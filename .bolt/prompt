@@ -1,0 +1,23 @@
+WinWota 2.0 Product Contract (always apply unless a prompt explicitly overrides)
+
+UI/UX
+- Target users are expert Olympic weightlifting coaches and athletes; prioritize information density and low interaction cost over “spacious” layouts.
+- Prefer compact tables, tight spacing, and scan-friendly hierarchy (bold titles, small secondary text).
+- Avoid wizard flows and excessive modals. Prefer inline editing where appropriate.
+- Any “planned” data is coach-authored and must remain read-only for athlete-facing views; athlete edits must go into log entities only.
+
+Formatting
+- Use dd/mm/yyyy for all date display and input (Europe/Denmark). Do not show mm/dd/yyyy anywhere.
+- Prescription notation rules:
+  - Input supports "load x reps" (implies sets=1) and "load x reps x sets" (explicit sets), comma-separated segments.
+  - When sets=1, never display the “×1” sets part.
+- Read-only display can use Stacked Load Notation (load on top, reps below a divider, sets on the right) for kg/%/RPE when enabled per exercise.
+
+Architecture / Slices
+- Build in small vertical slices. Do not introduce unrelated features, packages, or refactors.
+- Reuse existing data models and naming; do not rename types/fields unless prompted.
+- Add non-goals explicitly and do not implement them.
+
+Styling
+- Clean, professional, compact. Avoid “marketing site” aesthetics.
+- Use Tailwind + Lucide only (no extra UI libraries unless requested).

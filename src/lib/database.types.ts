@@ -1,0 +1,442 @@
+export type Category = string;
+export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'other';
+export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition';
+
+export interface Athlete {
+  id: string;
+  name: string;
+  birthdate: string | null;
+  bodyweight: number | null;
+  weight_class: string | null;
+  club: string | null;
+  notes: string | null;
+  photo_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AthletePR {
+  id: string;
+  athlete_id: string;
+  exercise_id: string;
+  pr_value_kg: number | null;
+  pr_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Exercise {
+  id: string;
+  name: string;
+  exercise_code: string | null;
+  category: Category;
+  is_competition_lift: boolean;
+  default_unit: DefaultUnit;
+  color: string;
+  counts_towards_totals: boolean;
+  use_stacked_notation: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMember {
+  id: string;
+  group_id: string;
+  athlete_id: string;
+  joined_at: string;
+  left_at: string | null;
+}
+
+export interface GroupMemberWithAthlete extends GroupMember {
+  athlete: Athlete;
+}
+
+export interface WeekPlan {
+  id: string;
+  week_start: string;
+  name: string | null;
+  athlete_id: string | null;
+  is_group_plan: boolean;
+  group_id: string | null;
+  active_days: number[];
+  day_labels: Record<number, string> | null;
+  day_display_order: number[] | null;
+  week_description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlannedExercise {
+  id: string;
+  weekplan_id: string;
+  day_index: number;
+  exercise_id: string;
+  position: number;
+  notes: string | null;
+  unit: string | null;
+  prescription_raw: string | null;
+  summary_total_sets: number | null;
+  summary_total_reps: number | null;
+  summary_highest_load: number | null;
+  summary_avg_load: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlannedExerciseWithExercise extends PlannedExercise {
+  exercise: Exercise;
+}
+
+export interface PlannedSetLine {
+  id: string;
+  planned_exercise_id: string;
+  sets: number;
+  reps: number;
+  load_value: number;
+  position: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroCycle {
+  id: string;
+  athlete_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroWeek {
+  id: string;
+  macrocycle_id: string;
+  week_start: string;
+  week_number: number;
+  week_type: WeekType;
+  week_type_text: string;
+  notes: string;
+  total_reps_target: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroTrackedExercise {
+  id: string;
+  macrocycle_id: string;
+  exercise_id: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroTrackedExerciseWithExercise extends MacroTrackedExercise {
+  exercise: Exercise;
+}
+
+export interface MacroTarget {
+  id: string;
+  macro_week_id: string;
+  tracked_exercise_id: string;
+  target_reps: number | null;
+  target_ave: number | null;
+  target_hi: number | null;
+  target_rhi: number | null;
+  target_shi: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GeneralSettings {
+  id: string;
+  raw_enabled: boolean;
+  raw_average_days: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingLogSession {
+  id: string;
+  athlete_id: string;
+  date: string;
+  week_start: string;
+  day_index: number;
+  session_notes: string;
+  status: string;
+  raw_sleep: number | null;
+  raw_physical: number | null;
+  raw_mood: number | null;
+  raw_nutrition: number | null;
+  raw_total: number | null;
+  raw_guidance: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingLogExercise {
+  id: string;
+  session_id: string;
+  exercise_id: string;
+  planned_exercise_id: string | null;
+  performed_raw: string;
+  performed_notes: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingLogExerciseWithExercise extends TrainingLogExercise {
+  exercise: Exercise;
+}
+
+export interface Event {
+  id: string;
+  name: string;
+  event_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventAthlete {
+  id: string;
+  event_id: string;
+  athlete_id: string;
+  created_at: string;
+}
+
+export interface EventAttempts {
+  id: string;
+  event_id: string;
+  athlete_id: string;
+  planned_snatch_1: number | null;
+  planned_snatch_2: number | null;
+  planned_snatch_3: number | null;
+  planned_cj_1: number | null;
+  planned_cj_2: number | null;
+  planned_cj_3: number | null;
+  actual_snatch_1: number | null;
+  actual_snatch_2: number | null;
+  actual_snatch_3: number | null;
+  actual_cj_1: number | null;
+  actual_cj_2: number | null;
+  actual_cj_3: number | null;
+  competition_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventVideo {
+  id: string;
+  event_id: string;
+  athlete_id: string;
+  lift_type: 'snatch' | 'clean_jerk';
+  attempt_number: number;
+  video_url: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface ExerciseComboTemplate {
+  id: string;
+  name: string;
+  unit: DefaultUnit | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExerciseComboTemplatePart {
+  id: string;
+  template_id: string;
+  exercise_id: string;
+  position: number;
+  created_at: string;
+}
+
+export interface ExerciseComboTemplatePartWithExercise extends ExerciseComboTemplatePart {
+  exercise: Exercise;
+}
+
+export interface ExerciseComboTemplateWithParts extends ExerciseComboTemplate {
+  parts: ExerciseComboTemplatePartWithExercise[];
+}
+
+export interface PlannedCombo {
+  id: string;
+  weekplan_id: string;
+  day_index: number;
+  position: number;
+  template_id: string | null;
+  combo_name: string | null;
+  unit: DefaultUnit;
+  shared_load_value: number;
+  sets: number;
+  reps_tuple_text: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlannedComboItem {
+  id: string;
+  planned_combo_id: string;
+  exercise_id: string;
+  position: number;
+  planned_exercise_id: string;
+  created_at: string;
+}
+
+export interface PlannedComboItemWithExercise extends PlannedComboItem {
+  exercise: Exercise;
+}
+
+export interface PlannedComboSetLine {
+  id: string;
+  planned_combo_id: string;
+  position: number;
+  load_value: number;
+  sets: number;
+  reps_tuple_text: string;
+  created_at: string;
+}
+
+export interface PlannedComboWithDetails extends PlannedCombo {
+  template: ExerciseComboTemplate | null;
+  items: PlannedComboItemWithExercise[];
+  set_lines: PlannedComboSetLine[];
+}
+
+export interface Database {
+  public: {
+    Tables: {
+      athletes: {
+        Row: Athlete;
+        Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      athlete_prs: {
+        Row: AthletePR;
+        Insert: Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      exercises: {
+        Row: Exercise;
+        Insert: Omit<Exercise, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Exercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      week_plans: {
+        Row: WeekPlan;
+        Insert: Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      planned_exercises: {
+        Row: PlannedExercise;
+        Insert: Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      planned_set_lines: {
+        Row: PlannedSetLine;
+        Insert: Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      macrocycles: {
+        Row: MacroCycle;
+        Insert: Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      macro_weeks: {
+        Row: MacroWeek;
+        Insert: Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      macro_tracked_exercises: {
+        Row: MacroTrackedExercise;
+        Insert: Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      macro_targets: {
+        Row: MacroTarget;
+        Insert: Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      general_settings: {
+        Row: GeneralSettings;
+        Insert: Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      training_log_sessions: {
+        Row: TrainingLogSession;
+        Insert: Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      training_log_exercises: {
+        Row: TrainingLogExercise;
+        Insert: Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      events: {
+        Row: Event;
+        Insert: Omit<Event, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Event, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      event_athletes: {
+        Row: EventAthlete;
+        Insert: Omit<EventAthlete, 'id' | 'created_at'>;
+        Update: Partial<Omit<EventAthlete, 'id' | 'created_at'>>;
+      };
+      event_attempts: {
+        Row: EventAttempts;
+        Insert: Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      event_videos: {
+        Row: EventVideo;
+        Insert: Omit<EventVideo, 'id' | 'created_at'>;
+        Update: Partial<Omit<EventVideo, 'id' | 'created_at'>>;
+      };
+      exercise_combo_templates: {
+        Row: ExerciseComboTemplate;
+        Insert: Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      exercise_combo_template_parts: {
+        Row: ExerciseComboTemplatePart;
+        Insert: Omit<ExerciseComboTemplatePart, 'id' | 'created_at'>;
+        Update: Partial<Omit<ExerciseComboTemplatePart, 'id' | 'created_at'>>;
+      };
+      planned_combos: {
+        Row: PlannedCombo;
+        Insert: Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      planned_combo_items: {
+        Row: PlannedComboItem;
+        Insert: Omit<PlannedComboItem, 'id' | 'created_at'>;
+        Update: Partial<Omit<PlannedComboItem, 'id' | 'created_at'>>;
+      };
+      training_groups: {
+        Row: TrainingGroup;
+        Insert: Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      group_members: {
+        Row: GroupMember;
+        Insert: Omit<GroupMember, 'id' | 'joined_at'>;
+        Update: Partial<Omit<GroupMember, 'id' | 'joined_at'>>;
+      };
+    };
+  };
+}
