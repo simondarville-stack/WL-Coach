@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
+import { X, Check, Type, Grid3x3 } from 'lucide-react';
 import type { PlannedExercise, Exercise, PlannedSetLine, DefaultUnit } from '../lib/database.types';
 import { getUnitSymbol, DEFAULT_UNITS } from '../lib/constants';
 import { parsePrescription, parseFreeTextPrescription } from '../lib/prescriptionParser';
 import { supabase } from '../lib/supabase';
+import { GridPrescriptionEditor } from './GridPrescriptionEditor';
 
 interface PrescriptionModalProps {
   plannedEx: PlannedExercise & { exercise: Exercise };
@@ -27,11 +28,14 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [macroTarget, setMacroTarget] = useState<MacroTarget | null>(null);
+  const [inputMode, setInputMode] = useState<'text' | 'grid'>('text');
+  const [gridSettings, setGridSettings] = useState({ loadIncrement: 5, clickIncrement: 1 });
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSetLines();
     loadMacroTarget();
+    loadGridSettings();
   }, []);
 
   useEffect(() => {
@@ -107,6 +111,24 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
       }
     } catch (err) {
       console.error('Failed to load macro target:', err);
+    }
+  };
+
+  const loadGridSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from('general_settings')
+        .select('grid_load_increment, grid_click_increment')
+        .maybeSingle();
+
+      if (data) {
+        setGridSettings({
+          loadIncrement: data.grid_load_increment || 5,
+          clickIncrement: data.grid_click_increment || 1,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load grid settings:', err);
     }
   };
 
@@ -359,13 +381,41 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {isTextBased
-                ? 'Prescription (Text x Reps x Sets)'
-                : isOtherUnit
-                ? 'Prescription (Free Text)'
-                : 'Prescription (Weight x Reps x Sets)'}
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                {isTextBased
+                  ? 'Prescription (Text x Reps x Sets)'
+                  : isOtherUnit
+                  ? 'Prescription (Free Text)'
+                  : 'Prescription (Weight x Reps x Sets)'}
+              </label>
+              {!isTextBased && !isOtherUnit && (
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setInputMode('text')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                      inputMode === 'text'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Type size={14} />
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setInputMode('grid')}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                      inputMode === 'grid'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <Grid3x3 size={14} />
+                    Grid
+                  </button>
+                </div>
+              )}
+            </div>
             {isTextBased ? (
               <div>
                 <input
@@ -389,6 +439,14 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                 placeholder="Enter any prescription text (e.g., 3x max reps, AMRAP, timed hold, etc.)"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-y"
               />
+            ) : inputMode === 'grid' ? (
+              <GridPrescriptionEditor
+                prescriptionRaw={prescription}
+                unit={unit}
+                gridLoadIncrement={gridSettings.loadIncrement}
+                gridClickIncrement={gridSettings.clickIncrement}
+                onSave={(newPrescription) => setPrescription(newPrescription)}
+              />
             ) : (
               <input
                 ref={inputRef}
@@ -400,11 +458,13 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              {isOtherUnit
-                ? 'Free text field for any type of prescription'
-                : `Format: LoadxReps or LoadxRepsxSets (e.g., 300x3 = 1 set, 20x4x3 = 3 sets)`}
-            </p>
+            {inputMode === 'text' && !isOtherUnit && (
+              <p className="mt-1 text-xs text-gray-500">
+                {isOtherUnit
+                  ? 'Free text field for any type of prescription'
+                  : `Format: LoadxReps or LoadxRepsxSets (e.g., 300x3 = 1 set, 20x4x3 = 3 sets)`}
+              </p>
+            )}
           </div>
 
           <div className="border-t border-gray-200 pt-4">

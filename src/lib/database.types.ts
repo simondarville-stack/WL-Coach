@@ -163,6 +163,8 @@ export interface GeneralSettings {
   id: string;
   raw_enabled: boolean;
   raw_average_days: number;
+  grid_load_increment: number;
+  grid_click_increment: number;
   created_at: string;
   updated_at: string;
 }
