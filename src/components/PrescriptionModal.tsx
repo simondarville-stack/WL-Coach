@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Check, Type, Grid3x3 } from 'lucide-react';
 import type { PlannedExercise, Exercise, PlannedSetLine, DefaultUnit } from '../lib/database.types';
-import { getUnitSymbol, DEFAULT_UNITS } from '../lib/constants';
+import { getUnitSymbol, DEFAULT_UNITS, DAYS_OF_WEEK } from '../lib/constants';
 import { parsePrescription, parseFreeTextPrescription } from '../lib/prescriptionParser';
 import { supabase } from '../lib/supabase';
 import { GridPrescriptionEditor } from './GridPrescriptionEditor';
@@ -20,6 +20,14 @@ interface MacroTarget {
   target_shi: number | null;
 }
 
+interface OtherDayEntry {
+  dayIndex: number;
+  dayName: string;
+  prescriptionRaw: string | null;
+  totalSets: number | null;
+  totalReps: number | null;
+}
+
 export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionModalProps) {
   const [prescription, setPrescription] = useState(plannedEx.prescription_raw || '');
   const [notes, setNotes] = useState(plannedEx.notes || '');
@@ -30,12 +38,14 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
   const [macroTarget, setMacroTarget] = useState<MacroTarget | null>(null);
   const [inputMode, setInputMode] = useState<'text' | 'grid'>('text');
   const [gridSettings, setGridSettings] = useState({ loadIncrement: 5, clickIncrement: 1 });
+  const [otherDayEntries, setOtherDayEntries] = useState<OtherDayEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSetLines();
     loadMacroTarget();
     loadGridSettings();
+    loadOtherDayPrescriptions();
   }, []);
 
   useEffect(() => {
@@ -129,6 +139,36 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
       }
     } catch (err) {
       console.error('Failed to load grid settings:', err);
+    }
+  };
+
+  const loadOtherDayPrescriptions = async () => {
+    try {
+      const { data: otherExercises, error } = await supabase
+        .from('planned_exercises')
+        .select('day_index, prescription_raw, summary_total_sets, summary_total_reps')
+        .eq('weekplan_id', plannedEx.weekplan_id)
+        .eq('exercise_id', plannedEx.exercise_id)
+        .neq('id', plannedEx.id);
+
+      if (error) throw error;
+      if (!otherExercises || otherExercises.length === 0) return;
+
+      const entries: OtherDayEntry[] = otherExercises.map(ex => {
+        const day = DAYS_OF_WEEK.find(d => d.index === ex.day_index);
+        return {
+          dayIndex: ex.day_index,
+          dayName: day?.name || `Day ${ex.day_index}`,
+          prescriptionRaw: ex.prescription_raw,
+          totalSets: ex.summary_total_sets,
+          totalReps: ex.summary_total_reps,
+        };
+      });
+
+      entries.sort((a, b) => a.dayIndex - b.dayIndex);
+      setOtherDayEntries(entries);
+    } catch (err) {
+      console.error('Failed to load other day prescriptions:', err);
     }
   };
 
@@ -446,6 +486,7 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                 gridLoadIncrement={gridSettings.loadIncrement}
                 gridClickIncrement={gridSettings.clickIncrement}
                 onSave={(newPrescription) => setPrescription(newPrescription)}
+                macroTarget={macroTarget}
               />
             ) : (
               <input
@@ -503,6 +544,34 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                 ))}
               </div>
             )}
+
+            {otherDayEntries.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  Also planned this week
+                </p>
+                <div className="space-y-1.5">
+                  {otherDayEntries.map(entry => (
+                    <div
+                      key={entry.dayIndex}
+                      className="flex items-center justify-between px-3 py-2 bg-amber-50 border border-amber-100 rounded"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-amber-800 w-12">{entry.dayName.substring(0, 3)}</span>
+                        <span className="text-xs text-gray-700">
+                          {entry.prescriptionRaw || <span className="italic text-gray-400">No prescription</span>}
+                        </span>
+                      </div>
+                      {(entry.totalSets || entry.totalReps) && (
+                        <span className="text-[10px] text-gray-500">
+                          S{entry.totalSets || 0} / R{entry.totalReps || 0}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t border-gray-200 pt-4">
@@ -544,9 +613,9 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                         {plannedEx.summary_highest_load.toFixed(0)}{unitSymbol}
                       </p>
                     </div>
-                    <div className="bg-purple-50 p-3 rounded-lg">
-                      <p className="text-xs text-purple-600 font-medium">Avg Load</p>
-                      <p className="text-lg font-bold text-purple-900">
+                    <div className="bg-gray-50 p-3 rounded-lg">
+                      <p className="text-xs text-gray-600 font-medium">Avg Load</p>
+                      <p className="text-lg font-bold text-gray-900">
                         {plannedEx.summary_avg_load?.toFixed(0)}{unitSymbol}
                       </p>
                     </div>

@@ -8,6 +8,13 @@ interface GridPrescriptionEditorProps {
   gridLoadIncrement: number;
   gridClickIncrement: number;
   onSave: (prescriptionRaw: string) => void;
+  macroTarget?: {
+    target_reps: number | null;
+    target_ave: number | null;
+    target_hi: number | null;
+    target_rhi: number | null;
+    target_shi: number | null;
+  } | null;
 }
 
 interface GridColumn {
@@ -23,6 +30,7 @@ export function GridPrescriptionEditor({
   gridLoadIncrement,
   gridClickIncrement,
   onSave,
+  macroTarget,
 }: GridPrescriptionEditorProps) {
   const [columns, setColumns] = useState<GridColumn[]>([]);
   const [editingCell, setEditingCell] = useState<{ columnId: string; field: 'load' | 'reps' | 'sets' } | null>(null);
@@ -58,7 +66,15 @@ export function GridPrescriptionEditor({
     onSave(prescriptionText);
   };
 
-  const handleCellClick = (columnId: string, field: 'load' | 'reps' | 'sets', isRightClick: boolean) => {
+  const handleCellClick = (e: React.MouseEvent, columnId: string, field: 'load' | 'reps' | 'sets', isRightClick: boolean) => {
+    if (e.ctrlKey || e.metaKey) {
+      const col = columns.find(c => c.id === columnId);
+      if (!col) return;
+      setEditValue(String(col[field]));
+      setEditingCell({ columnId, field });
+      return;
+    }
+
     setColumns(prev => {
       const newCols = prev.map(col => {
         if (col.id === columnId) {
@@ -78,13 +94,6 @@ export function GridPrescriptionEditor({
       serializeAndSave(newCols);
       return newCols;
     });
-  };
-
-  const handleCellDoubleClick = (columnId: string, field: 'load' | 'reps' | 'sets') => {
-    const col = columns.find(c => c.id === columnId);
-    if (!col) return;
-    setEditValue(String(col[field]));
-    setEditingCell({ columnId, field });
   };
 
   const commitEdit = () => {
@@ -202,6 +211,26 @@ export function GridPrescriptionEditor({
   const summary = calculateSummary();
   const unitLabel = unit === 'absolute_kg' ? 'KG' : unit === 'percentage' ? '%' : unit === 'rpe' ? 'RPE' : '';
 
+  const getMacroComparison = (field: 'S' | 'R' | 'Hi' | 'Avg', value: number) => {
+    if (!macroTarget) return null;
+
+    let target: number | null = null;
+    if (field === 'R' && macroTarget.target_reps !== null) target = macroTarget.target_reps;
+    if (field === 'Hi' && macroTarget.target_hi !== null) target = macroTarget.target_hi;
+    if (field === 'Avg' && macroTarget.target_ave !== null) target = macroTarget.target_ave;
+
+    if (target === null) return null;
+
+    const diff = value - target;
+    const pct = target > 0 ? (diff / target) * 100 : 0;
+    let color = 'text-gray-500';
+    if (Math.abs(pct) < 5) color = 'text-green-600';
+    else if (diff > 0) color = 'text-amber-600';
+    else color = 'text-red-600';
+
+    return { target, diff, color };
+  };
+
   return (
     <div className="space-y-2">
       <div
@@ -209,23 +238,25 @@ export function GridPrescriptionEditor({
         className="overflow-x-auto"
         onContextMenu={handleContextMenu}
       >
-        <div className="inline-flex flex-col gap-0.5 min-w-full">
-          <div className="flex items-center gap-0.5">
-            <div className="w-12 text-[10px] font-medium text-gray-600 flex items-center justify-end pr-1">
+        <div className="inline-flex items-stretch gap-2.5 min-w-full">
+          <div className="flex flex-col gap-0.5 w-12 flex-shrink-0">
+            <div className="h-8 text-[10px] font-medium text-gray-600 flex items-center justify-end pr-1">
               {unitLabel}:
             </div>
-            {columns.map(col => (
+            <div className="h-8 text-[10px] font-medium text-gray-600 flex items-center justify-end pr-1">
+              R / S:
+            </div>
+          </div>
+
+          {columns.map(col => (
+            <div key={col.id} className="flex flex-col gap-0.5" onKeyDown={(e) => handleKeyDown(e, col.id)} tabIndex={0}>
               <div
-                key={`${col.id}-load`}
                 className="w-14 h-8 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
-                onClick={() => handleCellClick(col.id, 'load', false)}
+                onClick={(e) => handleCellClick(e, col.id, 'load', false)}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  handleCellClick(col.id, 'load', true);
+                  handleCellClick(e, col.id, 'load', true);
                 }}
-                onDoubleClick={() => handleCellDoubleClick(col.id, 'load')}
-                onKeyDown={(e) => handleKeyDown(e, col.id)}
-                tabIndex={0}
               >
                 {editingCell?.columnId === col.id && editingCell.field === 'load' ? (
                   <input
@@ -245,31 +276,15 @@ export function GridPrescriptionEditor({
                   <span className="text-xs font-medium">{col.load}</span>
                 )}
               </div>
-            ))}
-            <div
-              className="w-14 h-8 border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={handleAddColumn}
-            >
-              <span className="text-gray-400 text-lg">+</span>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-0.5">
-            <div className="w-12 text-[10px] font-medium text-gray-600 flex items-center justify-end pr-1">
-              R / S:
-            </div>
-            {columns.map(col => (
-              <div key={`${col.id}-reps-sets`} className="w-14 h-8 flex gap-0.5">
+              <div className="w-14 h-8 flex gap-0.5">
                 <div
                   className="flex-1 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
-                  onClick={() => handleCellClick(col.id, 'reps', false)}
+                  onClick={(e) => handleCellClick(e, col.id, 'reps', false)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    handleCellClick(col.id, 'reps', true);
+                    handleCellClick(e, col.id, 'reps', true);
                   }}
-                  onDoubleClick={() => handleCellDoubleClick(col.id, 'reps')}
-                  onKeyDown={(e) => handleKeyDown(e, col.id)}
-                  tabIndex={0}
                 >
                   {editingCell?.columnId === col.id && editingCell.field === 'reps' ? (
                     <input
@@ -291,14 +306,11 @@ export function GridPrescriptionEditor({
                 </div>
                 <div
                   className="flex-1 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
-                  onClick={() => handleCellClick(col.id, 'sets', false)}
+                  onClick={(e) => handleCellClick(e, col.id, 'sets', false)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    handleCellClick(col.id, 'sets', true);
+                    handleCellClick(e, col.id, 'sets', true);
                   }}
-                  onDoubleClick={() => handleCellDoubleClick(col.id, 'sets')}
-                  onKeyDown={(e) => handleKeyDown(e, col.id)}
-                  tabIndex={0}
                 >
                   {editingCell?.columnId === col.id && editingCell.field === 'sets' ? (
                     <input
@@ -319,31 +331,73 @@ export function GridPrescriptionEditor({
                   )}
                 </div>
               </div>
-            ))}
-            <div
-              className="w-14 h-8 border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
-              onClick={handleAddColumn}
-            >
-              <span className="text-gray-400 text-lg">+</span>
             </div>
+          ))}
+
+          <div
+            className="w-10 border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors rounded-sm self-stretch"
+            onClick={handleAddColumn}
+          >
+            <span className="text-gray-400 text-lg">+</span>
           </div>
         </div>
       </div>
 
       {columns.length > 0 && (
-        <div className="flex items-center gap-4 text-[10px] text-gray-600 pt-1 border-t border-gray-200">
-          <div>
-            <span className="font-medium">S:</span> {summary.totalSets}
+        <div className="space-y-1 pt-1 border-t border-gray-200">
+          <div className="flex items-center gap-4 text-[10px] text-gray-600">
+            <div>
+              <span className="font-medium">S:</span> {summary.totalSets}
+            </div>
+            <div>
+              <span className="font-medium">R:</span> {summary.totalReps}
+            </div>
+            <div>
+              <span className="font-medium">Hi:</span> {summary.highestLoad}
+            </div>
+            <div>
+              <span className="font-medium">Avg:</span> {summary.avgLoad}
+            </div>
           </div>
-          <div>
-            <span className="font-medium">R:</span> {summary.totalReps}
-          </div>
-          <div>
-            <span className="font-medium">Hi:</span> {summary.highestLoad}
-          </div>
-          <div>
-            <span className="font-medium">Avg:</span> {summary.avgLoad}
-          </div>
+
+          {macroTarget && (
+            <div className="flex items-center gap-4 text-[10px]">
+              {macroTarget.target_reps !== null && (() => {
+                const cmp = getMacroComparison('R', summary.totalReps);
+                return cmp ? (
+                  <div className={cmp.color}>
+                    <span className="font-medium">R:</span> {cmp.target}
+                  </div>
+                ) : null;
+              })()}
+              {macroTarget.target_hi !== null && (() => {
+                const cmp = getMacroComparison('Hi', summary.highestLoad);
+                return cmp ? (
+                  <div className={cmp.color}>
+                    <span className="font-medium">Hi:</span> {cmp.target}
+                  </div>
+                ) : null;
+              })()}
+              {macroTarget.target_ave !== null && (() => {
+                const cmp = getMacroComparison('Avg', summary.avgLoad);
+                return cmp ? (
+                  <div className={cmp.color}>
+                    <span className="font-medium">Avg:</span> {cmp.target}
+                  </div>
+                ) : null;
+              })()}
+              {macroTarget.target_rhi !== null && (
+                <div className="text-gray-500">
+                  <span className="font-medium">R@Hi:</span> {macroTarget.target_rhi}
+                </div>
+              )}
+              {macroTarget.target_shi !== null && (
+                <div className="text-gray-500">
+                  <span className="font-medium">S@Hi:</span> {macroTarget.target_shi}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
