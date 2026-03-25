@@ -1,16 +1,13 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, TrendingUp, Calendar, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, TrendingUp, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import {
+import type {
   Athlete,
   MacroCycle,
   MacroWeek,
-  TrainingLogSession,
-  PlannedExerciseWithExercise,
-  MacroTrackedExercise,
-  MacroTarget,
   GeneralSettings as GeneralSettingsType,
   Event,
+  TrainingGroup,
 } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { EventOverviewModal } from './EventOverviewModal';
@@ -25,6 +22,8 @@ interface AthleteStatus {
   rawAverage: number | null;
   currentWeekPlanned: boolean;
   nextWeekPlanned: boolean;
+  currentWeekStart: string;
+  nextWeekStart: string;
 }
 
 interface ActivityEvent {
@@ -45,6 +44,7 @@ interface UpcomingEvent {
 }
 
 interface MacroAlignment {
+  athleteId: string;
   athleteName: string;
   exerciseName: string;
   status: 'on-target' | 'close' | 'off-target';
@@ -52,16 +52,37 @@ interface MacroAlignment {
   target: number;
 }
 
-export function CoachDashboard() {
+interface GroupStatus {
+  group: TrainingGroup;
+  memberCount: number;
+  members: { id: string; name: string }[];
+  currentWeekPlanned: boolean;
+  nextWeekPlanned: boolean;
+  currentWeekStart: string;
+  nextWeekStart: string;
+}
+
+type SortColumn = 'name' | 'macrocycle' | 'week' | 'lastTraining' | 'latestRaw' | 'rawAvg' | 'thisWeek' | 'nextWeek';
+type SortDirection = 'asc' | 'desc';
+
+interface CoachDashboardProps {
+  onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
+}
+
+export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
   const [athleteStatuses, setAthleteStatuses] = useState<AthleteStatus[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
   const [macroAlignments, setMacroAlignments] = useState<MacroAlignment[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<UpcomingEvent[]>([]);
+  const [groupStatuses, setGroupStatuses] = useState<GroupStatus[]>([]);
   const [settings, setSettings] = useState<GeneralSettingsType | null>(null);
-  const [showMacroAlignment, setShowMacroAlignment] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [showEventOverview, setShowEventOverview] = useState(false);
+  const [expandedAthleteId, setExpandedAthleteId] = useState<string | null>(null);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   useEffect(() => {
     loadDashboardData();
@@ -72,27 +93,42 @@ export function CoachDashboard() {
   async function loadDashboardData() {
     try {
       setLoading(true);
+      const settingsData = await loadSettings();
       await Promise.all([
-        loadSettings(),
-        loadAthleteStatuses(),
+        loadAthleteStatuses(settingsData),
         loadActivityFeed(),
         loadMacroAlignments(),
         loadUpcomingEvents(),
+        loadGroupStatuses(),
       ]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadSettings() {
+  async function loadSettings(): Promise<GeneralSettingsType | null> {
     const { data } = await supabase
       .from('general_settings')
       .select('*')
       .maybeSingle();
     setSettings(data);
+    return data;
   }
 
-  async function loadAthleteStatuses() {
+  function getWeekDates() {
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(monday.getDate() - monday.getDay() + (monday.getDay() === 0 ? -6 : 1));
+    const weekStartISO = monday.toISOString().split('T')[0];
+
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(nextMonday.getDate() + 7);
+    const nextWeekStartISO = nextMonday.toISOString().split('T')[0];
+
+    return { weekStartISO, nextWeekStartISO };
+  }
+
+  async function loadAthleteStatuses(settingsData: GeneralSettingsType | null) {
     const { data: athletes } = await supabase
       .from('athletes')
       .select('*')
@@ -101,7 +137,8 @@ export function CoachDashboard() {
 
     if (!athletes) return;
 
-    const rawAverageDays = settings?.raw_average_days || 7;
+    const rawAverageDays = settingsData?.raw_average_days || 7;
+    const { weekStartISO, nextWeekStartISO } = getWeekDates();
     const statuses: AthleteStatus[] = [];
 
     for (const athlete of athletes) {
@@ -161,15 +198,6 @@ export function CoachDashboard() {
         }
       }
 
-      const today = new Date();
-      const monday = new Date(today);
-      monday.setDate(monday.getDate() - monday.getDay() + 1);
-      const weekStartISO = monday.toISOString().split('T')[0];
-
-      const nextMonday = new Date(monday);
-      nextMonday.setDate(nextMonday.getDate() + 7);
-      const nextWeekStartISO = nextMonday.toISOString().split('T')[0];
-
       const { data: currentWeekPlan } = await supabase
         .from('week_plans')
         .select('id')
@@ -207,13 +235,15 @@ export function CoachDashboard() {
       statuses.push({
         athlete,
         currentMacrocycle: macrocycle || null,
-        currentMacroWeek: currentMacroWeek,
+        currentMacroWeek,
         totalMacroWeeks,
         lastTrainingDate,
         latestRaw,
         rawAverage,
         currentWeekPlanned,
         nextWeekPlanned,
+        currentWeekStart: weekStartISO,
+        nextWeekStart: nextWeekStartISO,
       });
     }
 
@@ -283,10 +313,7 @@ export function CoachDashboard() {
 
     if (!athletes) return;
 
-    const today = new Date();
-    const monday = new Date(today);
-    monday.setDate(monday.getDate() - monday.getDay() + 1);
-    const weekStartISO = monday.toISOString().split('T')[0];
+    const { weekStartISO } = getWeekDates();
 
     for (const athlete of athletes) {
       const { data: macrocycle } = await supabase
@@ -305,6 +332,7 @@ export function CoachDashboard() {
 
       if (!macroWeeks) continue;
 
+      const today = new Date();
       const currentWeek = macroWeeks.find(mw => {
         const start = new Date(mw.week_start);
         const end = new Date(start);
@@ -366,6 +394,7 @@ export function CoachDashboard() {
         }
 
         alignments.push({
+          athleteId: athlete.id,
           athleteName: athlete.name,
           exerciseName: exercise.name,
           status,
@@ -421,9 +450,84 @@ export function CoachDashboard() {
     setUpcomingEvents(events);
   }
 
+  async function loadGroupStatuses() {
+    const { data: groups } = await supabase
+      .from('training_groups')
+      .select('*')
+      .order('name');
+
+    if (!groups || groups.length === 0) {
+      setGroupStatuses([]);
+      return;
+    }
+
+    const { weekStartISO, nextWeekStartISO } = getWeekDates();
+    const statuses: GroupStatus[] = [];
+
+    for (const group of groups) {
+      const { data: members } = await supabase
+        .from('group_members')
+        .select('athlete:athlete_id(id, name)')
+        .eq('group_id', group.id)
+        .is('left_at', null);
+
+      const memberList = (members || []).map((m: any) => ({
+        id: m.athlete.id,
+        name: m.athlete.name,
+      }));
+
+      const { data: currentWeekPlan } = await supabase
+        .from('week_plans')
+        .select('id')
+        .eq('group_id', group.id)
+        .eq('is_group_plan', true)
+        .eq('week_start', weekStartISO)
+        .maybeSingle();
+
+      const { data: nextWeekPlan } = await supabase
+        .from('week_plans')
+        .select('id')
+        .eq('group_id', group.id)
+        .eq('is_group_plan', true)
+        .eq('week_start', nextWeekStartISO)
+        .maybeSingle();
+
+      let currentWeekPlanned = false;
+      if (currentWeekPlan) {
+        const { data: pe } = await supabase
+          .from('planned_exercises')
+          .select('id')
+          .eq('weekplan_id', currentWeekPlan.id)
+          .limit(1);
+        currentWeekPlanned = (pe?.length || 0) > 0;
+      }
+
+      let nextWeekPlanned = false;
+      if (nextWeekPlan) {
+        const { data: pe } = await supabase
+          .from('planned_exercises')
+          .select('id')
+          .eq('weekplan_id', nextWeekPlan.id)
+          .limit(1);
+        nextWeekPlanned = (pe?.length || 0) > 0;
+      }
+
+      statuses.push({
+        group,
+        memberCount: memberList.length,
+        members: memberList,
+        currentWeekPlanned,
+        nextWeekPlanned,
+        currentWeekStart: weekStartISO,
+        nextWeekStart: nextWeekStartISO,
+      });
+    }
+
+    setGroupStatuses(statuses);
+  }
+
   function getRelativeTime(date: Date | null): string {
     if (!date) return 'Never';
-
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -458,6 +562,67 @@ export function CoachDashboard() {
     return daysSinceTraining > 7;
   };
 
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  }
+
+  function getSortedStatuses(): AthleteStatus[] {
+    const sorted = [...athleteStatuses];
+    const dir = sortDirection === 'asc' ? 1 : -1;
+
+    sorted.sort((a, b) => {
+      switch (sortColumn) {
+        case 'name':
+          return dir * a.athlete.name.localeCompare(b.athlete.name);
+        case 'macrocycle':
+          return dir * (a.currentMacrocycle?.name || '').localeCompare(b.currentMacrocycle?.name || '');
+        case 'week':
+          return dir * ((a.currentMacroWeek?.week_number || 0) - (b.currentMacroWeek?.week_number || 0));
+        case 'lastTraining': {
+          const aTime = a.lastTrainingDate?.getTime() || 0;
+          const bTime = b.lastTrainingDate?.getTime() || 0;
+          return dir * (aTime - bTime);
+        }
+        case 'latestRaw':
+          return dir * ((a.latestRaw || 0) - (b.latestRaw || 0));
+        case 'rawAvg':
+          return dir * ((a.rawAverage || 0) - (b.rawAverage || 0));
+        case 'thisWeek':
+          return dir * ((a.currentWeekPlanned ? 1 : 0) - (b.currentWeekPlanned ? 1 : 0));
+        case 'nextWeek':
+          return dir * ((a.nextWeekPlanned ? 1 : 0) - (b.nextWeekPlanned ? 1 : 0));
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }
+
+  function SortHeader({ column, label }: { column: SortColumn; label: string }) {
+    const isActive = sortColumn === column;
+    return (
+      <th
+        className="text-left py-3 px-4 text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-50 select-none"
+        onClick={() => handleSort(column)}
+      >
+        <div className="flex items-center gap-1">
+          {label}
+          {isActive && (
+            sortDirection === 'asc'
+              ? <ArrowUp size={12} className="text-blue-600" />
+              : <ArrowDown size={12} className="text-blue-600" />
+          )}
+        </div>
+      </th>
+    );
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-screen">
@@ -465,6 +630,8 @@ export function CoachDashboard() {
       </div>
     );
   }
+
+  const sortedStatuses = getSortedStatuses();
 
   return (
     <div className="p-6 space-y-6">
@@ -481,115 +648,83 @@ export function CoachDashboard() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Athlete</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Macrocycle</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Week</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Last Training</th>
+                <th className="w-6 py-3 px-2"></th>
+                <SortHeader column="name" label="Athlete" />
+                <SortHeader column="macrocycle" label="Macrocycle" />
+                <SortHeader column="week" label="Week" />
+                <SortHeader column="lastTraining" label="Last Training" />
                 {settings?.raw_enabled && (
                   <>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Latest RAW</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">RAW Avg</th>
+                    <SortHeader column="latestRaw" label="Latest RAW" />
+                    <SortHeader column="rawAvg" label="RAW Avg" />
                   </>
                 )}
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">This Week</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Next Week</th>
+                <SortHeader column="thisWeek" label="This Week" />
+                <SortHeader column="nextWeek" label="Next Week" />
               </tr>
             </thead>
             <tbody>
-              {athleteStatuses.map((status) => (
-                <tr
-                  key={status.athlete.id}
-                  className="border-b border-gray-100 hover:bg-gray-50"
-                >
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      {needsAttention(status) && (
-                        <AlertCircle className="w-4 h-4 text-red-600" />
-                      )}
-                      <span className="font-medium text-gray-900">{status.athlete.name}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {status.currentMacrocycle?.name || '-'}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {status.currentMacroWeek ? (
-                      <div>
-                        <div>
-                          Week {status.currentMacroWeek.week_number}
-                          {status.totalMacroWeeks && `/${status.totalMacroWeeks}`}
-                        </div>
-                        {status.currentMacroWeek.week_type_text && (
-                          <div className="text-xs text-gray-500">
-                            {status.currentMacroWeek.week_type_text}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {getRelativeTime(status.lastTrainingDate)}
-                  </td>
-                  {settings?.raw_enabled && (
-                    <>
-                      <td className="py-3 px-4">
-                        {status.latestRaw !== null ? (
-                          <div
-                            className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-medium ${getRawBgColor(
-                              status.latestRaw
-                            )} ${getRawColor(status.latestRaw)}`}
-                          >
-                            {status.latestRaw}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        {status.rawAverage !== null ? (
-                          <div
-                            className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-medium ${getRawBgColor(
-                              status.rawAverage
-                            )} ${getRawColor(status.rawAverage)}`}
-                          >
-                            {status.rawAverage.toFixed(1)}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">-</span>
-                        )}
-                      </td>
-                    </>
-                  )}
-                  <td className="py-3 px-4">
-                    {status.currentWeekPlanned ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                        Planned
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800">
-                        Not Planned
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    {status.nextWeekPlanned ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                        Planned
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-yellow-100 text-yellow-800">
-                        Not Planned
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {sortedStatuses.map((status) => {
+                const isExpanded = expandedAthleteId === status.athlete.id;
+                const athleteAlignments = macroAlignments.filter(
+                  ma => ma.athleteId === status.athlete.id
+                );
+
+                return (
+                  <AthleteRow
+                    key={status.athlete.id}
+                    status={status}
+                    isExpanded={isExpanded}
+                    onToggleExpand={() => setExpandedAthleteId(isExpanded ? null : status.athlete.id)}
+                    rawEnabled={settings?.raw_enabled || false}
+                    alignments={athleteAlignments}
+                    needsAttention={needsAttention(status)}
+                    getRawColor={getRawColor}
+                    getRawBgColor={getRawBgColor}
+                    getRelativeTime={getRelativeTime}
+                    onNavigateToPlanner={onNavigateToPlanner}
+                  />
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+
+      {groupStatuses.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <UsersRound className="w-5 h-5" />
+            Training Groups Overview
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="w-6 py-3 px-2"></th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Group</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Members</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">This Week</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Next Week</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groupStatuses.map((gs) => {
+                  const isExpanded = expandedGroupId === gs.group.id;
+                  return (
+                    <GroupRow
+                      key={gs.group.id}
+                      groupStatus={gs}
+                      isExpanded={isExpanded}
+                      onToggleExpand={() => setExpandedGroupId(isExpanded ? null : gs.group.id)}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-6">
         <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -673,79 +808,6 @@ export function CoachDashboard() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Macro Alignment Signals</h2>
-          <button
-            onClick={() => setShowMacroAlignment(!showMacroAlignment)}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            {showMacroAlignment ? (
-              <>
-                <EyeOff className="w-4 h-4" />
-                Hide
-              </>
-            ) : (
-              <>
-                <Eye className="w-4 h-4" />
-                Show
-              </>
-            )}
-          </button>
-        </div>
-
-        {showMacroAlignment && (
-          <div className="space-y-4">
-            {athleteStatuses
-              .filter(status => status.currentMacrocycle)
-              .map((status) => {
-                const athleteAlignments = macroAlignments.filter(
-                  ma => ma.athleteName === status.athlete.name
-                );
-
-                if (athleteAlignments.length === 0) return null;
-
-                return (
-                  <div key={status.athlete.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="font-semibold text-gray-900 mb-3">{status.athlete.name}</div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {athleteAlignments.map((alignment, index) => (
-                        <div
-                          key={index}
-                          className="relative group"
-                          title={`Planned: ${alignment.planned}, Target: ${alignment.target}`}
-                        >
-                          <div
-                            className={`px-3 py-2 rounded-lg border-2 cursor-help ${
-                              alignment.status === 'on-target'
-                                ? 'bg-green-50 border-green-400'
-                                : alignment.status === 'close'
-                                ? 'bg-yellow-50 border-yellow-400'
-                                : 'bg-red-50 border-red-400'
-                            }`}
-                          >
-                            <div className="text-sm font-medium text-gray-900 truncate">
-                              {alignment.exerciseName}
-                            </div>
-                            <div className="text-xs text-gray-600 mt-1">
-                              {alignment.planned}/{alignment.target} reps
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            {macroAlignments.length === 0 && (
-              <div className="text-gray-500 italic text-center py-8">
-                No macro alignment data available
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {showEventOverview && selectedEvent && (
         <EventOverviewModal
           event={selectedEvent}
@@ -756,5 +818,292 @@ export function CoachDashboard() {
         />
       )}
     </div>
+  );
+}
+
+interface AthleteRowProps {
+  status: AthleteStatus;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  rawEnabled: boolean;
+  alignments: MacroAlignment[];
+  needsAttention: boolean;
+  getRawColor: (avg: number | null) => string;
+  getRawBgColor: (avg: number | null) => string;
+  getRelativeTime: (date: Date | null) => string;
+  onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
+}
+
+function AthleteRow({
+  status,
+  isExpanded,
+  onToggleExpand,
+  rawEnabled,
+  alignments,
+  needsAttention,
+  getRawColor,
+  getRawBgColor,
+  getRelativeTime,
+  onNavigateToPlanner,
+}: AthleteRowProps) {
+  const colCount = 8 + (rawEnabled ? 2 : 0);
+
+  function calculateAge(birthdate: string | null): number | null {
+    if (!birthdate) return null;
+    const today = new Date();
+    const birth = new Date(birthdate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  return (
+    <>
+      <tr
+        className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
+        onClick={onToggleExpand}
+      >
+        <td className="py-3 px-2">
+          {isExpanded
+            ? <ChevronDown size={14} className="text-gray-400" />
+            : <ChevronRight size={14} className="text-gray-400" />
+          }
+        </td>
+        <td className="py-3 px-4">
+          <div className="flex items-center gap-2">
+            {needsAttention && (
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+            )}
+            <span className="font-medium text-gray-900">{status.athlete.name}</span>
+          </div>
+        </td>
+        <td className="py-3 px-4 text-sm text-gray-600">
+          {status.currentMacrocycle?.name || '-'}
+        </td>
+        <td className="py-3 px-4 text-sm text-gray-600">
+          {status.currentMacroWeek ? (
+            <div>
+              <div>
+                Week {status.currentMacroWeek.week_number}
+                {status.totalMacroWeeks && `/${status.totalMacroWeeks}`}
+              </div>
+              {status.currentMacroWeek.week_type_text && (
+                <div className="text-xs text-gray-500">
+                  {status.currentMacroWeek.week_type_text}
+                </div>
+              )}
+            </div>
+          ) : (
+            '-'
+          )}
+        </td>
+        <td className="py-3 px-4 text-sm text-gray-600">
+          {getRelativeTime(status.lastTrainingDate)}
+        </td>
+        {rawEnabled && (
+          <>
+            <td className="py-3 px-4">
+              {status.latestRaw !== null ? (
+                <div
+                  className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-medium ${getRawBgColor(
+                    status.latestRaw
+                  )} ${getRawColor(status.latestRaw)}`}
+                >
+                  {status.latestRaw}
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">-</span>
+              )}
+            </td>
+            <td className="py-3 px-4">
+              {status.rawAverage !== null ? (
+                <div
+                  className={`inline-flex items-center px-2 py-1 rounded-full text-sm font-medium ${getRawBgColor(
+                    status.rawAverage
+                  )} ${getRawColor(status.rawAverage)}`}
+                >
+                  {status.rawAverage.toFixed(1)}
+                </div>
+              ) : (
+                <span className="text-sm text-gray-400">-</span>
+              )}
+            </td>
+          </>
+        )}
+        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onNavigateToPlanner(status.athlete, status.currentWeekStart)}
+            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors hover:ring-2 hover:ring-blue-300 ${
+              status.currentWeekPlanned
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+            }`}
+            title="Go to this week's plan"
+          >
+            {status.currentWeekPlanned ? 'Planned' : 'Not Planned'}
+          </button>
+        </td>
+        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onNavigateToPlanner(status.athlete, status.nextWeekStart)}
+            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors hover:ring-2 hover:ring-blue-300 ${
+              status.nextWeekPlanned
+                ? 'bg-green-100 text-green-800'
+                : 'bg-yellow-100 text-yellow-800'
+            }`}
+            title="Go to next week's plan"
+          >
+            {status.nextWeekPlanned ? 'Planned' : 'Not Planned'}
+          </button>
+        </td>
+      </tr>
+
+      {isExpanded && (
+        <tr className="bg-gray-50">
+          <td colSpan={colCount} className="px-4 py-4">
+            <div className="ml-6 space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">Club:</span>{' '}
+                  <span className="font-medium text-gray-900">{status.athlete.club || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Age:</span>{' '}
+                  <span className="font-medium text-gray-900">
+                    {calculateAge(status.athlete.birthdate) ?? '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Bodyweight:</span>{' '}
+                  <span className="font-medium text-gray-900">
+                    {status.athlete.bodyweight ? `${status.athlete.bodyweight}kg` : '-'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Weight Class:</span>{' '}
+                  <span className="font-medium text-gray-900">{status.athlete.weight_class || '-'}</span>
+                </div>
+              </div>
+
+              {status.athlete.notes && (
+                <div className="text-sm">
+                  <span className="text-gray-500">Notes:</span>{' '}
+                  <span className="text-gray-700">{status.athlete.notes}</span>
+                </div>
+              )}
+
+              {alignments.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Macro Alignment
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {alignments.map((alignment, index) => (
+                      <div
+                        key={index}
+                        className={`px-3 py-2 rounded-lg border-2 ${
+                          alignment.status === 'on-target'
+                            ? 'bg-green-50 border-green-400'
+                            : alignment.status === 'close'
+                            ? 'bg-yellow-50 border-yellow-400'
+                            : 'bg-red-50 border-red-400'
+                        }`}
+                      >
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {alignment.exerciseName}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {alignment.planned}/{alignment.target} reps
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+interface GroupRowProps {
+  groupStatus: GroupStatus;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}
+
+function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
+  return (
+    <>
+      <tr
+        className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-gray-50' : ''}`}
+        onClick={onToggleExpand}
+      >
+        <td className="py-3 px-2">
+          {isExpanded
+            ? <ChevronDown size={14} className="text-gray-400" />
+            : <ChevronRight size={14} className="text-gray-400" />
+          }
+        </td>
+        <td className="py-3 px-4">
+          <span className="font-medium text-gray-900">{groupStatus.group.name}</span>
+          {groupStatus.group.description && (
+            <div className="text-xs text-gray-500 mt-0.5">{groupStatus.group.description}</div>
+          )}
+        </td>
+        <td className="py-3 px-4 text-sm text-gray-600">
+          {groupStatus.memberCount} athlete{groupStatus.memberCount !== 1 ? 's' : ''}
+        </td>
+        <td className="py-3 px-4">
+          <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
+            groupStatus.currentWeekPlanned
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }`}>
+            {groupStatus.currentWeekPlanned ? 'Planned' : 'Not Planned'}
+          </span>
+        </td>
+        <td className="py-3 px-4">
+          <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
+            groupStatus.nextWeekPlanned
+              ? 'bg-green-100 text-green-800'
+              : 'bg-yellow-100 text-yellow-800'
+          }`}>
+            {groupStatus.nextWeekPlanned ? 'Planned' : 'Not Planned'}
+          </span>
+        </td>
+      </tr>
+
+      {isExpanded && (
+        <tr className="bg-gray-50">
+          <td colSpan={5} className="px-4 py-4">
+            <div className="ml-6">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Members
+              </h4>
+              {groupStatus.members.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {groupStatus.members.map(member => (
+                    <span
+                      key={member.id}
+                      className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-800 border border-blue-200"
+                    >
+                      {member.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">No members</p>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

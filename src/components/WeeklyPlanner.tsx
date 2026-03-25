@@ -30,10 +30,12 @@ function getMondayOfWeek(date: Date): string {
 interface WeeklyPlannerProps {
   selectedAthlete: Athlete | null;
   onAthleteChange: (athlete: Athlete | null) => void;
+  initialWeekStart?: string | null;
 }
 
-export function WeeklyPlanner({ selectedAthlete, onAthleteChange }: WeeklyPlannerProps) {
+export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekStart }: WeeklyPlannerProps) {
   const [selectedDate, setSelectedDate] = useState(() => {
+    if (initialWeekStart) return initialWeekStart;
     return getMondayOfWeek(new Date());
   });
   const [planSelection, setPlanSelection] = useState<PlanSelection>({

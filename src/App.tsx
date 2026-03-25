@@ -30,6 +30,7 @@ function App() {
   const [selectedAthlete, setSelectedAthlete] = useState<Athlete | null>(null);
   const [showPlanningMenu, setShowPlanningMenu] = useState(false);
   const [showAthleteMenu, setShowAthleteMenu] = useState(false);
+  const [plannerWeekStart, setPlannerWeekStart] = useState<string | null>(null);
 
   useEffect(() => {
     loadExercises();
@@ -155,7 +156,7 @@ function App() {
                 {showPlanningMenu && (
                   <div className="absolute top-full left-0 mt-1 bg-white rounded-md shadow-lg border border-gray-200 py-1 min-w-[180px] z-50">
                     <button
-                      onClick={() => { setCurrentPage('planner'); setShowPlanningMenu(false); }}
+                      onClick={() => { setCurrentPage('planner'); setShowPlanningMenu(false); setPlannerWeekStart(null); }}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                     >
                       <Calendar size={16} />
@@ -273,7 +274,14 @@ function App() {
         )}
 
         {currentPage === 'coach_dashboard' ? (
-          <CoachDashboard key="coach_dashboard" />
+          <CoachDashboard
+            key="coach_dashboard"
+            onNavigateToPlanner={(athlete: Athlete, weekStart: string) => {
+              setSelectedAthlete(athlete);
+              setPlannerWeekStart(weekStart);
+              setCurrentPage('planner');
+            }}
+          />
         ) : currentPage === 'athletes' ? (
           <Athletes key="athletes" />
         ) : currentPage === 'library' ? (
@@ -325,7 +333,7 @@ function App() {
         ) : currentPage === 'training_groups' ? (
           <TrainingGroups key="training_groups" />
         ) : (
-          <WeeklyPlanner key={`planner-${currentPage}`} selectedAthlete={selectedAthlete} onAthleteChange={setSelectedAthlete} />
+          <WeeklyPlanner key={`planner-${selectedAthlete?.id}-${plannerWeekStart}`} selectedAthlete={selectedAthlete} onAthleteChange={setSelectedAthlete} initialWeekStart={plannerWeekStart} />
         )}
 
         <ExerciseFormModal
