@@ -68,8 +68,8 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [comboRefreshKey, setComboRefreshKey] = useState(0);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
-  const [copiedSourceAthlete, setCopiedSourceAthlete] = useState<Athlete | null>(null);
-  const [copiedSourceGroup, setCopiedSourceGroup] = useState<TrainingGroup | null>(null);
+  const [copiedSourceWeekPlanId, setCopiedSourceWeekPlanId] = useState<string | null>(null);
+  const [copiedSourceLabel, setCopiedSourceLabel] = useState<string>('');
   const [showPasteModal, setShowPasteModal] = useState(false);
 
   useEffect(() => {
@@ -877,8 +877,13 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
       return;
     }
     setCopiedWeekStart(selectedDate);
-    setCopiedSourceAthlete(planSelection.athlete);
-    setCopiedSourceGroup(planSelection.group);
+    setCopiedSourceWeekPlanId(currentWeekPlan.id);
+    const label = planSelection.athlete
+      ? planSelection.athlete.name
+      : planSelection.group
+      ? `${planSelection.group.name} (Group)`
+      : 'Unassigned';
+    setCopiedSourceLabel(label);
   };
 
   const handlePasteWeek = () => {
@@ -1279,7 +1284,7 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
           </>
         )}
 
-        {showPasteModal && copiedWeekStart && (
+        {showPasteModal && copiedWeekStart && copiedSourceWeekPlanId && (
           <CopyWeekModal
             onClose={() => setShowPasteModal(false)}
             onPasteComplete={() => {
@@ -1288,8 +1293,8 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
             }}
             destinationWeekStart={selectedDate}
             sourceWeekStart={copiedWeekStart}
-            sourceAthlete={copiedSourceAthlete}
-            sourceGroup={copiedSourceGroup}
+            sourceWeekPlanId={copiedSourceWeekPlanId}
+            sourceLabel={copiedSourceLabel}
             destinationAthlete={planSelection.athlete}
             destinationGroup={planSelection.group}
             allAthletes={athletes}
