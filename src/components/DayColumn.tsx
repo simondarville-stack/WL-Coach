@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import type { PlannedExercise, Exercise, PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
-import { GripVertical, X, Layers } from 'lucide-react';
+import { GripVertical, X, Layers, Video, Image as ImageIcon, Type, type LucideIcon } from 'lucide-react';
 import { getUnitSymbol } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 import { PrescriptionModal } from './PrescriptionModal';
 import { ComboCard } from './ComboCard';
 import { ComboEditorModal } from './ComboEditorModal';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { MediaInputModal } from './MediaInputModal';
 
 interface DayColumnProps {
   dayIndex: number;
@@ -20,6 +21,22 @@ interface DayColumnProps {
   onMoveExercise: (exerciseId: string, fromDayIndex: number, toDayIndex: number) => Promise<void>;
   comboRefreshKey?: number;
 }
+
+interface SlashCommand {
+  key: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  iconColor: string;
+  bgColor: string;
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  { key: '/combo', label: 'Combo Exercise', description: 'Create a combo exercise', icon: Layers, iconColor: 'text-blue-700', bgColor: 'bg-blue-50' },
+  { key: '/text', label: 'Free Text / Notes', description: 'Add a text note', icon: Type, iconColor: 'text-gray-700', bgColor: 'bg-gray-50' },
+  { key: '/video', label: 'Video', description: 'Embed a video link', icon: Video, iconColor: 'text-indigo-700', bgColor: 'bg-indigo-50' },
+  { key: '/image', label: 'Image', description: 'Add an image', icon: ImageIcon, iconColor: 'text-pink-700', bgColor: 'bg-pink-50' },
+];
 
 export function DayColumn({
   dayIndex,
@@ -42,6 +59,7 @@ export function DayColumn({
   const [isLoading, setIsLoading] = useState(false);
   const [isDragOverEmpty, setIsDragOverEmpty] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [showMediaModal, setShowMediaModal] = useState<'video' | 'image' | null>(null);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
 
   const [combos, setCombos] = useState<PlannedComboWithDetails[]>([]);
@@ -120,7 +138,15 @@ export function DayColumn({
     setComboExerciseIds(linkedExerciseIds);
   }
 
-  const searchResults = searchQuery && searchQuery.toLowerCase() !== '/combo' && searchQuery.toLowerCase() !== '/text'
+  const isSlashQuery = searchQuery.startsWith('/');
+
+  const filteredCommands = isSlashQuery
+    ? SLASH_COMMANDS.filter(cmd =>
+        cmd.key.toLowerCase().startsWith(searchQuery.toLowerCase())
+      )
+    : [];
+
+  const searchResults = searchQuery && !isSlashQuery
     ? allExercises.filter(ex =>
         ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (ex.exercise_code && ex.exercise_code.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -246,15 +272,21 @@ export function DayColumn({
   }, []);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    const itemCount = isSlashQuery ? filteredCommands.length : searchResults.length;
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedSearchIndex(prev => prev < searchResults.length - 1 ? prev + 1 : prev);
+      setSelectedSearchIndex(prev => prev < itemCount - 1 ? prev + 1 : prev);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedSearchIndex(prev => prev > 0 ? prev - 1 : 0);
-    } else if (e.key === 'Enter' && searchResults.length > 0) {
+    } else if (e.key === 'Enter' && itemCount > 0) {
       e.preventDefault();
-      handleSelectExercise(searchResults[selectedSearchIndex]);
+      if (isSlashQuery) {
+        handleSlashCommand(filteredCommands[selectedSearchIndex].key);
+      } else {
+        handleSelectExercise(searchResults[selectedSearchIndex]);
+      }
     }
   };
 
@@ -262,19 +294,71 @@ export function DayColumn({
     setSelectedSearchIndex(0);
   }, [searchQuery]);
 
+  const handleSlashCommand = (commandKey: string) => {
+    setSearchQuery('');
+    setShowSearchResults(false);
+
+    switch (commandKey) {
+      case '/combo':
+        setShowComboCreator(true);
+        break;
+      case '/text':
+        handleAddFreeText();
+        break;
+      case '/video':
+        setShowMediaModal('video');
+        break;
+      case '/image':
+        setShowMediaModal('image');
+        break;
+    }
+  };
+
+  const handleAddMedia = async (type: 'video' | 'image', url: string) => {
+    setShowMediaModal(null);
+    setIsLoading(true);
+    try {
+      const code = type === 'video' ? 'VIDEO' : 'IMAGE';
+      const { data: sentinelExercise } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('exercise_code', code)
+        .maybeSingle();
+
+      if (!sentinelExercise) {
+        console.error(`${code} sentinel exercise not found. Run the migration first.`);
+        alert(`${code} exercise type not found. Please run the database migration.`);
+        return;
+      }
+
+      const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
+      const newPosition = visibleExerciseCount + combos.length + 1;
+
+      const { error } = await supabase
+        .from('planned_exercises')
+        .insert([{
+          weekplan_id: weekPlanId,
+          day_index: dayIndex,
+          exercise_id: sentinelExercise.id,
+          position: newPosition,
+          unit: sentinelExercise.default_unit,
+          summary_total_sets: 0,
+          summary_total_reps: 0,
+          notes: url,
+        }]);
+
+      if (error) throw error;
+      await onRefresh();
+
+      setTimeout(() => { searchInputRef.current?.focus(); }, 100);
+    } catch (err) {
+      console.error(`Failed to add ${type}:`, err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSelectExercise = async (exercise: Exercise) => {
-    if (searchQuery.toLowerCase() === '/combo') {
-      setShowComboCreator(true);
-      setSearchQuery('');
-      setShowSearchResults(false);
-      return;
-    }
-
-    if (searchQuery.toLowerCase() === '/text') {
-      await handleAddFreeText();
-      return;
-    }
-
     setIsLoading(true);
     try {
       const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
@@ -804,36 +888,36 @@ export function DayColumn({
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setShowSearchResults(true)}
               onKeyDown={handleSearchKeyDown}
-              placeholder="Add exercise, /combo, or /text..."
+              placeholder="Search exercises or type / for commands..."
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
             />
             {showSearchResults && searchQuery && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-64 overflow-y-auto">
-                {searchQuery.toLowerCase() === '/combo' ? (
-                  <button
-                    onClick={() => {
-                      setShowComboCreator(true);
-                      setSearchQuery('');
-                      setShowSearchResults(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm bg-blue-50 hover:bg-blue-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Layers size={14} className="text-blue-700" />
-                      <div className="font-medium text-blue-900">Create Combo Exercise</div>
-                    </div>
-                  </button>
-                ) : searchQuery.toLowerCase() === '/text' ? (
-                  <button
-                    onClick={handleAddFreeText}
-                    className="w-full text-left px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-sm flex-shrink-0 bg-gray-400" />
-                      <div className="font-medium text-gray-900">Add Free Text / Notes</div>
-                    </div>
-                  </button>
+                {isSlashQuery ? (
+                  filteredCommands.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-500">No matching commands</div>
+                  ) : (
+                    filteredCommands.map((cmd, index) => {
+                      const CmdIcon = cmd.icon;
+                      return (
+                        <button
+                          key={cmd.key}
+                          onClick={() => handleSlashCommand(cmd.key)}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                            index === selectedSearchIndex ? 'bg-blue-100' : `${cmd.bgColor} hover:bg-opacity-80`
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <CmdIcon size={14} className={cmd.iconColor} />
+                            <div className="font-medium text-gray-900">{cmd.label}</div>
+                            <span className="text-xs text-gray-400 ml-auto">{cmd.key}</span>
+                          </div>
+                          <div className="text-xs text-gray-500 ml-6">{cmd.description}</div>
+                        </button>
+                      );
+                    })
+                  )
                 ) : searchResults.length === 0 ? (
                   <div className="px-3 py-2 text-sm text-gray-500">No matches</div>
                 ) : (
@@ -1029,6 +1113,14 @@ export function DayColumn({
           onSave={handleCreateCombo}
         />
       )}
+
+      {showMediaModal && (
+        <MediaInputModal
+          type={showMediaModal}
+          onClose={() => setShowMediaModal(null)}
+          onSave={(url) => handleAddMedia(showMediaModal, url)}
+        />
+      )}
     </>
   );
 }
@@ -1046,6 +1138,95 @@ interface ExerciseCardProps {
   onDrop: (e: React.DragEvent) => void;
 }
 
+function isYouTubeUrl(url: string): boolean {
+  return /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)/.test(url);
+}
+
+function isVimeoUrl(url: string): boolean {
+  return /vimeo\.com\/\d+/.test(url);
+}
+
+function getYouTubeId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
+
+function getVimeoId(url: string): string | null {
+  const match = url.match(/vimeo\.com\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function MediaDisplay({ url, type }: { url: string; type: 'video' | 'image' }) {
+  if (type === 'image') {
+    return (
+      <img
+        src={url}
+        alt="Attached image"
+        className="max-h-28 rounded border border-gray-200 object-contain cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation();
+          window.open(url, '_blank');
+        }}
+        onError={(e) => {
+          (e.target as HTMLImageElement).style.display = 'none';
+        }}
+      />
+    );
+  }
+
+  // Video
+  const ytId = getYouTubeId(url);
+  if (ytId) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="block relative group"
+      >
+        <img
+          src={`https://img.youtube.com/vi/${ytId}/mqdefault.jpg`}
+          alt="YouTube video"
+          className="w-full max-h-24 rounded border border-gray-200 object-cover"
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20 group-hover:bg-opacity-30 rounded transition-colors">
+          <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
+            <div className="w-0 h-0 border-l-[10px] border-l-white border-y-[6px] border-y-transparent ml-0.5" />
+          </div>
+        </div>
+      </a>
+    );
+  }
+
+  const vimeoId = getVimeoId(url);
+  if (vimeoId) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800"
+      >
+        <Video size={14} />
+        <span className="truncate">Vimeo video</span>
+      </a>
+    );
+  }
+
+  // Direct video URL
+  return (
+    <video
+      src={url}
+      controls
+      preload="metadata"
+      className="max-h-24 rounded border border-gray-200 w-full"
+      onClick={(e) => e.stopPropagation()}
+    />
+  );
+}
+
 function ExerciseCard({
   plannedEx,
   isDragged,
@@ -1060,6 +1241,9 @@ function ExerciseCard({
   const unitSymbol = getUnitSymbol(plannedEx.unit);
   const hasSummary = plannedEx.summary_total_sets !== null && plannedEx.summary_total_sets > 0;
   const isFreeText = plannedEx.exercise.exercise_code === 'TEXT';
+  const isVideo = plannedEx.exercise.exercise_code === 'VIDEO';
+  const isImage = plannedEx.exercise.exercise_code === 'IMAGE';
+  const isMedia = isVideo || isImage;
 
   return (
     <div
@@ -1083,6 +1267,26 @@ function ExerciseCard({
                 {plannedEx.notes || 'Click to add text...'}
               </p>
             </>
+          ) : isMedia ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                {isVideo ? (
+                  <Video size={12} className="text-indigo-500 flex-shrink-0" />
+                ) : (
+                  <ImageIcon size={12} className="text-pink-500 flex-shrink-0" />
+                )}
+                <span className="text-[10px] font-medium text-gray-500 uppercase">
+                  {isVideo ? 'Video' : 'Image'}
+                </span>
+              </div>
+              {plannedEx.notes ? (
+                <MediaDisplay url={plannedEx.notes} type={isVideo ? 'video' : 'image'} />
+              ) : (
+                <p className="text-xs text-gray-400 italic">
+                  Click to set {isVideo ? 'video' : 'image'} URL...
+                </p>
+              )}
+            </div>
           ) : (
             <>
               <div className="flex items-center gap-2 mb-1">
