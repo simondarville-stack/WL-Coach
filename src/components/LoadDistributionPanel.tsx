@@ -95,6 +95,10 @@ export function LoadDistributionPanel({
                 dataKey="day"
                 tick={{ fontSize: 11 }}
                 stroke="#6b7280"
+                interval={0}
+                angle={-35}
+                textAnchor="end"
+                height={50}
               />
               <YAxis
                 domain={[0, maxLoad * 1.1]}
@@ -119,6 +123,10 @@ export function LoadDistributionPanel({
                 dataKey="day"
                 tick={{ fontSize: 11 }}
                 stroke="#6b7280"
+                interval={0}
+                angle={-35}
+                textAnchor="end"
+                height={50}
               />
               <YAxis
                 domain={[0, maxReps * 1.1]}
@@ -143,6 +151,10 @@ export function LoadDistributionPanel({
                 dataKey="day"
                 tick={{ fontSize: 11 }}
                 stroke="#6b7280"
+                interval={0}
+                angle={-35}
+                textAnchor="end"
+                height={50}
               />
               <YAxis
                 domain={[0, maxStress * 1.1]}
