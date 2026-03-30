@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, AlertTriangle, Clipboard } from 'lucide-react';
+import { X, AlertTriangle, Clipboard, ArrowRight } from 'lucide-react';
 import type { Athlete, TrainingGroup } from '../lib/database.types';
 import { formatDateRange } from '../lib/dateUtils';
 
@@ -9,17 +9,97 @@ interface CopyWeekModalProps {
   onPasteComplete: () => void;
   destinationWeekStart: string;
   sourceWeekStart: string;
-  athlete: Athlete | null;
-  group: TrainingGroup | null;
+  sourceWeekPlanId: string;
+  sourceLabel: string;
+  destinationAthlete: Athlete | null;
+  destinationGroup: TrainingGroup | null;
+  allAthletes: Athlete[];
+  allGroups: TrainingGroup[];
 }
 
-export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, sourceWeekStart, athlete, group }: CopyWeekModalProps) {
+type TargetType = 'athlete' | 'group';
+
+export function CopyWeekModal({
+  onClose,
+  onPasteComplete,
+  destinationWeekStart,
+  sourceWeekStart,
+  sourceWeekPlanId,
+  sourceLabel,
+  destinationAthlete,
+  destinationGroup,
+  allAthletes,
+  allGroups,
+}: CopyWeekModalProps) {
+  const getInitialTargetType = (): TargetType => {
+    if (destinationGroup) return 'group';
+    return 'athlete';
+  };
+
+  const [targetType, setTargetType] = useState<TargetType>(getInitialTargetType());
+  const [selectedTargetAthleteId, setSelectedTargetAthleteId] = useState<string>(
+    destinationAthlete?.id || ''
+  );
+  const [selectedTargetGroupId, setSelectedTargetGroupId] = useState<string>(
+    destinationGroup?.id || ''
+  );
   const [destinationHasData, setDestinationHasData] = useState(false);
   const [pasting, setPasting] = useState(false);
 
+  const resolveTarget = (): { athlete: Athlete | null; group: TrainingGroup | null } => {
+    if (targetType === 'athlete') {
+      const athlete = allAthletes.find(a => a.id === selectedTargetAthleteId) || null;
+      return { athlete, group: null };
+    }
+    if (targetType === 'group') {
+      const group = allGroups.find(g => g.id === selectedTargetGroupId) || null;
+      return { athlete: null, group };
+    }
+    return { athlete: null, group: null };
+  };
+
+  const target = resolveTarget();
+
+  // Fetch source week plan metadata for same-context detection
+  const [sourceAthleteId, setSourceAthleteId] = useState<string | null>(null);
+  const [sourceGroupId, setSourceGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('week_plans')
+        .select('athlete_id, group_id')
+        .eq('id', sourceWeekPlanId)
+        .single();
+      if (data) {
+        setSourceAthleteId(data.athlete_id);
+        setSourceGroupId(data.group_id);
+      }
+    })();
+  }, [sourceWeekPlanId]);
+
+  const isSameContext =
+    sourceWeekStart === destinationWeekStart &&
+    sourceAthleteId === (target.athlete?.id || null) &&
+    sourceGroupId === (target.group?.id || null);
+
   useEffect(() => {
     checkDestinationData();
-  }, [destinationWeekStart, athlete, group]);
+  }, [destinationWeekStart, targetType, selectedTargetAthleteId, selectedTargetGroupId]);
+
+  const buildOwnerFilter = (
+    query: any,
+    athlete: Athlete | null,
+    group: TrainingGroup | null
+  ) => {
+    if (athlete) {
+      return query.eq('athlete_id', athlete.id).is('group_id', null);
+    }
+    if (group) {
+      return query.eq('group_id', group.id).is('athlete_id', null);
+    }
+    return query.is('athlete_id', null).is('group_id', null);
+  };
 
   const checkDestinationData = async () => {
     try {
@@ -28,13 +108,7 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         .select('id', { count: 'exact', head: true })
         .eq('week_start', destinationWeekStart);
 
-      if (athlete) {
-        query = query.eq('athlete_id', athlete.id).is('group_id', null);
-      } else if (group) {
-        query = query.eq('group_id', group.id).is('athlete_id', null);
-      } else {
-        query = query.is('athlete_id', null).is('group_id', null);
-      }
+      query = buildOwnerFilter(query, target.athlete, target.group);
 
       const { count } = await query;
       setDestinationHasData((count ?? 0) > 0);
@@ -44,22 +118,19 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
   };
 
   const handlePaste = async () => {
+    if (isSameContext) {
+      alert('Source and destination are identical');
+      return;
+    }
+
     setPasting(true);
     try {
-      let sourceQuery = supabase
+      // 1. Fetch source week plan by ID (guaranteed match)
+      const { data: sourceWeekPlan, error: sourceError } = await supabase
         .from('week_plans')
         .select('*')
-        .eq('week_start', sourceWeekStart);
-
-      if (athlete) {
-        sourceQuery = sourceQuery.eq('athlete_id', athlete.id).is('group_id', null);
-      } else if (group) {
-        sourceQuery = sourceQuery.eq('group_id', group.id).is('athlete_id', null);
-      } else {
-        sourceQuery = sourceQuery.is('athlete_id', null).is('group_id', null);
-      }
-
-      const { data: sourceWeekPlan, error: sourceError } = await sourceQuery.maybeSingle();
+        .eq('id', sourceWeekPlanId)
+        .single();
 
       if (sourceError) {
         console.error('Source query error:', sourceError);
@@ -71,19 +142,14 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         return;
       }
 
+      // 2. Delete existing destination data if present
       if (destinationHasData) {
         let deleteQuery = supabase
           .from('week_plans')
           .delete()
           .eq('week_start', destinationWeekStart);
 
-        if (athlete) {
-          deleteQuery = deleteQuery.eq('athlete_id', athlete.id).is('group_id', null);
-        } else if (group) {
-          deleteQuery = deleteQuery.eq('group_id', group.id).is('athlete_id', null);
-        } else {
-          deleteQuery = deleteQuery.is('athlete_id', null).is('group_id', null);
-        }
+        deleteQuery = buildOwnerFilter(deleteQuery, target.athlete, target.group);
 
         const { error: deleteError } = await deleteQuery;
         if (deleteError) {
@@ -92,10 +158,14 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         }
       }
 
+      // 3. Create new week plan with DESTINATION owner context
       const { id: _oldId, created_at: _created, ...weekPlanData } = sourceWeekPlan;
       const newWeekPlan = {
         ...weekPlanData,
         week_start: destinationWeekStart,
+        athlete_id: target.athlete?.id || null,
+        group_id: target.group?.id || null,
+        is_group_plan: !!target.group,
       };
 
       const { data: createdWeekPlan, error: createError } = await supabase
@@ -109,6 +179,7 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         throw createError;
       }
 
+      // 4. Copy planned exercises
       const { data: sourceExercises, error: exercisesError } = await supabase
         .from('planned_exercises')
         .select('*')
@@ -138,6 +209,7 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         }
       }
 
+      // 5. Copy combos, combo items, and set lines
       const { data: sourceCombos, error: combosError } = await supabase
         .from('planned_combos')
         .select('*')
@@ -226,6 +298,20 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
     }
   };
 
+  const targetLabel = target.athlete
+    ? target.athlete.name
+    : target.group
+    ? `${target.group.name} (Group)`
+    : 'Select target...';
+
+  const isCrossContext =
+    sourceAthleteId !== (target.athlete?.id || null) ||
+    sourceGroupId !== (target.group?.id || null);
+
+  const hasValidTarget =
+    (targetType === 'athlete' && !!selectedTargetAthleteId) ||
+    (targetType === 'group' && !!selectedTargetGroupId);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
@@ -243,16 +329,96 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
         </div>
 
         <div className="p-4 space-y-4">
+          {/* Source info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-900">
-              <span className="font-semibold">Source:</span> {formatDateRange(sourceWeekStart)}
-            </p>
-            <p className="text-sm text-blue-900 mt-1">
-              <span className="font-semibold">Destination:</span> {formatDateRange(destinationWeekStart)}
+              <span className="font-semibold">Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
             </p>
           </div>
 
-          {destinationHasData && (
+          {/* Destination target selection */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700">Paste to</label>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setTargetType('athlete');
+                  if (!selectedTargetAthleteId && allAthletes.length > 0) {
+                    setSelectedTargetAthleteId(allAthletes[0].id);
+                  }
+                }}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                  targetType === 'athlete'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Athlete
+              </button>
+              {allGroups.length > 0 && (
+                <button
+                  onClick={() => {
+                    setTargetType('group');
+                    if (!selectedTargetGroupId && allGroups.length > 0) {
+                      setSelectedTargetGroupId(allGroups[0].id);
+                    }
+                  }}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                    targetType === 'group'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Group
+                </button>
+              )}
+            </div>
+
+            {targetType === 'athlete' && (
+              <select
+                value={selectedTargetAthleteId}
+                onChange={(e) => setSelectedTargetAthleteId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select athlete...</option>
+                {allAthletes.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            )}
+
+            {targetType === 'group' && (
+              <select
+                value={selectedTargetGroupId}
+                onChange={(e) => setSelectedTargetGroupId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select group...</option>
+                {allGroups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Destination summary */}
+          {hasValidTarget && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-2">
+              <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
+              <p className="text-sm text-gray-700">
+                <span className="font-semibold">Destination:</span> {targetLabel} — {formatDateRange(destinationWeekStart)}
+              </p>
+            </div>
+          )}
+
+          {isCrossContext && hasValidTarget && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              Cross-context paste: exercises and structure will be copied from <strong>{sourceLabel}</strong> to <strong>{targetLabel}</strong>.
+            </div>
+          )}
+
+          {destinationHasData && hasValidTarget && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex gap-2">
               <AlertTriangle size={18} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-yellow-800">
@@ -262,8 +428,14 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
             </div>
           )}
 
+          {isSameContext && hasValidTarget && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              Source and destination are identical. Select a different athlete, group, or week.
+            </div>
+          )}
+
           <div className="text-sm text-gray-600">
-            This will copy all exercises, combos, and week settings from the source week to the destination week.
+            This will copy all exercises, combos, and week settings from the source to the destination.
           </div>
         </div>
 
@@ -277,7 +449,7 @@ export function CopyWeekModal({ onClose, onPasteComplete, destinationWeekStart, 
           </button>
           <button
             onClick={handlePaste}
-            disabled={pasting}
+            disabled={pasting || isSameContext || !hasValidTarget}
             className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {pasting ? (
