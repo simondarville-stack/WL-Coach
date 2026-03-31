@@ -12,23 +12,9 @@ import { PlanSelector, type PlanSelection } from './PlanSelector';
 import { LoadDistributionPanel } from './LoadDistributionPanel';
 import { CopyWeekModal } from './CopyWeekModal';
 import { ChevronLeft, ChevronRight, Settings, X, User, Printer, Users, BarChart3, Copy, Clipboard } from 'lucide-react';
-import { getMondayOfWeek as getMondayOfWeekUtil, formatDateRange as formatDateRangeUtil } from '../lib/dateUtils';
-
-function calculateAge(birthdate: string | null): number | null {
-  if (!birthdate) return null;
-  const today = new Date();
-  const birth = new Date(birthdate);
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age--;
-  }
-  return age;
-}
-
-function getMondayOfWeek(date: Date): string {
-  return getMondayOfWeekUtil(date).toISOString().split('T')[0];
-}
+import { formatDateRange as formatDateRangeUtil } from '../lib/dateUtils';
+import { calculateAge } from '../lib/calculations';
+import { getMondayOfWeekISO as getMondayOfWeek } from '../lib/weekUtils';
 
 interface WeeklyPlannerProps {
   initialWeekStart?: string | null;

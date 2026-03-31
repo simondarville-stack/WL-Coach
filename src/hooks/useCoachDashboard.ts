@@ -9,6 +9,8 @@ import type {
   TrainingGroup,
 } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { getCurrentAndNextWeekStart, findCurrentMacroWeek } from '../lib/weekUtils';
+import { computeRawAverage } from '../lib/calculations';
 
 export interface AthleteStatus {
   athlete: Athlete;
@@ -60,19 +62,6 @@ export interface GroupStatus {
   nextWeekStart: string;
 }
 
-function getWeekDates() {
-  const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(monday.getDate() - monday.getDay() + (monday.getDay() === 0 ? -6 : 1));
-  const weekStartISO = monday.toISOString().split('T')[0];
-
-  const nextMonday = new Date(monday);
-  nextMonday.setDate(nextMonday.getDate() + 7);
-  const nextWeekStartISO = nextMonday.toISOString().split('T')[0];
-
-  return { weekStartISO, nextWeekStartISO };
-}
-
 export function useCoachDashboard() {
   const [athleteStatuses, setAthleteStatuses] = useState<AthleteStatus[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
@@ -101,7 +90,7 @@ export function useCoachDashboard() {
     if (!athletes) return;
 
     const rawAverageDays = settingsData?.raw_average_days || 7;
-    const { weekStartISO, nextWeekStartISO } = getWeekDates();
+    const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
     const statuses: AthleteStatus[] = [];
 
     for (const athlete of athletes) {
@@ -115,7 +104,6 @@ export function useCoachDashboard() {
       let currentMacroWeek: MacroWeek | null = null;
       let totalMacroWeeks: number | null = null;
       if (macrocycle) {
-        const today = new Date();
         const { data: macroWeeks } = await supabase
           .from('macro_weeks')
           .select('*')
@@ -124,12 +112,7 @@ export function useCoachDashboard() {
 
         if (macroWeeks) {
           totalMacroWeeks = macroWeeks.length;
-          currentMacroWeek = macroWeeks.find(mw => {
-            const start = new Date(mw.week_start);
-            const end = new Date(start);
-            end.setDate(end.getDate() + 7);
-            return today >= start && today < end;
-          }) || null;
+          currentMacroWeek = findCurrentMacroWeek(macroWeeks);
         }
       }
 
@@ -151,15 +134,9 @@ export function useCoachDashboard() {
         ? recentSessions[0].raw_total
         : null;
 
-      let rawAverage: number | null = null;
-      if (recentSessions && recentSessions.length > 0) {
-        const rawTotals = recentSessions
-          .map(s => s.raw_total)
-          .filter((r): r is number => r !== null);
-        if (rawTotals.length > 0) {
-          rawAverage = rawTotals.reduce((a, b) => a + b, 0) / rawTotals.length;
-        }
-      }
+      const rawAverage = computeRawAverage(
+        (recentSessions || []).map(s => s.raw_total)
+      );
 
       const { data: currentWeekPlan } = await supabase
         .from('week_plans')
@@ -276,7 +253,7 @@ export function useCoachDashboard() {
 
     if (!athletes) return;
 
-    const { weekStartISO } = getWeekDates();
+    const { weekStartISO } = getCurrentAndNextWeekStart();
 
     for (const athlete of athletes) {
       const { data: macrocycle } = await supabase
@@ -295,13 +272,7 @@ export function useCoachDashboard() {
 
       if (!macroWeeks) continue;
 
-      const today = new Date();
-      const currentWeek = macroWeeks.find(mw => {
-        const start = new Date(mw.week_start);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
-        return today >= start && today < end;
-      });
+      const currentWeek = findCurrentMacroWeek(macroWeeks);
 
       if (!currentWeek) continue;
 
@@ -424,7 +395,7 @@ export function useCoachDashboard() {
       return;
     }
 
-    const { weekStartISO, nextWeekStartISO } = getWeekDates();
+    const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
     const statuses: GroupStatus[] = [];
 
     for (const group of groups) {

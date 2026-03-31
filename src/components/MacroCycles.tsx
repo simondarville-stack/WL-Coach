@@ -4,30 +4,10 @@ import { useMacroCycles } from '../hooks/useMacroCycles';
 import { useAthleteStore } from '../store/athleteStore';
 import { useExercises } from '../hooks/useExercises';
 import { ChevronLeft, ChevronRight, X, Plus, Trash2, TrendingUp, BarChart3 } from 'lucide-react';
-import { getMondayOfWeek, formatDateShort, formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { formatDateShort, formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { generateMacroWeeks, getMacroWeekColor } from '../lib/weekUtils';
 import { MacroGraph } from './MacroGraph';
 import { TotalRepsGraph } from './TotalRepsGraph';
-
-function generateMacroWeeks(startDate: string, endDate: string): Array<{ week_start: string; week_number: number }> {
-  const weeks: Array<{ week_start: string; week_number: number }> = [];
-  const start = getMondayOfWeek(new Date(startDate));
-  const end = new Date(endDate);
-
-  let currentWeek = new Date(start);
-  let weekNumber = 1;
-
-  while (currentWeek <= end) {
-    weeks.push({
-      week_start: currentWeek.toISOString().split('T')[0],
-      week_number: weekNumber
-    });
-
-    currentWeek.setDate(currentWeek.getDate() + 7);
-    weekNumber++;
-  }
-
-  return weeks;
-}
 
 export function MacroCycles() {
   const { selectedAthlete } = useAthleteStore();
@@ -552,12 +532,7 @@ export function MacroCycles() {
                       </thead>
                       <tbody>
                         {macroWeeks.map((week) => {
-                          const weekColor = week.week_type_text.toLowerCase().includes('deload') ||
-                            week.week_type_text.toLowerCase().includes('low')
-                            ? 'bg-green-50'
-                            : week.week_type_text.toLowerCase().includes('high')
-                            ? 'bg-orange-50'
-                            : 'bg-white';
+                          const weekColor = getMacroWeekColor(week.week_type_text);
 
                           return (
                             <tr key={week.id} className={`border-b border-gray-200 ${weekColor} hover:bg-gray-50`}>

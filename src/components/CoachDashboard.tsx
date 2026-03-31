@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AlertCircle, TrendingUp, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
 import type { Athlete, Event } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { calculateAge, getRawColor, getRawBgColor, getRelativeTime, needsAttentionCheck } from '../lib/calculations';
 import { EventOverviewModal } from './EventOverviewModal';
 import {
   useCoachDashboard,
@@ -43,42 +44,6 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
     const interval = setInterval(loadDashboardData, 60000);
     return () => clearInterval(interval);
   }, []);
-
-  function getRelativeTime(date: Date | null): string {
-    if (!date) return 'Never';
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 14) return '1 week ago';
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    return `${Math.floor(diffDays / 30)} months ago`;
-  }
-
-  function getRawColor(avg: number | null): string {
-    if (avg === null) return 'text-gray-400';
-    if (avg >= 10) return 'text-green-600';
-    if (avg >= 7) return 'text-yellow-600';
-    return 'text-red-600';
-  }
-
-  function getRawBgColor(avg: number | null): string {
-    if (avg === null) return 'bg-gray-100';
-    if (avg >= 10) return 'bg-green-100';
-    if (avg >= 7) return 'bg-yellow-100';
-    return 'bg-red-100';
-  }
-
-  const needsAttention = (status: AthleteStatus) => {
-    if (!status.lastTrainingDate) return true;
-    const daysSinceTraining = Math.floor(
-      (new Date().getTime() - status.lastTrainingDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    return daysSinceTraining > 7;
-  };
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -196,10 +161,7 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
                     onToggleExpand={() => setExpandedAthleteId(isExpanded ? null : status.athlete.id)}
                     rawEnabled={settings?.raw_enabled || false}
                     alignments={athleteAlignments}
-                    needsAttention={needsAttention(status)}
-                    getRawColor={getRawColor}
-                    getRawBgColor={getRawBgColor}
-                    getRelativeTime={getRelativeTime}
+                    needsAttention={needsAttentionCheck(status.lastTrainingDate)}
                     onNavigateToPlanner={onNavigateToPlanner}
                   />
                 );
@@ -346,9 +308,6 @@ interface AthleteRowProps {
   rawEnabled: boolean;
   alignments: MacroAlignment[];
   needsAttention: boolean;
-  getRawColor: (avg: number | null) => string;
-  getRawBgColor: (avg: number | null) => string;
-  getRelativeTime: (date: Date | null) => string;
   onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
 }
 
@@ -359,24 +318,9 @@ function AthleteRow({
   rawEnabled,
   alignments,
   needsAttention,
-  getRawColor,
-  getRawBgColor,
-  getRelativeTime,
   onNavigateToPlanner,
 }: AthleteRowProps) {
   const colCount = 8 + (rawEnabled ? 2 : 0);
-
-  function calculateAge(birthdate: string | null): number | null {
-    if (!birthdate) return null;
-    const today = new Date();
-    const birth = new Date(birthdate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  }
 
   return (
     <>

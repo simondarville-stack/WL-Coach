@@ -4,6 +4,7 @@ import type { WeekPlan, PlannedExercise, Exercise, Athlete, PlannedComboWithDeta
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { getUnitSymbol } from '../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { calculateAge } from '../lib/calculations';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
 import { useWeekPlans } from '../hooks/useWeekPlans';
 import { useCombos } from '../hooks/useCombos';
@@ -166,18 +167,6 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   };
 
   const weeklyTotal = calculateWeeklyTotal();
-
-  const calculateAge = (birthdate: string | null): number | null => {
-    if (!birthdate) return null;
-    const today = new Date();
-    const birth = new Date(birthdate);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
 
   if (loading) {
     return (
