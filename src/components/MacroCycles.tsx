@@ -8,6 +8,7 @@ import { formatDateShort, formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { generateMacroWeeks, getMacroWeekColor } from '../lib/weekUtils';
 import { MacroGraph } from './MacroGraph';
 import { TotalRepsGraph } from './TotalRepsGraph';
+import { CreateMacrocycleModal } from './CreateMacrocycleModal';
 
 export function MacroCycles() {
   const { selectedAthlete } = useAthleteStore();
@@ -650,80 +651,13 @@ export function MacroCycles() {
         )}
 
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
-              <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
-                <h2 className="text-xl font-bold text-gray-900">Create New Macrocycle</h2>
-                <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setFormData({ name: '', start_date: '', end_date: '' });
-                  }}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                  title="Close"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-6">
-                <form onSubmit={(e) => {
-                  handleCreateMacrocycle(e);
-                  setShowCreateModal(false);
-                }} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="e.g., Spring 2024"
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-                    <input
-                      type="date"
-                      value={formData.start_date}
-                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-                    <input
-                      type="date"
-                      value={formData.end_date}
-                      onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-3 justify-end pt-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowCreateModal(false);
-                        setFormData({ name: '', start_date: '', end_date: '' });
-                      }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 font-medium"
-                    >
-                      Create Macrocycle
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
+          <CreateMacrocycleModal
+            formData={formData}
+            loading={loading}
+            onChange={(updates) => setFormData({ ...formData, ...updates })}
+            onSubmit={(e) => { handleCreateMacrocycle(e); setShowCreateModal(false); }}
+            onClose={() => { setShowCreateModal(false); setFormData({ name: '', start_date: '', end_date: '' }); }}
+          />
         )}
       </div>
     </div>

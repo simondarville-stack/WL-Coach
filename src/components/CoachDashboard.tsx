@@ -207,85 +207,11 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
       )}
 
       <div className="grid grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            Activity Feed
-          </h2>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {activityFeed.map((event, index) => (
-              <div key={index} className="flex items-start gap-3 text-sm">
-                <div className="flex-shrink-0 w-2 h-2 mt-2 rounded-full bg-blue-600" />
-                <div className="flex-1">
-                  {event.type === 'training_logged' && (
-                    <div>
-                      <span className="font-medium text-gray-900">{event.athleteName}</span>
-                      {' logged training on '}
-                      <span className="text-gray-600">{event.details}</span>
-                      {event.rawScore !== null && event.rawScore !== undefined && (
-                        <span className={`ml-2 ${getRawColor(event.rawScore)}`}>
-                          (RAW {event.rawScore})
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {event.type === 'session_skipped' && (
-                    <div>
-                      <span className="font-medium text-gray-900">{event.athleteName}</span>
-                      {' skipped session on '}
-                      <span className="text-gray-600">{event.details}</span>
-                    </div>
-                  )}
-                  {event.type === 'macrocycle_created' && (
-                    <div>
-                      New macrocycle{' '}
-                      <span className="font-medium text-gray-900">{event.details}</span>
-                      {' started for '}
-                      <span className="font-medium text-gray-900">{event.athleteName}</span>
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-400 mt-1">
-                    {getRelativeTime(event.timestamp)}
-                  </div>
-                </div>
-              </div>
-            ))}
-            {activityFeed.length === 0 && (
-              <div className="text-gray-500 italic text-center py-8">No recent activity</div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            Upcoming Events
-          </h2>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {upcomingEvents.map((event, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  setSelectedEvent(event.eventData);
-                  setShowEventOverview(true);
-                }}
-                className="w-full border-l-4 border-blue-600 pl-3 py-2 text-left hover:bg-gray-50 rounded-r transition-colors"
-              >
-                <div className="font-medium text-gray-900">{event.note}</div>
-                <div className="text-sm text-gray-600">{event.athleteName}</div>
-                <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
-                  <span>{formatDateToDDMMYYYY(event.date.toISOString())}</span>
-                  <span className="font-medium text-blue-600">
-                    {event.daysUntil} days ({event.weeksUntil} weeks)
-                  </span>
-                </div>
-              </button>
-            ))}
-            {upcomingEvents.length === 0 && (
-              <div className="text-gray-500 italic text-center py-8">No upcoming events</div>
-            )}
-          </div>
-        </div>
+        <ActivityFeed events={activityFeed} />
+        <UpcomingEventsList
+          events={upcomingEvents}
+          onEventClick={(event) => { setSelectedEvent(event); setShowEventOverview(true); }}
+        />
       </div>
 
       {showEventOverview && selectedEvent && (
@@ -567,5 +493,96 @@ function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
         </tr>
       )}
     </>
+  );
+}
+
+function ActivityFeed({ events }: { events: ActivityEvent[] }) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <TrendingUp className="w-5 h-5" />
+        Activity Feed
+      </h2>
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+        {events.map((event, index) => (
+          <div key={index} className="flex items-start gap-3 text-sm">
+            <div className="flex-shrink-0 w-2 h-2 mt-2 rounded-full bg-blue-600" />
+            <div className="flex-1">
+              {event.type === 'training_logged' && (
+                <div>
+                  <span className="font-medium text-gray-900">{event.athleteName}</span>
+                  {' logged training on '}
+                  <span className="text-gray-600">{event.details}</span>
+                  {event.rawScore !== null && event.rawScore !== undefined && (
+                    <span className={`ml-2 ${getRawColor(event.rawScore)}`}>
+                      (RAW {event.rawScore})
+                    </span>
+                  )}
+                </div>
+              )}
+              {event.type === 'session_skipped' && (
+                <div>
+                  <span className="font-medium text-gray-900">{event.athleteName}</span>
+                  {' skipped session on '}
+                  <span className="text-gray-600">{event.details}</span>
+                </div>
+              )}
+              {event.type === 'macrocycle_created' && (
+                <div>
+                  New macrocycle{' '}
+                  <span className="font-medium text-gray-900">{event.details}</span>
+                  {' started for '}
+                  <span className="font-medium text-gray-900">{event.athleteName}</span>
+                </div>
+              )}
+              <div className="text-xs text-gray-400 mt-1">
+                {getRelativeTime(event.timestamp)}
+              </div>
+            </div>
+          </div>
+        ))}
+        {events.length === 0 && (
+          <div className="text-gray-500 italic text-center py-8">No recent activity</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UpcomingEventsList({
+  events,
+  onEventClick,
+}: {
+  events: UpcomingEvent[];
+  onEventClick: (event: Event) => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <Calendar className="w-5 h-5" />
+        Upcoming Events
+      </h2>
+      <div className="space-y-3 max-h-96 overflow-y-auto">
+        {events.map((event, index) => (
+          <button
+            key={index}
+            onClick={() => onEventClick(event.eventData)}
+            className="w-full border-l-4 border-blue-600 pl-3 py-2 text-left hover:bg-gray-50 rounded-r transition-colors"
+          >
+            <div className="font-medium text-gray-900">{event.note}</div>
+            <div className="text-sm text-gray-600">{event.athleteName}</div>
+            <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
+              <span>{formatDateToDDMMYYYY(event.date.toISOString())}</span>
+              <span className="font-medium text-blue-600">
+                {event.daysUntil} days ({event.weeksUntil} weeks)
+              </span>
+            </div>
+          </button>
+        ))}
+        {events.length === 0 && (
+          <div className="text-gray-500 italic text-center py-8">No upcoming events</div>
+        )}
+      </div>
+    </div>
   );
 }
