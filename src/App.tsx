@@ -16,6 +16,8 @@ import { Sidebar } from './components/Sidebar';
 import { Plus, Settings as SettingsIcon, X } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
 import { useAthletes } from './hooks/useAthletes';
+import { useAthleteStore } from './store/athleteStore';
+import type { Athlete } from './lib/database.types';
 
 type Page = 'athletes' | 'library' | 'planner' | 'macrocycles' | 'athlete_programme' | 'athlete_log' | 'general_settings' | 'coach_dashboard' | 'events' | 'training_groups';
 
@@ -39,8 +41,10 @@ function App() {
   } = useExercises();
 
   const { fetchAllAthletes } = useAthletes();
+  const { setSelectedAthlete } = useAthleteStore();
 
   const [currentPage, setCurrentPage] = useState<Page>('coach_dashboard');
+  const [plannerWeekStart, setPlannerWeekStart] = useState<string | null>(null);
   const [editingExercise, setEditingExercise] = useState<import('./lib/database.types').Exercise | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -79,6 +83,12 @@ function App() {
     }
   };
 
+  const handleNavigateToPlanner = (athlete: Athlete, weekStart: string) => {
+    setSelectedAthlete(athlete);
+    setPlannerWeekStart(weekStart);
+    setCurrentPage('planner');
+  };
+
   const handleCancelEdit = () => {
     setEditingExercise(null);
     setShowFormModal(false);
@@ -104,7 +114,7 @@ function App() {
           )}
 
           {currentPage === 'coach_dashboard' ? (
-            <CoachDashboard key="coach_dashboard" />
+            <CoachDashboard key="coach_dashboard" onNavigateToPlanner={handleNavigateToPlanner} />
           ) : currentPage === 'athletes' ? (
             <Athletes key="athletes" />
           ) : currentPage === 'library' ? (
@@ -153,7 +163,7 @@ function App() {
           ) : currentPage === 'training_groups' ? (
             <TrainingGroups key="training_groups" />
           ) : (
-            <WeeklyPlanner key={`planner-${currentPage}`} />
+            <WeeklyPlanner key={`planner-${plannerWeekStart ?? 'default'}`} initialWeekStart={plannerWeekStart} />
           )}
 
           <ExerciseFormModal
