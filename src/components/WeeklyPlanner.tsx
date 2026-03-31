@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import type { WeekPlan, PlannedExercise, Exercise, Athlete, TrainingGroup, PlannedComboSetLine, AthletePR } from '../lib/database.types';
+import { useWeekPlans } from '../hooks/useWeekPlans';
+import { useAthleteStore } from '../store/athleteStore';
+import { useExercises } from '../hooks/useExercises';
+import { useAthletes } from '../hooks/useAthletes';
+import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { DayColumn } from './DayColumn';
 import { PrintWeek } from './PrintWeek';
@@ -28,12 +31,11 @@ function getMondayOfWeek(date: Date): string {
 }
 
 interface WeeklyPlannerProps {
-  selectedAthlete: Athlete | null;
-  onAthleteChange: (athlete: Athlete | null) => void;
   initialWeekStart?: string | null;
 }
 
-export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekStart }: WeeklyPlannerProps) {
+export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
+  const { selectedAthlete, setSelectedAthlete } = useAthleteStore();
   const [selectedDate, setSelectedDate] = useState(() => {
     if (initialWeekStart) return initialWeekStart;
     return getMondayOfWeek(new Date());
@@ -43,29 +45,60 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
     athlete: selectedAthlete,
     group: null,
   });
-  const [groups, setGroups] = useState<TrainingGroup[]>([]);
-  const [currentWeekPlan, setCurrentWeekPlan] = useState<WeekPlan | null>(null);
-  const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
-  const [weekComboSetLines, setWeekComboSetLines] = useState<(PlannedComboSetLine & { unit: string; day_index: number })[]>([]);
-  const [weekComboItems, setWeekComboItems] = useState<{ combo_id: string; exercise: Exercise; position: number }[]>([]);
-  const [comboExerciseIds, setComboExerciseIds] = useState<Set<string>>(new Set());
-  const [allExercises, setAllExercises] = useState<Exercise[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    exercises: allExercises,
+    fetchExercisesByName,
+  } = useExercises();
+
+  const {
+    athletes,
+    fetchAllAthletes,
+  } = useAthletes();
+
+  const {
+    groups,
+    fetchGroups,
+  } = useTrainingGroups();
+
+  const {
+    weekPlan: currentWeekPlan,
+    setWeekPlan: setCurrentWeekPlan,
+    plannedExercises,
+    setPlannedExercises,
+    weekComboSetLines,
+    weekComboItems,
+    comboExerciseIds,
+    athletePRs,
+    setAthletePRs,
+    macroWeekTarget,
+    setMacroWeekTarget,
+    macroWeekTypeText,
+    setMacroWeekTypeText,
+    loading,
+    error,
+    setError,
+    fetchOrCreateWeekPlan,
+    fetchPlannedExercises,
+    fetchWeekCombos,
+    fetchMacroWeekTarget,
+    fetchAthletePRs,
+    deletePlannedExercise,
+    updateWeekPlan,
+    reorderExercises,
+    moveExercise,
+    normalizePositions,
+  } = useWeekPlans();
+
   const [showSettings, setShowSettings] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showCategorySummaries, setShowCategorySummaries] = useState(true);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
-  const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
   const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
   const [dayDisplayOrder, setDayDisplayOrder] = useState<number[]>([]);
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
-  const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
-  const [macroWeekTypeText, setMacroWeekTypeText] = useState<string | null>(null);
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [comboRefreshKey, setComboRefreshKey] = useState(0);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
   const [copiedSourceWeekPlanId, setCopiedSourceWeekPlanId] = useState<string | null>(null);
@@ -73,9 +106,9 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
   const [showPasteModal, setShowPasteModal] = useState(false);
 
   useEffect(() => {
-    loadExercises();
-    loadGroups();
-    loadAthletes();
+    fetchExercisesByName();
+    fetchGroups();
+    fetchAllAthletes();
   }, []);
 
   useEffect(() => {
@@ -152,278 +185,36 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
     };
   }, [selectedAthlete, currentWeekPlan]);
 
-  const loadExercises = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setAllExercises(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
-    }
-  };
-
-  const loadGroups = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('training_groups')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setGroups(data || []);
-    } catch (err) {
-      console.error('Failed to load groups:', err);
-    }
-  };
-
-  const loadAthletes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setAthletes(data || []);
-    } catch (err) {
-      console.error('Failed to load athletes:', err);
-    }
-  };
-
-  const loadAthletePRs = async (athleteId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', athleteId);
-
-      if (error) throw error;
-      setAthletePRs(data || []);
-    } catch (err) {
-      console.error('Failed to load athlete PRs:', err);
-      setAthletePRs([]);
-    }
-  };
+  const loadExercises = () => fetchExercisesByName();
+  const loadGroups = () => fetchGroups();
+  const loadAthletes = () => fetchAllAthletes();
+  const loadAthletePRs = (athleteId: string) => fetchAthletePRs(athleteId);
 
   const loadWeekPlan = async () => {
-    const { type, athlete, group } = planSelection;
-    if (!athlete && !group) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      let query = supabase
-        .from('week_plans')
-        .select('*')
-        .eq('week_start', selectedDate);
-
-      if (type === 'individual' && athlete) {
-        query = query.eq('athlete_id', athlete.id).is('group_id', null);
-      } else if (type === 'group' && group) {
-        query = query.eq('group_id', group.id).is('athlete_id', null);
-      }
-
-      const { data: existingPlan, error: searchError } = await query.maybeSingle();
-
-      if (searchError) throw searchError;
-
-      let weekPlan = existingPlan;
-      if (!weekPlan) {
-        const insertData: any = {
-          week_start: selectedDate,
-          is_group_plan: type === 'group',
-        };
-
-        if (type === 'individual' && athlete) {
-          insertData.athlete_id = athlete.id;
-          insertData.group_id = null;
-        } else if (type === 'group' && group) {
-          insertData.group_id = group.id;
-          insertData.athlete_id = null;
-        }
-
-        const { data: newPlan, error: createError } = await supabase
-          .from('week_plans')
-          .insert([insertData])
-          .select()
-          .single();
-
-        if (createError) {
-          if (createError.code === '23505') {
-            const { data: retryPlan, error: retryError } = await query.maybeSingle();
-            if (retryError) throw retryError;
-            if (retryPlan) {
-              weekPlan = retryPlan;
-            } else {
-              throw createError;
-            }
-          } else {
-            throw createError;
-          }
-        } else {
-          weekPlan = newPlan;
-        }
-      }
-
-      setCurrentWeekPlan(weekPlan);
+    const plan = await fetchOrCreateWeekPlan(selectedDate, planSelection);
+    if (plan) {
       await Promise.all([
-        loadPlannedExercises(weekPlan.id),
-        loadWeekCombos(weekPlan.id),
+        fetchPlannedExercises(plan.id, plan.day_labels),
+        fetchWeekCombos(plan.id),
       ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load week plan');
-    } finally {
-      setLoading(false);
     }
   };
 
   const loadMacroWeekTarget = async () => {
     if (!planSelection.athlete) return;
-
-    try {
-      const { data: macrocycles, error: macroError } = await supabase
-        .from('macrocycles')
-        .select('id, start_date, end_date')
-        .eq('athlete_id', planSelection.athlete.id)
-        .lte('start_date', selectedDate)
-        .gte('end_date', selectedDate);
-
-      if (macroError) throw macroError;
-
-      console.log('Macrocycles found:', macrocycles);
-      console.log('Selected date:', selectedDate);
-
-      if (!macrocycles || macrocycles.length === 0) {
-        console.log('No macrocycles found for this date range');
-        setMacroWeekTarget(null);
-        return;
-      }
-
-      const { data: macroWeeks, error: weekError } = await supabase
-        .from('macro_weeks')
-        .select('id, total_reps_target, week_type_text')
-        .eq('macrocycle_id', macrocycles[0].id)
-        .lte('week_start', selectedDate)
-        .gte('week_start', new Date(new Date(selectedDate).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .order('week_start', { ascending: false })
-        .limit(1);
-
-      const macroWeek = macroWeeks && macroWeeks.length > 0 ? macroWeeks[0] : null;
-
-      if (weekError) throw weekError;
-
-      console.log('Macro week found:', macroWeek);
-      console.log('Total reps target:', macroWeek?.total_reps_target);
-
-      setMacroWeekTarget(macroWeek?.total_reps_target || null);
-      setMacroWeekTypeText(macroWeek?.week_type_text || null);
-    } catch (err) {
-      console.error('Failed to load macro week target:', err);
-      setMacroWeekTarget(null);
-      setMacroWeekTypeText(null);
-    }
+    await fetchMacroWeekTarget(planSelection.athlete.id, selectedDate);
   };
 
-  const loadWeekCombos = async (weekPlanId: string) => {
-    try {
-      const { data: combos } = await supabase
-        .from('planned_combos')
-        .select('id, unit, day_index')
-        .eq('weekplan_id', weekPlanId);
+  const loadWeekCombos = (weekPlanId: string) => fetchWeekCombos(weekPlanId);
 
-      if (!combos || combos.length === 0) {
-        setWeekComboSetLines([]);
-        setWeekComboItems([]);
-        setComboExerciseIds(new Set());
-        return;
-      }
-
-      const comboIds = combos.map(c => c.id);
-      const comboUnitMap: Record<string, { unit: string; day_index: number }> = {};
-      combos.forEach(c => { comboUnitMap[c.id] = { unit: c.unit, day_index: c.day_index }; });
-
-      const { data: setLines } = await supabase
-        .from('planned_combo_set_lines')
-        .select('*')
-        .in('planned_combo_id', comboIds);
-
-      const enriched = (setLines || []).map(line => ({
-        ...line,
-        unit: comboUnitMap[line.planned_combo_id]?.unit || 'absolute_kg',
-        day_index: comboUnitMap[line.planned_combo_id]?.day_index || 0,
-      }));
-
-      setWeekComboSetLines(enriched);
-
-      const { data: items } = await supabase
-        .from('planned_combo_items')
-        .select('planned_exercise_id, planned_combo_id, position, exercise:exercise_id(*)')
-        .in('planned_combo_id', comboIds)
-        .order('position');
-
-      const ids = new Set<string>((items || []).map((i: any) => i.planned_exercise_id));
-      setComboExerciseIds(ids);
-
-      const comboItemsForCategories = (items || []).map((i: any) => ({
-        combo_id: i.planned_combo_id,
-        exercise: i.exercise as Exercise,
-        position: i.position as number,
-      }));
-      setWeekComboItems(comboItemsForCategories);
-    } catch (err) {
-      console.error('Failed to load week combos:', err);
-    }
-  };
-
-  const loadPlannedExercises = async (weekPlanId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('planned_exercises')
-        .select(`
-          *,
-          exercise:exercise_id(*)
-        `)
-        .eq('weekplan_id', weekPlanId)
-        .order('day_index')
-        .order('position');
-
-      if (error) throw error;
-
-      const grouped: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-
-      if (currentWeekPlan?.day_labels) {
-        Object.keys(currentWeekPlan.day_labels).forEach((key) => {
-          grouped[parseInt(key)] = [];
-        });
-      } else {
-        DAYS_OF_WEEK.forEach((day) => {
-          grouped[day.index] = [];
-        });
-      }
-
-      (data || []).forEach((item) => {
-        if (!grouped[item.day_index]) {
-          grouped[item.day_index] = [];
-        }
-        grouped[item.day_index].push(item);
-      });
-
-      setPlannedExercises(grouped);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load planned exercises');
-    }
-  };
+  const loadPlannedExercises = (weekPlanId: string) =>
+    fetchPlannedExercises(weekPlanId, currentWeekPlan?.day_labels);
 
   const handleRefresh = async () => {
     if (currentWeekPlan) {
       await Promise.all([
-        loadPlannedExercises(currentWeekPlan.id),
-        loadWeekCombos(currentWeekPlan.id),
+        fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
+        fetchWeekCombos(currentWeekPlan.id),
       ]);
       setComboRefreshKey(k => k + 1);
     }
@@ -431,39 +222,25 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
 
   const handleDeleteExercise = async (plannedExerciseId: string, dayIndex: number) => {
     if (!currentWeekPlan) return;
-
     try {
-      const { error } = await supabase
-        .from('planned_exercises')
-        .delete()
-        .eq('id', plannedExerciseId);
-
-      if (error) throw error;
-
+      await deletePlannedExercise(plannedExerciseId);
       await normalizePositions(currentWeekPlan.id, dayIndex);
       await Promise.all([
-        loadPlannedExercises(currentWeekPlan.id),
-        loadWeekCombos(currentWeekPlan.id),
+        fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
+        fetchWeekCombos(currentWeekPlan.id),
       ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete exercise');
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
     if (!currentWeekPlan) return;
-
     try {
-      for (let i = 0; i < orderedIds.length; i++) {
-        await supabase
-          .from('planned_exercises')
-          .update({ position: i + 1 })
-          .eq('id', orderedIds[i]);
-      }
-
-      await loadPlannedExercises(currentWeekPlan.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reorder exercises');
+      await reorderExercises(currentWeekPlan.id, orderedIds);
+      await fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -473,89 +250,14 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
     toDayIndex: number
   ) => {
     if (!currentWeekPlan) return;
-
     try {
-      const { data: toCombos } = await supabase
-        .from('planned_combos')
-        .select('id')
-        .eq('weekplan_id', currentWeekPlan.id)
-        .eq('day_index', toDayIndex);
-
-      const { data: toExercises } = await supabase
-        .from('planned_exercises')
-        .select('id')
-        .eq('weekplan_id', currentWeekPlan.id)
-        .eq('day_index', toDayIndex);
-
-      const { data: toComboItems } = (toCombos && toCombos.length > 0)
-        ? await supabase.from('planned_combo_items').select('planned_exercise_id').in('planned_combo_id', toCombos.map(c => c.id))
-        : { data: [] };
-
-      const toComboExIds = new Set((toComboItems || []).map(i => i.planned_exercise_id));
-      const toVisibleCount = (toExercises || []).filter(ex => !toComboExIds.has(ex.id)).length;
-      const newToPosition = toVisibleCount + (toCombos?.length || 0) + 1;
-
-      await supabase
-        .from('planned_exercises')
-        .update({
-          day_index: toDayIndex,
-          position: newToPosition,
-        })
-        .eq('id', exerciseId);
-
+      await moveExercise(currentWeekPlan.id, exerciseId, fromDayIndex, toDayIndex);
       await Promise.all([
-        normalizePositions(currentWeekPlan.id, fromDayIndex),
-        normalizePositions(currentWeekPlan.id, toDayIndex),
+        fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
+        fetchWeekCombos(currentWeekPlan.id),
       ]);
-      await Promise.all([
-        loadPlannedExercises(currentWeekPlan.id),
-        loadWeekCombos(currentWeekPlan.id),
-      ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to move exercise');
-    }
-  };
-
-  const normalizePositions = async (weekPlanId: string, dayIndex: number) => {
-    try {
-      const [{ data: exData }, { data: comboData }] = await Promise.all([
-        supabase
-          .from('planned_exercises')
-          .select('id, position')
-          .eq('weekplan_id', weekPlanId)
-          .eq('day_index', dayIndex)
-          .order('position'),
-        supabase
-          .from('planned_combos')
-          .select('id, position')
-          .eq('weekplan_id', weekPlanId)
-          .eq('day_index', dayIndex)
-          .order('position'),
-      ]);
-
-      const comboIds = (comboData || []).map(c => c.id);
-      const { data: comboItemData } = comboIds.length > 0
-        ? await supabase.from('planned_combo_items').select('planned_exercise_id').in('planned_combo_id', comboIds)
-        : { data: [] };
-
-      const comboExerciseIdSet = new Set((comboItemData || []).map(i => i.planned_exercise_id));
-
-      const visibleExercises = (exData || []).filter(ex => !comboExerciseIdSet.has(ex.id));
-
-      const allItems: Array<{ table: 'planned_exercises' | 'planned_combos'; id: string; position: number }> = [
-        ...visibleExercises.map(ex => ({ table: 'planned_exercises' as const, id: ex.id, position: ex.position })),
-        ...(comboData || []).map(c => ({ table: 'planned_combos' as const, id: c.id, position: c.position })),
-      ].sort((a, b) => a.position - b.position);
-
-      for (let i = 0; i < allItems.length; i++) {
-        const item = allItems[i];
-        await supabase
-          .from(item.table)
-          .update({ position: i + 1 })
-          .eq('id', item.id);
-      }
-    } catch (err) {
-      console.error('Failed to normalize positions:', err);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -631,28 +333,15 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
 
   const saveDayLabels = async () => {
     if (!currentWeekPlan) return;
-
     try {
-      const { error } = await supabase
-        .from('week_plans')
-        .update({
-          day_labels: editingDayLabels,
-          active_days: activeDays,
-          day_display_order: dayDisplayOrder
-        })
-        .eq('id', currentWeekPlan.id);
-
-      if (error) throw error;
-
-      setCurrentWeekPlan({
-        ...currentWeekPlan,
+      await updateWeekPlan(currentWeekPlan.id, {
         day_labels: editingDayLabels,
         active_days: activeDays,
-        day_display_order: dayDisplayOrder
+        day_display_order: dayDisplayOrder,
       } as any);
       setShowSettings(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save day labels');
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -688,18 +377,10 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
 
   const saveWeekDescription = async () => {
     if (!currentWeekPlan) return;
-
     try {
-      const { error } = await supabase
-        .from('week_plans')
-        .update({ week_description: weekDescription.trim() || null })
-        .eq('id', currentWeekPlan.id);
-
-      if (error) throw error;
-
-      setCurrentWeekPlan({ ...currentWeekPlan, week_description: weekDescription.trim() || null });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save week description');
+      await updateWeekPlan(currentWeekPlan.id, { week_description: weekDescription.trim() || null });
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -865,9 +546,9 @@ export function WeeklyPlanner({ selectedAthlete, onAthleteChange, initialWeekSta
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
     if (selection.type === 'individual' && selection.athlete) {
-      onAthleteChange(selection.athlete);
+      setSelectedAthlete(selection.athlete);
     } else {
-      onAthleteChange(null);
+      setSelectedAthlete(null);
     }
   };
 

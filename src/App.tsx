@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabase';
-import type { Exercise, Athlete } from './lib/database.types';
 import { ExerciseFormModal } from './components/ExerciseFormModal';
 import { ExerciseList } from './components/ExerciseList';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
@@ -16,6 +14,8 @@ import { Events } from './components/Events';
 import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
 import { Plus, Settings as SettingsIcon, X } from 'lucide-react';
+import { useExercises } from './hooks/useExercises';
+import { useAthletes } from './hooks/useAthletes';
 
 type Page = 'athletes' | 'library' | 'planner' | 'macrocycles' | 'athlete_programme' | 'athlete_log' | 'general_settings' | 'coach_dashboard' | 'events' | 'training_groups';
 
@@ -33,93 +33,49 @@ const pageTitles: Record<Page, string> = {
 };
 
 function App() {
+  const {
+    exercises, loading, error, setError,
+    fetchExercises, createExercise, updateExercise, deleteExercise,
+  } = useExercises();
+
+  const { fetchAllAthletes } = useAthletes();
+
   const [currentPage, setCurrentPage] = useState<Page>('coach_dashboard');
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [editingExercise, setEditingExercise] = useState<import('./lib/database.types').Exercise | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
-  const [selectedAthlete, setSelectedAthlete] = useState<Athlete | null>(null);
 
   useEffect(() => {
-    loadExercises();
-    loadAthletes();
+    fetchExercises();
+    fetchAllAthletes();
   }, []);
 
-  const loadAthletes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setAthletes(data || []);
-    } catch (err) {
-      console.error('Failed to load athletes:', err);
-    }
-  };
-
-  const loadExercises = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setExercises(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async (exerciseData: Partial<Exercise>) => {
+  const handleSave = async (exerciseData: Partial<import('./lib/database.types').Exercise>) => {
     try {
       if (editingExercise) {
-        const { error } = await supabase
-          .from('exercises')
-          .update(exerciseData)
-          .eq('id', editingExercise.id);
-
-        if (error) throw error;
+        await updateExercise(editingExercise.id, exerciseData);
         setEditingExercise(null);
       } else {
-        const { error } = await supabase
-          .from('exercises')
-          .insert([exerciseData]);
-
-        if (error) throw error;
+        await createExercise(exerciseData);
       }
-      await loadExercises();
+      await fetchExercises();
       setShowFormModal(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save exercise');
+    } catch {
+      // error already set in hook
     }
   };
 
-  const handleEdit = (exercise: Exercise) => {
+  const handleEdit = (exercise: import('./lib/database.types').Exercise) => {
     setEditingExercise(exercise);
     setShowFormModal(true);
   };
 
   const handleDelete = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('exercises')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      await loadExercises();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete exercise');
+      await deleteExercise(id);
+      await fetchExercises();
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -137,11 +93,7 @@ function App() {
           <h1 className="font-medium text-gray-900">
             {pageTitles[currentPage]}
           </h1>
-          <AthleteSelector
-            athletes={athletes}
-            selectedAthlete={selectedAthlete}
-            onSelectAthlete={setSelectedAthlete}
-          />
+          <AthleteSelector />
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -159,10 +111,7 @@ function App() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <div className="mb-6 flex items-center gap-3">
                 <button
-                  onClick={() => {
-                    setEditingExercise(null);
-                    setShowFormModal(true);
-                  }}
+                  onClick={() => { setEditingExercise(null); setShowFormModal(true); }}
                   className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium shadow-md"
                 >
                   <Plus size={20} />
@@ -198,13 +147,13 @@ function App() {
           ) : currentPage === 'general_settings' ? (
             <GeneralSettings key="general_settings" />
           ) : currentPage === 'macrocycles' ? (
-            <MacroCycles key="macrocycles" selectedAthlete={selectedAthlete} onAthleteChange={setSelectedAthlete} />
+            <MacroCycles key="macrocycles" />
           ) : currentPage === 'events' ? (
             <Events key="events" />
           ) : currentPage === 'training_groups' ? (
             <TrainingGroups key="training_groups" />
           ) : (
-            <WeeklyPlanner key={`planner-${currentPage}`} selectedAthlete={selectedAthlete} onAthleteChange={setSelectedAthlete} />
+            <WeeklyPlanner key={`planner-${currentPage}`} />
           )}
 
           <ExerciseFormModal

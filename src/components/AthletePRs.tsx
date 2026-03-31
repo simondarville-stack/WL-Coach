@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import type { Athlete, Exercise, AthletePR } from '../lib/database.types';
+import type { Athlete, Exercise } from '../lib/database.types';
 import { ArrowLeft, Search } from 'lucide-react';
+import { useAthletes } from '../hooks/useAthletes';
+import { useExercises } from '../hooks/useExercises';
 
 interface AthletePRsProps {
   athlete: Athlete;
@@ -14,15 +15,11 @@ interface ExerciseWithPR extends Exercise {
   pr_id: string | null;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  display_order: number;
-}
-
 export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
+  const { fetchPRs, upsertPR, deletePR } = useAthletes();
+  const { categories, fetchCategories } = useExercises();
+
   const [exercises, setExercises] = useState<ExerciseWithPR[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,30 +28,16 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    loadCategories();
+    fetchCategories();
     loadExercisesWithPRs();
   }, [athlete.id]);
-
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (error) throw error;
-      setCategories(data || []);
-    } catch (err) {
-      console.error('Failed to load categories:', err);
-    }
-  };
 
   const loadExercisesWithPRs = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const { data: exercisesData, error: exercisesError } = await supabase
+      const { data: exercisesData, error: exercisesError } = await (await import('../lib/supabase')).supabase
         .from('exercises')
         .select('*')
         .order('category')
@@ -62,16 +45,11 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
 
       if (exercisesError) throw exercisesError;
 
-      const { data: prsData, error: prsError } = await supabase
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', athlete.id);
+      const prsData = await fetchPRs(athlete.id);
 
-      if (prsError) throw prsError;
-
-      const prsByExercise = new Map<string, AthletePR>();
-      (prsData || []).forEach((pr) => {
-        prsByExercise.set(pr.exercise_id, pr);
+      const prsByExercise = new Map<string, { id: string; pr_value_kg: number | null; pr_date: string | null }>();
+      prsData.forEach((pr) => {
+        prsByExercise.set(pr.exercise_id, { id: pr.id, pr_value_kg: pr.pr_value_kg, pr_date: pr.pr_date });
       });
 
       const exercisesWithPRs: ExerciseWithPR[] = (exercisesData || []).map((ex) => {
@@ -121,31 +99,12 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
     try {
       if (exercise.pr_id) {
         if (numValue === null) {
-          const { error } = await supabase
-            .from('athlete_prs')
-            .delete()
-            .eq('id', exercise.pr_id);
-
-          if (error) throw error;
+          await deletePR(exercise.pr_id);
         } else {
-          const { error } = await supabase
-            .from('athlete_prs')
-            .update({ pr_value_kg: numValue })
-            .eq('id', exercise.pr_id);
-
-          if (error) throw error;
+          await upsertPR(athlete.id, exerciseId, numValue, exercise.pr_date || new Date().toISOString().split('T')[0], exercise.pr_id);
         }
       } else if (numValue !== null) {
-        const { error } = await supabase
-          .from('athlete_prs')
-          .insert({
-            athlete_id: athlete.id,
-            exercise_id: exerciseId,
-            pr_value_kg: numValue,
-            pr_date: new Date().toISOString().split('T')[0],
-          });
-
-        if (error) throw error;
+        await upsertPR(athlete.id, exerciseId, numValue, new Date().toISOString().split('T')[0]);
       }
 
       await loadExercisesWithPRs();
@@ -170,11 +129,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Back to athletes"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Back to athletes">
             <ArrowLeft size={24} />
           </button>
           <div>
@@ -184,9 +139,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            {error}
-          </div>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">{error}</div>
         )}
 
         <div className="mb-6">
@@ -205,9 +158,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
             <button
               onClick={() => setSelectedCategory('all')}
               className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
-                selectedCategory === 'all'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                selectedCategory === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
               All ({exercises.length})
@@ -219,9 +170,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.name)}
                   className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
-                    selectedCategory === cat.name
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    selectedCategory === cat.name ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
                   {cat.name} ({count})
@@ -260,17 +209,12 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
                     <tr key={exercise.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div
-                            className="w-3 h-3 rounded-sm flex-shrink-0"
-                            style={{ backgroundColor: exercise.color }}
-                          />
+                          <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: exercise.color }} />
                           <span className="font-medium text-gray-900">{exercise.name}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4 text-gray-600 text-sm">{exercise.category}</td>
-                      <td className="py-3 px-4 text-gray-600 text-sm">
-                        {exercise.exercise_code || '-'}
-                      </td>
+                      <td className="py-3 px-4 text-gray-600 text-sm">{exercise.exercise_code || '-'}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
                           <input
@@ -278,11 +222,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
                             value={inputValues[exercise.id] || ''}
                             onChange={(e) => handleInputChange(exercise.id, e.target.value)}
                             onBlur={() => handlePRSave(exercise.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.currentTarget.blur();
-                              }
-                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                             placeholder="--"
                             className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             step="0.5"
@@ -304,8 +244,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
 
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>Tip:</strong> Enter PR values in kilograms. Changes are saved automatically.
-            Leave blank to remove a PR.
+            <strong>Tip:</strong> Enter PR values in kilograms. Changes are saved automatically. Leave blank to remove a PR.
           </p>
         </div>
       </div>

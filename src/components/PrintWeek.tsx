@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { X, Printer } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { getUnitSymbol } from '../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
+import { useWeekPlans } from '../hooks/useWeekPlans';
+import { useCombos } from '../hooks/useCombos';
 
 interface PrintWeekProps {
   athlete: Athlete;
@@ -30,6 +31,9 @@ function getComboDisplayName(combo: PlannedComboWithDetails): string {
 }
 
 export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription = null }: PrintWeekProps) {
+  const { fetchWeekPlanForAthlete, fetchPlannedExercisesFlat } = useWeekPlans();
+  const { fetchProgrammeData } = useCombos();
+
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
   const [combos, setCombos] = useState<PlannedComboWithDetails[]>([]);
@@ -44,14 +48,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
     try {
       setLoading(true);
 
-      const { data: plan, error: planError } = await supabase
-        .from('week_plans')
-        .select('*')
-        .eq('week_start', weekStart)
-        .eq('athlete_id', athlete.id)
-        .maybeSingle();
-
-      if (planError) throw planError;
+      const plan = await fetchWeekPlanForAthlete(athlete.id, weekStart);
       if (!plan) {
         setLoading(false);
         return;
@@ -59,77 +56,17 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
 
       setWeekPlan(plan);
 
-      const { data: exercises, error: exercisesError } = await supabase
-        .from('planned_exercises')
-        .select(`*, exercise:exercise_id(*)`)
-        .eq('weekplan_id', plan.id)
-        .order('day_index')
-        .order('position');
-
-      if (exercisesError) throw exercisesError;
+      const [exercises, { combos: combosWithDetails, comboExerciseIds: linkedIds }] = await Promise.all([
+        fetchPlannedExercisesFlat(plan.id),
+        fetchProgrammeData(plan.id),
+      ]);
 
       const grouped: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-      DAYS_OF_WEEK.forEach((day) => {
-        grouped[day.index] = [];
-      });
-
-      const { data: combosData, error: combosError } = await supabase
-        .from('planned_combos')
-        .select('*')
-        .eq('weekplan_id', plan.id)
-        .order('day_index')
-        .order('position');
-
-      if (combosError) throw combosError;
-
-      const combosWithDetails: PlannedComboWithDetails[] = [];
-      const linkedIds = new Set<string>();
-
-      for (const combo of combosData || []) {
-        let template = null;
-        if (combo.template_id) {
-          const { data: tpl } = await supabase
-            .from('exercise_combo_templates')
-            .select('*')
-            .eq('id', combo.template_id)
-            .maybeSingle();
-          template = tpl;
-        }
-
-        const { data: items, error: itemsError } = await supabase
-          .from('planned_combo_items')
-          .select('*, exercise:exercise_id(*)')
-          .eq('planned_combo_id', combo.id)
-          .order('position');
-
-        if (itemsError) {
-          console.error('Error loading combo items:', itemsError);
-          continue;
-        }
-
-        const { data: setLines } = await supabase
-          .from('planned_combo_set_lines')
-          .select('*')
-          .eq('planned_combo_id', combo.id)
-          .order('position');
-
-        if (items && items.length > 0) {
-          combosWithDetails.push({
-            ...combo,
-            template,
-            items: items.map(item => ({ ...item, exercise: item.exercise })),
-            set_lines: setLines || []
-          });
-
-          items.forEach(item => linkedIds.add(item.planned_exercise_id));
-        }
-      }
+      DAYS_OF_WEEK.forEach((day) => { grouped[day.index] = []; });
 
       (exercises || []).forEach((item) => {
-        if (!grouped[item.day_index]) {
-          grouped[item.day_index] = [];
-        }
-        grouped[item.day_index].push(item);
+        if (!grouped[item.day_index]) grouped[item.day_index] = [];
+        grouped[item.day_index].push(item as PlannedExercise & { exercise: Exercise });
       });
 
       setPlannedExercises(grouped);

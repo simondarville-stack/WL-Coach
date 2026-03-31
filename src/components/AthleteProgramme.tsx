@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import type { Athlete, WeekPlan, PlannedExerciseWithExercise, PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
 import { formatDateToDDMMYYYY, formatDateRange, getMondayOfWeek } from '../lib/dateUtils';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
 import { Calendar } from 'lucide-react';
+import { useAthletes } from '../hooks/useAthletes';
+import { useWeekPlans } from '../hooks/useWeekPlans';
+import { useCombos } from '../hooks/useCombos';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -21,7 +23,10 @@ function getComboDisplayName(combo: PlannedComboWithDetails): string {
 }
 
 export function AthleteProgramme() {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const { athletes, fetchActiveAthletes } = useAthletes();
+  const { fetchWeekPlanForAthlete, fetchPlannedExercisesFlat } = useWeekPlans();
+  const { fetchProgrammeData } = useCombos();
+
   const [selectedAthlete, setSelectedAthlete] = useState<Athlete | null>(null);
   const [weekStart, setWeekStart] = useState<string>('');
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
@@ -32,7 +37,7 @@ export function AthleteProgramme() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadAthletes();
+    fetchActiveAthletes();
     const today = getMondayOfWeek(new Date());
     setWeekStart(today.toISOString().split('T')[0]);
   }, []);
@@ -46,21 +51,6 @@ export function AthleteProgramme() {
     }
   }, [selectedAthlete, weekStart]);
 
-  const loadAthletes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-      setAthletes(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load athletes');
-    }
-  };
-
   const loadProgramme = async () => {
     if (!selectedAthlete || !weekStart) return;
 
@@ -68,80 +58,15 @@ export function AthleteProgramme() {
       setLoading(true);
       setError(null);
 
-      const { data: weekPlanData, error: weekError } = await supabase
-        .from('week_plans')
-        .select('*')
-        .eq('athlete_id', selectedAthlete.id)
-        .eq('week_start', weekStart)
-        .maybeSingle();
-
-      if (weekError) throw weekError;
-
+      const weekPlanData = await fetchWeekPlanForAthlete(selectedAthlete.id, weekStart);
       setWeekPlan(weekPlanData);
 
       if (weekPlanData) {
-        const { data: exercisesData, error: exercisesError } = await supabase
-          .from('planned_exercises')
-          .select(`*, exercise:exercises(*)`)
-          .eq('weekplan_id', weekPlanData.id)
-          .order('day_index')
-          .order('position');
-
-        if (exercisesError) throw exercisesError;
-        setPlannedExercises(exercisesData || []);
-
-        const { data: combosData, error: combosError } = await supabase
-          .from('planned_combos')
-          .select('*')
-          .eq('weekplan_id', weekPlanData.id)
-          .order('day_index')
-          .order('position');
-
-        if (combosError) throw combosError;
-
-        const combosWithDetails: PlannedComboWithDetails[] = [];
-        const linkedIds = new Set<string>();
-
-        for (const combo of combosData || []) {
-          let template = null;
-          if (combo.template_id) {
-            const { data: tpl } = await supabase
-              .from('exercise_combo_templates')
-              .select('*')
-              .eq('id', combo.template_id)
-              .maybeSingle();
-            template = tpl;
-          }
-
-          const { data: items, error: itemsError } = await supabase
-            .from('planned_combo_items')
-            .select('*, exercise:exercise_id(*)')
-            .eq('planned_combo_id', combo.id)
-            .order('position');
-
-          if (itemsError) {
-            console.error('Error loading combo items:', itemsError);
-            continue;
-          }
-
-          const { data: setLines } = await supabase
-            .from('planned_combo_set_lines')
-            .select('*')
-            .eq('planned_combo_id', combo.id)
-            .order('position');
-
-          if (items && items.length > 0) {
-            combosWithDetails.push({
-              ...combo,
-              template,
-              items: items.map(item => ({ ...item, exercise: item.exercise })),
-              set_lines: setLines || []
-            });
-
-            items.forEach(item => linkedIds.add(item.planned_exercise_id));
-          }
-        }
-
+        const [exercisesData, { combos: combosWithDetails, comboExerciseIds: linkedIds }] = await Promise.all([
+          fetchPlannedExercisesFlat(weekPlanData.id),
+          fetchProgrammeData(weekPlanData.id),
+        ]);
+        setPlannedExercises(exercisesData as PlannedExerciseWithExercise[]);
         setCombos(combosWithDetails);
         setComboExerciseIds(linkedIds);
       } else {

@@ -1,18 +1,12 @@
 import { useState, useEffect } from 'react';
 import type { Exercise, DefaultUnit } from '../lib/database.types';
 import { DEFAULT_UNITS } from '../lib/constants';
-import { supabase } from '../lib/supabase';
+import { useExercises } from '../hooks/useExercises';
 
 interface ExerciseFormProps {
   editingExercise: Exercise | null;
   onSave: (exercise: Partial<Exercise>) => Promise<void>;
   onCancelEdit: () => void;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  display_order: number;
 }
 
 const PRESET_COLORS = [
@@ -27,10 +21,11 @@ const PRESET_COLORS = [
 ];
 
 export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: ExerciseFormProps) {
+  const { categories, fetchCategories } = useExercises();
+
   const [name, setName] = useState('');
   const [exerciseCode, setExerciseCode] = useState('');
   const [category, setCategory] = useState<string>('');
-  const [categories, setCategories] = useState<Category[]>([]);
   const [isCompetitionLift, setIsCompetitionLift] = useState(false);
   const [defaultUnit, setDefaultUnit] = useState<DefaultUnit>('percentage');
   const [color, setColor] = useState('#3B82F6');
@@ -41,7 +36,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    loadCategories();
+    fetchCategories();
   }, []);
 
   useEffect(() => {
@@ -60,23 +55,6 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
       resetForm();
     }
   }, [editingExercise, categories]);
-
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (error) throw error;
-      setCategories(data || []);
-      if (data && data.length > 0 && !category) {
-        setCategory(data[0].name);
-      }
-    } catch (err) {
-      console.error('Failed to load categories:', err);
-    }
-  };
 
   const resetForm = () => {
     setName('');

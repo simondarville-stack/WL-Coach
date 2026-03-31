@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
 import { X, Link, Upload, Video, Image as ImageIcon } from 'lucide-react';
+import { useMediaUpload } from '../hooks/useMediaUpload';
 
 interface MediaInputModalProps {
   type: 'video' | 'image';
@@ -9,6 +9,7 @@ interface MediaInputModalProps {
 }
 
 export function MediaInputModal({ type, onClose, onSave }: MediaInputModalProps) {
+  const { uploadMedia } = useMediaUpload();
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [inputMethod, setInputMethod] = useState<'url' | 'upload'>('url');
@@ -42,23 +43,8 @@ export function MediaInputModal({ type, onClose, onSave }: MediaInputModalProps)
 
     try {
       setUploading(true);
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${type}s/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('planner-media')
-        .upload(fileName, selectedFile, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('planner-media')
-        .getPublicUrl(fileName);
-
-      onSave(publicUrlData.publicUrl);
+      const publicUrl = await uploadMedia(selectedFile, type);
+      onSave(publicUrl);
     } catch (error) {
       console.error(`Error uploading ${type}:`, error);
       alert(`Failed to upload ${type}. Please try again.`);

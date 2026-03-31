@@ -1,39 +1,57 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Check, CreditCard as Edit3, Save, X, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import {
+import type {
   Athlete,
-  WeekPlan,
   PlannedExerciseWithExercise,
   TrainingLogSession,
   TrainingLogExerciseWithExercise,
-  Exercise,
-  GeneralSettings as GeneralSettingsType,
 } from '../lib/database.types';
 import { formatDateToDDMMYYYY, getMondayOfWeek } from '../lib/dateUtils';
 import { RAWScoring } from './RAWScoring';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
+import { useTrainingLog } from '../hooks/useTrainingLog';
+import { useAthletes } from '../hooks/useAthletes';
+import { useExercises } from '../hooks/useExercises';
+import { useSettings } from '../hooks/useSettings';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export function AthleteLog() {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const {
+    athletes,
+    fetchActiveAthletes,
+    fetchPRs,
+    upsertPR,
+  } = useAthletes();
+
+  const {
+    exercises,
+    fetchExercisesByName,
+  } = useExercises();
+
+  const {
+    settings,
+    fetchSettingsSilent,
+  } = useSettings();
+
+  const {
+    weekPlan,
+    plannedExercises,
+    session,
+    setSession,
+    loggedExercises,
+    setLoggedExercises,
+    saving,
+    fetchWeekData,
+    saveSession: hookSaveSession,
+  } = useTrainingLog();
+
   const [selectedAthlete, setSelectedAthlete] = useState<Athlete | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAthleteDropdown, setShowAthleteDropdown] = useState(false);
 
   const [weekStart, setWeekStart] = useState<Date>(getMondayOfWeek(new Date()));
   const [selectedDayIndex, setSelectedDayIndex] = useState(1);
-
-  const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
-  const [plannedExercises, setPlannedExercises] = useState<PlannedExerciseWithExercise[]>([]);
-
-  const [session, setSession] = useState<TrainingLogSession | null>(null);
-  const [loggedExercises, setLoggedExercises] = useState<TrainingLogExerciseWithExercise[]>([]);
-
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [settings, setSettings] = useState<GeneralSettingsType | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const [editingExercise, setEditingExercise] = useState<{
     plannedExercise: PlannedExerciseWithExercise;
@@ -48,14 +66,14 @@ export function AthleteLog() {
   } | null>(null);
 
   useEffect(() => {
-    loadAthletes();
-    loadExercises();
-    loadSettings();
+    fetchActiveAthletes();
+    fetchExercisesByName();
+    fetchSettingsSilent();
   }, []);
 
   useEffect(() => {
     if (selectedAthlete) {
-      loadWeekData();
+      fetchWeekData(selectedAthlete.id, weekStart, selectedDayIndex);
     }
   }, [selectedAthlete, weekStart, selectedDayIndex]);
 
@@ -70,210 +88,14 @@ export function AthleteLog() {
     }
   }, [weekPlan]);
 
-  async function loadSettings() {
-    const { data } = await supabase
-      .from('general_settings')
-      .select('*')
-      .maybeSingle();
-    setSettings(data);
-  }
-
-  async function loadAthletes() {
-    const { data } = await supabase
-      .from('athletes')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
-    setAthletes(data || []);
-  }
-
-  async function loadExercises() {
-    const { data } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('name');
-    setExercises(data || []);
-  }
-
-  async function loadWeekData() {
-    if (!selectedAthlete) return;
-
-    const weekStartISO = weekStart.toISOString().split('T')[0];
-
-    const { data: weekData } = await supabase
-      .from('week_plans')
-      .select('*')
-      .eq('athlete_id', selectedAthlete.id)
-      .eq('week_start', weekStartISO)
-      .maybeSingle();
-
-    setWeekPlan(weekData);
-
-    if (weekData) {
-      const { data: plannedData } = await supabase
-        .from('planned_exercises')
-        .select('*, exercise:exercises(*)')
-        .eq('weekplan_id', weekData.id)
-        .eq('day_index', selectedDayIndex)
-        .order('position');
-
-      setPlannedExercises(plannedData || []);
-    } else {
-      setPlannedExercises([]);
-    }
-
-    const selectedDate = new Date(weekStart);
-    selectedDate.setDate(selectedDate.getDate() + selectedDayIndex - 1);
-    const dateISO = selectedDate.toISOString().split('T')[0];
-
-    const { data: sessionData } = await supabase
-      .from('training_log_sessions')
-      .select('*')
-      .eq('athlete_id', selectedAthlete.id)
-      .eq('date', dateISO)
-      .maybeSingle();
-
-    if (sessionData) {
-      setSession(sessionData);
-
-      const { data: logData } = await supabase
-        .from('training_log_exercises')
-        .select('*, exercise:exercises(*)')
-        .eq('session_id', sessionData.id)
-        .order('position');
-
-      setLoggedExercises(logData || []);
-    } else {
-      const weekStartISO = weekStart.toISOString().split('T')[0];
-      setSession({
-        id: '',
-        athlete_id: selectedAthlete.id,
-        date: dateISO,
-        week_start: weekStartISO,
-        day_index: selectedDayIndex,
-        session_notes: '',
-        status: 'planned',
-        raw_sleep: null,
-        raw_physical: null,
-        raw_mood: null,
-        raw_nutrition: null,
-        raw_total: null,
-        raw_guidance: null,
-        created_at: '',
-        updated_at: '',
-      });
-      setLoggedExercises([]);
-    }
-  }
-
   async function saveSession(sessionToSave?: TrainingLogSession) {
     const currentSession = sessionToSave || session;
     if (!currentSession || !selectedAthlete) return;
-
     try {
-      setSaving(true);
-
-      const hasRawScores = currentSession.raw_sleep || currentSession.raw_physical ||
-                           currentSession.raw_mood || currentSession.raw_nutrition;
-      const rawTotal = hasRawScores
-        ? (currentSession.raw_sleep || 0) + (currentSession.raw_physical || 0) +
-          (currentSession.raw_mood || 0) + (currentSession.raw_nutrition || 0)
-        : null;
-
-      let rawGuidance = null;
-      if (rawTotal !== null) {
-        if (rawTotal >= 4 && rawTotal <= 6) {
-          rawGuidance = "Reduce total volume by 25-30%:\n• Reduce session RPE by 2\n• Reduce sets by 1-2 per lift\n• Reduce reps by 2-4 per lift\n• Reduce session length by 25-30%\n• Increase rest by ~30 sec depending on session goal";
-        } else if (rawTotal >= 7 && rawTotal <= 9) {
-          rawGuidance = "Reduce total volume by 15-20%:\n• Reduce session RPE by 1\n• Reduce sets by 1 per lift\n• Reduce reps by 1-2 per lift\n• Reduce session length by 15-20%\n• Increase rest by ~30 sec depending on session goal";
-        } else if (rawTotal >= 10 && rawTotal <= 12) {
-          rawGuidance = "Good to train as hard as you desire within your ability level.";
-        }
-      }
-
-      let sessionId = currentSession.id;
-
-      if (currentSession.id) {
-        const { error } = await supabase
-          .from('training_log_sessions')
-          .update({
-            session_notes: currentSession.session_notes,
-            status: currentSession.status,
-            raw_sleep: currentSession.raw_sleep,
-            raw_physical: currentSession.raw_physical,
-            raw_mood: currentSession.raw_mood,
-            raw_nutrition: currentSession.raw_nutrition,
-            raw_total: rawTotal,
-            raw_guidance: rawGuidance,
-          })
-          .eq('id', currentSession.id);
-
-        if (error) throw error;
-      } else {
-        const { data: newSession, error } = await supabase
-          .from('training_log_sessions')
-          .insert({
-            athlete_id: selectedAthlete.id,
-            date: currentSession.date,
-            week_start: currentSession.week_start,
-            day_index: currentSession.day_index,
-            session_notes: currentSession.session_notes,
-            status: currentSession.status,
-            raw_sleep: currentSession.raw_sleep,
-            raw_physical: currentSession.raw_physical,
-            raw_mood: currentSession.raw_mood,
-            raw_nutrition: currentSession.raw_nutrition,
-            raw_total: rawTotal,
-            raw_guidance: rawGuidance,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setSession(newSession);
-        sessionId = newSession.id;
-      }
-
-      const existingIds = new Set(loggedExercises.filter(e => e.id).map(e => e.id));
-      const { data: currentLogged } = await supabase
-        .from('training_log_exercises')
-        .select('id')
-        .eq('session_id', sessionId);
-
-      const toDelete = (currentLogged || []).filter(e => !existingIds.has(e.id));
-      for (const ex of toDelete) {
-        await supabase.from('training_log_exercises').delete().eq('id', ex.id);
-      }
-
-      for (const logEx of loggedExercises) {
-        if (logEx.id) {
-          await supabase
-            .from('training_log_exercises')
-            .update({
-              performed_raw: logEx.performed_raw,
-              performed_notes: logEx.performed_notes,
-              position: logEx.position,
-            })
-            .eq('id', logEx.id);
-        } else {
-          await supabase
-            .from('training_log_exercises')
-            .insert({
-              session_id: sessionId,
-              exercise_id: logEx.exercise_id,
-              planned_exercise_id: logEx.planned_exercise_id,
-              performed_raw: logEx.performed_raw,
-              performed_notes: logEx.performed_notes,
-              position: logEx.position,
-            });
-        }
-      }
-
-      await loadWeekData();
+      await hookSaveSession(currentSession, selectedAthlete.id, loggedExercises);
+      await fetchWeekData(selectedAthlete.id, weekStart, selectedDayIndex);
     } catch (error) {
       console.error('Error saving session:', error);
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -369,43 +191,15 @@ export function AthleteLog() {
     setLoggedExercises(updatedExercises);
     setEditingExercise(null);
 
+    if (!session || !selectedAthlete) return;
     try {
-      setSaving(true);
-      const sessionId = session?.id || '';
-
-      for (const logEx of updatedExercises) {
-        if (logEx.id) {
-          await supabase
-            .from('training_log_exercises')
-            .update({
-              performed_raw: logEx.performed_raw,
-              performed_notes: logEx.performed_notes,
-              position: logEx.position,
-            })
-            .eq('id', logEx.id);
-        } else {
-          await supabase
-            .from('training_log_exercises')
-            .insert({
-              session_id: sessionId,
-              exercise_id: logEx.exercise_id,
-              planned_exercise_id: logEx.planned_exercise_id,
-              performed_raw: logEx.performed_raw,
-              performed_notes: logEx.performed_notes,
-              position: logEx.position,
-            });
-        }
-      }
-
-      await loadWeekData();
-
-      if (selectedAthlete && pe.exercise.default_unit === 'absolute_kg') {
+      await hookSaveSession(session, selectedAthlete.id, updatedExercises);
+      await fetchWeekData(selectedAthlete.id, weekStart, selectedDayIndex);
+      if (pe.exercise.default_unit === 'absolute_kg') {
         await checkForPRUpdate(pe.exercise.id, pe.exercise.name, performedRaw);
       }
     } catch (error) {
       console.error('Error saving exercise:', error);
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -415,22 +209,12 @@ export function AthleteLog() {
     const maxLoad = extractMaxLoad(performedRaw);
     if (maxLoad === null) return;
 
-    const { data: pr } = await supabase
-      .from('athlete_prs')
-      .select('*')
-      .eq('athlete_id', selectedAthlete.id)
-      .eq('exercise_id', exerciseId)
-      .maybeSingle();
-
+    const prs = await fetchPRs(selectedAthlete.id);
+    const pr = prs.find(p => p.exercise_id === exerciseId);
     const currentPR = pr?.pr_value_kg || null;
 
     if (currentPR === null || maxLoad > currentPR) {
-      setPrUpdatePrompt({
-        exerciseId,
-        exerciseName,
-        newValue: maxLoad,
-        currentPR,
-      });
+      setPrUpdatePrompt({ exerciseId, exerciseName, newValue: maxLoad, currentPR });
     }
   }
 
@@ -453,36 +237,16 @@ export function AthleteLog() {
 
   async function updatePR() {
     if (!prUpdatePrompt || !selectedAthlete) return;
-
     try {
-      const { data: existingPR } = await supabase
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', selectedAthlete.id)
-        .eq('exercise_id', prUpdatePrompt.exerciseId)
-        .maybeSingle();
-
-      if (existingPR) {
-        await supabase
-          .from('athlete_prs')
-          .update({
-            pr_value_kg: prUpdatePrompt.newValue,
-            pr_date: selectedDate.toISOString().split('T')[0],
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingPR.id);
-      } else {
-        await supabase
-          .from('athlete_prs')
-          .insert({
-            athlete_id: selectedAthlete.id,
-            exercise_id: prUpdatePrompt.exerciseId,
-            pr_value_kg: prUpdatePrompt.newValue,
-            pr_date: selectedDate.toISOString().split('T')[0],
-            notes: null,
-          });
-      }
-
+      const prs = await fetchPRs(selectedAthlete.id);
+      const existingPR = prs.find(p => p.exercise_id === prUpdatePrompt.exerciseId);
+      await upsertPR(
+        selectedAthlete.id,
+        prUpdatePrompt.exerciseId,
+        prUpdatePrompt.newValue,
+        selectedDate.toISOString().split('T')[0],
+        existingPR?.id,
+      );
       setPrUpdatePrompt(null);
     } catch (error) {
       console.error('Error updating PR:', error);

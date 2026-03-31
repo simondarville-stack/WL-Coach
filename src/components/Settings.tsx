@@ -1,48 +1,25 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, X, ChevronUp, ChevronDown } from 'lucide-react';
-
-interface Category {
-  id: string;
-  name: string;
-  display_order: number;
-  created_at: string;
-}
+import { useExercises, type Category } from '../hooks/useExercises';
 
 interface SettingsProps {
   embedded?: boolean;
 }
 
 export function Settings({ embedded = false }: SettingsProps) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    categories, loading, error, setError,
+    fetchCategoriesWithError,
+    createCategory, updateCategory, deleteCategory, swapCategoryOrder,
+  } = useExercises();
+
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    loadCategories();
+    fetchCategoriesWithError();
   }, []);
-
-  const loadCategories = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: fetchError } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (fetchError) throw fetchError;
-      setCategories(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load categories');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,20 +27,13 @@ export function Settings({ embedded = false }: SettingsProps) {
 
     setIsSubmitting(true);
     setError(null);
-
     try {
       const maxOrder = Math.max(...categories.map((c) => c.display_order), 0);
-
-      const { error: insertError } = await supabase
-        .from('categories')
-        .insert([{ name: newCategoryName.trim(), display_order: maxOrder + 1 }]);
-
-      if (insertError) throw insertError;
-
+      await createCategory(newCategoryName.trim(), maxOrder + 1);
       setNewCategoryName('');
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add category');
+      await fetchCategoriesWithError();
+    } catch {
+      // error already set in hook
     } finally {
       setIsSubmitting(false);
     }
@@ -74,42 +44,26 @@ export function Settings({ embedded = false }: SettingsProps) {
 
     setIsSubmitting(true);
     setError(null);
-
     try {
-      const { error: updateError } = await supabase
-        .from('categories')
-        .update({ name: editingCategory.name.trim() })
-        .eq('id', editingCategory.id);
-
-      if (updateError) throw updateError;
-
+      await updateCategory(editingCategory.id, editingCategory.name.trim());
       setEditingCategory(null);
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update category');
+      await fetchCategoriesWithError();
+    } catch {
+      // error already set in hook
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
-    if (!confirm(`Are you sure you want to delete the category "${categoryName}"? This cannot be undone.`)) {
-      return;
-    }
+    if (!confirm(`Are you sure you want to delete the category "${categoryName}"? This cannot be undone.`)) return;
 
     setError(null);
-
     try {
-      const { error: deleteError } = await supabase
-        .from('categories')
-        .delete()
-        .eq('id', categoryId);
-
-      if (deleteError) throw deleteError;
-
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete category');
+      await deleteCategory(categoryId);
+      await fetchCategoriesWithError();
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -123,25 +77,11 @@ export function Settings({ embedded = false }: SettingsProps) {
     const swapCategory = categories[swapIndex];
 
     setError(null);
-
     try {
-      const { error: error1 } = await supabase
-        .from('categories')
-        .update({ display_order: swapCategory.display_order })
-        .eq('id', category.id);
-
-      if (error1) throw error1;
-
-      const { error: error2 } = await supabase
-        .from('categories')
-        .update({ display_order: category.display_order })
-        .eq('id', swapCategory.id);
-
-      if (error2) throw error2;
-
-      await loadCategories();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reorder categories');
+      await swapCategoryOrder(category.id, swapCategory.display_order, swapCategory.id, category.display_order);
+      await fetchCategoriesWithError();
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -230,9 +170,7 @@ export function Settings({ embedded = false }: SettingsProps) {
                         <input
                           type="text"
                           value={editingCategory.name}
-                          onChange={(e) =>
-                            setEditingCategory({ ...editingCategory, name: e.target.value })
-                          }
+                          onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
                           className="flex-1 px-3 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                           autoFocus
                         />

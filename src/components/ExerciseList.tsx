@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Edit2, Trash2, Search, ExternalLink } from 'lucide-react';
 import type { Exercise } from '../lib/database.types';
 import { DEFAULT_UNITS } from '../lib/constants';
-import { supabase } from '../lib/supabase';
+import { useExercises } from '../hooks/useExercises';
 
 interface ExerciseListProps {
   exercises: Exercise[];
@@ -10,34 +10,14 @@ interface ExerciseListProps {
   onDelete: (id: string) => void;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  display_order: number;
-}
-
 export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [categories, setCategories] = useState<Category[]>([]);
+  const { categories, fetchCategories } = useExercises();
 
   useEffect(() => {
-    loadCategories();
+    fetchCategories();
   }, []);
-
-  const loadCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (error) throw error;
-      setCategories(data || []);
-    } catch (err) {
-      console.error('Failed to load categories:', err);
-    }
-  };
 
   const getUnitLabel = (unitValue: string) => {
     const unit = DEFAULT_UNITS.find((u) => u.value === unitValue);

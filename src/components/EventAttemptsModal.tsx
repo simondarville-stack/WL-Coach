@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Video, Trash2, Plus, Upload } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
+import type { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
+import { useEvents } from '../hooks/useEvents';
 
 interface EventAttemptsModalProps {
   eventId: string;
@@ -12,6 +12,7 @@ interface EventAttemptsModalProps {
 }
 
 export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSave }: EventAttemptsModalProps) {
+  const { fetchEventAttempts, upsertEventAttempts, addEventVideo, uploadAndAddEventVideo, deleteEventVideo } = useEvents();
   const [attempts, setAttempts] = useState<EventAttempts | null>(null);
   const [videos, setVideos] = useState<EventVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,13 +35,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
   async function loadData() {
     try {
       setLoading(true);
-
-      const { data: attemptsData } = await supabase
-        .from('event_attempts')
-        .select('*')
-        .eq('event_id', eventId)
-        .eq('athlete_id', athlete.id)
-        .maybeSingle();
+      const { attempts: attemptsData, videos: videosData } = await fetchEventAttempts(eventId, athlete.id);
 
       if (attemptsData) {
         setAttempts(attemptsData);
@@ -67,15 +62,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
         });
       }
 
-      const { data: videosData } = await supabase
-        .from('event_videos')
-        .select('*')
-        .eq('event_id', eventId)
-        .eq('athlete_id', athlete.id)
-        .order('lift_type')
-        .order('attempt_number');
-
-      setVideos(videosData || []);
+      setVideos(videosData);
     } catch (error) {
       console.error('Error loading attempts:', error);
     } finally {
@@ -87,48 +74,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     if (!attempts) return;
 
     try {
-      if (attempts.id && attempts.id !== '') {
-        await supabase
-          .from('event_attempts')
-          .update({
-            planned_snatch_1: attempts.planned_snatch_1,
-            planned_snatch_2: attempts.planned_snatch_2,
-            planned_snatch_3: attempts.planned_snatch_3,
-            planned_cj_1: attempts.planned_cj_1,
-            planned_cj_2: attempts.planned_cj_2,
-            planned_cj_3: attempts.planned_cj_3,
-            actual_snatch_1: attempts.actual_snatch_1,
-            actual_snatch_2: attempts.actual_snatch_2,
-            actual_snatch_3: attempts.actual_snatch_3,
-            actual_cj_1: attempts.actual_cj_1,
-            actual_cj_2: attempts.actual_cj_2,
-            actual_cj_3: attempts.actual_cj_3,
-            competition_notes: attempts.competition_notes,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', attempts.id);
-      } else {
-        const { data, error } = await supabase.from('event_attempts').insert({
-          event_id: eventId,
-          athlete_id: athlete.id,
-          planned_snatch_1: attempts.planned_snatch_1,
-          planned_snatch_2: attempts.planned_snatch_2,
-          planned_snatch_3: attempts.planned_snatch_3,
-          planned_cj_1: attempts.planned_cj_1,
-          planned_cj_2: attempts.planned_cj_2,
-          planned_cj_3: attempts.planned_cj_3,
-          actual_snatch_1: attempts.actual_snatch_1,
-          actual_snatch_2: attempts.actual_snatch_2,
-          actual_snatch_3: attempts.actual_snatch_3,
-          actual_cj_1: attempts.actual_cj_1,
-          actual_cj_2: attempts.actual_cj_2,
-          actual_cj_3: attempts.actual_cj_3,
-          competition_notes: attempts.competition_notes,
-        }).select();
-
-        if (error) throw error;
-      }
-
+      await upsertEventAttempts(eventId, athlete.id, attempts);
       onSave();
       onClose();
     } catch (error) {
@@ -142,38 +88,13 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
 
     try {
       setUploading(true);
-
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${eventId}/${athlete.id}/${videoForm.lift_type}_${videoForm.attempt_number}_${Date.now()}.${fileExt}`;
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('event-videos')
-        .upload(fileName, selectedFile, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('event-videos')
-        .getPublicUrl(fileName);
-
-      await supabase.from('event_videos').insert({
-        event_id: eventId,
-        athlete_id: athlete.id,
+      await uploadAndAddEventVideo(eventId, athlete.id, selectedFile, {
         lift_type: videoForm.lift_type,
         attempt_number: videoForm.attempt_number,
-        video_url: publicUrlData.publicUrl,
-        description: videoForm.description || null,
+        description: videoForm.description,
       });
 
-      setVideoForm({
-        lift_type: 'snatch',
-        attempt_number: 1,
-        video_url: '',
-        description: '',
-      });
+      setVideoForm({ lift_type: 'snatch', attempt_number: 1, video_url: '', description: '' });
       setSelectedFile(null);
       setShowVideoForm(false);
       loadData();
@@ -189,21 +110,8 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     if (!videoForm.video_url.trim()) return;
 
     try {
-      await supabase.from('event_videos').insert({
-        event_id: eventId,
-        athlete_id: athlete.id,
-        lift_type: videoForm.lift_type,
-        attempt_number: videoForm.attempt_number,
-        video_url: videoForm.video_url,
-        description: videoForm.description || null,
-      });
-
-      setVideoForm({
-        lift_type: 'snatch',
-        attempt_number: 1,
-        video_url: '',
-        description: '',
-      });
+      await addEventVideo(eventId, athlete.id, videoForm);
+      setVideoForm({ lift_type: 'snatch', attempt_number: 1, video_url: '', description: '' });
       setShowVideoForm(false);
       loadData();
     } catch (error) {
@@ -223,15 +131,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     if (!confirm('Delete this video?')) return;
 
     try {
-      if (videoUrl.includes('event-videos')) {
-        const urlParts = videoUrl.split('/event-videos/');
-        if (urlParts.length > 1) {
-          const filePath = urlParts[1].split('?')[0];
-          await supabase.storage.from('event-videos').remove([filePath]);
-        }
-      }
-
-      await supabase.from('event_videos').delete().eq('id', videoId);
+      await deleteEventVideo(videoId, videoUrl);
       loadData();
     } catch (error) {
       console.error('Error deleting video:', error);

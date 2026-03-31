@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import type { Athlete, MacroCycle, MacroWeek, Exercise, MacroTrackedExerciseWithExercise, MacroTarget } from '../lib/database.types';
+import type { MacroCycle, MacroTarget } from '../lib/database.types';
+import { useMacroCycles } from '../hooks/useMacroCycles';
+import { useAthleteStore } from '../store/athleteStore';
+import { useExercises } from '../hooks/useExercises';
 import { ChevronLeft, ChevronRight, X, Plus, Trash2, TrendingUp, BarChart3 } from 'lucide-react';
 import { getMondayOfWeek, formatDateShort, formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { MacroGraph } from './MacroGraph';
@@ -27,21 +29,37 @@ function generateMacroWeeks(startDate: string, endDate: string): Array<{ week_st
   return weeks;
 }
 
-interface MacroCyclesProps {
-  selectedAthlete: Athlete | null;
-  onAthleteChange: (athlete: Athlete | null) => void;
-}
+export function MacroCycles() {
+  const { selectedAthlete } = useAthleteStore();
+  const {
+    exercises,
+    fetchExercisesByName,
+  } = useExercises();
 
-export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesProps) {
-  const [macrocycles, setMacrocycles] = useState<MacroCycle[]>([]);
+  const {
+    macrocycles,
+    macroWeeks,
+    trackedExercises,
+    targets,
+    loading,
+    error,
+    setError,
+    fetchMacrocycles,
+    createMacrocycle,
+    deleteMacrocycle,
+    fetchMacroWeeks,
+    updateMacroWeek,
+    fetchTrackedExercises,
+    addTrackedExercise,
+    swapTrackedExercisePositions,
+    removeTrackedExercise,
+    reorderTrackedExercise,
+    fetchTargets,
+    upsertTarget,
+  } = useMacroCycles();
+
   const [selectedMacrocycle, setSelectedMacrocycle] = useState<MacroCycle | null>(null);
-  const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [trackedExercises, setTrackedExercises] = useState<MacroTrackedExerciseWithExercise[]>([]);
-  const [targets, setTargets] = useState<MacroTarget[]>([]);
   const [selectedExercise, setSelectedExercise] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showGraphForExercise, setShowGraphForExercise] = useState<string | null>(null);
@@ -55,168 +73,56 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
   });
 
   useEffect(() => {
-    loadExercises();
+    fetchExercisesByName();
   }, []);
 
   useEffect(() => {
     if (selectedAthlete) {
-      loadMacrocycles();
+      fetchMacrocycles(selectedAthlete.id);
     } else {
-      setMacrocycles([]);
       setSelectedMacrocycle(null);
-      setMacroWeeks([]);
-      setTrackedExercises([]);
-      setTargets([]);
     }
   }, [selectedAthlete]);
 
   useEffect(() => {
     if (selectedMacrocycle) {
-      loadMacroWeeks();
-      loadTrackedExercises();
-    } else {
-      setMacroWeeks([]);
-      setTrackedExercises([]);
-      setTargets([]);
+      fetchMacroWeeks(selectedMacrocycle.id);
+      fetchTrackedExercises(selectedMacrocycle.id);
     }
   }, [selectedMacrocycle]);
 
   useEffect(() => {
     if (macroWeeks.length > 0) {
-      loadTargets();
+      fetchTargets(macroWeeks.map(w => w.id));
     }
   }, [macroWeeks]);
 
-  const loadExercises = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setExercises(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
-    }
-  };
-
-  const loadMacrocycles = async () => {
-    if (!selectedAthlete) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('macrocycles')
-        .select('*')
-        .eq('athlete_id', selectedAthlete.id)
-        .order('start_date', { ascending: false });
-
-      if (error) throw error;
-      setMacrocycles(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load macrocycles');
-    }
-  };
-
-  const loadMacroWeeks = async () => {
-    if (!selectedMacrocycle) return;
-
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('macro_weeks')
-        .select('*')
-        .eq('macrocycle_id', selectedMacrocycle.id)
-        .order('week_number');
-
-      if (error) throw error;
-      setMacroWeeks(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load weeks');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadTrackedExercises = async () => {
-    if (!selectedMacrocycle) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('macro_tracked_exercises')
-        .select(`
-          *,
-          exercise:exercises(*)
-        `)
-        .eq('macrocycle_id', selectedMacrocycle.id)
-        .order('position');
-
-      if (error) throw error;
-      setTrackedExercises(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tracked exercises');
-    }
-  };
-
-  const loadTargets = async () => {
-    if (!selectedMacrocycle) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('macro_targets')
-        .select('*')
-        .in('macro_week_id', macroWeeks.map(w => w.id));
-
-      if (error) throw error;
-      setTargets(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load targets');
-    }
-  };
 
   const handleCreateMacrocycle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAthlete) return;
-
     try {
-      setLoading(true);
-      const { data: macrocycle, error: macroError } = await supabase
-        .from('macrocycles')
-        .insert({
-          athlete_id: selectedAthlete.id,
-          name: formData.name,
-          start_date: formData.start_date,
-          end_date: formData.end_date
-        })
-        .select()
-        .single();
-
-      if (macroError) throw macroError;
-
       const weeks = generateMacroWeeks(formData.start_date, formData.end_date);
-
       const weekInserts = weeks.map(week => ({
-        macrocycle_id: macrocycle.id,
+        macrocycle_id: '',
         week_start: week.week_start,
         week_number: week.week_number,
         week_type: 'Medium',
         week_type_text: '',
         notes: ''
       }));
-
-      const { error: weeksError } = await supabase
-        .from('macro_weeks')
-        .insert(weekInserts);
-
-      if (weeksError) throw weeksError;
-
+      const macrocycle = await createMacrocycle(
+        selectedAthlete.id,
+        formData.name,
+        formData.start_date,
+        formData.end_date,
+        weekInserts
+      );
       setFormData({ name: '', start_date: '', end_date: '' });
-      await loadMacrocycles();
+      await fetchMacrocycles(selectedAthlete.id);
       setSelectedMacrocycle(macrocycle);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create macrocycle');
-    } finally {
-      setLoading(false);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -240,52 +146,31 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
 
   const handleUpdateWeek = async (weekId: string, field: 'week_type_text' | 'notes', value: string) => {
     try {
-      const { error } = await supabase
-        .from('macro_weeks')
-        .update({ [field]: value })
-        .eq('id', weekId);
-
-      if (error) throw error;
-
-      setMacroWeeks(macroWeeks.map(week =>
-        week.id === weekId ? { ...week, [field]: value } : week
-      ));
-
+      await updateMacroWeek(weekId, { [field]: value });
       const key = getWeekInputKey(weekId, field);
       setLocalTargetValues(prev => {
         const newValues = { ...prev };
         delete newValues[key];
         return newValues;
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update week');
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleUpdateTotalRepsTarget = async (weekId: string, value: string) => {
     const numValue = value === '' ? null : parseInt(value, 10);
     if (value !== '' && isNaN(numValue as number)) return;
-
     try {
-      const { error } = await supabase
-        .from('macro_weeks')
-        .update({ total_reps_target: numValue })
-        .eq('id', weekId);
-
-      if (error) throw error;
-
-      setMacroWeeks(macroWeeks.map(week =>
-        week.id === weekId ? { ...week, total_reps_target: numValue } : week
-      ));
-
+      await updateMacroWeek(weekId, { total_reps_target: numValue });
       const key = getWeekInputKey(weekId, 'total_reps_target');
       setLocalTargetValues(prev => {
         const newValues = { ...prev };
         delete newValues[key];
         return newValues;
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update total reps target');
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -293,25 +178,13 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
     if (!confirm('Are you sure you want to delete this macrocycle? This will delete all associated weeks, exercises, and targets.')) {
       return;
     }
-
     try {
-      setLoading(true);
-      const { error } = await supabase
-        .from('macrocycles')
-        .delete()
-        .eq('id', macrocycleId);
-
-      if (error) throw error;
-
       if (selectedMacrocycle?.id === macrocycleId) {
         setSelectedMacrocycle(null);
       }
-
-      await loadMacrocycles();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete macrocycle');
-    } finally {
-      setLoading(false);
+      await deleteMacrocycle(macrocycleId);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -328,23 +201,12 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
     }
 
     try {
-      const nextPosition = trackedExercises.length + 1;
-
-      const { error } = await supabase
-        .from('macro_tracked_exercises')
-        .insert({
-          macrocycle_id: selectedMacrocycle.id,
-          exercise_id: selectedExercise,
-          position: nextPosition
-        });
-
-      if (error) throw error;
-
+      await addTrackedExercise(selectedMacrocycle.id, selectedExercise, trackedExercises.length + 1);
       setSelectedExercise('');
       setShowAddExercise(false);
-      await loadTrackedExercises();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add tracked exercise');
+      await fetchTrackedExercises(selectedMacrocycle.id);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -357,48 +219,26 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
     const swap = trackedExercises[swapIndex];
 
     try {
-      const { error: error1 } = await supabase
-        .from('macro_tracked_exercises')
-        .update({ position: swap.position })
-        .eq('id', current.id);
-
-      const { error: error2 } = await supabase
-        .from('macro_tracked_exercises')
-        .update({ position: current.position })
-        .eq('id', swap.id);
-
-      if (error1 || error2) throw error1 || error2;
-
-      await loadTrackedExercises();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to move tracked exercise');
+      await swapTrackedExercisePositions(current.id, swap.position, swap.id, current.position);
+      await fetchTrackedExercises(selectedMacrocycle!.id);
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleRemoveTrackedExercise = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('macro_tracked_exercises')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
+      await removeTrackedExercise(id);
       const remaining = trackedExercises.filter(te => te.id !== id);
-
       for (let i = 0; i < remaining.length; i++) {
         const newPosition = i + 1;
         if (remaining[i].position !== newPosition) {
-          await supabase
-            .from('macro_tracked_exercises')
-            .update({ position: newPosition })
-            .eq('id', remaining[i].id);
+          await reorderTrackedExercise(remaining[i].id, newPosition);
         }
       }
-
-      await loadTrackedExercises();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove tracked exercise');
+      await fetchTrackedExercises(selectedMacrocycle!.id);
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -437,44 +277,17 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
   ) => {
     const numValue = value === '' ? null : parseFloat(value);
     if (value !== '' && isNaN(numValue as number)) return;
-
     const existingTarget = getTarget(weekId, trackedExId);
-
     try {
-      if (existingTarget) {
-        const { error } = await supabase
-          .from('macro_targets')
-          .update({ [field]: numValue })
-          .eq('id', existingTarget.id);
-
-        if (error) throw error;
-
-        setTargets(targets.map(t =>
-          t.id === existingTarget.id ? { ...t, [field]: numValue } : t
-        ));
-      } else {
-        const { data, error } = await supabase
-          .from('macro_targets')
-          .insert({
-            macro_week_id: weekId,
-            tracked_exercise_id: trackedExId,
-            [field]: numValue
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setTargets([...targets, data]);
-      }
-
+      await upsertTarget(weekId, trackedExId, field, numValue, existingTarget);
       const key = getInputKey(weekId, trackedExId, field);
       setLocalTargetValues(prev => {
         const newValues = { ...prev };
         delete newValues[key];
         return newValues;
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update target');
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -484,56 +297,21 @@ export function MacroCycles({ selectedAthlete, onAthleteChange }: MacroCyclesPro
     value: number
   ) => {
     if (!showGraphForExercise) return;
-
     const existingTarget = targets.find(
       t => t.macro_week_id === weekId && t.tracked_exercise_id === showGraphForExercise
     );
-
     try {
-      if (existingTarget) {
-        const { error } = await supabase
-          .from('macro_targets')
-          .update({ [field]: value })
-          .eq('id', existingTarget.id);
-
-        if (error) throw error;
-
-        setTargets(targets.map(t =>
-          t.id === existingTarget.id ? { ...t, [field]: value } : t
-        ));
-      } else {
-        const { data, error } = await supabase
-          .from('macro_targets')
-          .insert({
-            macro_week_id: weekId,
-            tracked_exercise_id: showGraphForExercise,
-            [field]: value
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setTargets([...targets, data]);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update target from graph');
+      await upsertTarget(weekId, showGraphForExercise, field, value, existingTarget);
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleTotalRepsUpdate = async (weekId: string, value: number) => {
     try {
-      const { error } = await supabase
-        .from('macro_weeks')
-        .update({ total_reps_target: value })
-        .eq('id', weekId);
-
-      if (error) throw error;
-
-      setMacroWeeks(macroWeeks.map(w =>
-        w.id === weekId ? { ...w, total_reps_target: value } : w
-      ));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update total reps from graph');
+      await updateMacroWeek(weekId, { total_reps_target: value });
+    } catch {
+      // error already set in hook
     }
   };
 

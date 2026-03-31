@@ -1,15 +1,20 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import type { TrainingGroup, GroupMemberWithAthlete, Athlete } from '../lib/database.types';
+import type { TrainingGroup } from '../lib/database.types';
 import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus } from 'lucide-react';
+import { useTrainingGroups } from '../hooks/useTrainingGroups';
+import { useAthletes } from '../hooks/useAthletes';
 
 export function TrainingGroups() {
-  const [groups, setGroups] = useState<TrainingGroup[]>([]);
+  const {
+    groups, groupMembers, loading, error, setError,
+    fetchGroups, fetchGroupMembers,
+    createGroup, updateGroup, deleteGroup,
+    addMember, removeMember,
+  } = useTrainingGroups();
+
+  const { athletes: allAthletes, fetchActiveAthletes } = useAthletes();
+
   const [selectedGroup, setSelectedGroup] = useState<TrainingGroup | null>(null);
-  const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
-  const [allAthletes, setAllAthletes] = useState<Athlete[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -17,174 +22,70 @@ export function TrainingGroups() {
   const [formDescription, setFormDescription] = useState('');
 
   useEffect(() => {
-    loadGroups();
-    loadAthletes();
+    fetchGroups();
+    fetchActiveAthletes();
   }, []);
 
   useEffect(() => {
     if (selectedGroup) {
-      loadGroupMembers(selectedGroup.id);
+      fetchGroupMembers(selectedGroup.id);
     }
   }, [selectedGroup]);
 
-  const loadGroups = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('training_groups')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setGroups(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load groups');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAthletes = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-      setAllAthletes(data || []);
-    } catch (err) {
-      console.error('Failed to load athletes:', err);
-    }
-  };
-
-  const loadGroupMembers = async (groupId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('group_members')
-        .select(`
-          *,
-          athlete:athlete_id(*)
-        `)
-        .eq('group_id', groupId)
-        .is('left_at', null)
-        .order('joined_at');
-
-      if (error) throw error;
-      setGroupMembers(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load group members');
-    }
-  };
-
   const handleCreateGroup = async () => {
     if (!formName.trim()) return;
-
     try {
-      const { data, error } = await supabase
-        .from('training_groups')
-        .insert([{ name: formName.trim(), description: formDescription.trim() || null }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setGroups([...groups, data].sort((a, b) => a.name.localeCompare(b.name)));
+      const newGroup = await createGroup(formName.trim(), formDescription.trim() || null);
+      setSelectedGroup(newGroup);
       setShowCreateModal(false);
       setFormName('');
       setFormDescription('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create group');
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleUpdateGroup = async () => {
     if (!selectedGroup || !formName.trim()) return;
-
     try {
-      const { error } = await supabase
-        .from('training_groups')
-        .update({ name: formName.trim(), description: formDescription.trim() || null })
-        .eq('id', selectedGroup.id);
-
-      if (error) throw error;
-
-      const updatedGroups = groups.map(g =>
-        g.id === selectedGroup.id
-          ? { ...g, name: formName.trim(), description: formDescription.trim() || null }
-          : g
-      );
-      setGroups(updatedGroups);
+      await updateGroup(selectedGroup.id, formName.trim(), formDescription.trim() || null);
       setSelectedGroup({ ...selectedGroup, name: formName.trim(), description: formDescription.trim() || null });
       setShowEditModal(false);
       setFormName('');
       setFormDescription('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update group');
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleDeleteGroup = async (groupId: string) => {
     if (!confirm('Delete this training group? This will also delete all associated group plans.')) return;
-
     try {
-      const { error } = await supabase
-        .from('training_groups')
-        .delete()
-        .eq('id', groupId);
-
-      if (error) throw error;
-
-      setGroups(groups.filter(g => g.id !== groupId));
-      if (selectedGroup?.id === groupId) {
-        setSelectedGroup(null);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete group');
+      await deleteGroup(groupId);
+      if (selectedGroup?.id === groupId) setSelectedGroup(null);
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleAddMember = async (athleteId: string) => {
     if (!selectedGroup) return;
-
     try {
-      const { error } = await supabase
-        .from('group_members')
-        .insert([{ group_id: selectedGroup.id, athlete_id: athleteId }]);
-
-      if (error) throw error;
-
-      await loadGroupMembers(selectedGroup.id);
+      await addMember(selectedGroup.id, athleteId);
       setShowAddMemberModal(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add member');
+    } catch {
+      // error already set in hook
     }
   };
 
   const handleRemoveMember = async (memberId: string) => {
     if (!confirm('Remove this athlete from the group? Their historical data will be preserved.')) return;
-
+    if (!selectedGroup) return;
     try {
-      const { error } = await supabase
-        .from('group_members')
-        .update({ left_at: new Date().toISOString() })
-        .eq('id', memberId);
-
-      if (error) throw error;
-
-      if (selectedGroup) {
-        await loadGroupMembers(selectedGroup.id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove member');
+      await removeMember(memberId, selectedGroup.id);
+    } catch {
+      // error already set in hook
     }
-  };
-
-  const openCreateModal = () => {
-    setFormName('');
-    setFormDescription('');
-    setShowCreateModal(true);
   };
 
   const openEditModal = () => {
@@ -204,7 +105,7 @@ export function TrainingGroups() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Training Groups</h1>
           <button
-            onClick={openCreateModal}
+            onClick={() => { setFormName(''); setFormDescription(''); setShowCreateModal(true); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
           >
             <Plus size={20} />
@@ -249,21 +150,14 @@ export function TrainingGroups() {
                       </div>
                       <div className="flex items-center gap-1 ml-2">
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedGroup(group);
-                            openEditModal();
-                          }}
+                          onClick={(e) => { e.stopPropagation(); setSelectedGroup(group); openEditModal(); }}
                           className="p-1.5 hover:bg-white rounded transition-colors"
                           title="Edit group"
                         >
                           <Edit2 size={14} />
                         </button>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteGroup(group.id);
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
                           className="p-1.5 text-red-600 hover:bg-white rounded transition-colors"
                           title="Delete group"
                         >
@@ -314,11 +208,7 @@ export function TrainingGroups() {
                       >
                         <div className="flex items-center gap-3">
                           {member.athlete.photo_url ? (
-                            <img
-                              src={member.athlete.photo_url}
-                              alt={member.athlete.name}
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
+                            <img src={member.athlete.photo_url} alt={member.athlete.name} className="w-10 h-10 rounded-full object-cover" />
                           ) : (
                             <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
                               <Users size={20} className="text-gray-600" />
@@ -352,19 +242,13 @@ export function TrainingGroups() {
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Create Training Group</h2>
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
+                <button onClick={() => setShowCreateModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
               </div>
-
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Group Name
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
                   <input
                     type="text"
                     value={formName}
@@ -374,11 +258,8 @@ export function TrainingGroups() {
                     autoFocus
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description (optional)
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
                   <textarea
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
@@ -386,12 +267,8 @@ export function TrainingGroups() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
                   />
                 </div>
-
                 <div className="flex justify-end gap-2 pt-4">
-                  <button
-                    onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
+                  <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                     Cancel
                   </button>
                   <button
@@ -412,19 +289,13 @@ export function TrainingGroups() {
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Edit Training Group</h2>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
+                <button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
               </div>
-
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Group Name
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
                   <input
                     type="text"
                     value={formName}
@@ -433,23 +304,16 @@ export function TrainingGroups() {
                     autoFocus
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description (optional)
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
                   <textarea
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
                   />
                 </div>
-
                 <div className="flex justify-end gap-2 pt-4">
-                  <button
-                    onClick={() => setShowEditModal(false)}
-                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
+                  <button onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                     Cancel
                   </button>
                   <button
@@ -470,14 +334,10 @@ export function TrainingGroups() {
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Add Member</h2>
-                <button
-                  onClick={() => setShowAddMemberModal(false)}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                >
+                <button onClick={() => setShowAddMemberModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
               </div>
-
               {availableAthletes.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <p>All active athletes are already in this group</p>
@@ -491,11 +351,7 @@ export function TrainingGroups() {
                       className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
                     >
                       {athlete.photo_url ? (
-                        <img
-                          src={athlete.photo_url}
-                          alt={athlete.name}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
+                        <img src={athlete.photo_url} alt={athlete.name} className="w-10 h-10 rounded-full object-cover" />
                       ) : (
                         <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
                           <Users size={20} className="text-gray-600" />
@@ -503,20 +359,14 @@ export function TrainingGroups() {
                       )}
                       <div>
                         <h3 className="font-semibold text-gray-900">{athlete.name}</h3>
-                        {athlete.club && (
-                          <p className="text-xs text-gray-600">{athlete.club}</p>
-                        )}
+                        {athlete.club && <p className="text-xs text-gray-600">{athlete.club}</p>}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-
               <div className="flex justify-end pt-4">
-                <button
-                  onClick={() => setShowAddMemberModal(false)}
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                >
+                <button onClick={() => setShowAddMemberModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
                   Close
                 </button>
               </div>

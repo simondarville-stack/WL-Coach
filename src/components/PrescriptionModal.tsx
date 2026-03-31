@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { X, Check, Type, Grid3x3 } from 'lucide-react';
 import type { PlannedExercise, Exercise, PlannedSetLine, DefaultUnit } from '../lib/database.types';
 import { getUnitSymbol, DEFAULT_UNITS, DAYS_OF_WEEK } from '../lib/constants';
-import { parsePrescription, parseFreeTextPrescription } from '../lib/prescriptionParser';
-import { supabase } from '../lib/supabase';
 import { GridPrescriptionEditor } from './GridPrescriptionEditor';
+import { useWeekPlans } from '../hooks/useWeekPlans';
+import { useMacroCycles } from '../hooks/useMacroCycles';
+import { useSettings } from '../hooks/useSettings';
 
 interface PrescriptionModalProps {
   plannedEx: PlannedExercise & { exercise: Exercise };
@@ -29,6 +30,10 @@ interface OtherDayEntry {
 }
 
 export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionModalProps) {
+  const { fetchSetLines, savePrescription, saveNotes, fetchOtherDayPrescriptions } = useWeekPlans();
+  const { fetchMacroTargetForExercise } = useMacroCycles();
+  const { settings, fetchSettings } = useSettings();
+
   const [prescription, setPrescription] = useState(plannedEx.prescription_raw || '');
   const [notes, setNotes] = useState(plannedEx.notes || '');
   const [unit, setUnit] = useState<DefaultUnit>(plannedEx.unit || plannedEx.exercise.default_unit);
@@ -42,10 +47,7 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadSetLines();
-    loadMacroTarget();
-    loadGridSettings();
-    loadOtherDayPrescriptions();
+    loadAll();
   }, []);
 
   useEffect(() => {
@@ -54,204 +56,51 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
     }
   }, []);
 
-  const loadSetLines = async () => {
+  const loadAll = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from('planned_set_lines')
-        .select('*')
-        .eq('planned_exercise_id', plannedEx.id)
-        .order('position');
+      const [lines, target, otherDays] = await Promise.all([
+        fetchSetLines(plannedEx.id),
+        fetchMacroTargetForExercise(plannedEx.weekplan_id, plannedEx.exercise_id),
+        fetchOtherDayPrescriptions(plannedEx.weekplan_id, plannedEx.exercise_id, plannedEx.id),
+      ]);
 
-      if (error) throw error;
-      setSetLines(data || []);
+      setSetLines(lines);
+      setMacroTarget(target);
+
+      const entries: OtherDayEntry[] = otherDays.map(ex => {
+        const day = DAYS_OF_WEEK.find(d => d.index === ex.dayIndex);
+        return {
+          dayIndex: ex.dayIndex,
+          dayName: day?.name || `Day ${ex.dayIndex}`,
+          prescriptionRaw: ex.prescriptionRaw,
+          totalSets: ex.totalSets,
+          totalReps: ex.totalReps,
+        };
+      }).sort((a, b) => a.dayIndex - b.dayIndex);
+      setOtherDayEntries(entries);
+
+      await fetchSettings();
     } catch (err) {
-      console.error('Failed to load set lines:', err);
+      console.error('Failed to load prescription context:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadMacroTarget = async () => {
-    try {
-      const { data: weekPlan } = await supabase
-        .from('week_plans')
-        .select('week_start, athlete_id')
-        .eq('id', plannedEx.weekplan_id)
-        .maybeSingle();
-
-      if (!weekPlan) return;
-
-      const { data: macrocycle } = await supabase
-        .from('macrocycles')
-        .select('id')
-        .eq('is_active', true)
-        .eq('athlete_id', weekPlan.athlete_id)
-        .maybeSingle();
-
-      if (!macrocycle) return;
-
-      const { data: macroWeek } = await supabase
-        .from('macro_weeks')
-        .select('id')
-        .eq('macrocycle_id', macrocycle.id)
-        .eq('week_start', weekPlan.week_start)
-        .maybeSingle();
-
-      if (!macroWeek) return;
-
-      const { data: trackedExercise } = await supabase
-        .from('macro_tracked_exercises')
-        .select('id')
-        .eq('macrocycle_id', macrocycle.id)
-        .eq('exercise_id', plannedEx.exercise_id)
-        .maybeSingle();
-
-      if (!trackedExercise) return;
-
-      const { data: target } = await supabase
-        .from('macro_targets')
-        .select('target_reps, target_ave, target_hi, target_rhi, target_shi')
-        .eq('macro_week_id', macroWeek.id)
-        .eq('tracked_exercise_id', trackedExercise.id)
-        .maybeSingle();
-
-      if (target) {
-        setMacroTarget(target);
-      }
-    } catch (err) {
-      console.error('Failed to load macro target:', err);
-    }
-  };
-
-  const loadGridSettings = async () => {
-    try {
-      const { data } = await supabase
-        .from('general_settings')
-        .select('grid_load_increment, grid_click_increment')
-        .maybeSingle();
-
-      if (data) {
-        setGridSettings({
-          loadIncrement: data.grid_load_increment || 5,
-          clickIncrement: data.grid_click_increment || 1,
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load grid settings:', err);
-    }
-  };
-
-  const loadOtherDayPrescriptions = async () => {
-    try {
-      const { data: otherExercises, error } = await supabase
-        .from('planned_exercises')
-        .select('day_index, prescription_raw, summary_total_sets, summary_total_reps')
-        .eq('weekplan_id', plannedEx.weekplan_id)
-        .eq('exercise_id', plannedEx.exercise_id)
-        .neq('id', plannedEx.id);
-
-      if (error) throw error;
-      if (!otherExercises || otherExercises.length === 0) return;
-
-      const entries: OtherDayEntry[] = otherExercises.map(ex => {
-        const day = DAYS_OF_WEEK.find(d => d.index === ex.day_index);
-        return {
-          dayIndex: ex.day_index,
-          dayName: day?.name || `Day ${ex.day_index}`,
-          prescriptionRaw: ex.prescription_raw,
-          totalSets: ex.summary_total_sets,
-          totalReps: ex.summary_total_reps,
-        };
+  useEffect(() => {
+    if (settings) {
+      setGridSettings({
+        loadIncrement: (settings as any).grid_load_increment || 5,
+        clickIncrement: (settings as any).grid_click_increment || 1,
       });
-
-      entries.sort((a, b) => a.dayIndex - b.dayIndex);
-      setOtherDayEntries(entries);
-    } catch (err) {
-      console.error('Failed to load other day prescriptions:', err);
     }
-  };
+  }, [settings]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const isFreeText = unit === 'free_text';
-      const isRPE = unit === 'rpe';
-      const isOtherUnit = unit === 'other';
-      const isTextBased = isFreeText || isRPE;
-      const isNonNumeric = isFreeText || isOtherUnit;
-
-      const parsed = isNonNumeric ? [] : parsePrescription(prescription);
-      const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
-
-      await supabase
-        .from('planned_set_lines')
-        .delete()
-        .eq('planned_exercise_id', plannedEx.id);
-
-      if (parsed.length > 0 && !isNonNumeric) {
-        const setLines = parsed.map((line, idx) => ({
-          planned_exercise_id: plannedEx.id,
-          sets: line.sets,
-          reps: line.reps,
-          load_value: line.load,
-          position: idx + 1,
-        }));
-
-        await supabase.from('planned_set_lines').insert(setLines);
-
-        const totalSets = parsed.reduce((sum, line) => sum + line.sets, 0);
-        const totalReps = parsed.reduce((sum, line) => sum + line.sets * line.reps, 0);
-        const highestLoad = Math.max(...parsed.map(line => line.load));
-        const weightedLoadSum = parsed.reduce(
-          (sum, line) => sum + line.load * line.sets * line.reps,
-          0
-        );
-        const avgLoad = totalReps > 0 ? weightedLoadSum / totalReps : null;
-
-        await supabase
-          .from('planned_exercises')
-          .update({
-            prescription_raw: prescription,
-            notes: notes.trim() || null,
-            unit: unit,
-            summary_total_sets: totalSets,
-            summary_total_reps: totalReps,
-            summary_highest_load: highestLoad,
-            summary_avg_load: avgLoad,
-          })
-          .eq('id', plannedEx.id);
-      } else if (parsedText.length > 0 && isTextBased) {
-        const totalSets = parsedText.reduce((sum, line) => sum + line.sets, 0);
-        const totalReps = parsedText.reduce((sum, line) => sum + line.sets * line.reps, 0);
-
-        await supabase
-          .from('planned_exercises')
-          .update({
-            prescription_raw: prescription,
-            notes: notes.trim() || null,
-            unit: unit,
-            summary_total_sets: totalSets,
-            summary_total_reps: totalReps,
-            summary_highest_load: null,
-            summary_avg_load: null,
-          })
-          .eq('id', plannedEx.id);
-      } else {
-        await supabase
-          .from('planned_exercises')
-          .update({
-            prescription_raw: prescription,
-            notes: notes.trim() || null,
-            unit: unit,
-            summary_total_sets: 0,
-            summary_total_reps: 0,
-            summary_highest_load: null,
-            summary_avg_load: null,
-          })
-          .eq('id', plannedEx.id);
-      }
-
+      await savePrescription(plannedEx.id, { prescription, notes, unit });
       await onSave();
       onClose();
     } catch (err) {
@@ -310,13 +159,7 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                 onClick={async () => {
                   setIsSaving(true);
                   try {
-                    await supabase
-                      .from('planned_exercises')
-                      .update({
-                        notes: notes.trim() || null,
-                      })
-                      .eq('id', plannedEx.id);
-
+                    await saveNotes(plannedEx.id, notes);
                     await onSave();
                     onClose();
                   } catch (err) {

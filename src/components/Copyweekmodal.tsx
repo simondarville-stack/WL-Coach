@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { X, AlertTriangle, Clipboard, ArrowRight } from 'lucide-react';
 import type { Athlete, TrainingGroup } from '../lib/database.types';
 import { formatDateRange } from '../lib/dateUtils';
+import { useCombos } from '../hooks/useCombos';
 
 interface CopyWeekModalProps {
   onClose: () => void;
@@ -46,6 +46,8 @@ export function CopyWeekModal({
   const [destinationHasData, setDestinationHasData] = useState(false);
   const [pasting, setPasting] = useState(false);
 
+  const { checkDestinationWeekHasData, copyWeekPlan } = useCombos();
+
   const resolveTarget = (): { athlete: Athlete | null; group: TrainingGroup | null } => {
     if (targetType === 'athlete') {
       const athlete = allAthletes.find(a => a.id === selectedTargetAthleteId) || null;
@@ -69,31 +71,14 @@ export function CopyWeekModal({
     checkDestinationData();
   }, [destinationWeekStart, targetType, selectedTargetAthleteId, selectedTargetGroupId]);
 
-  const buildOwnerFilter = (
-    query: any,
-    athlete: Athlete | null,
-    group: TrainingGroup | null
-  ) => {
-    if (athlete) {
-      return query.eq('athlete_id', athlete.id).is('group_id', null);
-    }
-    if (group) {
-      return query.eq('group_id', group.id).is('athlete_id', null);
-    }
-    return query.is('athlete_id', null).is('group_id', null);
-  };
-
   const checkDestinationData = async () => {
     try {
-      let query = supabase
-        .from('week_plans')
-        .select('id', { count: 'exact', head: true })
-        .eq('week_start', destinationWeekStart);
-
-      query = buildOwnerFilter(query, target.athlete, target.group);
-
-      const { count } = await query;
-      setDestinationHasData((count ?? 0) > 0);
+      const hasData = await checkDestinationWeekHasData(
+        destinationWeekStart,
+        target.athlete?.id || null,
+        target.group?.id || null,
+      );
+      setDestinationHasData(hasData);
     } catch (err) {
       console.error('Failed to check destination data:', err);
     }
@@ -107,171 +92,15 @@ export function CopyWeekModal({
 
     setPasting(true);
     try {
-      // 1. Fetch source week plan using SOURCE context
-      let sourceQuery = supabase
-        .from('week_plans')
-        .select('*')
-        .eq('week_start', sourceWeekStart);
-
-      sourceQuery = buildOwnerFilter(sourceQuery, sourceAthlete, sourceGroup);
-
-      const { data: sourceWeekPlan, error: sourceError } = await sourceQuery.maybeSingle();
-
-      if (sourceError) {
-        console.error('Source query error:', sourceError);
-        throw sourceError;
-      }
-      if (!sourceWeekPlan) {
-        alert('Source week has no data to paste');
-        setPasting(false);
-        return;
-      }
-
-      // 2. Delete existing destination data if present
-      if (destinationHasData) {
-        let deleteQuery = supabase
-          .from('week_plans')
-          .delete()
-          .eq('week_start', destinationWeekStart);
-
-        deleteQuery = buildOwnerFilter(deleteQuery, target.athlete, target.group);
-
-        const { error: deleteError } = await deleteQuery;
-        if (deleteError) {
-          console.error('Delete error:', deleteError);
-          throw deleteError;
-        }
-      }
-
-      // 3. Create new week plan with DESTINATION owner context
-      const { id: _oldId, created_at: _created, ...weekPlanData } = sourceWeekPlan;
-      const newWeekPlan = {
-        ...weekPlanData,
-        week_start: destinationWeekStart,
-        athlete_id: target.athlete?.id || null,
-        group_id: target.group?.id || null,
-        is_group_plan: !!target.group,
-      };
-
-      const { data: createdWeekPlan, error: createError } = await supabase
-        .from('week_plans')
-        .insert([newWeekPlan])
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Create week plan error:', createError);
-        throw createError;
-      }
-
-      // 4. Copy planned exercises
-      const { data: sourceExercises, error: exercisesError } = await supabase
-        .from('planned_exercises')
-        .select('*')
-        .eq('weekplan_id', sourceWeekPlan.id);
-
-      if (exercisesError) throw exercisesError;
-
-      const exerciseIdMap = new Map<string, string>();
-
-      if (sourceExercises && sourceExercises.length > 0) {
-        for (const ex of sourceExercises) {
-          const { id: oldExId, created_at: _created, weekplan_id: _oldWeekPlanId, ...exData } = ex;
-
-          const { data: newExercise, error: insertExError } = await supabase
-            .from('planned_exercises')
-            .insert([{
-              ...exData,
-              weekplan_id: createdWeekPlan.id,
-            }])
-            .select()
-            .single();
-
-          if (insertExError) throw insertExError;
-          if (newExercise) {
-            exerciseIdMap.set(oldExId, newExercise.id);
-          }
-        }
-      }
-
-      // 5. Copy combos, combo items, and set lines
-      const { data: sourceCombos, error: combosError } = await supabase
-        .from('planned_combos')
-        .select('*')
-        .eq('weekplan_id', sourceWeekPlan.id);
-
-      if (combosError) throw combosError;
-
-      if (sourceCombos && sourceCombos.length > 0) {
-        const comboIdMap = new Map<string, string>();
-
-        for (const combo of sourceCombos) {
-          const { id: oldComboId, created_at: _created, weekplan_id: _oldWeekPlanId, ...comboData } = combo;
-
-          const { data: newCombo, error: comboInsertError } = await supabase
-            .from('planned_combos')
-            .insert([{
-              ...comboData,
-              weekplan_id: createdWeekPlan.id,
-            }])
-            .select()
-            .single();
-
-          if (comboInsertError) throw comboInsertError;
-          comboIdMap.set(oldComboId, newCombo.id);
-        }
-
-        const { data: sourceComboItems, error: comboItemsError } = await supabase
-          .from('planned_combo_items')
-          .select('*')
-          .in('planned_combo_id', Array.from(comboIdMap.keys()));
-
-        if (comboItemsError) throw comboItemsError;
-
-        if (sourceComboItems && sourceComboItems.length > 0) {
-          const newComboItems = sourceComboItems.map(item => {
-            const { id: _id, created_at: _created, planned_combo_id: oldComboId, planned_exercise_id: oldExId, ...itemData } = item;
-            return {
-              ...itemData,
-              planned_combo_id: comboIdMap.get(oldComboId)!,
-              planned_exercise_id: exerciseIdMap.get(oldExId)!,
-            };
-          });
-
-          const { error: itemsInsertError } = await supabase
-            .from('planned_combo_items')
-            .insert(newComboItems);
-
-          if (itemsInsertError) {
-            console.error('Combo items insert error:', itemsInsertError);
-            throw itemsInsertError;
-          }
-        }
-
-        const { data: sourceSetLines, error: setLinesError } = await supabase
-          .from('planned_combo_set_lines')
-          .select('*')
-          .in('planned_combo_id', Array.from(comboIdMap.keys()));
-
-        if (setLinesError) throw setLinesError;
-
-        if (sourceSetLines && sourceSetLines.length > 0) {
-          const newSetLines = sourceSetLines.map(line => {
-            const { id: _id, created_at: _created, planned_combo_id: oldComboId, ...lineData } = line;
-            return {
-              ...lineData,
-              planned_combo_id: comboIdMap.get(oldComboId)!,
-            };
-          });
-
-          const { error: linesInsertError } = await supabase
-            .from('planned_combo_set_lines')
-            .insert(newSetLines);
-
-          if (linesInsertError) throw linesInsertError;
-        }
-      }
-
+      await copyWeekPlan({
+        sourceWeekStart,
+        destinationWeekStart,
+        sourceAthleteId: sourceAthlete?.id || null,
+        sourceGroupId: sourceGroup?.id || null,
+        targetAthleteId: target.athlete?.id || null,
+        targetGroupId: target.group?.id || null,
+        destinationHasData,
+      });
       onPasteComplete();
       onClose();
     } catch (err: any) {

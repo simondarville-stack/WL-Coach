@@ -1,136 +1,54 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { GeneralSettings as GeneralSettingsType } from '../lib/database.types';
+import { useSettings } from '../hooks/useSettings';
 
 export function GeneralSettings() {
-  const [settings, setSettings] = useState<GeneralSettingsType | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
+
   const [rawAverageDays, setRawAverageDays] = useState(7);
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
 
   useEffect(() => {
-    loadSettings();
+    fetchSettings();
   }, []);
 
-  async function loadSettings() {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('general_settings')
-        .select('*')
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        const { data: newSettings, error: insertError } = await supabase
-          .from('general_settings')
-          .insert({
-            raw_enabled: true,
-            raw_average_days: 7,
-            grid_load_increment: 5,
-            grid_click_increment: 1
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        setSettings(newSettings);
-        setRawAverageDays(newSettings.raw_average_days);
-        setGridLoadIncrement(newSettings.grid_load_increment);
-        setGridClickIncrement(newSettings.grid_click_increment);
-      } else {
-        setSettings(data);
-        setRawAverageDays(data.raw_average_days);
-        setGridLoadIncrement(data.grid_load_increment);
-        setGridClickIncrement(data.grid_click_increment);
-      }
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (settings) {
+      setRawAverageDays(settings.raw_average_days);
+      setGridLoadIncrement(settings.grid_load_increment);
+      setGridClickIncrement(settings.grid_click_increment);
     }
-  }
+  }, [settings]);
 
   async function toggleRawScoring() {
     if (!settings) return;
-
     try {
-      setSaving(true);
-      const newValue = !settings.raw_enabled;
-
-      const { error } = await supabase
-        .from('general_settings')
-        .update({ raw_enabled: newValue })
-        .eq('id', settings.id);
-
-      if (error) throw error;
-
-      setSettings({ ...settings, raw_enabled: newValue });
-    } catch (error) {
-      console.error('Error updating settings:', error);
-    } finally {
-      setSaving(false);
+      await updateSettings(settings.id, { raw_enabled: !settings.raw_enabled });
+    } catch {
+      // error logged in hook
     }
   }
 
   async function updateRawAverageDays() {
     if (!settings) return;
-
     try {
-      setSaving(true);
-
-      const { error } = await supabase
-        .from('general_settings')
-        .update({ raw_average_days: rawAverageDays })
-        .eq('id', settings.id);
-
-      if (error) throw error;
-
-      setSettings({ ...settings, raw_average_days: rawAverageDays });
-    } catch (error) {
-      console.error('Error updating settings:', error);
-    } finally {
-      setSaving(false);
+      await updateSettings(settings.id, { raw_average_days: rawAverageDays });
+    } catch {
+      // error logged in hook
     }
   }
 
   async function updateGridSettings() {
     if (!settings) return;
-
     try {
-      setSaving(true);
-
-      const { error } = await supabase
-        .from('general_settings')
-        .update({
-          grid_load_increment: gridLoadIncrement,
-          grid_click_increment: gridClickIncrement
-        })
-        .eq('id', settings.id);
-
-      if (error) throw error;
-
-      setSettings({
-        ...settings,
-        grid_load_increment: gridLoadIncrement,
-        grid_click_increment: gridClickIncrement
-      });
-    } catch (error) {
-      console.error('Error updating settings:', error);
-    } finally {
-      setSaving(false);
+      await updateSettings(settings.id, { grid_load_increment: gridLoadIncrement, grid_click_increment: gridClickIncrement });
+    } catch {
+      // error logged in hook
     }
   }
 
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="text-gray-600">Loading settings...</div>
-      </div>
-    );
+    return <div className="p-6"><div className="text-gray-600">Loading settings...</div></div>;
   }
 
   return (
@@ -140,9 +58,7 @@ export function GeneralSettings() {
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">
-              RAW Scoring
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">RAW Scoring</h2>
             <p className="text-sm text-gray-600">
               Enable athletes to record Readiness and Wellbeing scores with their training logs
             </p>
@@ -166,18 +82,14 @@ export function GeneralSettings() {
         {settings?.raw_enabled && (
           <>
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2">
-                About RAW Scoring
-              </h3>
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">About RAW Scoring</h3>
               <p className="text-sm text-blue-800">
                 RAW scoring helps athletes assess their readiness before training across four pillars: Sleep, Physical condition, Mood, and Nutrition. Based on their scores, the system provides volume adjustment recommendations.
               </p>
             </div>
 
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                RAW Average Days
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">RAW Average Days</label>
               <p className="text-sm text-gray-600 mb-3">
                 Number of days to calculate the rolling RAW average in the coach dashboard
               </p>
@@ -208,19 +120,13 @@ export function GeneralSettings() {
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">
-            Grid Input Mode
-          </h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Configure settings for the grid-based prescription editor
-          </p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Grid Input Mode</h2>
+          <p className="text-sm text-gray-600 mb-4">Configure settings for the grid-based prescription editor</p>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Load Increment (kg)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Load Increment (kg)</label>
             <p className="text-sm text-gray-600 mb-3">
               Auto-increment for new column load when adding columns in grid mode
             </p>
@@ -239,9 +145,7 @@ export function GeneralSettings() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Click Increment
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment</label>
             <p className="text-sm text-gray-600 mb-3">
               Value change per click on load/reps/sets cells (left-click increases, right-click decreases)
             </p>

@@ -1,14 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import type { Athlete } from '../lib/database.types';
 import { ChevronDown, User } from 'lucide-react';
+import { useAthleteStore } from '../store/athleteStore';
 
-interface AthleteSelectorProps {
-  athletes: Athlete[];
-  selectedAthlete: Athlete | null;
-  onSelectAthlete: (athlete: Athlete | null) => void;
-}
-
-export function AthleteSelector({ athletes, selectedAthlete, onSelectAthlete }: AthleteSelectorProps) {
+export function AthleteSelector() {
+  const { athletes, selectedAthlete, setSelectedAthlete } = useAthleteStore();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -65,7 +60,7 @@ export function AthleteSelector({ athletes, selectedAthlete, onSelectAthlete }: 
               {selectedAthlete && (
                 <button
                   onClick={() => {
-                    onSelectAthlete(null);
+                    setSelectedAthlete(null);
                     setIsOpen(false);
                   }}
                   className="w-full px-3 py-2 text-left text-gray-600 hover:bg-gray-100 rounded-md mb-2 border border-gray-200"
@@ -77,7 +72,7 @@ export function AthleteSelector({ athletes, selectedAthlete, onSelectAthlete }: 
                 <button
                   key={athlete.id}
                   onClick={() => {
-                    onSelectAthlete(athlete);
+                    setSelectedAthlete(athlete);
                     setIsOpen(false);
                   }}
                   className={`w-full flex items-center gap-3 p-3 rounded-md transition-colors ${

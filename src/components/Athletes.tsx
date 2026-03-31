@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import type { Athlete } from '../lib/database.types';
 import { User, Edit2, Trash2, Award } from 'lucide-react';
 import { AthletePRs } from './AthletePRs';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
+import { useAthletes } from '../hooks/useAthletes';
 
 function calculateAge(birthdate: string | null): number | null {
   if (!birthdate) return null;
@@ -18,9 +18,8 @@ function calculateAge(birthdate: string | null): number | null {
 }
 
 export function Athletes() {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { athletes, loading, error, setError, fetchAthletes, createAthlete, updateAthlete, deleteAthlete } = useAthletes();
+
   const [editingAthlete, setEditingAthlete] = useState<Athlete | null>(null);
   const [selectedAthleteForPRs, setSelectedAthleteForPRs] = useState<Athlete | null>(null);
 
@@ -36,7 +35,7 @@ export function Athletes() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    loadAthletes();
+    fetchAthletes();
   }, []);
 
   useEffect(() => {
@@ -54,25 +53,6 @@ export function Athletes() {
       resetForm();
     }
   }, [editingAthlete]);
-
-  const loadAthletes = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .order('is_active', { ascending: false })
-        .order('name');
-
-      if (error) throw error;
-      setAthletes(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load athletes');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setName('');
@@ -104,49 +84,30 @@ export function Athletes() {
       };
 
       if (editingAthlete) {
-        const { error } = await supabase
-          .from('athletes')
-          .update(athleteData)
-          .eq('id', editingAthlete.id);
-
-        if (error) throw error;
+        await updateAthlete(editingAthlete.id, athleteData);
         setEditingAthlete(null);
       } else {
-        const { error } = await supabase
-          .from('athletes')
-          .insert([athleteData]);
-
-        if (error) throw error;
+        await createAthlete(athleteData);
       }
 
       resetForm();
-      await loadAthletes();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save athlete');
+      await fetchAthletes();
+    } catch {
+      // error already set in hook
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleEdit = (athlete: Athlete) => {
-    setEditingAthlete(athlete);
   };
 
   const handleDelete = async (athlete: Athlete) => {
     if (!window.confirm(`Are you sure you want to delete ${athlete.name}? This will also delete all their PRs and week plans.`)) {
       return;
     }
-
     try {
-      const { error } = await supabase
-        .from('athletes')
-        .delete()
-        .eq('id', athlete.id);
-
-      if (error) throw error;
-      await loadAthletes();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete athlete');
+      await deleteAthlete(athlete.id);
+      await fetchAthletes();
+    } catch {
+      // error already set in hook
     }
   };
 
@@ -207,9 +168,7 @@ export function Athletes() {
                   setBirthdateDisplay(input);
                   if (input.length === 10) {
                     const isoDate = parseDDMMYYYYToISO(input);
-                    if (isoDate) {
-                      setBirthdate(isoDate);
-                    }
+                    if (isoDate) setBirthdate(isoDate);
                   } else if (input === '') {
                     setBirthdate('');
                   }
@@ -218,9 +177,7 @@ export function Athletes() {
                   const input = e.target.value;
                   if (input.length === 10) {
                     const isoDate = parseDDMMYYYYToISO(input);
-                    if (isoDate) {
-                      setBirthdate(isoDate);
-                    }
+                    if (isoDate) setBirthdate(isoDate);
                   }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -297,9 +254,7 @@ export function Athletes() {
                     src={photoUrl}
                     alt="Athlete preview"
                     className="w-20 h-20 rounded-full object-cover border-2 border-gray-300"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 </div>
               )}
@@ -387,24 +342,16 @@ export function Athletes() {
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                         {athlete.birthdate && (
-                          <div>
-                            <span className="font-medium">Age:</span> {calculateAge(athlete.birthdate)}
-                          </div>
+                          <div><span className="font-medium">Age:</span> {calculateAge(athlete.birthdate)}</div>
                         )}
                         {athlete.bodyweight && (
-                          <div>
-                            <span className="font-medium">BW:</span> {athlete.bodyweight}kg
-                          </div>
+                          <div><span className="font-medium">BW:</span> {athlete.bodyweight}kg</div>
                         )}
                         {athlete.weight_class && (
-                          <div>
-                            <span className="font-medium">WC:</span> {athlete.weight_class}
-                          </div>
+                          <div><span className="font-medium">WC:</span> {athlete.weight_class}</div>
                         )}
                         {athlete.club && (
-                          <div>
-                            <span className="font-medium">Club:</span> {athlete.club}
-                          </div>
+                          <div><span className="font-medium">Club:</span> {athlete.club}</div>
                         )}
                       </div>
                       {athlete.notes && (
@@ -420,7 +367,7 @@ export function Athletes() {
                         <Award size={18} />
                       </button>
                       <button
-                        onClick={() => handleEdit(athlete)}
+                        onClick={() => setEditingAthlete(athlete)}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
                         title="Edit athlete"
                       >

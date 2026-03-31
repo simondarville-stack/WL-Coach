@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import type { PlannedExerciseWithExercise, PlannedSetLine } from '../lib/database.types';
 import { getUnitSymbol, getUnitLabel } from '../lib/constants';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { useWeekPlans } from '../hooks/useWeekPlans';
 
 interface SetLineEditorProps {
   plannedExercise: PlannedExerciseWithExercise;
@@ -11,6 +11,7 @@ interface SetLineEditorProps {
 }
 
 export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEditorProps) {
+  const { fetchSetLines, addSetLine, deleteSetLine, normalizeSetLinePositions, saveSetLinesWithSummary } = useWeekPlans();
   const [setLines, setSetLines] = useState<PlannedSetLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,15 +28,8 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
     try {
       setLoading(true);
       setError(null);
-
-      const { data, error } = await supabase
-        .from('planned_set_lines')
-        .select('*')
-        .eq('planned_exercise_id', plannedExercise.id)
-        .order('position');
-
-      if (error) throw error;
-      setSetLines(data || []);
+      const data = await fetchSetLines(plannedExercise.id);
+      setSetLines(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load set lines');
     } finally {
@@ -46,22 +40,7 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
   const handleAddLine = async () => {
     try {
       const newPosition = setLines.length > 0 ? Math.max(...setLines.map(l => l.position)) + 1 : 1;
-
-      const { data, error } = await supabase
-        .from('planned_set_lines')
-        .insert([
-          {
-            planned_exercise_id: plannedExercise.id,
-            sets: 3,
-            reps: 3,
-            load_value: 0,
-            position: newPosition,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) throw error;
+      const data = await addSetLine(plannedExercise.id, newPosition);
       setSetLines([...setLines, data]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add set line');
@@ -70,17 +49,10 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
 
   const handleDeleteLine = async (lineId: string) => {
     try {
-      const { error } = await supabase
-        .from('planned_set_lines')
-        .delete()
-        .eq('id', lineId);
-
-      if (error) throw error;
-
+      await deleteSetLine(lineId);
       const updatedLines = setLines.filter(l => l.id !== lineId);
       setSetLines(updatedLines);
-
-      await normalizePositions(updatedLines);
+      await normalizeSetLinePositions(updatedLines);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete set line');
     }
@@ -92,76 +64,27 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
     ));
   };
 
-  const normalizePositions = async (lines: PlannedSetLine[]) => {
-    try {
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].position !== i + 1) {
-          await supabase
-            .from('planned_set_lines')
-            .update({ position: i + 1 })
-            .eq('id', lines[i].id);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to normalize positions:', err);
-    }
-  };
-
   const calculateSummaries = () => {
     if (setLines.length === 0) {
-      return {
-        total_sets: 0,
-        total_reps: 0,
-        highest_load: null,
-        avg_load: null,
-      };
+      return { total_sets: 0, total_reps: 0, highest_load: null, avg_load: null };
     }
 
     const total_sets = setLines.reduce((sum, line) => sum + line.sets, 0);
     const total_reps = setLines.reduce((sum, line) => sum + (line.sets * line.reps), 0);
     const highest_load = Math.max(...setLines.map(line => line.load_value));
-
     const weighted_load_sum = setLines.reduce(
-      (sum, line) => sum + (line.load_value * line.sets * line.reps),
-      0
+      (sum, line) => sum + (line.load_value * line.sets * line.reps), 0
     );
     const avg_load = total_reps > 0 ? weighted_load_sum / total_reps : null;
 
-    return {
-      total_sets,
-      total_reps,
-      highest_load,
-      avg_load,
-    };
+    return { total_sets, total_reps, highest_load, avg_load };
   };
 
   const handleSave = async () => {
     try {
       setSaving(true);
       setError(null);
-
-      for (const line of setLines) {
-        await supabase
-          .from('planned_set_lines')
-          .update({
-            sets: line.sets,
-            reps: line.reps,
-            load_value: line.load_value,
-          })
-          .eq('id', line.id);
-      }
-
-      const summaries = calculateSummaries();
-      await supabase
-        .from('planned_exercises')
-        .update({
-          summary_total_sets: summaries.total_sets,
-          summary_total_reps: summaries.total_reps,
-          summary_highest_load: summaries.highest_load,
-          summary_avg_load: summaries.avg_load,
-        })
-        .eq('id', plannedExercise.id);
-
+      await saveSetLinesWithSummary(plannedExercise.id, setLines);
       onSave();
       onClose();
     } catch (err) {
@@ -217,9 +140,7 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
 
                       <div className="flex-1 grid grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Sets
-                          </label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Sets</label>
                           <input
                             type="number"
                             min="1"
@@ -230,9 +151,7 @@ export function SetLineEditor({ plannedExercise, onClose, onSave }: SetLineEdito
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Reps
-                          </label>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Reps</label>
                           <input
                             type="number"
                             min="1"

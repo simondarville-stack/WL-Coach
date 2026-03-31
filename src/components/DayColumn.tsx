@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import type { PlannedExercise, Exercise, PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
 import { GripVertical, X, Layers, Video, Image as ImageIcon, Type, type LucideIcon } from 'lucide-react';
 import { getUnitSymbol } from '../lib/constants';
-import { supabase } from '../lib/supabase';
 import { PrescriptionModal } from './PrescriptionModal';
 import { ComboCard } from './ComboCard';
 import { ComboEditorModal } from './ComboEditorModal';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { MediaInputModal } from './MediaInputModal';
+import { useCombos } from '../hooks/useCombos';
+import { useWeekPlans } from '../hooks/useWeekPlans';
 
 interface DayColumnProps {
   dayIndex: number;
@@ -50,6 +51,14 @@ export function DayColumn({
   onMoveExercise,
   comboRefreshKey,
 }: DayColumnProps) {
+  const {
+    loadDayCombos, createCombo, deleteComboWithExercises, copyComboToDay,
+  } = useCombos();
+  const {
+    addExerciseToDay, copyExerciseWithSetLines, copyDayExercises, deleteDayExercises,
+    fetchExercisesForDay, updateItemPosition, fetchExerciseByCode, fetchPlannedExerciseById,
+  } = useWeekPlans();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [editingExercise, setEditingExercise] = useState<(PlannedExercise & { exercise: Exercise }) | null>(null);
@@ -69,73 +78,18 @@ export function DayColumn({
 
   useEffect(() => {
     if (weekPlanId) {
-      loadCombos();
+      refreshCombos();
     }
   }, [weekPlanId, dayIndex, comboRefreshKey]);
 
-  async function loadCombos() {
-    const { data: combosData, error } = await supabase
-      .from('planned_combos')
-      .select('*')
-      .eq('weekplan_id', weekPlanId)
-      .eq('day_index', dayIndex)
-      .order('position');
-
-    if (error) {
-      console.error('Error loading combos:', error);
-      return;
+  async function refreshCombos() {
+    try {
+      const { combos: combosWithDetails, comboExerciseIds: linkedExerciseIds } = await loadDayCombos(weekPlanId, dayIndex);
+      setCombos(combosWithDetails);
+      setComboExerciseIds(linkedExerciseIds);
+    } catch (err) {
+      console.error('Error loading combos:', err);
     }
-
-    const combosWithDetails: PlannedComboWithDetails[] = [];
-    const linkedExerciseIds = new Set<string>();
-
-    for (const combo of combosData || []) {
-      let template = null;
-      if (combo.template_id) {
-        const { data: tpl } = await supabase
-          .from('exercise_combo_templates')
-          .select('*')
-          .eq('id', combo.template_id)
-          .maybeSingle();
-        template = tpl;
-      }
-
-      const { data: items, error: itemsError } = await supabase
-        .from('planned_combo_items')
-        .select('*, exercise:exercise_id(*)')
-        .eq('planned_combo_id', combo.id)
-        .order('position');
-
-      if (itemsError) {
-        console.error('Error loading combo items:', itemsError);
-        continue;
-      }
-
-      const { data: setLines, error: setLinesError } = await supabase
-        .from('planned_combo_set_lines')
-        .select('*')
-        .eq('planned_combo_id', combo.id)
-        .order('position');
-
-      if (setLinesError) {
-        console.error('Error loading combo set lines:', setLinesError);
-        continue;
-      }
-
-      if (items && items.length > 0) {
-        combosWithDetails.push({
-          ...combo,
-          template,
-          items: items.map(item => ({ ...item, exercise: item.exercise })),
-          set_lines: setLines || []
-        });
-
-        items.forEach(item => linkedExerciseIds.add(item.planned_exercise_id));
-      }
-    }
-
-    setCombos(combosWithDetails);
-    setComboExerciseIds(linkedExerciseIds);
   }
 
   const isSlashQuery = searchQuery.startsWith('/');
@@ -163,71 +117,13 @@ export function DayColumn({
     try {
       const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
       const newPosition = visibleExerciseCount + combos.length + 1;
-      const defaultRepsTuple = data.exercises.map(() => '1').join('+');
-
-      const { data: newCombo, error: comboError } = await supabase
-        .from('planned_combos')
-        .insert({
-          weekplan_id: weekPlanId,
-          day_index: dayIndex,
-          position: newPosition,
-          template_id: null,
-          combo_name: data.comboName || null,
-          unit: data.unit,
-          shared_load_value: 0,
-          sets: 1,
-          reps_tuple_text: defaultRepsTuple,
-          color: data.color
-        })
-        .select()
-        .single();
-
-      if (comboError) throw comboError;
-
-      for (let i = 0; i < data.exercises.length; i++) {
-        const part = data.exercises[i];
-
-        const { data: plannedEx, error: exError } = await supabase
-          .from('planned_exercises')
-          .insert({
-            weekplan_id: weekPlanId,
-            day_index: dayIndex,
-            exercise_id: part.exercise.id,
-            position: newPosition,
-            unit: data.unit,
-            summary_total_sets: 0,
-            summary_total_reps: 0
-          })
-          .select()
-          .single();
-
-        if (exError) throw exError;
-
-        const { error: itemError } = await supabase
-          .from('planned_combo_items')
-          .insert({
-            planned_combo_id: newCombo.id,
-            exercise_id: part.exercise.id,
-            position: i + 1,
-            planned_exercise_id: plannedEx.id
-          });
-
-        if (itemError) throw itemError;
-      }
-
-      const { error: setLineError } = await supabase
-        .from('planned_combo_set_lines')
-        .insert({
-          planned_combo_id: newCombo.id,
-          position: 1,
-          load_value: 0,
-          sets: 1,
-          reps_tuple_text: defaultRepsTuple
-        });
-
-      if (setLineError) throw setLineError;
-
-      await loadCombos();
+      await createCombo(weekPlanId, dayIndex, newPosition, {
+        exercises: data.exercises,
+        unit: data.unit,
+        comboName: data.comboName,
+        color: data.color,
+      });
+      await refreshCombos();
       await onRefresh();
     } catch (err) {
       console.error('Failed to create combo:', err);
@@ -242,17 +138,8 @@ export function DayColumn({
     setIsLoading(true);
     try {
       const combo = combos.find(c => c.id === comboId);
-      if (!combo) return;
-
-      const plannedExIds = combo.items.map(item => item.planned_exercise_id);
-
-      await supabase.from('planned_set_lines').delete().in('planned_exercise_id', plannedExIds);
-      await supabase.from('planned_combo_set_lines').delete().eq('planned_combo_id', comboId);
-      await supabase.from('planned_combo_items').delete().eq('planned_combo_id', comboId);
-      await supabase.from('planned_exercises').delete().in('id', plannedExIds);
-      await supabase.from('planned_combos').delete().eq('id', comboId);
-
-      await loadCombos();
+      await deleteComboWithExercises(comboId, combo?.items);
+      await refreshCombos();
       await onRefresh();
     } catch (err) {
       console.error('Failed to delete combo:', err);
@@ -319,11 +206,7 @@ export function DayColumn({
     setIsLoading(true);
     try {
       const code = type === 'video' ? 'VIDEO' : 'IMAGE';
-      const { data: sentinelExercise } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('exercise_code', code)
-        .maybeSingle();
+      const sentinelExercise = await fetchExerciseByCode(code);
 
       if (!sentinelExercise) {
         console.error(`${code} sentinel exercise not found. Run the migration first.`);
@@ -334,20 +217,7 @@ export function DayColumn({
       const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
       const newPosition = visibleExerciseCount + combos.length + 1;
 
-      const { error } = await supabase
-        .from('planned_exercises')
-        .insert([{
-          weekplan_id: weekPlanId,
-          day_index: dayIndex,
-          exercise_id: sentinelExercise.id,
-          position: newPosition,
-          unit: sentinelExercise.default_unit,
-          summary_total_sets: 0,
-          summary_total_reps: 0,
-          notes: url,
-        }]);
-
-      if (error) throw error;
+      await addExerciseToDay(weekPlanId, dayIndex, sentinelExercise.id, newPosition, sentinelExercise.default_unit, { notes: url });
       await onRefresh();
 
       setTimeout(() => { searchInputRef.current?.focus(); }, 100);
@@ -364,19 +234,7 @@ export function DayColumn({
       const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
       const newPosition = visibleExerciseCount + combos.length + 1;
 
-      const { error } = await supabase
-        .from('planned_exercises')
-        .insert([{
-          weekplan_id: weekPlanId,
-          day_index: dayIndex,
-          exercise_id: exercise.id,
-          position: newPosition,
-          unit: exercise.default_unit,
-          summary_total_sets: 0,
-          summary_total_reps: 0,
-        }]);
-
-      if (error) throw error;
+      await addExerciseToDay(weekPlanId, dayIndex, exercise.id, newPosition, exercise.default_unit);
 
       setSearchQuery('');
       setShowSearchResults(false);
@@ -393,11 +251,7 @@ export function DayColumn({
   async function handleAddFreeText() {
     setIsLoading(true);
     try {
-      const { data: freeTextExercise } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('exercise_code', 'TEXT')
-        .maybeSingle();
+      const freeTextExercise = await fetchExerciseByCode('TEXT');
 
       if (!freeTextExercise) {
         console.error('Free Text exercise not found');
@@ -407,20 +261,7 @@ export function DayColumn({
       const visibleExerciseCount = exercises.filter(ex => !comboExerciseIds.has(ex.id)).length;
       const newPosition = visibleExerciseCount + combos.length + 1;
 
-      const { error } = await supabase
-        .from('planned_exercises')
-        .insert([{
-          weekplan_id: weekPlanId,
-          day_index: dayIndex,
-          exercise_id: freeTextExercise.id,
-          position: newPosition,
-          unit: freeTextExercise.default_unit,
-          summary_total_sets: 0,
-          summary_total_reps: 0,
-          notes: 'Enter your text here...',
-        }]);
-
-      if (error) throw error;
+      await addExerciseToDay(weekPlanId, dayIndex, freeTextExercise.id, newPosition, freeTextExercise.default_unit, { notes: 'Enter your text here...' });
 
       setSearchQuery('');
       setShowSearchResults(false);
@@ -480,46 +321,10 @@ export function DayColumn({
         if (draggedItemType === 'exercise') {
           const draggedExercise = exercises.find(ex => ex.id === draggedItemId);
           if (!draggedExercise) return;
-
-          const { data, error } = await supabase
-            .from('planned_exercises')
-            .insert([{
-              weekplan_id: weekPlanId,
-              day_index: dayIndex,
-              exercise_id: draggedExercise.exercise_id,
-              position: dropIndex + 1,
-              unit: draggedExercise.unit,
-              prescription_raw: draggedExercise.prescription_raw,
-              summary_total_sets: draggedExercise.summary_total_sets,
-              summary_total_reps: draggedExercise.summary_total_reps,
-              summary_highest_load: draggedExercise.summary_highest_load,
-              summary_avg_load: draggedExercise.summary_avg_load,
-            }])
-            .select()
-            .single();
-
-          if (error) throw error;
-
-          if (data && draggedExercise.prescription_raw) {
-            const { data: setLines } = await supabase
-              .from('planned_set_lines')
-              .select('*')
-              .eq('planned_exercise_id', draggedExercise.id);
-
-            if (setLines && setLines.length > 0) {
-              await supabase.from('planned_set_lines').insert(
-                setLines.map((line) => ({
-                  planned_exercise_id: data.id,
-                  sets: line.sets,
-                  reps: line.reps,
-                  load_value: line.load_value,
-                  position: line.position,
-                }))
-              );
-            }
-          }
+          await copyExerciseWithSetLines(draggedExercise, weekPlanId, dayIndex, dropIndex + 1);
         } else {
-          await copyCombo(draggedItemId, dropIndex + 1);
+          await copyComboToDay(draggedItemId, combos, weekPlanId, dayIndex, dropIndex + 1);
+          await refreshCombos();
         }
 
         await onRefresh();
@@ -537,14 +342,11 @@ export function DayColumn({
       try {
         for (let i = 0; i < reorderedItems.length; i++) {
           const item = reorderedItems[i];
-          if (item.type === 'exercise') {
-            await supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', item.id);
-          } else {
-            await supabase.from('planned_combos').update({ position: i + 1 }).eq('id', item.id);
-          }
+          const table = item.type === 'exercise' ? 'planned_exercises' : 'planned_combos';
+          await updateItemPosition(table, item.id, i + 1);
         }
 
-        await loadCombos();
+        await refreshCombos();
         await onRefresh();
       } finally {
         setIsLoading(false);
@@ -555,130 +357,6 @@ export function DayColumn({
     setDraggedItemType(null);
   };
 
-  async function copyCombo(sourceComboId: string, targetPosition: number, targetDayIndex?: number, targetWeekPlanId?: string) {
-    const srcCombo = combos.find(c => c.id === sourceComboId);
-    let sourceCombo = srcCombo;
-    let sourceItems = srcCombo?.items;
-    let sourceSetLines = srcCombo?.set_lines;
-
-    if (!sourceCombo) {
-      const { data: sc } = await supabase.from('planned_combos').select('*').eq('id', sourceComboId).single();
-      if (!sc) return;
-      sourceCombo = sc as any;
-      const { data: si } = await supabase.from('planned_combo_items').select('*, exercise:exercise_id(*)').eq('planned_combo_id', sourceComboId).order('position');
-      sourceItems = si?.map(item => ({ ...item, exercise: item.exercise })) || [];
-      const { data: ssl } = await supabase.from('planned_combo_set_lines').select('*').eq('planned_combo_id', sourceComboId).order('position');
-      sourceSetLines = ssl || [];
-    }
-
-    if (!sourceCombo || !sourceItems) return;
-
-    const tgtDay = targetDayIndex ?? dayIndex;
-    const tgtWp = targetWeekPlanId ?? weekPlanId;
-
-    const { data: newCombo, error: comboError } = await supabase
-      .from('planned_combos')
-      .insert({
-        weekplan_id: tgtWp,
-        day_index: tgtDay,
-        position: targetPosition,
-        template_id: sourceCombo.template_id || null,
-        combo_name: sourceCombo.combo_name || null,
-        unit: sourceCombo.unit,
-        shared_load_value: sourceCombo.shared_load_value,
-        sets: sourceCombo.sets,
-        reps_tuple_text: sourceCombo.reps_tuple_text,
-        notes: sourceCombo.notes
-      })
-      .select()
-      .single();
-
-    if (comboError) throw comboError;
-
-    for (const item of sourceItems) {
-      const { data: srcExData } = await supabase
-        .from('planned_exercises')
-        .select('*')
-        .eq('id', item.planned_exercise_id)
-        .maybeSingle();
-
-      const { data: plannedEx, error: exError } = await supabase
-        .from('planned_exercises')
-        .insert({
-          weekplan_id: tgtWp,
-          day_index: tgtDay,
-          exercise_id: item.exercise_id,
-          position: targetPosition,
-          unit: sourceCombo.unit,
-          summary_total_sets: srcExData?.summary_total_sets ?? 0,
-          summary_total_reps: srcExData?.summary_total_reps ?? 0,
-          summary_highest_load: srcExData?.summary_highest_load ?? null,
-          summary_avg_load: srcExData?.summary_avg_load ?? null,
-        })
-        .select()
-        .single();
-
-      if (exError) throw exError;
-
-      await supabase.from('planned_combo_items').insert({
-        planned_combo_id: newCombo.id,
-        exercise_id: item.exercise_id,
-        position: item.position,
-        planned_exercise_id: plannedEx.id
-      });
-
-      const { data: srcSetLines } = await supabase
-        .from('planned_set_lines')
-        .select('*')
-        .eq('planned_exercise_id', item.planned_exercise_id)
-        .order('position');
-
-      if (srcSetLines && srcSetLines.length > 0) {
-        await supabase.from('planned_set_lines').insert(
-          srcSetLines.map(line => ({
-            planned_exercise_id: plannedEx.id,
-            sets: line.sets,
-            reps: line.reps,
-            load_value: line.load_value,
-            position: line.position,
-          }))
-        );
-      }
-    }
-
-    if (sourceSetLines) {
-      for (const line of sourceSetLines) {
-        await supabase.from('planned_combo_set_lines').insert({
-          planned_combo_id: newCombo.id,
-          position: line.position,
-          load_value: line.load_value,
-          sets: line.sets,
-          reps_tuple_text: line.reps_tuple_text
-        });
-      }
-    }
-
-    await loadCombos();
-  }
-
-  async function deleteComboById(comboId: string) {
-    const { data: items } = await supabase
-      .from('planned_combo_items')
-      .select('planned_exercise_id')
-      .eq('planned_combo_id', comboId);
-
-    const plannedExIds = (items || []).map(i => i.planned_exercise_id);
-
-    if (plannedExIds.length > 0) {
-      await supabase.from('planned_set_lines').delete().in('planned_exercise_id', plannedExIds);
-    }
-    await supabase.from('planned_combo_set_lines').delete().eq('planned_combo_id', comboId);
-    await supabase.from('planned_combo_items').delete().eq('planned_combo_id', comboId);
-    if (plannedExIds.length > 0) {
-      await supabase.from('planned_exercises').delete().in('id', plannedExIds);
-    }
-    await supabase.from('planned_combos').delete().eq('id', comboId);
-  }
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -704,59 +382,20 @@ export function DayColumn({
     try {
       if (itemType === 'exercise') {
         if (isCopy) {
-          const { data: sourceExercise } = await supabase
-            .from('planned_exercises')
-            .select('*')
-            .eq('id', itemId)
-            .single();
-
+          const sourceExercise = await fetchPlannedExerciseById(itemId);
           if (sourceExercise) {
-            const { data, error } = await supabase
-              .from('planned_exercises')
-              .insert([{
-                weekplan_id: weekPlanId,
-                day_index: dayIndex,
-                exercise_id: sourceExercise.exercise_id,
-                position: newPosition,
-                unit: sourceExercise.unit,
-                prescription_raw: sourceExercise.prescription_raw,
-                summary_total_sets: sourceExercise.summary_total_sets,
-                summary_total_reps: sourceExercise.summary_total_reps,
-                summary_highest_load: sourceExercise.summary_highest_load,
-                summary_avg_load: sourceExercise.summary_avg_load,
-              }])
-              .select()
-              .single();
-
-            if (error) throw error;
-
-            if (data && sourceExercise.prescription_raw) {
-              const { data: setLines } = await supabase
-                .from('planned_set_lines')
-                .select('*')
-                .eq('planned_exercise_id', sourceExercise.id);
-
-              if (setLines && setLines.length > 0) {
-                await supabase.from('planned_set_lines').insert(
-                  setLines.map((line) => ({
-                    planned_exercise_id: data.id,
-                    sets: line.sets,
-                    reps: line.reps,
-                    load_value: line.load_value,
-                    position: line.position,
-                  }))
-                );
-              }
-            }
+            await copyExerciseWithSetLines(sourceExercise, weekPlanId, dayIndex, newPosition);
           }
         } else {
           await onMoveExercise(itemId, fromDay, dayIndex);
         }
       } else if (itemType === 'combo') {
-        await copyCombo(itemId, newPosition);
+        await copyComboToDay(itemId, combos, weekPlanId, dayIndex, newPosition);
+        await refreshCombos();
 
         if (!isCopy) {
-          await deleteComboById(itemId);
+          await deleteComboWithExercises(itemId);
+          await refreshCombos();
         }
       }
 
@@ -788,60 +427,14 @@ export function DayColumn({
     setIsLoading(true);
 
     try {
-      const { data: sourceExercises } = await supabase
-        .from('planned_exercises')
-        .select('*')
-        .eq('weekplan_id', weekPlanId)
-        .eq('day_index', sourceDayIndex)
-        .order('position');
+      const sourceExercises = await fetchExercisesForDay(weekPlanId, sourceDayIndex);
 
-      if (sourceExercises && sourceExercises.length > 0) {
-        for (const sourceEx of sourceExercises) {
-          const newPosition = exercises.length + sourceExercises.indexOf(sourceEx) + 1;
-
-          const { data: newEx, error } = await supabase
-            .from('planned_exercises')
-            .insert([{
-              weekplan_id: weekPlanId,
-              day_index: dayIndex,
-              exercise_id: sourceEx.exercise_id,
-              position: newPosition,
-              unit: sourceEx.unit,
-              prescription_raw: sourceEx.prescription_raw,
-              summary_total_sets: sourceEx.summary_total_sets,
-              summary_total_reps: sourceEx.summary_total_reps,
-              summary_highest_load: sourceEx.summary_highest_load,
-              summary_avg_load: sourceEx.summary_avg_load,
-            }])
-            .select()
-            .single();
-
-          if (error) throw error;
-
-          if (newEx && sourceEx.prescription_raw) {
-            const { data: setLines } = await supabase
-              .from('planned_set_lines')
-              .select('*')
-              .eq('planned_exercise_id', sourceEx.id);
-
-            if (setLines && setLines.length > 0) {
-              await supabase.from('planned_set_lines').insert(
-                setLines.map((line) => ({
-                  planned_exercise_id: newEx.id,
-                  sets: line.sets,
-                  reps: line.reps,
-                  load_value: line.load_value,
-                  position: line.position,
-                }))
-              );
-            }
-          }
-        }
+      if (sourceExercises.length > 0) {
+        const basePosition = exercises.length + 1;
+        await copyDayExercises(sourceExercises, weekPlanId, dayIndex, basePosition);
 
         if (!isCopy) {
-          const exerciseIds = sourceExercises.map((ex) => ex.id);
-          await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
-          await supabase.from('planned_exercises').delete().in('id', exerciseIds);
+          await deleteDayExercises(sourceExercises.map(ex => ex.id));
         }
 
         await onRefresh();
@@ -1100,7 +693,7 @@ export function DayColumn({
           combo={editingCombo}
           onClose={() => setEditingCombo(null)}
           onSave={async () => {
-            await loadCombos();
+            await refreshCombos();
             await onRefresh();
           }}
         />

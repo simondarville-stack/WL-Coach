@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { PlannedExercise, Exercise, Athlete, WeekPlan } from '../lib/database.types';
+import { useMacroCycles } from '../hooks/useMacroCycles';
+import { useCombos } from '../hooks/useCombos';
 
 interface MacroTarget {
   id: string;
@@ -51,6 +52,9 @@ interface AggregatedActuals {
 }
 
 export function MacroValidation({ athlete, weekPlan, plannedExercises }: MacroValidationProps) {
+  const { fetchMacroValidationData } = useMacroCycles();
+  const { fetchProgrammeData } = useCombos();
+
   const [macroTargets, setMacroTargets] = useState<Record<string, MacroTarget>>({});
   const [trackedExercises, setTrackedExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,131 +64,45 @@ export function MacroValidation({ athlete, weekPlan, plannedExercises }: MacroVa
   const [comboItems, setComboItems] = useState<ComboItemData[]>([]);
 
   useEffect(() => {
-    loadMacroTargets();
-    loadComboData();
+    loadAll();
   }, [athlete.id, weekPlan.week_start, weekPlan.id]);
 
-  const loadComboData = async () => {
-    if (!weekPlan?.id) return;
-
-    try {
-      const { data: combos } = await supabase
-        .from('planned_combos')
-        .select('id, unit, day_index')
-        .eq('weekplan_id', weekPlan.id);
-
-      const combosArray = (combos || []) as ComboData[];
-      setComboData(combosArray);
-
-      if (combosArray.length === 0) {
-        setComboSetLines([]);
-        setComboItems([]);
-        return;
-      }
-
-      const comboIds = combosArray.map(c => c.id);
-
-      const { data: setLines } = await supabase
-        .from('planned_combo_set_lines')
-        .select('planned_combo_id, position, sets, reps_tuple_text, load_value')
-        .in('planned_combo_id', comboIds);
-
-      setComboSetLines((setLines || []) as ComboSetLineData[]);
-
-      const { data: items } = await supabase
-        .from('planned_combo_items')
-        .select('planned_combo_id, exercise_id, position, planned_exercise_id')
-        .in('planned_combo_id', comboIds);
-
-      setComboItems((items || []) as ComboItemData[]);
-    } catch (err) {
-      console.error('Failed to load combo data:', err);
-    }
-  };
-
-  const loadMacroTargets = async () => {
+  const loadAll = async () => {
     setLoading(true);
     try {
-      console.log('MacroValidation: Loading targets for athlete:', athlete.id);
-      console.log('MacroValidation: Week start:', weekPlan.week_start);
+      const [validationData, programmeData] = await Promise.all([
+        fetchMacroValidationData(athlete.id, weekPlan.week_start),
+        fetchProgrammeData(weekPlan.id),
+      ]);
 
-      const { data: macroWeeks, error: macroError } = await supabase
-        .from('macro_weeks')
-        .select(`
-          id,
-          macrocycle_id,
-          week_start,
-          macrocycles!inner(athlete_id, start_date, end_date)
-        `)
-        .eq('macrocycles.athlete_id', athlete.id)
-        .lte('week_start', weekPlan.week_start)
-        .gte('week_start', new Date(new Date(weekPlan.week_start).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .lte('macrocycles.start_date', weekPlan.week_start)
-        .gte('macrocycles.end_date', weekPlan.week_start)
-        .order('week_start', { ascending: false })
-        .limit(1);
+      setMacroTargets(validationData.macroTargets as Record<string, MacroTarget>);
+      setTrackedExercises(validationData.trackedExercises);
 
-      if (macroError) throw macroError;
+      const combosArray = programmeData.combos.map(c => ({ id: c.id, unit: c.unit, day_index: c.day_index })) as ComboData[];
+      setComboData(combosArray);
 
-      console.log('MacroValidation: Macro weeks found:', macroWeeks);
+      const allSetLines: ComboSetLineData[] = programmeData.combos.flatMap(c =>
+        c.set_lines.map((line: any) => ({
+          planned_combo_id: c.id,
+          position: line.position,
+          sets: line.sets,
+          reps_tuple_text: line.reps_tuple_text,
+          load_value: line.load_value,
+        }))
+      );
+      setComboSetLines(allSetLines);
 
-      if (!macroWeeks || macroWeeks.length === 0) {
-        console.log('MacroValidation: No macro weeks found');
-        setMacroTargets({});
-        setTrackedExercises([]);
-        return;
-      }
-
-      const macroWeek = macroWeeks[0];
-      const macrocycleId = macroWeek.macrocycle_id;
-
-      console.log('MacroValidation: Macrocycle ID:', macrocycleId);
-      console.log('MacroValidation: Macro week ID:', macroWeek.id);
-
-      const { data: trackedExercisesData, error: trackedError } = await supabase
-        .from('macro_tracked_exercises')
-        .select('id, exercise_id, exercises(*)')
-        .eq('macrocycle_id', macrocycleId)
-        .order('position');
-
-      if (trackedError) throw trackedError;
-
-      console.log('MacroValidation: Tracked exercises data:', trackedExercisesData);
-
-      const exercises = (trackedExercisesData || [])
-        .map(item => item.exercises)
-        .filter(Boolean) as Exercise[];
-
-      setTrackedExercises(exercises);
-
-      const { data: targetsData, error: targetsError } = await supabase
-        .from('macro_targets')
-        .select('*')
-        .eq('macro_week_id', macroWeek.id);
-
-      if (targetsError) throw targetsError;
-
-      console.log('MacroValidation: Targets data:', targetsData);
-
-      const trackedExerciseMap: Record<string, string> = {};
-      (trackedExercisesData || []).forEach(te => {
-        trackedExerciseMap[te.exercise_id] = te.id;
-      });
-
-      const targetsMap: Record<string, MacroTarget> = {};
-      (targetsData || []).forEach(target => {
-        const trackedEx = (trackedExercisesData || []).find(te => te.id === target.tracked_exercise_id);
-        if (trackedEx) {
-          targetsMap[trackedEx.exercise_id] = {
-            ...target,
-            exercise_id: trackedEx.exercise_id
-          };
-        }
-      });
-
-      setMacroTargets(targetsMap);
+      const allItems: ComboItemData[] = programmeData.combos.flatMap(c =>
+        c.items.map((item: any) => ({
+          planned_combo_id: c.id,
+          exercise_id: item.exercise_id,
+          position: item.position,
+          planned_exercise_id: item.planned_exercise_id,
+        }))
+      );
+      setComboItems(allItems);
     } catch (err) {
-      console.error('Failed to load macro targets:', err);
+      console.error('Failed to load macro validation data:', err);
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
 import type { PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
-import { supabase } from '../lib/supabase';
+import { useCombos } from '../hooks/useCombos';
 
 interface ComboEditorModalProps {
   combo: PlannedComboWithDetails;
@@ -10,6 +10,7 @@ interface ComboEditorModalProps {
 }
 
 export function ComboEditorModal({ combo, onClose, onSave }: ComboEditorModalProps) {
+  const { saveComboSetLines } = useCombos();
   const formatInitialPrescription = () => {
     if (combo.set_lines.length > 0) {
       return combo.set_lines.map(line =>
@@ -103,130 +104,7 @@ export function ComboEditorModal({ combo, onClose, onSave }: ComboEditorModalPro
 
     try {
       setIsSaving(true);
-
-      const { data: existingSetLines } = await supabase
-        .from('planned_combo_set_lines')
-        .select('*')
-        .eq('planned_combo_id', combo.id)
-        .order('position');
-
-      const perItemSnapshots: { plannedExerciseId: string; setLines: any[]; summary: any }[] = [];
-      for (const item of combo.items) {
-        const { data: itemSetLines } = await supabase
-          .from('planned_set_lines')
-          .select('*')
-          .eq('planned_exercise_id', item.planned_exercise_id)
-          .order('position');
-        const { data: itemSummary } = await supabase
-          .from('planned_exercises')
-          .select('summary_total_sets, summary_total_reps, summary_avg_load, summary_highest_load')
-          .eq('id', item.planned_exercise_id)
-          .maybeSingle();
-        perItemSnapshots.push({ plannedExerciseId: item.planned_exercise_id, setLines: itemSetLines || [], summary: itemSummary });
-      }
-
-      const restore = async () => {
-        await supabase.from('planned_combo_set_lines').delete().eq('planned_combo_id', combo.id);
-        if (existingSetLines && existingSetLines.length > 0) {
-          await supabase.from('planned_combo_set_lines').insert(existingSetLines.map(({ id: _id, ...rest }: any) => rest));
-        }
-        for (const snap of perItemSnapshots) {
-          await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', snap.plannedExerciseId);
-          if (snap.setLines.length > 0) {
-            await supabase.from('planned_set_lines').insert(snap.setLines.map(({ id: _id, ...rest }: any) => rest));
-          }
-          if (snap.summary) {
-            await supabase.from('planned_exercises').update(snap.summary).eq('id', snap.plannedExerciseId);
-          }
-        }
-      };
-
-      try {
-        const { error: delSetLinesError } = await supabase
-          .from('planned_combo_set_lines')
-          .delete()
-          .eq('planned_combo_id', combo.id);
-        if (delSetLinesError) throw delSetLinesError;
-
-        for (let lineIdx = 0; lineIdx < parsed.length; lineIdx++) {
-          const line = parsed[lineIdx];
-          const { error: setLineError } = await supabase
-            .from('planned_combo_set_lines')
-            .insert({
-              planned_combo_id: combo.id,
-              position: lineIdx + 1,
-              load_value: line.loadValue,
-              sets: line.sets,
-              reps_tuple_text: line.repsTuple
-            });
-          if (setLineError) throw setLineError;
-        }
-
-        for (let i = 0; i < combo.items.length; i++) {
-          const item = combo.items[i];
-          const plannedExerciseId = item.planned_exercise_id;
-
-          const { error: delLinesError } = await supabase
-            .from('planned_set_lines')
-            .delete()
-            .eq('planned_exercise_id', plannedExerciseId);
-          if (delLinesError) throw delLinesError;
-
-          let totalSets = 0;
-          let totalReps = 0;
-          let totalLoadTimesReps = 0;
-          let highestLoad = 0;
-
-          for (let lineIdx = 0; lineIdx < parsed.length; lineIdx++) {
-            const line = parsed[lineIdx];
-            const repsParts = line.repsTuple.split('+').map(p => parseInt(p.trim()));
-            const repsForPart = repsParts[i];
-
-            const { error: lineError } = await supabase
-              .from('planned_set_lines')
-              .insert({
-                planned_exercise_id: plannedExerciseId,
-                sets: line.sets,
-                reps: repsForPart,
-                load_value: line.loadValue,
-                position: lineIdx + 1
-              });
-            if (lineError) throw lineError;
-
-            totalSets += line.sets;
-            totalReps += line.sets * repsForPart;
-            totalLoadTimesReps += line.loadValue * (line.sets * repsForPart);
-            highestLoad = Math.max(highestLoad, line.loadValue);
-          }
-
-          const avgLoad = totalReps > 0 ? totalLoadTimesReps / totalReps : 0;
-
-          const { error: summaryError } = await supabase
-            .from('planned_exercises')
-            .update({
-              summary_total_sets: totalSets,
-              summary_total_reps: totalReps,
-              summary_avg_load: avgLoad,
-              summary_highest_load: highestLoad,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', plannedExerciseId);
-          if (summaryError) throw summaryError;
-        }
-
-        const { error: comboError } = await supabase
-          .from('planned_combos')
-          .update({
-            notes: notes.trim() || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', combo.id);
-        if (comboError) throw comboError;
-      } catch (innerErr) {
-        await restore();
-        throw innerErr;
-      }
-
+      await saveComboSetLines(combo, parsed, notes);
       await onSave();
       onClose();
     } catch (err) {

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Trophy, Video } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
+import type { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { useEvents } from '../hooks/useEvents';
 
 interface EventOverviewModalProps {
   event: Event;
@@ -15,6 +15,7 @@ interface AthleteWithAttempts extends Athlete {
 }
 
 export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) {
+  const { fetchEventOverview } = useEvents();
   const [athletes, setAthletes] = useState<AthleteWithAttempts[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,51 +26,8 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
   async function loadEventData() {
     try {
       setLoading(true);
-
-      const { data: eventAthletes } = await supabase
-        .from('event_athletes')
-        .select('athlete_id')
-        .eq('event_id', event.id);
-
-      if (!eventAthletes || eventAthletes.length === 0) {
-        setAthletes([]);
-        return;
-      }
-
-      const athleteIds = eventAthletes.map((ea) => ea.athlete_id);
-
-      const { data: athletesData } = await supabase
-        .from('athletes')
-        .select('*')
-        .in('id', athleteIds)
-        .order('name');
-
-      if (!athletesData) return;
-
-      const athletesWithData = await Promise.all(
-        athletesData.map(async (athlete) => {
-          const { data: attempts } = await supabase
-            .from('event_attempts')
-            .select('*')
-            .eq('event_id', event.id)
-            .eq('athlete_id', athlete.id)
-            .maybeSingle();
-
-          const { data: videos } = await supabase
-            .from('event_videos')
-            .select('*')
-            .eq('event_id', event.id)
-            .eq('athlete_id', athlete.id);
-
-          return {
-            ...athlete,
-            attempts: attempts || null,
-            videos: videos || [],
-          };
-        })
-      );
-
-      setAthletes(athletesWithData);
+      const data = await fetchEventOverview(event.id);
+      setAthletes(data as AthleteWithAttempts[]);
     } catch (error) {
       console.error('Error loading event data:', error);
     } finally {
