@@ -228,7 +228,10 @@ export function MacroCycles() {
 
   const handleAddExercise = async () => {
     if (!selectedCycle || !selectedExerciseId) return;
-    await addTrackedExercise(selectedCycle.id, selectedExerciseId, trackedExercises.length);
+    const nextPosition = trackedExercises.length > 0
+      ? Math.max(...trackedExercises.map(te => te.position)) + 1
+      : 0;
+    await addTrackedExercise(selectedCycle.id, selectedExerciseId, nextPosition);
     await fetchTrackedExercises(selectedCycle.id);
     setSelectedExerciseId('');
     setShowAddExercise(false);
