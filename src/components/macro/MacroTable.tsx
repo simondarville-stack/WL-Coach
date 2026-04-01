@@ -19,6 +19,7 @@ interface MacroTableProps {
   onMoveExerciseRight: (trackedExId: string) => Promise<void>;
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
+  onExerciseDoubleClick: (trackedExId: string) => void;
 }
 
 export function MacroTable({
@@ -36,6 +37,7 @@ export function MacroTable({
   onMoveExerciseRight,
   onRemoveExercise,
   onPasteTargets,
+  onExerciseDoubleClick,
 }: MacroTableProps) {
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const [copiedWeekId, setCopiedWeekId] = useState<string | null>(null);
@@ -128,15 +130,15 @@ export function MacroTable({
 
   return (
     <div className="overflow-auto flex-1">
-      <table className="border-collapse text-xs" style={{ minWidth: 'max-content' }}>
+      <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead className="sticky top-0 z-20">
           {/* Exercise group header row */}
           <tr className="bg-gray-100 border-b border-gray-300">
             {/* Sticky fixed columns */}
             <th
               colSpan={5}
-              className="sticky left-0 z-30 bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-semibold text-gray-700"
-              style={{ minWidth: '266px' }}
+              className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-semibold text-gray-700"
+              style={{ minWidth: '388px' }}
             >
               Week
             </th>
@@ -146,8 +148,10 @@ export function MacroTable({
               <th
                 key={te.id}
                 colSpan={5}
-                className="px-1 py-1 border-r border-gray-300 text-center"
+                onDoubleClick={() => onExerciseDoubleClick(te.id)}
+                className="px-1 py-1 border-r border-gray-300 text-center cursor-pointer select-none"
                 style={{ minWidth: '220px' }}
+                title="Double-click to open chart"
               >
                 <div className="flex items-center justify-between gap-1">
                   <button
@@ -194,20 +198,20 @@ export function MacroTable({
 
           {/* Sub-column header row */}
           <tr className="bg-gray-50 border-b-2 border-gray-400">
-            <th className={`sticky left-0 z-30 bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '36px' }}>
+            <th className={`sticky left-0 z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '36px' }}>
               Wk
             </th>
-            <th className={`sticky left-[36px] z-30 bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '50px' }}>
+            <th className={`sticky left-[36px] z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '50px' }}>
               Date
             </th>
-            <th className={`sticky left-[86px] z-30 bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '100px' }}>
+            <th className={`sticky left-[86px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '100px' }}>
               Type
             </th>
-            <th className={`sticky left-[186px] z-30 bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ minWidth: '52px' }}>
+            <th className={`sticky left-[186px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ minWidth: '52px' }}>
               ΣReps
             </th>
-            <th className={`sticky left-[238px] z-30 bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '28px' }}>
-              📝
+            <th className={`sticky left-[238px] z-[10] bg-slate-100 px-1 py-0.5 text-left text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '150px' }}>
+              Notes
             </th>
 
             {trackedExercises.map((te, teIdx) =>

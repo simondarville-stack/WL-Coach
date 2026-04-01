@@ -132,17 +132,17 @@ export function MacroPhaseBlock({
         return (
           <tr key={week.id} className={`border-b border-gray-200 ${rowBg} hover:brightness-95 transition-all`}>
             {/* Wk */}
-            <td className={`sticky left-0 z-10 ${infoBg} px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300 min-w-[36px]`}>
+            <td className={`sticky left-0 z-[3] ${infoBg} px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300 min-w-[36px]`}>
               {week.week_number}
             </td>
 
             {/* Date */}
-            <td className={`sticky left-[36px] z-10 ${infoBg} px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300 min-w-[50px]`}>
+            <td className={`sticky left-[36px] z-[3] ${infoBg} px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300 min-w-[50px]`}>
               {formatDateShort(week.week_start)}
             </td>
 
             {/* Type */}
-            <td className={`sticky left-[86px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[100px]`}>
+            <td className={`sticky left-[86px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[100px]`}>
               <div className="flex flex-col gap-0.5">
                 <select
                   value={week.week_type}
@@ -163,7 +163,7 @@ export function MacroPhaseBlock({
             </td>
 
             {/* Σ Reps */}
-            <td className={`sticky left-[186px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-400 min-w-[52px]`}>
+            <td className={`sticky left-[186px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-400 min-w-[52px]`}>
               <input
                 type="text"
                 value={getLocalOrDb(localValues, `${week.id}_total_reps`, week.total_reps_target)}
@@ -174,8 +174,8 @@ export function MacroPhaseBlock({
               />
             </td>
 
-            {/* Notes icon */}
-            <td className={`sticky left-[238px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[28px] text-center`}>
+            {/* Notes — inline visible */}
+            <td className={`sticky left-[238px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[150px] max-w-[150px]`}>
               <MacroWeekNotes weekId={week.id} notes={week.notes} onSave={onUpdateNotes} />
             </td>
 

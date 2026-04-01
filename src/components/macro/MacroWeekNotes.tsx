@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { useState, useRef } from 'react';
 
 interface MacroWeekNotesProps {
   weekId: string;
@@ -8,67 +7,46 @@ interface MacroWeekNotesProps {
 }
 
 export function MacroWeekNotes({ weekId, notes, onSave }: MacroWeekNotesProps) {
-  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(notes);
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    if (open) setDraft(notes);
-  }, [open, notes]);
+  const startEdit = () => {
+    setDraft(notes);
+    setEditing(true);
+    setTimeout(() => taRef.current?.focus(), 0);
+  };
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
-        btnRef.current && !btnRef.current.contains(e.target as Node)
-      ) {
-        handleClose();
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open, draft, notes]);
-
-  const handleClose = async () => {
+  const handleBlur = async () => {
     if (draft !== notes) {
       await onSave(weekId, draft);
     }
-    setOpen(false);
+    setEditing(false);
   };
 
-  const hasNote = notes.trim().length > 0;
+  if (editing) {
+    return (
+      <textarea
+        ref={taRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={handleBlur}
+        rows={3}
+        placeholder="Add note…"
+        className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white leading-snug"
+      />
+    );
+  }
 
   return (
-    <div className="relative inline-block">
-      <button
-        ref={btnRef}
-        onClick={() => setOpen(o => !o)}
-        title={hasNote ? notes : 'Add note'}
-        className={`p-0.5 rounded transition-colors ${
-          hasNote ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
-        }`}
-      >
-        <MessageSquare size={13} className={hasNote ? 'fill-blue-100' : ''} />
-      </button>
-
-      {open && (
-        <div
-          ref={popoverRef}
-          className="absolute left-0 top-6 z-30 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-48"
-        >
-          <textarea
-            autoFocus
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onBlur={handleClose}
-            placeholder="Add note..."
-            rows={3}
-            className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
-          />
-        </div>
-      )}
+    <div
+      onClick={startEdit}
+      title="Click to edit"
+      className={`text-[10px] leading-snug cursor-text rounded px-1 py-0.5 min-h-[18px] whitespace-pre-wrap break-words hover:bg-white/60 transition-colors ${
+        notes.trim() ? 'text-gray-700' : 'text-gray-300 italic'
+      }`}
+    >
+      {notes.trim() || 'Add note…'}
     </div>
   );
 }

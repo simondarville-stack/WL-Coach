@@ -55,6 +55,7 @@ export function MacroCycles() {
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPhaseModal, setShowPhaseModal] = useState(false);
@@ -486,6 +487,7 @@ export function MacroCycles() {
           onMoveExerciseRight={handleMoveExerciseRight}
           onRemoveExercise={handleRemoveExercise}
           onPasteTargets={handlePasteTargets}
+          onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
         />
       ) : (
         <div className="flex-1 overflow-y-auto">
@@ -497,6 +499,7 @@ export function MacroCycles() {
             competitions={competitions}
             actuals={actuals}
             onDragTarget={handleDragTarget}
+            focusedExerciseId={focusedExerciseId}
           />
         </div>
       )}
