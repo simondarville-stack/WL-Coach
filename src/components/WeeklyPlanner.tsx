@@ -88,8 +88,8 @@ export function WeeklyPlanner() {
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [comboRefreshKey, setComboRefreshKey] = useState(0);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
-  const [copiedSourceWeekPlanId, setCopiedSourceWeekPlanId] = useState<string | null>(null);
-  const [copiedSourceLabel, setCopiedSourceLabel] = useState<string>('');
+  const [copiedSourceAthlete, setCopiedSourceAthlete] = useState<import('../lib/database.types').Athlete | null>(null);
+  const [copiedSourceGroup, setCopiedSourceGroup] = useState<import('../lib/database.types').TrainingGroup | null>(null);
   const [showPasteModal, setShowPasteModal] = useState(false);
 
   useEffect(() => {
@@ -545,13 +545,8 @@ export function WeeklyPlanner() {
       return;
     }
     setCopiedWeekStart(selectedDate);
-    setCopiedSourceWeekPlanId(currentWeekPlan.id);
-    const label = planSelection.athlete
-      ? planSelection.athlete.name
-      : planSelection.group
-      ? `${planSelection.group.name} (Group)`
-      : 'Unassigned';
-    setCopiedSourceLabel(label);
+    setCopiedSourceAthlete(planSelection.athlete);
+    setCopiedSourceGroup(planSelection.group);
   };
 
   const handlePasteWeek = () => {
@@ -739,7 +734,7 @@ export function WeeklyPlanner() {
           </>
         )}
 
-        {showPasteModal && copiedWeekStart && copiedSourceWeekPlanId && (
+        {showPasteModal && copiedWeekStart && (
           <CopyWeekModal
             onClose={() => setShowPasteModal(false)}
             onPasteComplete={() => {
@@ -748,8 +743,8 @@ export function WeeklyPlanner() {
             }}
             destinationWeekStart={selectedDate}
             sourceWeekStart={copiedWeekStart}
-            sourceWeekPlanId={copiedSourceWeekPlanId}
-            sourceLabel={copiedSourceLabel}
+            sourceAthlete={copiedSourceAthlete}
+            sourceGroup={copiedSourceGroup}
             destinationAthlete={planSelection.athlete}
             destinationGroup={planSelection.group}
             allAthletes={athletes}
