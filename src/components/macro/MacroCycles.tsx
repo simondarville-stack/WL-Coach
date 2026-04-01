@@ -299,35 +299,37 @@ export function MacroCycles() {
       {/* Top toolbar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0 flex-wrap">
         {/* Cycle selector */}
-        <div className="relative">
-          <button
-            onClick={() => setCycleMenuOpen(o => !o)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            {selectedCycle ? selectedCycle.name : 'Select macrocycle'}
-            <ChevronDown size={14} />
-          </button>
-          {cycleMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[200px]">
-              {macrocycles.map(mc => (
-                <button
-                  key={mc.id}
-                  onClick={() => { setSelectedCycle(mc); setCycleMenuOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${selectedCycle?.id === mc.id ? 'text-blue-600 font-medium' : 'text-gray-700'}`}
-                >
-                  {mc.name}
-                </button>
-              ))}
-              <div className="border-t border-gray-100">
-                <button
-                  onClick={() => { setShowCreateModal(true); setCycleMenuOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-1.5"
-                >
-                  <Plus size={13} /> New macrocycle
-                </button>
-              </div>
+        <div className="flex items-center gap-1">
+          {macrocycles.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setCycleMenuOpen(o => !o)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                {selectedCycle ? selectedCycle.name : 'Select macrocycle'}
+                <ChevronDown size={14} />
+              </button>
+              {cycleMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[200px]">
+                  {macrocycles.map(mc => (
+                    <button
+                      key={mc.id}
+                      onClick={() => { setSelectedCycle(mc); setCycleMenuOpen(false); }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${selectedCycle?.id === mc.id ? 'text-blue-600 font-medium' : 'text-gray-700'}`}
+                    >
+                      {mc.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={14} /> New macrocycle
+          </button>
         </div>
 
         {selectedCycle && (

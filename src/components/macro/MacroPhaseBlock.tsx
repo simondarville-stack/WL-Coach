@@ -18,6 +18,20 @@ const WEEK_TYPE_BG: Record<WeekType, string> = {
   Vacation: 'bg-gray-100',
 };
 
+// Slightly darker shade of the same family — used for the sticky info columns
+// so they're visually distinct from the exercise columns
+const WEEK_TYPE_INFO_BG: Record<WeekType, string> = {
+  High: 'bg-orange-100',
+  Medium: 'bg-gray-100',
+  Low: 'bg-blue-100',
+  Deload: 'bg-green-100',
+  Taper: 'bg-yellow-100',
+  Competition: 'bg-red-100',
+  Transition: 'bg-gray-100',
+  Testing: 'bg-purple-100',
+  Vacation: 'bg-gray-200',
+};
+
 function getCellColor(actual: number, target: number | null): string {
   if (target === null || target === 0) return '';
   if (actual === 0) return 'text-gray-400 italic';
@@ -111,23 +125,24 @@ export function MacroPhaseBlock({
       {/* Week rows */}
       {weeks.map(week => {
         const rowBg = WEEK_TYPE_BG[week.week_type] || 'bg-white';
+        const infoBg = WEEK_TYPE_INFO_BG[week.week_type] || 'bg-gray-100';
         const weekActuals = actuals[week.id] || {};
         const isCopied = copiedWeekId === week.id;
 
         return (
           <tr key={week.id} className={`border-b border-gray-200 ${rowBg} hover:brightness-95 transition-all`}>
             {/* Wk */}
-            <td className={`sticky left-0 z-10 ${rowBg} px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300 min-w-[36px]`}>
+            <td className={`sticky left-0 z-10 ${infoBg} px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300 min-w-[36px]`}>
               {week.week_number}
             </td>
 
             {/* Date */}
-            <td className={`sticky left-[36px] z-10 ${rowBg} px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300 min-w-[50px]`}>
+            <td className={`sticky left-[36px] z-10 ${infoBg} px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300 min-w-[50px]`}>
               {formatDateShort(week.week_start)}
             </td>
 
             {/* Type */}
-            <td className={`sticky left-[86px] z-10 ${rowBg} px-1 py-0.5 border-r border-gray-300 min-w-[100px]`}>
+            <td className={`sticky left-[86px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[100px]`}>
               <div className="flex flex-col gap-0.5">
                 <select
                   value={week.week_type}
@@ -148,7 +163,7 @@ export function MacroPhaseBlock({
             </td>
 
             {/* Σ Reps */}
-            <td className={`sticky left-[186px] z-10 ${rowBg} px-1 py-0.5 border-r border-gray-400 min-w-[52px]`}>
+            <td className={`sticky left-[186px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-400 min-w-[52px]`}>
               <input
                 type="text"
                 value={getLocalOrDb(localValues, `${week.id}_total_reps`, week.total_reps_target)}
@@ -160,7 +175,7 @@ export function MacroPhaseBlock({
             </td>
 
             {/* Notes icon */}
-            <td className={`sticky left-[238px] z-10 ${rowBg} px-1 py-0.5 border-r border-gray-300 min-w-[28px] text-center`}>
+            <td className={`sticky left-[238px] z-10 ${infoBg} px-1 py-0.5 border-r border-gray-300 min-w-[28px] text-center`}>
               <MacroWeekNotes weekId={week.id} notes={week.notes} onSave={onUpdateNotes} />
             </td>
 
