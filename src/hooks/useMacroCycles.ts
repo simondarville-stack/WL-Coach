@@ -13,6 +13,13 @@ export interface MacroActuals {
 // weekId → exerciseId → actuals
 export type MacroActualsMap = Record<string, Record<string, MacroActuals>>;
 
+function errMsg(err: unknown, fallback: string): string {
+  if (!err) return fallback;
+  if (typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message);
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
 export function useMacroCycles() {
   const [macrocycles, setMacrocycles] = useState<MacroCycle[]>([]);
   const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
@@ -33,7 +40,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacrocycles(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load macrocycles');
+      setError(errMsg(err, 'Failed to load macrocycles'));
     }
   };
 
@@ -59,7 +66,7 @@ export function useMacroCycles() {
 
       return macrocycle;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create macrocycle');
+      setError(errMsg(err, 'Failed to create macrocycle'));
       throw err;
     } finally {
       setLoading(false);
@@ -73,7 +80,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacrocycles(prev => prev.filter(m => m.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete macrocycle');
+      setError(errMsg(err, 'Failed to delete macrocycle'));
       throw err;
     } finally {
       setLoading(false);
@@ -91,7 +98,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacroWeeks(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load weeks');
+      setError(errMsg(err, 'Failed to load weeks'));
     } finally {
       setLoading(false);
     }
@@ -103,7 +110,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacroWeeks(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update week');
+      setError(errMsg(err, 'Failed to update week'));
       throw err;
     }
   };
@@ -118,7 +125,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setTrackedExercises(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tracked exercises');
+      setError(errMsg(err, 'Failed to load tracked exercises'));
     }
   };
 
@@ -129,7 +136,7 @@ export function useMacroCycles() {
         .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position });
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add tracked exercise');
+      setError(errMsg(err, 'Failed to add tracked exercise'));
       throw err;
     }
   };
@@ -146,7 +153,7 @@ export function useMacroCycles() {
         .eq('id', id2);
       if (e1 || e2) throw e1 || e2;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to move tracked exercise');
+      setError(errMsg(err, 'Failed to move tracked exercise'));
       throw err;
     }
   };
@@ -156,7 +163,7 @@ export function useMacroCycles() {
       const { error } = await supabase.from('macro_tracked_exercises').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove tracked exercise');
+      setError(errMsg(err, 'Failed to remove tracked exercise'));
       throw err;
     }
   };
@@ -178,7 +185,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setTargets(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load targets');
+      setError(errMsg(err, 'Failed to load targets'));
     }
   };
 
@@ -209,7 +216,7 @@ export function useMacroCycles() {
         return data;
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update target');
+      setError(errMsg(err, 'Failed to update target'));
       throw err;
     }
   };
@@ -343,7 +350,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load phases');
+      setError(errMsg(err, 'Failed to load phases'));
     }
   };
 
@@ -358,7 +365,7 @@ export function useMacroCycles() {
       setPhases(prev => [...prev, data].sort((a, b) => a.position - b.position));
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create phase');
+      setError(errMsg(err, 'Failed to create phase'));
       throw err;
     }
   };
@@ -369,7 +376,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update phase');
+      setError(errMsg(err, 'Failed to update phase'));
       throw err;
     }
   };
@@ -380,7 +387,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(prev => prev.filter(p => p.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete phase');
+      setError(errMsg(err, 'Failed to delete phase'));
       throw err;
     }
   };
@@ -397,7 +404,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setCompetitions(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load competitions');
+      setError(errMsg(err, 'Failed to load competitions'));
     }
   };
 
@@ -412,7 +419,7 @@ export function useMacroCycles() {
       setCompetitions(prev => [...prev, data].sort((a, b) => a.competition_date.localeCompare(b.competition_date)));
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create competition');
+      setError(errMsg(err, 'Failed to create competition'));
       throw err;
     }
   };
@@ -423,7 +430,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setCompetitions(prev => prev.filter(c => c.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete competition');
+      setError(errMsg(err, 'Failed to delete competition'));
       throw err;
     }
   };
