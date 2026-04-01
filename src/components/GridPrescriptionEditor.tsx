@@ -35,7 +35,9 @@ export function GridPrescriptionEditor({
   const [columns, setColumns] = useState<GridColumn[]>([]);
   const [editingCell, setEditingCell] = useState<{ columnId: string; field: 'load' | 'reps' | 'sets' } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [hoveredColId, setHoveredColId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -249,7 +251,23 @@ export function GridPrescriptionEditor({
           </div>
 
           {columns.map(col => (
-            <div key={col.id} className="flex flex-col gap-0.5" onKeyDown={(e) => handleKeyDown(e, col.id)} tabIndex={0}>
+            <div
+              key={col.id}
+              className="flex flex-col gap-0.5 relative"
+              onKeyDown={(e) => handleKeyDown(e, col.id)}
+              onMouseEnter={() => setHoveredColId(col.id)}
+              onMouseLeave={() => setHoveredColId(null)}
+              tabIndex={0}
+            >
+              {hoveredColId === col.id && (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteColumn(col.id); }}
+                  className="absolute -top-4 left-1/2 -translate-x-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] leading-none hover:bg-red-600 z-10"
+                  title="Delete set"
+                >
+                  ×
+                </button>
+              )}
               <div
                 className="w-14 h-8 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
                 onClick={(e) => handleCellClick(e, col.id, 'load', false)}
