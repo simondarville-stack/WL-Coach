@@ -67,7 +67,6 @@ export function Events() {
       setShowModal(false);
       fetchEvents();
     } catch (error) {
-      console.error('Error saving event:', error);
     }
   }
 
@@ -77,7 +76,6 @@ export function Events() {
       await deleteEvent(id);
       fetchEvents();
     } catch (error) {
-      console.error('Error deleting event:', error);
     }
   }
 

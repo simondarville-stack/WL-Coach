@@ -38,6 +38,7 @@ export interface Exercise {
   counts_towards_totals: boolean;
   use_stacked_notation: boolean;
   notes: string | null;
+  link: string | null;
   created_at: string;
   updated_at: string;
 }

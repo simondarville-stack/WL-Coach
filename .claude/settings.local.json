@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.tsx$\")",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npm run:*)",
+      "Bash(npm install:*)",
+      "Bash(wc:*)",
+      "Bash(grep -E \"^-.*\\\\.tsx$\")",
+      "Bash(xargs grep:*)",
+      "Bash(xargs sed:*)",
+      "Bash(git -C \"C:\\\\Users\\\\SimonDarville-GodEne\\\\WL-Coach\" rm src/components/Mediainputmodal.tsx)"
+    ]
+  }
+}

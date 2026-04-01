@@ -29,7 +29,6 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
       const data = await fetchEventOverview(event.id);
       setAthletes(data as AthleteWithAttempts[]);
     } catch (error) {
-      console.error('Error loading event data:', error);
     } finally {
       setLoading(false);
     }

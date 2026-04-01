@@ -97,7 +97,6 @@ export function useExercises() {
       setCategories(result);
       storeSetCategories(result);
     } catch (err) {
-      console.error('Failed to load categories:', err);
     }
   };
 

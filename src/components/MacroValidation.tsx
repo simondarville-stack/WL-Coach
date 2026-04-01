@@ -102,7 +102,6 @@ export function MacroValidation({ athlete, weekPlan, plannedExercises }: MacroVa
       );
       setComboItems(allItems);
     } catch (err) {
-      console.error('Failed to load macro validation data:', err);
     } finally {
       setLoading(false);
     }

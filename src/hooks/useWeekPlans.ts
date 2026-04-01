@@ -181,7 +181,6 @@ export function useWeekPlans() {
       }));
       setWeekComboItems(comboItemsForCategories);
     } catch (err) {
-      console.error('Failed to load week combos:', err);
     }
   };
 
@@ -216,7 +215,6 @@ export function useWeekPlans() {
       setMacroWeekTarget(macroWeek?.total_reps_target || null);
       setMacroWeekTypeText(macroWeek?.week_type_text || null);
     } catch (err) {
-      console.error('Failed to load macro week target:', err);
       setMacroWeekTarget(null);
       setMacroWeekTypeText(null);
     }
@@ -231,7 +229,6 @@ export function useWeekPlans() {
       if (error) throw error;
       setAthletePRs(data || []);
     } catch (err) {
-      console.error('Failed to load athlete PRs:', err);
       setAthletePRs([]);
     }
   };

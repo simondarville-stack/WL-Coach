@@ -74,7 +74,6 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
       setCombos(combosWithDetails);
       setComboExerciseIds(linkedIds);
     } catch (err) {
-      console.error('Failed to load week data:', err);
     } finally {
       setLoading(false);
     }

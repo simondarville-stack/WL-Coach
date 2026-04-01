@@ -40,7 +40,6 @@ export function useEvents() {
 
       setEvents(eventsWithAthletes);
     } catch (error) {
-      console.error('Error loading events:', error);
     } finally {
       setLoading(false);
     }
@@ -65,7 +64,6 @@ export function useEvents() {
         if (athletesError) throw athletesError;
       }
     } catch (error) {
-      console.error('Error creating event:', error);
       throw error;
     }
   };
@@ -91,7 +89,6 @@ export function useEvents() {
         if (insertError) throw insertError;
       }
     } catch (error) {
-      console.error('Error updating event:', error);
       throw error;
     }
   };
@@ -101,7 +98,6 @@ export function useEvents() {
       const { error } = await supabase.from('events').delete().eq('id', id);
       if (error) throw error;
     } catch (error) {
-      console.error('Error deleting event:', error);
       throw error;
     }
   };

@@ -95,7 +95,6 @@ export function AthleteLog() {
       await hookSaveSession(currentSession, selectedAthlete.id, loggedExercises);
       await fetchWeekData(selectedAthlete.id, weekStart, selectedDayIndex);
     } catch (error) {
-      console.error('Error saving session:', error);
     }
   }
 
@@ -199,7 +198,6 @@ export function AthleteLog() {
         await checkForPRUpdate(pe.exercise.id, pe.exercise.name, performedRaw);
       }
     } catch (error) {
-      console.error('Error saving exercise:', error);
     }
   }
 
@@ -249,7 +247,6 @@ export function AthleteLog() {
       );
       setPrUpdatePrompt(null);
     } catch (error) {
-      console.error('Error updating PR:', error);
     }
   }
 

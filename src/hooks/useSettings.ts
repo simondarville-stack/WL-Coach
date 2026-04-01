@@ -33,7 +33,6 @@ export function useSettings() {
         setSettings(data);
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
     } finally {
       setLoading(false);
     }
@@ -58,7 +57,6 @@ export function useSettings() {
       if (error) throw error;
       setSettings(prev => prev ? { ...prev, ...updates } : prev);
     } catch (error) {
-      console.error('Error updating settings:', error);
       throw error;
     } finally {
       setSaving(false);

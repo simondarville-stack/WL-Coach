@@ -64,7 +64,6 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
 
       setVideos(videosData);
     } catch (error) {
-      console.error('Error loading attempts:', error);
     } finally {
       setLoading(false);
     }
@@ -78,7 +77,6 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       onSave();
       onClose();
     } catch (error) {
-      console.error('Error saving attempts:', error);
       alert('Failed to save attempts. Please try again.');
     }
   }
@@ -99,7 +97,6 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setShowVideoForm(false);
       loadData();
     } catch (error) {
-      console.error('Error uploading video:', error);
       alert('Failed to upload video. Please try again.');
     } finally {
       setUploading(false);
@@ -115,7 +112,6 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setShowVideoForm(false);
       loadData();
     } catch (error) {
-      console.error('Error adding video:', error);
     }
   }
 
@@ -134,7 +130,6 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       await deleteEventVideo(videoId, videoUrl);
       loadData();
     } catch (error) {
-      console.error('Error deleting video:', error);
     }
   }
 

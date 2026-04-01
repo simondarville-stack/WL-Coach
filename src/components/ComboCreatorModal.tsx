@@ -100,7 +100,6 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
       });
       onClose();
     } catch (err) {
-      console.error('Failed to create combo:', err);
     } finally {
       setIsSaving(false);
     }

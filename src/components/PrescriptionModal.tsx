@@ -82,7 +82,6 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
 
       await fetchSettings();
     } catch (err) {
-      console.error('Failed to load prescription context:', err);
     } finally {
       setIsLoading(false);
     }
@@ -91,8 +90,8 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
   useEffect(() => {
     if (settings) {
       setGridSettings({
-        loadIncrement: (settings as any).grid_load_increment || 5,
-        clickIncrement: (settings as any).grid_click_increment || 1,
+        loadIncrement: settings.grid_load_increment || 5,
+        clickIncrement: settings.grid_click_increment || 1,
       });
     }
   }, [settings]);
@@ -104,7 +103,6 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
       await onSave();
       onClose();
     } catch (err) {
-      console.error('Failed to save prescription:', err);
     } finally {
       setIsSaving(false);
     }
@@ -163,7 +161,6 @@ export function PrescriptionModal({ plannedEx, onClose, onSave }: PrescriptionMo
                     await onSave();
                     onClose();
                   } catch (err) {
-                    console.error('Failed to save notes:', err);
                   } finally {
                     setIsSaving(false);
                   }

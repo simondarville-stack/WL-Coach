@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWeekPlans } from '../hooks/useWeekPlans';
 import { useAthleteStore } from '../store/athleteStore';
 import { useExercises } from '../hooks/useExercises';
@@ -139,7 +139,7 @@ export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
       setWeekDescription(currentWeekPlan.week_description || '');
 
       setDayDisplayOrder(
-        (currentWeekPlan as any).day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
+        currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
       );
     }
   }, [currentWeekPlan]);
@@ -290,7 +290,7 @@ export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
       }
       setEditingDayLabels(initialLabels);
       setDayDisplayOrder(
-        (currentWeekPlan as any).day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
+        currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
       );
     }
     setShowSettings(false);
@@ -326,7 +326,7 @@ export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
         day_labels: editingDayLabels,
         active_days: activeDays,
         day_display_order: dayDisplayOrder,
-      } as any);
+      });
       setShowSettings(false);
     } catch {
       // error already set in hook
@@ -528,8 +528,8 @@ export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
     return categoryTotals;
   };
 
-  const weeklySummary = calculateWeeklySummary();
-  const categorySummaries = calculateCategorySummaries();
+  const weeklySummary = useMemo(calculateWeeklySummary, [plannedExercises, weekComboItems, weekComboSetLines]);
+  const categorySummaries = useMemo(calculateCategorySummaries, [plannedExercises, weekComboItems, weekComboSetLines]);
 
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);

@@ -80,7 +80,6 @@ export function CopyWeekModal({
       );
       setDestinationHasData(hasData);
     } catch (err) {
-      console.error('Failed to check destination data:', err);
     }
   };
 
@@ -104,7 +103,6 @@ export function CopyWeekModal({
       onPasteComplete();
       onClose();
     } catch (err: any) {
-      console.error('Failed to paste week:', err);
       const errorMessage = err?.message || 'Unknown error';
       alert(`Failed to paste week: ${errorMessage}`);
     } finally {

@@ -179,7 +179,6 @@ export function useTrainingLog() {
         }
       }
     } catch (error) {
-      console.error('Error saving session:', error);
       throw error;
     } finally {
       setSaving(false);

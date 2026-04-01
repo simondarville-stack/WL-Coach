@@ -258,7 +258,6 @@ export function useMacroCycles() {
 
       return target || null;
     } catch (err) {
-      console.error('Failed to load macro target for exercise:', err);
       return null;
     }
   };
@@ -312,7 +311,7 @@ export function useMacroCycles() {
     (targetsData || []).forEach((target: any) => {
       const trackedEx = (trackedExercisesData || []).find((te: any) => te.id === target.tracked_exercise_id);
       if (trackedEx) {
-        targetsMap[(trackedEx as any).exercise_id] = { ...target, exercise_id: (trackedEx as any).exercise_id };
+        targetsMap[trackedEx.exercise_id] = { ...target, exercise_id: trackedEx.exercise_id };
       }
     });
 

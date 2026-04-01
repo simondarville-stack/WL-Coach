@@ -140,9 +140,9 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
               {exercise.notes && (
                 <p className="mt-2 text-sm text-gray-600 italic">{exercise.notes}</p>
               )}
-              {(exercise as any).link && (
+              {exercise.link && (
                 <a
-                  href={(exercise as any).link}
+                  href={exercise.link}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-2 inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"

@@ -88,7 +88,6 @@ export function DayColumn({
       setCombos(combosWithDetails);
       setComboExerciseIds(linkedExerciseIds);
     } catch (err) {
-      console.error('Error loading combos:', err);
     }
   }
 
@@ -126,7 +125,6 @@ export function DayColumn({
       await refreshCombos();
       await onRefresh();
     } catch (err) {
-      console.error('Failed to create combo:', err);
     } finally {
       setIsLoading(false);
     }
@@ -142,7 +140,6 @@ export function DayColumn({
       await refreshCombos();
       await onRefresh();
     } catch (err) {
-      console.error('Failed to delete combo:', err);
     } finally {
       setIsLoading(false);
     }
@@ -209,7 +206,6 @@ export function DayColumn({
       const sentinelExercise = await fetchExerciseByCode(code);
 
       if (!sentinelExercise) {
-        console.error(`${code} sentinel exercise not found. Run the migration first.`);
         alert(`${code} exercise type not found. Please run the database migration.`);
         return;
       }
@@ -222,7 +218,6 @@ export function DayColumn({
 
       setTimeout(() => { searchInputRef.current?.focus(); }, 100);
     } catch (err) {
-      console.error(`Failed to add ${type}:`, err);
     } finally {
       setIsLoading(false);
     }
@@ -242,7 +237,6 @@ export function DayColumn({
 
       setTimeout(() => { searchInputRef.current?.focus(); }, 100);
     } catch (err) {
-      console.error('Failed to add exercise:', err);
     } finally {
       setIsLoading(false);
     }
@@ -254,7 +248,6 @@ export function DayColumn({
       const freeTextExercise = await fetchExerciseByCode('TEXT');
 
       if (!freeTextExercise) {
-        console.error('Free Text exercise not found');
         return;
       }
 
@@ -269,7 +262,6 @@ export function DayColumn({
 
       setTimeout(() => { searchInputRef.current?.focus(); }, 100);
     } catch (err) {
-      console.error('Failed to add free text:', err);
     } finally {
       setIsLoading(false);
     }

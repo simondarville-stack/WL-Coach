@@ -108,7 +108,6 @@ export function ComboEditorModal({ combo, onClose, onSave }: ComboEditorModalPro
       await onSave();
       onClose();
     } catch (err) {
-      console.error('Error saving combo:', err);
       setError(err instanceof Error ? err.message : 'Failed to save combo');
     } finally {
       setIsSaving(false);

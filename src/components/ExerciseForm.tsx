@@ -48,7 +48,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
       setDefaultUnit(editingExercise.default_unit);
       setColor(editingExercise.color || '#3B82F6');
       setNotes(editingExercise.notes || '');
-      setLink((editingExercise as any).link || '');
+      setLink(editingExercise.link || '');
       setCountsTowardsTotals(editingExercise.counts_towards_totals);
       setUseStackedNotation(editingExercise.use_stacked_notation || false);
     } else {
@@ -86,7 +86,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
         use_stacked_notation: useStackedNotation,
         notes: notes.trim() || null,
         link: link.trim() || null,
-      } as any);
+      });
       if (!editingExercise) {
         resetForm();
       }

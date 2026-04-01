@@ -13,6 +13,7 @@ import { AthleteSelector } from './components/AthleteSelector';
 import { Events } from './components/Events';
 import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Plus, Settings as SettingsIcon, X } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
 import { useAthletes } from './hooks/useAthletes';
@@ -113,6 +114,7 @@ function App() {
             </div>
           )}
 
+          <ErrorBoundary>
           {currentPage === 'coach_dashboard' ? (
             <CoachDashboard key="coach_dashboard" onNavigateToPlanner={handleNavigateToPlanner} />
           ) : currentPage === 'athletes' ? (
@@ -165,6 +167,7 @@ function App() {
           ) : (
             <WeeklyPlanner key={`planner-${plannerWeekStart ?? 'default'}`} initialWeekStart={plannerWeekStart} />
           )}
+          </ErrorBoundary>
 
           <ExerciseFormModal
             isOpen={showFormModal}
