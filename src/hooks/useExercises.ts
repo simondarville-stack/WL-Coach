@@ -64,6 +64,17 @@ export function useExercises() {
     }
   };
 
+  const bulkCreateExercises = async (rows: Partial<Exercise>[]): Promise<number> => {
+    try {
+      const { data, error } = await supabase.from('exercises').insert(rows).select();
+      if (error) throw error;
+      return data?.length ?? 0;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import exercises');
+      throw err;
+    }
+  };
+
   const updateExercise = async (id: string, exerciseData: Partial<Exercise>) => {
     try {
       const { error } = await supabase.from('exercises').update(exerciseData).eq('id', id);
@@ -187,6 +198,7 @@ export function useExercises() {
     fetchExercises,
     fetchExercisesByName,
     createExercise,
+    bulkCreateExercises,
     updateExercise,
     deleteExercise,
     fetchCategories,

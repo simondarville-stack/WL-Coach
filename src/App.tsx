@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { ExerciseFormModal } from './components/ExerciseFormModal';
+import { ExerciseBulkImportModal } from './components/ExerciseBulkImportModal';
 import { ExerciseList } from './components/ExerciseList';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
 import { Athletes } from './components/Athletes';
@@ -15,7 +16,7 @@ import { Events } from './components/Events';
 import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Plus, Settings as SettingsIcon, X } from 'lucide-react';
+import { Plus, Settings as SettingsIcon, X, Upload } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
 import { useAthletes } from './hooks/useAthletes';
 import { useAthleteStore } from './store/athleteStore';
@@ -52,6 +53,7 @@ function App() {
   const [editingExercise, setEditingExercise] = useState<import('./lib/database.types').Exercise | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
 
   useEffect(() => {
     fetchExercises();
@@ -137,6 +139,13 @@ function App() {
                       <SettingsIcon size={20} />
                       Manage Categories
                     </button>
+                    <button
+                      onClick={() => setShowBulkImportModal(true)}
+                      className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                    >
+                      <Upload size={20} />
+                      Import from Excel
+                    </button>
                   </div>
                   <div className="bg-white rounded-lg shadow-md p-6">
                     {loading ? (
@@ -163,6 +172,13 @@ function App() {
             editingExercise={editingExercise}
             onSave={handleSave}
           />
+
+          {showBulkImportModal && (
+            <ExerciseBulkImportModal
+              onClose={() => setShowBulkImportModal(false)}
+              onComplete={async () => { await fetchExercises(); setShowBulkImportModal(false); }}
+            />
+          )}
 
           {showSettingsModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
