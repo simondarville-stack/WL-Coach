@@ -5,7 +5,7 @@ import { ExerciseBulkImportModal } from './components/ExerciseBulkImportModal';
 import { ExerciseList } from './components/ExerciseList';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
 import { Athletes } from './components/Athletes';
-import { MacroCycles } from './components/MacroCycles';
+import { MacroCycles } from './components/macro/MacroCycles';
 import { Settings } from './components/Settings';
 import { AthleteProgramme } from './components/AthleteProgramme';
 import { AthleteLog } from './components/AthleteLog';

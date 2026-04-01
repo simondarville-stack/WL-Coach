@@ -1,6 +1,7 @@
 export type Category = string;
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'other';
-export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition';
+export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition' | 'Transition' | 'Testing';
+export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition' | 'custom';
 
 export interface Athlete {
   id: string;
@@ -130,8 +131,34 @@ export interface MacroWeek {
   week_type_text: string;
   notes: string;
   total_reps_target: number | null;
+  phase_id: string | null;
+  volume_multiplier: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface MacroPhase {
+  id: string;
+  macrocycle_id: string;
+  name: string;
+  phase_type: PhaseType;
+  start_week_number: number;
+  end_week_number: number;
+  color: string;
+  notes: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroCompetition {
+  id: string;
+  macrocycle_id: string;
+  competition_name: string;
+  competition_date: string;
+  is_primary: boolean;
+  event_id: string | null;
+  created_at: string;
 }
 
 export interface MacroTrackedExercise {
@@ -166,6 +193,7 @@ export interface GeneralSettings {
   raw_average_days: number;
   grid_load_increment: number;
   grid_click_increment: number;
+  default_tracked_exercise_ids: string[];
   created_at: string;
   updated_at: string;
 }

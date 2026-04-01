@@ -1,12 +1,25 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget } from '../lib/database.types';
+import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
+
+export interface MacroActuals {
+  totalReps: number;
+  avgWeight: number;
+  hiWeight: number;
+  repsHi: number;
+  setsHi: number;
+}
+
+// weekId → exerciseId → actuals
+export type MacroActualsMap = Record<string, Record<string, MacroActuals>>;
 
 export function useMacroCycles() {
   const [macrocycles, setMacrocycles] = useState<MacroCycle[]>([]);
   const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
   const [trackedExercises, setTrackedExercises] = useState<MacroTrackedExerciseWithExercise[]>([]);
   const [targets, setTargets] = useState<MacroTarget[]>([]);
+  const [phases, setPhases] = useState<MacroPhase[]>([]);
+  const [competitions, setCompetitions] = useState<MacroCompetition[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -318,6 +331,242 @@ export function useMacroCycles() {
     return { macroTargets: targetsMap, trackedExercises: exercises };
   };
 
+  // --- Phase operations ---
+
+  const fetchPhases = async (macrocycleId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('macro_phases')
+        .select('*')
+        .eq('macrocycle_id', macrocycleId)
+        .order('position');
+      if (error) throw error;
+      setPhases(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load phases');
+    }
+  };
+
+  const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>): Promise<MacroPhase> => {
+    try {
+      const { data, error } = await supabase
+        .from('macro_phases')
+        .insert(phase)
+        .select()
+        .single();
+      if (error) throw error;
+      setPhases(prev => [...prev, data].sort((a, b) => a.position - b.position));
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create phase');
+      throw err;
+    }
+  };
+
+  const updatePhase = async (id: string, updates: Partial<MacroPhase>) => {
+    try {
+      const { error } = await supabase.from('macro_phases').update(updates).eq('id', id);
+      if (error) throw error;
+      setPhases(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update phase');
+      throw err;
+    }
+  };
+
+  const deletePhase = async (id: string) => {
+    try {
+      const { error } = await supabase.from('macro_phases').delete().eq('id', id);
+      if (error) throw error;
+      setPhases(prev => prev.filter(p => p.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete phase');
+      throw err;
+    }
+  };
+
+  // --- Competition operations ---
+
+  const fetchCompetitions = async (macrocycleId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('macro_competitions')
+        .select('*')
+        .eq('macrocycle_id', macrocycleId)
+        .order('competition_date');
+      if (error) throw error;
+      setCompetitions(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load competitions');
+    }
+  };
+
+  const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at'>): Promise<MacroCompetition> => {
+    try {
+      const { data, error } = await supabase
+        .from('macro_competitions')
+        .insert(comp)
+        .select()
+        .single();
+      if (error) throw error;
+      setCompetitions(prev => [...prev, data].sort((a, b) => a.competition_date.localeCompare(b.competition_date)));
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create competition');
+      throw err;
+    }
+  };
+
+  const deleteCompetition = async (id: string) => {
+    try {
+      const { error } = await supabase.from('macro_competitions').delete().eq('id', id);
+      if (error) throw error;
+      setCompetitions(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete competition');
+      throw err;
+    }
+  };
+
+  // --- Actuals computation across full macro ---
+
+  const fetchMacroActuals = async (
+    athleteId: string,
+    macroWeeksData: MacroWeek[],
+    trackedExercisesData: MacroTrackedExerciseWithExercise[],
+  ): Promise<MacroActualsMap> => {
+    if (macroWeeksData.length === 0 || trackedExercisesData.length === 0) return {};
+
+    const startDate = macroWeeksData[0].week_start;
+    const lastWeek = macroWeeksData[macroWeeksData.length - 1];
+    // end date = last week start + 6 days
+    const endDate = new Date(lastWeek.week_start);
+    endDate.setDate(endDate.getDate() + 6);
+    const endDateISO = endDate.toISOString().split('T')[0];
+
+    try {
+      // Fetch week_plans for this athlete in the macro date range
+      const { data: weekPlans } = await supabase
+        .from('week_plans')
+        .select('id, week_start')
+        .eq('athlete_id', athleteId)
+        .eq('is_group_plan', false)
+        .gte('week_start', startDate)
+        .lte('week_start', endDateISO);
+
+      if (!weekPlans || weekPlans.length === 0) return {};
+
+      const weekPlanIds = weekPlans.map(wp => wp.id);
+
+      // Fetch planned_exercises for all these week_plans
+      const { data: plannedExercises } = await supabase
+        .from('planned_exercises')
+        .select('weekplan_id, exercise_id, unit, summary_total_reps, summary_avg_load, summary_highest_load, prescription_raw')
+        .in('weekplan_id', weekPlanIds);
+
+      // Fetch combos + items + set_lines
+      const { data: combos } = await supabase
+        .from('planned_combos')
+        .select('id, weekplan_id, unit')
+        .in('weekplan_id', weekPlanIds);
+
+      const comboIds = (combos || []).map(c => c.id);
+
+      const [{ data: comboItems }, { data: comboSetLines }] = await Promise.all([
+        comboIds.length > 0
+          ? supabase.from('planned_combo_items').select('planned_combo_id, exercise_id, position').in('planned_combo_id', comboIds)
+          : Promise.resolve({ data: [] }),
+        comboIds.length > 0
+          ? supabase.from('planned_combo_set_lines').select('planned_combo_id, sets, reps_tuple_text, load_value').in('planned_combo_id', comboIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      // Build week_start → week_plan_id map
+      const weekStartToWpId = new Map<string, string>();
+      weekPlans.forEach(wp => weekStartToWpId.set(wp.week_start, wp.id));
+
+      const result: MacroActualsMap = {};
+      const trackedExIds = trackedExercisesData.map(te => te.exercise_id);
+
+      for (const macroWeek of macroWeeksData) {
+        const wpId = weekStartToWpId.get(macroWeek.week_start);
+        if (!wpId) continue;
+
+        const weekExercises = (plannedExercises || []).filter(pe => pe.weekplan_id === wpId);
+        const weekCombos = (combos || []).filter(c => c.weekplan_id === wpId);
+        const weekComboIds = new Set(weekCombos.map(c => c.id));
+        const weekComboItems = (comboItems || []).filter(ci => weekComboIds.has(ci.planned_combo_id));
+        const weekComboSetLines = (comboSetLines || []).filter(csl => weekComboIds.has(csl.planned_combo_id));
+
+        result[macroWeek.id] = {};
+
+        for (const exerciseId of trackedExIds) {
+          let totalReps = 0;
+          let totalWeightedReps = 0;
+          let hiWeight = 0;
+          const allSets: { weight: number; reps: number; sets: number }[] = [];
+
+          // Direct planned exercises
+          weekExercises.filter(pe => pe.exercise_id === exerciseId).forEach(pe => {
+            totalReps += pe.summary_total_reps || 0;
+            if (pe.unit === 'absolute_kg' && pe.summary_avg_load) {
+              totalWeightedReps += pe.summary_avg_load * (pe.summary_total_reps || 0);
+            }
+            if (pe.prescription_raw && pe.unit === 'absolute_kg') {
+              pe.prescription_raw.split(',').forEach((seg: string) => {
+                const m = seg.trim().match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+)(?:\s*[x×]\s*(\d+))?/i);
+                if (m) {
+                  const w = parseFloat(m[1]);
+                  const r = parseInt(m[2], 10);
+                  const s = m[3] ? parseInt(m[3], 10) : 1;
+                  allSets.push({ weight: w, reps: r, sets: s });
+                  if (w > hiWeight) hiWeight = w;
+                }
+              });
+            }
+          });
+
+          // Combo exercises
+          weekComboItems.filter(ci => ci.exercise_id === exerciseId).forEach(ci => {
+            const combo = weekCombos.find(c => c.id === ci.planned_combo_id);
+            if (!combo || combo.unit !== 'absolute_kg') return;
+            weekComboSetLines.filter(csl => csl.planned_combo_id === ci.planned_combo_id).forEach(line => {
+              const repsTuple = line.reps_tuple_text.split('+').map((r: string) => parseInt(r.trim(), 10));
+              const repsForEx = repsTuple[ci.position - 1] || 0;
+              const weight = line.load_value || 0;
+              const sets = line.sets || 1;
+              const lineReps = repsForEx * sets;
+              totalReps += lineReps;
+              if (weight > 0) {
+                totalWeightedReps += weight * lineReps;
+                allSets.push({ weight, reps: repsForEx, sets });
+                if (weight > hiWeight) hiWeight = weight;
+              }
+            });
+          });
+
+          let repsHi = 0;
+          let setsHi = 0;
+          if (hiWeight > 0) {
+            allSets.forEach(s => {
+              if (s.weight === hiWeight) {
+                if (s.reps > repsHi) repsHi = s.reps;
+                setsHi += s.sets;
+              }
+            });
+          }
+
+          const avgWeight = totalReps > 0 ? Math.round((totalWeightedReps / totalReps) * 10) / 10 : 0;
+          result[macroWeek.id][exerciseId] = { totalReps, avgWeight, hiWeight, repsHi, setsHi };
+        }
+      }
+
+      return result;
+    } catch {
+      return {};
+    }
+  };
+
   return {
     macrocycles,
     setMacrocycles,
@@ -327,6 +576,10 @@ export function useMacroCycles() {
     setTrackedExercises,
     targets,
     setTargets,
+    phases,
+    setPhases,
+    competitions,
+    setCompetitions,
     loading,
     error,
     setError,
@@ -344,5 +597,13 @@ export function useMacroCycles() {
     upsertTarget,
     fetchMacroTargetForExercise,
     fetchMacroValidationData,
+    fetchPhases,
+    createPhase,
+    updatePhase,
+    deletePhase,
+    fetchCompetitions,
+    createCompetition,
+    deleteCompetition,
+    fetchMacroActuals,
   };
 }
