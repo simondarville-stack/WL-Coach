@@ -138,7 +138,7 @@ export function MacroTable({
             <th
               colSpan={5}
               className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-semibold text-gray-700"
-              style={{ minWidth: '388px' }}
+              style={{ width: 388, minWidth: 388 }}
             >
               Week
             </th>
@@ -198,19 +198,19 @@ export function MacroTable({
 
           {/* Sub-column header row */}
           <tr className="bg-gray-50 border-b-2 border-gray-400">
-            <th className={`sticky left-0 z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '36px' }}>
+            <th className={`sticky left-0 z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 36, minWidth: 36 }}>
               Wk
             </th>
-            <th className={`sticky left-[36px] z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '50px' }}>
+            <th className={`sticky left-[36px] z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 50, minWidth: 50 }}>
               Date
             </th>
-            <th className={`sticky left-[86px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '100px' }}>
+            <th className={`sticky left-[86px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 100, minWidth: 100 }}>
               Type
             </th>
-            <th className={`sticky left-[186px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ minWidth: '52px' }}>
+            <th className={`sticky left-[186px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ width: 52, minWidth: 52 }}>
               ΣReps
             </th>
-            <th className={`sticky left-[238px] z-[10] bg-slate-100 px-1 py-0.5 text-left text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ minWidth: '150px' }}>
+            <th className={`sticky left-[238px] z-[10] bg-slate-100 px-1 py-0.5 text-left text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 150, minWidth: 150 }}>
               Notes
             </th>
 
