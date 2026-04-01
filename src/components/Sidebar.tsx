@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Dumbbell,
   BarChart3,
@@ -15,20 +16,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-type Page =
-  | 'athletes'
-  | 'library'
-  | 'planner'
-  | 'macrocycles'
-  | 'athlete_programme'
-  | 'athlete_log'
-  | 'general_settings'
-  | 'coach_dashboard'
-  | 'events'
-  | 'training_groups';
-
 interface NavItem {
-  key: Page;
+  path: string;
   label: string;
   icon: LucideIcon;
 }
@@ -42,36 +31,32 @@ const sections: NavSection[] = [
   {
     label: 'Planning',
     items: [
-      { key: 'coach_dashboard', label: 'Dashboard', icon: BarChart3 },
-      { key: 'planner', label: 'Weekly planner', icon: Calendar },
-      { key: 'macrocycles', label: 'Macro cycles', icon: TrendingUp },
-      { key: 'events', label: 'Events', icon: CalendarDays },
+      { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+      { path: '/planner', label: 'Weekly planner', icon: Calendar },
+      { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
+      { path: '/events', label: 'Events', icon: CalendarDays },
     ],
   },
   {
     label: 'Athletes',
     items: [
-      { key: 'athletes', label: 'Roster', icon: Users },
-      { key: 'training_groups', label: 'Training groups', icon: UsersRound },
-      { key: 'athlete_programme', label: 'Programme', icon: Eye },
-      { key: 'athlete_log', label: 'Training log', icon: ClipboardList },
+      { path: '/athletes', label: 'Roster', icon: Users },
+      { path: '/training-groups', label: 'Training groups', icon: UsersRound },
+      { path: '/athlete-programme', label: 'Programme', icon: Eye },
+      { path: '/athlete-log', label: 'Training log', icon: ClipboardList },
     ],
   },
   {
     label: 'System',
     items: [
-      { key: 'library', label: 'Exercise library', icon: BookOpen },
-      { key: 'general_settings', label: 'Settings', icon: Settings },
+      { path: '/library', label: 'Exercise library', icon: BookOpen },
+      { path: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ];
 
-interface SidebarProps {
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
-}
-
-export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export function Sidebar() {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('winwota_sidebar_collapsed') === 'true';
   });
@@ -93,7 +78,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
         className={`flex items-center gap-2 border-b border-gray-200 cursor-pointer flex-shrink-0 ${
           collapsed ? 'justify-center px-0 py-3' : 'px-3 py-3'
         }`}
-        onClick={() => onNavigate('coach_dashboard')}
+        onClick={() => navigate('/dashboard')}
         title="WinWota 2.0"
       >
         <Dumbbell className="text-blue-600 flex-shrink-0" size={20} />
@@ -126,35 +111,37 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             {/* Nav items */}
             {section.items.map((item) => {
               const Icon = item.icon;
-              const isActive = currentPage === item.key;
-
               return (
-                <button
-                  key={item.key}
-                  onClick={() => onNavigate(item.key)}
+                <NavLink
+                  key={item.path}
+                  to={item.path}
                   title={collapsed ? item.label : undefined}
-                  className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 ${
-                    collapsed
-                      ? 'justify-center py-2 px-0'
-                      : 'py-1.5 px-3'
-                  } ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  }`}
+                  className={({ isActive }) =>
+                    `w-full flex items-center gap-2 text-[13px] transition-colors duration-100 ${
+                      collapsed
+                        ? 'justify-center py-2 px-0'
+                        : 'py-1.5 px-3'
+                    } ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    }`
+                  }
                 >
-                  <Icon
-                    size={16}
-                    className={`flex-shrink-0 ${
-                      isActive ? 'text-blue-700' : ''
-                    }`}
-                  />
-                  {!collapsed && (
-                    <span className="whitespace-nowrap overflow-hidden">
-                      {item.label}
-                    </span>
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        size={16}
+                        className={`flex-shrink-0 ${isActive ? 'text-blue-700' : ''}`}
+                      />
+                      {!collapsed && (
+                        <span className="whitespace-nowrap overflow-hidden">
+                          {item.label}
+                        </span>
+                      )}
+                    </>
                   )}
-                </button>
+                </NavLink>
               );
             })}
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { ExerciseFormModal } from './components/ExerciseFormModal';
 import { ExerciseList } from './components/ExerciseList';
 import { WeeklyPlanner } from './components/WeeklyPlanner';
@@ -20,32 +21,34 @@ import { useAthletes } from './hooks/useAthletes';
 import { useAthleteStore } from './store/athleteStore';
 import type { Athlete } from './lib/database.types';
 
-type Page = 'athletes' | 'library' | 'planner' | 'macrocycles' | 'athlete_programme' | 'athlete_log' | 'general_settings' | 'coach_dashboard' | 'events' | 'training_groups';
-
-const pageTitles: Record<Page, string> = {
-  coach_dashboard: 'Dashboard',
-  planner: 'Weekly planner',
-  macrocycles: 'Macro cycles',
-  events: 'Events',
-  athletes: 'Roster',
-  training_groups: 'Training groups',
-  athlete_programme: 'Programme',
-  athlete_log: 'Training log',
-  library: 'Exercise library',
-  general_settings: 'Settings',
+const pageTitles: Record<string, string> = {
+  '/dashboard': 'Dashboard',
+  '/planner': 'Weekly planner',
+  '/macrocycles': 'Macro cycles',
+  '/events': 'Events',
+  '/athletes': 'Roster',
+  '/training-groups': 'Training groups',
+  '/athlete-programme': 'Programme',
+  '/athlete-log': 'Training log',
+  '/library': 'Exercise library',
+  '/settings': 'Settings',
 };
+
+function PageTitle() {
+  const location = useLocation();
+  return <h1 className="font-medium text-gray-900">{pageTitles[location.pathname] ?? ''}</h1>;
+}
 
 function App() {
   const {
-    exercises, loading, error, setError,
+    exercises, loading,
     fetchExercises, createExercise, updateExercise, deleteExercise,
   } = useExercises();
 
   const { fetchAllAthletes } = useAthletes();
   const { setSelectedAthlete } = useAthleteStore();
+  const navigate = useNavigate();
 
-  const [currentPage, setCurrentPage] = useState<Page>('coach_dashboard');
-  const [plannerWeekStart, setPlannerWeekStart] = useState<string | null>(null);
   const [editingExercise, setEditingExercise] = useState<import('./lib/database.types').Exercise | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -86,8 +89,7 @@ function App() {
 
   const handleNavigateToPlanner = (athlete: Athlete, weekStart: string) => {
     setSelectedAthlete(athlete);
-    setPlannerWeekStart(weekStart);
-    setCurrentPage('planner');
+    navigate('/planner', { state: { weekStart } });
   };
 
   const handleCancelEdit = () => {
@@ -97,76 +99,62 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
-          <h1 className="font-medium text-gray-900">
-            {pageTitles[currentPage]}
-          </h1>
+          <PageTitle />
           <AthleteSelector />
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          {error && (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-              {error}
-            </div>
-          )}
-
           <ErrorBoundary>
-          {currentPage === 'coach_dashboard' ? (
-            <CoachDashboard key="coach_dashboard" onNavigateToPlanner={handleNavigateToPlanner} />
-          ) : currentPage === 'athletes' ? (
-            <Athletes key="athletes" />
-          ) : currentPage === 'library' ? (
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <div className="mb-6 flex items-center gap-3">
-                <button
-                  onClick={() => { setEditingExercise(null); setShowFormModal(true); }}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium shadow-md"
-                >
-                  <Plus size={20} />
-                  Add New Exercise
-                </button>
-                <button
-                  onClick={() => setShowSettingsModal(true)}
-                  className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 font-medium shadow-md"
-                >
-                  <SettingsIcon size={20} />
-                  Manage Categories
-                </button>
-              </div>
-
-              <div className="bg-white rounded-lg shadow-md p-6">
-                {loading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="text-gray-500">Loading exercises...</div>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} />} />
+              <Route path="/planner" element={<WeeklyPlanner />} />
+              <Route path="/macrocycles" element={<MacroCycles />} />
+              <Route path="/events" element={<Events />} />
+              <Route path="/athletes" element={<Athletes />} />
+              <Route path="/training-groups" element={<TrainingGroups />} />
+              <Route path="/athlete-programme" element={<AthleteProgramme />} />
+              <Route path="/athlete-log" element={<AthleteLog />} />
+              <Route path="/settings" element={<GeneralSettings />} />
+              <Route path="/library" element={
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                  <div className="mb-6 flex items-center gap-3">
+                    <button
+                      onClick={() => { setEditingExercise(null); setShowFormModal(true); }}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                    >
+                      <Plus size={20} />
+                      Add New Exercise
+                    </button>
+                    <button
+                      onClick={() => setShowSettingsModal(true)}
+                      className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                    >
+                      <SettingsIcon size={20} />
+                      Manage Categories
+                    </button>
                   </div>
-                ) : (
-                  <ExerciseList
-                    exercises={exercises}
-                    onEdit={handleEdit}
-                    onDelete={handleDelete}
-                  />
-                )}
-              </div>
-            </div>
-          ) : currentPage === 'athlete_programme' ? (
-            <AthleteProgramme key="athlete_programme" />
-          ) : currentPage === 'athlete_log' ? (
-            <AthleteLog key="athlete_log" />
-          ) : currentPage === 'general_settings' ? (
-            <GeneralSettings key="general_settings" />
-          ) : currentPage === 'macrocycles' ? (
-            <MacroCycles key="macrocycles" />
-          ) : currentPage === 'events' ? (
-            <Events key="events" />
-          ) : currentPage === 'training_groups' ? (
-            <TrainingGroups key="training_groups" />
-          ) : (
-            <WeeklyPlanner key={`planner-${plannerWeekStart ?? 'default'}`} initialWeekStart={plannerWeekStart} />
-          )}
+                  <div className="bg-white rounded-lg shadow-md p-6">
+                    {loading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="text-gray-500">Loading exercises...</div>
+                      </div>
+                    ) : (
+                      <ExerciseList
+                        exercises={exercises}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                      />
+                    )}
+                  </div>
+                </div>
+              } />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
           </ErrorBoundary>
 
           <ExerciseFormModal

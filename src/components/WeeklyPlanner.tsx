@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useWeekPlans } from '../hooks/useWeekPlans';
 import { useAthleteStore } from '../store/athleteStore';
 import { useExercises } from '../hooks/useExercises';
@@ -18,11 +19,9 @@ import { DayConfigModal } from './DayConfigModal';
 import { WeeklyPlannerHeader } from './WeeklyPlannerHeader';
 import { WeeklySummaryPanel } from './WeeklySummaryPanel';
 
-interface WeeklyPlannerProps {
-  initialWeekStart?: string | null;
-}
-
-export function WeeklyPlanner({ initialWeekStart }: WeeklyPlannerProps) {
+export function WeeklyPlanner() {
+  const location = useLocation();
+  const initialWeekStart = (location.state as { weekStart?: string } | null)?.weekStart ?? null;
   const { selectedAthlete, setSelectedAthlete } = useAthleteStore();
   const [selectedDate, setSelectedDate] = useState(() => {
     if (initialWeekStart) return initialWeekStart;
