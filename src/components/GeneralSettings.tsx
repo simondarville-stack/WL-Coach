@@ -7,6 +7,7 @@ export function GeneralSettings() {
   const [rawAverageDays, setRawAverageDays] = useState(7);
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
+  const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
 
   useEffect(() => {
     fetchSettings();
@@ -17,6 +18,7 @@ export function GeneralSettings() {
       setRawAverageDays(settings.raw_average_days);
       setGridLoadIncrement(settings.grid_load_increment);
       setGridClickIncrement(settings.grid_click_increment);
+      setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
     }
   }, [settings]);
 
@@ -42,6 +44,15 @@ export function GeneralSettings() {
     if (!settings) return;
     try {
       await updateSettings(settings.id, { grid_load_increment: gridLoadIncrement, grid_click_increment: gridClickIncrement });
+    } catch {
+      // error logged in hook
+    }
+  }
+
+  async function updateBodyweightMaDays() {
+    if (!settings) return;
+    try {
+      await updateSettings(settings.id, { bodyweight_ma_days: bodyweightMaDays });
     } catch {
       // error logged in hook
     }
@@ -171,6 +182,39 @@ export function GeneralSettings() {
               Save Grid Settings
             </button>
           )}
+        </div>
+      </div>
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Bodyweight Tracking</h2>
+          <p className="text-sm text-gray-600 mb-4">Configure the moving average window for bodyweight trend calculations</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Moving average window (days)</label>
+          <p className="text-sm text-gray-600 mb-3">
+            Used for the dashboard bodyweight card and trend calculation
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="3"
+              max="30"
+              value={bodyweightMaDays}
+              onChange={(e) => setBodyweightMaDays(Math.max(3, Math.min(30, parseInt(e.target.value) || 7)))}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-600">days</span>
+            {bodyweightMaDays !== (settings?.bodyweight_ma_days ?? 7) && (
+              <button
+                onClick={updateBodyweightMaDays}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

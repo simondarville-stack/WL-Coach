@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Check, CreditCard as Edit3, Save, X, FileText } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import type {
   Athlete,
   PlannedExerciseWithExercise,
@@ -58,6 +59,7 @@ export function AthleteLog() {
     loggedExercise: TrainingLogExerciseWithExercise | null;
   } | null>(null);
   const [showSessionNotesModal, setShowSessionNotesModal] = useState(false);
+  const [todayBodyweight, setTodayBodyweight] = useState('');
   const [prUpdatePrompt, setPrUpdatePrompt] = useState<{
     exerciseId: string;
     exerciseName: string;
@@ -87,6 +89,35 @@ export function AthleteLog() {
       }
     }
   }, [weekPlan]);
+
+  const selectedDateISO = (() => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + selectedDayIndex - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  useEffect(() => {
+    if (!selectedAthlete?.track_bodyweight) { setTodayBodyweight(''); return; }
+    supabase
+      .from('bodyweight_entries')
+      .select('weight_kg')
+      .eq('athlete_id', selectedAthlete.id)
+      .eq('date', selectedDateISO)
+      .maybeSingle()
+      .then(({ data }) => {
+        setTodayBodyweight(data ? String(data.weight_kg) : '');
+      });
+  }, [selectedAthlete, selectedDateISO]);
+
+  const saveBodyweight = useCallback(async () => {
+    if (!selectedAthlete || !todayBodyweight) return;
+    const val = parseFloat(todayBodyweight);
+    if (isNaN(val)) return;
+    await supabase.from('bodyweight_entries').upsert(
+      { athlete_id: selectedAthlete.id, date: selectedDateISO, weight_kg: val },
+      { onConflict: 'athlete_id,date' }
+    );
+  }, [selectedAthlete, selectedDateISO, todayBodyweight]);
 
   async function saveSession(sessionToSave?: TrainingLogSession) {
     const currentSession = sessionToSave || session;
@@ -377,6 +408,22 @@ export function AthleteLog() {
 
       {selectedAthlete && (
         <>
+          {selectedAthlete.track_bodyweight && (
+            <div className="flex items-center gap-2 px-4 py-1.5 bg-gray-50 border border-gray-200 rounded-lg mb-3 text-sm">
+              <span className="text-xs text-gray-500 font-medium">Bodyweight</span>
+              <input
+                type="number"
+                step={0.1}
+                value={todayBodyweight}
+                onChange={e => setTodayBodyweight(e.target.value)}
+                onBlur={saveBodyweight}
+                placeholder="—"
+                className="w-20 px-2 py-0.5 text-xs border border-gray-200 rounded text-center focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <span className="text-xs text-gray-400">kg</span>
+            </div>
+          )}
+
           {settings?.raw_enabled && (
             <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
               <RAWScoring

@@ -13,8 +13,17 @@ export interface Athlete {
   notes: string | null;
   photo_url: string | null;
   is_active: boolean;
+  track_bodyweight: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface BodyweightEntry {
+  id: string;
+  athlete_id: string;
+  date: string;
+  weight_kg: number;
+  created_at: string;
 }
 
 export interface AthletePR {
@@ -194,6 +203,7 @@ export interface GeneralSettings {
   grid_load_increment: number;
   grid_click_increment: number;
   default_tracked_exercise_ids: string[];
+  bodyweight_ma_days: number;
   created_at: string;
   updated_at: string;
 }
@@ -357,6 +367,11 @@ export interface Database {
         Row: Athlete;
         Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      bodyweight_entries: {
+        Row: BodyweightEntry;
+        Insert: Omit<BodyweightEntry, 'id' | 'created_at'>;
+        Update: Partial<Omit<BodyweightEntry, 'id' | 'created_at'>>;
       };
       athlete_prs: {
         Row: AthletePR;

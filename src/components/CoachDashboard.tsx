@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, TrendingUp, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
-import type { Athlete, Event } from '../lib/database.types';
+import { AlertCircle, TrendingUp, TrendingDown, Minus, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
+import type { Athlete, Event, BodyweightEntry } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { calculateAge, getRawColor, getRawBgColor, getRelativeTime, needsAttentionCheck } from '../lib/calculations';
 import { EventOverviewModal } from './EventOverviewModal';
+import { BodyweightPopup } from './BodyweightPopup';
+import { supabase } from '../lib/supabase';
 import {
   useCoachDashboard,
   type AthleteStatus,
@@ -34,6 +36,8 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
 
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [showEventOverview, setShowEventOverview] = useState(false);
+  const [bodyweightPopupAthlete, setBodyweightPopupAthlete] = useState<Athlete | null>(null);
+  const [bwEntriesMap, setBwEntriesMap] = useState<Record<string, BodyweightEntry[]>>({});
   const [expandedAthleteId, setExpandedAthleteId] = useState<string | null>(null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('name');
@@ -44,6 +48,31 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
     const interval = setInterval(loadDashboardData, 60000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!athleteStatuses.length) return;
+    const maDays = settings?.bodyweight_ma_days ?? 7;
+    const trackedAthletes = athleteStatuses
+      .filter(s => s.athlete.track_bodyweight)
+      .map(s => s.athlete.id);
+    if (!trackedAthletes.length) return;
+
+    Promise.all(
+      trackedAthletes.map(async (athleteId) => {
+        const { data } = await supabase
+          .from('bodyweight_entries')
+          .select('*')
+          .eq('athlete_id', athleteId)
+          .order('date', { ascending: false })
+          .limit(maDays * 2);
+        return { athleteId, entries: (data || []).reverse() as BodyweightEntry[] };
+      })
+    ).then(results => {
+      const map: Record<string, BodyweightEntry[]> = {};
+      results.forEach(r => { map[r.athleteId] = r.entries; });
+      setBwEntriesMap(map);
+    });
+  }, [athleteStatuses, settings]);
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -163,6 +192,9 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
                     alignments={athleteAlignments}
                     needsAttention={needsAttentionCheck(status.lastTrainingDate)}
                     onNavigateToPlanner={onNavigateToPlanner}
+                    bwEntries={bwEntriesMap[status.athlete.id] || []}
+                    maDays={settings?.bodyweight_ma_days ?? 7}
+                    onOpenBodyweightPopup={setBodyweightPopupAthlete}
                   />
                 );
               })}
@@ -223,6 +255,14 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
           }}
         />
       )}
+
+      {bodyweightPopupAthlete && (
+        <BodyweightPopup
+          athlete={bodyweightPopupAthlete}
+          maDays={settings?.bodyweight_ma_days ?? 7}
+          onClose={() => setBodyweightPopupAthlete(null)}
+        />
+      )}
     </div>
   );
 }
@@ -235,6 +275,9 @@ interface AthleteRowProps {
   alignments: MacroAlignment[];
   needsAttention: boolean;
   onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
+  bwEntries: BodyweightEntry[];
+  maDays: number;
+  onOpenBodyweightPopup: (athlete: Athlete) => void;
 }
 
 function AthleteRow({
@@ -245,7 +288,20 @@ function AthleteRow({
   alignments,
   needsAttention,
   onNavigateToPlanner,
+  bwEntries,
+  maDays,
+  onOpenBodyweightPopup,
 }: AthleteRowProps) {
+  const currentMA = bwEntries.length
+    ? Math.round(bwEntries.slice(-maDays).reduce((s, e) => s + Number(e.weight_kg), 0) / Math.min(bwEntries.length, maDays) * 10) / 10
+    : null;
+  const prevEntries = bwEntries.slice(-maDays * 2, -maDays);
+  const prevMA = prevEntries.length
+    ? Math.round(prevEntries.reduce((s, e) => s + Number(e.weight_kg), 0) / prevEntries.length * 10) / 10
+    : null;
+  const bwTrend = currentMA !== null && prevMA !== null ? currentMA - prevMA : null;
+  const BwTrendIcon = bwTrend === null ? Minus : bwTrend > 0.3 ? TrendingUp : bwTrend < -0.3 ? TrendingDown : Minus;
+  const bwTrendColor = bwTrend === null ? 'text-gray-400' : bwTrend > 0.3 ? 'text-red-500' : bwTrend < -0.3 ? 'text-green-500' : 'text-gray-400';
   const colCount = 8 + (rawEnabled ? 2 : 0);
 
   return (
@@ -366,9 +422,27 @@ function AthleteRow({
                 </div>
                 <div>
                   <span className="text-gray-500">Bodyweight:</span>{' '}
-                  <span className="font-medium text-gray-900">
-                    {status.athlete.bodyweight ? `${status.athlete.bodyweight}kg` : '-'}
-                  </span>
+                  {status.athlete.track_bodyweight ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onOpenBodyweightPopup(status.athlete); }}
+                      className="inline-flex items-center gap-1 hover:text-blue-600 transition-colors"
+                      title="Open bodyweight history"
+                    >
+                      {currentMA !== null ? (
+                        <>
+                          <span className="font-medium text-gray-900">{currentMA.toFixed(1)} kg</span>
+                          <BwTrendIcon size={12} className={bwTrendColor} />
+                          <span className="text-[10px] text-gray-400">{maDays}-day avg</span>
+                        </>
+                      ) : (
+                        <span className="font-medium text-gray-400">No data</span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="font-medium text-gray-900">
+                      {status.athlete.bodyweight ? `${status.athlete.bodyweight}kg` : '-'}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-gray-500">Weight Class:</span>{' '}

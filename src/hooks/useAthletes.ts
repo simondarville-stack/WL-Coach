@@ -65,10 +65,11 @@ export function useAthletes() {
     }
   };
 
-  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>) => {
+  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>): Promise<Athlete> => {
     try {
-      const { error } = await supabase.from('athletes').insert([athleteData]);
+      const { data, error } = await supabase.from('athletes').insert([athleteData]).select().single();
       if (error) throw error;
+      return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save athlete');
       throw err;

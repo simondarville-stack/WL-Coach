@@ -5,6 +5,7 @@ import { AthletePRs } from './AthletePRs';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
+import { supabase } from '../lib/supabase';
 
 export function Athletes() {
   const { athletes, loading, error, setError, fetchAthletes, createAthlete, updateAthlete, deleteAthlete } = useAthletes();
@@ -21,6 +22,7 @@ export function Athletes() {
   const [notes, setNotes] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [trackBodyweight, setTrackBodyweight] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export function Athletes() {
       setNotes(editingAthlete.notes || '');
       setPhotoUrl(editingAthlete.photo_url || '');
       setIsActive(editingAthlete.is_active);
+      setTrackBodyweight(editingAthlete.track_bodyweight ?? true);
     } else {
       resetForm();
     }
@@ -53,6 +56,7 @@ export function Athletes() {
     setNotes('');
     setPhotoUrl('');
     setIsActive(true);
+    setTrackBodyweight(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,13 +74,21 @@ export function Athletes() {
         notes: notes.trim() || null,
         photo_url: photoUrl.trim() || null,
         is_active: isActive,
+        track_bodyweight: trackBodyweight,
       };
 
       if (editingAthlete) {
         await updateAthlete(editingAthlete.id, athleteData);
         setEditingAthlete(null);
       } else {
-        await createAthlete(athleteData);
+        const newAthlete = await createAthlete(athleteData);
+        if (newAthlete && bodyweight) {
+          await supabase.from('bodyweight_entries').upsert({
+            athlete_id: newAthlete.id,
+            date: new Date().toISOString().split('T')[0],
+            weight_kg: parseFloat(bodyweight),
+          }, { onConflict: 'athlete_id,date' });
+        }
       }
 
       resetForm();
@@ -273,6 +285,19 @@ export function Athletes() {
               />
               <label htmlFor="isActive" className="text-sm font-medium text-gray-700">
                 Active athlete
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="trackBodyweight"
+                checked={trackBodyweight}
+                onChange={(e) => setTrackBodyweight(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="trackBodyweight" className="text-sm font-medium text-gray-700">
+                Track bodyweight
               </label>
             </div>
 
