@@ -167,6 +167,85 @@ function parseFreeTextSegment(segment: string): FreeTextSetLine | null {
 }
 
 /**
+ * Parsed set line for combo prescriptions ("80×2+1×3")
+ */
+export interface ParsedComboSetLine {
+  sets: number;
+  repsText: string;   // "2+1" or "1+1+1"
+  totalReps: number;  // sum of all parts
+  load: number;
+}
+
+/**
+ * Parses a combo prescription string where reps are tuples.
+ * Format: "80×2+1, 90×2+1×3" (load × tuple_reps × sets)
+ * Sets defaults to 1 if omitted.
+ */
+export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
+  if (!raw || raw.trim() === '') return [];
+
+  const segments = raw.split(',').map(s => s.trim()).filter(s => s);
+  const result: ParsedComboSetLine[] = [];
+
+  for (const segment of segments) {
+    const normalized = segment
+      .replace(/×/g, 'x')
+      .replace(/\s+/g, '')
+      .replace(/%/g, '');
+
+    // Split on 'x' but preserve the '+' inside reps
+    // Format: load x repsText [x sets]
+    const firstX = normalized.indexOf('x');
+    if (firstX === -1) continue;
+
+    const loadStr = normalized.slice(0, firstX);
+    const rest = normalized.slice(firstX + 1);
+
+    const load = parseFloat(loadStr);
+    if (isNaN(load)) continue;
+
+    // Check if there's a trailing 'x sets' (last segment after 'x' that is just a number, no '+')
+    const lastX = rest.lastIndexOf('x');
+    let repsText: string;
+    let sets = 1;
+
+    if (lastX !== -1) {
+      const possibleSets = rest.slice(lastX + 1);
+      const possibleReps = rest.slice(0, lastX);
+      // Only treat as sets if it's a plain integer (no '+')
+      if (/^\d+$/.test(possibleSets) && possibleReps.length > 0) {
+        sets = parseInt(possibleSets, 10);
+        repsText = possibleReps;
+      } else {
+        repsText = rest;
+      }
+    } else {
+      repsText = rest;
+    }
+
+    if (!repsText) continue;
+    const repsParts = repsText.split('+').map(p => parseInt(p, 10) || 0);
+    const totalReps = repsParts.reduce((s, n) => s + n, 0);
+    if (totalReps <= 0 || sets <= 0) continue;
+
+    result.push({ sets, repsText, totalReps, load });
+  }
+
+  return result;
+}
+
+/**
+ * Formats combo set lines back into prescription string
+ */
+export function formatComboPrescription(lines: ParsedComboSetLine[], unit: string | null): string {
+  if (!lines.length) return '';
+  const sym = unit === 'percentage' ? '%' : '';
+  return lines
+    .map(l => l.sets === 1 ? `${l.load}${sym}×${l.repsText}` : `${l.load}${sym}×${l.repsText}×${l.sets}`)
+    .join(', ');
+}
+
+/**
  * Formats free text set lines back into a prescription string
  * Display rule: If sets = 1, omit the sets part
  */

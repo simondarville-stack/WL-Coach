@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Athlete, WeekPlan, PlannedExerciseWithExercise, PlannedComboWithDetails, DefaultUnit } from '../lib/database.types';
+import type { Athlete, WeekPlan, PlannedExerciseWithExercise, ComboMemberEntry } from '../lib/database.types';
 import { formatDateToDDMMYYYY, formatDateRange, getMondayOfWeek } from '../lib/dateUtils';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
 import { Calendar } from 'lucide-react';
@@ -8,19 +8,6 @@ import { useWeekPlans } from '../hooks/useWeekPlans';
 import { useCombos } from '../hooks/useCombos';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-function formatUnit(unit: DefaultUnit): string {
-  if (unit === 'absolute_kg') return 'kg';
-  if (unit === 'percentage') return '%';
-  if (unit === 'rpe') return 'RPE';
-  return '';
-}
-
-function getComboDisplayName(combo: PlannedComboWithDetails): string {
-  if (combo.combo_name) return combo.combo_name;
-  if (combo.template?.name) return combo.template.name;
-  return combo.items.map(i => i.exercise.name).join(' + ');
-}
 
 export function AthleteProgramme() {
   const { athletes, fetchActiveAthletes } = useAthletes();
@@ -31,8 +18,7 @@ export function AthleteProgramme() {
   const [weekStart, setWeekStart] = useState<string>('');
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<PlannedExerciseWithExercise[]>([]);
-  const [combos, setCombos] = useState<PlannedComboWithDetails[]>([]);
-  const [comboExerciseIds, setComboExerciseIds] = useState<Set<string>>(new Set());
+  const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,17 +48,15 @@ export function AthleteProgramme() {
       setWeekPlan(weekPlanData);
 
       if (weekPlanData) {
-        const [exercisesData, { combos: combosWithDetails, comboExerciseIds: linkedIds }] = await Promise.all([
+        const [exercisesData, { comboMembers: members }] = await Promise.all([
           fetchPlannedExercisesFlat(weekPlanData.id),
           fetchProgrammeData(weekPlanData.id),
         ]);
         setPlannedExercises(exercisesData as PlannedExerciseWithExercise[]);
-        setCombos(combosWithDetails);
-        setComboExerciseIds(linkedIds);
+        setComboMembers(members);
       } else {
         setPlannedExercises([]);
-        setCombos([]);
-        setComboExerciseIds(new Set());
+        setComboMembers({});
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load programme');
@@ -88,11 +72,9 @@ export function AthleteProgramme() {
   };
 
   const getExercisesForDay = (dayIndex: number): PlannedExerciseWithExercise[] => {
-    return plannedExercises.filter(pe => pe.day_index === dayIndex && !comboExerciseIds.has(pe.id));
-  };
-
-  const getCombosForDay = (dayIndex: number): PlannedComboWithDetails[] => {
-    return combos.filter(c => c.day_index === dayIndex);
+    return plannedExercises
+      .filter(pe => pe.day_index === dayIndex)
+      .sort((a, b) => a.position - b.position);
   };
 
   const getDayLabel = (dayIndex: number): string => {
@@ -195,18 +177,12 @@ export function AthleteProgramme() {
             <div className="divide-y divide-gray-200">
               {[0, 1, 2, 3, 4, 5, 6].map(dayIndex => {
                 const dayExercises = getExercisesForDay(dayIndex);
-                const dayCombos = getCombosForDay(dayIndex);
                 const isActive = isDayActive(dayIndex);
-                const hasContent = dayExercises.length > 0 || dayCombos.length > 0;
+                const hasContent = dayExercises.length > 0;
 
                 if (!isActive && !hasContent) {
                   return null;
                 }
-
-                const allItems = [
-                  ...dayExercises.map(ex => ({ type: 'exercise' as const, data: ex, position: ex.position })),
-                  ...dayCombos.map(c => ({ type: 'combo' as const, data: c, position: c.position })),
-                ].sort((a, b) => a.position - b.position);
 
                 return (
                   <div key={dayIndex} className="p-6">
@@ -218,84 +194,49 @@ export function AthleteProgramme() {
                       <p className="text-sm text-gray-500 italic">Rest day</p>
                     ) : (
                       <div className="space-y-4">
-                        {allItems.map((item) => {
-                          if (item.type === 'exercise') {
-                            const pe = item.data;
-                            return (
-                              <div key={pe.id} className="pl-4 border-l-4" style={{ borderColor: pe.exercise.color }}>
-                                <div className="font-medium text-gray-900">
-                                  {pe.exercise.name}
-                                </div>
-                                <div className="text-gray-700 mt-2">
-                                  {pe.prescription_raw ? (
-                                    <PrescriptionDisplay
-                                      prescription={pe.prescription_raw}
-                                      unit={pe.unit}
-                                      useStackedNotation={pe.exercise.use_stacked_notation}
-                                    />
-                                  ) : pe.summary_total_sets && pe.summary_total_reps ? (
-                                    `${pe.summary_total_sets} sets x ${pe.summary_total_reps} reps`
-                                  ) : (
-                                    'No prescription'
-                                  )}
-                                </div>
-                                {pe.notes && (
-                                  <div className="text-sm text-gray-600 mt-1 italic">
-                                    {pe.notes}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          } else {
-                            const combo = item.data;
-                            const unitSym = formatUnit(combo.unit);
-                            const hasSetLines = combo.set_lines.length > 0 && combo.set_lines.some((l: any) => l.load_value > 0);
+                        {dayExercises.map((pe) => {
+                          const isCombo = pe.is_combo ?? false;
+                          const members = isCombo
+                            ? (comboMembers[pe.id] ?? []).sort((a, b) => a.position - b.position)
+                            : [];
+                          const displayName = isCombo
+                            ? (pe.combo_notation || members.map(m => m.exercise.name).join(' + '))
+                            : pe.exercise.name;
+                          const borderColor = isCombo
+                            ? (pe.combo_color || '#3b82f6')
+                            : (pe.exercise.color || '#94a3b8');
 
-                            return (
-                              <div key={combo.id} className="pl-4 border-l-4 border-blue-500">
-                                <div className="font-medium text-gray-900">
-                                  {getComboDisplayName(combo)}
-                                </div>
-                                <div className="text-xs text-gray-500 mb-2">
-                                  {combo.items.map((ci: any, idx: number) => (
-                                    <span key={ci.id}>
+                          return (
+                            <div key={pe.id} className="pl-4 border-l-4" style={{ borderColor }}>
+                              <div className="font-medium text-gray-900">{displayName}</div>
+                              {isCombo && members.length > 0 && (
+                                <div className="text-xs text-gray-500 mb-1">
+                                  {members.map((m, idx) => (
+                                    <span key={m.exerciseId}>
                                       {idx > 0 && ' + '}
-                                      {ci.exercise.name}
+                                      {m.exercise.name}
                                     </span>
                                   ))}
                                 </div>
-                                {hasSetLines ? (
-                                  <div className="text-gray-700 mt-2">
-                                    {combo.set_lines.map((line: any, idx: number) => (
-                                      <span key={line.id}>
-                                        <span className="inline-flex flex-col items-center border rounded px-3 py-2 bg-gray-50">
-                                          <span className="text-lg font-semibold">
-                                            {line.load_value}
-                                            <span className="text-sm ml-1">{unitSym}</span>
-                                          </span>
-                                          <span className="w-full border-t border-gray-400 my-1"></span>
-                                          <span className="text-sm">({line.reps_tuple_text})</span>
-                                        </span>
-                                        {line.sets > 1 && (
-                                          <span className="text-lg font-medium ml-1">x{line.sets}</span>
-                                        )}
-                                        {idx < combo.set_lines.length - 1 && (
-                                          <span className="mx-2 text-gray-400">,</span>
-                                        )}
-                                      </span>
-                                    ))}
-                                  </div>
+                              )}
+                              <div className="text-gray-700 mt-1">
+                                {pe.prescription_raw ? (
+                                  <PrescriptionDisplay
+                                    prescription={pe.prescription_raw}
+                                    unit={pe.unit}
+                                    useStackedNotation={!isCombo && pe.exercise.use_stacked_notation}
+                                  />
+                                ) : pe.summary_total_sets && pe.summary_total_reps ? (
+                                  `${pe.summary_total_sets} sets × ${pe.summary_total_reps} reps`
                                 ) : (
-                                  <div className="text-sm text-gray-400 italic">No prescription</div>
-                                )}
-                                {combo.notes && (
-                                  <div className="text-sm text-gray-600 mt-2 italic">
-                                    {combo.notes}
-                                  </div>
+                                  <span className="text-gray-400 italic text-sm">No prescription</span>
                                 )}
                               </div>
-                            );
-                          }
+                              {pe.notes && (
+                                <div className="text-sm text-gray-600 mt-1 italic">{pe.notes}</div>
+                              )}
+                            </div>
+                          );
                         })}
                       </div>
                     )}

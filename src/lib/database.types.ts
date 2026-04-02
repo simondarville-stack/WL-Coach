@@ -1,5 +1,5 @@
 export type Category = string;
-export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'other';
+export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
 export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition' | 'Transition' | 'Testing';
 export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition' | 'custom';
 
@@ -101,6 +101,10 @@ export interface PlannedExercise {
   summary_total_reps: number | null;
   summary_highest_load: number | null;
   summary_avg_load: number | null;
+  variation_note: string | null;
+  is_combo: boolean;
+  combo_notation: string | null;
+  combo_color: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -114,12 +118,27 @@ export interface PlannedSetLine {
   planned_exercise_id: string;
   sets: number;
   reps: number;
+  reps_text: string | null;
   load_value: number;
   position: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export interface PlannedExerciseComboMember {
+  id: string;
+  planned_exercise_id: string;
+  exercise_id: string;
+  position: number;
+  created_at: string;
+}
+
+export interface PlannedExerciseComboMemberWithExercise extends PlannedExerciseComboMember {
+  exercise: Exercise;
+}
+
+export type ComboMemberEntry = { exerciseId: string; exercise: Exercise; position: number };
 
 export interface MacroCycle {
   id: string;
@@ -204,6 +223,8 @@ export interface GeneralSettings {
   grid_click_increment: number;
   default_tracked_exercise_ids: string[];
   bodyweight_ma_days: number;
+  visible_summary_metrics: string[];
+  show_stress_metric: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -397,6 +418,11 @@ export interface Database {
         Row: PlannedSetLine;
         Insert: Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      planned_exercise_combo_members: {
+        Row: PlannedExerciseComboMember;
+        Insert: Omit<PlannedExerciseComboMember, 'id' | 'created_at'>;
+        Update: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>>;
       };
       macrocycles: {
         Row: MacroCycle;
