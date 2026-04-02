@@ -35,7 +35,7 @@ export function GridPrescriptionEditor({
   const [columns, setColumns] = useState<GridColumn[]>([]);
   const [editingCell, setEditingCell] = useState<{ columnId: string; field: 'load' | 'reps' | 'sets' } | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [hoveredColId, setHoveredColId] = useState<string | null>(null);
+  const [shiftHeld, setShiftHeld] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +239,8 @@ export function GridPrescriptionEditor({
         ref={containerRef}
         className="overflow-x-auto"
         onContextMenu={handleContextMenu}
+        onMouseMove={(e) => { if (shiftHeld !== e.shiftKey) setShiftHeld(e.shiftKey); }}
+        onMouseLeave={() => setShiftHeld(false)}
       >
         <div className="inline-flex items-stretch gap-2.5 min-w-full">
           <div className="flex flex-col gap-0.5 w-12 flex-shrink-0">
@@ -253,23 +255,13 @@ export function GridPrescriptionEditor({
           {columns.map(col => (
             <div
               key={col.id}
-              className="flex flex-col gap-0.5 relative"
+              className="flex flex-col gap-0.5"
               onKeyDown={(e) => handleKeyDown(e, col.id)}
-              onMouseEnter={() => setHoveredColId(col.id)}
-              onMouseLeave={() => setHoveredColId(null)}
+              onMouseDown={(e) => { if (e.shiftKey) { e.preventDefault(); handleDeleteColumn(col.id); } }}
               tabIndex={0}
             >
-              {hoveredColId === col.id && (
-                <button
-                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteColumn(col.id); }}
-                  className="absolute -top-4 left-1/2 -translate-x-1/2 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] leading-none hover:bg-red-600 z-10"
-                  title="Delete set"
-                >
-                  ×
-                </button>
-              )}
               <div
-                className="w-14 h-8 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
+                className={`w-14 h-8 border flex items-center justify-center cursor-pointer transition-colors ${shiftHeld ? 'border-red-400 bg-red-50 hover:bg-red-100' : 'border-gray-300 bg-white hover:bg-blue-50'}`}
                 onClick={(e) => handleCellClick(e, col.id, 'load', false)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -297,7 +289,7 @@ export function GridPrescriptionEditor({
 
               <div className="w-14 h-8 flex gap-0.5">
                 <div
-                  className="flex-1 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
+                  className={`flex-1 border flex items-center justify-center cursor-pointer transition-colors ${shiftHeld ? 'border-red-400 bg-red-50 hover:bg-red-100' : 'border-gray-300 bg-white hover:bg-blue-50'}`}
                   onClick={(e) => handleCellClick(e, col.id, 'reps', false)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -323,7 +315,7 @@ export function GridPrescriptionEditor({
                   )}
                 </div>
                 <div
-                  className="flex-1 border border-gray-300 bg-white flex items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors"
+                  className={`flex-1 border flex items-center justify-center cursor-pointer transition-colors ${shiftHeld ? 'border-red-400 bg-red-50 hover:bg-red-100' : 'border-gray-300 bg-white hover:bg-blue-50'}`}
                   onClick={(e) => handleCellClick(e, col.id, 'sets', false)}
                   onContextMenu={(e) => {
                     e.preventDefault();
