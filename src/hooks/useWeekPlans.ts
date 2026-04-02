@@ -5,12 +5,12 @@ import type {
   PlannedExercise,
   Exercise,
   AthletePR,
-  PlannedComboSetLine,
   PlannedSetLine,
   DefaultUnit,
+  ComboMemberEntry,
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
-import { parsePrescription, parseFreeTextPrescription } from '../lib/prescriptionParser';
+import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
 
 export interface PlanSelection {
   type: 'individual' | 'group';
@@ -21,9 +21,7 @@ export interface PlanSelection {
 export function useWeekPlans() {
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
-  const [weekComboSetLines, setWeekComboSetLines] = useState<(PlannedComboSetLine & { unit: string; day_index: number })[]>([]);
-  const [weekComboItems, setWeekComboItems] = useState<{ combo_id: string; exercise: Exercise; position: number }[]>([]);
-  const [comboExerciseIds, setComboExerciseIds] = useState<Set<string>>(new Set());
+  const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
   const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
   const [macroWeekTypeText, setMacroWeekTypeText] = useState<string | null>(null);
@@ -130,59 +128,35 @@ export function useWeekPlans() {
       });
 
       setPlannedExercises(grouped);
+
+      // Load combo members for any is_combo exercises
+      const comboExs = (data || []).filter(e => e.is_combo);
+      if (comboExs.length > 0) {
+        const { data: members } = await supabase
+          .from('planned_exercise_combo_members')
+          .select('*, exercise:exercise_id(*)')
+          .in('planned_exercise_id', comboExs.map(e => e.id))
+          .order('position');
+        const membersMap: Record<string, ComboMemberEntry[]> = {};
+        (members || []).forEach((m: any) => {
+          if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
+          membersMap[m.planned_exercise_id].push({
+            exerciseId: m.exercise_id,
+            exercise: m.exercise as Exercise,
+            position: m.position,
+          });
+        });
+        setComboMembers(membersMap);
+      } else {
+        setComboMembers({});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load planned exercises');
     }
   };
 
-  const fetchWeekCombos = async (weekPlanId: string) => {
-    try {
-      const { data: combos } = await supabase
-        .from('planned_combos')
-        .select('id, unit, day_index')
-        .eq('weekplan_id', weekPlanId);
-
-      if (!combos || combos.length === 0) {
-        setWeekComboSetLines([]);
-        setWeekComboItems([]);
-        setComboExerciseIds(new Set());
-        return;
-      }
-
-      const comboIds = combos.map(c => c.id);
-      const comboUnitMap: Record<string, { unit: string; day_index: number }> = {};
-      combos.forEach(c => { comboUnitMap[c.id] = { unit: c.unit, day_index: c.day_index }; });
-
-      const { data: setLines } = await supabase
-        .from('planned_combo_set_lines')
-        .select('*')
-        .in('planned_combo_id', comboIds);
-
-      const enriched = (setLines || []).map(line => ({
-        ...line,
-        unit: comboUnitMap[line.planned_combo_id]?.unit || 'absolute_kg',
-        day_index: comboUnitMap[line.planned_combo_id]?.day_index || 0,
-      }));
-      setWeekComboSetLines(enriched);
-
-      const { data: items } = await supabase
-        .from('planned_combo_items')
-        .select('planned_exercise_id, planned_combo_id, position, exercise:exercise_id(*)')
-        .in('planned_combo_id', comboIds)
-        .order('position');
-
-      const ids = new Set<string>((items || []).map((i: any) => i.planned_exercise_id));
-      setComboExerciseIds(ids);
-
-      const comboItemsForCategories = (items || []).map((i: any) => ({
-        combo_id: i.planned_combo_id,
-        exercise: i.exercise as Exercise,
-        position: i.position as number,
-      }));
-      setWeekComboItems(comboItemsForCategories);
-    } catch (err) {
-    }
-  };
+  // Kept for backward compat — combo members are now loaded in fetchPlannedExercises
+  const fetchWeekCombos = async (_weekPlanId: string) => { /* no-op */ };
 
   const fetchMacroWeekTarget = async (athleteId: string, selectedDate: string) => {
     try {
@@ -266,25 +240,13 @@ export function useWeekPlans() {
     fromDayIndex: number,
     toDayIndex: number,
   ) => {
-    const { data: toCombos } = await supabase
-      .from('planned_combos')
-      .select('id')
-      .eq('weekplan_id', weekPlanId)
-      .eq('day_index', toDayIndex);
-
     const { data: toExercises } = await supabase
       .from('planned_exercises')
       .select('id')
       .eq('weekplan_id', weekPlanId)
       .eq('day_index', toDayIndex);
 
-    const { data: toComboItems } = (toCombos && toCombos.length > 0)
-      ? await supabase.from('planned_combo_items').select('planned_exercise_id').in('planned_combo_id', toCombos.map((c: any) => c.id))
-      : { data: [] };
-
-    const toComboExIds = new Set((toComboItems || []).map((i: any) => i.planned_exercise_id));
-    const toVisibleCount = (toExercises || []).filter((ex: any) => !toComboExIds.has(ex.id)).length;
-    const newToPosition = toVisibleCount + (toCombos?.length || 0) + 1;
+    const newToPosition = (toExercises?.length ?? 0) + 1;
 
     await supabase
       .from('planned_exercises')
@@ -298,37 +260,16 @@ export function useWeekPlans() {
   };
 
   const normalizePositions = async (weekPlanId: string, dayIndex: number) => {
-    const [{ data: exData }, { data: comboData }] = await Promise.all([
-      supabase
-        .from('planned_exercises')
-        .select('id, position')
-        .eq('weekplan_id', weekPlanId)
-        .eq('day_index', dayIndex)
-        .order('position'),
-      supabase
-        .from('planned_combos')
-        .select('id, position')
-        .eq('weekplan_id', weekPlanId)
-        .eq('day_index', dayIndex)
-        .order('position'),
-    ]);
+    const { data: exData } = await supabase
+      .from('planned_exercises')
+      .select('id, position')
+      .eq('weekplan_id', weekPlanId)
+      .eq('day_index', dayIndex)
+      .order('position');
 
-    const comboIds = (comboData || []).map((c: any) => c.id);
-    const { data: comboItemData } = comboIds.length > 0
-      ? await supabase.from('planned_combo_items').select('planned_exercise_id').in('planned_combo_id', comboIds)
-      : { data: [] };
-
-    const comboExerciseIdSet = new Set((comboItemData || []).map((i: any) => i.planned_exercise_id));
-    const visibleExercises = (exData || []).filter((ex: any) => !comboExerciseIdSet.has(ex.id));
-
-    const allItems: Array<{ table: 'planned_exercises' | 'planned_combos'; id: string; position: number }> = [
-      ...visibleExercises.map((ex: any) => ({ table: 'planned_exercises' as const, id: ex.id, position: ex.position })),
-      ...(comboData || []).map((c: any) => ({ table: 'planned_combos' as const, id: c.id, position: c.position })),
-    ].sort((a, b) => a.position - b.position);
-
-    for (let i = 0; i < allItems.length; i++) {
-      const item = allItems[i];
-      await supabase.from(item.table).update({ position: i + 1 }).eq('id', item.id);
+    const items = (exData || []).sort((a: any, b: any) => a.position - b.position);
+    for (let i = 0; i < items.length; i++) {
+      await supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', items[i].id);
     }
   };
 
@@ -395,19 +336,61 @@ export function useWeekPlans() {
 
   const savePrescription = async (
     plannedExId: string,
-    data: { prescription: string; notes: string; unit: DefaultUnit },
+    data: { prescription: string; notes: string; unit: DefaultUnit; isCombo?: boolean },
   ): Promise<void> => {
-    const { prescription, notes, unit } = data;
+    const { prescription, notes, unit, isCombo } = data;
     const isFreeText = unit === 'free_text';
     const isRPE = unit === 'rpe';
     const isOtherUnit = unit === 'other';
     const isTextBased = isFreeText || isRPE;
     const isNonNumeric = isFreeText || isOtherUnit;
 
+    await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
+
+    if (isCombo) {
+      const parsed = parseComboPrescription(prescription);
+      if (parsed.length > 0) {
+        const lines = parsed.map((line, idx) => ({
+          planned_exercise_id: plannedExId,
+          sets: line.sets,
+          reps: line.totalReps,
+          reps_text: line.repsText,
+          load_value: line.load,
+          position: idx + 1,
+        }));
+        await supabase.from('planned_set_lines').insert(lines);
+
+        const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
+        const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.totalReps, 0);
+        const highestLoad = Math.max(...parsed.map(l => l.load));
+        const weightedSum = parsed.reduce((sum, l) => sum + l.load * l.sets * l.totalReps, 0);
+        const avgLoad = totalReps > 0 ? weightedSum / totalReps : null;
+
+        await supabase.from('planned_exercises').update({
+          prescription_raw: prescription,
+          notes: notes.trim() || null,
+          unit,
+          summary_total_sets: totalSets,
+          summary_total_reps: totalReps,
+          summary_highest_load: highestLoad,
+          summary_avg_load: avgLoad,
+        }).eq('id', plannedExId);
+      } else {
+        await supabase.from('planned_exercises').update({
+          prescription_raw: prescription,
+          notes: notes.trim() || null,
+          unit,
+          summary_total_sets: 0,
+          summary_total_reps: 0,
+          summary_highest_load: null,
+          summary_avg_load: null,
+        }).eq('id', plannedExId);
+      }
+      return;
+    }
+
     const parsed = isNonNumeric ? [] : parsePrescription(prescription);
     const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
-
-    await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
 
     if (parsed.length > 0 && !isNonNumeric) {
       const lines = parsed.map((line, idx) => ({
@@ -496,7 +479,17 @@ export function useWeekPlans() {
     exerciseId: string,
     position: number,
     unit: DefaultUnit,
-    extras?: { prescription_raw?: string | null; notes?: string | null; summary_total_sets?: number; summary_total_reps?: number; summary_highest_load?: number | null; summary_avg_load?: number | null },
+    extras?: {
+      prescription_raw?: string | null;
+      notes?: string | null;
+      summary_total_sets?: number;
+      summary_total_reps?: number;
+      summary_highest_load?: number | null;
+      summary_avg_load?: number | null;
+      is_combo?: boolean;
+      combo_notation?: string | null;
+      combo_color?: string | null;
+    },
   ): Promise<PlannedExercise & { id: string }> => {
     const { data, error } = await supabase
       .from('planned_exercises')
@@ -512,6 +505,9 @@ export function useWeekPlans() {
         summary_avg_load: extras?.summary_avg_load ?? null,
         prescription_raw: extras?.prescription_raw ?? null,
         notes: extras?.notes ?? null,
+        is_combo: extras?.is_combo ?? false,
+        combo_notation: extras?.combo_notation ?? null,
+        combo_color: extras?.combo_color ?? null,
       }])
       .select()
       .single();
@@ -531,6 +527,9 @@ export function useWeekPlans() {
       summary_total_reps: sourceEx.summary_total_reps ?? 0,
       summary_highest_load: sourceEx.summary_highest_load,
       summary_avg_load: sourceEx.summary_avg_load,
+      is_combo: sourceEx.is_combo,
+      combo_notation: sourceEx.combo_notation,
+      combo_color: sourceEx.combo_color,
     });
 
     if (sourceEx.prescription_raw) {
@@ -545,6 +544,7 @@ export function useWeekPlans() {
             planned_exercise_id: newEx.id,
             sets: line.sets,
             reps: line.reps,
+            reps_text: line.reps_text ?? null,
             load_value: line.load_value,
             position: line.position,
           }))
@@ -552,7 +552,65 @@ export function useWeekPlans() {
       }
     }
 
+    // Copy combo members if this is a combo exercise
+    if (sourceEx.is_combo) {
+      const { data: members } = await supabase
+        .from('planned_exercise_combo_members')
+        .select('exercise_id, position')
+        .eq('planned_exercise_id', sourceEx.id)
+        .order('position');
+
+      if (members && members.length > 0) {
+        await supabase.from('planned_exercise_combo_members').insert(
+          members.map((m: any) => ({
+            planned_exercise_id: newEx.id,
+            exercise_id: m.exercise_id,
+            position: m.position,
+          }))
+        );
+      }
+    }
+
     return newEx.id;
+  };
+
+  const createComboExercise = async (
+    weekPlanId: string,
+    dayIndex: number,
+    position: number,
+    data: {
+      exercises: { exercise: Exercise; position: number }[];
+      unit: DefaultUnit;
+      comboName: string;
+      color: string;
+    },
+  ): Promise<void> => {
+    const autoNotation = data.exercises.map(e => e.exercise.name).join(' + ');
+    const { data: comboEx, error } = await supabase
+      .from('planned_exercises')
+      .insert({
+        weekplan_id: weekPlanId,
+        day_index: dayIndex,
+        exercise_id: data.exercises[0].exercise.id,
+        position,
+        unit: data.unit,
+        is_combo: true,
+        combo_notation: data.comboName || autoNotation,
+        combo_color: data.color,
+        summary_total_sets: 0,
+        summary_total_reps: 0,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+
+    for (const part of data.exercises) {
+      await supabase.from('planned_exercise_combo_members').insert({
+        planned_exercise_id: comboEx.id,
+        exercise_id: part.exercise.id,
+        position: part.position,
+      });
+    }
   };
 
   const copyDayExercises = async (
@@ -583,8 +641,8 @@ export function useWeekPlans() {
     return data || [];
   };
 
-  const updateItemPosition = async (table: 'planned_exercises' | 'planned_combos', id: string, position: number): Promise<void> => {
-    await supabase.from(table).update({ position }).eq('id', id);
+  const updateItemPosition = async (_table: 'planned_exercises', id: string, position: number): Promise<void> => {
+    await supabase.from('planned_exercises').update({ position }).eq('id', id);
   };
 
   const fetchExerciseByCode = async (code: string): Promise<Exercise | null> => {
@@ -632,9 +690,8 @@ export function useWeekPlans() {
     setWeekPlan,
     plannedExercises,
     setPlannedExercises,
-    weekComboSetLines,
-    weekComboItems,
-    comboExerciseIds,
+    comboMembers,
+    setComboMembers,
     athletePRs,
     setAthletePRs,
     macroWeekTarget,
@@ -672,5 +729,6 @@ export function useWeekPlans() {
     fetchPlannedExerciseById,
     fetchWeekPlanForAthlete,
     fetchPlannedExercisesFlat,
+    createComboExercise,
   };
 }
