@@ -6,11 +6,11 @@ import { useTrainingLog } from '../../hooks/useTrainingLog';
 import { RAWScoring } from '../RAWScoring';
 import { PrescriptionDisplay } from '../PrescriptionDisplay';
 import { supabase } from '../../lib/supabase';
-import { getMondayOfWeek } from '../../lib/dateUtils';
 
 interface SessionViewProps {
   athlete: Athlete;
-  date: string; // ISO date string e.g. "2026-04-03"
+  weekStart: string; // ISO date of Monday e.g. "2026-03-31"
+  dayIndex: number;  // 1–7 matching the week plan's day_index
   onBack: () => void;
 }
 
@@ -144,7 +144,7 @@ function SetRow({ set, index, onComplete, onSkip, prSetId }: SetRowProps) {
   );
 }
 
-export function SessionView({ athlete, date, onBack }: SessionViewProps) {
+export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionViewProps) {
   const {
     session, setSession,
     plannedExercises, loggedExercises, setLoggedExercises,
@@ -175,16 +175,19 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initializedExercises = useRef<Set<string>>(new Set());
 
+  // Derive the nominal date for display (weekStart + dayIndex - 1 days)
+  const date = (() => {
+    const d = new Date(weekStart + 'T00:00:00');
+    d.setDate(d.getDate() + dayIndex - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
   // Load data on mount
   useEffect(() => {
-    const dateObj = new Date(date + 'T00:00:00');
-    const weekStart = getMondayOfWeek(dateObj);
-    const dayOfWeek = dateObj.getDay();
-    // Convert JS day (0=Sun) to day_index (1=Mon..7=Sun)
-    const dayIndex = dayOfWeek === 0 ? 7 : dayOfWeek;
+    const weekStartDate = new Date(weekStart + 'T00:00:00');
     setDataLoading(true);
-    fetchWeekData(athlete.id, weekStart, dayIndex).finally(() => setDataLoading(false));
-  }, [athlete.id, date]);
+    fetchWeekData(athlete.id, weekStartDate, dayIndex).finally(() => setDataLoading(false));
+  }, [athlete.id, weekStart, dayIndex]);
 
   // Detect resume
   useEffect(() => {
