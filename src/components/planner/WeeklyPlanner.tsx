@@ -37,7 +37,7 @@ export function WeeklyPlanner() {
   const locationState = (location.state as { weekStart?: string; groupId?: string } | null);
   const initialWeekStart = locationState?.weekStart ?? null;
   const initialGroupId = locationState?.groupId ?? null;
-  const { selectedAthlete, setSelectedAthlete } = useAthleteStore();
+  const { selectedAthlete, setSelectedAthlete, selectedGroup: storeSelectedGroup, setSelectedGroup } = useAthleteStore();
   const { settings, fetchSettings } = useSettings();
 
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -118,6 +118,7 @@ export function WeeklyPlanner() {
       const group = groups.find(g => g.id === initialGroupId);
       if (group) {
         setPlanSelection({ type: 'group', athlete: null, group });
+        setSelectedGroup(group);
       }
     }
   }, [initialGroupId, groups]);
@@ -127,6 +128,12 @@ export function WeeklyPlanner() {
       setPlanSelection({ type: 'individual', athlete: selectedAthlete, group: null });
     }
   }, [selectedAthlete]);
+
+  useEffect(() => {
+    if (storeSelectedGroup) {
+      setPlanSelection({ type: 'group', athlete: null, group: storeSelectedGroup });
+    }
+  }, [storeSelectedGroup]);
 
   useEffect(() => {
     if (planSelection.athlete || planSelection.group) {
@@ -486,7 +493,9 @@ export function WeeklyPlanner() {
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
     if (selection.type === 'individual' && selection.athlete) {
-      setSelectedAthlete(selection.athlete);
+      setSelectedAthlete(selection.athlete); // also clears selectedGroup in store
+    } else if (selection.type === 'group' && selection.group) {
+      setSelectedGroup(selection.group); // also clears selectedAthlete in store
     } else {
       setSelectedAthlete(null);
     }
