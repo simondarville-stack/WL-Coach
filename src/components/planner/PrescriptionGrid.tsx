@@ -186,7 +186,7 @@ export function PrescriptionGrid({
         setEditing({ colId, field: 'load', value: col.loadText });
         return;
       }
-      const next = Math.max(0, col.load + (delta * loadIncrement));
+      const next = Math.max(0, col.load + delta);
       updateColumn(colId, { load: next, loadText: String(next) });
     } else if (field === 'reps') {
       if (isCombo) {

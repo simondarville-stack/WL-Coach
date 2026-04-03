@@ -93,6 +93,7 @@ export function DayEditor({
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     if (!macroContext) return;
@@ -173,12 +174,21 @@ export function DayEditor({
 
   function handleGridSave(ex: PlannedExercise, raw: string) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    void savePrescription(ex.id, {
+    pendingSaveRef.current = savePrescription(ex.id, {
       prescription: raw,
       unit: (ex.unit as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     });
     saveTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
+  }
+
+  async function flushAndClose() {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (pendingSaveRef.current) {
+      try { await pendingSaveRef.current; } catch {}
+      pendingSaveRef.current = null;
+    }
+    onClose();
   }
 
   async function handleDeleteExercise(id: string) {
@@ -280,7 +290,7 @@ export function DayEditor({
               </div>
             )}
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500">
+          <button onClick={() => void flushAndClose()} className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500">
             <X size={16} />
           </button>
         </div>

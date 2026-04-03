@@ -8,7 +8,6 @@ import {
   CalendarDays,
   Users,
   UsersRound,
-  Eye,
   ClipboardList,
   BookOpen,
   Settings,
@@ -42,7 +41,6 @@ const sections: NavSection[] = [
     items: [
       { path: '/athletes', label: 'Roster', icon: Users },
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
-      { path: '/athlete-programme', label: 'Programme', icon: Eye },
       { path: '/athlete-log', label: 'Training log', icon: ClipboardList },
     ],
   },
