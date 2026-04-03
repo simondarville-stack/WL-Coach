@@ -103,7 +103,7 @@ export function TrainingGroups() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Training Groups</h1>
+          <h1 className="text-3xl font-medium text-gray-900">Training Groups</h1>
           <button
             onClick={() => { setFormName(''); setFormDescription(''); setShowCreateModal(true); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -121,7 +121,7 @@ export function TrainingGroups() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Groups</h2>
+            <h2 className="text-sm font-medium text-gray-700 uppercase tracking-wide mb-4">Groups</h2>
             {loading ? (
               <div className="text-gray-500 text-center py-8">Loading...</div>
             ) : groups.length === 0 ? (
@@ -143,7 +143,7 @@ export function TrainingGroups() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-gray-900 truncate">{group.name}</h3>
+                        <h3 className="font-medium text-gray-900 truncate">{group.name}</h3>
                         {group.description && (
                           <p className="text-xs text-gray-600 truncate mt-1">{group.description}</p>
                         )}
@@ -181,7 +181,7 @@ export function TrainingGroups() {
               <>
                 <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">{selectedGroup.name}</h2>
+                    <h2 className="text-xl font-medium text-gray-900">{selectedGroup.name}</h2>
                     {selectedGroup.description && (
                       <p className="text-sm text-gray-600 mt-1">{selectedGroup.description}</p>
                     )}
@@ -215,7 +215,7 @@ export function TrainingGroups() {
                             </div>
                           )}
                           <div>
-                            <h3 className="font-semibold text-gray-900">{member.athlete.name}</h3>
+                            <h3 className="font-medium text-gray-900">{member.athlete.name}</h3>
                             <p className="text-xs text-gray-600">
                               Joined {new Date(member.joined_at).toLocaleDateString('en-GB')}
                             </p>
@@ -241,7 +241,7 @@ export function TrainingGroups() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Create Training Group</h2>
+                <h2 className="text-xl font-medium text-gray-900">Create Training Group</h2>
                 <button onClick={() => setShowCreateModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
@@ -288,7 +288,7 @@ export function TrainingGroups() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Edit Training Group</h2>
+                <h2 className="text-xl font-medium text-gray-900">Edit Training Group</h2>
                 <button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
@@ -333,7 +333,7 @@ export function TrainingGroups() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Add Member</h2>
+                <h2 className="text-xl font-medium text-gray-900">Add Member</h2>
                 <button onClick={() => setShowAddMemberModal(false)} className="p-1 hover:bg-gray-100 rounded transition-colors">
                   <X size={20} />
                 </button>
@@ -358,7 +358,7 @@ export function TrainingGroups() {
                         </div>
                       )}
                       <div>
-                        <h3 className="font-semibold text-gray-900">{athlete.name}</h3>
+                        <h3 className="font-medium text-gray-900">{athlete.name}</h3>
                         {athlete.club && <p className="text-xs text-gray-600">{athlete.club}</p>}
                       </div>
                     </div>

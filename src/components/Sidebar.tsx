@@ -83,7 +83,7 @@ export function Sidebar() {
       >
         <Dumbbell className="text-blue-600 flex-shrink-0" size={20} />
         {!collapsed && (
-          <span className="font-semibold text-sm text-gray-900 whitespace-nowrap overflow-hidden">
+          <span className="font-medium text-sm text-gray-900 whitespace-nowrap overflow-hidden">
             WinWota 2.0
           </span>
         )}
