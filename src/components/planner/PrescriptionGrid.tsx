@@ -58,7 +58,7 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
     return lines.map(line => ({
       id: nextId(),
       load: line.load,
-      loadText: String(line.load),
+      loadText: line.loadText ?? String(line.load),
       reps: line.totalReps,
       repsText: line.repsText,
       sets: line.sets,
@@ -123,7 +123,13 @@ export function PrescriptionGrid({
     let raw: string;
     if (isCombo) {
       raw = formatComboPrescription(
-        cols.map(col => ({ sets: col.sets, repsText: col.repsText, totalReps: col.reps, load: col.load })),
+        cols.map(col => ({
+          sets: col.sets,
+          repsText: col.repsText,
+          totalReps: col.reps,
+          load: col.load,
+          ...(isFreeTextReps ? { loadText: col.loadText } : {}),
+        })),
         unit,
       );
     } else if (isFreeTextReps) {
