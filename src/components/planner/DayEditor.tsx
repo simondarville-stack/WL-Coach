@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Settings as GearIcon, GripVertical, Trash2 } from 'lucide-react';
+import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -48,6 +48,19 @@ const UNIT_BADGE: Record<string, string> = {
   free_text_reps: 'text+reps',
   free_text: 'text',
 };
+
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(code: string | null): SentinelType {
+  if (code === 'TEXT') return 'text';
+  if (code === 'VIDEO') return 'video';
+  if (code === 'IMAGE') return 'image';
+  return null;
+}
+
+function getYouTubeThumbnail(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
 
 function hiLabel(hi: number | null, rhi: number | null, shi: number | null): string {
   if (hi == null) return '';
@@ -280,10 +293,15 @@ export function DayEditor({
           )}
 
           {sortedExercises.map(ex => {
-            const macroTgt = !ex.is_combo ? macroTargets.get(ex.exercise_id) : undefined;
+            const sentinel = getSentinelType(ex.exercise.exercise_code);
+            const macroTgt = !ex.is_combo && !sentinel ? macroTargets.get(ex.exercise_id) : undefined;
             const isDraggingOver = dragOverId === ex.id;
             const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
-            const borderColor = ex.is_combo
+            const borderColor = sentinel === 'text'
+              ? 'transparent'
+              : sentinel
+              ? '#d1d5db'
+              : ex.is_combo
               ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8')
               : (ex.exercise.color || '#94a3b8');
 
@@ -312,7 +330,22 @@ export function DayEditor({
                   ].join(' ')}
                 >
                   <GripVertical size={12} className="text-gray-400 flex-shrink-0" />
-                  {ex.is_combo && members ? (
+                  {sentinel === 'text' ? (
+                    <>
+                      <AlignLeft size={12} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-xs text-gray-400 italic flex-1">Free text</span>
+                    </>
+                  ) : sentinel === 'video' ? (
+                    <>
+                      <Video size={12} className="text-indigo-400 flex-shrink-0" />
+                      <span className="text-xs text-gray-500 flex-1">Video</span>
+                    </>
+                  ) : sentinel === 'image' ? (
+                    <>
+                      <ImageIcon size={12} className="text-pink-400 flex-shrink-0" />
+                      <span className="text-xs text-gray-500 flex-1">Image</span>
+                    </>
+                  ) : ex.is_combo && members ? (
                     <>
                       <div className="flex gap-0.5 items-center flex-shrink-0">
                         {members.map(m => (
@@ -338,7 +371,7 @@ export function DayEditor({
                     </>
                   )}
                   <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-                    {(ex.summary_total_sets != null && ex.summary_total_sets > 0) && (
+                    {!sentinel && (ex.summary_total_sets != null && ex.summary_total_sets > 0) && (
                       <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
                         <span>S <strong className="text-gray-900 font-medium">{ex.summary_total_sets}</strong></span>
                         <span>R <strong className="text-gray-900 font-medium">{ex.summary_total_reps}</strong></span>
@@ -360,44 +393,86 @@ export function DayEditor({
                     <button
                       onClick={() => onNavigateToExercise(ex.id)}
                       className="p-0.5 text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
-                      title="Exercise detail"
+                      title="Detail"
                     >
                       <GearIcon size={12} />
                     </button>
                     <button
                       onClick={() => void handleDeleteExercise(ex.id)}
                       className="p-0.5 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
-                      title="Remove exercise"
+                      title="Remove"
                     >
                       <Trash2 size={12} />
                     </button>
                   </div>
                 </div>
 
-                {/* Grid */}
-                <div className="px-3 py-2">
-                  <PrescriptionGrid
-                    prescriptionRaw={ex.prescription_raw}
-                    unit={ex.unit}
-                    loadIncrement={loadIncrement}
-                    isCombo={ex.is_combo}
-                    comboPartCount={ex.is_combo ? ((comboMembers[ex.id] ?? []).length || 2) : undefined}
-                    onSave={raw => handleGridSave(ex, raw)}
-                  />
-                </div>
-
-                {/* Notes (regular exercises only) */}
-                {!ex.is_combo && (
-                  <div className="px-3 pb-2">
+                {/* Body — sentinels get custom rendering; exercises + combos get grid + notes */}
+                {sentinel === 'text' ? (
+                  <div className="px-3 py-2">
                     <textarea
                       defaultValue={ex.notes ?? ''}
                       onBlur={e => handleNotesBlur(ex, e.target.value)}
-                      placeholder="Notes…"
-                      rows={1}
-                      className="w-full text-[10px] text-gray-500 placeholder-gray-300 italic border-0 bg-transparent resize-none focus:outline-none focus:ring-0 leading-tight"
-                      style={{ minHeight: '1rem' }}
+                      placeholder="Type your notes…"
+                      rows={2}
+                      className="w-full text-sm text-gray-600 italic placeholder-gray-300 border-0 bg-transparent resize-none focus:outline-none focus:ring-0 leading-snug"
+                      style={{ minHeight: '2.5rem' }}
                     />
                   </div>
+                ) : sentinel === 'video' ? (
+                  <div className="px-3 py-2 space-y-1.5">
+                    <input
+                      type="url"
+                      defaultValue={ex.notes ?? ''}
+                      onBlur={e => void saveNotes(ex.id, e.target.value)}
+                      placeholder="Paste YouTube or video URL…"
+                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    />
+                    {ex.notes && (() => {
+                      const thumb = getYouTubeThumbnail(ex.notes);
+                      return thumb
+                        ? <img src={thumb} alt="Video thumbnail" className="rounded w-full max-w-[200px] object-cover" />
+                        : <p className="text-[10px] text-gray-400 truncate">{ex.notes}</p>;
+                    })()}
+                  </div>
+                ) : sentinel === 'image' ? (
+                  <div className="px-3 py-2 space-y-1.5">
+                    <input
+                      type="url"
+                      defaultValue={ex.notes ?? ''}
+                      onBlur={e => void saveNotes(ex.id, e.target.value)}
+                      placeholder="Paste image URL…"
+                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    />
+                    {ex.notes && (
+                      <img src={ex.notes} alt="" className="rounded w-full max-w-[200px] object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Grid */}
+                    <div className="px-3 py-2">
+                      <PrescriptionGrid
+                        prescriptionRaw={ex.prescription_raw}
+                        unit={ex.unit}
+                        loadIncrement={loadIncrement}
+                        isCombo={ex.is_combo}
+                        comboPartCount={ex.is_combo ? ((comboMembers[ex.id] ?? []).length || 2) : undefined}
+                        onSave={raw => handleGridSave(ex, raw)}
+                      />
+                    </div>
+                    {/* Notes — shown for both regular exercises and combos */}
+                    <div className="px-3 pb-2">
+                      <textarea
+                        defaultValue={ex.notes ?? ''}
+                        onBlur={e => handleNotesBlur(ex, e.target.value)}
+                        placeholder="Notes…"
+                        rows={1}
+                        className="w-full text-[10px] text-gray-500 placeholder-gray-300 italic border-0 bg-transparent resize-none focus:outline-none focus:ring-0 leading-tight"
+                        style={{ minHeight: '1rem' }}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             );

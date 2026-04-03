@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, ArrowLeft } from 'lucide-react';
+import { X, ArrowLeft, Video, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -45,6 +45,18 @@ interface ExerciseDetailProps {
   ) => Promise<OtherDay[]>;
 }
 
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(code: string | null | undefined): SentinelType {
+  if (code === 'TEXT') return 'text';
+  if (code === 'VIDEO') return 'video';
+  if (code === 'IMAGE') return 'image';
+  return null;
+}
+function getYouTubeThumbnail(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
+
 const UNIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'absolute_kg', label: 'kg' },
   { value: 'percentage', label: '%' },
@@ -69,11 +81,12 @@ export function ExerciseDetail({
   settings,
 }: ExerciseDetailProps) {
   const isCombo = plannedExercise?.is_combo ?? false;
+  const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code);
   const members = isCombo && plannedExercise
     ? (comboMembers[plannedExercise.id] ?? []).sort((a, b) => a.position - b.position)
     : [];
 
-  const hasMacro = !!macroContext && !isCombo && !!plannedExercise;
+  const hasMacro = !!macroContext && !isCombo && !sentinel && !!plannedExercise;
 
   const [textMode, setTextMode] = useState(false);
   const [textValue, setTextValue] = useState(plannedExercise?.prescription_raw ?? '');
@@ -89,7 +102,8 @@ export function ExerciseDetail({
 
   useEffect(() => {
     if (hasMacro && plannedExercise) void loadSollTarget();
-    if (!isCombo && plannedExercise) void loadOtherDays();
+    if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
+    if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
   }, [macroContext?.macroId, plannedExercise?.id]);
 
   async function loadSollTarget() {
@@ -127,6 +141,35 @@ export function ExerciseDetail({
     setOtherDays(data);
   }
 
+  async function loadComboOtherDays() {
+    if (!plannedExercise || members.length === 0) return;
+    const currentMemberIds = members.map(m => m.exerciseId).sort().join(',');
+    const { data: otherCombos } = await supabase
+      .from('planned_exercises')
+      .select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
+      .eq('weekplan_id', weekPlanId)
+      .eq('is_combo', true)
+      .neq('id', plannedExercise.id);
+    if (!otherCombos?.length) { setOtherDays([]); return; }
+    const matching: OtherDay[] = [];
+    for (const combo of otherCombos) {
+      const { data: memberData } = await supabase
+        .from('planned_exercise_combo_members')
+        .select('exercise_id')
+        .eq('planned_exercise_id', combo.id);
+      const theirIds = (memberData || []).map((m: { exercise_id: string }) => m.exercise_id).sort().join(',');
+      if (theirIds === currentMemberIds) {
+        matching.push({
+          dayIndex: combo.day_index,
+          prescriptionRaw: combo.prescription_raw,
+          totalSets: combo.summary_total_sets,
+          totalReps: combo.summary_total_reps,
+        });
+      }
+    }
+    setOtherDays(matching);
+  }
+
   async function applyText() {
     if (!plannedExercise) return;
     setSaving(true);
@@ -156,7 +199,10 @@ export function ExerciseDetail({
     return `${hi}`;
   }
 
-  const exerciseName = isCombo && members.length > 0
+  const exerciseName = sentinel === 'text' ? 'Free text'
+    : sentinel === 'video' ? 'Video'
+    : sentinel === 'image' ? 'Image'
+    : isCombo && members.length > 0
     ? (plannedExercise?.combo_notation || members.map(m => m.exercise.name).join(' + '))
     : (plannedExercise?.exercise.name ?? 'Exercise');
 
@@ -197,8 +243,59 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Prescription ── */}
-        {plannedExercise && (
+        {/* ── Content: sentinel-specific or prescription grid ── */}
+        {plannedExercise && sentinel === 'text' && (
+          <div>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Text content</span>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              onBlur={() => void saveNotes(plannedExercise.id, notes)}
+              rows={5}
+              placeholder="Type your notes or instructions…"
+              className="w-full text-sm text-gray-700 italic border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+        )}
+
+        {plannedExercise && sentinel === 'video' && (
+          <div>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Video URL</span>
+            <input
+              type="url"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              onBlur={() => void saveNotes(plannedExercise.id, notes)}
+              placeholder="Paste YouTube or video URL…"
+              className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+            {notes && (() => {
+              const thumb = getYouTubeThumbnail(notes);
+              return thumb
+                ? <img src={thumb} alt="Video thumbnail" className="mt-2 rounded w-full max-w-xs object-cover" />
+                : <p className="mt-1 text-xs text-gray-500 flex items-center gap-1"><Video size={12} className="text-indigo-400" />{notes}</p>;
+            })()}
+          </div>
+        )}
+
+        {plannedExercise && sentinel === 'image' && (
+          <div>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Image URL</span>
+            <input
+              type="url"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              onBlur={() => void saveNotes(plannedExercise.id, notes)}
+              placeholder="Paste image URL…"
+              className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+            {notes && (
+              <img src={notes} alt="" className="mt-2 rounded w-full max-w-xs object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+            )}
+          </div>
+        )}
+
+        {plannedExercise && !sentinel && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Prescription</span>
@@ -273,8 +370,8 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Other days (regular exercise only) ── */}
-        {!isCombo && plannedExercise && (
+        {/* ── Other days (regular and combo, not sentinels) ── */}
+        {!sentinel && plannedExercise && (
           <div>
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Other days this week</span>
             {otherDays.length === 0 ? (
@@ -302,52 +399,56 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Notes ── */}
-        <div className="border-t border-gray-100 pt-4">
-          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Coach notes</label>
-          {plannedExercise ? (
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              onBlur={() => void saveNotes(plannedExercise.id, notes)}
-              rows={3}
-              placeholder="Notes visible to athlete…"
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-          ) : null}
-        </div>
-
-        {/* ── Settings ── */}
-        <div className="border-t border-gray-100 pt-4 space-y-4">
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Settings</span>
-
-          {plannedExercise && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Unit</label>
-              <select
-                value={unit}
-                onChange={e => { setUnit(e.target.value); void saveSettingsField('unit', e.target.value); }}
-                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
-              >
-                {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-          )}
-
-          {!isCombo && plannedExercise && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Variation note</label>
-              <input
-                type="text"
-                value={variationNote}
-                onChange={e => setVariationNote(e.target.value)}
-                onBlur={() => void saveSettingsField('variation_note', variationNote)}
-                placeholder="e.g. pause at knee, blocks"
-                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+        {/* ── Notes (exercises and combos, not sentinels — sentinels use notes as their content above) ── */}
+        {!sentinel && (
+          <div className="border-t border-gray-100 pt-4">
+            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Coach notes</label>
+            {plannedExercise ? (
+              <textarea
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                onBlur={() => void saveNotes(plannedExercise.id, notes)}
+                rows={3}
+                placeholder="Notes visible to athlete…"
+                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
               />
-            </div>
-          )}
-        </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* ── Settings (not for sentinels) ── */}
+        {!sentinel && (
+          <div className="border-t border-gray-100 pt-4 space-y-4">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Settings</span>
+
+            {plannedExercise && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Unit</label>
+                <select
+                  value={unit}
+                  onChange={e => { setUnit(e.target.value); void saveSettingsField('unit', e.target.value); }}
+                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
+                >
+                  {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+
+            {!isCombo && plannedExercise && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Variation note</label>
+                <input
+                  type="text"
+                  value={variationNote}
+                  onChange={e => setVariationNote(e.target.value)}
+                  onBlur={() => void saveSettingsField('variation_note', variationNote)}
+                  placeholder="e.g. pause at knee, blocks"
+                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
