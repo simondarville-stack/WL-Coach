@@ -19,6 +19,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Plus, Settings as SettingsIcon, X, Upload } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
 import { useAthletes } from './hooks/useAthletes';
+import { useTrainingGroups } from './hooks/useTrainingGroups';
 import { useAthleteStore } from './store/athleteStore';
 import type { Athlete } from './lib/database.types';
 
@@ -47,6 +48,7 @@ function App() {
   } = useExercises();
 
   const { fetchAllAthletes } = useAthletes();
+  const { fetchGroups } = useTrainingGroups();
   const { setSelectedAthlete } = useAthleteStore();
   const navigate = useNavigate();
 
@@ -58,6 +60,7 @@ function App() {
   useEffect(() => {
     fetchExercises();
     fetchAllAthletes();
+    fetchGroups();
   }, []);
 
   const handleSave = async (exerciseData: Partial<import('./lib/database.types').Exercise>) => {

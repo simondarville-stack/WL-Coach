@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { TrainingGroup, GroupMemberWithAthlete } from '../lib/database.types';
+import { useAthleteStore } from '../store/athleteStore';
 
 export function useTrainingGroups() {
   const [groups, setGroups] = useState<TrainingGroup[]>([]);
   const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { setGroups: storeSetGroups } = useAthleteStore();
 
   const fetchGroups = async () => {
     try {
@@ -16,7 +18,9 @@ export function useTrainingGroups() {
         .select('*')
         .order('name');
       if (error) throw error;
-      setGroups(data || []);
+      const result = data || [];
+      setGroups(result);
+      storeSetGroups(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups');
     } finally {

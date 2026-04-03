@@ -336,13 +336,14 @@ export function useWeekPlans() {
 
   const savePrescription = async (
     plannedExId: string,
-    data: { prescription: string; notes: string; unit: DefaultUnit; isCombo?: boolean },
+    data: { prescription: string; unit: DefaultUnit; isCombo?: boolean },
   ): Promise<void> => {
-    const { prescription, notes, unit, isCombo } = data;
+    const { prescription, unit, isCombo } = data;
     const isFreeText = unit === 'free_text';
     const isRPE = unit === 'rpe';
     const isOtherUnit = unit === 'other';
-    const isTextBased = isFreeText || isRPE;
+    const isFreeTextReps = unit === 'free_text_reps';
+    const isTextBased = isFreeText || isRPE || isFreeTextReps;
     const isNonNumeric = isFreeText || isOtherUnit;
 
     await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
@@ -368,7 +369,7 @@ export function useWeekPlans() {
 
         await supabase.from('planned_exercises').update({
           prescription_raw: prescription,
-          notes: notes.trim() || null,
+
           unit,
           summary_total_sets: totalSets,
           summary_total_reps: totalReps,
@@ -378,7 +379,7 @@ export function useWeekPlans() {
       } else {
         await supabase.from('planned_exercises').update({
           prescription_raw: prescription,
-          notes: notes.trim() || null,
+
           unit,
           summary_total_sets: 0,
           summary_total_reps: 0,

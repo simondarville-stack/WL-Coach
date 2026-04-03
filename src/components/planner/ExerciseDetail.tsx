@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, ArrowLeft, Video, Image as ImageIcon } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, ArrowLeft, Video, Image as ImageIcon, Upload, Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -38,7 +38,7 @@ interface ExerciseDetailProps {
   onClose: () => void;
   onBack?: () => void;
   onSaved: () => Promise<void>;
-  savePrescription: (id: string, data: { prescription: string; notes: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<void>;
+  savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<void>;
   saveNotes: (id: string, notes: string) => Promise<void>;
   fetchOtherDayPrescriptions: (
     weekplanId: string, exerciseId: string, excludeId: string,
@@ -91,12 +91,40 @@ export function ExerciseDetail({
   const [textMode, setTextMode] = useState(false);
   const [textValue, setTextValue] = useState(plannedExercise?.prescription_raw ?? '');
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
   const [variationNote, setVariationNote] = useState(plannedExercise?.variation_note ?? '');
+  const [comboName, setComboName] = useState(plannedExercise?.combo_notation ?? '');
   const [notes, setNotes] = useState(plannedExercise?.notes ?? '');
+  const notesRef = useRef(plannedExercise?.notes ?? '');
   const [sollTarget, setSollTarget] = useState<SollTarget | null>(null);
   const [trackedExId, setTrackedExId] = useState<string | null>(null);
   const [otherDays, setOtherDays] = useState<OtherDay[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notesTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const variationNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => { void onSaved(); }, 600);
+  }, [onSaved]);
+
+  function saveNotesDebounced(id: string, value: string) {
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => { void saveNotes(id, value); }, 400);
+  }
+
+  function saveVariationNoteDebounced(value: string) {
+    if (variationNoteTimerRef.current) clearTimeout(variationNoteTimerRef.current);
+    variationNoteTimerRef.current = setTimeout(() => { void saveSettingsField('variation_note', value); }, 400);
+  }
+
+  function saveComboNameDebounced(value: string) {
+    if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
+    comboNameTimerRef.current = setTimeout(() => { void saveSettingsField('combo_notation', value); }, 400);
+  }
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
 
@@ -176,7 +204,6 @@ export function ExerciseDetail({
     try {
       await savePrescription(plannedExercise.id, {
         prescription: textValue,
-        notes: plannedExercise.notes ?? '',
         unit: (unit as DefaultUnit) || 'absolute_kg',
         isCombo,
       });
@@ -187,10 +214,67 @@ export function ExerciseDetail({
     }
   }
 
-  async function saveSettingsField(field: 'unit' | 'variation_note', value: string) {
+  async function saveSentinelNotes() {
+    if (!plannedExercise) return;
+    setSaving(true);
+    try {
+      await saveNotes(plannedExercise.id, notes);
+      await onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !plannedExercise) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg';
+      const path = `${plannedExercise.id}.${ext}`;
+      const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data: urlData } = supabase.storage.from('planner-media').getPublicUrl(path);
+      setNotes(urlData.publicUrl);
+      await saveNotes(plannedExercise.id, urlData.publicUrl);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  // Saves a single field to DB. Unit changes also trigger a full refresh (affects grid rendering).
+  // variation_note / combo_notation do NOT refresh — to avoid racing with in-flight savePrescription calls.
+  async function saveSettingsField(field: 'unit' | 'variation_note' | 'combo_notation', value: string) {
     if (!plannedExercise) return;
     await supabase.from('planned_exercises').update({ [field]: value || null }).eq('id', plannedExercise.id);
-    await onSaved();
+    if (field === 'unit') await onSaved();
+  }
+
+  // Close immediately, flush pending timers, save in background, then refresh parent.
+  function handleClose() {
+    // Cancel all pending debounce timers
+    [variationNoteTimerRef, comboNameTimerRef, notesTimerRef, refreshTimerRef].forEach(r => {
+      if (r.current) { clearTimeout(r.current); r.current = null; }
+    });
+    // Fire-and-forget: save current state then refresh parent (always, even on error)
+    if (plannedExercise) {
+      const id = plannedExercise.id;
+      void Promise.all([
+        saveNotes(id, notesRef.current).catch(() => {}),
+        supabase.from('planned_exercises').update({
+          variation_note: variationNote || null,
+          ...(isCombo && { combo_notation: comboName || null }),
+        }).eq('id', id),
+      ]).then(() => void onSaved()).catch(() => void onSaved());
+    } else {
+      void onSaved();
+    }
+    onClose(); // Always close immediately — saves happen in the background
   }
 
   function hiFormat(hi: number | null, hiReps: number | null, hiSets: number | null) {
@@ -207,7 +291,15 @@ export function ExerciseDetail({
     : (plannedExercise?.exercise.name ?? 'Exercise');
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div
+      className="flex flex-col h-full bg-white"
+      onKeyDown={e => {
+        if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          void handleClose();
+        }
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -218,12 +310,12 @@ export function ExerciseDetail({
           )}
           <div>
             <h2 className="text-base font-semibold text-gray-900 leading-tight">{exerciseName}</h2>
-            {!isCombo && plannedExercise?.variation_note && (
+            {plannedExercise?.variation_note && (
               <p className="text-xs text-gray-400 italic">{plannedExercise.variation_note}</p>
             )}
           </div>
         </div>
-        <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-500">
+        <button onClick={() => void handleClose()} className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-500">
           <X size={18} />
         </button>
       </div>
@@ -245,13 +337,12 @@ export function ExerciseDetail({
 
         {/* ── Content: sentinel-specific or prescription grid ── */}
         {plannedExercise && sentinel === 'text' && (
-          <div>
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Text content</span>
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Text content</span>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              onBlur={() => void saveNotes(plannedExercise.id, notes)}
-              rows={5}
+              rows={6}
               placeholder="Type your notes or instructions…"
               className="w-full text-sm text-gray-700 italic border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
             />
@@ -259,38 +350,54 @@ export function ExerciseDetail({
         )}
 
         {plannedExercise && sentinel === 'video' && (
-          <div>
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Video URL</span>
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Video URL</span>
             <input
               type="url"
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              onBlur={() => void saveNotes(plannedExercise.id, notes)}
               placeholder="Paste YouTube or video URL…"
               className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
             />
             {notes && (() => {
               const thumb = getYouTubeThumbnail(notes);
               return thumb
-                ? <img src={thumb} alt="Video thumbnail" className="mt-2 rounded w-full max-w-xs object-cover" />
-                : <p className="mt-1 text-xs text-gray-500 flex items-center gap-1"><Video size={12} className="text-indigo-400" />{notes}</p>;
+                ? <img src={thumb} alt="Video thumbnail" className="rounded w-full max-w-xs object-cover" />
+                : <p className="text-xs text-gray-500 flex items-center gap-1 break-all"><Video size={12} className="text-indigo-400 flex-shrink-0" />{notes}</p>;
             })()}
           </div>
         )}
 
         {plannedExercise && sentinel === 'image' && (
-          <div>
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Image URL</span>
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Image</span>
             <input
               type="url"
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              onBlur={() => void saveNotes(plannedExercise.id, notes)}
               placeholder="Paste image URL…"
               className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
             />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">or upload:</span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded transition-colors disabled:opacity-50"
+              >
+                <Upload size={12} />
+                {uploading ? 'Uploading…' : 'Upload file'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => void handleImageUpload(e)}
+              />
+            </div>
             {notes && (
-              <img src={notes} alt="" className="mt-2 rounded w-full max-w-xs object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+              <img src={notes} alt="" className="rounded w-full max-w-xs object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
             )}
           </div>
         )}
@@ -335,44 +442,52 @@ export function ExerciseDetail({
                 loadIncrement={loadIncrement}
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}
-                onSave={raw => void savePrescription(plannedExercise.id, {
-                  prescription: raw,
-                  notes: plannedExercise.notes ?? '',
-                  unit: (unit as DefaultUnit) || 'absolute_kg',
-                  isCombo,
-                }).then(() => onSaved())}
+                onSave={raw => {
+                  void savePrescription(plannedExercise.id, {
+                    prescription: raw,
+                    unit: (unit as DefaultUnit) || 'absolute_kg',
+                    isCombo,
+                  });
+                  debouncedRefresh();
+                }}
               />
             )}
           </div>
         )}
 
-        {/* ── SOLL / IST (macro, regular exercise only) ── */}
-        {hasMacro && sollTarget && (
+        {/* ── Variation note (right below prescription) ── */}
+        {!sentinel && plannedExercise && (
           <div>
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Macro targets</span>
-            <div className="bg-gray-50 rounded-lg px-4 py-3 font-mono text-sm space-y-1.5 mb-3">
-              <div className="flex gap-3 items-baseline">
-                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">SOLL</span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{sollTarget.reps ?? '—'}</strong></span>
-                <span className="text-gray-500">Avg <strong className="text-gray-900">{sollTarget.avg ?? '—'}</strong></span>
-                <span className="text-gray-500">Hi <strong className="text-gray-900">{hiFormat(sollTarget.hi, sollTarget.hiReps, sollTarget.hiSets)}</strong></span>
-              </div>
-              <div className="flex gap-3 items-baseline">
-                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">IST</span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{plannedExercise?.summary_total_reps ?? '—'}</strong></span>
-                <span className="text-gray-500">Avg <strong className="text-gray-900">{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
-                <span className="text-gray-500">Hi <strong className="text-gray-900">{plannedExercise?.summary_highest_load ?? '—'}</strong></span>
-              </div>
-            </div>
-            {trackedExId !== null && (
-              <SollIstChart exerciseId={plannedExercise!.exercise_id} athleteId={athleteId} macroContext={macroContext!} />
-            )}
+            <label className="block text-xs text-gray-500 mb-1">Variation note</label>
+            <input
+              type="text"
+              value={variationNote}
+              onChange={e => { setVariationNote(e.target.value); saveVariationNoteDebounced(e.target.value); }}
+              onBlur={() => { if (variationNoteTimerRef.current) clearTimeout(variationNoteTimerRef.current); void saveSettingsField('variation_note', variationNote); }}
+              placeholder="e.g. pause at knee, blocks"
+              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
+          </div>
+        )}
+
+        {/* ── Coach notes ── */}
+        {!sentinel && plannedExercise && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Coach notes</label>
+            <textarea
+              value={notes}
+              onChange={e => { notesRef.current = e.target.value; setNotes(e.target.value); saveNotesDebounced(plannedExercise.id, e.target.value); }}
+              onBlur={() => { if (notesTimerRef.current) clearTimeout(notesTimerRef.current); void saveNotes(plannedExercise.id, notesRef.current); }}
+              rows={3}
+              placeholder="Notes visible to athlete…"
+              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+            />
           </div>
         )}
 
         {/* ── Other days (regular and combo, not sentinels) ── */}
         {!sentinel && plannedExercise && (
-          <div>
+          <div className="border-t border-gray-100 pt-4">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Other days this week</span>
             {otherDays.length === 0 ? (
               <p className="text-xs text-gray-400 italic">Only planned on {dayName} this week</p>
@@ -399,50 +514,55 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Notes (exercises and combos, not sentinels — sentinels use notes as their content above) ── */}
-        {!sentinel && (
+        {/* ── SOLL / IST (macro, regular exercise only) ── */}
+        {hasMacro && sollTarget && (
           <div className="border-t border-gray-100 pt-4">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Coach notes</label>
-            {plannedExercise ? (
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                onBlur={() => void saveNotes(plannedExercise.id, notes)}
-                rows={3}
-                placeholder="Notes visible to athlete…"
-                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
-              />
-            ) : null}
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Macro targets</span>
+            <div className="bg-gray-50 rounded-lg px-4 py-3 font-mono text-sm space-y-1.5 mb-3">
+              <div className="flex gap-3 items-baseline">
+                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">SOLL</span>
+                <span className="text-gray-500">R <strong className="text-gray-900">{sollTarget.reps ?? '—'}</strong></span>
+                <span className="text-gray-500">Avg <strong className="text-gray-900">{sollTarget.avg ?? '—'}</strong></span>
+                <span className="text-gray-500">Hi <strong className="text-gray-900">{hiFormat(sollTarget.hi, sollTarget.hiReps, sollTarget.hiSets)}</strong></span>
+              </div>
+              <div className="flex gap-3 items-baseline">
+                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">IST</span>
+                <span className="text-gray-500">R <strong className="text-gray-900">{plannedExercise?.summary_total_reps ?? '—'}</strong></span>
+                <span className="text-gray-500">Avg <strong className="text-gray-900">{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
+                <span className="text-gray-500">Hi <strong className="text-gray-900">{plannedExercise?.summary_highest_load ?? '—'}</strong></span>
+              </div>
+            </div>
+            {trackedExId !== null && (
+              <SollIstChart exerciseId={plannedExercise!.exercise_id} athleteId={athleteId} macroContext={macroContext!} />
+            )}
           </div>
         )}
 
         {/* ── Settings (not for sentinels) ── */}
-        {!sentinel && (
+        {!sentinel && plannedExercise && (
           <div className="border-t border-gray-100 pt-4 space-y-4">
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Settings</span>
 
-            {plannedExercise && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Unit</label>
-                <select
-                  value={unit}
-                  onChange={e => { setUnit(e.target.value); void saveSettingsField('unit', e.target.value); }}
-                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
-                >
-                  {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Unit</label>
+              <select
+                value={unit}
+                onChange={e => { setUnit(e.target.value); void saveSettingsField('unit', e.target.value); }}
+                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
+              >
+                {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
 
-            {!isCombo && plannedExercise && (
+            {isCombo && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Variation note</label>
+                <label className="block text-xs text-gray-500 mb-1">Combo name</label>
                 <input
                   type="text"
-                  value={variationNote}
-                  onChange={e => setVariationNote(e.target.value)}
-                  onBlur={() => void saveSettingsField('variation_note', variationNote)}
-                  placeholder="e.g. pause at knee, blocks"
+                  value={comboName}
+                  onChange={e => { setComboName(e.target.value); saveComboNameDebounced(e.target.value); }}
+                  onBlur={() => { if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current); void saveSettingsField('combo_notation', comboName); }}
+                  placeholder={members.map(m => m.exercise.name).join(' + ')}
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
               </div>
@@ -451,6 +571,20 @@ export function ExerciseDetail({
         )}
 
       </div>
+
+      {/* Footer — Save button for sentinels only */}
+      {sentinel && plannedExercise && (
+        <div className="flex-shrink-0 border-t border-gray-200 px-4 py-3 flex justify-end bg-white">
+          <button
+            onClick={() => void saveSentinelNotes()}
+            disabled={saving || uploading}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors"
+          >
+            <Save size={14} />
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
