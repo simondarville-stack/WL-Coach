@@ -68,7 +68,7 @@ export function AthleteSelector() {
 
           {groups.length > 0 && (
             <div className="p-2 border-b border-gray-100">
-              <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Training groups</p>
+              <p className="px-2 py-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Training groups</p>
               {groups.map(group => (
                 <button
                   key={group.id}
@@ -95,7 +95,7 @@ export function AthleteSelector() {
           )}
 
           <div className="p-2">
-            <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Individual athletes</p>
+            <p className="px-2 py-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Individual athletes</p>
             {activeAthletes.length === 0 ? (
               <p className="px-2 py-3 text-sm text-gray-400 text-center">No athletes available</p>
             ) : (

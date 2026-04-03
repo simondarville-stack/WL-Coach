@@ -46,7 +46,7 @@ export function RAWScoring({ sleep, physical, mood, nutrition, onChange }: RAWSc
             <button
               key={score}
               onClick={() => onChange(field, score)}
-              className={`flex-1 px-4 py-3 text-sm font-semibold rounded-lg border-2 transition-colors ${
+              className={`flex-1 px-4 py-3 text-sm font-medium rounded-lg border-2 transition-colors ${
                 value === score
                   ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
@@ -77,7 +77,7 @@ export function RAWScoring({ sleep, physical, mood, nutrition, onChange }: RAWSc
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">RAW Score</h3>
+        <h3 className="text-lg font-medium text-gray-900">RAW Score</h3>
         <div className="text-sm text-gray-600">
           (Rate each pillar: 1 = Poor, 2 = OK, 3 = Good)
         </div>
@@ -93,7 +93,7 @@ export function RAWScoring({ sleep, physical, mood, nutrition, onChange }: RAWSc
       {total > 0 && (
         <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
           <span className="text-sm font-medium text-gray-700">Total Score:</span>
-          <span className="text-lg font-bold text-gray-900">{total}/12</span>
+          <span className="text-lg font-medium text-gray-900">{total}/12</span>
         </div>
       )}
 
@@ -102,7 +102,7 @@ export function RAWScoring({ sleep, physical, mood, nutrition, onChange }: RAWSc
           <div className="flex items-start gap-3">
             <AlertCircle className={`w-5 h-5 mt-0.5 flex-shrink-0 ${getGuidanceTextColor()}`} />
             <div className="flex-1">
-              <h4 className={`font-semibold mb-2 ${getGuidanceTextColor()}`}>
+              <h4 className={`font-medium mb-2 ${getGuidanceTextColor()}`}>
                 Training Guidance
               </h4>
               <div className={`text-sm whitespace-pre-line ${getGuidanceTextColor()}`}>

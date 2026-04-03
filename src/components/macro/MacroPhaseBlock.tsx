@@ -109,7 +109,7 @@ export function MacroPhaseBlock({
           style={phaseHeaderStyle}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-800">
+            <span className="text-xs font-medium text-gray-800">
               {phase ? phase.name : 'Unassigned weeks'}
               {phase && ` — Wk ${phase.start_week_number}–${phase.end_week_number}`}
             </span>

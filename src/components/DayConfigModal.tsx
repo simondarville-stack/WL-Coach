@@ -36,7 +36,7 @@ export function DayConfigModal({
     <ModalShell maxWidth="max-w-2xl">
       <div className="p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Training Days</h2>
+          <h2 className="text-xl font-medium text-gray-900">Training Days</h2>
           <button
             onClick={onCancel}
             className="p-1 hover:bg-gray-100 rounded transition-colors"

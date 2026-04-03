@@ -261,7 +261,7 @@ export function MacroDraggableChart({
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50">
-        <span className="text-xs font-semibold text-gray-700">{label}</span>
+        <span className="text-xs font-medium text-gray-700">{label}</span>
         <div className="flex items-center gap-1 flex-wrap">
           {trackedExercises.map(te => {
             const isLinked = linkedExerciseIds.has(te.id);

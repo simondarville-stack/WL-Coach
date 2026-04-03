@@ -114,7 +114,7 @@ export function PlanSelector({ athletes, groups, selection, onSelect }: PlanSele
 
           {groups.length > 0 && (
             <div className="p-2 border-b border-gray-200">
-              <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Group Plans
               </div>
               {groups.map((group) => (
@@ -142,7 +142,7 @@ export function PlanSelector({ athletes, groups, selection, onSelect }: PlanSele
           )}
 
           <div className="p-2">
-            <div className="px-2 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            <div className="px-2 py-1 text-xs font-medium text-gray-500 uppercase tracking-wide">
               Individual Plans
             </div>
             {activeAthletes.length === 0 ? (

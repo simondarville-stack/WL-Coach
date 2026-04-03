@@ -326,7 +326,7 @@ export function AthleteLog() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">Athlete Training Log</h1>
+      <h1 className="text-2xl font-medium mb-6 text-gray-900">Athlete Training Log</h1>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <div className="grid grid-cols-3 gap-4">
@@ -444,7 +444,7 @@ export function AthleteLog() {
 
           <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-medium text-gray-900">
                 {getDayName(selectedDayIndex)} - {formatDateToDDMMYYYY(selectedDate.toISOString())}
               </h2>
 
@@ -491,7 +491,7 @@ export function AthleteLog() {
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <div className="font-semibold text-gray-900">{pe.exercise.name}</div>
+                          <div className="font-medium text-gray-900">{pe.exercise.name}</div>
                           {hasChange && (
                             <span className="text-xs px-2 py-1 bg-yellow-600 text-white rounded-full font-medium">
                               Modified
@@ -582,15 +582,15 @@ export function AthleteLog() {
       {prUpdatePrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">New Personal Record!</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">New Personal Record!</h3>
             <div className="mb-6">
               <p className="text-sm text-gray-700 mb-2">
-                You've logged <span className="font-semibold">{prUpdatePrompt.newValue} kg</span> for{' '}
-                <span className="font-semibold">{prUpdatePrompt.exerciseName}</span>.
+                You've logged <span className="font-medium">{prUpdatePrompt.newValue} kg</span> for{' '}
+                <span className="font-medium">{prUpdatePrompt.exerciseName}</span>.
               </p>
               {prUpdatePrompt.currentPR !== null ? (
                 <p className="text-sm text-gray-600">
-                  Your current PR is <span className="font-semibold">{prUpdatePrompt.currentPR} kg</span>.
+                  Your current PR is <span className="font-medium">{prUpdatePrompt.currentPR} kg</span>.
                   Would you like to update it?
                 </p>
               ) : (
@@ -641,7 +641,7 @@ function ExerciseEditModal({ plannedExercise, loggedExercise, onSave, onClose, s
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Edit Exercise</h2>
+            <h2 className="text-xl font-medium text-gray-900">Edit Exercise</h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600"
@@ -651,7 +651,7 @@ function ExerciseEditModal({ plannedExercise, loggedExercise, onSave, onClose, s
           </div>
 
           <div className="mb-4">
-            <div className="text-lg font-semibold text-gray-900 mb-2">
+            <div className="text-lg font-medium text-gray-900 mb-2">
               {plannedExercise.exercise.name}
             </div>
             <div className="text-sm text-gray-600 mb-1">
@@ -731,7 +731,7 @@ function SessionNotesModal({ session, onSessionChange, onSave, onClose, saving }
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Session Notes</h2>
+            <h2 className="text-xl font-medium text-gray-900">Session Notes</h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600"

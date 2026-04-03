@@ -133,7 +133,7 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-bold text-gray-900">Bodyweight — {athlete.name}</h2>
+          <h2 className="text-lg font-medium text-gray-900">Bodyweight — {athlete.name}</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
             <X size={18} />
           </button>
@@ -146,7 +146,7 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
               <span className="text-gray-500">{maDays}-day avg:</span>
               {currentMA !== null ? (
                 <>
-                  <span className="font-semibold text-gray-900">{currentMA.toFixed(1)} kg</span>
+                  <span className="font-medium text-gray-900">{currentMA.toFixed(1)} kg</span>
                   <TrendIcon size={14} className={trendColor} />
                   {trend !== null && (
                     <span className={`text-xs ${trendColor}`}>

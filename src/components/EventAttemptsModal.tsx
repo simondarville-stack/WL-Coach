@@ -196,7 +196,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{eventName}</h2>
+            <h2 className="text-xl font-medium text-gray-900">{eventName}</h2>
             <p className="text-sm text-gray-600">{athlete.name}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded">
@@ -231,7 +231,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
           {activeTab === 'planned' && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Snatch</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Snatch</h3>
                 <div className="space-y-2 pl-4">
                   {renderAttemptInput('1st', 'planned_snatch_1')}
                   {renderAttemptInput('2nd', 'planned_snatch_2')}
@@ -240,7 +240,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Clean & Jerk</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Clean & Jerk</h3>
                 <div className="space-y-2 pl-4">
                   {renderAttemptInput('1st', 'planned_cj_1')}
                   {renderAttemptInput('2nd', 'planned_cj_2')}
@@ -253,7 +253,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
           {activeTab === 'actual' && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Snatch</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Snatch</h3>
                 <div className="space-y-2 pl-4">
                   {renderAttemptInput('1st', 'actual_snatch_1', true)}
                   {renderAttemptInput('2nd', 'actual_snatch_2', true)}
@@ -262,7 +262,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Clean & Jerk</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Clean & Jerk</h3>
                 <div className="space-y-2 pl-4">
                   {renderAttemptInput('1st', 'actual_cj_1', true)}
                   {renderAttemptInput('2nd', 'actual_cj_2', true)}
@@ -271,7 +271,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">Competition Notes</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">Competition Notes</label>
                 <textarea
                   value={attempts?.competition_notes || ''}
                   onChange={(e) =>
@@ -287,7 +287,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
 
           <div className="mt-8 pt-6 border-t border-gray-200">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900">Videos</h3>
+              <h3 className="text-sm font-medium text-gray-900">Videos</h3>
               <button
                 onClick={() => setShowVideoForm(!showVideoForm)}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
