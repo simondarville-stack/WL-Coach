@@ -161,14 +161,17 @@ export function WeeklyPlanner() {
     }
   }, [currentWeekPlan]);
 
-  // Global Escape key closes any open dialog
+  // Global Escape/Enter key closes any open dialog (with refresh)
   useEffect(() => {
     if (panelView === 'overview') return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPanelView('overview');
+    const handler = async (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        await closeDialog();
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelView]);
 
   useEffect(() => {
@@ -274,6 +277,12 @@ export function WeeklyPlanner() {
         fetchWeekCombos(currentWeekPlan.id),
       ]);
     }
+  };
+
+  // Close any dialog, refreshing data first so day cards reflect changes
+  const closeDialog = async () => {
+    await handleRefresh();
+    setPanelView('overview');
   };
 
   const handleDeleteExercise = async (plannedExerciseId: string) => {
@@ -567,9 +576,17 @@ export function WeeklyPlanner() {
 
             {/* ── Day Editor dialog ── */}
             {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
-              <div className="fixed inset-0 z-50 flex items-start justify-center pt-8">
-                <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
-                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl" tabIndex={-1}>
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center p-6"
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
+                    e.preventDefault();
+                    await closeDialog();
+                  }
+                }}
+              >
+                <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
+                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200" tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
                     dayIndex={selectedDayIndex}
@@ -580,7 +597,7 @@ export function WeeklyPlanner() {
                     settings={settings}
                     macroContext={macroContext}
                     allExercises={allExercises}
-                    onClose={() => setPanelView('overview')}
+                    onClose={closeDialog}
                     onNavigateToExercise={exerciseId =>
                       handleNavigateToExercise(selectedDayIndex, exerciseId)
                     }
@@ -600,9 +617,17 @@ export function WeeklyPlanner() {
 
             {/* ── Exercise Detail dialog ── */}
             {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
-              <div className="fixed inset-0 z-50 flex items-start justify-center pt-8">
-                <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
-                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl" tabIndex={-1}>
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center p-6"
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
+                    e.preventDefault();
+                    await closeDialog();
+                  }
+                }}
+              >
+                <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
+                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200" tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}
                     comboMembers={comboMembers}
@@ -614,7 +639,7 @@ export function WeeklyPlanner() {
                     athletePRs={athletePRs}
                     dayLabels={dayLabels}
                     settings={settings}
-                    onClose={() => setPanelView('overview')}
+                    onClose={closeDialog}
                     onBack={() => setPanelView('day')}
                     onSaved={handleRefresh}
                     savePrescription={savePrescription}
