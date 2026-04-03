@@ -127,7 +127,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-4 mb-6">
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Back to athletes">
             <ArrowLeft size={24} />
