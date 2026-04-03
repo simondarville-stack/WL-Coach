@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import {
   parsePrescription, formatPrescription,
@@ -279,6 +279,75 @@ export function PrescriptionGrid({
     );
   }
 
+  function renderComboRepsCell(col: GridColumn) {
+    const isEditingThis = editing?.colId === col.id && editing.field === 'reps';
+    const isDeleting = shiftHeld;
+
+    if (isEditingThis) {
+      return (
+        <input
+          ref={inputRef}
+          value={editing!.value}
+          onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={commitEdit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+          }}
+          className="w-full text-center text-xs font-mono bg-blue-50 border border-blue-400 rounded outline-none"
+          style={{ minWidth: 0 }}
+        />
+      );
+    }
+
+    const parts = col.repsText.split('+');
+
+    return (
+      <div className="flex items-center justify-center gap-px" style={{ minHeight: '1.25rem' }}>
+        {parts.map((part, partIdx) => (
+          <React.Fragment key={partIdx}>
+            {partIdx > 0 && (
+              <span className={`text-[10px] leading-none select-none ${isDeleting ? 'text-red-400' : 'text-gray-400'}`}>+</span>
+            )}
+            <button
+              onMouseDown={e => {
+                if (e.button !== 0 && e.button !== 2) return;
+                e.preventDefault();
+                if (isDeleting) {
+                  removeColumn(col.id);
+                  return;
+                }
+                if (e.ctrlKey || e.metaKey) {
+                  setEditing({ colId: col.id, field: 'reps', value: col.repsText });
+                  return;
+                }
+                const isRight = e.button === 2;
+                const delta = isRight ? -1 : 1;
+                const newParts = col.repsText.split('+').map(p => parseInt(p, 10) || 1);
+                newParts[partIdx] = Math.max(1, newParts[partIdx] + delta);
+                const newRepsText = newParts.join('+');
+                const newTotalReps = newParts.reduce((s, p) => s + p, 0);
+                updateColumn(col.id, { repsText: newRepsText, reps: newTotalReps });
+              }}
+              onContextMenu={e => e.preventDefault()}
+              tabIndex={-1}
+              disabled={disabled}
+              className={[
+                'text-center text-xs font-mono font-medium select-none transition-colors rounded px-0.5',
+                isDeleting
+                  ? 'text-red-600 hover:bg-red-100 active:bg-red-200 cursor-pointer'
+                  : 'text-gray-900 hover:bg-blue-50 hover:ring-1 hover:ring-blue-300 active:bg-blue-100 cursor-pointer',
+              ].join(' ')}
+              style={{ minWidth: '1rem', lineHeight: '1.25rem' }}
+            >
+              {part}
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  }
+
   function renderCell(col: GridColumn, field: 'load' | 'reps' | 'sets', displayValue: string) {
     const isEditingThis = editing?.colId === col.id && editing.field === field;
 
@@ -361,10 +430,12 @@ export function PrescriptionGrid({
             onBlur={() => setFocusedColId(prev => prev === col.id ? null : prev)}
           >
             {/* Stacked fraction: load / reps */}
-            <div className="flex flex-col items-center" style={{ minWidth: '2.5rem' }}>
+            <div className="flex flex-col items-center" style={{ minWidth: isCombo ? 'auto' : '2.5rem' }}>
               <div className="w-full">{renderCell(col, 'load', loadDisplay)}</div>
               <div className={`w-full my-px border-t ${isDeleting ? 'border-red-300' : 'border-gray-400'}`} />
-              <div className="w-full">{renderCell(col, 'reps', col.repsText)}</div>
+              <div className="w-full">
+                {isCombo ? renderComboRepsCell(col) : renderCell(col, 'reps', col.repsText)}
+              </div>
             </div>
             {/* Sets — right of fraction */}
             <div style={{ minWidth: '1rem', alignSelf: 'center' }}>
