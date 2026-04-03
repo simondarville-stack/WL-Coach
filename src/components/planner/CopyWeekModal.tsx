@@ -134,7 +134,7 @@ export function CopyWeekModal({
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Clipboard size={20} className="text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Paste Week</h2>
+            <h2 className="text-lg font-medium text-gray-900">Paste Week</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={20} />
@@ -144,7 +144,7 @@ export function CopyWeekModal({
         <div className="p-4 space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-900">
-              <span className="font-semibold">Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
+              <span className="font-medium">Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
             </p>
           </div>
 
@@ -208,7 +208,7 @@ export function CopyWeekModal({
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-2">
               <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
               <p className="text-sm text-gray-700">
-                <span className="font-semibold">Destination:</span> {targetLabel} — {formatDateRange(destinationWeekStart)}
+                <span className="font-medium">Destination:</span> {targetLabel} — {formatDateRange(destinationWeekStart)}
               </p>
             </div>
           )}
