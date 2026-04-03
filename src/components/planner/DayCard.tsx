@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
@@ -33,6 +33,19 @@ interface DayCardProps {
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+}
+
+function getYouTubeThumbnail(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
+
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(exerciseCode: string | null): SentinelType {
+  if (exerciseCode === 'TEXT') return 'text';
+  if (exerciseCode === 'VIDEO') return 'video';
+  if (exerciseCode === 'IMAGE') return 'image';
+  return null;
 }
 
 function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: string | null; isCombo?: boolean }) {
@@ -263,8 +276,13 @@ export function DayCard({
           ) : (
             <div className="flex flex-col divide-y divide-gray-50">
               {exercises.map(ex => {
+                const sentinel = getSentinelType(ex.exercise.exercise_code);
                 const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
-                const borderColor = ex.is_combo
+                const borderColor = sentinel === 'text'
+                  ? 'transparent'
+                  : sentinel
+                  ? '#d1d5db'
+                  : ex.is_combo
                   ? (ex.combo_color || (members?.[0]?.exercise.color) || '#94a3b8')
                   : (ex.exercise.color || '#94a3b8');
 
@@ -292,36 +310,66 @@ export function DayCard({
                       <GripVertical size={11} />
                     </div>
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                      {/* Exercise name row */}
-                      {ex.is_combo && members ? (
-                        <div className="flex items-baseline gap-1 min-w-0">
-                          <div className="flex gap-0.5 items-center flex-shrink-0">
-                            {members.map(m => (
-                              <div
-                                key={m.exerciseId}
-                                className="w-1.5 h-1.5 rounded-full"
-                                style={{ backgroundColor: m.exercise.color || '#94a3b8' }}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-xs font-medium text-gray-900 truncate leading-tight">
-                            {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
-                          </span>
-                          <span className="text-[9px] px-1 py-px bg-blue-50 text-blue-600 rounded font-medium flex-shrink-0">
-                            Combo
-                          </span>
+                      {sentinel === 'text' ? (
+                        <p className="text-xs text-gray-500 italic leading-snug line-clamp-3">
+                          {ex.notes || 'Free text…'}
+                        </p>
+                      ) : sentinel === 'video' ? (
+                        <div className="flex items-center gap-1.5">
+                          <Video size={11} className="text-indigo-400 flex-shrink-0" />
+                          <span className="text-xs text-gray-500">Video</span>
+                          {ex.notes && (() => {
+                            const thumb = getYouTubeThumbnail(ex.notes);
+                            return thumb
+                              ? <img src={thumb} alt="" className="w-14 h-9 object-cover rounded flex-shrink-0" />
+                              : null;
+                          })()}
                         </div>
-                      ) : (
-                        <div className="flex items-baseline gap-1 min-w-0">
-                          <span className="text-xs font-medium text-gray-900 truncate leading-tight">
-                            {ex.exercise.name}
-                          </span>
-                          {ex.variation_note && (
-                            <span className="text-[10px] text-gray-400 italic truncate flex-shrink-0">{ex.variation_note}</span>
+                      ) : sentinel === 'image' ? (
+                        <div className="flex items-center gap-1.5">
+                          <ImageIcon size={11} className="text-pink-400 flex-shrink-0" />
+                          <span className="text-xs text-gray-500">Image</span>
+                          {ex.notes && (
+                            <img src={ex.notes} alt="" className="w-14 h-9 object-cover rounded flex-shrink-0" onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
                         </div>
+                      ) : ex.is_combo && members ? (
+                        <>
+                          <div className="flex items-baseline gap-1 min-w-0">
+                            <div className="flex gap-0.5 items-center flex-shrink-0">
+                              {members.map(m => (
+                                <div
+                                  key={m.exerciseId}
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: m.exercise.color || '#94a3b8' }}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-xs font-medium text-gray-900 truncate leading-tight">
+                              {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
+                            </span>
+                            <span className="text-[9px] px-1 py-px bg-blue-50 text-blue-600 rounded font-medium flex-shrink-0">
+                              Combo
+                            </span>
+                          </div>
+                          <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={true} />
+                          {ex.notes && (
+                            <p className="text-[10px] text-gray-400 italic leading-tight">{ex.notes}</p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline gap-1 min-w-0">
+                            <span className="text-xs font-medium text-gray-900 truncate leading-tight">
+                              {ex.exercise.name}
+                            </span>
+                            {ex.variation_note && (
+                              <span className="text-[10px] text-gray-400 italic truncate flex-shrink-0">{ex.variation_note}</span>
+                            )}
+                          </div>
+                          <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
+                        </>
                       )}
-                      <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
                     </div>
                   </div>
                 );
