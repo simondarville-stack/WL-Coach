@@ -72,7 +72,7 @@ export function WeekSummary({
           if (pr && pr > 0) totalStress += r * Math.pow(avg / pr, 2);
         }
         // For combos: use the combo exercise category (first member's category is on the exercise itself)
-        addToCategory(ex.exercise.category, s, r, ton);
+        if (ex.exercise.category !== '— System') addToCategory(ex.exercise.category, s, r, ton);
       });
     });
 
