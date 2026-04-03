@@ -8,6 +8,7 @@ import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { Settings } from './components/Settings';
 import { AthleteLog } from './components/AthleteLog';
+import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
 import { CoachDashboard } from './components/CoachDashboard';
 import { AthleteSelector } from './components/AthleteSelector';
@@ -29,6 +30,7 @@ const pageTitles: Record<string, string> = {
   '/events': 'Calendar',
   '/athletes': 'Roster',
   '/training-groups': 'Training groups',
+  '/training-log': 'Training log',
   '/athlete-log': 'Training log',
   '/library': 'Exercise library',
   '/settings': 'Settings',
@@ -124,7 +126,8 @@ function App() {
               <Route path="/events" element={<CompetitionCalendar />} />
               <Route path="/athletes" element={<Athletes />} />
               <Route path="/training-groups" element={<TrainingGroups />} />
-              <Route path="/athlete-log" element={<AthleteLog />} />
+              <Route path="/training-log" element={<TrainingLogPage />} />
+              <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
