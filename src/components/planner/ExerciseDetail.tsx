@@ -327,7 +327,7 @@ export function ExerciseDetail({
         {isCombo && members.length > 0 && (
           <div className="flex gap-2 flex-wrap">
             {members.map(m => (
-              <div key={m.exerciseId} className="flex items-center gap-1.5 text-xs text-gray-600">
+              <div key={m.position} className="flex items-center gap-1.5 text-xs text-gray-600">
                 <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.exercise.color || '#94a3b8' }} />
                 {m.exercise.name}
               </div>

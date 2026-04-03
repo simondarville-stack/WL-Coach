@@ -339,7 +339,7 @@ export function DayCard({
                             <div className="flex gap-0.5 items-center flex-shrink-0">
                               {members.map(m => (
                                 <div
-                                  key={m.exerciseId}
+                                  key={m.position}
                                   className="w-1.5 h-1.5 rounded-full"
                                   style={{ backgroundColor: m.exercise.color || '#94a3b8' }}
                                 />

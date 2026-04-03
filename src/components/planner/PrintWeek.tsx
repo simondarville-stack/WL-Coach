@@ -359,7 +359,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
                           </div>
                           {ex.is_combo && members && members.length > 0 && (
                             <p className="text-xs text-gray-500 mb-1">
-                              {members.map((m, i) => <span key={m.exerciseId}>{i > 0 && ' + '}{m.exercise.name}</span>)}
+                              {members.map((m, i) => <span key={m.position}>{i > 0 && ' + '}{m.exercise.name}</span>)}
                             </p>
                           )}
                           {ex.prescription_raw && (
