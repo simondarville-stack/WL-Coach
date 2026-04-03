@@ -261,8 +261,8 @@ export function DayCard({
           <span className="text-sm font-medium text-gray-900">{dayName}</span>
           {!isEmpty && (
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-gray-500">S <strong className="text-gray-900 font-semibold">{daySets}</strong></span>
-              <span className="text-gray-500">R <strong className="text-gray-900 font-semibold">{dayReps}</strong></span>
+              <span className="text-gray-500">S <strong className="text-gray-900 font-medium">{daySets}</strong></span>
+              <span className="text-gray-500">R <strong className="text-gray-900 font-medium">{dayReps}</strong></span>
             </div>
           )}
         </div>

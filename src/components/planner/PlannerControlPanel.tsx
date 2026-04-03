@@ -235,7 +235,7 @@ export function PlannerControlPanel({
                 onError={e => { e.currentTarget.style.display = 'none'; }}
               />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-sm font-semibold text-blue-700 flex-shrink-0 border border-blue-200">
+              <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0 border border-blue-200">
                 {athleteInitials}
               </div>
             )}
@@ -392,7 +392,7 @@ export function PlannerControlPanel({
             {/* LEFT: macro name + week */}
             <div className="flex-shrink-0 w-28">
               <p className="text-[10px] text-gray-500 truncate leading-tight">{macroContext.macroName}</p>
-              <p className="text-[10px] font-semibold text-gray-700 leading-tight">
+              <p className="text-[10px] font-medium text-gray-700 leading-tight">
                 Wk {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? `/${macroContext.totalWeeks}` : ''}
               </p>
             </div>
