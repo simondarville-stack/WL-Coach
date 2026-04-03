@@ -7,7 +7,6 @@ import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
 import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { Settings } from './components/Settings';
-import { AthleteLog } from './components/AthleteLog';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
 import { CoachDashboard } from './components/CoachDashboard';
