@@ -6,7 +6,7 @@ import { CoachSessionView } from './CoachSessionView';
 
 type View =
   | { type: 'history' }
-  | { type: 'session'; date: string }
+  | { type: 'session'; weekStart: string; dayIndex: number }
   | { type: 'review'; sessionId: string };
 
 export function TrainingLogPage() {
@@ -28,7 +28,8 @@ export function TrainingLogPage() {
     return (
       <SessionView
         athlete={selectedAthlete}
-        date={view.date}
+        weekStart={view.weekStart}
+        dayIndex={view.dayIndex}
         onBack={() => setView({ type: 'history' })}
       />
     );
@@ -48,7 +49,7 @@ export function TrainingLogPage() {
   return (
     <SessionHistory
       athlete={selectedAthlete}
-      onOpenSession={date => setView({ type: 'session', date })}
+      onOpenSession={(weekStart, dayIndex) => setView({ type: 'session', weekStart, dayIndex })}
       onReviewSession={sessionId => setView({ type: 'review', sessionId })}
     />
   );
