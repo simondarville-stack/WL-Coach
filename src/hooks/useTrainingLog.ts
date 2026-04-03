@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { parsePrescription } from '../lib/prescriptionParser';
+import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
+
+function toLocalISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 import type {
   WeekPlan,
   PlannedExerciseWithExercise,
@@ -20,7 +27,7 @@ export function useTrainingLog() {
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
 
   const fetchWeekData = async (athleteId: string, weekStart: Date, selectedDayIndex: number) => {
-    const weekStartISO = weekStart.toISOString().split('T')[0];
+    const weekStartISO = toLocalISO(weekStart);
 
     const { data: weekData } = await supabase
       .from('week_plans')
@@ -45,7 +52,7 @@ export function useTrainingLog() {
 
     const selectedDate = new Date(weekStart);
     selectedDate.setDate(selectedDate.getDate() + selectedDayIndex - 1);
-    const dateISO = selectedDate.toISOString().split('T')[0];
+    const dateISO = toLocalISO(selectedDate);
 
     const { data: sessionData } = await supabase
       .from('training_log_sessions')
@@ -280,6 +287,7 @@ export function useTrainingLog() {
     logExerciseId: string,
     prescriptionRaw: string | null,
     unit: string | null,
+    isCombo = false,
   ): Promise<void> => {
     // Delete existing sets first
     await supabase
@@ -292,33 +300,59 @@ export function useTrainingLog() {
       return;
     }
 
-    const parsed = parsePrescription(prescriptionRaw);
-    if (parsed.length === 0) {
-      setSetsMap(prev => ({ ...prev, [logExerciseId]: [] }));
-      return;
-    }
-
-    // Expand set lines into individual sets
     const setsToInsert: Array<{
       log_exercise_id: string;
       set_number: number;
       planned_load: number | null;
       planned_reps: number | null;
+      notes: string | null;
       status: string;
     }> = [];
 
     let setNumber = 1;
-    const isPercentage = unit === 'percentage';
 
-    for (const line of parsed) {
-      for (let i = 0; i < line.sets; i++) {
-        setsToInsert.push({
-          log_exercise_id: logExerciseId,
-          set_number: setNumber++,
-          planned_load: isPercentage ? null : line.load,
-          planned_reps: line.reps,
-          status: 'pending',
-        });
+    if (isCombo) {
+      const parsed = parseComboPrescription(prescriptionRaw);
+      for (const line of parsed) {
+        for (let i = 0; i < line.sets; i++) {
+          setsToInsert.push({
+            log_exercise_id: logExerciseId,
+            set_number: setNumber++,
+            planned_load: unit === 'percentage' ? null : line.load,
+            planned_reps: line.totalReps,
+            notes: line.repsText,
+            status: 'pending',
+          });
+        }
+      }
+    } else if (unit === 'free_text_reps') {
+      const parsed = parseFreeTextPrescription(prescriptionRaw);
+      for (const line of parsed) {
+        for (let i = 0; i < line.sets; i++) {
+          setsToInsert.push({
+            log_exercise_id: logExerciseId,
+            set_number: setNumber++,
+            planned_load: null,
+            planned_reps: line.reps,
+            notes: line.loadText,
+            status: 'pending',
+          });
+        }
+      }
+    } else {
+      const parsed = parsePrescription(prescriptionRaw);
+      const isPercentage = unit === 'percentage';
+      for (const line of parsed) {
+        for (let i = 0; i < line.sets; i++) {
+          setsToInsert.push({
+            log_exercise_id: logExerciseId,
+            set_number: setNumber++,
+            planned_load: isPercentage ? null : line.load,
+            planned_reps: line.reps,
+            notes: null,
+            status: 'pending',
+          });
+        }
       }
     }
 
@@ -476,7 +510,7 @@ export function useTrainingLog() {
       if (existing) {
         await supabase
           .from('athlete_prs')
-          .update({ pr_value_kg: load, pr_date: new Date().toISOString().split('T')[0] })
+          .update({ pr_value_kg: load, pr_date: toLocalISO(new Date()) })
           .eq('id', existing.id);
       } else {
         await supabase
@@ -485,7 +519,7 @@ export function useTrainingLog() {
             athlete_id: athleteId,
             exercise_id: exerciseId,
             pr_value_kg: load,
-            pr_date: new Date().toISOString().split('T')[0],
+            pr_date: toLocalISO(new Date()),
           });
       }
     }

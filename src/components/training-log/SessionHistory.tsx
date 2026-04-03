@@ -15,19 +15,26 @@ interface WeekData {
   sessions: TrainingLogSession[];
 }
 
+function toLocalISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getMondayISO(): string {
   const d = new Date();
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
+  return toLocalISO(d);
 }
 
 function addWeeks(isoDate: string, weeks: number): string {
   const d = new Date(isoDate + 'T00:00:00');
   d.setDate(d.getDate() + weeks * 7);
-  return d.toISOString().split('T')[0];
+  return toLocalISO(d);
 }
 
 function formatWeekRange(weekStartISO: string): string {

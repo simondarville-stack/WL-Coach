@@ -179,7 +179,10 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
   const date = (() => {
     const d = new Date(weekStart + 'T00:00:00');
     d.setDate(d.getDate() + dayIndex - 1);
-    return d.toISOString().split('T')[0];
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const dy = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${dy}`;
   })();
 
   // Load data on mount
@@ -271,7 +274,7 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
       return;
     }
     initializedExercises.current.add(logEx.id);
-    await initSetsFromPlan(logEx.id, planned.prescription_raw, planned.unit);
+    await initSetsFromPlan(logEx.id, planned.prescription_raw, planned.unit, planned.is_combo);
   }, [setsMap, initSetsFromPlan]);
 
   const currentPlanned = plannedExercises[currentExerciseIndex];

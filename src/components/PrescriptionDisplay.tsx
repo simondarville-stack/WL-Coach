@@ -11,7 +11,7 @@ export function PrescriptionDisplay({ prescription, unit, useStackedNotation }: 
     return <span className="text-gray-500 italic">No prescription</span>;
   }
 
-  if (unit === 'free_text' || unit === 'rpe') {
+  if (unit === 'free_text' || unit === 'free_text_reps' || unit === 'rpe') {
     const parsed = parseFreeTextPrescription(prescription);
     if (parsed.length === 0) {
       return <span>{prescription}</span>;
