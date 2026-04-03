@@ -101,7 +101,7 @@ export function WeekSummary({
           title="Go to Macro Cycles"
         >
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2 py-0.5 rounded border text-xs font-semibold ${weekTypeBadgeClass(macroContext.weekType)}`}>
+            <span className={`px-2 py-0.5 rounded border text-xs font-medium ${weekTypeBadgeClass(macroContext.weekType)}`}>
               {macroContext.weekType}
             </span>
             {macroContext.phaseName && (
@@ -151,7 +151,7 @@ export function WeekSummary({
           {visibleMetrics.includes('sets') && (
             <div className="flex flex-col items-center">
               <span className="text-[10px] text-gray-500 uppercase tracking-wide">Sets</span>
-              <span className="text-xl font-semibold text-gray-900">{metrics.totalSets}</span>
+              <span className="text-xl font-medium text-gray-900">{metrics.totalSets}</span>
             </div>
           )}
           {visibleMetrics.includes('sets') && visibleMetrics.includes('reps') && (
@@ -160,7 +160,7 @@ export function WeekSummary({
           {visibleMetrics.includes('reps') && (
             <div className="flex flex-col items-center">
               <span className="text-[10px] text-gray-500 uppercase tracking-wide">Reps</span>
-              <span className="text-xl font-semibold text-gray-900">{metrics.totalReps}</span>
+              <span className="text-xl font-medium text-gray-900">{metrics.totalReps}</span>
             </div>
           )}
           {macroWeekTarget != null && (
@@ -168,7 +168,7 @@ export function WeekSummary({
               <div className="w-px h-8 bg-gray-200" />
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500 uppercase tracking-wide">Target</span>
-                <span className="text-xl font-semibold text-gray-900">{macroWeekTarget}</span>
+                <span className="text-xl font-medium text-gray-900">{macroWeekTarget}</span>
               </div>
             </>
           )}
@@ -177,7 +177,7 @@ export function WeekSummary({
               <div className="w-px h-8 bg-gray-200" />
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500 uppercase tracking-wide">Tonnage</span>
-                <span className="text-xl font-semibold text-gray-900">{metrics.totalTonnage.toLocaleString()}</span>
+                <span className="text-xl font-medium text-gray-900">{metrics.totalTonnage.toLocaleString()}</span>
               </div>
             </>
           )}
@@ -186,7 +186,7 @@ export function WeekSummary({
               <div className="w-px h-8 bg-gray-200" />
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500 uppercase tracking-wide">Stress</span>
-                <span className="text-xl font-semibold text-gray-900">{metrics.totalStress}</span>
+                <span className="text-xl font-medium text-gray-900">{metrics.totalStress}</span>
               </div>
             </>
           )}

@@ -309,7 +309,7 @@ export function ExerciseDetail({
             </button>
           )}
           <div>
-            <h2 className="text-base font-semibold text-gray-900 leading-tight">{exerciseName}</h2>
+            <h2 className="text-base font-medium text-gray-900 leading-tight">{exerciseName}</h2>
             {plannedExercise?.variation_note && (
               <p className="text-xs text-gray-400 italic">{plannedExercise.variation_note}</p>
             )}

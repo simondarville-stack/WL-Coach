@@ -272,10 +272,10 @@ export function DayEditor({
             <h2 className="text-base font-medium text-gray-900">{dayName}</h2>
             {(totalSets > 0 || totalReps > 0) && (
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-gray-500">S <strong className="text-gray-900 font-semibold">{totalSets}</strong></span>
-                <span className="text-gray-500">R <strong className="text-gray-900 font-semibold">{totalReps}</strong></span>
+                <span className="text-gray-500">S <strong className="text-gray-900 font-medium">{totalSets}</strong></span>
+                <span className="text-gray-500">R <strong className="text-gray-900 font-medium">{totalReps}</strong></span>
                 {totalTonnage > 0 && (
-                  <span className="text-gray-500">T <strong className="text-gray-900 font-semibold">{Math.round(totalTonnage).toLocaleString()}</strong></span>
+                  <span className="text-gray-500">T <strong className="text-gray-900 font-medium">{Math.round(totalTonnage).toLocaleString()}</strong></span>
                 )}
               </div>
             )}
