@@ -45,8 +45,81 @@ export function useEvents() {
     }
   };
 
+  const fetchUpcomingEvents = async (days: number): Promise<EventWithAthletes[]> => {
+    const today = new Date().toISOString().split('T')[0];
+    const future = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const { data: eventsData } = await supabase
+      .from('events')
+      .select('*')
+      .gte('event_date', today)
+      .lte('event_date', future)
+      .order('event_date', { ascending: true });
+
+    if (!eventsData) return [];
+    return Promise.all(
+      eventsData.map(async (event) => {
+        const { data: eventAthletes } = await supabase
+          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
+        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
+        const { data: athletesData } = await supabase
+          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
+        return { ...event, athletes: athletesData || [] };
+      })
+    );
+  };
+
+  const fetchEventsByMonth = async (year: number, month: number): Promise<EventWithAthletes[]> => {
+    const start = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const { data: eventsData } = await supabase
+      .from('events')
+      .select('*')
+      .gte('event_date', start)
+      .lte('event_date', end)
+      .order('event_date', { ascending: true });
+
+    if (!eventsData) return [];
+    return Promise.all(
+      eventsData.map(async (event) => {
+        const { data: eventAthletes } = await supabase
+          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
+        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
+        const { data: athletesData } = await supabase
+          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
+        return { ...event, athletes: athletesData || [] };
+      })
+    );
+  };
+
+  const fetchEventsByDateRange = async (start: string, end: string): Promise<EventWithAthletes[]> => {
+    const { data: eventsData } = await supabase
+      .from('events')
+      .select('*')
+      .gte('event_date', start)
+      .lte('event_date', end)
+      .order('event_date', { ascending: true });
+
+    if (!eventsData) return [];
+    return Promise.all(
+      eventsData.map(async (event) => {
+        const { data: eventAthletes } = await supabase
+          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
+        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
+        const { data: athletesData } = await supabase
+          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
+        return { ...event, athletes: athletesData || [] };
+      })
+    );
+  };
+
   const createEvent = async (
-    eventData: { name: string; event_date: string; description: string },
+    eventData: {
+      name: string; event_date: string; description: string | null;
+      event_type: string; location: string | null; end_date: string | null;
+      color: string | null; notes: string | null; is_all_day: boolean;
+      start_time: string | null; end_time: string | null; external_url: string | null;
+    },
     athleteIds: string[],
   ) => {
     try {
@@ -70,7 +143,12 @@ export function useEvents() {
 
   const updateEvent = async (
     id: string,
-    eventData: { name: string; event_date: string; description: string },
+    eventData: {
+      name: string; event_date: string; description: string | null;
+      event_type: string; location: string | null; end_date: string | null;
+      color: string | null; notes: string | null; is_all_day: boolean;
+      start_time: string | null; end_time: string | null; external_url: string | null;
+    },
     athleteIds: string[],
   ) => {
     try {
@@ -271,6 +349,9 @@ export function useEvents() {
     events,
     loading,
     fetchEvents,
+    fetchUpcomingEvents,
+    fetchEventsByMonth,
+    fetchEventsByDateRange,
     createEvent,
     updateEvent,
     deleteEvent,

@@ -263,11 +263,22 @@ export interface TrainingLogExerciseWithExercise extends TrainingLogExercise {
   exercise: Exercise;
 }
 
+export type EventType = 'competition' | 'training_camp' | 'seminar' | 'testing_day' | 'team_meeting' | 'other';
+
 export interface Event {
   id: string;
   name: string;
   event_date: string;
+  end_date: string | null;
   description: string | null;
+  event_type: EventType;
+  location: string | null;
+  color: string | null;
+  notes: string | null;
+  is_all_day: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  external_url: string | null;
   created_at: string;
   updated_at: string;
 }

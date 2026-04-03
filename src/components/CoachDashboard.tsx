@@ -670,22 +670,24 @@ function UpcomingEventsList({
         Upcoming Events
       </h2>
       <div className="space-y-3 max-h-96 overflow-y-auto">
-        {events.map((event, index) => (
-          <button
-            key={index}
-            onClick={() => onEventClick(event.eventData)}
-            className="w-full border-l-4 border-blue-600 pl-3 py-2 text-left hover:bg-gray-50 rounded-r transition-colors"
-          >
-            <div className="font-medium text-gray-900">{event.note}</div>
-            <div className="text-sm text-gray-600">{event.athleteName}</div>
-            <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
-              <span>{formatDateToDDMMYYYY(event.date.toISOString())}</span>
-              <span className="font-medium text-blue-600">
-                {event.daysUntil} days ({event.weeksUntil} weeks)
-              </span>
-            </div>
-          </button>
-        ))}
+        {events.map((event, index) => {
+          const color = event.eventData.color ?? '#3b82f6';
+          return (
+            <button
+              key={index}
+              onClick={() => onEventClick(event.eventData)}
+              className="w-full border-l-4 pl-3 py-2 text-left hover:bg-gray-50 rounded-r transition-colors"
+              style={{ borderLeftColor: color }}
+            >
+              <div className="font-medium text-gray-900">{event.note}</div>
+              <div className="text-sm text-gray-600">{event.athleteName}</div>
+              <div className="text-xs text-gray-500 mt-1 flex items-center gap-3">
+                <span>{formatDateToDDMMYYYY(event.date.toISOString())}</span>
+                <span className="font-medium" style={{ color }}>{event.daysUntil}d / {event.weeksUntil}w</span>
+              </div>
+            </button>
+          );
+        })}
         {events.length === 0 && (
           <div className="text-gray-500 italic text-center py-8">No upcoming events</div>
         )}
