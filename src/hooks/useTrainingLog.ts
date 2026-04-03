@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { parsePrescription } from '../lib/prescriptionParser';
 import type {
   WeekPlan,
   PlannedExerciseWithExercise,
   TrainingLogSession,
   TrainingLogExerciseWithExercise,
+  TrainingLogSet,
+  TrainingLogMessage,
 } from '../lib/database.types';
 
 export function useTrainingLog() {
@@ -13,6 +16,8 @@ export function useTrainingLog() {
   const [session, setSession] = useState<TrainingLogSession | null>(null);
   const [loggedExercises, setLoggedExercises] = useState<TrainingLogExerciseWithExercise[]>([]);
   const [saving, setSaving] = useState(false);
+  const [setsMap, setSetsMap] = useState<Record<string, TrainingLogSet[]>>({});
+  const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
 
   const fetchWeekData = async (athleteId: string, weekStart: Date, selectedDayIndex: number) => {
     const weekStartISO = weekStart.toISOString().split('T')[0];
@@ -72,6 +77,11 @@ export function useTrainingLog() {
         raw_nutrition: null,
         raw_total: null,
         raw_guidance: null,
+        started_at: null,
+        completed_at: null,
+        duration_minutes: null,
+        session_rpe: null,
+        bodyweight_kg: null,
         created_at: '',
         updated_at: '',
       });
@@ -185,7 +195,306 @@ export function useTrainingLog() {
     }
   };
 
+  // ── New functions ──────────────────────────────────────────────────────────
+
+  const fetchSetsForExercise = async (logExerciseId: string): Promise<void> => {
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .select('*')
+      .eq('log_exercise_id', logExerciseId)
+      .order('set_number');
+    if (error) throw error;
+    setSetsMap(prev => ({ ...prev, [logExerciseId]: data || [] }));
+  };
+
+  const saveSet = async (
+    set: Partial<TrainingLogSet> & { log_exercise_id: string; set_number: number }
+  ): Promise<TrainingLogSet> => {
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .insert({
+        log_exercise_id: set.log_exercise_id,
+        set_number: set.set_number,
+        planned_load: set.planned_load ?? null,
+        planned_reps: set.planned_reps ?? null,
+        performed_load: set.performed_load ?? null,
+        performed_reps: set.performed_reps ?? null,
+        rpe: set.rpe ?? null,
+        status: set.status ?? 'pending',
+        notes: set.notes ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    setSetsMap(prev => ({
+      ...prev,
+      [set.log_exercise_id]: [...(prev[set.log_exercise_id] || []), data],
+    }));
+    return data;
+  };
+
+  const completeSet = async (
+    setId: string,
+    performed: { load: number | null; reps: number | null; rpe: number | null }
+  ): Promise<void> => {
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .update({
+        performed_load: performed.load,
+        performed_reps: performed.reps,
+        rpe: performed.rpe,
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', setId)
+      .select()
+      .single();
+    if (error) throw error;
+    setSetsMap(prev => {
+      const exId = data.log_exercise_id;
+      return {
+        ...prev,
+        [exId]: (prev[exId] || []).map(s => s.id === setId ? data : s),
+      };
+    });
+  };
+
+  const skipSet = async (setId: string): Promise<void> => {
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .update({ status: 'skipped', updated_at: new Date().toISOString() })
+      .eq('id', setId)
+      .select()
+      .single();
+    if (error) throw error;
+    setSetsMap(prev => {
+      const exId = data.log_exercise_id;
+      return {
+        ...prev,
+        [exId]: (prev[exId] || []).map(s => s.id === setId ? data : s),
+      };
+    });
+  };
+
+  const initSetsFromPlan = async (
+    logExerciseId: string,
+    prescriptionRaw: string | null,
+    unit: string | null,
+  ): Promise<void> => {
+    // Delete existing sets first
+    await supabase
+      .from('training_log_sets')
+      .delete()
+      .eq('log_exercise_id', logExerciseId);
+
+    if (!prescriptionRaw) {
+      setSetsMap(prev => ({ ...prev, [logExerciseId]: [] }));
+      return;
+    }
+
+    const parsed = parsePrescription(prescriptionRaw);
+    if (parsed.length === 0) {
+      setSetsMap(prev => ({ ...prev, [logExerciseId]: [] }));
+      return;
+    }
+
+    // Expand set lines into individual sets
+    const setsToInsert: Array<{
+      log_exercise_id: string;
+      set_number: number;
+      planned_load: number | null;
+      planned_reps: number | null;
+      status: string;
+    }> = [];
+
+    let setNumber = 1;
+    const isPercentage = unit === 'percentage';
+
+    for (const line of parsed) {
+      for (let i = 0; i < line.sets; i++) {
+        setsToInsert.push({
+          log_exercise_id: logExerciseId,
+          set_number: setNumber++,
+          planned_load: isPercentage ? null : line.load,
+          planned_reps: line.reps,
+          status: 'pending',
+        });
+      }
+    }
+
+    if (setsToInsert.length === 0) {
+      setSetsMap(prev => ({ ...prev, [logExerciseId]: [] }));
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .insert(setsToInsert)
+      .select();
+    if (error) throw error;
+
+    setSetsMap(prev => ({ ...prev, [logExerciseId]: data || [] }));
+  };
+
+  const startSession = async (sessionId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('training_log_sessions')
+      .update({ started_at: now, status: 'in_progress' })
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error) throw error;
+    setSession(data);
+  };
+
+  const completeSession = async (
+    sessionId: string,
+    opts?: { rpe?: number; notes?: string; bodyweight_kg?: number }
+  ): Promise<void> => {
+    const now = new Date().toISOString();
+
+    // Fetch current session to compute duration
+    const { data: current } = await supabase
+      .from('training_log_sessions')
+      .select('started_at')
+      .eq('id', sessionId)
+      .single();
+
+    let durationMinutes: number | null = null;
+    if (current?.started_at) {
+      const start = new Date(current.started_at).getTime();
+      const end = new Date(now).getTime();
+      durationMinutes = Math.round((end - start) / 60000);
+    }
+
+    const { data, error } = await supabase
+      .from('training_log_sessions')
+      .update({
+        completed_at: now,
+        status: 'completed',
+        duration_minutes: durationMinutes,
+        session_rpe: opts?.rpe ?? null,
+        session_notes: opts?.notes ?? undefined,
+        bodyweight_kg: opts?.bodyweight_kg ?? null,
+      })
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error) throw error;
+    setSession(data);
+  };
+
+  const startExercise = async (logExerciseId: string): Promise<void> => {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('training_log_exercises')
+      .update({ status: 'in_progress', started_at: now })
+      .eq('id', logExerciseId);
+    if (error) throw error;
+    setLoggedExercises(prev =>
+      prev.map(e => e.id === logExerciseId ? { ...e, status: 'in_progress', started_at: now } : e)
+    );
+  };
+
+  const completeExercise = async (logExerciseId: string, techniqueRating?: number): Promise<void> => {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('training_log_exercises')
+      .update({
+        status: 'completed',
+        completed_at: now,
+        technique_rating: techniqueRating ?? null,
+      })
+      .eq('id', logExerciseId);
+    if (error) throw error;
+    setLoggedExercises(prev =>
+      prev.map(e => e.id === logExerciseId
+        ? { ...e, status: 'completed', completed_at: now, technique_rating: techniqueRating ?? null }
+        : e
+      )
+    );
+  };
+
+  const skipExercise = async (logExerciseId: string, _reason?: string): Promise<void> => {
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('training_log_exercises')
+      .update({ status: 'skipped', completed_at: now })
+      .eq('id', logExerciseId);
+    if (error) throw error;
+    setLoggedExercises(prev =>
+      prev.map(e => e.id === logExerciseId ? { ...e, status: 'skipped', completed_at: now } : e)
+    );
+  };
+
+  const fetchMessages = async (sessionId: string): Promise<void> => {
+    const { data, error } = await supabase
+      .from('training_log_messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at');
+    if (error) throw error;
+    setMessages(data || []);
+  };
+
+  const sendMessage = async (
+    sessionId: string,
+    exerciseId: string | null,
+    message: string,
+    senderType: 'athlete' | 'coach'
+  ): Promise<void> => {
+    const { data, error } = await supabase
+      .from('training_log_messages')
+      .insert({ session_id: sessionId, exercise_id: exerciseId, message, sender_type: senderType })
+      .select()
+      .single();
+    if (error) throw error;
+    setMessages(prev => [...prev, data]);
+  };
+
+  const checkAndRecordPR = async (
+    athleteId: string,
+    exerciseId: string,
+    load: number,
+    reps: number
+  ): Promise<{ isPR: boolean; previousBest: { load: number; reps: number } | null }> => {
+    const { data: existing } = await supabase
+      .from('athlete_prs')
+      .select('*')
+      .eq('athlete_id', athleteId)
+      .eq('exercise_id', exerciseId)
+      .maybeSingle();
+
+    const previousBest = existing?.pr_value_kg
+      ? { load: existing.pr_value_kg, reps: 1 }
+      : null;
+
+    const isNewPR = !existing?.pr_value_kg || load > existing.pr_value_kg;
+
+    if (isNewPR) {
+      if (existing) {
+        await supabase
+          .from('athlete_prs')
+          .update({ pr_value_kg: load, pr_date: new Date().toISOString().split('T')[0] })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('athlete_prs')
+          .insert({
+            athlete_id: athleteId,
+            exercise_id: exerciseId,
+            pr_value_kg: load,
+            pr_date: new Date().toISOString().split('T')[0],
+          });
+      }
+    }
+
+    return { isPR: isNewPR, previousBest };
+  };
+
   return {
+    // Existing exports
     weekPlan,
     plannedExercises,
     session,
@@ -195,5 +504,22 @@ export function useTrainingLog() {
     saving,
     fetchWeekData,
     saveSession,
+    // New exports
+    setsMap,
+    setSetsMap,
+    messages,
+    fetchSetsForExercise,
+    saveSet,
+    completeSet,
+    skipSet,
+    initSetsFromPlan,
+    startSession,
+    completeSession,
+    startExercise,
+    completeExercise,
+    skipExercise,
+    fetchMessages,
+    sendMessage,
+    checkAndRecordPR,
   };
 }
