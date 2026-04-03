@@ -122,7 +122,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
     const totals: Record<string, { sets: number; reps: number; totalLoad: number; avgLoad: number; loadCount: number }> = {};
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
-        if (ex.exercise.counts_towards_totals && ex.exercise.category) {
+        if (ex.exercise.counts_towards_totals && ex.exercise.category && ex.exercise.category !== '— System') {
           if (!totals[ex.exercise.category]) totals[ex.exercise.category] = { sets: 0, reps: 0, totalLoad: 0, avgLoad: 0, loadCount: 0 };
           totals[ex.exercise.category].sets += ex.summary_total_sets || 0;
           totals[ex.exercise.category].reps += ex.summary_total_reps || 0;
