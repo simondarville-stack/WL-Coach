@@ -78,17 +78,17 @@ export function GeneralSettings() {
   }
 
   if (loading) {
-    return <div className="p-6"><div className="text-gray-600">Loading settings...</div></div>;
+    return <div className="p-6 flex items-center gap-2 text-gray-400 text-sm"><div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />Loading settings...</div>;
   }
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">General Settings</h1>
+      <h1 className="text-2xl font-medium mb-6 text-gray-900">General Settings</h1>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">RAW Scoring</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-1">RAW Scoring</h2>
             <p className="text-sm text-gray-600">
               Enable athletes to record Readiness and Wellbeing scores with their training logs
             </p>
@@ -112,7 +112,7 @@ export function GeneralSettings() {
         {settings?.raw_enabled && (
           <>
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2">About RAW Scoring</h3>
+              <h3 className="text-sm font-medium text-blue-900 mb-2">About RAW Scoring</h3>
               <p className="text-sm text-blue-800">
                 RAW scoring helps athletes assess their readiness before training across four pillars: Sleep, Physical condition, Mood, and Nutrition. Based on their scores, the system provides volume adjustment recommendations.
               </p>
@@ -150,7 +150,7 @@ export function GeneralSettings() {
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Grid Input Mode</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Grid Input Mode</h2>
           <p className="text-sm text-gray-600 mb-4">Configure settings for the grid-based prescription editor</p>
         </div>
 
@@ -205,7 +205,7 @@ export function GeneralSettings() {
       </div>
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Bodyweight Tracking</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Bodyweight Tracking</h2>
           <p className="text-sm text-gray-600 mb-4">Configure the moving average window for bodyweight trend calculations</p>
         </div>
 
@@ -239,7 +239,7 @@ export function GeneralSettings() {
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Weekly Planner Display</h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
           <p className="text-sm text-gray-600 mb-4">Control which metrics are shown in the week summary</p>
         </div>
 

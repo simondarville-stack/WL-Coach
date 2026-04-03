@@ -98,7 +98,7 @@ export function Events() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Events</h1>
+        <h1 className="text-xl font-medium text-gray-900">Events</h1>
         <button
           onClick={openCreateModal}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700"
@@ -113,12 +113,12 @@ export function Events() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Event</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Date</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Time Until</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Athletes</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Description</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-700">Actions</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Event</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Time Until</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Athletes</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Description</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -201,7 +201,7 @@ export function Events() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
+              <h2 className="text-lg font-medium text-gray-900">
                 {editingEvent ? 'Edit Event' : 'Create Event'}
               </h2>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded">
