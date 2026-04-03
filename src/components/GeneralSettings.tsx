@@ -8,6 +8,8 @@ export function GeneralSettings() {
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
+  const [showStressMetric, setShowStressMetric] = useState(false);
+  const [visibleMetrics, setVisibleMetrics] = useState<string[]>(['sets', 'reps', 'tonnage']);
 
   useEffect(() => {
     fetchSettings();
@@ -19,6 +21,8 @@ export function GeneralSettings() {
       setGridLoadIncrement(settings.grid_load_increment);
       setGridClickIncrement(settings.grid_click_increment);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
+      setShowStressMetric(settings.show_stress_metric ?? false);
+      setVisibleMetrics(settings.visible_summary_metrics ?? ['sets', 'reps', 'tonnage']);
     }
   }, [settings]);
 
@@ -56,6 +60,21 @@ export function GeneralSettings() {
     } catch {
       // error logged in hook
     }
+  }
+
+  async function toggleMetric(key: string) {
+    if (!settings) return;
+    const next = visibleMetrics.includes(key)
+      ? visibleMetrics.filter(m => m !== key)
+      : [...visibleMetrics, key];
+    setVisibleMetrics(next);
+    await updateSettings(settings.id, { visible_summary_metrics: next });
+  }
+
+  async function toggleStressMetric(value: boolean) {
+    if (!settings) return;
+    setShowStressMetric(value);
+    await updateSettings(settings.id, { show_stress_metric: value });
   }
 
   if (loading) {
@@ -214,6 +233,52 @@ export function GeneralSettings() {
                 Save
               </button>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Weekly Planner Display</h2>
+          <p className="text-sm text-gray-600 mb-4">Control which metrics are shown in the week summary</p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Visible summary metrics</label>
+            <div className="flex flex-wrap gap-3">
+              {(['sets', 'reps', 'tonnage'] as const).map(key => (
+                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={visibleMetrics.includes(key)}
+                    onChange={() => void toggleMetric(key)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="capitalize text-gray-700">{key}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div>
+              <p className="text-sm font-medium text-gray-700">Show stress metric</p>
+              <p className="text-xs text-gray-500 mt-0.5">sum(reps × (load/PR)²) — requires athlete PRs</p>
+            </div>
+            <button
+              onClick={() => void toggleStressMetric(!showStressMetric)}
+              disabled={saving}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                showStressMetric ? 'bg-blue-600' : 'bg-gray-300'
+              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  showStressMetric ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
       </div>
