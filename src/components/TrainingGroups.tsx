@@ -103,7 +103,7 @@ export function TrainingGroups() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-medium text-gray-900">Training Groups</h1>
+          <h1 className="text-xl font-medium text-gray-900">Training Groups</h1>
           <button
             onClick={() => { setFormName(''); setFormDescription(''); setShowCreateModal(true); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"

@@ -20,7 +20,7 @@ import { useExercises } from './hooks/useExercises';
 import { useAthletes } from './hooks/useAthletes';
 import { useTrainingGroups } from './hooks/useTrainingGroups';
 import { useAthleteStore } from './store/athleteStore';
-import type { Athlete } from './lib/database.types';
+import type { Athlete, TrainingGroup } from './lib/database.types';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -95,6 +95,10 @@ function App() {
     navigate('/planner', { state: { weekStart } });
   };
 
+  const handleNavigateToGroupPlanner = (group: TrainingGroup, weekStart: string) => {
+    navigate('/planner', { state: { weekStart, groupId: group.id } });
+  };
+
   const handleCancelEdit = () => {
     setEditingExercise(null);
     setShowFormModal(false);
@@ -114,7 +118,7 @@ function App() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} />} />
+              <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/macrocycles" element={<MacroCycles />} />
               <Route path="/events" element={<CompetitionCalendar />} />
