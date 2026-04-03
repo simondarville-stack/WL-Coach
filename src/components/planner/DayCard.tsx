@@ -241,7 +241,7 @@ export function DayCard({
     <>
       <div
         className={[
-          'bg-white rounded-lg border shadow-sm flex flex-col transition-all min-h-[200px]',
+          'bg-white rounded-lg border flex flex-col transition-all min-h-[200px]',
           isDragOver ? 'border-blue-400 shadow-md bg-blue-50/30' : 'border-gray-200',
         ].join(' ')}
         onDragOver={handleCardDragOver}
@@ -396,7 +396,7 @@ export function DayCard({
             exercises={allExercises}
             onAdd={handleAddExercise}
             onSlashCommand={key => void handleSlashCommand(key)}
-            placeholder={adding ? '…' : undefined}
+            placeholder={adding ? '…' : '+ Add exercise...'}
           />
         </div>
       </div>
