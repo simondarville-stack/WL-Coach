@@ -120,10 +120,13 @@ export function TrainingGroups() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-sm font-medium text-gray-700 uppercase tracking-wide mb-4">Groups</h2>
             {loading ? (
-              <div className="text-gray-500 text-center py-8">Loading...</div>
+              <div className="flex items-center justify-center py-8 gap-2 text-gray-400 text-sm">
+                <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+                Loading...
+              </div>
             ) : groups.length === 0 ? (
               <div className="text-gray-500 text-center py-8">
                 <Users className="mx-auto mb-2" size={32} />
@@ -171,7 +174,7 @@ export function TrainingGroups() {
             )}
           </div>
 
-          <div className="lg:col-span-2 bg-white rounded-lg shadow-md p-6">
+          <div className="lg:col-span-2 bg-white rounded-lg border border-gray-200 p-6">
             {!selectedGroup ? (
               <div className="text-center py-12 text-gray-500">
                 <Users size={48} className="mx-auto mb-4 text-gray-400" />

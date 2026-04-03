@@ -87,7 +87,7 @@ export function Settings({ embedded = false }: SettingsProps) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
         {!embedded && (
           <div className="flex items-center gap-3 mb-6">
             <SettingsIcon className="text-blue-600" size={28} />

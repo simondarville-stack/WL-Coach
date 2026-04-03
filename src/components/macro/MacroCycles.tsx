@@ -470,7 +470,10 @@ export function MacroCycles() {
           </div>
         </div>
       ) : loading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading…</div>
+        <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
+          <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+          Loading…
+        </div>
       ) : viewMode === 'table' ? (
         <MacroTable
           macroWeeks={macroWeeks}

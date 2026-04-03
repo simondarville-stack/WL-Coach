@@ -107,7 +107,7 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
           {filteredExercises.map((exercise) => (
         <div
           key={exercise.id}
-          className="bg-white border-l-4 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+          className="bg-white border-l-4 border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
           style={{ borderLeftColor: exercise.color }}
         >
           <div className="flex items-start justify-between">
