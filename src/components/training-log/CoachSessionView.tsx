@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { X, Send, RefreshCw } from 'lucide-react';
+import { ComplianceChart } from './ComplianceChart';
 import { supabase } from '../../lib/supabase';
 import type {
   TrainingLogSession,
@@ -335,6 +336,11 @@ export function CoachSessionView({ sessionId, onClose }: CoachSessionViewProps) 
             onSendMessage={handleSendMessage}
           />
         ))}
+
+        {/* Compliance chart */}
+        {sessionData.athlete_id && sessionData.status === 'completed' && (
+          <ComplianceChart athleteId={sessionData.athlete_id} weeks={6} />
+        )}
 
         {/* Session summary */}
         {(sessionData.session_rpe || sessionData.session_notes || sessionData.bodyweight_kg) && (

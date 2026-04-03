@@ -171,6 +171,7 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
   const [prSetId, setPrSetId] = useState<string | undefined>(undefined);
   const [showRestTimer, setShowRestTimer] = useState(false);
   const [restSeconds, setRestSeconds] = useState(120);
+  const [dataLoading, setDataLoading] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initializedExercises = useRef<Set<string>>(new Set());
 
@@ -181,7 +182,8 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
     const dayOfWeek = dateObj.getDay();
     // Convert JS day (0=Sun) to day_index (1=Mon..7=Sun)
     const dayIndex = dayOfWeek === 0 ? 7 : dayOfWeek;
-    fetchWeekData(athlete.id, weekStart, dayIndex);
+    setDataLoading(true);
+    fetchWeekData(athlete.id, weekStart, dayIndex).finally(() => setDataLoading(false));
   }, [athlete.id, date]);
 
   // Detect resume
@@ -409,6 +411,25 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
     const compliance = plannedSets > 0 ? Math.round((completedSets / plannedSets) * 100) : 0;
     return { totalReps, totalTonnage, completedSets, plannedSets, compliance };
   };
+
+  // ── LOADING ────────────────────────────────────────────────────────────────
+  if (dataLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+          <button onClick={onBack} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-500 rounded-lg hover:bg-gray-100">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <div className="h-4 w-40 bg-gray-200 rounded animate-pulse" />
+        </div>
+        <div className="max-w-lg mx-auto p-4 space-y-4">
+          {[1, 2, 3].map(n => (
+            <div key={n} className="h-20 bg-white rounded-lg border border-gray-200 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // ── PRE-SESSION ────────────────────────────────────────────────────────────
   if (phase === 'pre-session') {
