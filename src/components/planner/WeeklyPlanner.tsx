@@ -279,8 +279,9 @@ export function WeeklyPlanner() {
     }
   };
 
-  // Close any dialog, refreshing data first so day cards reflect changes
+  // Close any dialog — wait briefly for any in-flight saves, then refresh so day cards reflect changes
   const closeDialog = async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
     await handleRefresh();
     setPanelView('overview');
   };

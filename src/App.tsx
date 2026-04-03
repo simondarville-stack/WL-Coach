@@ -7,7 +7,6 @@ import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
 import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { Settings } from './components/Settings';
-import { AthleteProgramme } from './components/AthleteProgramme';
 import { AthleteLog } from './components/AthleteLog';
 import { GeneralSettings } from './components/GeneralSettings';
 import { CoachDashboard } from './components/CoachDashboard';
@@ -30,7 +29,6 @@ const pageTitles: Record<string, string> = {
   '/events': 'Events',
   '/athletes': 'Roster',
   '/training-groups': 'Training groups',
-  '/athlete-programme': 'Programme',
   '/athlete-log': 'Training log',
   '/library': 'Exercise library',
   '/settings': 'Settings',
@@ -122,7 +120,6 @@ function App() {
               <Route path="/events" element={<Events />} />
               <Route path="/athletes" element={<Athletes />} />
               <Route path="/training-groups" element={<TrainingGroups />} />
-              <Route path="/athlete-programme" element={<AthleteProgramme />} />
               <Route path="/athlete-log" element={<AthleteLog />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={
