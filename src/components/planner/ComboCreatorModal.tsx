@@ -80,8 +80,8 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
   const autoName = selectedExercises.map(e => e.exercise.name).join(' + ');
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
+      <div className="bg-white rounded-xl shadow-xl border border-gray-200 max-w-lg w-full max-h-[90vh] overflow-y-auto animate-dialog-in">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
           <h2 className="text-lg font-medium text-gray-900">Create Combo</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded transition-colors">

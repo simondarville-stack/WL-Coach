@@ -492,7 +492,7 @@ function AthleteRow({
 
               {alignments.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
                     Macro Alignment
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -578,7 +578,7 @@ function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
         <tr className="bg-gray-50">
           <td colSpan={5} className="px-4 py-4">
             <div className="ml-6">
-              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
                 Members
               </h4>
               {groupStatus.members.length > 0 ? (
