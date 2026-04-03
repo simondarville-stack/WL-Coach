@@ -102,7 +102,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-2xl font-bold text-gray-800">
+      <h2 className="text-2xl font-medium text-gray-800">
         {editingExercise ? 'Edit Exercise' : 'Add New Exercise'}
       </h2>
 

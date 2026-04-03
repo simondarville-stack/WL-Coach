@@ -82,7 +82,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
       <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{event.name}</h2>
+            <h2 className="text-xl font-medium text-gray-900">{event.name}</h2>
             <p className="text-sm text-gray-600">{formatDateToDDMMYYYY(event.event_date)}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded">
@@ -106,10 +106,10 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Trophy className="w-5 h-5 text-gray-400" />
-                          <h3 className="font-semibold text-gray-900">{athlete.name}</h3>
+                          <h3 className="font-medium text-gray-900">{athlete.name}</h3>
                         </div>
                         {total !== null && (
-                          <div className="text-lg font-bold text-blue-600">Total: {total} kg</div>
+                          <div className="text-lg font-medium text-blue-600">Total: {total} kg</div>
                         )}
                       </div>
                     </div>
@@ -117,7 +117,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
                     <div className="p-4">
                       <div className="grid grid-cols-2 gap-6">
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-900 mb-3">Snatch</h4>
+                          <h4 className="text-sm font-medium text-gray-900 mb-3">Snatch</h4>
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
@@ -170,14 +170,14 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
                             {bestSnatch !== null && (
                               <div className="mt-2 pt-2 border-t border-gray-200">
                                 <span className="text-xs text-gray-600">Best: </span>
-                                <span className="text-sm font-bold text-green-600">{bestSnatch} kg</span>
+                                <span className="text-sm font-medium text-green-600">{bestSnatch} kg</span>
                               </div>
                             )}
                           </div>
                         </div>
 
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-900 mb-3">Clean & Jerk</h4>
+                          <h4 className="text-sm font-medium text-gray-900 mb-3">Clean & Jerk</h4>
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
@@ -230,7 +230,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
                             {bestCJ !== null && (
                               <div className="mt-2 pt-2 border-t border-gray-200">
                                 <span className="text-xs text-gray-600">Best: </span>
-                                <span className="text-sm font-bold text-green-600">{bestCJ} kg</span>
+                                <span className="text-sm font-medium text-green-600">{bestCJ} kg</span>
                               </div>
                             )}
                           </div>
@@ -239,14 +239,14 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
 
                       {athlete.attempts?.competition_notes && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
-                          <h5 className="text-xs font-semibold text-gray-700 mb-1">Competition Notes</h5>
+                          <h5 className="text-xs font-medium text-gray-700 mb-1">Competition Notes</h5>
                           <p className="text-sm text-gray-600">{athlete.attempts.competition_notes}</p>
                         </div>
                       )}
 
                       {athlete.videos.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
-                          <h5 className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                          <h5 className="text-xs font-medium text-gray-700 mb-2 flex items-center gap-1">
                             <Video className="w-3 h-3" />
                             Videos ({athlete.videos.length})
                           </h5>

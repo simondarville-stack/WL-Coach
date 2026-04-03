@@ -47,16 +47,16 @@ export function PrescriptionDisplay({ prescription, unit, useStackedNotation }: 
       {parsed.map((line, index) => (
         <div key={index} className="flex items-center gap-2">
           <div className="inline-flex flex-col items-center">
-            <div className="text-center font-semibold text-gray-900">
+            <div className="text-center font-medium text-gray-900">
               {line.load}{unitSymbol}
             </div>
             <div className="border-t border-gray-400 w-full my-0.5"></div>
-            <div className="text-center font-semibold text-gray-900">
+            <div className="text-center font-medium text-gray-900">
               {line.reps}
             </div>
           </div>
           {line.sets > 1 && (
-            <div className="flex items-center justify-center font-bold text-gray-900">
+            <div className="flex items-center justify-center font-medium text-gray-900">
               {line.sets}
             </div>
           )}

@@ -137,7 +137,7 @@ export function MacroTable({
             {/* Sticky fixed columns */}
             <th
               colSpan={5}
-              className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-semibold text-gray-700"
+              className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-medium text-gray-700"
               style={{ width: 388, minWidth: 388 }}
             >
               Week
@@ -167,7 +167,7 @@ export function MacroTable({
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: te.exercise.color }}
                     />
-                    <span className="text-[10px] font-semibold text-gray-800 truncate">
+                    <span className="text-[10px] font-medium text-gray-800 truncate">
                       {te.exercise.exercise_code || te.exercise.name}
                     </span>
                   </div>
