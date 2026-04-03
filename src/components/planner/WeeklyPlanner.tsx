@@ -34,7 +34,9 @@ type PanelView = 'overview' | 'day' | 'exercise';
 
 export function WeeklyPlanner() {
   const location = useLocation();
-  const initialWeekStart = (location.state as { weekStart?: string } | null)?.weekStart ?? null;
+  const locationState = (location.state as { weekStart?: string; groupId?: string } | null);
+  const initialWeekStart = locationState?.weekStart ?? null;
+  const initialGroupId = locationState?.groupId ?? null;
   const { selectedAthlete, setSelectedAthlete } = useAthleteStore();
   const { settings, fetchSettings } = useSettings();
 
@@ -112,7 +114,16 @@ export function WeeklyPlanner() {
   }, []);
 
   useEffect(() => {
-    if (selectedAthlete) {
+    if (initialGroupId && groups.length > 0) {
+      const group = groups.find(g => g.id === initialGroupId);
+      if (group) {
+        setPlanSelection({ type: 'group', athlete: null, group });
+      }
+    }
+  }, [initialGroupId, groups]);
+
+  useEffect(() => {
+    if (selectedAthlete && !initialGroupId) {
       setPlanSelection({ type: 'individual', athlete: selectedAthlete, group: null });
     }
   }, [selectedAthlete]);

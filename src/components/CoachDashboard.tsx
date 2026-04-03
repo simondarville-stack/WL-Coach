@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, TrendingUp, TrendingDown, Minus, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
-import type { Athlete, Event, BodyweightEntry } from '../lib/database.types';
+import type { Athlete, Event, BodyweightEntry, TrainingGroup } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { calculateAge, getRawColor, getRawBgColor, getRelativeTime, needsAttentionCheck } from '../lib/calculations';
 import { EventOverviewModal } from './EventOverviewModal';
@@ -20,9 +20,10 @@ type SortDirection = 'asc' | 'desc';
 
 interface CoachDashboardProps {
   onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
+  onNavigateToGroupPlanner: (group: TrainingGroup, weekStart: string) => void;
 }
 
-export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
+export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }: CoachDashboardProps) {
   const {
     athleteStatuses,
     activityFeed,
@@ -251,6 +252,7 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
                       groupStatus={gs}
                       isExpanded={isExpanded}
                       onToggleExpand={() => setExpandedGroupId(isExpanded ? null : gs.group.id)}
+                      onNavigateToPlanner={onNavigateToGroupPlanner}
                     />
                   );
                 })}
@@ -530,9 +532,10 @@ interface GroupRowProps {
   groupStatus: GroupStatus;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onNavigateToPlanner: (group: TrainingGroup, weekStart: string) => void;
 }
 
-function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
+function GroupRow({ groupStatus, isExpanded, onToggleExpand, onNavigateToPlanner }: GroupRowProps) {
   return (
     <>
       <tr
@@ -554,23 +557,31 @@ function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
         <td className="py-3 px-4 text-sm text-gray-600">
           {groupStatus.memberCount} athlete{groupStatus.memberCount !== 1 ? 's' : ''}
         </td>
-        <td className="py-3 px-4">
-          <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
-            groupStatus.currentWeekPlanned
-              ? 'bg-green-100 text-green-800'
-              : 'bg-red-100 text-red-800'
-          }`}>
+        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onNavigateToPlanner(groupStatus.group, groupStatus.currentWeekStart)}
+            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors hover:ring-2 hover:ring-blue-300 ${
+              groupStatus.currentWeekPlanned
+                ? 'bg-green-100 text-green-800'
+                : 'bg-red-100 text-red-800'
+            }`}
+            title="Go to this week's group plan"
+          >
             {groupStatus.currentWeekPlanned ? 'Planned' : 'Not Planned'}
-          </span>
+          </button>
         </td>
-        <td className="py-3 px-4">
-          <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
-            groupStatus.nextWeekPlanned
-              ? 'bg-green-100 text-green-800'
-              : 'bg-yellow-100 text-yellow-800'
-          }`}>
+        <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => onNavigateToPlanner(groupStatus.group, groupStatus.nextWeekStart)}
+            className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium transition-colors hover:ring-2 hover:ring-blue-300 ${
+              groupStatus.nextWeekPlanned
+                ? 'bg-green-100 text-green-800'
+                : 'bg-yellow-100 text-yellow-800'
+            }`}
+            title="Go to next week's group plan"
+          >
             {groupStatus.nextWeekPlanned ? 'Planned' : 'Not Planned'}
-          </span>
+          </button>
         </td>
       </tr>
 
