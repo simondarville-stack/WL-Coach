@@ -49,7 +49,7 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Exercise Library</h2>
+        <h2 className="text-base font-medium text-gray-800 mb-4">Exercise Library</h2>
 
         <div className="mb-4">
           <div className="relative">
@@ -117,7 +117,7 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
                   className="w-4 h-4 rounded-full flex-shrink-0"
                   style={{ backgroundColor: exercise.color }}
                 />
-                <h3 className="text-lg font-semibold text-gray-900">{exercise.name}</h3>
+                <h3 className="text-sm font-medium text-gray-900">{exercise.name}</h3>
                 {exercise.exercise_code && (
                   <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded">
                     {exercise.exercise_code}

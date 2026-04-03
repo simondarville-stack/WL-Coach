@@ -577,7 +577,7 @@ export function WeeklyPlanner() {
             {/* ── Day Editor dialog ── */}
             {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-6"
+                className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -586,7 +586,7 @@ export function WeeklyPlanner() {
                 }}
               >
                 <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200" tabIndex={-1}>
+                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in" tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
                     dayIndex={selectedDayIndex}
@@ -618,7 +618,7 @@ export function WeeklyPlanner() {
             {/* ── Exercise Detail dialog ── */}
             {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-6"
+                className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -627,7 +627,7 @@ export function WeeklyPlanner() {
                 }}
               >
                 <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200" tabIndex={-1}>
+                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in" tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}
                     comboMembers={comboMembers}

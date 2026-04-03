@@ -91,7 +91,7 @@ export function Settings({ embedded = false }: SettingsProps) {
         {!embedded && (
           <div className="flex items-center gap-3 mb-6">
             <SettingsIcon className="text-blue-600" size={28} />
-            <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+            <h1 className="text-2xl font-medium text-gray-900">Settings</h1>
           </div>
         )}
 
@@ -103,7 +103,7 @@ export function Settings({ embedded = false }: SettingsProps) {
 
         <div className="space-y-8">
           <div>
-            <h2 className={`${embedded ? 'text-xl' : 'text-2xl'} font-bold text-gray-800 mb-4`}>
+            <h2 className={`${embedded ? 'text-base' : 'text-lg'} font-medium text-gray-800 mb-4`}>
               Exercise Categories
             </h2>
             <p className="text-gray-600 mb-6">

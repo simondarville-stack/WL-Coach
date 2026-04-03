@@ -133,7 +133,7 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
             <ArrowLeft size={24} />
           </button>
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Personal Records</h2>
+            <h2 className="text-xl font-medium text-gray-800">Personal Records</h2>
             <p className="text-gray-600">{athlete.name}</p>
           </div>
         </div>
@@ -189,10 +189,10 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Exercise</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Category</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Code</th>
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">PR (kg)</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 text-xs uppercase tracking-wide">Exercise</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 text-xs uppercase tracking-wide">Category</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 text-xs uppercase tracking-wide">Code</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-600 text-xs uppercase tracking-wide">PR (kg)</th>
                 </tr>
               </thead>
               <tbody>
