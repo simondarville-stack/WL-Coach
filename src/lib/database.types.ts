@@ -243,6 +243,11 @@ export interface TrainingLogSession {
   raw_nutrition: number | null;
   raw_total: number | null;
   raw_guidance: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_minutes: number | null;
+  session_rpe: number | null;
+  bodyweight_kg: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -255,12 +260,40 @@ export interface TrainingLogExercise {
   performed_raw: string;
   performed_notes: string;
   position: number;
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
+  technique_rating: number | null;
+  started_at: string | null;
+  completed_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface TrainingLogExerciseWithExercise extends TrainingLogExercise {
   exercise: Exercise;
+}
+
+export interface TrainingLogSet {
+  id: string;
+  log_exercise_id: string;
+  set_number: number;
+  planned_load: number | null;
+  planned_reps: number | null;
+  performed_load: number | null;
+  performed_reps: number | null;
+  rpe: number | null;
+  status: 'pending' | 'completed' | 'skipped' | 'failed';
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingLogMessage {
+  id: string;
+  session_id: string;
+  exercise_id: string | null;
+  sender_type: 'athlete' | 'coach';
+  message: string;
+  created_at: string;
 }
 
 export type EventType = 'competition' | 'training_camp' | 'seminar' | 'testing_day' | 'team_meeting' | 'other';
@@ -469,6 +502,16 @@ export interface Database {
         Row: TrainingLogExercise;
         Insert: Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      training_log_sets: {
+        Row: TrainingLogSet;
+        Insert: Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      training_log_messages: {
+        Row: TrainingLogMessage;
+        Insert: Omit<TrainingLogMessage, 'id' | 'created_at'>;
+        Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>>;
       };
       events: {
         Row: Event;
