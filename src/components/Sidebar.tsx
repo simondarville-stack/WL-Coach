@@ -41,7 +41,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/athletes', label: 'Roster', icon: Users },
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
-      { path: '/athlete-log', label: 'Training log', icon: ClipboardList },
+      { path: '/training-log', label: 'Training log', icon: ClipboardList },
     ],
   },
   {
