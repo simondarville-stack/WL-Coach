@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { GripVertical } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -134,6 +135,46 @@ export function DayCard({
     setAdding(true);
     try {
       await addExerciseToDay(weekPlanId, dayIndex, exercise.id, exercises.length + 1, exercise.default_unit);
+      await onRefresh();
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function getOrCreateSentinel(code: string): Promise<{ id: string; default_unit: string } | null> {
+    const { data: existing } = await supabase
+      .from('exercises').select('id, default_unit').eq('exercise_code', code).maybeSingle();
+    if (existing) return existing;
+    const sentinelDefs: Record<string, { name: string; color: string }> = {
+      TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
+      VIDEO: { name: 'Video',             color: '#6366F1' },
+      IMAGE: { name: 'Image',             color: '#EC4899' },
+    };
+    const def = sentinelDefs[code];
+    if (!def) return null;
+    const { data: created } = await supabase.from('exercises').insert({
+      name: def.name,
+      category: '— System',
+      default_unit: 'other',
+      color: def.color,
+      exercise_code: code,
+      use_stacked_notation: false,
+      counts_towards_totals: false,
+      is_competition_lift: false,
+    }).select('id, default_unit').single();
+    return created ?? null;
+  }
+
+  async function handleSlashCommand(key: string) {
+    if (key === '/combo') { setShowComboModal(true); return; }
+    const codeMap: Record<string, string> = { '/text': 'TEXT', '/video': 'VIDEO', '/image': 'IMAGE' };
+    const code = codeMap[key];
+    if (!code) return;
+    setAdding(true);
+    try {
+      const sentinel = await getOrCreateSentinel(code);
+      if (!sentinel) return;
+      await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, exercises.length + 1, sentinel.default_unit as DefaultUnit);
       await onRefresh();
     } finally {
       setAdding(false);
@@ -299,9 +340,7 @@ export function DayCard({
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}
-            onSlashCommand={key => {
-              if (key === '/combo') setShowComboModal(true);
-            }}
+            onSlashCommand={key => void handleSlashCommand(key)}
             placeholder={adding ? '…' : undefined}
           />
         </div>

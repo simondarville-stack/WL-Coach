@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Plus, GripVertical, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
-import type { Exercise, DefaultUnit } from '../lib/database.types';
+import { X, Plus, ArrowUp, ArrowDown, Trash2, GripVertical } from 'lucide-react';
+import type { Exercise, DefaultUnit } from '../../lib/database.types';
 
 interface ComboCreatorModalProps {
   allExercises: Exercise[];
@@ -14,14 +14,8 @@ interface ComboCreatorModalProps {
 }
 
 const PRESET_COLORS = [
-  '#3B82F6', // blue
-  '#10B981', // green
-  '#F59E0B', // amber
-  '#EF4444', // red
-  '#8B5CF6', // violet
-  '#EC4899', // pink
-  '#06B6D4', // cyan
-  '#6366F1', // indigo
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
+  '#8B5CF6', '#EC4899', '#06B6D4', '#6366F1',
 ];
 
 export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreatorModalProps) {
@@ -34,13 +28,8 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    setSelectedSearchIndex(0);
-  }, [searchQuery]);
+  useEffect(() => { searchRef.current?.focus(); }, []);
+  useEffect(() => { setSelectedSearchIndex(0); }, [searchQuery]);
 
   const searchResults = searchQuery
     ? allExercises.filter(ex =>
@@ -50,19 +39,15 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
     : [];
 
   const addExercise = (exercise: Exercise) => {
-    setSelectedExercises(prev => [
-      ...prev,
-      { exercise, position: prev.length + 1 }
-    ]);
+    setSelectedExercises(prev => [...prev, { exercise, position: prev.length + 1 }]);
     setSearchQuery('');
     searchRef.current?.focus();
   };
 
   const removeExercise = (index: number) => {
-    setSelectedExercises(prev => {
-      const next = prev.filter((_, i) => i !== index);
-      return next.map((item, i) => ({ ...item, position: i + 1 }));
-    });
+    setSelectedExercises(prev =>
+      prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 }))
+    );
   };
 
   const moveExercise = (index: number, direction: -1 | 1) => {
@@ -76,31 +61,18 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedSearchIndex(prev => Math.min(prev + 1, searchResults.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedSearchIndex(prev => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter' && searchResults.length > 0) {
-      e.preventDefault();
-      addExercise(searchResults[selectedSearchIndex]);
-    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedSearchIndex(prev => Math.min(prev + 1, searchResults.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedSearchIndex(prev => Math.max(prev - 1, 0)); }
+    else if (e.key === 'Enter' && searchResults.length > 0) { e.preventDefault(); addExercise(searchResults[selectedSearchIndex]); }
   };
 
   const handleSave = async () => {
     if (selectedExercises.length < 2) return;
     setIsSaving(true);
     try {
-      await onSave({
-        exercises: selectedExercises,
-        unit,
-        comboName: comboName.trim(),
-        color,
-      });
+      await onSave({ exercises: selectedExercises, unit, comboName: comboName.trim(), color });
       onClose();
-    } catch (err) {
-    } finally {
+    } catch { /* ignore */ } finally {
       setIsSaving(false);
     }
   };
@@ -139,16 +111,14 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
               >
                 <option value="absolute_kg">kg</option>
                 <option value="percentage">%</option>
-                <option value="rpe">RPE</option>
-                <option value="free_text">Free Text</option>
-                <option value="other">Other</option>
+                <option value="free_text_reps">Free text + reps × sets</option>
+                <option value="free_text">Free text</option>
               </select>
             </div>
-
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Ribbon Color</label>
-              <div className="flex gap-1.5">
-                {PRESET_COLORS.map((presetColor) => (
+              <div className="flex gap-1.5 flex-wrap">
+                {PRESET_COLORS.map(presetColor => (
                   <button
                     key={presetColor}
                     type="button"
@@ -175,30 +145,16 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
                   <div key={`${item.exercise.id}-${index}`} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-2">
                     <GripVertical size={14} className="text-gray-400 flex-shrink-0" />
                     <span className="text-xs font-medium text-gray-500 w-5">{index + 1}.</span>
-                    <div
-                      className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                      style={{ backgroundColor: item.exercise.color }}
-                    />
+                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: item.exercise.color }} />
                     <span className="text-sm text-gray-900 flex-1 truncate">{item.exercise.name}</span>
                     <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => moveExercise(index, -1)}
-                        disabled={index === 0}
-                        className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                      >
+                      <button onClick={() => moveExercise(index, -1)} disabled={index === 0} className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30">
                         <ArrowUp size={14} />
                       </button>
-                      <button
-                        onClick={() => moveExercise(index, 1)}
-                        disabled={index === selectedExercises.length - 1}
-                        className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                      >
+                      <button onClick={() => moveExercise(index, 1)} disabled={index === selectedExercises.length - 1} className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30">
                         <ArrowDown size={14} />
                       </button>
-                      <button
-                        onClick={() => removeExercise(index)}
-                        className="p-0.5 text-red-400 hover:text-red-600 ml-1"
-                      >
+                      <button onClick={() => removeExercise(index)} className="p-0.5 text-red-400 hover:text-red-600 ml-1">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -230,9 +186,7 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: ex.color }} />
                         <span className="font-medium text-gray-900">{ex.name}</span>
-                        {ex.exercise_code && (
-                          <span className="text-xs text-gray-500 ml-auto">{ex.exercise_code}</span>
-                        )}
+                        {ex.exercise_code && <span className="text-xs text-gray-500 ml-auto">{ex.exercise_code}</span>}
                       </div>
                     </button>
                   ))}
@@ -248,14 +202,11 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
         </div>
 
         <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded transition-colors"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded transition-colors">
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={isSaving || selectedExercises.length < 2}
             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
           >

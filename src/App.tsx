@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import { ExerciseFormModal } from './components/ExerciseFormModal';
 import { ExerciseBulkImportModal } from './components/ExerciseBulkImportModal';
 import { ExerciseList } from './components/ExerciseList';
-import { WeeklyPlanner } from './components/WeeklyPlanner';
+import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
 import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { Settings } from './components/Settings';

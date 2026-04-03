@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, AlertTriangle, Clipboard, ArrowRight } from 'lucide-react';
-import type { Athlete, TrainingGroup } from '../lib/database.types';
-import { formatDateRange } from '../lib/dateUtils';
-import { useCombos } from '../hooks/useCombos';
+import type { Athlete, TrainingGroup } from '../../lib/database.types';
+import { formatDateRange } from '../../lib/dateUtils';
+import { useCombos } from '../../hooks/useCombos';
 
 interface CopyWeekModalProps {
   onClose: () => void;
@@ -68,7 +68,7 @@ export function CopyWeekModal({
     sourceGroup?.id === target.group?.id;
 
   useEffect(() => {
-    checkDestinationData();
+    void checkDestinationData();
   }, [destinationWeekStart, targetType, selectedTargetAthleteId, selectedTargetGroupId]);
 
   const checkDestinationData = async () => {
@@ -79,8 +79,7 @@ export function CopyWeekModal({
         target.group?.id || null,
       );
       setDestinationHasData(hasData);
-    } catch (err) {
-    }
+    } catch { /* ignore */ }
   };
 
   const handlePaste = async () => {
@@ -88,7 +87,6 @@ export function CopyWeekModal({
       alert('Source and destination are identical');
       return;
     }
-
     setPasting(true);
     try {
       await copyWeekPlan({
@@ -102,8 +100,8 @@ export function CopyWeekModal({
       });
       onPasteComplete();
       onClose();
-    } catch (err: any) {
-      const errorMessage = err?.message || 'Unknown error';
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       alert(`Failed to paste week: ${errorMessage}`);
     } finally {
       setPasting(false);
@@ -138,26 +136,20 @@ export function CopyWeekModal({
             <Clipboard size={20} className="text-blue-600" />
             <h2 className="text-lg font-semibold text-gray-900">Paste Week</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={20} />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Source info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-900">
               <span className="font-semibold">Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
             </p>
           </div>
 
-          {/* Destination target selection */}
           <div className="space-y-3">
             <label className="text-sm font-medium text-gray-700">Paste to</label>
-
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -167,9 +159,7 @@ export function CopyWeekModal({
                   }
                 }}
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
-                  targetType === 'athlete'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  targetType === 'athlete' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Athlete
@@ -183,9 +173,7 @@ export function CopyWeekModal({
                     }
                   }}
                   className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
-                    targetType === 'group'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    targetType === 'group' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   Group
@@ -200,9 +188,7 @@ export function CopyWeekModal({
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select athlete...</option>
-                {allAthletes.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
+                {allAthletes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             )}
 
@@ -213,14 +199,11 @@ export function CopyWeekModal({
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select group...</option>
-                {allGroups.map(g => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
+                {allGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             )}
           </div>
 
-          {/* Destination summary */}
           {hasValidTarget && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-2">
               <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
@@ -241,7 +224,7 @@ export function CopyWeekModal({
               <AlertTriangle size={18} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-yellow-800">
                 <p className="font-medium">Warning: Destination week has existing data</p>
-                <p className="text-xs mt-1">All existing exercises and combos will be deleted and replaced with the copied week's data.</p>
+                <p className="text-xs mt-1">All existing exercises and combos will be deleted and replaced.</p>
               </div>
             </div>
           )}
@@ -251,10 +234,6 @@ export function CopyWeekModal({
               Source and destination are identical. Select a different athlete, group, or week.
             </div>
           )}
-
-          <div className="text-sm text-gray-600">
-            This will copy all exercises, combos, and week settings from the source to the destination.
-          </div>
         </div>
 
         <div className="flex gap-2 p-4 border-t border-gray-200">
@@ -266,13 +245,13 @@ export function CopyWeekModal({
             Cancel
           </button>
           <button
-            onClick={handlePaste}
+            onClick={() => void handlePaste()}
             disabled={pasting || isSameContext || !hasValidTarget}
             className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {pasting ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Pasting...
               </>
             ) : (
