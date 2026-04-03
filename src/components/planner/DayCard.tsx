@@ -174,7 +174,8 @@ export function DayCard({
     try {
       const sentinel = await getOrCreateSentinel(code);
       if (!sentinel) return;
-      await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, exercises.length + 1, sentinel.default_unit as DefaultUnit);
+      // Always use free_text so PrescriptionGrid renders a textarea, not a numeric grid
+      await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, exercises.length + 1, 'free_text');
       await onRefresh();
     } finally {
       setAdding(false);
