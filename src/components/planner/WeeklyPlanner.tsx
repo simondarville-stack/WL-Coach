@@ -20,7 +20,14 @@ import { User } from 'lucide-react';
 
 export interface MacroContext {
   macroId: string;
+  macroName: string;
+  weekType: string;
+  weekTypeText: string | null;
   weekNumber: number;
+  totalWeeks: number;
+  phaseName: string | null;
+  phaseColor: string | null;
+  totalRepsTarget: number | null;
 }
 
 type PanelView = 'overview' | 'day' | 'exercise';
@@ -154,6 +161,16 @@ export function WeeklyPlanner() {
     }
   }, [currentWeekPlan]);
 
+  // Global Escape key closes any open dialog
+  useEffect(() => {
+    if (panelView === 'overview') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPanelView('overview');
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [panelView]);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
@@ -199,28 +216,49 @@ export function WeeklyPlanner() {
 
   const loadMacroContext = async (athleteId: string, date: string) => {
     try {
-      const { data: macro } = await supabase
-        .from('macrocycles')
-        .select('id')
-        .eq('athlete_id', athleteId)
-        .lte('start_date', date)
-        .gte('end_date', date)
-        .maybeSingle();
-      if (!macro) { setMacroContext(null); return; }
-
-      const weekAgoDate = new Date(new Date(date).getTime() - 6 * 24 * 60 * 60 * 1000)
-        .toISOString().split('T')[0];
       const { data: mw } = await supabase
         .from('macro_weeks')
-        .select('week_number')
-        .eq('macrocycle_id', macro.id)
-        .lte('week_start', date)
-        .gte('week_start', weekAgoDate)
-        .order('week_start', { ascending: false })
+        .select(`
+          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target,
+          macrocycles!inner(id, athlete_id, start_date, end_date, name)
+        `)
+        .eq('macrocycles.athlete_id', athleteId)
+        .eq('week_start', date)
+        .lte('macrocycles.start_date', date)
+        .gte('macrocycles.end_date', date)
         .limit(1)
         .maybeSingle();
 
-      setMacroContext(mw ? { macroId: macro.id, weekNumber: mw.week_number } : null);
+      if (!mw) { setMacroContext(null); return; }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const macro = (mw as any).macrocycles;
+
+      const [phaseResult, countResult] = await Promise.all([
+        supabase
+          .from('macro_phases')
+          .select('name, color')
+          .eq('macrocycle_id', mw.macrocycle_id)
+          .lte('start_week_number', mw.week_number)
+          .gte('end_week_number', mw.week_number)
+          .maybeSingle(),
+        supabase
+          .from('macro_weeks')
+          .select('id', { count: 'exact', head: true })
+          .eq('macrocycle_id', mw.macrocycle_id),
+      ]);
+
+      setMacroContext({
+        macroId: mw.macrocycle_id,
+        macroName: macro?.name ?? 'Macrocycle',
+        weekType: mw.week_type,
+        weekTypeText: mw.week_type_text,
+        weekNumber: mw.week_number,
+        totalWeeks: countResult.count ?? 0,
+        phaseName: phaseResult.data?.name ?? null,
+        phaseColor: phaseResult.data?.color ?? null,
+        totalRepsTarget: mw.total_reps_target,
+      });
     } catch {
       setMacroContext(null);
     }
@@ -360,11 +398,21 @@ export function WeeklyPlanner() {
   const saveDayLabels = async () => {
     if (!currentWeekPlan) return;
     try {
+      // Delete exercises for any days that were removed
+      const removedDays = currentWeekPlan.active_days.filter(d => !activeDays.includes(d));
+      if (removedDays.length > 0) {
+        await supabase
+          .from('planned_exercises')
+          .delete()
+          .eq('weekplan_id', currentWeekPlan.id)
+          .in('day_index', removedDays);
+      }
       await updateWeekPlan(currentWeekPlan.id, {
         day_labels: editingDayLabels,
         active_days: activeDays,
         day_display_order: dayDisplayOrder,
       });
+      if (removedDays.length > 0) await handleRefresh();
       setShowSettings(false);
     } catch {
       // error already set in hook
@@ -519,9 +567,9 @@ export function WeeklyPlanner() {
 
             {/* ── Day Editor dialog ── */}
             {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
-              <div className="fixed inset-0 z-50 flex items-start justify-end">
+              <div className="fixed inset-0 z-50 flex items-start justify-center pt-8">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
-                <div className="relative z-10 w-full max-w-lg h-full bg-white shadow-xl flex flex-col overflow-hidden">
+                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl" tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
                     dayIndex={selectedDayIndex}
@@ -552,9 +600,9 @@ export function WeeklyPlanner() {
 
             {/* ── Exercise Detail dialog ── */}
             {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
-              <div className="fixed inset-0 z-50 flex items-start justify-end">
+              <div className="fixed inset-0 z-50 flex items-start justify-center pt-8">
                 <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
-                <div className="relative z-10 w-full max-w-lg h-full bg-white shadow-xl flex flex-col overflow-hidden">
+                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl" tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}
                     comboMembers={comboMembers}

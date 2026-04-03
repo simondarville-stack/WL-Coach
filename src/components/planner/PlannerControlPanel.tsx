@@ -179,8 +179,10 @@ export function PlannerControlPanel({
           const pr = prMap.get(ex.exercise_id);
           if (pr && pr > 0) totalStress += r * Math.pow(avg / pr, 2);
         }
-        const prev = catMap.get(ex.exercise.category) || { category: ex.exercise.category, sets: 0, reps: 0, tonnage: 0 };
-        catMap.set(ex.exercise.category, { ...prev, sets: prev.sets + s, reps: prev.reps + r, tonnage: prev.tonnage + ton });
+        if (ex.exercise.category !== '— System') {
+          const prev = catMap.get(ex.exercise.category) || { category: ex.exercise.category, sets: 0, reps: 0, tonnage: 0 };
+          catMap.set(ex.exercise.category, { ...prev, sets: prev.sets + s, reps: prev.reps + r, tonnage: prev.tonnage + ton });
+        }
       });
     });
     return {
