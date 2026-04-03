@@ -120,7 +120,7 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
     const isActive = sortColumn === column;
     return (
       <th
-        className="text-left py-3 px-4 text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-50 select-none"
+        className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-50 select-none"
         onClick={() => handleSort(column)}
       >
         <div className="flex items-center gap-1">
@@ -138,24 +138,46 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-screen">
-        <div className="text-lg text-gray-600">Loading dashboard...</div>
+        <div className="flex items-center gap-3 text-gray-500">
+          <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+          Loading dashboard...
+        </div>
       </div>
     );
   }
 
   const sortedStatuses = getSortedStatuses();
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const todayLabel = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const activeThisWeek = athleteStatuses.filter(s => s.currentWeekPlanned).length;
+  const needsAttentionCount = athleteStatuses.filter(s => needsAttentionCheck(s.lastTrainingDate)).length;
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Coach Dashboard</h1>
-        <div className="text-sm text-gray-500">
-          Updated: {new Date().toLocaleTimeString()}
-        </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-medium text-gray-900">{greeting}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{todayLabel}</p>
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Athletes', value: athleteStatuses.length },
+          { label: 'Active this week', value: activeThisWeek },
+          { label: 'Upcoming events', value: upcomingEvents.length },
+          { label: 'Needs attention', value: needsAttentionCount, warn: needsAttentionCount > 0 },
+        ].map(({ label, value, warn }) => (
+          <div key={label} className="bg-white rounded-lg border border-gray-200 py-2 px-4">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</div>
+            <div className={`text-xl font-medium ${warn ? 'text-red-600' : 'text-gray-900'}`}>{value}</div>
+          </div>
+        ))}
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Athlete Status Overview</h2>
+        <h2 className="text-base font-medium text-gray-900 mb-4">Athletes</h2>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -205,19 +227,19 @@ export function CoachDashboard({ onNavigateToPlanner }: CoachDashboardProps) {
 
       {groupStatuses.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <UsersRound className="w-5 h-5" />
-            Training Groups Overview
+          <h2 className="text-base font-medium text-gray-900 mb-4 flex items-center gap-2">
+            <UsersRound className="w-4 h-4" />
+            Training Groups
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200">
                   <th className="w-6 py-3 px-2"></th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Group</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Members</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">This Week</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Next Week</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Group</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Members</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">This Week</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wide">Next Week</th>
                 </tr>
               </thead>
               <tbody>
@@ -316,12 +338,23 @@ function AthleteRow({
             : <ChevronRight size={14} className="text-gray-400" />
           }
         </td>
-        <td className="py-3 px-4">
+        <td className="py-3 px-4" onClick={(e) => { e.stopPropagation(); onNavigateToPlanner(status.athlete, status.currentWeekStart); }}>
           <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-[11px] font-medium text-blue-700 flex-shrink-0">
+              {status.athlete.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-medium text-gray-900 hover:text-blue-600 transition-colors leading-tight">{status.athlete.name}</span>
+              {status.athlete.weight_class && (
+                <span className="text-[11px] text-gray-400">{status.athlete.weight_class}</span>
+              )}
+            </div>
             {needsAttention && (
-              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+              <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 ml-1" />
             )}
-            <span className="font-medium text-gray-900">{status.athlete.name}</span>
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ml-auto ${
+              status.currentWeekPlanned ? 'bg-green-400' : 'bg-red-400'
+            }`} title={status.currentWeekPlanned ? 'Planned this week' : 'No plan this week'} />
           </div>
         </td>
         <td className="py-3 px-4 text-sm text-gray-600">
@@ -573,8 +606,8 @@ function GroupRow({ groupStatus, isExpanded, onToggleExpand }: GroupRowProps) {
 function ActivityFeed({ events }: { events: ActivityEvent[] }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-        <TrendingUp className="w-5 h-5" />
+      <h2 className="text-base font-medium text-gray-900 mb-4 flex items-center gap-2">
+        <TrendingUp className="w-4 h-4" />
         Activity Feed
       </h2>
       <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -632,8 +665,8 @@ function UpcomingEventsList({
 }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-        <Calendar className="w-5 h-5" />
+      <h2 className="text-base font-medium text-gray-900 mb-4 flex items-center gap-2">
+        <Calendar className="w-4 h-4" />
         Upcoming Events
       </h2>
       <div className="space-y-3 max-h-96 overflow-y-auto">
