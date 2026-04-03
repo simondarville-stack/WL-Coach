@@ -34,7 +34,7 @@ interface DayEditorProps {
   onRefresh: () => Promise<void>;
   addExerciseToDay: (weekPlanId: string, dayIndex: number, exerciseId: string, position: number, unit: DefaultUnit) => Promise<unknown>;
   createComboExercise: (weekPlanId: string, dayIndex: number, position: number, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
-  savePrescription: (id: string, data: { prescription: string; notes: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
+  savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   saveNotes: (id: string, notes: string) => Promise<unknown>;
   deletePlannedExercise: (id: string) => Promise<unknown>;
   reorderExercises: (weekPlanId: string, orderedIds: string[]) => Promise<unknown>;
@@ -175,7 +175,6 @@ export function DayEditor({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     void savePrescription(ex.id, {
       prescription: raw,
-      notes: ex.notes ?? '',
       unit: (ex.unit as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     });
@@ -323,7 +322,7 @@ export function DayEditor({
                   draggable
                   onDragStart={() => handleExerciseDragStart(ex.id)}
                   onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
-                  onClick={e => { if (e.shiftKey || shiftHeld) void handleDeleteExercise(ex.id); }}
+                  onClick={() => { if (shiftHeld) void handleDeleteExercise(ex.id); }}
                   className={[
                     'flex items-center gap-2 px-2.5 py-1.5 border-b border-gray-100 rounded-t-sm',
                     shiftHeld ? 'cursor-pointer bg-red-50 hover:bg-red-100' : 'cursor-grab active:cursor-grabbing bg-gray-50/70',

@@ -99,13 +99,16 @@ export function PrescriptionGrid({
   const [focusedColId, setFocusedColId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync when external data changes
+  // Track what we last sent so we can ignore our own echoes coming back from the DB
+  const lastSentRef = useRef<string | null>(null);
+
+  // Sync when external data changes (but NOT when it's our own save echoing back)
   const prevRawRef = useRef(prescriptionRaw);
   useEffect(() => {
-    if (prescriptionRaw !== prevRawRef.current) {
-      prevRawRef.current = prescriptionRaw;
-      setColumns(parseToColumns(prescriptionRaw, isCombo, unit));
-    }
+    if (prescriptionRaw === prevRawRef.current) return;
+    prevRawRef.current = prescriptionRaw;
+    if (prescriptionRaw === lastSentRef.current) return; // ignore round-trip
+    setColumns(parseToColumns(prescriptionRaw, isCombo, unit));
   }, [prescriptionRaw, isCombo, unit]);
 
   // Focus+select only when a new cell enters edit mode
@@ -117,20 +120,19 @@ export function PrescriptionGrid({
   }, [editing?.colId, editing?.field]);
 
   const save = useCallback((cols: GridColumn[]) => {
+    let raw: string;
     if (isCombo) {
-      onSave(formatComboPrescription(
+      raw = formatComboPrescription(
         cols.map(col => ({ sets: col.sets, repsText: col.repsText, totalReps: col.reps, load: col.load })),
         unit,
-      ));
+      );
     } else if (isFreeTextReps) {
-      onSave(formatFreeTextPrescription(cols.map(col => ({
-        loadText: col.loadText,
-        reps: col.reps,
-        sets: col.sets,
-      }))));
+      raw = formatFreeTextPrescription(cols.map(col => ({ loadText: col.loadText, reps: col.reps, sets: col.sets })));
     } else {
-      onSave(formatPrescription(columnsToSetLines(cols), unit));
+      raw = formatPrescription(columnsToSetLines(cols), unit);
     }
+    lastSentRef.current = raw;
+    onSave(raw);
   }, [isCombo, isFreeTextReps, unit, onSave]);
 
   function updateColumn(id: string, patch: Partial<GridColumn>) {
@@ -153,7 +155,7 @@ export function PrescriptionGrid({
     e.preventDefault();
     if (disabled) return;
 
-    if (e.shiftKey || shiftHeld) {
+    if (shiftHeld) {
       removeColumn(colId);
       return;
     }
@@ -180,20 +182,23 @@ export function PrescriptionGrid({
     const delta = isRight ? -1 : 1;
 
     if (field === 'load') {
-      if (isFreeTextReps) return;
-      const next = Math.max(0, col.load + delta * loadIncrement);
+      if (isFreeTextReps) {
+        setEditing({ colId, field: 'load', value: col.loadText });
+        return;
+      }
+      const next = Math.max(0, col.load + delta); // clicks always ±1 kg
       updateColumn(colId, { load: next, loadText: String(next) });
     } else if (field === 'reps') {
       if (isCombo) {
         // Increment first part of the tuple
         const parts = col.repsText.split('+');
-        const first = Math.max(1, (parseInt(parts[0], 10) || 1) + delta);
+        const first = Math.max(0, (parseInt(parts[0], 10) || 0) + delta);
         parts[0] = String(first);
         const newRepsText = parts.join('+');
         const newTotalReps = parts.reduce((s, p) => s + (parseInt(p, 10) || 0), 0);
         updateColumn(colId, { repsText: newRepsText, reps: newTotalReps });
       } else {
-        const next = Math.max(1, col.reps + delta);
+        const next = Math.max(0, col.reps + delta);
         updateColumn(colId, { reps: next, repsText: String(next) });
       }
     } else {
@@ -216,11 +221,11 @@ export function PrescriptionGrid({
           const totalReps = parts.reduce((s, n) => s + n, 0);
           updateColumn(editing.colId, { repsText: raw, reps: totalReps });
         } else {
-          const val = Math.max(1, parseInt(raw, 10) || col.reps);
+          const val = Math.max(0, parseInt(raw, 10));
           updateColumn(editing.colId, { repsText: String(val), reps: val });
         }
       } else {
-        const val = Math.max(1, parseInt(editing.value, 10) || col.reps);
+        const val = Math.max(0, parseInt(editing.value, 10));
         updateColumn(editing.colId, { reps: val, repsText: String(val) });
       }
     } else if (editing.field === 'load') {
@@ -256,8 +261,8 @@ export function PrescriptionGrid({
       : String(last?.reps ?? 1);
     const newCol: GridColumn = {
       id: nextId(),
-      load: last ? last.load + loadIncrement : loadIncrement,
-      loadText: last ? String(last.load + loadIncrement) : String(loadIncrement),
+      load: isFreeTextReps ? (last?.load ?? 0) : (last ? last.load + loadIncrement : loadIncrement),
+      loadText: isFreeTextReps ? (last?.loadText ?? '') : (last ? String(last.load + loadIncrement) : String(loadIncrement)),
       reps: last ? last.reps : 1,
       repsText: defaultRepsText,
       sets: 1,
@@ -291,8 +296,8 @@ export function PrescriptionGrid({
           onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={commitEdit}
           onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
           }}
           className="w-full text-center text-xs font-mono bg-blue-50 border border-blue-400 rounded outline-none"
           style={{ minWidth: 0 }}
@@ -323,8 +328,8 @@ export function PrescriptionGrid({
                 }
                 const isRight = e.button === 2;
                 const delta = isRight ? -1 : 1;
-                const newParts = col.repsText.split('+').map(p => parseInt(p, 10) || 1);
-                newParts[partIdx] = Math.max(1, newParts[partIdx] + delta);
+                const newParts = col.repsText.split('+').map(p => parseInt(p, 10) || 0);
+                newParts[partIdx] = Math.max(0, newParts[partIdx] + delta);
                 const newRepsText = newParts.join('+');
                 const newTotalReps = newParts.reduce((s, p) => s + p, 0);
                 updateColumn(col.id, { repsText: newRepsText, reps: newTotalReps });
@@ -359,8 +364,8 @@ export function PrescriptionGrid({
           onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={commitEdit}
           onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
           }}
           className="w-full text-center text-xs font-mono bg-blue-50 border border-blue-400 rounded outline-none"
           style={{ minWidth: 0 }}
@@ -380,22 +385,17 @@ export function PrescriptionGrid({
         onContextMenu={e => e.preventDefault()}
         tabIndex={-1}
         disabled={disabled}
-        title={
-          field === 'load' && isFreeTextReps ? 'Ctrl+click to edit'
-          : isDeleting ? 'Click to delete column'
-          : undefined
-        }
+        title={isDeleting ? 'Click to delete column' : undefined}
         className={[
           'w-full text-center text-xs font-mono select-none transition-colors',
           isSetCell
             ? `font-medium ${isSetsOne ? 'opacity-0 group-hover:opacity-40' : 'opacity-80'} ${isDeleting ? 'text-red-600' : 'text-gray-700'}`
             : `font-medium ${isDeleting ? 'text-red-600' : 'text-gray-900'}`,
-          !disabled && !(field === 'load' && isFreeTextReps)
+          !disabled
             ? (isDeleting
                 ? 'hover:bg-red-100 active:bg-red-200 cursor-pointer rounded'
                 : 'hover:bg-blue-50 hover:ring-1 hover:ring-blue-300 active:bg-blue-100 cursor-pointer rounded')
             : '',
-          field === 'load' && isFreeTextReps ? 'cursor-default text-gray-600' : '',
         ].filter(Boolean).join(' ')}
         style={{ minHeight: '1.25rem', lineHeight: '1.25rem' }}
       >

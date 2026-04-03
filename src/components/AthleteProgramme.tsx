@@ -2,12 +2,24 @@ import { useState, useEffect } from 'react';
 import type { Athlete, WeekPlan, PlannedExerciseWithExercise, ComboMemberEntry } from '../lib/database.types';
 import { formatDateToDDMMYYYY, formatDateRange, getMondayOfWeek } from '../lib/dateUtils';
 import { PrescriptionDisplay } from './PrescriptionDisplay';
-import { Calendar } from 'lucide-react';
+import { Calendar, Video } from 'lucide-react';
 import { useAthletes } from '../hooks/useAthletes';
 import { useWeekPlans } from '../hooks/useWeekPlans';
 import { useCombos } from '../hooks/useCombos';
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(code: string | null | undefined): SentinelType {
+  if (code === 'TEXT') return 'text';
+  if (code === 'VIDEO') return 'video';
+  if (code === 'IMAGE') return 'image';
+  return null;
+}
+function getYouTubeVideoId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? m[1] : null;
+}
 
 export function AthleteProgramme() {
   const { athletes, fetchActiveAthletes } = useAthletes();
@@ -195,10 +207,48 @@ export function AthleteProgramme() {
                     ) : (
                       <div className="space-y-4">
                         {dayExercises.map((pe) => {
+                          const sentinel = getSentinelType(pe.exercise.exercise_code);
                           const isCombo = pe.is_combo ?? false;
                           const members = isCombo
                             ? (comboMembers[pe.id] ?? []).sort((a, b) => a.position - b.position)
                             : [];
+
+                          // Sentinel rendering
+                          if (sentinel === 'text') {
+                            if (!pe.notes?.trim()) return null;
+                            return (
+                              <div key={pe.id} className="bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                                <p className="text-sm text-gray-700 italic whitespace-pre-wrap">{pe.notes}</p>
+                              </div>
+                            );
+                          }
+                          if (sentinel === 'image') {
+                            if (!pe.notes?.trim()) return null;
+                            return (
+                              <div key={pe.id}>
+                                <img src={pe.notes} alt="" className="rounded border border-gray-200 max-w-full" style={{ maxHeight: '300px', objectFit: 'contain' }} onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
+                              </div>
+                            );
+                          }
+                          if (sentinel === 'video') {
+                            const url = pe.notes?.trim();
+                            if (!url) return null;
+                            const videoId = getYouTubeVideoId(url);
+                            return (
+                              <div key={pe.id} className="bg-indigo-50 border border-indigo-200 rounded px-3 py-2 flex items-center gap-3">
+                                <Video size={16} className="text-indigo-400 flex-shrink-0" />
+                                <div className="min-w-0">
+                                  {videoId && (
+                                    <a href={url} target="_blank" rel="noopener noreferrer">
+                                      <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="Video thumbnail" className="rounded w-32 h-20 object-cover mb-1" />
+                                    </a>
+                                  )}
+                                  <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 underline break-all">{url}</a>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           const displayName = isCombo
                             ? (pe.combo_notation || members.map(m => m.exercise.name).join(' + '))
                             : pe.exercise.name;
@@ -208,7 +258,12 @@ export function AthleteProgramme() {
 
                           return (
                             <div key={pe.id} className="pl-4 border-l-4" style={{ borderColor }}>
-                              <div className="font-medium text-gray-900">{displayName}</div>
+                              <div className="font-medium text-gray-900">
+                                {displayName}
+                                {pe.variation_note && (
+                                  <span className="text-xs text-gray-400 italic ml-2">{pe.variation_note}</span>
+                                )}
+                              </div>
                               {isCombo && members.length > 0 && (
                                 <div className="text-xs text-gray-500 mb-1">
                                   {members.map((m, idx) => (

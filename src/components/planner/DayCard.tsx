@@ -302,7 +302,7 @@ export function DayCard({
                     style={{ borderLeft: `3px solid ${borderColor}` }}
                     onClick={e => {
                       e.stopPropagation();
-                      if (e.shiftKey || shiftHeld) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
+                      if (shiftHeld) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
                       onNavigateToExercise(ex.id);
                     }}
                   >
@@ -352,9 +352,12 @@ export function DayCard({
                               Combo
                             </span>
                           </div>
+                          {ex.variation_note && (
+                            <p className="text-[10px] text-gray-400 italic leading-tight truncate">{ex.variation_note}</p>
+                          )}
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={true} />
                           {ex.notes && (
-                            <p className="text-[10px] text-gray-400 italic leading-tight">{ex.notes}</p>
+                            <p className="text-[10px] text-gray-400 italic leading-tight line-clamp-1">{ex.notes}</p>
                           )}
                         </>
                       ) : (
@@ -368,6 +371,9 @@ export function DayCard({
                             )}
                           </div>
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
+                          {ex.notes && (
+                            <p className="text-[10px] text-gray-400 italic leading-tight line-clamp-1">{ex.notes}</p>
+                          )}
                         </>
                       )}
                     </div>

@@ -149,16 +149,14 @@ function parseFreeTextSegment(segment: string): FreeTextSetLine | null {
   if (parts.length === 2) {
     const loadText = parts[0].trim();
     const reps = parseInt(parts[1], 10);
-
-    if (loadText && reps > 0) {
+    if (!isNaN(reps) && reps >= 0) {
       return { loadText, reps, sets: 1 };
     }
   } else if (parts.length === 3) {
     const loadText = parts[0].trim();
     const reps = parseInt(parts[1], 10);
     const sets = parseInt(parts[2], 10);
-
-    if (loadText && reps > 0 && sets > 0) {
+    if (!isNaN(reps) && reps >= 0 && !isNaN(sets) && sets > 0) {
       return { loadText, reps, sets };
     }
   }

@@ -17,6 +17,18 @@ interface PrintWeekProps {
   weekDescription?: string | null;
 }
 
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(code: string | null | undefined): SentinelType {
+  if (code === 'TEXT') return 'text';
+  if (code === 'VIDEO') return 'video';
+  if (code === 'IMAGE') return 'image';
+  return null;
+}
+function getYouTubeVideoId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? m[1] : null;
+}
+
 function formatUnit(unit: DefaultUnit | string | null): string {
   if (unit === 'absolute_kg') return 'kg';
   if (unit === 'percentage') return '%';
@@ -282,10 +294,49 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
 
               <div className="space-y-4">
                 {dayExs.map(ex => {
+                  const sentinel = getSentinelType(ex.exercise.exercise_code);
                   const unitSymbol = getUnitSymbol(ex.unit);
                   const hasSummary = ex.summary_total_sets !== null && ex.summary_total_sets > 0;
                   const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
-                  const borderColor = ex.is_combo ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8') : ex.exercise.color;
+                  const borderColor = sentinel
+                    ? (sentinel === 'text' ? 'transparent' : '#d1d5db')
+                    : ex.is_combo ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8') : ex.exercise.color;
+
+                  // Sentinel rendering
+                  if (sentinel === 'text') {
+                    if (!ex.notes?.trim()) return null;
+                    return (
+                      <div key={ex.id} className="break-inside-avoid bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        <p className="text-sm text-gray-700 italic whitespace-pre-wrap">{ex.notes}</p>
+                      </div>
+                    );
+                  }
+                  if (sentinel === 'image') {
+                    if (!ex.notes?.trim()) return null;
+                    return (
+                      <div key={ex.id} className="break-inside-avoid">
+                        <img src={ex.notes} alt="" className="max-w-full rounded border border-gray-200" style={{ maxHeight: '200px', objectFit: 'contain' }} onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
+                      </div>
+                    );
+                  }
+                  if (sentinel === 'video') {
+                    const url = ex.notes?.trim();
+                    if (!url) return null;
+                    const videoId = getYouTubeVideoId(url);
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(url)}&size=80x80`;
+                    return (
+                      <div key={ex.id} className="break-inside-avoid flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded px-3 py-2">
+                        <img src={qrUrl} alt="QR code" className="w-16 h-16 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-700 mb-0.5">Video</p>
+                          {videoId && (
+                            <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="rounded w-24 h-14 object-cover mb-1" />
+                          )}
+                          <p className="text-[10px] text-gray-500 break-all">{url}</p>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div key={ex.id} className="break-inside-avoid">
@@ -298,6 +349,9 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
                                 ? (ex.combo_notation || (members?.map(m => m.exercise.name).join(' + ') ?? ex.exercise.name))
                                 : ex.exercise.name}
                             </h3>
+                            {ex.variation_note && (
+                              <span className="text-xs text-gray-500 italic">{ex.variation_note}</span>
+                            )}
                             {ex.is_combo && (
                               <span className="text-[9px] bg-blue-50 text-blue-600 font-medium px-1.5 py-0.5 rounded">Combo</span>
                             )}
