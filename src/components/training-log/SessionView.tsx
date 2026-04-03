@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Check, Star, ChevronDown, ChevronUp } from 'lucide-react';
+import { RestTimer } from './RestTimer';
 import type { Athlete, PlannedExerciseWithExercise, TrainingLogExerciseWithExercise, TrainingLogSet } from '../../lib/database.types';
 import { useTrainingLog } from '../../hooks/useTrainingLog';
 import { RAWScoring } from '../RAWScoring';
@@ -168,6 +169,8 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
   const [sessionNotes, setSessionNotes] = useState('');
   const [prBadge, setPrBadge] = useState<{ load: number; reps: number } | null>(null);
   const [prSetId, setPrSetId] = useState<string | undefined>(undefined);
+  const [showRestTimer, setShowRestTimer] = useState(false);
+  const [restSeconds, setRestSeconds] = useState(120);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initializedExercises = useRef<Set<string>>(new Set());
 
@@ -311,6 +314,13 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
 
   const handleCompleteSet = async (setId: string, load: number | null, repCount: number | null, rpe: number | null) => {
     await completeSet(setId, { load, reps: repCount, rpe });
+
+    // Show rest timer
+    if (currentPlanned) {
+      const secs = getDefaultRestSeconds(currentPlanned.exercise.name);
+      setRestSeconds(secs);
+      setShowRestTimer(true);
+    }
 
     // PR check
     if (load && repCount && currentLogged && session) {
@@ -650,7 +660,7 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
         )}
 
         {/* Navigation */}
-        <div className="mx-4 mt-3 flex items-center gap-2">
+        <div className="mx-4 mt-3 mb-4 flex items-center gap-2">
           <button
             onClick={() => setCurrentExerciseIndex(prev => Math.max(0, prev - 1))}
             disabled={currentExerciseIndex === 0}
@@ -673,6 +683,15 @@ export function SessionView({ athlete, date, onBack }: SessionViewProps) {
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Rest timer overlay */}
+        {showRestTimer && (
+          <RestTimer
+            defaultSeconds={restSeconds}
+            onDismiss={() => setShowRestTimer(false)}
+            onComplete={() => setShowRestTimer(false)}
+          />
+        )}
       </div>
     );
   }
