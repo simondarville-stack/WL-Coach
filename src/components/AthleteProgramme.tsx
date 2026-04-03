@@ -267,7 +267,7 @@ export function AthleteProgramme() {
                               {isCombo && members.length > 0 && (
                                 <div className="text-xs text-gray-500 mb-1">
                                   {members.map((m, idx) => (
-                                    <span key={m.exerciseId}>
+                                    <span key={m.position}>
                                       {idx > 0 && ' + '}
                                       {m.exercise.name}
                                     </span>
