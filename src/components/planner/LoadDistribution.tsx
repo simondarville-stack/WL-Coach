@@ -67,7 +67,7 @@ export function LoadDistribution({
 
   return (
     <div className="bg-white border-t border-gray-200 p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-4">Weekly Load Distribution</h3>
+      <h3 className="text-sm font-medium text-gray-700 mb-4">Weekly Load Distribution</h3>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-gray-50 p-3 rounded-lg">
           <h4 className="text-xs font-medium text-gray-600 mb-2">Load by Day (kg)</h4>
