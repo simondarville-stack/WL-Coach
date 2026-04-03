@@ -1,28 +1,36 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useWeekPlans } from '../hooks/useWeekPlans';
-import { useAthleteStore } from '../store/athleteStore';
-import { useExercises } from '../hooks/useExercises';
-import { useAthletes } from '../hooks/useAthletes';
-import { useTrainingGroups } from '../hooks/useTrainingGroups';
-import { DAYS_OF_WEEK } from '../lib/constants';
-import { DayColumn } from './DayColumn';
-import { PrintWeek } from './PrintWeek';
-import { MacroValidation } from './MacroValidation';
-import type { PlanSelection } from './PlanSelector';
-import { LoadDistributionPanel } from './LoadDistributionPanel';
-import { CopyWeekModal } from './CopyWeekModal';
+import { supabase } from '../../lib/supabase';
+import { useWeekPlans } from '../../hooks/useWeekPlans';
+import { useSettings } from '../../hooks/useSettings';
+import { useAthleteStore } from '../../store/athleteStore';
+import { useExercises } from '../../hooks/useExercises';
+import { useAthletes } from '../../hooks/useAthletes';
+import { useTrainingGroups } from '../../hooks/useTrainingGroups';
+import { DAYS_OF_WEEK } from '../../lib/constants';
+import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
+import type { PlanSelection } from '../PlanSelector';
+import { WeekOverview } from './WeekOverview';
+import { DayEditor } from './DayEditor';
+import { ExerciseDetail } from './ExerciseDetail';
+import { LoadDistribution } from './LoadDistribution';
+import { PlannerControlPanel } from './PlannerControlPanel';
+import { PlannerModals } from './PlannerModals';
 import { User } from 'lucide-react';
-import { formatDateRange as formatDateRangeUtil } from '../lib/dateUtils';
-import { getMondayOfWeekISO as getMondayOfWeek } from '../lib/weekUtils';
-import { DayConfigModal } from './DayConfigModal';
-import { WeeklyPlannerHeader } from './WeeklyPlannerHeader';
-import { WeeklySummaryPanel } from './WeeklySummaryPanel';
+
+export interface MacroContext {
+  macroId: string;
+  weekNumber: number;
+}
+
+type PanelView = 'overview' | 'day' | 'exercise';
 
 export function WeeklyPlanner() {
   const location = useLocation();
   const initialWeekStart = (location.state as { weekStart?: string } | null)?.weekStart ?? null;
   const { selectedAthlete, setSelectedAthlete } = useAthleteStore();
+  const { settings, fetchSettings } = useSettings();
+
   const [selectedDate, setSelectedDate] = useState(() => {
     if (initialWeekStart) return initialWeekStart;
     return getMondayOfWeek(new Date());
@@ -32,29 +40,22 @@ export function WeeklyPlanner() {
     athlete: selectedAthlete,
     group: null,
   });
-  const {
-    exercises: allExercises,
-    fetchExercisesByName,
-  } = useExercises();
 
-  const {
-    athletes,
-    fetchAllAthletes,
-  } = useAthletes();
+  // Panel navigation
+  const [panelView, setPanelView] = useState<PanelView>('overview');
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const {
-    groups,
-    fetchGroups,
-  } = useTrainingGroups();
+  const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { athletes, fetchAllAthletes } = useAthletes();
+  const { groups, fetchGroups } = useTrainingGroups();
 
   const {
     weekPlan: currentWeekPlan,
     setWeekPlan: setCurrentWeekPlan,
     plannedExercises,
     setPlannedExercises,
-    weekComboSetLines,
-    weekComboItems,
-    comboExerciseIds,
+    comboMembers,
     athletePRs,
     setAthletePRs,
     macroWeekTarget,
@@ -74,28 +75,33 @@ export function WeeklyPlanner() {
     reorderExercises,
     moveExercise,
     normalizePositions,
+    savePrescription,
+    saveNotes,
+    fetchOtherDayPrescriptions,
+    addExerciseToDay,
+    createComboExercise,
+    copyExerciseWithSetLines,
+    copyDayExercises,
+    deleteDayExercises,
   } = useWeekPlans();
 
+  const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
-  const [showCategorySummaries, setShowCategorySummaries] = useState(true);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
   const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
   const [dayDisplayOrder, setDayDisplayOrder] = useState<number[]>([]);
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
-  const [comboRefreshKey, setComboRefreshKey] = useState(0);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
-  const [copiedSourceAthlete, setCopiedSourceAthlete] = useState<import('../lib/database.types').Athlete | null>(null);
-  const [copiedSourceGroup, setCopiedSourceGroup] = useState<import('../lib/database.types').TrainingGroup | null>(null);
-  const [showPasteModal, setShowPasteModal] = useState(false);
 
   useEffect(() => {
     fetchExercisesByName();
     fetchGroups();
     fetchAllAthletes();
+    fetchSettings();
   }, []);
 
   useEffect(() => {
@@ -109,11 +115,13 @@ export function WeeklyPlanner() {
       loadWeekPlan();
       if (planSelection.athlete) {
         loadMacroWeekTarget();
+        loadMacroContext(planSelection.athlete.id, selectedDate);
         loadAthletePRs(planSelection.athlete.id);
       } else {
         setMacroWeekTarget(null);
         setMacroWeekTypeText(null);
         setAthletePRs([]);
+        setMacroContext(null);
       }
     } else {
       setCurrentWeekPlan(null);
@@ -121,7 +129,12 @@ export function WeeklyPlanner() {
       setMacroWeekTarget(null);
       setMacroWeekTypeText(null);
       setAthletePRs([]);
+      setMacroContext(null);
     }
+    // Reset panel on week/athlete change
+    setPanelView('overview');
+    setSelectedDayIndex(null);
+    setSelectedExerciseId(null);
   }, [selectedDate, planSelection]);
 
   useEffect(() => {
@@ -129,14 +142,12 @@ export function WeeklyPlanner() {
       setActiveDays(currentWeekPlan.active_days);
       const labels = currentWeekPlan.day_labels || {};
       const initialLabels: Record<number, string> = {};
-
       const maxDay = Math.max(...currentWeekPlan.active_days, 7);
       for (let i = 1; i <= maxDay; i++) {
         initialLabels[i] = labels[i] || DAYS_OF_WEEK.find(d => d.index === i)?.name || `Day ${i}`;
       }
       setEditingDayLabels(initialLabels);
       setWeekDescription(currentWeekPlan.week_description || '');
-
       setDayDisplayOrder(
         currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
       );
@@ -149,21 +160,17 @@ export function WeeklyPlanner() {
         loadExercises();
         if (selectedAthlete && currentWeekPlan) {
           loadPlannedExercises(currentWeekPlan.id);
-          loadWeekCombos(currentWeekPlan.id);
           loadMacroWeekTarget();
         }
       }
     };
-
     const handleFocus = () => {
       loadExercises();
       if (selectedAthlete && currentWeekPlan) {
         loadPlannedExercises(currentWeekPlan.id);
-        loadWeekCombos(currentWeekPlan.id);
         loadMacroWeekTarget();
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleFocus);
     return () => {
@@ -173,8 +180,6 @@ export function WeeklyPlanner() {
   }, [selectedAthlete, currentWeekPlan]);
 
   const loadExercises = () => fetchExercisesByName();
-  const loadGroups = () => fetchGroups();
-  const loadAthletes = () => fetchAllAthletes();
   const loadAthletePRs = (athleteId: string) => fetchAthletePRs(athleteId);
 
   const loadWeekPlan = async () => {
@@ -192,7 +197,34 @@ export function WeeklyPlanner() {
     await fetchMacroWeekTarget(planSelection.athlete.id, selectedDate);
   };
 
-  const loadWeekCombos = (weekPlanId: string) => fetchWeekCombos(weekPlanId);
+  const loadMacroContext = async (athleteId: string, date: string) => {
+    try {
+      const { data: macro } = await supabase
+        .from('macrocycles')
+        .select('id')
+        .eq('athlete_id', athleteId)
+        .lte('start_date', date)
+        .gte('end_date', date)
+        .maybeSingle();
+      if (!macro) { setMacroContext(null); return; }
+
+      const weekAgoDate = new Date(new Date(date).getTime() - 6 * 24 * 60 * 60 * 1000)
+        .toISOString().split('T')[0];
+      const { data: mw } = await supabase
+        .from('macro_weeks')
+        .select('week_number')
+        .eq('macrocycle_id', macro.id)
+        .lte('week_start', date)
+        .gte('week_start', weekAgoDate)
+        .order('week_start', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setMacroContext(mw ? { macroId: macro.id, weekNumber: mw.week_number } : null);
+    } catch {
+      setMacroContext(null);
+    }
+  };
 
   const loadPlannedExercises = (weekPlanId: string) =>
     fetchPlannedExercises(weekPlanId, currentWeekPlan?.day_labels);
@@ -203,22 +235,46 @@ export function WeeklyPlanner() {
         fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
         fetchWeekCombos(currentWeekPlan.id),
       ]);
-      setComboRefreshKey(k => k + 1);
     }
   };
 
-  const handleDeleteExercise = async (plannedExerciseId: string, dayIndex: number) => {
+  const handleDeleteExercise = async (plannedExerciseId: string) => {
     if (!currentWeekPlan) return;
+    const dayIndex = Object.entries(plannedExercises).find(
+      ([, exs]) => exs.some(ex => ex.id === plannedExerciseId)
+    )?.[0];
     try {
       await deletePlannedExercise(plannedExerciseId);
-      await normalizePositions(currentWeekPlan.id, dayIndex);
-      await Promise.all([
-        fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
-        fetchWeekCombos(currentWeekPlan.id),
-      ]);
+      if (dayIndex) await normalizePositions(currentWeekPlan.id, parseInt(dayIndex));
+      await handleRefresh();
     } catch {
       // error already set in hook
     }
+  };
+
+  const handleExerciseDrop = async (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => {
+    if (!currentWeekPlan) return;
+    const sourceEx = (plannedExercises[fromDay] || []).find(ex => ex.id === plannedExId);
+    if (!sourceEx) return;
+    const destPosition = (plannedExercises[toDay] || []).length;
+    if (isCopy) {
+      await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
+    } else {
+      await moveExercise(currentWeekPlan.id, plannedExId, fromDay, toDay);
+    }
+    await handleRefresh();
+  };
+
+  const handleDayDrop = async (sourceDay: number, destDay: number, isCopy: boolean) => {
+    if (!currentWeekPlan) return;
+    const srcExercises = plannedExercises[sourceDay] || [];
+    if (srcExercises.length === 0) return;
+    const basePosition = (plannedExercises[destDay] || []).length;
+    await copyDayExercises(srcExercises, currentWeekPlan.id, destDay, basePosition);
+    if (!isCopy) {
+      await deleteDayExercises(srcExercises.map(ex => ex.id));
+    }
+    await handleRefresh();
   };
 
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
@@ -231,21 +287,16 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleMoveExercise = async (
-    exerciseId: string,
-    fromDayIndex: number,
-    toDayIndex: number
-  ) => {
-    if (!currentWeekPlan) return;
-    try {
-      await moveExercise(currentWeekPlan.id, exerciseId, fromDayIndex, toDayIndex);
-      await Promise.all([
-        fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
-        fetchWeekCombos(currentWeekPlan.id),
-      ]);
-    } catch {
-      // error already set in hook
-    }
+  const handleNavigateToDay = (dayIndex: number) => {
+    setSelectedDayIndex(dayIndex);
+    setSelectedExerciseId(null);
+    setPanelView('day');
+  };
+
+  const handleNavigateToExercise = (dayIndex: number, exerciseId: string) => {
+    setSelectedDayIndex(dayIndex);
+    setSelectedExerciseId(exerciseId);
+    setPanelView('exercise');
   };
 
   const goToPreviousWeek = () => {
@@ -260,15 +311,10 @@ export function WeeklyPlanner() {
     setSelectedDate(date.toISOString().split('T')[0]);
   };
 
-  const formatDateRange = () => {
-    return formatDateRangeUtil(selectedDate, 7);
-  };
-
   const toggleDay = (dayIndex: number) => {
     if (!currentWeekPlan) return;
-
     if (activeDays.includes(dayIndex)) {
-      setActiveDays(activeDays.filter((d) => d !== dayIndex));
+      setActiveDays(activeDays.filter(d => d !== dayIndex));
     } else {
       setActiveDays([...activeDays, dayIndex].sort((a, b) => a - b));
       if (!dayDisplayOrder.includes(dayIndex)) {
@@ -282,7 +328,6 @@ export function WeeklyPlanner() {
       setActiveDays(currentWeekPlan.active_days);
       const labels = currentWeekPlan.day_labels || {};
       const initialLabels: Record<number, string> = {};
-
       const maxDay = Math.max(...currentWeekPlan.active_days, 7);
       for (let i = 1; i <= maxDay; i++) {
         initialLabels[i] = labels[i] || DAYS_OF_WEEK.find(d => d.index === i)?.name || `Day ${i}`;
@@ -295,18 +340,14 @@ export function WeeklyPlanner() {
     setShowSettings(false);
   };
 
-  const handleDragStart = (dayIndex: number) => {
-    setDraggedDayIndex(dayIndex);
-  };
+  const handleDragStart = (dayIndex: number) => setDraggedDayIndex(dayIndex);
 
   const handleDragOver = (e: React.DragEvent, targetDayIndex: number) => {
     e.preventDefault();
     if (draggedDayIndex === null || draggedDayIndex === targetDayIndex) return;
-
     const newOrder = [...dayDisplayOrder];
     const draggedIdx = newOrder.indexOf(draggedDayIndex);
     const targetIdx = newOrder.indexOf(targetDayIndex);
-
     if (draggedIdx !== -1 && targetIdx !== -1) {
       newOrder.splice(draggedIdx, 1);
       newOrder.splice(targetIdx, 0, draggedDayIndex);
@@ -314,9 +355,7 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleDragEnd = () => {
-    setDraggedDayIndex(null);
-  };
+  const handleDragEnd = () => setDraggedDayIndex(null);
 
   const saveDayLabels = async () => {
     if (!currentWeekPlan) return;
@@ -333,9 +372,7 @@ export function WeeklyPlanner() {
   };
 
   const getDayLabel = (dayIndex: number): string => {
-    if (currentWeekPlan?.day_labels && currentWeekPlan.day_labels[dayIndex]) {
-      return currentWeekPlan.day_labels[dayIndex];
-    }
+    if (currentWeekPlan?.day_labels?.[dayIndex]) return currentWeekPlan.day_labels[dayIndex];
     return DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
   };
 
@@ -353,182 +390,29 @@ export function WeeklyPlanner() {
     const newLabels = { ...editingDayLabels };
     delete newLabels[dayIndex];
     setEditingDayLabels(newLabels);
-
-    if (activeDays.includes(dayIndex)) {
-      const newActiveDays = activeDays.filter(d => d !== dayIndex);
-      setActiveDays(newActiveDays);
-    }
-
+    setActiveDays(activeDays.filter(d => d !== dayIndex));
     setDayDisplayOrder(dayDisplayOrder.filter(d => d !== dayIndex));
   };
 
-  const saveWeekDescription = async () => {
+  const saveWeekDescription = async (value: string) => {
     if (!currentWeekPlan) return;
+    setWeekDescription(value);
     try {
-      await updateWeekPlan(currentWeekPlan.id, { week_description: weekDescription.trim() || null });
+      await updateWeekPlan(currentWeekPlan.id, { week_description: value.trim() || null });
     } catch {
       // error already set in hook
     }
   };
 
-  const visibleDays = dayDisplayOrder
-    .filter(dayIndex => activeDays.includes(dayIndex))
-    .map(dayIndex => ({
-      index: dayIndex,
-      name: getDayLabel(dayIndex)
-    }));
-
-  const calculateWeeklySummary = () => {
-    let totalSets = 0;
-    let totalReps = 0;
-    let totalTonnage = 0;
-
-    Object.values(plannedExercises).forEach((dayExercises) => {
-      dayExercises.forEach((ex) => {
-        if (!comboExerciseIds.has(ex.id) && ex.exercise.counts_towards_totals) {
-          totalSets += ex.summary_total_sets || 0;
-          totalReps += ex.summary_total_reps || 0;
-          if (ex.unit === 'absolute_kg' && ex.summary_avg_load) {
-            totalTonnage += (ex.summary_avg_load * (ex.summary_total_reps || 0));
-          }
-        }
-      });
-    });
-
-    const itemsByCombo: Record<string, typeof weekComboItems> = {};
-    weekComboItems.forEach(item => {
-      if (!itemsByCombo[item.combo_id]) itemsByCombo[item.combo_id] = [];
-      itemsByCombo[item.combo_id].push(item);
-    });
-
-    const comboSetLineMap: Record<string, (typeof weekComboSetLines[number])[]> = {};
-    weekComboSetLines.forEach(line => {
-      if (!comboSetLineMap[line.planned_combo_id]) comboSetLineMap[line.planned_combo_id] = [];
-      comboSetLineMap[line.planned_combo_id].push(line);
-    });
-
-    Object.keys(itemsByCombo).forEach(comboId => {
-      const items = itemsByCombo[comboId];
-      const lines = comboSetLineMap[comboId] || [];
-      if (lines.length === 0) return;
-
-      const countingItems = items.filter(item => item.exercise.counts_towards_totals);
-      if (countingItems.length === 0) return;
-
-      const sortedItems = items.sort((a, b) => a.position - b.position);
-
-      lines.forEach(line => {
-        const repsParts = line.reps_tuple_text.split('+').map(p => parseInt(p.trim(), 10) || 0);
-        totalSets += line.sets;
-
-        sortedItems.forEach((item, itemIndex) => {
-          if (!item.exercise.counts_towards_totals) return;
-          const myReps = repsParts[itemIndex] ?? repsParts[0] ?? 0;
-          totalReps += line.sets * myReps;
-          if (line.unit === 'absolute_kg' && line.load_value > 0) {
-            totalTonnage += line.load_value * line.sets * myReps;
-          }
-        });
-      });
-    });
-
-    return { totalSets, totalReps, totalTonnage: Math.round(totalTonnage) };
+  const handleCopyWeek = () => {
+    if (!currentWeekPlan) { alert('No week data to copy'); return; }
+    setCopiedWeekStart(selectedDate);
   };
 
-  const calculateCategorySummaries = () => {
-    const categoryTotals: Record<string, { sets: number; reps: number; totalLoad: number; avgLoad: number; loadCount: number; frequency: number }> = {};
-
-    const ensureCategory = (cat: string) => {
-      if (!categoryTotals[cat]) {
-        categoryTotals[cat] = { sets: 0, reps: 0, totalLoad: 0, avgLoad: 0, loadCount: 0, frequency: 0 };
-      }
-    };
-
-    Object.values(plannedExercises).forEach((dayExercises) => {
-      dayExercises.forEach((ex) => {
-        if (!comboExerciseIds.has(ex.id) && ex.exercise.counts_towards_totals && ex.exercise.category) {
-          ensureCategory(ex.exercise.category);
-          categoryTotals[ex.exercise.category].sets += ex.summary_total_sets || 0;
-          categoryTotals[ex.exercise.category].reps += ex.summary_total_reps || 0;
-          categoryTotals[ex.exercise.category].frequency += 1;
-
-          if (ex.unit === 'absolute_kg' && ex.summary_avg_load) {
-            const tonnage = ex.summary_avg_load * (ex.summary_total_reps || 0);
-            categoryTotals[ex.exercise.category].totalLoad += tonnage;
-            categoryTotals[ex.exercise.category].avgLoad += ex.summary_avg_load;
-            categoryTotals[ex.exercise.category].loadCount += 1;
-          }
-        }
-      });
-    });
-
-    const comboSetLineMap: Record<string, (typeof weekComboSetLines[number])[]> = {};
-    weekComboSetLines.forEach(line => {
-      if (!comboSetLineMap[line.planned_combo_id]) comboSetLineMap[line.planned_combo_id] = [];
-      comboSetLineMap[line.planned_combo_id].push(line);
-    });
-
-    const itemsByCombo: Record<string, typeof weekComboItems> = {};
-    weekComboItems.forEach(item => {
-      if (!itemsByCombo[item.combo_id]) itemsByCombo[item.combo_id] = [];
-      itemsByCombo[item.combo_id].push(item);
-    });
-
-    const seenCombosByCategory: Record<string, Set<string>> = {};
-
-    Object.keys(itemsByCombo).forEach(comboId => {
-      const items = itemsByCombo[comboId].sort((a, b) => a.position - b.position);
-      const lines = comboSetLineMap[comboId] || [];
-      if (lines.length === 0) return;
-
-      const unit = lines[0].unit;
-
-      lines.forEach(line => {
-        const repsParts = line.reps_tuple_text.split('+').map(p => parseInt(p.trim(), 10) || 0);
-
-        const categoriesSeenThisLine = new Set<string>();
-
-        items.forEach((item, itemIndex) => {
-          const ex = item.exercise;
-          if (!ex.counts_towards_totals || !ex.category) return;
-          ensureCategory(ex.category);
-
-          if (!seenCombosByCategory[ex.category]) seenCombosByCategory[ex.category] = new Set();
-          if (!seenCombosByCategory[ex.category].has(comboId)) {
-            seenCombosByCategory[ex.category].add(comboId);
-            categoryTotals[ex.category].frequency += 1;
-          }
-
-          const myReps = repsParts[itemIndex] ?? repsParts[0] ?? 0;
-          const totalRepsForThis = line.sets * myReps;
-
-          if (!categoriesSeenThisLine.has(ex.category)) {
-            categoriesSeenThisLine.add(ex.category);
-            categoryTotals[ex.category].sets += line.sets;
-          }
-
-          categoryTotals[ex.category].reps += totalRepsForThis;
-
-          if (unit === 'absolute_kg' && line.load_value > 0) {
-            categoryTotals[ex.category].totalLoad += line.load_value * totalRepsForThis;
-            categoryTotals[ex.category].avgLoad += line.load_value;
-            categoryTotals[ex.category].loadCount += 1;
-          }
-        });
-      });
-    });
-
-    Object.keys(categoryTotals).forEach(category => {
-      if (categoryTotals[category].loadCount > 0) {
-        categoryTotals[category].avgLoad = categoryTotals[category].avgLoad / categoryTotals[category].loadCount;
-      }
-    });
-
-    return categoryTotals;
+  const handlePasteWeek = () => {
+    if (!copiedWeekStart) { alert('No week copied to clipboard'); return; }
+    setShowCopyWeekModal(true);
   };
-
-  const weeklySummary = useMemo(calculateWeeklySummary, [plannedExercises, weekComboItems, weekComboSetLines]);
-  const categorySummaries = useMemo(calculateCategorySummaries, [plannedExercises, weekComboItems, weekComboSetLines]);
 
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
@@ -539,23 +423,16 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleCopyWeek = () => {
-    if (!currentWeekPlan) {
-      alert('No week data to copy');
-      return;
-    }
-    setCopiedWeekStart(selectedDate);
-    setCopiedSourceAthlete(planSelection.athlete);
-    setCopiedSourceGroup(planSelection.group);
-  };
+  const visibleDays = dayDisplayOrder
+    .filter(dayIndex => activeDays.includes(dayIndex))
+    .map(dayIndex => ({ index: dayIndex, name: getDayLabel(dayIndex) }));
 
-  const handlePasteWeek = () => {
-    if (!copiedWeekStart) {
-      alert('No week copied to clipboard');
-      return;
-    }
-    setShowPasteModal(true);
-  };
+  // Derive selected exercise from panelView state
+  const selectedExercise = selectedDayIndex !== null && selectedExerciseId !== null
+    ? (plannedExercises[selectedDayIndex] || []).find(ex => ex.id === selectedExerciseId) ?? null
+    : null;
+
+  const dayLabels: Record<number, string> = currentWeekPlan?.day_labels ?? {};
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
@@ -564,6 +441,7 @@ export function WeeklyPlanner() {
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}
+            <button onClick={() => setError(null)} className="ml-2 underline text-xs">Dismiss</button>
           </div>
         )}
 
@@ -577,128 +455,36 @@ export function WeeklyPlanner() {
           </div>
         ) : (
           <>
-            {showSettings && (
-              <DayConfigModal
-                dayDisplayOrder={dayDisplayOrder}
-                editingDayLabels={editingDayLabels}
-                activeDays={activeDays}
-                draggedDayIndex={draggedDayIndex}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragEnd={handleDragEnd}
-                onToggleDay={toggleDay}
-                onLabelChange={(dayIndex, value) => setEditingDayLabels({ ...editingDayLabels, [dayIndex]: value })}
-                onRemoveDay={removeDay}
-                onAddDay={addNewDay}
-                onCancel={handleCancelSettings}
-                onSave={saveDayLabels}
-              />
-            )}
-
             {/* ── Control Panel ── */}
             <div className="bg-white rounded-lg border border-gray-200 mb-4">
-
-              {/* Row 1: Athlete info + toolbar */}
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-                <div className="flex items-center gap-3">
-                  {planSelection.athlete?.photo_url ? (
-                    <img
-                      src={planSelection.athlete.photo_url}
-                      alt=""
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-xs font-medium text-blue-700">
-                      {planSelection.athlete?.name?.split(' ').map(n => n[0]).join('') ||
-                       planSelection.group?.name?.substring(0, 2) || '?'}
-                    </div>
-                  )}
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {planSelection.athlete?.name || planSelection.group?.name}
-                    </div>
-                    {planSelection.athlete && (
-                      <div className="text-xs text-gray-400">
-                        {planSelection.athlete.birthdate
-                          ? `${new Date().getFullYear() - new Date(planSelection.athlete.birthdate).getFullYear()} yr`
-                          : ''}
-                        {planSelection.athlete.weight_class ? ` · ${planSelection.athlete.weight_class} kg` : ''}
-                      </div>
-                    )}
-                    {planSelection.type === 'group' && (
-                      <div className="text-xs text-gray-400">Group plan</div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Toolbar lives here */}
-                <WeeklyPlannerHeader
-                  selectedDate={selectedDate}
-                  dateRangeLabel={formatDateRange()}
-                  hasAthlete={!!planSelection.athlete}
-                  hasWeekPlan={!!currentWeekPlan}
-                  isCurrentWeekCopied={copiedWeekStart === selectedDate}
-                  hasCopiedWeek={!!copiedWeekStart}
-                  showLoadDistribution={showLoadDistribution}
-                  onDateChange={(rawDate) => setSelectedDate(getMondayOfWeek(new Date(rawDate)))}
-                  onToggleLoadDistribution={() => setShowLoadDistribution(!showLoadDistribution)}
-                  onCopyWeek={handleCopyWeek}
-                  onPasteWeek={handlePasteWeek}
-                  onPrint={() => setShowPrintModal(true)}
-                  onOpenSettings={() => setShowSettings(!showSettings)}
-                  onPreviousWeek={goToPreviousWeek}
-                  onNextWeek={goToNextWeek}
-                />
-              </div>
-
-              {/* Row 2: Macro bar (if exists) */}
-              {macroWeekTypeText && (
-                <div className="flex items-center gap-3 px-4 py-1.5 border-b border-gray-100 text-xs">
-                  <span className="text-gray-400">Macro:</span>
-                  <span className="font-medium text-gray-700">{macroWeekTypeText}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
-                    macroWeekTypeText?.toLowerCase().includes('high') ? 'bg-amber-50 text-amber-700' :
-                    macroWeekTypeText?.toLowerCase().includes('deload') ? 'bg-green-50 text-green-700' :
-                    macroWeekTypeText?.toLowerCase().includes('comp') ? 'bg-red-50 text-red-700' :
-                    'bg-blue-50 text-blue-700'
-                  }`}>
-                    {macroWeekTypeText}
-                  </span>
-                </div>
-              )}
-
-              {/* Row 3: Summary metrics + categories */}
-              {currentWeekPlan && (
-                <div className="px-4 py-2">
-                  <WeeklySummaryPanel
-                    weeklySummary={weeklySummary}
-                    macroWeekTarget={macroWeekTarget}
-                    showCategorySummaries={showCategorySummaries}
-                    categorySummaries={categorySummaries}
-                    onShowCategorySummariesChange={setShowCategorySummaries}
-                  />
-                </div>
-              )}
-
-              {/* Row 4: Week description (inline, subtle) */}
-              {currentWeekPlan && (
-                <div className="px-4 pb-3">
-                  <input
-                    type="text"
-                    value={weekDescription}
-                    onChange={(e) => setWeekDescription(e.target.value)}
-                    onBlur={saveWeekDescription}
-                    placeholder="Week notes / description..."
-                    className="w-full text-sm text-gray-500 placeholder-gray-300 border-0 border-b border-transparent hover:border-gray-200 focus:border-blue-300 focus:outline-none py-1 transition-colors bg-transparent"
-                  />
-                </div>
-              )}
+              <PlannerControlPanel
+                selectedAthlete={planSelection.athlete}
+                selectedGroup={planSelection.group}
+                selectedDate={selectedDate}
+                macroContext={macroContext}
+                macroWeekTarget={macroWeekTarget}
+                plannedExercises={plannedExercises}
+                athletePRs={athletePRs}
+                settings={settings}
+                weekDescription={weekDescription}
+                canCopyPaste={planSelection.type === 'individual'}
+                copiedWeekStart={copiedWeekStart}
+                showLoadDistribution={showLoadDistribution}
+                onPrevWeek={goToPreviousWeek}
+                onNextWeek={goToNextWeek}
+                onSaveWeekDescription={saveWeekDescription}
+                onDayConfig={() => setShowSettings(s => !s)}
+                onCopy={handleCopyWeek}
+                onPaste={handlePasteWeek}
+                onPrint={() => setShowPrintModal(true)}
+                onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
+              />
             </div>
 
             {/* ── Load Distribution (collapsible) ── */}
             {currentWeekPlan && showLoadDistribution && planSelection.type === 'individual' && planSelection.athlete && (
               <div className="mb-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <LoadDistributionPanel
+                <LoadDistribution
                   plannedExercises={plannedExercises}
                   athletePRs={athletePRs}
                   dayLabels={currentWeekPlan.day_labels || {}}
@@ -708,72 +494,120 @@ export function WeeklyPlanner() {
               </div>
             )}
 
-            {/* ── Macro Validation ── */}
-            {currentWeekPlan && planSelection.type === 'individual' && planSelection.athlete && (
-              <div className="mb-4">
-                <MacroValidation
-                  athlete={planSelection.athlete}
-                  weekPlan={currentWeekPlan}
-                  plannedExercises={plannedExercises}
-                />
-              </div>
-            )}
-
-            {/* ── Day Cards Grid ── */}
+            {/* ── Week Overview (always visible) ── */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="text-sm text-gray-400">Loading week plan...</div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-                {currentWeekPlan && visibleDays.map((day) => (
-                  <DayColumn
-                    key={day.index}
-                    dayIndex={day.index}
-                    dayName={day.name}
-                    weekPlanId={currentWeekPlan.id}
-                    exercises={plannedExercises[day.index] || []}
+              <WeekOverview
+                weekPlan={currentWeekPlan}
+                visibleDays={visibleDays}
+                plannedExercises={plannedExercises}
+                comboMembers={comboMembers}
+                allExercises={allExercises}
+                onNavigateToDay={handleNavigateToDay}
+                onNavigateToExercise={handleNavigateToExercise}
+                addExerciseToDay={addExerciseToDay}
+                createComboExercise={createComboExercise}
+                onRefresh={handleRefresh}
+                onDeleteExercise={handleDeleteExercise}
+                onExerciseDrop={handleExerciseDrop}
+                onDayDrop={handleDayDrop}
+              />
+            )}
+
+            {/* ── Day Editor dialog ── */}
+            {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
+              <div className="fixed inset-0 z-50 flex items-start justify-end">
+                <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
+                <div className="relative z-10 w-full max-w-lg h-full bg-white shadow-xl flex flex-col overflow-hidden">
+                  <DayEditor
+                    weekPlan={currentWeekPlan}
+                    dayIndex={selectedDayIndex}
+                    dayName={getDayLabel(selectedDayIndex)}
+                    exercises={plannedExercises[selectedDayIndex] || []}
+                    comboMembers={comboMembers}
+                    athletePRs={athletePRs}
+                    settings={settings}
+                    macroContext={macroContext}
                     allExercises={allExercises}
+                    onClose={() => setPanelView('overview')}
+                    onNavigateToExercise={exerciseId =>
+                      handleNavigateToExercise(selectedDayIndex, exerciseId)
+                    }
                     onRefresh={handleRefresh}
-                    onDeleteExercise={handleDeleteExercise}
-                    onReorderItems={handleReorderItems}
-                    onMoveExercise={handleMoveExercise}
-                    comboRefreshKey={comboRefreshKey}
+                    addExerciseToDay={addExerciseToDay}
+                    createComboExercise={createComboExercise}
+                    savePrescription={savePrescription}
+                    saveNotes={saveNotes}
+                    deletePlannedExercise={deletePlannedExercise}
+                    reorderExercises={reorderExercises}
+                    moveExercise={moveExercise}
+                    normalizePositions={normalizePositions}
                   />
-                ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Exercise Detail dialog ── */}
+            {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
+              <div className="fixed inset-0 z-50 flex items-start justify-end">
+                <div className="absolute inset-0 bg-black/30" onClick={() => setPanelView('overview')} />
+                <div className="relative z-10 w-full max-w-lg h-full bg-white shadow-xl flex flex-col overflow-hidden">
+                  <ExerciseDetail
+                    plannedExercise={selectedExercise}
+                    comboMembers={comboMembers}
+                    weekPlanId={currentWeekPlan.id}
+                    dayIndex={selectedDayIndex}
+                    dayName={getDayLabel(selectedDayIndex)}
+                    athleteId={planSelection.athlete?.id ?? ''}
+                    macroContext={macroContext}
+                    athletePRs={athletePRs}
+                    dayLabels={dayLabels}
+                    settings={settings}
+                    onClose={() => setPanelView('overview')}
+                    onBack={() => setPanelView('day')}
+                    onSaved={handleRefresh}
+                    savePrescription={savePrescription}
+                    saveNotes={saveNotes}
+                    fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
+                  />
+                </div>
               </div>
             )}
           </>
         )}
 
-        {showPasteModal && copiedWeekStart && (
-          <CopyWeekModal
-            onClose={() => setShowPasteModal(false)}
-            onPasteComplete={() => {
-              setShowPasteModal(false);
-              loadWeekPlan();
-            }}
-            destinationWeekStart={selectedDate}
-            sourceWeekStart={copiedWeekStart}
-            sourceAthlete={copiedSourceAthlete}
-            sourceGroup={copiedSourceGroup}
-            destinationAthlete={planSelection.athlete}
-            destinationGroup={planSelection.group}
-            allAthletes={athletes}
-            allGroups={groups}
-          />
-        )}
-
-        {showPrintModal && planSelection.athlete && (
-          <PrintWeek
-            athlete={planSelection.athlete}
-            weekStart={selectedDate}
-            onClose={() => setShowPrintModal(false)}
-            showCategorySummaries={showCategorySummaries}
-            dayLabels={currentWeekPlan?.day_labels}
-            weekDescription={currentWeekPlan?.week_description}
-          />
-        )}
+        {/* ── Modals ── */}
+        <PlannerModals
+          showDayConfig={showSettings}
+          dayDisplayOrder={dayDisplayOrder}
+          editingDayLabels={editingDayLabels}
+          activeDays={activeDays}
+          dayDragIndex={draggedDayIndex}
+          onDayDragStart={handleDragStart}
+          onDayDragOver={handleDragOver}
+          onDayDragEnd={handleDragEnd}
+          onToggleDay={toggleDay}
+          onLabelChange={(dayIndex, value) => setEditingDayLabels({ ...editingDayLabels, [dayIndex]: value })}
+          onRemoveDay={removeDay}
+          onAddDay={addNewDay}
+          onDayConfigCancel={handleCancelSettings}
+          onDayConfigSave={saveDayLabels}
+          showPasteModal={showCopyWeekModal}
+          copiedWeekStart={copiedWeekStart}
+          selectedDate={selectedDate}
+          selectedAthlete={planSelection.athlete}
+          allAthletes={athletes}
+          allGroups={groups}
+          onPasteClose={() => setShowCopyWeekModal(false)}
+          onPasteComplete={() => { setShowCopyWeekModal(false); void loadWeekPlan(); }}
+          showPrintModal={showPrintModal}
+          dayLabels={currentWeekPlan?.day_labels ?? {}}
+          weekDescription={currentWeekPlan?.week_description}
+          onPrintClose={() => setShowPrintModal(false)}
+        />
       </div>
     </div>
   );
