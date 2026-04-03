@@ -411,7 +411,6 @@ export function useWeekPlans() {
 
       await supabase.from('planned_exercises').update({
         prescription_raw: prescription,
-        notes: notes.trim() || null,
         unit,
         summary_total_sets: totalSets,
         summary_total_reps: totalReps,
@@ -424,7 +423,6 @@ export function useWeekPlans() {
 
       await supabase.from('planned_exercises').update({
         prescription_raw: prescription,
-        notes: notes.trim() || null,
         unit,
         summary_total_sets: totalSets,
         summary_total_reps: totalReps,
@@ -434,7 +432,6 @@ export function useWeekPlans() {
     } else {
       await supabase.from('planned_exercises').update({
         prescription_raw: prescription,
-        notes: notes.trim() || null,
         unit,
         summary_total_sets: 0,
         summary_total_reps: 0,

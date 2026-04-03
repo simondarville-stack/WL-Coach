@@ -172,6 +172,7 @@ export interface ParsedComboSetLine {
   repsText: string;   // "2+1" or "1+1+1"
   totalReps: number;  // sum of all parts
   load: number;
+  loadText?: string;  // set when load is free text (non-numeric)
 }
 
 /**
@@ -200,7 +201,9 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     const rest = normalized.slice(firstX + 1);
 
     const load = parseFloat(loadStr);
-    if (isNaN(load)) continue;
+    const loadIsNumeric = !isNaN(load);
+    // Allow free-text loads (e.g. "Heavy") — store as loadText with load=0
+    if (!loadIsNumeric && !loadStr) continue;
 
     // Check if there's a trailing 'x sets' (last segment after 'x' that is just a number, no '+')
     const lastX = rest.lastIndexOf('x');
@@ -226,7 +229,13 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     const totalReps = repsParts.reduce((s, n) => s + n, 0);
     if (totalReps <= 0 || sets <= 0) continue;
 
-    result.push({ sets, repsText, totalReps, load });
+    result.push({
+      sets,
+      repsText,
+      totalReps,
+      load: loadIsNumeric ? load : 0,
+      ...(loadIsNumeric ? {} : { loadText: loadStr }),
+    });
   }
 
   return result;
@@ -239,7 +248,10 @@ export function formatComboPrescription(lines: ParsedComboSetLine[], unit: strin
   if (!lines.length) return '';
   const sym = unit === 'percentage' ? '%' : '';
   return lines
-    .map(l => l.sets === 1 ? `${l.load}${sym}×${l.repsText}` : `${l.load}${sym}×${l.repsText}×${l.sets}`)
+    .map(l => {
+      const loadPart = l.loadText ?? `${l.load}${sym}`;
+      return l.sets === 1 ? `${loadPart}×${l.repsText}` : `${loadPart}×${l.repsText}×${l.sets}`;
+    })
     .join(', ');
 }
 
