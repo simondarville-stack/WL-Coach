@@ -35,15 +35,9 @@ export function IntensityZones({ athleteId, startDate, endDate }: Props) {
   const [weeklyZones, setWeeklyZones] = useState<Array<Record<string, number | string>>>([]);
 
   useEffect(() => {
-    supabase.from('exercises').select('id, name')
+    supabase.from('exercises').select('id, name').order('name')
       .then(({ data }) => {
-        const exList = (data ?? []) as Array<{ id: string; name: string }>;
-        // Filter to common lifts
-        const relevant = exList.filter(e => {
-          const n = e.name.toLowerCase();
-          return (n.includes('snatch') || n.includes('clean') || n.includes('squat')) && !n.includes('balance');
-        });
-        setExercises(relevant);
+        setExercises((data ?? []) as Array<{ id: string; name: string }>);
       });
   }, []);
 
