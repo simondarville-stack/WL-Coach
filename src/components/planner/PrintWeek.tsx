@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Printer } from 'lucide-react';
+import { X, Printer, FileText, LayoutGrid } from 'lucide-react';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
@@ -7,6 +7,7 @@ import { calculateAge } from '../../lib/calculations';
 import { parsePrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
+import { PrintWeekCompact } from './PrintWeekCompact';
 
 interface PrintWeekProps {
   athlete: Athlete;
@@ -83,6 +84,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [loading, setLoading] = useState(true);
+  const [printMode, setPrintMode] = useState<'programme' | 'compact'>('programme');
 
   useEffect(() => { void loadWeekData(); }, [athlete.id, weekStart]);
 
@@ -184,7 +186,25 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   return (
     <div className="fixed inset-0 bg-white z-50 overflow-auto">
       <div className="print:hidden bg-gray-100 border-b border-gray-300 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <h2 className="text-xl font-bold text-gray-900">Print Preview</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold text-gray-900">Print Preview</h2>
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden bg-white">
+            <button
+              onClick={() => setPrintMode('programme')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${printMode === 'programme' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <FileText size={14} />
+              Programme
+            </button>
+            <button
+              onClick={() => setPrintMode('compact')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'compact' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <LayoutGrid size={14} />
+              Compact
+            </button>
+          </div>
+        </div>
         <div className="flex gap-2">
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Printer size={18} />
@@ -196,6 +216,17 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
         </div>
       </div>
 
+      {printMode === 'compact' ? (
+        <PrintWeekCompact
+          athlete={athlete}
+          weekPlan={weekPlan}
+          plannedExercises={plannedExercises}
+          comboMembers={comboMembers}
+          weekStart={weekStart}
+          weekDescription={weekDescription}
+          dayLabels={dayLabels}
+        />
+      ) : (<>
       <style>{`@media print { @page { margin: 1.5cm; } }`}</style>
       <div className="print-content max-w-[210mm] mx-auto bg-white p-8 print:p-6">
         {/* Header */}
@@ -394,6 +425,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
           .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
+    </>)}
     </div>
   );
 }
