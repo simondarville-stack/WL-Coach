@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, TrendingUp, TrendingDown, Minus, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
+import { fetchWeeklyAggregates } from '../hooks/useAnalysis';
 import type { Athlete, Event, BodyweightEntry, TrainingGroup } from '../lib/database.types';
 import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { calculateAge, getRawColor, getRawBgColor, getRelativeTime, needsAttentionCheck } from '../lib/calculations';
@@ -43,6 +44,7 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [complianceTrends, setComplianceTrends] = useState<Record<string, number[]>>({});
 
   useEffect(() => {
     loadDashboardData();
@@ -74,6 +76,23 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
       setBwEntriesMap(map);
     });
   }, [athleteStatuses, settings]);
+
+  // Fetch 4-week compliance trend per athlete
+  const loadComplianceTrends = useCallback(async () => {
+    if (!athleteStatuses.length) return;
+    const endDate = new Date().toISOString().slice(0, 10);
+    const startDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const trends: Record<string, number[]> = {};
+    await Promise.all(
+      athleteStatuses.map(async (s) => {
+        const aggs = await fetchWeeklyAggregates({ athleteId: s.athlete.id, startDate, endDate });
+        trends[s.athlete.id] = aggs.slice(-4).map(a => a.complianceReps);
+      })
+    );
+    setComplianceTrends(trends);
+  }, [athleteStatuses]);
+
+  useEffect(() => { loadComplianceTrends(); }, [loadComplianceTrends]);
 
   function handleSort(column: SortColumn) {
     if (sortColumn === column) {
@@ -225,6 +244,47 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
           </table>
         </div>
       </div>
+
+      {/* Quick analysis — compliance sparklines */}
+      {athleteStatuses.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <h2 className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-3">Quick analysis — 4-week compliance trend</h2>
+          <div className="flex flex-wrap gap-3">
+            {athleteStatuses.map(s => {
+              const values = complianceTrends[s.athlete.id] ?? [];
+              const avg = values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
+              const color = avg == null ? '#9ca3af' : avg >= 95 ? '#1D9E75' : avg >= 85 ? '#378ADD' : avg >= 75 ? '#EF9F27' : '#E24B4A';
+              // Build SVG sparkline points
+              const w = 50, h = 20;
+              const points = values.map((v, i) => {
+                const x = values.length > 1 ? (i / (values.length - 1)) * w : w / 2;
+                const y = h - (Math.min(v, 100) / 100) * h;
+                return `${x},${y}`;
+              }).join(' ');
+              return (
+                <div key={s.athlete.id} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                  <div className="text-[12px] font-medium text-gray-700 whitespace-nowrap">{s.athlete.name.split(' ')[0]}</div>
+                  {values.length > 1 ? (
+                    <svg width={w} height={h} className="overflow-visible">
+                      <polyline points={points} fill="none" stroke={color} strokeWidth={1.5} />
+                      {values.map((v, i) => {
+                        const x = (i / (values.length - 1)) * w;
+                        const y = h - (Math.min(v, 100) / 100) * h;
+                        return <circle key={i} cx={x} cy={y} r={2} fill={color} />;
+                      })}
+                    </svg>
+                  ) : (
+                    <div className="text-[11px] text-gray-300">—</div>
+                  )}
+                  {avg != null && (
+                    <div className="text-[11px] font-medium" style={{ color }}>{avg}%</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {groupStatuses.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">
