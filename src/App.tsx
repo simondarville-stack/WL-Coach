@@ -10,6 +10,7 @@ import { Settings } from './components/Settings';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
 import { CoachDashboard } from './components/CoachDashboard';
+import { AnalysisPage } from './components/analysis/AnalysisPage';
 import { AthleteSelector } from './components/AthleteSelector';
 import { CompetitionCalendar } from './components/calendar/CompetitionCalendar';
 import { TrainingGroups } from './components/TrainingGroups';
@@ -33,6 +34,7 @@ const pageTitles: Record<string, string> = {
   '/athlete-log': 'Training log',
   '/library': 'Exercise library',
   '/settings': 'Settings',
+  '/analysis': 'Analysis',
 };
 
 function PageTitle() {
@@ -126,6 +128,7 @@ function App() {
               <Route path="/athletes" element={<Athletes />} />
               <Route path="/training-groups" element={<TrainingGroups />} />
               <Route path="/training-log" element={<TrainingLogPage />} />
+              <Route path="/analysis" element={<AnalysisPage />} />
               <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={
