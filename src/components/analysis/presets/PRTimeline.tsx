@@ -3,13 +3,6 @@ import { fetchPRTimeline } from '../../../hooks/useAnalysis';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  Classical: '#378ADD',
-  Squats: '#1D9E75',
-  Pulls: '#EF9F27',
-  Accessories: '#9b5de5',
-};
-
 export function PRTimeline({ athleteId, startDate, endDate }: Props) {
   const [prs, setPrs] = useState<Array<{ date: string; exerciseName: string; load: number; isCompetition: boolean }>>([]);
   const [loading, setLoading] = useState(true);
