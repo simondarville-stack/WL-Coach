@@ -38,7 +38,7 @@ export function BodyweightTrend({ athleteId, startDate, endDate }: Props) {
     load();
   }, [athleteId, startDate, endDate]);
 
-  if (loading) return <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading...</div>;
+  if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
   if (!series.length) return (
     <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
       No bodyweight data found. Bodyweight tracking must be enabled for this athlete.
