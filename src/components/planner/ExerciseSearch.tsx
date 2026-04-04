@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Layers, Type, Video, Image as ImageIcon, Plus } from 'lucide-react';
+import { Layers, Type, Video, Image as ImageIcon, Plus, PlusCircle } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 
 interface SlashCommand {
@@ -13,6 +13,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { key: '/text', label: 'Free text note', icon: Type },
   { key: '/video', label: 'Video', icon: Video },
   { key: '/image', label: 'Image', icon: ImageIcon },
+  { key: '/newexercise', label: 'Create new exercise', icon: PlusCircle },
 ];
 
 interface ExerciseSearchProps {

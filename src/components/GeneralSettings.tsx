@@ -239,6 +239,54 @@ export function GeneralSettings() {
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Layout preferences</h2>
+          <p className="text-sm text-gray-600 mb-4">Choose how exercise and day dialogs open in the weekly planner</p>
+        </div>
+        <div className="flex gap-3">
+          {([
+            {
+              value: 'center' as const,
+              label: 'Centered dialog',
+              preview: (
+                <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/10 rounded" />
+                  <div className="relative w-14 h-7 bg-white border border-gray-300 rounded shadow-sm" />
+                </div>
+              ),
+            },
+            {
+              value: 'sidebar' as const,
+              label: 'Side panel',
+              preview: (
+                <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-end overflow-hidden">
+                  <div className="absolute inset-0 bg-black/10 rounded" />
+                  <div className="relative w-10 h-full bg-white border-l border-gray-300" />
+                </div>
+              ),
+            },
+          ] as const).map(({ value, label, preview }) => {
+            const active = (settings?.dialog_mode ?? 'center') === value;
+            return (
+              <button
+                key={value}
+                onClick={async () => {
+                  if (!settings) return;
+                  await updateSettings(settings.id, { dialog_mode: value });
+                }}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                  active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                {preview}
+                <p className={`text-xs font-medium mt-2 ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
           <p className="text-sm text-gray-600 mb-4">Control which metrics are shown in the week summary</p>
         </div>
