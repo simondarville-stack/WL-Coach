@@ -90,7 +90,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav sections */}
-      <nav className="flex-1 overflow-y-auto py-1">
+      <nav className="flex-1 overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden">
         {sections.map((section, sIdx) => (
           <div key={section.label}>
             {/* Section header */}
