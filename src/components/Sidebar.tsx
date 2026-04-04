@@ -100,7 +100,7 @@ export function Sidebar() {
               )
             ) : (
               <div
-                className={`px-3 pb-1 text-[11px] font-medium text-gray-400 uppercase tracking-wider whitespace-nowrap overflow-hidden ${
+                className={`px-4 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-widest whitespace-nowrap overflow-hidden ${
                   sIdx === 0 ? 'pt-2' : 'pt-4'
                 }`}
               >
@@ -117,13 +117,13 @@ export function Sidebar() {
                   to={item.path}
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
-                    `w-full flex items-center gap-2 text-[13px] transition-colors duration-100 ${
+                    `w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
                       collapsed
                         ? 'justify-center py-2 px-0'
                         : 'py-1.5 px-3'
                     } ${
                       isActive
-                        ? 'bg-blue-50 text-blue-700'
+                        ? 'bg-blue-50 text-blue-700 font-medium'
                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                     }`
                   }
@@ -148,13 +148,16 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Collapse toggle */}
+      {/* Collapse toggle + version */}
       <div className="flex-shrink-0 border-t border-gray-200">
+        {!collapsed && (
+          <div className="px-4 pt-2 text-[10px] text-gray-300 select-none">v2.0</div>
+        )}
         <button
           onClick={toggleCollapsed}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={`w-full flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors duration-100 ${
-            collapsed ? 'justify-center py-2.5 px-0' : 'py-2.5 px-3'
+            collapsed ? 'justify-center py-2.5 px-0' : 'py-2 px-3'
           }`}
         >
           <ChevronsLeft
