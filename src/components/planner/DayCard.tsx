@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
+import { GripVertical, Video, Image as ImageIcon, AlignLeft, ChevronRight } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
@@ -254,8 +254,9 @@ export function DayCard({
     <>
       <div
         className={[
-          'bg-white rounded-lg border flex flex-col transition-all min-h-[200px]',
-          isDragOver ? 'border-blue-400 shadow-md bg-blue-50/30' : 'border-gray-200',
+          'bg-white rounded-lg border flex flex-col transition-all duration-150',
+          isEmpty ? 'min-h-[120px]' : 'min-h-[160px]',
+          isDragOver ? 'border-blue-400 shadow-md bg-blue-50/30' : 'border-gray-200 hover:border-gray-300 hover:shadow-sm',
         ].join(' ')}
         onDragOver={handleCardDragOver}
         onDragLeave={handleCardDragLeave}
@@ -268,22 +269,23 @@ export function DayCard({
             e.dataTransfer.setData('text/plain', `DAY:${dayIndex}`);
             e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
           }}
-          className="flex items-center gap-3 px-3 py-2 border-b border-gray-100 cursor-grab active:cursor-grabbing hover:bg-gray-50 transition-colors rounded-t-lg"
+          className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg group/header"
           onClick={onNavigateToDay}
         >
-          <span className="text-sm font-medium text-gray-900">{dayName}</span>
+          <span className="text-sm font-medium text-gray-900 flex-1">{dayName}</span>
           {!isEmpty && (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-gray-500">S <strong className="text-gray-900 font-medium">{daySets}</strong></span>
-              <span className="text-gray-500">R <strong className="text-gray-900 font-medium">{dayReps}</strong></span>
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="text-gray-400">S <span className="text-gray-700 font-medium">{daySets}</span></span>
+              <span className="text-gray-400">R <span className="text-gray-700 font-medium">{dayReps}</span></span>
             </div>
           )}
+          <ChevronRight size={12} className="text-gray-200 group-hover/header:text-gray-400 transition-colors flex-shrink-0" />
         </div>
 
         {/* Exercise list */}
         <div className="flex flex-col flex-1">
           {isEmpty ? (
-            <div className="flex-1 flex items-center justify-center py-4 text-xs text-gray-400 italic">
+            <div className="flex-1 flex items-center justify-center py-3 text-xs text-gray-300 italic">
               {isDragOver ? 'Drop here' : 'Rest day'}
             </div>
           ) : (
@@ -309,8 +311,8 @@ export function DayCard({
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
                     }}
                     className={[
-                      'flex items-start gap-1.5 px-2 py-1.5 group transition-colors cursor-pointer',
-                      shiftHeld ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-blue-50/60',
+                      'flex items-start gap-1.5 px-2 py-1.5 group transition-colors cursor-pointer border-b border-gray-50 last:border-b-0',
+                      shiftHeld ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50',
                     ].join(' ')}
                     style={{ borderLeft: `3px solid ${borderColor}` }}
                     onClick={e => {
@@ -361,7 +363,7 @@ export function DayCard({
                             <span className="text-xs font-medium text-gray-900 truncate leading-tight">
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
-                            <span className="text-[9px] px-1 py-px bg-blue-50 text-blue-600 rounded font-medium flex-shrink-0">
+                            <span className="text-[9px] px-1.5 py-px bg-blue-50 text-blue-700 rounded font-medium flex-shrink-0">
                               Combo
                             </span>
                           </div>
@@ -404,7 +406,7 @@ export function DayCard({
         </div>
 
         {/* Search */}
-        <div className="border-t border-gray-100 mt-auto">
+        <div className="mt-auto pt-0.5">
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}
