@@ -112,6 +112,7 @@ export function PlannerControlPanel({
   const [phases, setPhases]                 = useState<MacroPhase[]>([]);
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
+  const [copyFlash, setCopyFlash]           = useState(false);
 
   useEffect(() => { setLocalDesc(weekDescription); }, [weekDescription]);
 
@@ -282,9 +283,9 @@ export function PlannerControlPanel({
           {canCopyPaste && (
             <>
               <button
-                onClick={onCopy}
+                onClick={() => { onCopy(); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1200); }}
                 title="Copy week"
-                className="p-1.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                className={`p-1.5 rounded transition-colors ${copyFlash ? 'bg-green-50 text-green-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}
               >
                 <Copy size={14} />
               </button>
