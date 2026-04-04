@@ -56,7 +56,11 @@ export function useSettings() {
         .eq('id', id);
       if (error) throw error;
       setSettings(prev => prev ? { ...prev, ...updates } : prev);
+      // Verify what's in the DB after update
+      const { data: verify } = await supabase.from('general_settings').select('dialog_mode').maybeSingle();
+      console.log('[useSettings] DB after update:', verify?.dialog_mode, '| updates sent:', updates);
     } catch (error) {
+      console.error('[useSettings] updateSettings error:', error);
       throw error;
     } finally {
       setSaving(false);
