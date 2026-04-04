@@ -34,7 +34,7 @@ export function PRTimeline({ athleteId, startDate, endDate }: Props) {
               />
               <div className="mt-2 text-center">
                 <div className="text-[11px] font-medium text-gray-700">{pr.exerciseName}</div>
-                <div className="text-[13px] font-bold text-gray-900">{pr.load} kg</div>
+                <div className="text-[13px] font-medium text-gray-900">{pr.load} kg</div>
                 <div className="text-[10px] text-gray-400">{new Date(pr.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
               </div>
             </div>
