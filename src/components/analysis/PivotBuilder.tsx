@@ -47,8 +47,6 @@ const OVERLAY_OPTIONS: { id: OverlayMetric; label: string }[] = [
   { id: 'sessionRpe', label: 'Session RPE' },
 ];
 
-const COMPLIANCE_COLOR_PRESETS = ['All', 'Snatch', 'Clean & jerk', 'Back squat', 'Front squat', 'Pulls'];
-const CATEGORY_PRESETS = ['All', 'Classical', 'Squats', 'Pulls', 'Accessories'];
 
 function formatWeekLabel(ws: string) {
   const d = new Date(ws);
@@ -92,7 +90,9 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
   const [xAxis, setXAxis] = useState<XAxisType>('week');
   const [primaryMetric, setPrimaryMetric] = useState<PrimaryMetric>('performedReps');
   const [overlayMetric, setOverlayMetric] = useState<OverlayMetric>('none');
-  const [exerciseFilter, setExerciseFilter] = useState('All');
+  // 'all' or an exercise ID
+  const [exerciseFilter, setExerciseFilter] = useState('all');
+  // 'All' or a category name
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [aggregates, setAggregates] = useState<WeeklyAggregate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -100,40 +100,20 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
 
   // Load exercise list once
   useEffect(() => {
-    supabase.from('exercises').select('id, name, category').then(({ data }) => {
+    supabase.from('exercises').select('id, name, category').order('name').then(({ data }) => {
       if (data) setExercises(data as typeof exercises);
     });
   }, []);
+
+  // Unique categories derived from the exercise library
+  const categories = ['All', ...Array.from(new Set(exercises.map(e => e.category))).sort()];
 
   const load = useCallback(async () => {
     if (!athleteId) return;
     setLoading(true);
     try {
-      // Build exercise/category filters
-      const exFilter: string[] = [];
-      const catFilter: string[] = [];
-
-      if (exerciseFilter !== 'All') {
-        // Find matching exercise IDs by name pattern
-        const patterns: Record<string, string[]> = {
-          'Snatch': ['snatch'],
-          'Clean & jerk': ['clean', 'jerk'],
-          'Back squat': ['back squat'],
-          'Front squat': ['front squat'],
-          'Pulls': ['pull'],
-        };
-        const p = patterns[exerciseFilter];
-        if (p) {
-          exercises.forEach(ex => {
-            const n = ex.name.toLowerCase();
-            if (p.every(word => n.includes(word))) exFilter.push(ex.id);
-          });
-        }
-      }
-
-      if (categoryFilter !== 'All') {
-        catFilter.push(categoryFilter);
-      }
+      const exFilter = exerciseFilter !== 'all' ? [exerciseFilter] : [];
+      const catFilter = categoryFilter !== 'All' ? [categoryFilter] : [];
 
       const data = await fetchWeeklyAggregates({
         athleteId,
@@ -216,34 +196,39 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
         </div>
       </div>
 
-      {/* Filter pills */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        <span className="text-[10px] uppercase text-gray-400 tracking-wider font-medium self-center">Exercise</span>
-        {COMPLIANCE_COLOR_PRESETS.map(f => (
-          <button
-            key={f}
-            onClick={() => setExerciseFilter(f)}
-            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
-              exerciseFilter === f ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-            }`}
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase text-gray-400 tracking-wider font-medium">Exercise</span>
+          <select
+            value={exerciseFilter}
+            onChange={e => { setExerciseFilter(e.target.value); setCategoryFilter('All'); }}
+            className="border border-gray-200 rounded px-2 py-1 text-xs bg-white max-w-[220px]"
           >
-            {f}
-          </button>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2 mb-4">
-        <span className="text-[10px] uppercase text-gray-400 tracking-wider font-medium self-center">Category</span>
-        {CATEGORY_PRESETS.map(f => (
-          <button
-            key={f}
-            onClick={() => setCategoryFilter(f)}
-            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
-              categoryFilter === f ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+            <option value="all">All exercises</option>
+            {exercises.map(ex => (
+              <option key={ex.id} value={ex.id}>{ex.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] uppercase text-gray-400 tracking-wider font-medium">Category</span>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.map(f => (
+              <button
+                key={f}
+                onClick={() => { setCategoryFilter(f); setExerciseFilter('all'); }}
+                className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                  categoryFilter === f && exerciseFilter === 'all'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Summary metric cards */}
