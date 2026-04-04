@@ -121,7 +121,7 @@ export function ExerciseSearch({
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="w-full pl-6 pr-2 py-1 text-xs border border-gray-200 rounded-b-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-gray-50 placeholder:text-gray-400"
+          className="w-full pl-6 pr-2 py-1 text-[11px] border-0 border-t border-transparent hover:border-gray-100 focus:border-gray-200 focus:outline-none bg-transparent placeholder:text-gray-300 transition-colors"
         />
       </div>
 
