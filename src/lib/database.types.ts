@@ -225,6 +225,7 @@ export interface GeneralSettings {
   bodyweight_ma_days: number;
   visible_summary_metrics: string[];
   show_stress_metric: boolean;
+  dialog_mode: 'center' | 'sidebar';
   created_at: string;
   updated_at: string;
 }

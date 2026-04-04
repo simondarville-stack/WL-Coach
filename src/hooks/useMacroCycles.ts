@@ -73,6 +73,20 @@ export function useMacroCycles() {
     }
   };
 
+  const updateMacrocycle = async (id: string, updates: Partial<Pick<MacroCycle, 'name' | 'start_date' | 'end_date'>>) => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.from('macrocycles').update(updates).eq('id', id);
+      if (error) throw error;
+      setMacrocycles(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+    } catch (err) {
+      setError(errMsg(err, 'Failed to update macrocycle'));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const deleteMacrocycle = async (id: string) => {
     try {
       setLoading(true);
@@ -424,6 +438,17 @@ export function useMacroCycles() {
     }
   };
 
+  const updateCompetition = async (id: string, updates: Partial<Pick<MacroCompetition, 'competition_name' | 'competition_date' | 'is_primary'>>) => {
+    try {
+      const { error } = await supabase.from('macro_competitions').update(updates).eq('id', id);
+      if (error) throw error;
+      setCompetitions(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    } catch (err) {
+      setError(errMsg(err, 'Failed to update competition'));
+      throw err;
+    }
+  };
+
   const deleteCompetition = async (id: string) => {
     try {
       const { error } = await supabase.from('macro_competitions').delete().eq('id', id);
@@ -610,7 +635,9 @@ export function useMacroCycles() {
     deletePhase,
     fetchCompetitions,
     createCompetition,
+    updateCompetition,
     deleteCompetition,
     fetchMacroActuals,
+    updateMacrocycle,
   };
 }

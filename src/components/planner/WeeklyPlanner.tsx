@@ -596,9 +596,13 @@ export function WeeklyPlanner() {
             )}
 
             {/* ── Day Editor dialog ── */}
-            {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
+            {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (() => {
+              const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
+              return (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
+                className={isSidebar
+                  ? 'fixed inset-0 z-50 flex items-start justify-end animate-backdrop-in'
+                  : 'fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in'}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -607,7 +611,10 @@ export function WeeklyPlanner() {
                 }}
               >
                 <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className="relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in" tabIndex={-1}>
+                <div className={isSidebar
+                  ? 'relative z-10 w-full max-w-lg h-full bg-white shadow-xl border-l border-gray-200 overflow-y-auto flex flex-col animate-sidebar-in'
+                  : 'relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-lg flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in'}
+                  tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
                     dayIndex={selectedDayIndex}
@@ -634,12 +641,17 @@ export function WeeklyPlanner() {
                   />
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* ── Exercise Detail dialog ── */}
-            {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
+            {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (() => {
+              const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
+              return (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
+                className={isSidebar
+                  ? 'fixed inset-0 z-50 flex items-start justify-end animate-backdrop-in'
+                  : 'fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in'}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -648,7 +660,10 @@ export function WeeklyPlanner() {
                 }}
               >
                 <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className="relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-xl flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in" tabIndex={-1}>
+                <div className={isSidebar
+                  ? 'relative z-10 w-full max-w-lg h-full bg-white shadow-xl border-l border-gray-200 overflow-y-auto flex flex-col animate-sidebar-in'
+                  : 'relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-lg flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in'}
+                  tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}
                     comboMembers={comboMembers}
@@ -669,7 +684,8 @@ export function WeeklyPlanner() {
                   />
                 </div>
               </div>
-            )}
+              );
+            })()}
           </>
         )}
 

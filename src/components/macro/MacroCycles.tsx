@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, Table2, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -9,9 +9,11 @@ import { MacroTable } from './MacroTable';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
+import { MacroEditModal } from './MacroEditModal';
 import { MacroPhaseModal } from './MacroPhaseModal';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
+import { supabase } from '../../lib/supabase';
 
 type ViewMode = 'table' | 'graph';
 
@@ -49,8 +51,10 @@ export function MacroCycles() {
     deletePhase,
     fetchCompetitions,
     createCompetition,
+    updateCompetition,
     deleteCompetition,
     fetchMacroActuals,
+    updateMacrocycle,
   } = useMacroCycles();
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
@@ -58,6 +62,7 @@ export function MacroCycles() {
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showPhaseModal, setShowPhaseModal] = useState(false);
   const [editingPhase, setEditingPhase] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -260,6 +265,103 @@ export function MacroCycles() {
     await fetchTrackedExercises(selectedCycle!.id);
   };
 
+  // ─── Edit cycle ───────────────────────────────────────────────────────────────
+
+  const handleEditCycle = async (data: {
+    name: string;
+    startDate: string;
+    endDate: string;
+    competitions: Array<{ id?: string; name: string; date: string; is_primary: boolean }>;
+  }) => {
+    if (!selectedCycle) return;
+
+    // Update macrocycle fields
+    await updateMacrocycle(selectedCycle.id, {
+      name: data.name,
+      start_date: data.startDate,
+      end_date: data.endDate,
+    });
+
+    // Sync competitions: update existing, create new, delete removed
+    const originalIds = competitions.map(c => c.id);
+    const keptIds = data.competitions.filter(c => c.id).map(c => c.id!);
+
+    // Delete competitions removed from the list
+    for (const id of originalIds) {
+      if (!keptIds.includes(id)) {
+        await deleteCompetition(id);
+      }
+    }
+
+    // Update existing competitions
+    for (const comp of data.competitions) {
+      if (comp.id) {
+        const original = competitions.find(c => c.id === comp.id);
+        if (
+          original &&
+          (original.competition_name !== comp.name ||
+            original.competition_date !== comp.date ||
+            original.is_primary !== comp.is_primary)
+        ) {
+          await updateCompetition(comp.id, {
+            competition_name: comp.name,
+            competition_date: comp.date,
+            is_primary: comp.is_primary,
+          });
+        }
+      } else if (comp.name.trim() && comp.date) {
+        // New competition
+        await createCompetition({
+          macrocycle_id: selectedCycle.id,
+          competition_name: comp.name,
+          competition_date: comp.date,
+          is_primary: comp.is_primary,
+          event_id: null,
+        });
+      }
+    }
+
+    // Adjust weeks based on end date change
+    if (data.endDate !== selectedCycle.end_date) {
+      if (data.endDate > selectedCycle.end_date) {
+        // Extend: add new weeks after the last existing week
+        const lastWeek = macroWeeks[macroWeeks.length - 1];
+        if (lastWeek) {
+          const newStart = new Date(lastWeek.week_start);
+          newStart.setDate(newStart.getDate() + 7);
+          const newWeeks = generateMacroWeeks(newStart.toISOString().slice(0, 10), data.endDate);
+          if (newWeeks.length > 0) {
+            const inserts = newWeeks.map((w, i) => ({
+              macrocycle_id: selectedCycle.id,
+              week_start: w.week_start,
+              week_number: lastWeek.week_number + 1 + i,
+              week_type: 'Medium' as WeekType,
+              week_type_text: '',
+              notes: '',
+            }));
+            await supabase.from('macro_weeks').insert(inserts);
+          }
+        }
+      } else {
+        // Shorten: delete weeks past the new end date
+        await supabase
+          .from('macro_weeks')
+          .delete()
+          .eq('macrocycle_id', selectedCycle.id)
+          .gt('week_start', data.endDate);
+      }
+    }
+
+    // Refresh
+    const updated = { ...selectedCycle, name: data.name, start_date: data.startDate, end_date: data.endDate };
+    setSelectedCycle(updated);
+    await Promise.all([
+      fetchMacroWeeks(selectedCycle.id),
+      fetchCompetitions(selectedCycle.id),
+    ]);
+    setShowEditModal(false);
+  };
+
   // ─── Delete cycle ─────────────────────────────────────────────────────────────
 
   const handleDeleteCycle = async () => {
@@ -411,10 +513,18 @@ export function MacroCycles() {
               onImportTargets={handleImportTargets}
             />
 
+            {/* Edit cycle */}
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="ml-auto flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              <Pencil size={13} /> Edit cycle
+            </button>
+
             {/* Delete cycle */}
             <button
               onClick={handleDeleteCycle}
-              className="ml-auto flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
             >
               <Trash2 size={13} /> Delete
             </button>
@@ -523,6 +633,16 @@ export function MacroCycles() {
           loading={loading}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateCycle}
+        />
+      )}
+
+      {showEditModal && selectedCycle && (
+        <MacroEditModal
+          cycle={selectedCycle}
+          competitions={competitions}
+          loading={loading}
+          onClose={() => setShowEditModal(false)}
+          onSave={handleEditCycle}
         />
       )}
 

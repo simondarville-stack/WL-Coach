@@ -6,6 +6,7 @@ import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '.
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { ExerciseFormModal } from '../ExerciseFormModal';
 
 interface DayCardProps {
   dayIndex: number;
@@ -138,6 +139,7 @@ export function DayCard({
   const [isDragOver, setIsDragOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
+  const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
   const shiftHeld = useShiftHeld();
 
   const daySets = exercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
@@ -180,6 +182,7 @@ export function DayCard({
 
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
+    if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
     const codeMap: Record<string, string> = { '/text': 'TEXT', '/video': 'VIDEO', '/image': 'IMAGE' };
     const code = codeMap[key];
     if (!code) return;
@@ -192,6 +195,16 @@ export function DayCard({
       await onRefresh();
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
+    const { data, error } = await supabase.from('exercises').insert([exerciseData]).select().single();
+    if (error) throw new Error(error.message);
+    setShowNewExerciseModal(false);
+    if (data) {
+      await addExerciseToDay(weekPlanId, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);
+      await onRefresh();
     }
   }
 
@@ -408,6 +421,13 @@ export function DayCard({
           onSave={handleComboCreate}
         />
       )}
+
+      <ExerciseFormModal
+        isOpen={showNewExerciseModal}
+        onClose={() => setShowNewExerciseModal(false)}
+        editingExercise={null}
+        onSave={handleNewExerciseSave}
+      />
     </>
   );
 }

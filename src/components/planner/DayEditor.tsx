@@ -10,6 +10,7 @@ import type { MacroContext } from './WeeklyPlanner';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { ExerciseFormModal } from '../ExerciseFormModal';
 
 interface MacroTargetData {
   reps: number | null;
@@ -92,6 +93,7 @@ export function DayEditor({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
+  const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<Promise<unknown> | null>(null);
 
@@ -222,6 +224,7 @@ export function DayEditor({
 
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
+    if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
     const codeMap: Record<string, string> = { '/text': 'TEXT', '/video': 'VIDEO', '/image': 'IMAGE' };
     const code = codeMap[key];
     if (!code) return;
@@ -234,6 +237,16 @@ export function DayEditor({
       await onRefresh();
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
+    const { data, error } = await supabase.from('exercises').insert([exerciseData]).select().single();
+    if (error) throw new Error(error.message);
+    setShowNewExerciseModal(false);
+    if (data) {
+      await addExerciseToDay(weekPlan.id, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);
+      await onRefresh();
     }
   }
 
@@ -506,6 +519,13 @@ export function DayEditor({
           onSave={handleComboCreate}
         />
       )}
+
+      <ExerciseFormModal
+        isOpen={showNewExerciseModal}
+        onClose={() => setShowNewExerciseModal(false)}
+        editingExercise={null}
+        onSave={handleNewExerciseSave}
+      />
     </>
   );
 }
