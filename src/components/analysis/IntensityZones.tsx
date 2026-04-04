@@ -127,7 +127,7 @@ export function IntensityZones({ athleteId, startDate, endDate }: Props) {
           Select a specific exercise to see intensity zone distribution.
         </div>
       ) : loading ? (
-        <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading...</div>
+        <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>
       ) : (
         <>
           {/* Summary zone cards */}
