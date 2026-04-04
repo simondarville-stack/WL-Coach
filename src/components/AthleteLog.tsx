@@ -326,7 +326,7 @@ export function AthleteLog() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-medium mb-6 text-gray-900">Athlete Training Log</h1>
+      <h1 className="text-base font-medium mb-4 text-gray-900">Athlete Training Log</h1>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <div className="grid grid-cols-3 gap-4">
