@@ -513,7 +513,7 @@ export function WeeklyPlanner() {
   const dayLabels: Record<number, string> = currentWeekPlan?.day_labels ?? {};
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-5">
       <div className="max-w-[1600px] mx-auto">
 
         {error && (
@@ -534,8 +534,7 @@ export function WeeklyPlanner() {
         ) : (
           <>
             {/* ── Control Panel ── */}
-            <div className="bg-white rounded-lg border border-gray-200 mb-4">
-              <PlannerControlPanel
+            <PlannerControlPanel
                 selectedAthlete={planSelection.athlete}
                 selectedGroup={planSelection.group}
                 selectedDate={selectedDate}
@@ -557,7 +556,6 @@ export function WeeklyPlanner() {
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
               />
-            </div>
 
             {/* ── Load Distribution (collapsible) ── */}
             {currentWeekPlan && showLoadDistribution && planSelection.type === 'individual' && planSelection.athlete && (
