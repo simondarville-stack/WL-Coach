@@ -40,6 +40,12 @@ function weekTypeBadgeStyle(weekType: string): string {
   }
 }
 
+function complianceColor(pct: number): string {
+  if (pct >= 90) return 'text-green-600';
+  if (pct >= 70) return 'text-amber-500';
+  return 'text-red-500';
+}
+
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface CompetitionPR {
@@ -104,8 +110,6 @@ export function PlannerControlPanel({
 
   const [competitionPRs, setCompetitionPRs] = useState<CompetitionPR[]>([]);
   const [phases, setPhases]                 = useState<MacroPhase[]>([]);
-  const [prevWeekAdj, setPrevWeekAdj]       = useState<AdjacentWeek | null>(null);
-  const [nextWeekAdj, setNextWeekAdj]       = useState<AdjacentWeek | null>(null);
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
 
@@ -117,10 +121,9 @@ export function PlannerControlPanel({
   }, [selectedAthlete?.id]);
 
   useEffect(() => {
-    if (!macroContext) { setPhases([]); setPrevWeekAdj(null); setNextWeekAdj(null); return; }
+    if (!macroContext) { setPhases([]); return; }
     void loadPhases(macroContext.macroId);
-    void loadAdjacentWeeks(macroContext.macroId, macroContext.weekNumber);
-  }, [macroContext?.macroId, macroContext?.weekNumber]);
+  }, [macroContext?.macroId]);
 
   async function loadCompetitionPRs(athleteId: string) {
     const { data } = await supabase
@@ -143,20 +146,6 @@ export function PlannerControlPanel({
       .eq('macrocycle_id', macroId)
       .order('start_week_number');
     setPhases((data as MacroPhase[]) ?? []);
-  }
-
-  async function loadAdjacentWeeks(macroId: string, currentWk: number) {
-    const { data } = await supabase
-      .from('macro_weeks')
-      .select('week_number, week_type, total_reps_target')
-      .eq('macrocycle_id', macroId)
-      .in('week_number', [currentWk - 1, currentWk + 1]);
-    if (!data) return;
-    type Row = { week_number: number; week_type: string; total_reps_target: number | null };
-    const prev = (data as Row[]).find(w => w.week_number === currentWk - 1);
-    const next = (data as Row[]).find(w => w.week_number === currentWk + 1);
-    setPrevWeekAdj(prev ? { weekNumber: prev.week_number, weekType: prev.week_type, totalRepsTarget: prev.total_reps_target } : null);
-    setNextWeekAdj(next ? { weekNumber: next.week_number, weekType: next.week_type, totalRepsTarget: next.total_reps_target } : null);
   }
 
   // ── metrics ──────────────────────────────────────────────────────────────
@@ -195,7 +184,7 @@ export function PlannerControlPanel({
 
   const visibleMetrics = settings?.visible_summary_metrics ?? ['sets', 'reps', 'tonnage'];
   const showStress     = settings?.show_stress_metric ?? false;
-  const repsProgress   = macroWeekTarget
+  const repsProgress   = macroWeekTarget && metrics.totalReps > 0
     ? Math.min(100, Math.round((metrics.totalReps / macroWeekTarget) * 100))
     : null;
 
@@ -203,337 +192,275 @@ export function PlannerControlPanel({
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
   const totalWeeks      = macroContext?.totalWeeks ?? 1;
 
+  const subLabel = [
+    athleteAge !== null ? `${athleteAge} yr` : null,
+    selectedAthlete?.bodyweight ? `${selectedAthlete.bodyweight} kg` : null,
+    selectedAthlete?.weight_class ? `-${selectedAthlete.weight_class}` : null,
+    ...competitionPRs.slice(0, 2).map(pr => `${abbreviateExercise(pr.exerciseName)} ${pr.value}`),
+  ].filter(Boolean).join(' · ');
+
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mx-4 mt-4 mb-1 flex-shrink-0">
+    <div className="bg-white border-b border-gray-200 flex-shrink-0">
 
-      {/* ── LAYER 1: Athlete info + tool buttons ─────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100">
+      {/* ── ROW 1: Athlete + Week nav + Tools ──────────────────────────────── */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
 
-        {/* LEFT: athlete/group info */}
-        {selectedGroup ? (
-          <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 border border-blue-200">
-              <Users size={16} className="text-blue-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-900 leading-tight">{selectedGroup.name}</p>
-              {selectedGroup.description && (
-                <p className="text-[11px] text-gray-400 leading-tight mt-0.5 truncate">{selectedGroup.description}</p>
-              )}
-            </div>
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Group</span>
-          </div>
-        ) : selectedAthlete ? (
-          <div className="flex items-center gap-2.5 flex-1 min-w-0">
-            {selectedAthlete.photo_url ? (
-              <img
-                src={selectedAthlete.photo_url}
-                alt={selectedAthlete.name}
-                className="w-9 h-9 rounded-full object-cover flex-shrink-0 border border-gray-200"
-                onError={e => { e.currentTarget.style.display = 'none'; }}
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-sm font-medium text-blue-700 flex-shrink-0 border border-blue-200">
-                {athleteInitials}
+        {/* LEFT: avatar + name */}
+        <div className="flex items-center gap-2 flex-shrink-0 min-w-0" style={{ width: 180 }}>
+          {selectedGroup ? (
+            <>
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <Users size={14} className="text-blue-600" />
               </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-900 leading-tight">{selectedAthlete.name}</p>
-              {(athleteAge !== null || selectedAthlete.bodyweight || selectedAthlete.weight_class || competitionPRs.length > 0) && (
-                <p className="text-[11px] text-gray-400 leading-tight mt-0.5">
-                  {[
-                    athleteAge !== null ? `${athleteAge} yr` : null,
-                    selectedAthlete.bodyweight ? `${selectedAthlete.bodyweight} kg` : null,
-                    selectedAthlete.weight_class ? `-${selectedAthlete.weight_class}` : null,
-                    ...competitionPRs.slice(0, 3).map(pr => `${abbreviateExercise(pr.exerciseName)} ${pr.value}`),
-                  ].filter(Boolean).join(' · ')}
-                </p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate leading-tight">{selectedGroup.name}</p>
+              </div>
+            </>
+          ) : selectedAthlete ? (
+            <>
+              {selectedAthlete.photo_url ? (
+                <img
+                  src={selectedAthlete.photo_url}
+                  alt={selectedAthlete.name}
+                  className="w-8 h-8 rounded-full object-cover flex-shrink-0 border border-gray-200"
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700 flex-shrink-0">
+                  {athleteInitials}
+                </div>
               )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1" />
-        )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate leading-tight">{selectedAthlete.name}</p>
+                {subLabel && <p className="text-[10px] text-gray-400 leading-tight truncate">{subLabel}</p>}
+              </div>
+            </>
+          ) : null}
+        </div>
 
-        {/* RIGHT: tool pills */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        {/* CENTER: week navigation */}
+        <div className="flex-1 flex items-center justify-center gap-1">
+          <button
+            onClick={onPrevWeek}
+            className="flex items-center gap-0.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+          >
+            <ChevronLeft size={13} />
+            <span className="text-[11px]">Prev</span>
+          </button>
+
+          <div className="flex flex-col items-center px-2">
+            <span className="text-sm font-medium text-gray-900 leading-tight select-none">
+              {formatDateRange(selectedDate, 7)}
+            </span>
+            {macroContext && (
+              <span className="text-[10px] text-gray-400 leading-none">
+                Week {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? ` of ${macroContext.totalWeeks}` : ''}
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={onNextWeek}
+            className="flex items-center gap-0.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+          >
+            <span className="text-[11px]">Next</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+
+        {/* RIGHT: tool buttons */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           <button
             onClick={onDayConfig}
-            className="flex items-center gap-1 text-xs py-1 px-2 bg-gray-50 border border-gray-200 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+            title="Day settings"
+            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
-            <Settings2 size={11} />
-            Days
+            <Settings2 size={14} />
           </button>
           {canCopyPaste && (
             <>
               <button
                 onClick={onCopy}
-                className="flex items-center gap-1 text-xs py-1 px-2 bg-gray-50 border border-gray-200 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+                title="Copy week"
+                className="p-1.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
               >
-                <Copy size={11} />
-                Copy
+                <Copy size={14} />
               </button>
               <button
                 onClick={onPaste}
                 disabled={!copiedWeekStart}
-                className={[
-                  'flex items-center gap-1 text-xs py-1 px-2 border rounded-md transition-colors',
-                  copiedWeekStart
-                    ? 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-                    : 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed',
-                ].join(' ')}
+                title="Paste week"
+                className={`p-1.5 rounded transition-colors ${
+                  copiedWeekStart ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
+                }`}
               >
-                <ClipboardPaste size={11} />
-                Paste
+                <ClipboardPaste size={14} />
               </button>
             </>
           )}
           <button
             onClick={onPrint}
-            className="flex items-center gap-1 text-xs py-1 px-2 bg-gray-50 border border-gray-200 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+            title="Print week"
+            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
-            <Printer size={11} />
-            Print
+            <Printer size={14} />
           </button>
           <button
             onClick={onToggleLoadDistribution}
-            className={[
-              'flex items-center gap-1 text-xs py-1 px-2 border rounded-md transition-colors',
-              showLoadDistribution
-                ? 'bg-blue-50 border-blue-200 text-blue-600'
-                : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100',
-            ].join(' ')}
+            title="Load distribution chart"
+            className={`p-1.5 rounded transition-colors ${
+              showLoadDistribution ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
+            }`}
           >
-            <BarChart2 size={11} />
-            Charts
+            <BarChart2 size={14} />
           </button>
         </div>
       </div>
 
-      {/* ── LAYER 2: Week navigation with peek cards ─────────────────────── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
+      {/* ── ROW 2: Metrics strip + week description ─────────────────────────── */}
+      <div className="px-4 py-1.5 flex items-center gap-0 text-xs">
 
-        {/* Prev week card */}
-        <button
-          onClick={onPrevWeek}
-          className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md py-1.5 px-2.5 hover:bg-gray-100 transition-colors text-left"
-          style={{ minWidth: 96 }}
-        >
-          <ChevronLeft size={13} className="text-gray-400 flex-shrink-0" />
-          <div className="flex flex-col min-w-0">
-            <span className="text-[9px] uppercase text-gray-400 tracking-wide leading-none">Last week</span>
-            <div className="mt-1 flex items-center gap-1 flex-wrap">
-              {prevWeekAdj ? (
-                <>
-                  <span className={`text-[9px] font-medium px-1 py-px rounded border ${weekTypeBadgeStyle(prevWeekAdj.weekType)}`}>
-                    {prevWeekAdj.weekType}
-                  </span>
-                  {prevWeekAdj.totalRepsTarget != null && (
-                    <span className="text-[9px] text-gray-400">R {prevWeekAdj.totalRepsTarget}</span>
-                  )}
-                </>
-              ) : (
-                <span className="text-[9px] text-gray-300 italic">—</span>
-              )}
-            </div>
-          </div>
-        </button>
+        {visibleMetrics.includes('sets') && (
+          <>
+            <span className="text-[10px] uppercase text-gray-400 mr-1">S</span>
+            <span className="font-medium text-gray-900">{metrics.totalSets}</span>
+          </>
+        )}
 
-        {/* Center: date + "Week X of Y" */}
-        <div className="flex-1 flex flex-col items-center gap-0.5">
-          <span className="text-[15px] font-medium text-gray-900 select-none leading-tight">
-            {formatDateRange(selectedDate, 7)}
-          </span>
-          {macroContext && (
-            <span className="text-[10px] text-gray-400 leading-none">
-              Week {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? ` of ${macroContext.totalWeeks}` : ''}
-            </span>
-          )}
-        </div>
+        {visibleMetrics.includes('reps') && (
+          <>
+            <span className="text-gray-300 mx-2">·</span>
+            <span className="text-[10px] uppercase text-gray-400 mr-1">R</span>
+            <span className="font-medium text-gray-900">{metrics.totalReps}</span>
+            {macroWeekTarget != null && (
+              <span className="text-gray-400 ml-1">/ {macroWeekTarget}</span>
+            )}
+            {repsProgress !== null && (
+              <span className={`ml-1 font-medium ${complianceColor(repsProgress)}`}>({repsProgress}%)</span>
+            )}
+          </>
+        )}
 
-        {/* Next week card */}
-        <button
-          onClick={onNextWeek}
-          className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-md py-1.5 px-2.5 hover:bg-gray-100 transition-colors text-right"
-          style={{ minWidth: 96 }}
-        >
-          <div className="flex flex-col items-end min-w-0 flex-1">
-            <span className="text-[9px] uppercase text-gray-400 tracking-wide leading-none">Next week</span>
-            <div className="mt-1 flex items-center gap-1 flex-wrap justify-end">
-              {nextWeekAdj ? (
-                <>
-                  {nextWeekAdj.totalRepsTarget != null && (
-                    <span className="text-[9px] text-gray-400">R {nextWeekAdj.totalRepsTarget}</span>
-                  )}
-                  <span className={`text-[9px] font-medium px-1 py-px rounded border ${weekTypeBadgeStyle(nextWeekAdj.weekType)}`}>
-                    {nextWeekAdj.weekType}
-                  </span>
-                </>
-              ) : (
-                <span className="text-[9px] text-gray-300 italic">—</span>
-              )}
-            </div>
-          </div>
-          <ChevronRight size={13} className="text-gray-400 flex-shrink-0" />
-        </button>
-      </div>
+        {visibleMetrics.includes('tonnage') && metrics.totalTonnage > 0 && (
+          <>
+            <span className="text-gray-300 mx-2">·</span>
+            <span className="text-[10px] uppercase text-gray-400 mr-1">T</span>
+            <span className="font-medium text-gray-900">{metrics.totalTonnage.toLocaleString()}</span>
+            <span className="text-gray-400 ml-0.5">kg</span>
+          </>
+        )}
 
-      {/* ── LAYER 3: Macro phase timeline ────────────────────────────────── */}
-      {macroContext && (
-        <div
-          className="bg-gray-50/60 border-b border-gray-100 px-4 py-2 cursor-pointer hover:bg-gray-50 transition-colors"
-          onClick={() => navigate('/macrocycles')}
-          title="Open macro cycles"
-        >
-          <div className="flex items-center gap-3">
+        {showStress && metrics.totalStress > 0 && (
+          <>
+            <span className="text-gray-300 mx-2">·</span>
+            <span className="text-[10px] uppercase text-gray-400 mr-1">Stress</span>
+            <span className="font-medium text-gray-900">{metrics.totalStress}</span>
+          </>
+        )}
 
-            {/* LEFT: macro name + week */}
-            <div className="flex-shrink-0 w-28">
-              <p className="text-[10px] text-gray-500 truncate leading-tight">{macroContext.macroName}</p>
-              <p className="text-[10px] font-medium text-gray-700 leading-tight">
-                Wk {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? `/${macroContext.totalWeeks}` : ''}
-              </p>
-            </div>
-
-            {/* CENTER: phase timeline bar */}
-            <div className="flex-1 relative h-5">
-              <div className="flex h-full rounded overflow-hidden bg-gray-200">
-                {phases.length > 0 ? (
-                  phases.map(phase => {
-                    const duration = phase.end_week_number - phase.start_week_number + 1;
-                    const pct      = (duration / totalWeeks) * 100;
-                    const showText = pct > 12;
-                    return (
-                      <div
-                        key={phase.id}
-                        className="relative flex items-center justify-center overflow-hidden"
-                        style={{ width: `${pct}%`, backgroundColor: phase.color || '#D1D5DB' }}
-                        title={`${phase.name} — Wk ${phase.start_week_number}–${phase.end_week_number}`}
-                      >
-                        {showText && (
-                          <span className="text-[8px] font-semibold text-white/90 px-0.5 truncate leading-none drop-shadow-sm">
-                            {phase.name}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div
-                    className="flex-1 flex items-center justify-center"
-                    style={{ backgroundColor: macroContext.phaseColor || '#93C5FD' }}
-                  >
-                    {macroContext.phaseName && (
-                      <span className="text-[8px] font-semibold text-white/90 truncate">
-                        {macroContext.phaseName}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              {/* Current-week position marker */}
-              {macroContext.totalWeeks > 0 && (
-                <div
-                  className="absolute top-0 bottom-0 w-[2px] bg-gray-900 rounded pointer-events-none"
-                  style={{ left: `calc(${((macroContext.weekNumber - 1) / macroContext.totalWeeks) * 100}% + 1px)` }}
-                />
-              )}
-            </div>
-
-            {/* RIGHT: week type badge */}
-            <div className="flex-shrink-0">
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${weekTypeBadgeStyle(macroContext.weekType)}`}>
-                {macroContext.weekTypeText || macroContext.weekType}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── LAYER 4: Metric cards ─────────────────────────────────────────── */}
-      <div className="px-4 py-2.5">
-        <div className="flex items-start gap-2.5 flex-wrap">
-
-          {visibleMetrics.includes('sets') && (
-            <div className="bg-gray-50 rounded-md py-2 px-3 min-w-[52px]">
-              <p className="text-[9px] uppercase text-gray-400 tracking-[0.3px] leading-none mb-1">Sets</p>
-              <p className="text-lg font-medium text-gray-900 leading-none">{metrics.totalSets}</p>
-            </div>
-          )}
-
-          {visibleMetrics.includes('reps') && (
-            <div className="bg-gray-50 rounded-md py-2 px-3 min-w-[52px]">
-              <p className="text-[9px] uppercase text-gray-400 tracking-[0.3px] leading-none mb-1">Reps</p>
-              <div className="flex items-baseline gap-1 leading-none">
-                <p className="text-lg font-medium text-gray-900 leading-none">{metrics.totalReps}</p>
-                {macroWeekTarget != null && (
-                  <span className="text-xs text-gray-400">/ {macroWeekTarget}</span>
-                )}
-              </div>
-              {repsProgress !== null && (
-                <p className={[
-                  'text-[9px] font-medium mt-0.5 leading-none',
-                  repsProgress >= 90 ? 'text-green-600' : repsProgress >= 70 ? 'text-amber-500' : 'text-red-500',
-                ].join(' ')}>{repsProgress}%</p>
-              )}
-            </div>
-          )}
-
-          {visibleMetrics.includes('tonnage') && metrics.totalTonnage > 0 && (
-            <div className="bg-gray-50 rounded-md py-2 px-3 min-w-[52px]">
-              <p className="text-[9px] uppercase text-gray-400 tracking-[0.3px] leading-none mb-1">Tonnage</p>
-              <p className="text-lg font-medium text-gray-900 leading-none">{metrics.totalTonnage.toLocaleString()}</p>
-            </div>
-          )}
-
-          {showStress && metrics.totalStress > 0 && (
-            <div className="bg-gray-50 rounded-md py-2 px-3 min-w-[52px]">
-              <p className="text-[9px] uppercase text-gray-400 tracking-[0.3px] leading-none mb-1">Stress</p>
-              <p className="text-lg font-medium text-gray-900 leading-none">{metrics.totalStress}</p>
-            </div>
-          )}
-
-          {metrics.categories.length > 0 && (
+        {metrics.categories.length > 0 && (
+          <>
+            <span className="text-gray-300 mx-2">·</span>
             <button
               onClick={() => setShowCategories(v => !v)}
-              className="ml-auto self-center flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              className="flex items-center gap-0.5 text-gray-400 hover:text-gray-700 transition-colors"
             >
-              {showCategories ? <ChevronDown size={12} /> : <ChevronRightSmall size={12} />}
-              Categories
+              {showCategories ? <ChevronDown size={11} /> : <ChevronRightSmall size={11} />}
+              <span className="text-[11px]">Categories</span>
             </button>
-          )}
-        </div>
-
-        {showCategories && metrics.categories.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-            {metrics.categories.map(cat => (
-              <div key={cat.category} className="flex items-center gap-3 text-xs">
-                <span className="text-gray-600 flex-1 truncate">{cat.category}</span>
-                <span className="text-gray-500">S <strong className="text-gray-900">{cat.sets}</strong></span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{cat.reps}</strong></span>
-                {cat.tonnage > 0 && (
-                  <span className="text-gray-500">T <strong className="text-gray-900">{cat.tonnage.toLocaleString()}</strong></span>
-                )}
-              </div>
-            ))}
-          </div>
+          </>
         )}
-      </div>
 
-      {/* ── Week description ─────────────────────────────────────────────── */}
-      <div className="px-4 pb-2.5 border-t border-gray-100">
-        <textarea
+        {macroContext && (
+          <>
+            <span className="text-gray-300 mx-2">·</span>
+            <button
+              onClick={() => navigate('/macrocycles')}
+              className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors truncate"
+            >
+              {macroContext.macroName} — <span className={`font-medium px-1 py-px rounded border text-[9px] ${weekTypeBadgeStyle(macroContext.weekType)}`}>{macroContext.weekTypeText || macroContext.weekType}</span>
+            </button>
+          </>
+        )}
+
+        {/* Week description inline */}
+        <input
           value={localDesc}
           onChange={e => setLocalDesc(e.target.value)}
           onBlur={e => { void onSaveWeekDescription(e.target.value); }}
-          placeholder="Week notes / description…"
-          rows={1}
-          className="w-full text-xs text-gray-700 italic placeholder-gray-400 bg-transparent resize-none border-0 focus:outline-none focus:border-b focus:border-gray-200 leading-relaxed pt-2"
+          placeholder="Week notes…"
+          className="ml-3 flex-1 text-[11px] text-gray-500 italic placeholder-gray-300 bg-transparent border-0 focus:outline-none min-w-0"
         />
       </div>
 
+      {/* ── Categories strip (collapsible) ──────────────────────────────────── */}
+      {showCategories && metrics.categories.length > 0 && (
+        <div className="px-4 pb-2 flex flex-wrap gap-x-4 gap-y-0.5 border-t border-gray-50 pt-1.5">
+          {metrics.categories.map(cat => (
+            <div key={cat.category} className="flex items-center gap-2 text-[11px]">
+              <span className="text-gray-500 truncate max-w-[120px]">{cat.category}</span>
+              <span className="text-gray-400">S <span className="text-gray-700 font-medium">{cat.sets}</span></span>
+              <span className="text-gray-400">R <span className="text-gray-700 font-medium">{cat.reps}</span></span>
+              {cat.tonnage > 0 && (
+                <span className="text-gray-400">T <span className="text-gray-700 font-medium">{cat.tonnage.toLocaleString()}</span></span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── MACRO phase timeline (conditional) ──────────────────────────────── */}
+      {macroContext && (
+        <div
+          className="h-4 flex cursor-pointer"
+          onClick={() => navigate('/macrocycles')}
+          title="Open macro cycles"
+        >
+          <div className="flex w-full">
+            {phases.length > 0 ? (
+              phases.map(phase => {
+                const duration = phase.end_week_number - phase.start_week_number + 1;
+                const pct      = (duration / totalWeeks) * 100;
+                const showText = pct > 15;
+                return (
+                  <div
+                    key={phase.id}
+                    className="relative flex items-center justify-center overflow-hidden"
+                    style={{ width: `${pct}%`, backgroundColor: phase.color || '#D1D5DB' }}
+                    title={`${phase.name} — Wk ${phase.start_week_number}–${phase.end_week_number}`}
+                  >
+                    {showText && (
+                      <span className="text-[8px] font-medium text-white/90 px-0.5 truncate leading-none">
+                        {phase.name}
+                      </span>
+                    )}
+                    {/* Current-week marker */}
+                    {macroContext.weekNumber >= phase.start_week_number && macroContext.weekNumber <= phase.end_week_number && totalWeeks > 0 && (
+                      <div
+                        className="absolute top-0 bottom-0 w-px bg-gray-900/50 pointer-events-none"
+                        style={{ left: `${((macroContext.weekNumber - phase.start_week_number) / duration) * 100}%` }}
+                      />
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <div
+                className="flex-1 flex items-center justify-center"
+                style={{ backgroundColor: macroContext.phaseColor || '#93C5FD' }}
+              >
+                {macroContext.phaseName && (
+                  <span className="text-[8px] font-medium text-white/90 truncate">
+                    {macroContext.phaseName}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
