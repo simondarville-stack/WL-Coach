@@ -8,6 +8,8 @@ import { parsePrescription, parseComboPrescription } from '../../lib/prescriptio
 // Types
 // ---------------------------------------------------------------------------
 
+const WEEKDAY_NAMES_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 interface PrintWeekCompactProps {
   athlete: Athlete;
   weekPlan: WeekPlan;
@@ -452,8 +454,13 @@ export function PrintWeekCompact({
 
   const getDayLabel = (dayIndex: number): string => {
     const labels = dayLabels || weekPlan.day_labels;
-    if (labels?.[dayIndex]) return labels[dayIndex];
-    return DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const base = (labels?.[dayIndex]) || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const schedule = weekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null;
+    const entry = schedule?.[dayIndex];
+    if (!entry) return base;
+    const wdName = WEEKDAY_NAMES_FULL[entry.weekday];
+    const timeSuffix = entry.time ? ` ${entry.time}` : '';
+    return `${base} (${wdName}${timeSuffix})`;
   };
 
   const activeDays = weekPlan.active_days || [1, 2, 3, 4, 5, 6, 7];
