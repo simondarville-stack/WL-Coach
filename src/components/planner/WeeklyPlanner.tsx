@@ -580,6 +580,7 @@ export function WeeklyPlanner() {
                   dayLabels={currentWeekPlan.day_labels || {}}
                   activeDays={activeDays}
                   dayDisplayOrder={dayDisplayOrder}
+                  daySchedule={(currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 />
               </div>
             )}
