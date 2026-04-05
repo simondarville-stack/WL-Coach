@@ -125,8 +125,20 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
           .order('week_start', { ascending: false }),
       ]);
 
-      const sessions: TrainingLogSession[] = (sessionsData || []).filter(s => s.status !== 'planned');
+      const rawSessions: TrainingLogSession[] = (sessionsData || []).filter(s => s.status !== 'planned');
       const plans: WeekPlan[] = plansData || [];
+
+      // Filter out sessions with no exercises
+      const rawIds = rawSessions.map(s => s.id);
+      let withExercises = new Set<string>();
+      if (rawIds.length > 0) {
+        const { data: exRows } = await supabase
+          .from('training_log_exercises')
+          .select('session_id')
+          .in('session_id', rawIds);
+        withExercises = new Set((exRows || []).map(e => e.session_id));
+      }
+      const sessions = rawSessions.filter(s => withExercises.has(s.id));
 
       setAllSessions(sessions);
 
@@ -169,10 +181,21 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
           .eq('week_start', currentWeekStart),
       ]);
 
+      const weekRaw = (sessList || []).filter(s => s.status !== 'planned');
+      const weekIds = weekRaw.map(s => s.id);
+      let weekWithEx = new Set<string>();
+      if (weekIds.length > 0) {
+        const { data: exRows } = await supabase
+          .from('training_log_exercises')
+          .select('session_id')
+          .in('session_id', weekIds);
+        weekWithEx = new Set((exRows || []).map(e => e.session_id));
+      }
+
       setWeekData({
         weekStartISO: currentWeekStart,
         weekPlan: plan ?? null,
-        sessions: (sessList || []).filter(s => s.status !== 'planned'),
+        sessions: weekRaw.filter(s => weekWithEx.has(s.id)),
       });
     };
     load();
