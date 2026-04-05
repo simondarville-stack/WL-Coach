@@ -14,6 +14,9 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
+import { calculateRestInfo } from '../../lib/restCalculation';
+
+const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -69,6 +72,7 @@ export interface PlannerControlPanelProps {
   athletePRs: AthletePR[];
   settings: GeneralSettings | null;
   weekDescription: string;
+  daySchedule: Record<number, { weekday: number; time: string | null }> | null;
   canCopyPaste: boolean;
   copiedWeekStart: string | null;
   showLoadDistribution: boolean;
@@ -94,6 +98,7 @@ export function PlannerControlPanel({
   athletePRs,
   settings,
   weekDescription,
+  daySchedule,
   canCopyPaste,
   copiedWeekStart,
   showLoadDistribution,
@@ -405,6 +410,39 @@ export function PlannerControlPanel({
           ))}
         </div>
       )}
+
+      {/* ── Schedule indicator (calendar-mapped mode only) ───────────────────── */}
+      {daySchedule && Object.keys(daySchedule).length > 0 && (() => {
+        const slots = Object.keys(daySchedule).map(Number).sort((a, b) => {
+          const wa = daySchedule[a].weekday * 24 + (daySchedule[a].time ? parseInt(daySchedule[a].time!.replace(':', ''), 10) / 100 : 12);
+          const wb = daySchedule[b].weekday * 24 + (daySchedule[b].time ? parseInt(daySchedule[b].time!.replace(':', ''), 10) / 100 : 12);
+          return wa - wb;
+        });
+        const restInfos = calculateRestInfo(slots, daySchedule);
+        const avgRest = restInfos.filter(r => r.hoursFromPrevious !== null);
+        const avgRestHours = avgRest.length > 0
+          ? Math.round(avgRest.reduce((s, r) => s + r.hoursFromPrevious!, 0) / avgRest.length)
+          : null;
+        return (
+          <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
+            {slots.map(s => {
+              const e = daySchedule[s];
+              return (
+                <span key={s} className="text-gray-600 font-medium">
+                  {WEEKDAY_SHORT[e.weekday]}{e.time ? ` ${e.time}` : ''}
+                </span>
+              );
+            }).reduce((acc: React.ReactNode[], el, i) => {
+              if (i > 0) acc.push(<span key={`dot-${i}`} className="text-gray-200">·</span>);
+              acc.push(el);
+              return acc;
+            }, [])}
+            {avgRestHours !== null && (
+              <span className="ml-auto text-gray-400">{avgRestHours}h avg rest</span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── MACRO phase + week timeline ──────────────────────────────────────── */}
       {macroContext && totalWeeks > 0 && (

@@ -558,6 +558,7 @@ export function WeeklyPlanner() {
                 athletePRs={athletePRs}
                 settings={settings}
                 weekDescription={weekDescription}
+                daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 canCopyPaste={planSelection.type === 'individual'}
                 copiedWeekStart={copiedWeekStart}
                 showLoadDistribution={showLoadDistribution}
