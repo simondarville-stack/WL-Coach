@@ -499,22 +499,28 @@ export function PrintWeekCompact({
           {/* ── Exercise summary table ── */}
           {exerciseSummaries.length > 0 && (
             <div className="print-section">
-              <div className="print-ex-summary-grid">
-                {summaryChunks.map((chunk, ci) => (
-                  <div key={ci} className="print-ex-summary-col">
-                    {chunk.map(s => (
-                      <div key={s.exerciseId} className="print-ex-summary-row">
-                        <span className="print-ex-code">{s.exerciseCode}</span>
-                        <span className="print-ex-stat">{s.totalReps}</span>
-                        <span className="print-ex-stat">{s.avgLoad > 0 ? Math.round(s.avgLoad) : '—'}</span>
-                        <span className="print-ex-stat">{s.maxLoad > 0 ? Math.round(s.maxLoad) : '—'}</span>
-                        <span className="print-ex-freq">{s.frequency}d</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              {/* Summary header labels */}
+              <table className="print-summary-table">
+                <tbody>
+                  {/* Build rows of 3 exercises side by side */}
+                  {Array.from({ length: Math.ceil(exerciseSummaries.length / 3) }).map((_, ri) => {
+                    const row = exerciseSummaries.slice(ri * 3, ri * 3 + 3);
+                    return (
+                      <tr key={ri}>
+                        {row.map((s, ci) => (
+                          <>
+                            {ci > 0 && <td key={`sep-${ci}`} className="print-summary-sep">│</td>}
+                            <td key={`code-${s.exerciseId}`} className="print-sum-code">{s.exerciseCode}</td>
+                            <td key={`wh-${s.exerciseId}`} className="print-sum-stat">{s.totalReps}</td>
+                            <td key={`mhg-${s.exerciseId}`} className="print-sum-stat">{s.avgLoad > 0 ? Math.round(s.avgLoad) : '—'}</td>
+                            <td key={`bw-${s.exerciseId}`} className="print-sum-stat">{s.maxLoad > 0 ? Math.round(s.maxLoad) : '—'}</td>
+                            <td key={`freq-${s.exerciseId}`} className="print-sum-freq">{s.frequency}d</td>
+                          </>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
               <div className="print-ex-summary-legend">
                 Code · WH (reps) · MHG (avg kg) · BW (max kg) · Days
               </div>
@@ -624,21 +630,22 @@ const COMPACT_PRINT_CSS = `
   .print-cat-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .print-cat-item { white-space: nowrap; }
 
-  /* Exercise summary */
-  .print-ex-summary-grid {
-    display: grid;
-    grid-template-columns: 1fr 1px 1fr 1px 1fr;
-    gap: 0 4px;
-  }
-  .print-ex-summary-col { display: flex; flex-direction: column; gap: 1px; }
-  .print-ex-summary-row {
-    display: flex;
-    gap: 4px;
+  /* Exercise summary table */
+  .print-summary-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 8px;
+    font-family: 'Courier New', Consolas, monospace;
   }
-  .print-ex-code { font-weight: bold; min-width: 30px; }
-  .print-ex-stat { min-width: 26px; text-align: right; }
-  .print-ex-freq { min-width: 16px; text-align: right; color: #666; }
+  .print-summary-table td {
+    padding: 0 2px;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+  .print-sum-code { font-weight: bold; width: 28px; }
+  .print-sum-stat { text-align: right; width: 28px; }
+  .print-sum-freq { text-align: right; width: 16px; color: #666; }
+  .print-summary-sep { color: #bbb; padding: 0 3px; width: 10px; text-align: center; }
   .print-ex-summary-legend {
     font-size: 7px;
     color: #999;
