@@ -76,27 +76,33 @@ export function WeekOverview({
     // Slots not in schedule — show below as "Unscheduled"
     const unscheduledDays = visibleDays.filter(d => !schedule![d.index]);
 
+    // Rest-day columns are narrow spacers; training-day columns share remaining space equally
+    const columnTemplate = cells.map(c => c.isRestDay ? '2.5rem' : '1fr').join(' ');
+
     return (
       <div className="p-4">
         {/* Weekday headers */}
-        <div className="grid grid-cols-7 gap-2 mb-1">
-          {WEEKDAY_FULL.map(d => (
-            <div key={d} className="text-center text-[10px] font-medium text-gray-400 uppercase tracking-wide">{d.slice(0,3)}</div>
+        <div className="grid gap-2 mb-1" style={{ gridTemplateColumns: columnTemplate }}>
+          {WEEKDAY_FULL.map((d, i) => (
+            <div key={d} className="text-center text-[10px] font-medium text-gray-400 uppercase tracking-wide overflow-hidden">
+              {cells[i]?.isRestDay ? '' : d.slice(0, 3)}
+            </div>
           ))}
         </div>
 
         {/* Recovery strip */}
-        <RecoveryStrip cells={cells} />
+        <RecoveryStrip cells={cells} columnTemplate={columnTemplate} />
 
         {/* Day cards / rest cells */}
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns: columnTemplate }}>
           {cells.map(cell => (
             cell.isRestDay ? (
               <div
                 key={cell.weekday}
-                className="rounded-lg bg-gray-50/50 border border-dashed border-gray-200 min-h-[80px] flex items-center justify-center"
+                className="flex flex-col items-center pt-1 gap-1"
               >
-                <span className="text-[10px] text-gray-300 italic">{cell.weekdayName}</span>
+                <div className="flex-1 w-px border-l border-dashed border-gray-200 min-h-[60px]" />
+                <span className="text-[8px] text-gray-300" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>{cell.weekdayName}</span>
               </div>
             ) : (
               <div key={cell.weekday} className="space-y-2">
