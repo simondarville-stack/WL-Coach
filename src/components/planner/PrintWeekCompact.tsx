@@ -343,10 +343,13 @@ function DayTable({
 
           if (sentinel === 'video') {
             const url = ex.notes?.trim() || '';
-            const ytId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/)?.[1];
-            const display = ytId
-              ? `YouTube (${ytId})`
-              : (() => { try { return new URL(url).hostname; } catch { return url.slice(0, 30); } })();
+            let display = 'attached';
+            if (url) {
+              const ytId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/)?.[1];
+              display = ytId
+                ? `YouTube (${ytId})`
+                : (() => { try { return new URL(url).hostname; } catch { return url.slice(0, 30); } })();
+            }
             return (
               <tr key={ex.id} className="print-sentinel-tr">
                 <td colSpan={totalCols} className="print-text-cell">📎 Video: {display}</td>
@@ -364,8 +367,13 @@ function DayTable({
 
           if (ex.is_combo) {
             const members = (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position);
-            const comboCode = '●● ' + (ex.combo_notation ||
-              members.map(m => codeMap.get(m.exercise_id) || m.exercise.name.slice(0, 3).toUpperCase()).join('+'));
+            // Always use short member codes for compact layout (ignore long combo_notation)
+            const memberCodes = members.map(m =>
+              codeMap.get(m.exercise_id) ||
+              m.exercise.name.split(/\s+/).map((w: string) => w[0].toUpperCase()).join('').slice(0, 4),
+            ).join('+');
+            const shortNotation = ex.combo_notation && ex.combo_notation.length <= 8 ? ex.combo_notation : memberCodes;
+            const comboCode = '●● ' + shortNotation;
             const cells = buildComboGridCells(ex.prescription_raw);
             return (
               <ExerciseRows
