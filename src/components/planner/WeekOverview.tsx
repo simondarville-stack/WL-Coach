@@ -6,11 +6,8 @@ import type {
   ComboMemberEntry,
 } from '../../lib/database.types';
 import { DayCard } from './DayCard';
-import { RecoveryStrip } from './RecoveryStrip';
 import { calculateRestInfo, buildWeekdayCells } from '../../lib/restCalculation';
 import type { ScheduleEntry } from '../../lib/restCalculation';
-
-const WEEKDAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 interface WeekOverviewProps {
   weekPlan: WeekPlan | null;
@@ -78,33 +75,23 @@ export function WeekOverview({
 
     return (
       <div className="p-4">
-        {/* Weekday headers — only visible when all 7 fit in one row */}
-        <div className="hidden lg:grid grid-cols-7 gap-2 mb-1">
-          {WEEKDAY_FULL.map(d => (
-            <div key={d} className="text-center text-[10px] font-medium text-gray-400 uppercase tracking-wide">{d.slice(0, 3)}</div>
-          ))}
-        </div>
-
-        {/* Recovery strip — only visible at full 7-col width */}
-        <div className="hidden lg:block">
-          <RecoveryStrip cells={cells} columnTemplate="repeat(7, 1fr)" />
-        </div>
-
-        {/* Day cards — responsive wrapping grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+        {/* Day cards — flex-wrap so training cards keep min width and spill to next row */}
+        <div className="flex flex-wrap gap-2">
           {cells.map(cell => (
             cell.isRestDay ? (
+              /* Thin vertical separator — stays narrow, wraps with the row */
               <div
                 key={cell.weekday}
-                className="rounded-lg border border-dashed border-gray-200 bg-gray-50/60 min-h-[70px] flex flex-col items-center justify-center gap-0.5 px-1"
+                className="flex flex-col items-center gap-1 self-stretch py-1"
+                style={{ flex: '0 0 2rem' }}
               >
-                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{cell.weekdayName}</span>
-                <span className="text-[9px] text-gray-300">Rest</span>
+                <div className="flex-1 border-l border-dashed border-gray-200 w-0" />
+                <span className="text-[8px] text-gray-300 select-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                  {cell.weekdayName}
+                </span>
               </div>
             ) : (
-              <div key={cell.weekday} className="space-y-2">
-                {/* Weekday label shown inline when headers row is hidden */}
-                <div className="lg:hidden text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">{cell.weekdayName}</div>
+              <div key={cell.weekday} className="space-y-2" style={{ flex: '1 1 180px' }}>
                 {cell.trainingSessions.map(session => {
                   const dayEntry = visibleDays.find(d => d.index === session.slotIndex);
                   return (
