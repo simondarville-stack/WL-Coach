@@ -22,7 +22,6 @@ interface GridCell {
   load: number | string;
   reps: number | string;
   sets: number;
-  showSuperscript: boolean;
 }
 
 interface WeekExerciseSummary {
@@ -115,25 +114,11 @@ function buildGridCells(prescriptionRaw: string | null): GridCell[] {
   const parsed = parsePrescription(prescriptionRaw);
   if (parsed.length === 0) return parsed.map(() => ({ load: '?', reps: '?', sets: 1, showSuperscript: false }));
 
-  const cells: GridCell[] = parsed.map(p => ({
+  return parsed.map(p => ({
     load: p.load,
     reps: p.reps,
     sets: p.sets,
-    showSuperscript: false,
   }));
-
-  // Mark last cell of consecutive same-sets groups where sets > 1
-  let i = 0;
-  while (i < cells.length) {
-    const s = cells[i].sets;
-    if (s <= 1) { i++; continue; }
-    let j = i;
-    while (j < cells.length && cells[j].sets === s) j++;
-    cells[j - 1].showSuperscript = true;
-    i = j;
-  }
-
-  return cells;
 }
 
 function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
@@ -141,23 +126,11 @@ function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
   const parsed = parseComboPrescription(prescriptionRaw);
   if (parsed.length === 0) return [];
 
-  const cells: GridCell[] = parsed.map(p => ({
+  return parsed.map(p => ({
     load: p.load,
     reps: p.repsText,
     sets: p.sets,
-    showSuperscript: false,
   }));
-
-  let i = 0;
-  while (i < cells.length) {
-    const s = cells[i].sets;
-    if (s <= 1) { i++; continue; }
-    let j = i;
-    while (j < cells.length && cells[j].sets === s) j++;
-    cells[j - 1].showSuperscript = true;
-    i = j;
-  }
-  return cells;
 }
 
 function aggregateWeekExercises(
@@ -291,9 +264,7 @@ function ExerciseGridRow({
           {cells.map((c, i) => (
             <div key={i} className="print-cell text-right" style={{ minWidth: CELL_W }}>
               {c.reps}
-              {c.showSuperscript && c.sets > 1 && (
-                <sup className="text-[6px]">{c.sets}</sup>
-              )}
+              {c.sets > 1 && <sup className="text-[6px]">{c.sets}</sup>}
             </div>
           ))}
         </div>
@@ -508,7 +479,7 @@ export function PrintWeekCompact({
                             {cells.map((c, i) => (
                               <div key={i} className="print-cell text-right">
                                 {c.reps}
-                                {c.showSuperscript && c.sets > 1 && <sup className="text-[6px]">{c.sets}</sup>}
+                                {c.sets > 1 && <sup className="text-[6px]">{c.sets}</sup>}
                               </div>
                             ))}
                           </div>
