@@ -58,6 +58,7 @@ export function LoadDistribution({
   const chartProps = {
     cartesianGrid: { strokeDasharray: '3 3', stroke: '#e5e7eb' },
     xAxis: { dataKey: 'day', tick: { fontSize: 11 }, stroke: '#6b7280', interval: 0, angle: -35, textAnchor: 'end' as const, height: 70 },
+    yAxis: { domain: [0, 'auto'] as [number, string], tickCount: 5, tick: { fontSize: 11 }, stroke: '#6b7280', width: 48 },
     tooltip: { contentStyle: { fontSize: 12 } },
   };
 
@@ -71,7 +72,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis {...chartProps.yAxis} />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${Math.round(v)} kg`} />
               <Bar dataKey="load" fill="#3b82f6" />
             </BarChart>
@@ -83,7 +84,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis {...chartProps.yAxis} />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${v} reps`} />
               <Bar dataKey="reps" fill="#10b981" />
             </BarChart>
@@ -95,7 +96,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis {...chartProps.yAxis} />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => v.toFixed(1)} />
               <Bar dataKey="stress" fill="#f59e0b" />
             </BarChart>
