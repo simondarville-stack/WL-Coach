@@ -30,7 +30,9 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
     }
   };
 
-  const filteredExercises = exercises.filter((ex) => {
+  const userExercises = exercises.filter(ex => ex.category !== '— System');
+
+  const filteredExercises = userExercises.filter((ex) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch = ex.name.toLowerCase().includes(query) ||
                          (ex.exercise_code && ex.exercise_code.toLowerCase().includes(query));
@@ -38,7 +40,7 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
     return matchesSearch && matchesCategory;
   });
 
-  if (exercises.length === 0) {
+  if (userExercises.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500 text-lg">No exercises yet. Add your first exercise to get started.</p>
@@ -73,10 +75,10 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            All ({exercises.length})
+            All ({userExercises.length})
           </button>
-          {categories.map((cat) => {
-            const count = exercises.filter(ex => ex.category === cat.name).length;
+          {categories.filter(cat => cat.name !== '— System').map((cat) => {
+            const count = userExercises.filter(ex => ex.category === cat.name).length;
             return (
               <button
                 key={cat.id}

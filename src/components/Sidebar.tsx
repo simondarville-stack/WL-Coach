@@ -15,6 +15,8 @@ import {
   ChevronsLeft,
   type LucideIcon,
 } from 'lucide-react';
+import { useCoachStore } from '../store/coachStore';
+import { useAthleteStore } from '../store/athleteStore';
 
 interface NavItem {
   path: string;
@@ -55,8 +57,13 @@ const sections: NavSection[] = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  onNewCoach?: () => void;
+}
+
+export function Sidebar({ onNewCoach }: SidebarProps) {
   const navigate = useNavigate();
+  const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('winwota_sidebar_collapsed') === 'true';
   });
@@ -88,6 +95,40 @@ export function Sidebar() {
           </span>
         )}
       </div>
+
+      {/* Environment switcher */}
+      {!collapsed && (
+        <div className="px-3 py-3 border-b border-gray-200 flex-shrink-0">
+          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">
+            Environment
+          </div>
+          <select
+            value={activeCoach?.id ?? ''}
+            onChange={(e) => {
+              const coach = coaches.find(c => c.id === e.target.value);
+              if (coach) {
+                setActiveCoach(coach);
+                useAthleteStore.getState().setSelectedAthlete(null);
+                window.location.reload();
+              }
+            }}
+            className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5
+                       bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            {coaches.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}{c.club_name ? ` — ${c.club_name}` : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => onNewCoach?.()}
+            className="w-full mt-1.5 text-[10px] text-blue-600 hover:text-blue-700 text-left px-1"
+          >
+            + New environment
+          </button>
+        </div>
+      )}
 
       {/* Nav sections */}
       <nav className="flex-1 overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden">

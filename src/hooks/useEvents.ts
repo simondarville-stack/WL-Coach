@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 
 export interface EventWithAthletes extends Event {
@@ -16,6 +17,7 @@ export function useEvents() {
       const { data: eventsData } = await supabase
         .from('events')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .order('event_date', { ascending: true });
 
       if (!eventsData) return;
@@ -51,6 +53,7 @@ export function useEvents() {
     const { data: eventsData } = await supabase
       .from('events')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .gte('event_date', today)
       .lte('event_date', future)
       .order('event_date', { ascending: true });
@@ -75,6 +78,7 @@ export function useEvents() {
     const { data: eventsData } = await supabase
       .from('events')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .gte('event_date', start)
       .lte('event_date', end)
       .order('event_date', { ascending: true });
@@ -96,6 +100,7 @@ export function useEvents() {
     const { data: eventsData } = await supabase
       .from('events')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .gte('event_date', start)
       .lte('event_date', end)
       .order('event_date', { ascending: true });
@@ -125,7 +130,7 @@ export function useEvents() {
     try {
       const { data: newEvent, error: insertError } = await supabase
         .from('events')
-        .insert(eventData)
+        .insert({ ...eventData, owner_id: getOwnerId() })
         .select()
         .single();
       if (insertError) throw insertError;
@@ -173,6 +178,8 @@ export function useEvents() {
 
   const deleteEvent = async (id: string) => {
     try {
+      const { data: existing } = await supabase.from('events').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('events').delete().eq('id', id);
       if (error) throw error;
     } catch (error) {

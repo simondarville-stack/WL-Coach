@@ -1,3 +1,14 @@
+export interface CoachProfile {
+  id: string;
+  name: string;
+  email: string | null;
+  photo_url: string | null;
+  club_name: string | null;
+  locale: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type Category = string;
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
 export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition' | 'Transition' | 'Testing';
@@ -5,6 +16,7 @@ export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition
 
 export interface Athlete {
   id: string;
+  owner_id: string;
   name: string;
   birthdate: string | null;
   bodyweight: number | null;
@@ -39,6 +51,7 @@ export interface AthletePR {
 
 export interface Exercise {
   id: string;
+  owner_id: string;
   name: string;
   exercise_code: string | null;
   category: Category;
@@ -49,12 +62,14 @@ export interface Exercise {
   use_stacked_notation: boolean;
   notes: string | null;
   link: string | null;
+  is_archived: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface TrainingGroup {
   id: string;
+  owner_id: string;
   name: string;
   description: string | null;
   created_at: string;
@@ -75,6 +90,7 @@ export interface GroupMemberWithAthlete extends GroupMember {
 
 export interface WeekPlan {
   id: string;
+  owner_id: string;
   week_start: string;
   name: string | null;
   athlete_id: string | null;
@@ -218,6 +234,7 @@ export interface MacroTarget {
 
 export interface GeneralSettings {
   id: string;
+  owner_id: string;
   raw_enabled: boolean;
   raw_average_days: number;
   grid_load_increment: number;
@@ -257,7 +274,7 @@ export interface TrainingLogSession {
 export interface TrainingLogExercise {
   id: string;
   session_id: string;
-  exercise_id: string;
+  exercise_id: string | null;  // null = exercise was deleted
   planned_exercise_id: string | null;
   performed_raw: string;
   performed_notes: string;
@@ -302,6 +319,7 @@ export type EventType = 'competition' | 'training_camp' | 'seminar' | 'testing_d
 
 export interface Event {
   id: string;
+  owner_id: string;
   name: string;
   event_date: string;
   end_date: string | null;

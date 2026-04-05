@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type {
   Athlete,
   MacroCycle,
@@ -75,6 +76,7 @@ export function useCoachDashboard() {
     const { data } = await supabase
       .from('general_settings')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .maybeSingle();
     setSettings(data);
     return data;
@@ -84,6 +86,7 @@ export function useCoachDashboard() {
     const { data: athletes } = await supabase
       .from('athletes')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .eq('is_active', true)
       .order('name');
 
@@ -123,6 +126,7 @@ export function useCoachDashboard() {
         .from('training_log_sessions')
         .select('*')
         .eq('athlete_id', athlete.id)
+        .neq('status', 'planned')
         .gte('date', cutoffDate.toISOString().split('T')[0])
         .order('date', { ascending: false });
 
@@ -191,9 +195,17 @@ export function useCoachDashboard() {
   }
 
   async function loadActivityFeed() {
+    const { data: ownerAthletes } = await supabase
+      .from('athletes')
+      .select('id')
+      .eq('owner_id', getOwnerId());
+    const athleteIds = ownerAthletes?.map(a => a.id) || [];
+    const idFilter = athleteIds.length > 0 ? athleteIds : [''];
+
     const { data: sessions } = await supabase
       .from('training_log_sessions')
       .select('*, athlete:athletes(name)')
+      .in('athlete_id', idFilter)
       .order('date', { ascending: false })
       .limit(30);
 
@@ -224,6 +236,7 @@ export function useCoachDashboard() {
     const { data: macrocycles } = await supabase
       .from('macrocycles')
       .select('*, athlete:athletes(name)')
+      .eq('owner_id', getOwnerId())
       .order('created_at', { ascending: false })
       .limit(10);
 
@@ -249,6 +262,7 @@ export function useCoachDashboard() {
     const { data: athletes } = await supabase
       .from('athletes')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .eq('is_active', true);
 
     if (!athletes) return;
@@ -350,6 +364,7 @@ export function useCoachDashboard() {
     const { data: eventsData } = await supabase
       .from('events')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .gte('event_date', today.toISOString().split('T')[0])
       .lte('event_date', eightWeeksFromNow.toISOString().split('T')[0])
       .order('event_date');
@@ -388,6 +403,7 @@ export function useCoachDashboard() {
     const { data: groups } = await supabase
       .from('training_groups')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .order('name');
 
     if (!groups || groups.length === 0) {

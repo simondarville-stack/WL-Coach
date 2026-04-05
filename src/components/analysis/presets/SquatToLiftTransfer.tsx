@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fetchExerciseTimeSeries } from '../../../hooks/useAnalysis';
 import { supabase } from '../../../lib/supabase';
+import { getOwnerId } from '../../../lib/ownerContext';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -13,7 +14,7 @@ export function SquatToLiftTransfer({ athleteId, startDate, endDate }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const { data: exercises } = await supabase.from('exercises').select('id, name');
+        const { data: exercises } = await supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId());
         const exList = (exercises ?? []) as Array<{ id: string; name: string }>;
 
         const bsqEx = exList.find(e => e.name.toLowerCase().includes('back squat'));

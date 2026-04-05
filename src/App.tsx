@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { CoachProfileModal } from './components/CoachProfileModal';
+import { useCoachStore } from './store/coachStore';
+import { useCoachProfiles } from './hooks/useCoachProfiles';
 import { ExerciseFormModal } from './components/ExerciseFormModal';
 import { ExerciseBulkImportModal } from './components/ExerciseBulkImportModal';
 import { ExerciseList } from './components/ExerciseList';
@@ -51,12 +54,26 @@ function App() {
   const { fetchAllAthletes } = useAthletes();
   const { fetchGroups } = useTrainingGroups();
   const { setSelectedAthlete } = useAthleteStore();
+  const { activeCoach, setActiveCoach, setCoaches } = useCoachStore();
+  const { fetchCoaches } = useCoachProfiles();
   const navigate = useNavigate();
 
   const [editingExercise, setEditingExercise] = useState<import('./lib/database.types').Exercise | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showNewCoachModal, setShowNewCoachModal] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+      const coaches = await fetchCoaches();
+      setCoaches(coaches);
+      if (!activeCoach && coaches.length > 0) {
+        setActiveCoach(coaches[0]);
+      }
+    };
+    init();
+  }, []);
 
   useEffect(() => {
     fetchExercises();
@@ -109,7 +126,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-slate-50">
-      <Sidebar />
+      <Sidebar onNewCoach={() => setShowNewCoachModal(true)} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
@@ -186,6 +203,18 @@ function App() {
             <ExerciseBulkImportModal
               onClose={() => setShowBulkImportModal(false)}
               onComplete={async () => { await fetchExercises(); setShowBulkImportModal(false); }}
+            />
+          )}
+
+          {showNewCoachModal && (
+            <CoachProfileModal
+              onClose={() => setShowNewCoachModal(false)}
+              onCreated={(coach) => {
+                setCoaches([...useCoachStore.getState().coaches, coach]);
+                setActiveCoach(coach);
+                setShowNewCoachModal(false);
+                window.location.reload();
+              }}
             />
           )}
 

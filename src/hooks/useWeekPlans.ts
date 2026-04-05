@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type {
   WeekPlan,
   PlannedExercise,
@@ -39,6 +40,7 @@ export function useWeekPlans() {
       let query = supabase
         .from('week_plans')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .eq('week_start', selectedDate);
 
       if (type === 'individual' && athlete) {
@@ -55,6 +57,7 @@ export function useWeekPlans() {
         const insertData: Record<string, unknown> = {
           week_start: selectedDate,
           is_group_plan: type === 'group',
+          owner_id: getOwnerId(),
         };
 
         if (type === 'individual' && athlete) {
@@ -219,6 +222,8 @@ export function useWeekPlans() {
 
   const updateWeekPlan = async (id: string, updates: Partial<WeekPlan>) => {
     try {
+      const { data: existing } = await supabase.from('week_plans').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('week_plans').update(updates).eq('id', id);
       if (error) throw error;
       setWeekPlan(prev => prev ? { ...prev, ...updates } : prev);
@@ -665,6 +670,7 @@ export function useWeekPlans() {
     const { data, error } = await supabase
       .from('week_plans')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .eq('athlete_id', athleteId)
       .eq('week_start', weekStart)
       .maybeSingle();

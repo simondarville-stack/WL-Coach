@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchExerciseTimeSeries, fetchWeeklyAggregates } from '../../../hooks/useAnalysis';
 import { supabase } from '../../../lib/supabase';
+import { getOwnerId } from '../../../lib/ownerContext';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -18,7 +19,7 @@ export function CompetitionLiftTrends({ athleteId, startDate, endDate }: Props) 
       setLoading(true);
       try {
         const [exRes, aggRes] = await Promise.all([
-          supabase.from('exercises').select('id, name'),
+          supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId()),
           fetchWeeklyAggregates({ athleteId, startDate, endDate }),
         ]);
 

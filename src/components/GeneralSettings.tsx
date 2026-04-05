@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useCoachStore } from '../store/coachStore';
+import { useCoachProfiles } from '../hooks/useCoachProfiles';
 
 export function GeneralSettings() {
   const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
+  const { activeCoach, setActiveCoach, coaches, setCoaches } = useCoachStore();
+  const { updateCoach, deleteCoach } = useCoachProfiles();
+
+  const [coachName, setCoachName] = useState('');
+  const [coachClub, setCoachClub] = useState('');
+  const [coachEmail, setCoachEmail] = useState('');
+  const [savingCoach, setSavingCoach] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const [rawAverageDays, setRawAverageDays] = useState(7);
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
@@ -14,6 +24,51 @@ export function GeneralSettings() {
   useEffect(() => {
     fetchSettings();
   }, []);
+
+  useEffect(() => {
+    if (activeCoach) {
+      setCoachName(activeCoach.name);
+      setCoachClub(activeCoach.club_name ?? '');
+      setCoachEmail(activeCoach.email ?? '');
+    }
+  }, [activeCoach]);
+
+  async function handleSaveCoachProfile() {
+    if (!activeCoach) return;
+    try {
+      setSavingCoach(true);
+      await updateCoach(activeCoach.id, {
+        name: coachName.trim(),
+        club_name: coachClub.trim() || null,
+        email: coachEmail.trim() || null,
+      });
+      const updated = { ...activeCoach, name: coachName.trim(), club_name: coachClub.trim() || null, email: coachEmail.trim() || null };
+      setActiveCoach(updated);
+      setCoaches(coaches.map(c => c.id === activeCoach.id ? updated : c));
+    } catch {
+      // silent
+    } finally {
+      setSavingCoach(false);
+    }
+  }
+
+  async function handleDeleteEnvironment() {
+    if (!activeCoach) return;
+    const isDefault = activeCoach.id === '00000000-0000-0000-0000-000000000001';
+    if (isDefault) {
+      alert('Cannot delete the default environment.');
+      return;
+    }
+    try {
+      await deleteCoach(activeCoach.id);
+      const remaining = coaches.filter(c => c.id !== activeCoach.id);
+      setCoaches(remaining);
+      if (remaining.length > 0) setActiveCoach(remaining[0]);
+      window.location.reload();
+    } catch {
+      // silent
+    }
+  }
 
   useEffect(() => {
     if (settings) {
@@ -84,6 +139,82 @@ export function GeneralSettings() {
   return (
     <div className="p-6">
       <h1 className="text-base font-medium mb-4 text-gray-900">General Settings</h1>
+
+      {/* Coach Profile */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Coach profile</h2>
+        <p className="text-sm text-gray-600 mb-4">This environment's identity. Shown on printed programmes.</p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input
+              type="text"
+              value={coachName}
+              onChange={e => setCoachName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Club</label>
+            <input
+              type="text"
+              value={coachClub}
+              onChange={e => setCoachClub(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={coachEmail}
+              onChange={e => setCoachEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={handleSaveCoachProfile}
+              disabled={savingCoach}
+              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {savingCoach ? 'Saving…' : 'Save profile'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              Delete this environment…
+            </button>
+          ) : (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+              <p className="text-sm text-red-800 font-medium mb-2">Delete environment?</p>
+              <p className="text-xs text-red-700 mb-3">
+                This will permanently delete all athletes, exercises, plans, and settings in this environment. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeleteEnvironment}
+                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                >
+                  Delete permanently
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
         <div className="flex items-center justify-between">

@@ -64,6 +64,7 @@ export function ComplianceChart({ athleteId, weeks = 4 }: ComplianceChartProps) 
         .from('training_log_sessions')
         .select('id, date, status')
         .eq('athlete_id', athleteId)
+        .neq('status', 'planned')
         .gte('date', since);
 
       const sessionIds = (sessions || []).map(s => s.id);

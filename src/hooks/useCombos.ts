@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type { Exercise, ComboMemberEntry } from '../lib/database.types';
 
 export function useCombos() {
@@ -10,6 +11,7 @@ export function useCombos() {
     let query = supabase
       .from('week_plans')
       .select('id', { count: 'exact', head: true })
+      .eq('owner_id', getOwnerId())
       .eq('week_start', weekStart);
 
     if (athleteId) {
@@ -48,7 +50,7 @@ export function useCombos() {
 
     // 1. Fetch source week plan
     const sourceQuery = buildOwnerFilter(
-      supabase.from('week_plans').select('*').eq('week_start', sourceWeekStart),
+      supabase.from('week_plans').select('*').eq('owner_id', getOwnerId()).eq('week_start', sourceWeekStart),
       sourceAthleteId, sourceGroupId,
     );
     const { data: sourceWeekPlan, error: sourceError } = await sourceQuery.maybeSingle();
@@ -75,6 +77,7 @@ export function useCombos() {
         athlete_id: targetAthleteId,
         group_id: targetGroupId,
         is_group_plan: !!targetGroupId,
+        owner_id: getOwnerId(),
       }])
       .select()
       .single();

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -160,6 +161,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     supabase
       .from('week_plans')
       .select('id, week_start')
+      .eq('owner_id', getOwnerId())
       .eq('athlete_id', athleteId)
       .gte('week_start', startDate)
       .lte('week_start', endDate)
@@ -177,6 +179,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')
       .eq('athlete_id', athleteId)
+      .neq('status', 'planned')
       .gte('date', startDate)
       .lte('date', endDate),
     supabase
@@ -192,7 +195,8 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .order('date'),
     supabase
       .from('exercises')
-      .select('id, name, category, color'),
+      .select('id, name, category, color')
+      .eq('owner_id', getOwnerId()),
   ]);
 
   const weekPlans = weekPlansRes.data ?? [];
@@ -200,7 +204,9 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
   const macroPhases = macroPhasesRes.data ?? [];
   const sessions = sessionsRes.data ?? [];
   const bwEntries = bodyweightRes.data ?? [];
-  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string; category: string; color: string }>;
+  const exercises = (exercisesRes.data ?? []).filter(
+    (e: { id: string; name: string; category: string; color: string }) => e.category !== '— System'
+  ) as Array<{ id: string; name: string; category: string; color: string }>;
 
   const exerciseMap = new Map(exercises.map(e => [e.id, e]));
 
@@ -406,6 +412,7 @@ export async function fetchExerciseTimeSeries(
     .from('training_log_sessions')
     .select('id, date')
     .eq('athlete_id', athleteId)
+    .neq('status', 'planned')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date');

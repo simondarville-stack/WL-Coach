@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type { TrainingGroup, GroupMemberWithAthlete } from '../lib/database.types';
 import { useAthleteStore } from '../store/athleteStore';
 
@@ -16,6 +17,7 @@ export function useTrainingGroups() {
       const { data, error } = await supabase
         .from('training_groups')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .order('name');
       if (error) throw error;
       const result = data || [];
@@ -47,7 +49,7 @@ export function useTrainingGroups() {
     try {
       const { data, error } = await supabase
         .from('training_groups')
-        .insert([{ name, description }])
+        .insert([{ name, description, owner_id: getOwnerId() }])
         .select()
         .single();
       if (error) throw error;
