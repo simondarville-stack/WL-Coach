@@ -103,6 +103,7 @@ export function WeeklyPlanner() {
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
   const [dayDisplayOrder, setDayDisplayOrder] = useState<number[]>([]);
+  const [editingDaySchedule, setEditingDaySchedule] = useState<Record<number, { weekday: number; time: string | null }>>({});
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
 
@@ -175,6 +176,9 @@ export function WeeklyPlanner() {
       setWeekDescription(currentWeekPlan.week_description || '');
       setDayDisplayOrder(
         currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
+      );
+      setEditingDaySchedule(
+        (currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? {}
       );
     }
   }, [currentWeekPlan]);
@@ -402,6 +406,9 @@ export function WeeklyPlanner() {
       setDayDisplayOrder(
         currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
       );
+      setEditingDaySchedule(
+        (currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? {}
+      );
     }
     setShowSettings(false);
   };
@@ -435,10 +442,14 @@ export function WeeklyPlanner() {
           .eq('weekplan_id', currentWeekPlan.id)
           .in('day_index', removedDays);
       }
+      // Strip removed days from schedule
+      const cleanSchedule: Record<number, { weekday: number; time: string | null }> = {};
+      activeDays.forEach(d => { if (editingDaySchedule[d]) cleanSchedule[d] = editingDaySchedule[d]; });
       await updateWeekPlan(currentWeekPlan.id, {
         day_labels: editingDayLabels,
         active_days: activeDays,
         day_display_order: dayDisplayOrder,
+        day_schedule: Object.keys(cleanSchedule).length > 0 ? cleanSchedule : null,
       });
       if (removedDays.length > 0) await handleRefresh();
       setShowSettings(false);
@@ -468,6 +479,9 @@ export function WeeklyPlanner() {
     setEditingDayLabels(newLabels);
     setActiveDays(activeDays.filter(d => d !== dayIndex));
     setDayDisplayOrder(dayDisplayOrder.filter(d => d !== dayIndex));
+    const newSched = { ...editingDaySchedule };
+    delete newSched[dayIndex];
+    setEditingDaySchedule(newSched);
   };
 
   const saveWeekDescription = async (value: string) => {
@@ -693,12 +707,18 @@ export function WeeklyPlanner() {
           dayDisplayOrder={dayDisplayOrder}
           editingDayLabels={editingDayLabels}
           activeDays={activeDays}
+          daySchedule={editingDaySchedule}
           dayDragIndex={draggedDayIndex}
           onDayDragStart={handleDragStart}
           onDayDragOver={handleDragOver}
           onDayDragEnd={handleDragEnd}
           onToggleDay={toggleDay}
           onLabelChange={(dayIndex, value) => setEditingDayLabels({ ...editingDayLabels, [dayIndex]: value })}
+          onScheduleChange={(dayIndex, entry) => {
+            const next = { ...editingDaySchedule };
+            if (entry === null) { delete next[dayIndex]; } else { next[dayIndex] = entry; }
+            setEditingDaySchedule(next);
+          }}
           onRemoveDay={removeDay}
           onAddDay={addNewDay}
           onDayConfigCancel={handleCancelSettings}
