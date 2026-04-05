@@ -444,7 +444,7 @@ export function PlannerControlPanel({
                 {/* Phase name label (positioned at start of phase, spanning full phase) */}
                 {showPhaseLabel && (
                   <span
-                    className="absolute left-1 top-0.5 text-[8px] font-semibold text-white/80 leading-none truncate pointer-events-none z-10"
+                    className="absolute left-1 top-0.5 text-[9px] font-semibold text-white/90 leading-none truncate pointer-events-none z-10"
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     {phase!.name}
@@ -453,8 +453,8 @@ export function PlannerControlPanel({
 
                 {/* Week number */}
                 <span
-                  className={`text-[9px] leading-none z-10 relative select-none ${
-                    isCurrentWeek ? 'font-bold text-white' : 'font-medium text-white/60'
+                  className={`text-[11px] leading-none z-10 relative select-none ${
+                    isCurrentWeek ? 'font-bold text-white drop-shadow' : 'font-semibold text-white/85'
                   }`}
                 >
                   {weekNum}
