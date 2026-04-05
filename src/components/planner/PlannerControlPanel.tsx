@@ -472,12 +472,18 @@ export function PlannerControlPanel({
 
       {/* ── WEEK NOTES: between bar and cards ───────────────────────────────── */}
       <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/40">
-        <input
+        <textarea
           value={localDesc}
-          onChange={e => setLocalDesc(e.target.value)}
+          onChange={e => {
+            setLocalDesc(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
           onBlur={e => { void onSaveWeekDescription(e.target.value); }}
           placeholder="Week brief — tell the athlete what to expect this week…"
-          className="w-full text-sm text-gray-700 placeholder-gray-300 bg-transparent border-0 focus:outline-none leading-relaxed"
+          rows={1}
+          className="w-full text-sm text-gray-700 placeholder-gray-300 bg-transparent border-0 focus:outline-none leading-relaxed resize-none overflow-hidden"
+          style={{ minHeight: '1.5rem' }}
         />
       </div>
     </div>

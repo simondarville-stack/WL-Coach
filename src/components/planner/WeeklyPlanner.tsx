@@ -366,15 +366,15 @@ export function WeeklyPlanner() {
   };
 
   const goToPreviousWeek = () => {
-    const date = new Date(selectedDate);
-    date.setDate(date.getDate() - 7);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    const d = new Date(selectedDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 7);
+    setSelectedDate(d.toISOString().slice(0, 10));
   };
 
   const goToNextWeek = () => {
-    const date = new Date(selectedDate);
-    date.setDate(date.getDate() + 7);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    const d = new Date(selectedDate + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + 7);
+    setSelectedDate(d.toISOString().slice(0, 10));
   };
 
   const toggleDay = (dayIndex: number) => {
