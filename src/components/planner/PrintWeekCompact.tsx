@@ -1,3 +1,4 @@
+import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry } from '../../lib/database.types';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { formatDateRange } from '../../lib/dateUtils';
@@ -441,6 +442,7 @@ export function PrintWeekCompact({
   weekDescription,
   dayLabels,
 }: PrintWeekCompactProps) {
+  const { activeCoach } = useCoachStore();
   const age = calculateAge(athlete.birthdate);
   const usedCodes = new Map<string, string>();
 
@@ -483,6 +485,7 @@ export function PrintWeekCompact({
           {/* ── Header ── */}
           <div className="print-header">
             <div className="print-header-left">
+              {activeCoach?.name && <div className="print-muted" style={{ fontSize: '7pt' }}>{activeCoach.name}</div>}
               <div className="print-athlete-name">{athlete.name}</div>
               <div className="print-athlete-sub">
                 {age !== null && `${age} y`}
@@ -492,6 +495,7 @@ export function PrintWeekCompact({
             </div>
             <div className="print-header-center">WEEKLY PLAN</div>
             <div className="print-header-right">
+              {activeCoach?.club_name && <div className="print-muted" style={{ fontSize: '7pt' }}>{activeCoach.club_name}</div>}
               <div>{formatDateRange(weekStart)}</div>
               <div className="print-muted">Week {weekPlan.week_number} / {new Date(weekStart).getFullYear()}</div>
             </div>

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -160,6 +161,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     supabase
       .from('week_plans')
       .select('id, week_start')
+      .eq('owner_id', getOwnerId())
       .eq('athlete_id', athleteId)
       .gte('week_start', startDate)
       .lte('week_start', endDate)
@@ -192,7 +194,8 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .order('date'),
     supabase
       .from('exercises')
-      .select('id, name, category, color'),
+      .select('id, name, category, color')
+      .eq('owner_id', getOwnerId()),
   ]);
 
   const weekPlans = weekPlansRes.data ?? [];

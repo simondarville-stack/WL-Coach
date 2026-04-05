@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type { GeneralSettings } from '../lib/database.types';
 
 export function useSettings() {
@@ -13,6 +14,7 @@ export function useSettings() {
       const { data, error } = await supabase
         .from('general_settings')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .maybeSingle();
       if (error) throw error;
 
@@ -24,6 +26,7 @@ export function useSettings() {
             raw_average_days: 7,
             grid_load_increment: 5,
             grid_click_increment: 1,
+            owner_id: getOwnerId(),
           })
           .select()
           .single();
@@ -42,6 +45,7 @@ export function useSettings() {
     const { data } = await supabase
       .from('general_settings')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .maybeSingle();
     setSettings(data);
     return data;
@@ -53,7 +57,8 @@ export function useSettings() {
       const { error } = await supabase
         .from('general_settings')
         .update(updates)
-        .eq('id', id);
+        .eq('id', id)
+        .eq('owner_id', getOwnerId());
       if (error) throw error;
       setSettings(prev => prev ? { ...prev, ...updates } : prev);
       // Verify what's in the DB after update

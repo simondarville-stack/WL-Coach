@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Printer, FileText, LayoutGrid } from 'lucide-react';
+import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
@@ -79,6 +80,7 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
 export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription = null }: PrintWeekProps) {
   const { fetchWeekPlanForAthlete, fetchPlannedExercisesFlat } = useWeekPlans();
   const { fetchProgrammeData } = useCombos();
+  const { activeCoach } = useCoachStore();
 
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
@@ -238,6 +240,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
         {/* Header */}
         <div className="flex items-start justify-between mb-6 pb-4 border-b-2 border-gray-300">
           <div>
+            {activeCoach?.name && <p className="text-xs text-gray-500 mb-0.5">{activeCoach.name}{activeCoach.club_name ? ` · ${activeCoach.club_name}` : ''}</p>}
             <h1 className="text-2xl font-bold text-gray-900 mb-1">{athlete.name}</h1>
             <p className="text-sm text-gray-600">
               {age !== null && `${age} years old`}

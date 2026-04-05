@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Athlete, AthletePR } from '../lib/database.types';
 import { useAthleteStore } from '../store/athleteStore';
+import { getOwnerId } from '../lib/ownerContext';
 
 export function useAthletes() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
@@ -17,6 +18,7 @@ export function useAthletes() {
       const { data, error } = await supabase
         .from('athletes')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .order('is_active', { ascending: false })
         .order('name');
       if (error) throw error;
@@ -37,6 +39,7 @@ export function useAthletes() {
       const { data, error } = await supabase
         .from('athletes')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .eq('is_active', true)
         .order('name');
       if (error) throw error;
@@ -55,6 +58,7 @@ export function useAthletes() {
       const { data, error } = await supabase
         .from('athletes')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .order('name');
       if (error) throw error;
       const result = data || [];
@@ -67,7 +71,7 @@ export function useAthletes() {
 
   const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>): Promise<Athlete> => {
     try {
-      const { data, error } = await supabase.from('athletes').insert([athleteData]).select().single();
+      const { data, error } = await supabase.from('athletes').insert([{ ...athleteData, owner_id: getOwnerId() }]).select().single();
       if (error) throw error;
       return data;
     } catch (err) {
@@ -78,6 +82,8 @@ export function useAthletes() {
 
   const updateAthlete = async (id: string, athleteData: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>) => {
     try {
+      const { data: existing } = await supabase.from('athletes').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('athletes').update(athleteData).eq('id', id);
       if (error) throw error;
     } catch (err) {
@@ -88,6 +94,8 @@ export function useAthletes() {
 
   const deleteAthlete = async (id: string) => {
     try {
+      const { data: existing } = await supabase.from('athletes').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('athletes').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {

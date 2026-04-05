@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type {
   Athlete,
   MacroCycle,
@@ -75,6 +76,7 @@ export function useCoachDashboard() {
     const { data } = await supabase
       .from('general_settings')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .maybeSingle();
     setSettings(data);
     return data;
@@ -84,6 +86,7 @@ export function useCoachDashboard() {
     const { data: athletes } = await supabase
       .from('athletes')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .eq('is_active', true)
       .order('name');
 
@@ -249,6 +252,7 @@ export function useCoachDashboard() {
     const { data: athletes } = await supabase
       .from('athletes')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .eq('is_active', true);
 
     if (!athletes) return;
@@ -350,6 +354,7 @@ export function useCoachDashboard() {
     const { data: eventsData } = await supabase
       .from('events')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .gte('event_date', today.toISOString().split('T')[0])
       .lte('event_date', eightWeeksFromNow.toISOString().split('T')[0])
       .order('event_date');
@@ -388,6 +393,7 @@ export function useCoachDashboard() {
     const { data: groups } = await supabase
       .from('training_groups')
       .select('*')
+      .eq('owner_id', getOwnerId())
       .order('name');
 
     if (!groups || groups.length === 0) {

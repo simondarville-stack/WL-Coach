@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Exercise } from '../lib/database.types';
 import { useExerciseStore } from '../store/exerciseStore';
+import { getOwnerId } from '../lib/ownerContext';
 
 export interface Category {
   id: string;
@@ -27,6 +28,8 @@ export function useExercises() {
       const { data, error } = await supabase
         .from('exercises')
         .select('*')
+        .eq('owner_id', getOwnerId())
+        .eq('is_archived', false)
         .order('created_at', { ascending: false });
       if (error) throw error;
       const result = data || [];
@@ -44,6 +47,8 @@ export function useExercises() {
       const { data, error } = await supabase
         .from('exercises')
         .select('*')
+        .eq('owner_id', getOwnerId())
+        .eq('is_archived', false)
         .order('name');
       if (error) throw error;
       const result = data || [];
@@ -56,7 +61,7 @@ export function useExercises() {
 
   const createExercise = async (exerciseData: Partial<Exercise>) => {
     try {
-      const { error } = await supabase.from('exercises').insert([exerciseData]);
+      const { error } = await supabase.from('exercises').insert([{ ...exerciseData, owner_id: getOwnerId() }]);
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save exercise');
@@ -66,7 +71,8 @@ export function useExercises() {
 
   const bulkCreateExercises = async (rows: Partial<Exercise>[]): Promise<number> => {
     try {
-      const { data, error } = await supabase.from('exercises').insert(rows).select();
+      const ownerId = getOwnerId();
+      const { data, error } = await supabase.from('exercises').insert(rows.map(r => ({ ...r, owner_id: ownerId }))).select();
       if (error) throw error;
       return data?.length ?? 0;
     } catch (err) {
@@ -77,6 +83,8 @@ export function useExercises() {
 
   const updateExercise = async (id: string, exerciseData: Partial<Exercise>) => {
     try {
+      const { data: existing } = await supabase.from('exercises').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('exercises').update(exerciseData).eq('id', id);
       if (error) throw error;
     } catch (err) {
@@ -85,12 +93,46 @@ export function useExercises() {
     }
   };
 
-  const deleteExercise = async (id: string) => {
+  const deleteExercise = async (id: string): Promise<{ archived: boolean }> => {
     try {
       const { error } = await supabase.from('exercises').delete().eq('id', id);
+
+      if (error?.code === '23503') {
+        // FK violation — exercise is in use, archive instead
+        await supabase.from('exercises').update({ is_archived: true }).eq('id', id);
+        return { archived: true };
+      }
+
       if (error) throw error;
+      return { archived: false };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete exercise');
+      throw err;
+    }
+  };
+
+  const fetchAllExercisesIncludingArchived = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('owner_id', getOwnerId())
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      const result = data || [];
+      setExercises(result);
+      storeSetExercises(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load exercises');
+    }
+  };
+
+  const restoreExercise = async (id: string) => {
+    try {
+      const { error } = await supabase.from('exercises').update({ is_archived: false }).eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore exercise');
       throw err;
     }
   };
@@ -197,10 +239,12 @@ export function useExercises() {
     setError,
     fetchExercises,
     fetchExercisesByName,
+    fetchAllExercisesIncludingArchived,
     createExercise,
     bulkCreateExercises,
     updateExercise,
     deleteExercise,
+    restoreExercise,
     fetchCategories,
     fetchCategoriesWithError,
     createCategory,

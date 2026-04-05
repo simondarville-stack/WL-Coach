@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 export interface MacroActuals {
@@ -35,6 +36,7 @@ export function useMacroCycles() {
       const { data, error } = await supabase
         .from('macrocycles')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .eq('athlete_id', athleteId)
         .order('start_date', { ascending: false });
       if (error) throw error;
@@ -55,7 +57,7 @@ export function useMacroCycles() {
       setLoading(true);
       const { data: macrocycle, error: macroError } = await supabase
         .from('macrocycles')
-        .insert({ athlete_id: athleteId, name, start_date: startDate, end_date: endDate })
+        .insert({ athlete_id: athleteId, name, start_date: startDate, end_date: endDate, owner_id: getOwnerId() })
         .select()
         .single();
       if (macroError) throw macroError;
@@ -90,6 +92,8 @@ export function useMacroCycles() {
   const deleteMacrocycle = async (id: string) => {
     try {
       setLoading(true);
+      const { data: existing } = await supabase.from('macrocycles').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
       const { error } = await supabase.from('macrocycles').delete().eq('id', id);
       if (error) throw error;
       setMacrocycles(prev => prev.filter(m => m.id !== id));
