@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, Legend,
+  ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { parsePrescription } from '../../lib/prescriptionParser';
@@ -11,15 +11,17 @@ interface WeekPoint {
   weekStart: string;
   label: string;
   weekNumber: number | null;
-  perf_hi: number | null;
+  plan_hi:  number | null;
+  plan_avg: number | null;
+  perf_hi:  number | null;
   perf_avg: number | null;
-  soll_hi: number | null;
+  soll_hi:  number | null;
   soll_avg: number | null;
 }
 
 interface ExerciseHistoryChartProps {
   exerciseId: string;
-  athleteId: string;
+  athleteId:  string;
   macroContext: MacroContext | null;
 }
 
@@ -37,37 +39,79 @@ function formatLabel(weekStart: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
+function addWeeksUTC(dateStr: string, weeks: number): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
+  return d.toISOString().slice(0, 10);
+}
+
 export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: ExerciseHistoryChartProps) {
-  const [data, setData] = useState<WeekPoint[]>([]);
+  const [data, setData]     = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'hi' | 'avg'>('hi');
+  const [view, setView]     = useState<'hi' | 'avg'>('hi');
 
   useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId]);
 
   async function loadData() {
     setLoading(true);
     try {
-      // ── 1. Performed data from training log ──────────────────────────────
-      // Look back WINDOW_WEEKS from today
-      const cutoff = new Date();
-      cutoff.setUTCDate(cutoff.getUTCDate() - WINDOW_WEEKS * 7);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const todayStr  = new Date().toISOString().slice(0, 10);
+      const lookBack  = addWeeksUTC(todayStr, -WINDOW_WEEKS);
+      // Look ahead to cover future macro weeks too
+      const lookAhead = macroContext
+        ? addWeeksUTC(todayStr, macroContext.totalWeeks - macroContext.weekNumber + 2)
+        : addWeeksUTC(todayStr, 4);
 
+      // ── 1. Planned data (week_plans + planned_exercises) ──────────────────
+      const { data: weekPlans } = await supabase
+        .from('week_plans')
+        .select('id, week_start')
+        .eq('athlete_id', athleteId)
+        .gte('week_start', lookBack)
+        .lte('week_start', lookAhead);
+
+      const planByWeek = new Map<string, { hi: number; totalLoad: number; totalReps: number }>();
+
+      if (weekPlans?.length) {
+        const wpIds = weekPlans.map(w => w.id);
+        const wpStartById = new Map(weekPlans.map(w => [w.id, w.week_start]));
+
+        const { data: planRows } = await supabase
+          .from('planned_exercises')
+          .select('weekplan_id, summary_highest_load, summary_avg_load, summary_total_reps')
+          .eq('exercise_id', exerciseId)
+          .in('weekplan_id', wpIds);
+
+        for (const row of planRows ?? []) {
+          const ws = wpStartById.get(row.weekplan_id);
+          if (!ws) continue;
+          const hi   = row.summary_highest_load ?? 0;
+          const avg  = row.summary_avg_load ?? 0;
+          const reps = row.summary_total_reps ?? 0;
+          if (hi <= 0 && avg <= 0) continue;
+          const prev = planByWeek.get(ws) ?? { hi: 0, totalLoad: 0, totalReps: 0 };
+          planByWeek.set(ws, {
+            hi: Math.max(prev.hi, hi),
+            totalLoad: prev.totalLoad + avg * reps,
+            totalReps: prev.totalReps + reps,
+          });
+        }
+      }
+
+      // ── 2. Performed data (training log, completed sessions only) ─────────
       const { data: logRows } = await supabase
         .from('training_log_exercises')
-        .select('performed_raw, session:training_log_sessions!inner(date, week_start, athlete_id, status)')
+        .select('performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
         .eq('exercise_id', exerciseId)
         .eq('session.athlete_id', athleteId)
         .eq('session.status', 'completed')
-        .gte('session.date', cutoffStr)
-        .order('session.date', { ascending: true });
+        .gte('session.date', lookBack);
 
-      // Aggregate by week_start
       const perfByWeek = new Map<string, { hi: number; totalLoad: number; totalReps: number }>();
       for (const row of logRows ?? []) {
-        const session = row.session as { date: string; week_start: string } | null;
+        const session = row.session as { date: string } | null;
         if (!session || !row.performed_raw) continue;
-        const ws = getMondayUTC(session.date);
+        const ws    = getMondayUTC(session.date);
         const lines = parsePrescription(row.performed_raw);
         for (const line of lines) {
           if (line.load <= 0) continue;
@@ -80,8 +124,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         }
       }
 
-      // ── 2. Macro targets (if macro active and exercise is tracked) ───────
-      let sollByWeekStart = new Map<string, { hi: number | null; avg: number | null; weekNumber: number }>();
+      // ── 3. Macro SOLL targets ──────────────────────────────────────────────
+      const sollByWeekStart = new Map<string, { hi: number | null; avg: number | null; weekNumber: number }>();
 
       if (macroContext) {
         const { data: te } = await supabase
@@ -118,23 +162,26 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         }
       }
 
-      // ── 3. Merge into chart points ────────────────────────────────────────
+      // ── 4. Merge all three sources ────────────────────────────────────────
       const allWeeks = new Set<string>([
-        ...Array.from(perfByWeek.keys()),
-        ...Array.from(sollByWeekStart.keys()),
+        ...planByWeek.keys(),
+        ...perfByWeek.keys(),
+        ...sollByWeekStart.keys(),
       ]);
 
-      const sorted = Array.from(allWeeks).sort();
-      const points: WeekPoint[] = sorted.map(ws => {
+      const points: WeekPoint[] = Array.from(allWeeks).sort().map(ws => {
+        const plan = planByWeek.get(ws);
         const perf = perfByWeek.get(ws);
         const soll = sollByWeekStart.get(ws);
         return {
           weekStart: ws,
-          label: soll ? `W${soll.weekNumber}` : formatLabel(ws),
+          label:      soll ? `W${soll.weekNumber}` : formatLabel(ws),
           weekNumber: soll?.weekNumber ?? null,
-          perf_hi: perf && perf.hi > 0 ? perf.hi : null,
+          plan_hi:  plan && plan.hi > 0 ? plan.hi : null,
+          plan_avg: plan && plan.totalReps > 0 ? Math.round(plan.totalLoad / plan.totalReps) : null,
+          perf_hi:  perf && perf.hi > 0 ? perf.hi : null,
           perf_avg: perf && perf.totalReps > 0 ? Math.round(perf.totalLoad / perf.totalReps) : null,
-          soll_hi: soll?.hi ?? null,
+          soll_hi:  soll?.hi ?? null,
           soll_avg: soll?.avg ?? null,
         };
       });
@@ -151,21 +198,24 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
     return <div className="h-40 flex items-center justify-center text-xs text-gray-400">Loading history…</div>;
   }
 
-  const hasPerf  = data.some(d => d.perf_hi !== null || d.perf_avg !== null);
-  const hasSoll  = data.some(d => d.soll_hi !== null || d.soll_avg !== null);
+  const hasPlan = data.some(d => d.plan_hi !== null || d.plan_avg !== null);
+  const hasPerf = data.some(d => d.perf_hi !== null || d.perf_avg !== null);
+  const hasSoll = data.some(d => d.soll_hi !== null || d.soll_avg !== null);
 
-  if (!hasPerf && !hasSoll) {
+  if (!hasPlan && !hasPerf && !hasSoll) {
     return (
-      <div className="h-32 flex items-center justify-center text-xs text-gray-400 italic border border-dashed border-gray-200 rounded-lg mb-3">
-        No logged sessions found for this exercise
+      <div className="h-28 flex items-center justify-center text-xs text-gray-400 italic border border-dashed border-gray-200 rounded-lg mb-3">
+        No planned or logged data found for this exercise
       </div>
     );
   }
 
-  const perfKey = view === 'hi' ? 'perf_hi' : 'perf_avg';
-  const sollKey = view === 'hi' ? 'soll_hi' : 'soll_avg';
+  const planKey = view === 'hi' ? 'plan_hi'  : 'plan_avg';
+  const perfKey = view === 'hi' ? 'perf_hi'  : 'perf_avg';
+  const sollKey = view === 'hi' ? 'soll_hi'  : 'soll_avg';
 
   const allVals = data.flatMap(d => [
+    d[planKey as keyof WeekPoint],
     d[perfKey as keyof WeekPoint],
     d[sollKey as keyof WeekPoint],
   ]).filter((v): v is number => typeof v === 'number');
@@ -173,11 +223,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
   const minY = allVals.length > 0 ? Math.max(0, Math.min(...allVals) - 10) : 0;
   const maxY = allVals.length > 0 ? Math.max(...allVals) + 10 : 100;
 
-  const nowWeekStart = macroContext
-    ? undefined
-    : getMondayUTC(new Date().toISOString().slice(0, 10));
-
-  // Find label for current week to draw reference line
+  const nowWeekStart = getMondayUTC(new Date().toISOString().slice(0, 10));
   const nowLabel = macroContext
     ? `W${macroContext.weekNumber}`
     : data.find(d => d.weekStart === nowWeekStart)?.label;
@@ -227,10 +273,12 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             contentStyle={{ fontSize: 11, padding: '4px 8px', borderColor: '#e5e7eb' }}
             formatter={(value: number, name: string) => [
               `${value} kg`,
-              name === 'perf_hi' ? 'Hi performed'
-              : name === 'perf_avg' ? 'Avg performed'
-              : name === 'soll_hi' ? 'SOLL Hi'
-              : 'SOLL Avg',
+              name === 'plan_hi'  ? 'Planned hi'
+              : name === 'plan_avg' ? 'Planned avg'
+              : name === 'perf_hi'  ? 'Performed hi'
+              : name === 'perf_avg' ? 'Performed avg'
+              : name === 'soll_hi'  ? 'SOLL hi'
+              : 'SOLL avg',
             ]}
             labelFormatter={(label: string) => `Week: ${label}`}
           />
@@ -244,12 +292,12 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             />
           )}
 
-          {/* SOLL line (macro targets) */}
+          {/* SOLL macro targets — orange dashed */}
           {hasSoll && (
             <Line
               type="stepAfter"
               dataKey={sollKey}
-              stroke="#f97316"
+              stroke="#fb923c"
               strokeWidth={1.5}
               strokeDasharray="5 3"
               dot={false}
@@ -259,15 +307,30 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             />
           )}
 
-          {/* Performed line */}
+          {/* Planned — gray line with open dots */}
+          {hasPlan && (
+            <Line
+              type="monotone"
+              dataKey={planKey}
+              stroke="#94a3b8"
+              strokeWidth={1.5}
+              dot={{ r: 3, fill: '#fff', stroke: '#94a3b8', strokeWidth: 1.5 }}
+              activeDot={{ r: 4 }}
+              connectNulls
+              name={planKey}
+              legendType="none"
+            />
+          )}
+
+          {/* Performed — blue filled dots */}
           {hasPerf && (
             <Line
               type="monotone"
               dataKey={perfKey}
               stroke="#3b82f6"
               strokeWidth={2}
-              dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }}
-              activeDot={{ r: 4 }}
+              dot={{ r: 3.5, fill: '#3b82f6', strokeWidth: 0 }}
+              activeDot={{ r: 5 }}
               connectNulls
               name={perfKey}
               legendType="none"
@@ -276,18 +339,23 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* Manual legend */}
       <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
+        {hasPlan && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-px bg-slate-400 rounded" style={{ height: 1.5 }} />
+            Planned
+          </span>
+        )}
         {hasPerf && (
           <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" />
-            Performed {view === 'hi' ? 'hi' : 'avg'}
+            <span className="inline-block w-3 rounded" style={{ height: 2, backgroundColor: '#3b82f6' }} />
+            Performed
           </span>
         )}
         {hasSoll && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3 border-t border-dashed border-orange-400" />
-            SOLL {view === 'hi' ? 'hi' : 'avg'}
+            SOLL
           </span>
         )}
       </div>
