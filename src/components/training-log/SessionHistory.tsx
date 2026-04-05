@@ -86,10 +86,9 @@ function computeStreak(sessions: TrainingLogSession[]): number {
     // Consecutive means no more than a few days gap (allow up to 5-day gap between sessions)
     const prev = completed[i - 1];
     const curr = completed[i];
-    const prevDate = new Date(prev.week_start + 'T00:00:00');
-    prevDate.setDate(prevDate.getDate() + prev.day_index - 1);
-    const currDate = new Date(curr.week_start + 'T00:00:00');
-    currDate.setDate(currDate.getDate() + curr.day_index - 1);
+    // Use actual session dates, not calculated weekStart + dayIndex dates
+    const prevDate = new Date(prev.date + 'T00:00:00');
+    const currDate = new Date(curr.date + 'T00:00:00');
     const diffDays = (prevDate.getTime() - currDate.getTime()) / 86400000;
     if (diffDays <= 5) streak++;
     else break;
