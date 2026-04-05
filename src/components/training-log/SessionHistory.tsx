@@ -158,7 +158,8 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
         });
       }
 
-      setHistory(pastWeeks);
+      // Only show past weeks that have at least one actual session
+      setHistory(pastWeeks.filter(wk => wk.sessions.length > 0));
       setLoading(false);
     };
     load();
@@ -331,7 +332,7 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
             {history.map(wk => {
               const days = getActiveDays(wk.weekPlan);
               const completedCount = wk.sessions.filter(s => s.status === 'completed').length;
-              const totalDays = days.length || wk.sessions.length;
+              const totalDays = wk.sessions.length;
 
               return (
                 <div key={wk.weekStartISO} className="bg-white rounded-lg border border-gray-200">
@@ -341,7 +342,7 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
                   </div>
                   <div className="divide-y divide-gray-100">
                     {days.length > 0 ? (
-                      days.map(dayIndex => {
+                      days.filter(dayIndex => wk.sessions.some(s => s.day_index === dayIndex)).map(dayIndex => {
                         const sess = wk.sessions.find(s => s.day_index === dayIndex);
                         const status = sess?.status ?? 'pending';
                         const dotClass = STATUS_DOT[status] ?? 'bg-gray-200';
