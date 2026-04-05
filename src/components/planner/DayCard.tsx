@@ -7,6 +7,8 @@ import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } 
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
+import { RestBadge } from './RestBadge';
+import type { RestInfo } from '../../lib/restCalculation';
 
 interface DayCardProps {
   dayIndex: number;
@@ -15,6 +17,7 @@ interface DayCardProps {
   exercises: (PlannedExercise & { exercise: Exercise })[];
   comboMembers: Record<string, ComboMemberEntry[]>;
   allExercises: Exercise[];
+  restInfo?: RestInfo | null;
   onNavigateToDay: () => void;
   onNavigateToExercise: (exerciseId: string) => void;
   addExerciseToDay: (
@@ -127,6 +130,7 @@ export function DayCard({
   exercises,
   comboMembers,
   allExercises,
+  restInfo,
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
@@ -273,6 +277,9 @@ export function DayCard({
           onClick={onNavigateToDay}
         >
           <span className="text-sm font-medium text-gray-900 flex-1">{dayName}</span>
+          {restInfo && restInfo.hoursFromPrevious !== null && (
+            <RestBadge hours={restInfo.hoursFromPrevious} recoveryLevel={restInfo.recoveryLevel} />
+          )}
           {!isEmpty && (
             <div className="flex items-center gap-2 text-[11px]">
               <span className="text-gray-400">S <span className="text-gray-700 font-medium">{daySets}</span></span>

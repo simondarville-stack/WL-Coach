@@ -596,6 +596,7 @@ export function WeeklyPlanner() {
                 plannedExercises={plannedExercises}
                 comboMembers={comboMembers}
                 allExercises={allExercises}
+                daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
                 addExerciseToDay={addExerciseToDay}
