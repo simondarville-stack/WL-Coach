@@ -649,24 +649,27 @@ const COMPACT_PRINT_CSS = `
   /* Day header */
   .print-day-block {
     border-top: 0.5px solid #000;
-    padding-top: 3px;
-    margin-top: 3px;
+    padding-top: 2px;
+    margin-top: 4px;
+    margin-bottom: 2px;
     page-break-inside: avoid;
     break-inside: avoid;
   }
   .print-day-header {
     display: flex;
-    align-items: center;
-    margin-bottom: 2px;
+    align-items: baseline;
+    margin-bottom: 1px;
     font-weight: bold;
     font-size: 9px;
     gap: 4px;
   }
-  .print-day-name { white-space: nowrap; }
+  .print-day-name { white-space: nowrap; font-weight: bold; }
   .print-day-rule {
     flex: 1;
-    height: 0.5px;
-    background: #000;
+    border-bottom: 0.5px solid #000;
+    margin: 0 4px;
+    align-self: flex-end;
+    margin-bottom: 2px;
   }
   .print-day-col-headers {
     white-space: nowrap;
@@ -675,6 +678,12 @@ const COMPACT_PRINT_CSS = `
     color: #333;
     min-width: 90px;
     text-align: right;
+  }
+  .print-day-total {
+    font-size: 7px;
+    color: #888;
+    text-align: right;
+    margin-top: 1px;
   }
 
   /* Day table — all exercises in a day share aligned columns */
@@ -739,12 +748,6 @@ const COMPACT_PRINT_CSS = `
   }
   .print-sentinel-tr td {
     padding: 1px 0;
-  }
-  .print-day-total {
-    font-size: 7px;
-    color: #888;
-    text-align: right;
-    margin-top: 1px;
   }
 
   /* Footer */
