@@ -86,10 +86,9 @@ function computeStreak(sessions: TrainingLogSession[]): number {
     // Consecutive means no more than a few days gap (allow up to 5-day gap between sessions)
     const prev = completed[i - 1];
     const curr = completed[i];
-    const prevDate = new Date(prev.week_start + 'T00:00:00');
-    prevDate.setDate(prevDate.getDate() + prev.day_index - 1);
-    const currDate = new Date(curr.week_start + 'T00:00:00');
-    currDate.setDate(currDate.getDate() + curr.day_index - 1);
+    // Use actual session dates, not calculated weekStart + dayIndex dates
+    const prevDate = new Date(prev.date + 'T00:00:00');
+    const currDate = new Date(curr.date + 'T00:00:00');
     const diffDays = (prevDate.getTime() - currDate.getTime()) / 86400000;
     if (diffDays <= 5) streak++;
     else break;
@@ -282,8 +281,11 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
                   <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${dotClass}`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900">{label}</div>
-                    {session?.duration_minutes && (
-                      <div className="text-xs text-gray-400 mt-0.5">{session.duration_minutes} min</div>
+                    {session?.date && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        logged {new Date(session.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        {session.duration_minutes ? ` · ${session.duration_minutes} min` : ''}
+                      </div>
                     )}
                   </div>
                   <div className="text-xs text-gray-500 flex-shrink-0">{STATUS_LABEL[status] ?? status}</div>

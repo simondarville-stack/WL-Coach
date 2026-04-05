@@ -414,9 +414,6 @@ function AthleteRow({
             {needsAttention && (
               <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 ml-1" />
             )}
-            <div className={`w-2 h-2 rounded-full flex-shrink-0 ml-auto ${
-              status.currentWeekPlanned ? 'bg-green-400' : 'bg-red-400'
-            }`} title={status.currentWeekPlanned ? 'Planned this week' : 'No plan this week'} />
           </div>
         </td>
         <td className="py-3 px-4 text-sm text-gray-600">

@@ -8,6 +8,8 @@ import { parsePrescription, parseComboPrescription } from '../../lib/prescriptio
 // Types
 // ---------------------------------------------------------------------------
 
+const WEEKDAY_NAMES_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 interface PrintWeekCompactProps {
   athlete: Athlete;
   weekPlan: WeekPlan;
@@ -22,7 +24,6 @@ interface GridCell {
   load: number | string;
   reps: number | string;
   sets: number;
-  showSuperscript: boolean;
 }
 
 interface WeekExerciseSummary {
@@ -90,14 +91,14 @@ function getCategoryAbbr(category: string): string {
 
 function getExerciseCode(ex: Exercise, usedCodes: Map<string, string>): string {
   if (ex.exercise_code) return ex.exercise_code;
-  // Generate from name
+  // Generate from name — max 4 chars
   const words = ex.name.trim().split(/\s+/);
   let code: string;
   if (words.length === 1) {
     code = words[0].slice(0, 3).toUpperCase();
   } else {
-    // Initials, but keep first word capitalised
-    code = words[0].slice(0, 1).toUpperCase() + words.slice(1).map(w => w[0].toUpperCase()).join('');
+    // Initials of each word, capped at 4 chars
+    code = words.map(w => w[0].toUpperCase()).join('').slice(0, 4);
   }
   // Ensure uniqueness
   let candidate = code;
@@ -115,25 +116,11 @@ function buildGridCells(prescriptionRaw: string | null): GridCell[] {
   const parsed = parsePrescription(prescriptionRaw);
   if (parsed.length === 0) return parsed.map(() => ({ load: '?', reps: '?', sets: 1, showSuperscript: false }));
 
-  const cells: GridCell[] = parsed.map(p => ({
+  return parsed.map(p => ({
     load: p.load,
     reps: p.reps,
     sets: p.sets,
-    showSuperscript: false,
   }));
-
-  // Mark last cell of consecutive same-sets groups where sets > 1
-  let i = 0;
-  while (i < cells.length) {
-    const s = cells[i].sets;
-    if (s <= 1) { i++; continue; }
-    let j = i;
-    while (j < cells.length && cells[j].sets === s) j++;
-    cells[j - 1].showSuperscript = true;
-    i = j;
-  }
-
-  return cells;
 }
 
 function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
@@ -141,23 +128,11 @@ function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
   const parsed = parseComboPrescription(prescriptionRaw);
   if (parsed.length === 0) return [];
 
-  const cells: GridCell[] = parsed.map(p => ({
+  return parsed.map(p => ({
     load: p.load,
     reps: p.repsText,
     sets: p.sets,
-    showSuperscript: false,
   }));
-
-  let i = 0;
-  while (i < cells.length) {
-    const s = cells[i].sets;
-    if (s <= 1) { i++; continue; }
-    let j = i;
-    while (j < cells.length && cells[j].sets === s) j++;
-    cells[j - 1].showSuperscript = true;
-    i = j;
-  }
-  return cells;
 }
 
 function aggregateWeekExercises(
@@ -248,9 +223,17 @@ function calculateWeekTotals(
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function ExerciseGridRow({
+function unitLabel(unit: string | null): string {
+  if (unit === 'percentage') return ' (%)';
+  if (unit === 'rpe') return ' RPE';
+  return '';
+}
+
+// Renders two <tr> rows (load + reps) plus optional notes rows for one exercise
+function ExerciseRows({
   code,
   cells,
+  maxCols,
   unit,
   totalReps,
   avgLoad,
@@ -260,57 +243,188 @@ function ExerciseGridRow({
 }: {
   code: string;
   cells: GridCell[];
-  unit: string | null;
+  maxCols: number;
+  unit?: string | null;
   totalReps: number | null;
   avgLoad: number | null;
   maxLoad: number | null;
   notes?: string | null;
   variationNote?: string | null;
 }) {
-  const unitSuffix = unit === 'percentage' ? '%' : '';
-  const CELL_W = 30; // px
-
+  const emptyCols = Math.max(0, maxCols - cells.length);
+  const codeLabel = code + unitLabel(unit ?? null);
   return (
-    <div className="print-exercise-block">
+    <>
       {/* Load row */}
-      <div className="flex items-baseline">
-        <div className="print-code-col font-bold">{code}</div>
-        <div className="flex flex-1 flex-wrap">
-          {cells.map((c, i) => (
-            <div key={i} className="print-cell text-right" style={{ minWidth: CELL_W }}>
-              {typeof c.load === 'number' && c.load === 0 ? '—' : `${c.load}${unitSuffix}`}
-            </div>
-          ))}
-        </div>
-        {/* spacer to align WH/MHG/BW */}
-        <div className="print-summary-spacer" />
-      </div>
+      <tr className="print-load-row">
+        <td rowSpan={2} className="print-code-cell">{codeLabel}</td>
+        {cells.map((c, i) => (
+          <td key={i} className="print-cell">
+            {typeof c.load === 'number' && c.load === 0 ? '—' : typeof c.load === 'number' ? Math.round(c.load) : c.load}
+          </td>
+        ))}
+        {emptyCols > 0 && <td colSpan={emptyCols} />}
+        <td className="print-spacer-cell" />
+        <td className="print-stat-cell" />
+        <td className="print-stat-cell" />
+        <td className="print-stat-cell" />
+      </tr>
       {/* Reps row */}
-      <div className="flex items-baseline">
-        <div className="print-code-col" />
-        <div className="flex flex-1 flex-wrap">
-          {cells.map((c, i) => (
-            <div key={i} className="print-cell text-right" style={{ minWidth: CELL_W }}>
-              {c.reps}
-              {c.showSuperscript && c.sets > 1 && (
-                <sup className="text-[6px]">{c.sets}</sup>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="print-summary-cols">
-          <span>{totalReps ?? '—'}</span>
-          <span>{avgLoad != null && avgLoad > 0 ? Math.round(avgLoad) : '—'}</span>
-          <span>{maxLoad != null && maxLoad > 0 ? Math.round(maxLoad) : '—'}</span>
-        </div>
-      </div>
+      <tr className="print-reps-row">
+        {cells.map((c, i) => (
+          <td key={i} className="print-cell">
+            {c.reps}
+            {c.sets > 1 && <sup className="print-sup">{c.sets}</sup>}
+          </td>
+        ))}
+        {emptyCols > 0 && <td colSpan={emptyCols} />}
+        <td className="print-spacer-cell" />
+        <td className="print-stat-cell">{totalReps ?? '—'}</td>
+        <td className="print-stat-cell">{avgLoad != null && avgLoad > 0 ? Math.round(avgLoad) : '—'}</td>
+        <td className="print-stat-cell">{maxLoad != null && maxLoad > 0 ? Math.round(maxLoad) : '—'}</td>
+      </tr>
       {variationNote && (
-        <div className="print-notes-row">{variationNote}</div>
+        <tr className="print-notes-tr">
+          <td colSpan={maxCols + 5} className="print-notes-cell">{variationNote}</td>
+        </tr>
       )}
       {notes && (
-        <div className="print-notes-row">{notes}</div>
+        <tr className="print-notes-tr">
+          <td colSpan={maxCols + 5} className="print-notes-cell">{notes}</td>
+        </tr>
       )}
-    </div>
+    </>
+  );
+}
+
+// Renders a full table for one training day — all exercises share aligned columns
+function DayTable({
+  dayExs,
+  codeMap,
+  comboMembers,
+}: {
+  dayExs: (PlannedExercise & { exercise: Exercise })[];
+  codeMap: Map<string, string>;
+  comboMembers: Record<string, ComboMemberEntry[]>;
+}) {
+  const maxCols = Math.max(
+    1,
+    ...dayExs.map(ex => {
+      if (getSentinelType(ex.exercise.exercise_code)) return 0;
+      if (ex.unit === 'free_text') return 0;
+      if (ex.is_combo) return buildComboGridCells(ex.prescription_raw).length;
+      return buildGridCells(ex.prescription_raw).length;
+    }),
+  );
+
+  // total table columns: code(1) + data(maxCols) + spacer(1) + stats(3) = maxCols + 5
+  const totalCols = maxCols + 5;
+
+  return (
+    <table className="print-day-table">
+      <colgroup>
+        <col style={{ width: '45px' }} />
+        {Array.from({ length: maxCols }).map((_, i) => <col key={i} style={{ width: '34px' }} />)}
+        <col style={{ width: 'auto' }} />
+        <col style={{ width: '30px' }} />
+        <col style={{ width: '30px' }} />
+        <col style={{ width: '30px' }} />
+      </colgroup>
+      <tbody>
+        {dayExs.map(ex => {
+          const sentinel = getSentinelType(ex.exercise.exercise_code);
+
+          if (sentinel === 'text') {
+            if (!ex.notes?.trim()) return null;
+            return (
+              <tr key={ex.id} className="print-sentinel-tr">
+                <td colSpan={totalCols} className="print-text-cell">— {ex.notes}</td>
+              </tr>
+            );
+          }
+
+          if (sentinel === 'video') {
+            const url = ex.notes?.trim() || '';
+            let display = 'attached';
+            if (url) {
+              const ytId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/)?.[1];
+              display = ytId
+                ? `YouTube (${ytId})`
+                : (() => { try { return new URL(url).hostname; } catch { return url.slice(0, 30); } })();
+            }
+            return (
+              <tr key={ex.id} className="print-sentinel-tr">
+                <td colSpan={totalCols} className="print-text-cell">📎 Video: {display}</td>
+              </tr>
+            );
+          }
+
+          if (sentinel === 'image') {
+            return (
+              <tr key={ex.id} className="print-sentinel-tr">
+                <td colSpan={totalCols} className="print-text-cell">📎 Image attached</td>
+              </tr>
+            );
+          }
+
+          if (ex.is_combo) {
+            const members = (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position);
+            // Always use short member codes for compact layout (ignore long combo_notation)
+            const memberCodes = members.map(m =>
+              codeMap.get(m.exercise_id) ||
+              m.exercise.name.split(/\s+/).map((w: string) => w[0].toUpperCase()).join('').slice(0, 4),
+            ).join('+');
+            const shortNotation = ex.combo_notation && ex.combo_notation.length <= 8 ? ex.combo_notation : memberCodes;
+            const comboCode = '●● ' + shortNotation;
+            const cells = buildComboGridCells(ex.prescription_raw);
+            return (
+              <ExerciseRows
+                key={ex.id}
+                code={comboCode}
+                cells={cells}
+                maxCols={maxCols}
+                totalReps={ex.summary_total_reps}
+                avgLoad={ex.summary_avg_load}
+                maxLoad={ex.summary_highest_load}
+                notes={ex.notes}
+                variationNote={ex.variation_note}
+              />
+            );
+          }
+
+          const code = codeMap.get(ex.exercise_id) || getExerciseCode(ex.exercise, new Map());
+          const cells = buildGridCells(ex.prescription_raw);
+
+          if (ex.unit === 'free_text' || (cells.length === 0 && ex.prescription_raw?.trim())) {
+            return (
+              <tr key={ex.id}>
+                <td className="print-code-cell">{code}</td>
+                <td colSpan={maxCols} className="print-free-text-cell">{ex.prescription_raw}</td>
+                <td className="print-spacer-cell" />
+                <td className="print-stat-cell">—</td>
+                <td className="print-stat-cell">—</td>
+                <td className="print-stat-cell">—</td>
+              </tr>
+            );
+          }
+
+          return (
+            <ExerciseRows
+              key={ex.id}
+              code={code}
+              cells={cells}
+              maxCols={maxCols}
+              unit={ex.unit}
+              totalReps={ex.summary_total_reps}
+              avgLoad={ex.summary_avg_load}
+              maxLoad={ex.summary_highest_load}
+              notes={ex.notes}
+              variationNote={ex.variation_note}
+            />
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -340,8 +454,13 @@ export function PrintWeekCompact({
 
   const getDayLabel = (dayIndex: number): string => {
     const labels = dayLabels || weekPlan.day_labels;
-    if (labels?.[dayIndex]) return labels[dayIndex];
-    return DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const base = (labels?.[dayIndex]) || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const schedule = weekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null;
+    const entry = schedule?.[dayIndex];
+    if (!entry) return base;
+    const wdName = WEEKDAY_NAMES_FULL[entry.weekday];
+    const timeSuffix = entry.time ? ` ${entry.time}` : '';
+    return `${base} (${wdName}${timeSuffix})`;
   };
 
   const activeDays = weekPlan.active_days || [1, 2, 3, 4, 5, 6, 7];
@@ -405,22 +524,28 @@ export function PrintWeekCompact({
           {/* ── Exercise summary table ── */}
           {exerciseSummaries.length > 0 && (
             <div className="print-section">
-              <div className="print-ex-summary-grid">
-                {summaryChunks.map((chunk, ci) => (
-                  <div key={ci} className="print-ex-summary-col">
-                    {chunk.map(s => (
-                      <div key={s.exerciseId} className="print-ex-summary-row">
-                        <span className="print-ex-code">{s.exerciseCode}</span>
-                        <span className="print-ex-stat">{s.totalReps}</span>
-                        <span className="print-ex-stat">{s.avgLoad > 0 ? Math.round(s.avgLoad) : '—'}</span>
-                        <span className="print-ex-stat">{s.maxLoad > 0 ? Math.round(s.maxLoad) : '—'}</span>
-                        <span className="print-ex-freq">{s.frequency}d</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              {/* Summary header labels */}
+              <table className="print-summary-table">
+                <tbody>
+                  {/* Build rows of 3 exercises side by side */}
+                  {Array.from({ length: Math.ceil(exerciseSummaries.length / 3) }).map((_, ri) => {
+                    const row = exerciseSummaries.slice(ri * 3, ri * 3 + 3);
+                    return (
+                      <tr key={ri}>
+                        {row.map((s, ci) => (
+                          <>
+                            {ci > 0 && <td key={`sep-${ci}`} className="print-summary-sep">│</td>}
+                            <td key={`code-${s.exerciseId}`} className="print-sum-code">{s.exerciseCode}</td>
+                            <td key={`wh-${s.exerciseId}`} className="print-sum-stat">{s.totalReps}</td>
+                            <td key={`mhg-${s.exerciseId}`} className="print-sum-stat">{s.avgLoad > 0 ? Math.round(s.avgLoad) : '—'}</td>
+                            <td key={`bw-${s.exerciseId}`} className="print-sum-stat">{s.maxLoad > 0 ? Math.round(s.maxLoad) : '—'}</td>
+                            <td key={`freq-${s.exerciseId}`} className="print-sum-freq">{s.frequency}d</td>
+                          </>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
               <div className="print-ex-summary-legend">
                 Code · WH (reps) · MHG (avg kg) · BW (max kg) · Days
               </div>
@@ -449,116 +574,11 @@ export function PrintWeekCompact({
                   <span className="print-day-col-headers">WH&nbsp;&nbsp;MHG&nbsp;&nbsp;&nbsp;BW</span>
                 </div>
 
-                {dayExs.map(ex => {
-                  const sentinel = getSentinelType(ex.exercise.exercise_code);
-
-                  // TEXT sentinel
-                  if (sentinel === 'text') {
-                    if (!ex.notes?.trim()) return null;
-                    return (
-                      <div key={ex.id} className="print-text-row">
-                        — {ex.notes}
-                      </div>
-                    );
-                  }
-
-                  // VIDEO sentinel
-                  if (sentinel === 'video') {
-                    const url = ex.notes?.trim() || '';
-                    return (
-                      <div key={ex.id} className="print-text-row">
-                        📎 Video: {url.length > 50 ? url.slice(0, 47) + '…' : url}
-                      </div>
-                    );
-                  }
-
-                  // IMAGE sentinel
-                  if (sentinel === 'image') {
-                    return (
-                      <div key={ex.id} className="print-text-row">
-                        📎 Image: {ex.notes?.trim() || 'attached image'}
-                      </div>
-                    );
-                  }
-
-                  // Combo exercise
-                  if (ex.is_combo) {
-                    const members = (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position);
-                    const comboCode = ex.combo_notation ||
-                      members.map(m => codeMap.get(m.exercise_id) || m.exercise.name.slice(0, 3).toUpperCase()).join('+');
-                    const cells = buildComboGridCells(ex.prescription_raw);
-
-                    return (
-                      <div key={ex.id} className="print-exercise-block">
-                        {/* Load row */}
-                        <div className="flex items-baseline">
-                          <div className="print-code-col font-bold text-[8px]">{comboCode}</div>
-                          <div className="flex flex-1 flex-wrap">
-                            {cells.map((c, i) => (
-                              <div key={i} className="print-cell text-right">
-                                {c.load === 0 ? '—' : `${c.load}`}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="print-summary-spacer" />
-                        </div>
-                        {/* Reps row */}
-                        <div className="flex items-baseline">
-                          <div className="print-code-col" />
-                          <div className="flex flex-1 flex-wrap">
-                            {cells.map((c, i) => (
-                              <div key={i} className="print-cell text-right">
-                                {c.reps}
-                                {c.showSuperscript && c.sets > 1 && <sup className="text-[6px]">{c.sets}</sup>}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="print-summary-cols">
-                            <span>{ex.summary_total_reps ?? '—'}</span>
-                            <span>{ex.summary_avg_load != null && ex.summary_avg_load > 0 ? Math.round(ex.summary_avg_load) : '—'}</span>
-                            <span>{ex.summary_highest_load != null && ex.summary_highest_load > 0 ? Math.round(ex.summary_highest_load) : '—'}</span>
-                          </div>
-                        </div>
-                        {ex.variation_note && <div className="print-notes-row">{ex.variation_note}</div>}
-                        {ex.notes && <div className="print-notes-row">{ex.notes}</div>}
-                      </div>
-                    );
-                  }
-
-                  // Regular exercise
-                  const code = codeMap.get(ex.exercise_id) || getExerciseCode(ex.exercise, new Map());
-                  const cells = buildGridCells(ex.prescription_raw);
-
-                  // Free-text unit — no grid
-                  if (ex.unit === 'free_text' || (cells.length === 0 && ex.prescription_raw?.trim())) {
-                    return (
-                      <div key={ex.id} className="print-exercise-block">
-                        <div className="flex items-baseline gap-2">
-                          <div className="print-code-col font-bold">{code}</div>
-                          <div className="print-muted flex-1">{ex.prescription_raw}</div>
-                          <div className="print-summary-cols">
-                            <span>—</span><span>—</span><span>—</span>
-                          </div>
-                        </div>
-                        {ex.notes && <div className="print-notes-row">{ex.notes}</div>}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <ExerciseGridRow
-                      key={ex.id}
-                      code={code}
-                      cells={cells}
-                      unit={ex.unit}
-                      totalReps={ex.summary_total_reps}
-                      avgLoad={ex.summary_avg_load}
-                      maxLoad={ex.summary_highest_load}
-                      notes={ex.notes}
-                      variationNote={ex.variation_note}
-                    />
-                  );
-                })}
+                <DayTable
+                  dayExs={dayExs}
+                  codeMap={codeMap}
+                  comboMembers={comboMembers}
+                />
 
                 {dayReps > 0 && (
                   <div className="print-day-total">Total: {dayReps} reps</div>
@@ -635,21 +655,22 @@ const COMPACT_PRINT_CSS = `
   .print-cat-row { display: flex; flex-wrap: wrap; gap: 6px; }
   .print-cat-item { white-space: nowrap; }
 
-  /* Exercise summary */
-  .print-ex-summary-grid {
-    display: grid;
-    grid-template-columns: 1fr 1px 1fr 1px 1fr;
-    gap: 0 4px;
-  }
-  .print-ex-summary-col { display: flex; flex-direction: column; gap: 1px; }
-  .print-ex-summary-row {
-    display: flex;
-    gap: 4px;
+  /* Exercise summary table */
+  .print-summary-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 8px;
+    font-family: 'Courier New', Consolas, monospace;
   }
-  .print-ex-code { font-weight: bold; min-width: 30px; }
-  .print-ex-stat { min-width: 26px; text-align: right; }
-  .print-ex-freq { min-width: 16px; text-align: right; color: #666; }
+  .print-summary-table td {
+    padding: 0 2px;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+  .print-sum-code { font-weight: bold; width: 28px; }
+  .print-sum-stat { text-align: right; width: 28px; }
+  .print-sum-freq { text-align: right; width: 16px; color: #666; }
+  .print-summary-sep { color: #bbb; padding: 0 3px; width: 10px; text-align: center; }
   .print-ex-summary-legend {
     font-size: 7px;
     color: #999;
@@ -660,24 +681,27 @@ const COMPACT_PRINT_CSS = `
   /* Day header */
   .print-day-block {
     border-top: 0.5px solid #000;
-    padding-top: 3px;
-    margin-top: 3px;
+    padding-top: 2px;
+    margin-top: 4px;
+    margin-bottom: 2px;
     page-break-inside: avoid;
     break-inside: avoid;
   }
   .print-day-header {
     display: flex;
-    align-items: center;
-    margin-bottom: 2px;
+    align-items: baseline;
+    margin-bottom: 1px;
     font-weight: bold;
     font-size: 9px;
     gap: 4px;
   }
-  .print-day-name { white-space: nowrap; }
+  .print-day-name { white-space: nowrap; font-weight: bold; }
   .print-day-rule {
     flex: 1;
-    height: 0.5px;
-    background: #000;
+    border-bottom: 0.5px solid #000;
+    margin: 0 4px;
+    align-self: flex-end;
+    margin-bottom: 2px;
   }
   .print-day-col-headers {
     white-space: nowrap;
@@ -687,61 +711,75 @@ const COMPACT_PRINT_CSS = `
     min-width: 90px;
     text-align: right;
   }
-
-  /* Exercise rows */
-  .print-exercise-block {
-    margin-bottom: 2px;
-  }
-  .print-code-col {
-    min-width: 36px;
-    max-width: 36px;
-    font-size: 8px;
-    font-weight: bold;
-    flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .print-cell {
-    min-width: 28px;
-    max-width: 36px;
-    font-size: 8px;
-    padding: 0 2px;
-    flex-shrink: 0;
-  }
-  .print-summary-spacer {
-    min-width: 90px;
-  }
-  .print-summary-cols {
-    display: flex;
-    gap: 0;
-    min-width: 90px;
-    justify-content: flex-end;
-    font-size: 8px;
-    font-weight: bold;
-  }
-  .print-summary-cols span {
-    min-width: 30px;
-    text-align: right;
-  }
-  .print-notes-row {
-    font-style: italic;
-    font-size: 8px;
-    color: #444;
-    padding-left: 38px;
-    margin-bottom: 1px;
-  }
-  .print-text-row {
-    font-style: italic;
-    font-size: 8px;
-    color: #333;
-    padding: 1px 0;
-  }
   .print-day-total {
     font-size: 7px;
     color: #888;
     text-align: right;
     margin-top: 1px;
+  }
+
+  /* Day table — all exercises in a day share aligned columns */
+  .print-day-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin-bottom: 1px;
+  }
+  .print-day-table td {
+    padding: 0 2px;
+    font-size: 8px;
+    line-height: 1.2;
+    vertical-align: baseline;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .print-code-cell {
+    font-weight: bold;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    vertical-align: middle !important;
+  }
+  .print-cell {
+    text-align: right;
+    font-size: 8px;
+  }
+  .print-spacer-cell {
+    /* fills remaining space */
+  }
+  .print-stat-cell {
+    text-align: right;
+    font-size: 8px;
+    font-weight: bold;
+  }
+  .print-sup {
+    font-size: 6px;
+    vertical-align: super;
+    line-height: 0;
+  }
+  .print-load-row td { padding-bottom: 0; }
+  .print-reps-row td { padding-top: 0; padding-bottom: 1px; }
+  .print-notes-tr td { padding: 0; }
+  .print-notes-cell {
+    font-style: italic;
+    font-size: 7.5px;
+    color: #444;
+    padding-left: 47px !important;
+    line-height: 1.2;
+  }
+  .print-text-cell {
+    font-style: italic;
+    font-size: 8px;
+    color: #333;
+    padding: 1px 0;
+  }
+  .print-free-text-cell {
+    font-size: 8px;
+    color: #555;
+  }
+  .print-sentinel-tr td {
+    padding: 1px 0;
   }
 
   /* Footer */

@@ -8,6 +8,7 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { SollIstChart } from './SollIstChart';
+import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 
 interface OtherDay {
   dayIndex: number;
@@ -404,6 +405,11 @@ export function ExerciseDetail({
 
         {plannedExercise && !sentinel && (
           <div>
+            <ExerciseHistoryChart
+              exerciseId={plannedExercise.exercise_id}
+              athleteId={athleteId}
+              macroContext={macroContext}
+            />
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Prescription</span>
               <button

@@ -147,6 +147,7 @@ function SetRow({ set, index, onComplete, onSkip, prSetId }: SetRowProps) {
 export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionViewProps) {
   const {
     session, setSession,
+    weekPlan,
     plannedExercises, loggedExercises, setLoggedExercises,
     saving,
     setsMap, setSetsMap,
@@ -175,15 +176,14 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const initializedExercises = useRef<Set<string>>(new Set());
 
-  // Derive the nominal date for display (weekStart + dayIndex - 1 days)
-  const date = (() => {
-    const d = new Date(weekStart + 'T00:00:00');
-    d.setDate(d.getDate() + dayIndex - 1);
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const dy = String(d.getDate()).padStart(2, '0');
-    return `${y}-${mo}-${dy}`;
+  // Use the session's actual logged date; fall back to today for new sessions
+  const displayDate = session?.date ?? (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
+
+  // Slot label from day_labels (e.g. "Training 2" or "Monday")
+  const slotLabel = weekPlan?.day_labels?.[dayIndex] ?? `Day ${dayIndex}`;
 
   // Load data on mount
   useEffect(() => {
@@ -446,8 +446,8 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div>
-            <div className="font-medium text-gray-900">{formatDateLong(date)}</div>
-            <div className="text-xs text-gray-500">{athlete.name}</div>
+            <div className="font-medium text-gray-900">{slotLabel}</div>
+            <div className="text-xs text-gray-500">{formatDateLong(displayDate)}</div>
           </div>
         </div>
 
@@ -536,7 +536,7 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-500">{formatDateLong(date)}</div>
+            <div className="text-sm text-gray-500">{slotLabel} · {formatDateLong(displayDate)}</div>
             <div className="font-medium text-gray-900 tabular-nums">{formatElapsed(elapsed)}</div>
             <div className="text-sm text-gray-500">
               {completedExercisesCount + 1} of {totalExercises}
