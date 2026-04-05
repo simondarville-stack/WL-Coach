@@ -90,14 +90,14 @@ function getCategoryAbbr(category: string): string {
 
 function getExerciseCode(ex: Exercise, usedCodes: Map<string, string>): string {
   if (ex.exercise_code) return ex.exercise_code;
-  // Generate from name
+  // Generate from name — max 4 chars
   const words = ex.name.trim().split(/\s+/);
   let code: string;
   if (words.length === 1) {
     code = words[0].slice(0, 3).toUpperCase();
   } else {
-    // Initials, but keep first word capitalised
-    code = words[0].slice(0, 1).toUpperCase() + words.slice(1).map(w => w[0].toUpperCase()).join('');
+    // Initials of each word, capped at 4 chars
+    code = words.map(w => w[0].toUpperCase()).join('').slice(0, 4);
   }
   // Ensure uniqueness
   let candidate = code;
@@ -693,8 +693,8 @@ const COMPACT_PRINT_CSS = `
     margin-bottom: 2px;
   }
   .print-code-col {
-    min-width: 36px;
-    max-width: 36px;
+    min-width: 45px;
+    max-width: 45px;
     font-size: 8px;
     font-weight: bold;
     flex-shrink: 0;
