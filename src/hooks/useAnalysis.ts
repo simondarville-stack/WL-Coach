@@ -68,16 +68,16 @@ export interface LiftRatio {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getMonday(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const mon = new Date(d.setDate(diff));
-  return mon.toISOString().slice(0, 10);
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  const diff = d.getUTCDate() + (day === 0 ? -6 : 1 - day);
+  d.setUTCDate(diff);
+  return d.toISOString().slice(0, 10);
 }
 
 function addWeeks(dateStr: string, weeks: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + weeks * 7);
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
   return d.toISOString().slice(0, 10);
 }
 
