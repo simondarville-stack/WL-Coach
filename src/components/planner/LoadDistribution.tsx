@@ -55,13 +55,9 @@ export function LoadDistribution({
     });
   }, [plannedExercises, athletePRs, dayLabels, activeDays, dayDisplayOrder]);
 
-  const maxLoad = Math.max(...distributionData.map(d => d.load), 1);
-  const maxReps = Math.max(...distributionData.map(d => d.reps), 1);
-  const maxStress = Math.max(...distributionData.map(d => d.stress), 1);
-
   const chartProps = {
     cartesianGrid: { strokeDasharray: '3 3', stroke: '#e5e7eb' },
-    xAxis: { dataKey: 'day', tick: { fontSize: 11 }, stroke: '#6b7280', interval: 0, angle: -35, textAnchor: 'end' as const, height: 50 },
+    xAxis: { dataKey: 'day', tick: { fontSize: 11 }, stroke: '#6b7280', interval: 0, angle: -35, textAnchor: 'end' as const, height: 70 },
     tooltip: { contentStyle: { fontSize: 12 } },
   };
 
@@ -75,7 +71,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, maxLoad * 1.1]} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${Math.round(v)} kg`} />
               <Bar dataKey="load" fill="#3b82f6" />
             </BarChart>
@@ -87,7 +83,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, maxReps * 1.1]} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${v} reps`} />
               <Bar dataKey="reps" fill="#10b981" />
             </BarChart>
@@ -99,7 +95,7 @@ export function LoadDistribution({
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
-              <YAxis domain={[0, maxStress * 1.1]} tick={{ fontSize: 11 }} stroke="#6b7280" />
+              <YAxis domain={[0, 'auto']} tickCount={5} tick={{ fontSize: 11 }} stroke="#6b7280" />
               <Tooltip {...chartProps.tooltip} formatter={(v: number) => v.toFixed(1)} />
               <Bar dataKey="stress" fill="#f59e0b" />
             </BarChart>
