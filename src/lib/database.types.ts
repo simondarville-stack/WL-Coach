@@ -84,6 +84,7 @@ export interface WeekPlan {
   day_labels: Record<number, string> | null;
   day_display_order: number[] | null;
   week_description: string | null;
+  day_schedule: Record<number, { weekday: number; time: string | null }> | null;
   created_at: string;
   updated_at: string;
 }
