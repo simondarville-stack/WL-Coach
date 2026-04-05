@@ -221,11 +221,18 @@ function calculateWeekTotals(
 // Sub-components
 // ---------------------------------------------------------------------------
 
+function unitLabel(unit: string | null): string {
+  if (unit === 'percentage') return ' (%)';
+  if (unit === 'rpe') return ' RPE';
+  return '';
+}
+
 // Renders two <tr> rows (load + reps) plus optional notes rows for one exercise
 function ExerciseRows({
   code,
   cells,
   maxCols,
+  unit,
   totalReps,
   avgLoad,
   maxLoad,
@@ -235,6 +242,7 @@ function ExerciseRows({
   code: string;
   cells: GridCell[];
   maxCols: number;
+  unit?: string | null;
   totalReps: number | null;
   avgLoad: number | null;
   maxLoad: number | null;
@@ -242,11 +250,12 @@ function ExerciseRows({
   variationNote?: string | null;
 }) {
   const emptyCols = Math.max(0, maxCols - cells.length);
+  const codeLabel = code + unitLabel(unit ?? null);
   return (
     <>
       {/* Load row */}
       <tr className="print-load-row">
-        <td rowSpan={2} className="print-code-cell">{code}</td>
+        <td rowSpan={2} className="print-code-cell">{codeLabel}</td>
         {cells.map((c, i) => (
           <td key={i} className="print-cell">
             {typeof c.load === 'number' && c.load === 0 ? '—' : typeof c.load === 'number' ? Math.round(c.load) : c.load}
@@ -395,6 +404,7 @@ function DayTable({
               code={code}
               cells={cells}
               maxCols={maxCols}
+              unit={ex.unit}
               totalReps={ex.summary_total_reps}
               avgLoad={ex.summary_avg_load}
               maxLoad={ex.summary_highest_load}
