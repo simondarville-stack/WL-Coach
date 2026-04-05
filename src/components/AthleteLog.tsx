@@ -90,11 +90,8 @@ export function AthleteLog() {
     }
   }, [weekPlan]);
 
-  const selectedDateISO = (() => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + selectedDayIndex - 1);
-    return d.toISOString().split('T')[0];
-  })();
+  // Use session's actual date if it exists, otherwise today
+  const selectedDateISO = session?.date ?? new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (!selectedAthlete?.track_bodyweight) { setTodayBodyweight(''); return; }
@@ -311,8 +308,8 @@ export function AthleteLog() {
       name: getDayName(dayIdx)
     }));
 
-  const selectedDate = new Date(weekStart);
-  selectedDate.setDate(selectedDate.getDate() + selectedDayIndex - 1);
+  // Use session's actual date if it exists, otherwise today
+  const selectedDate = new Date((session?.date ?? new Date().toISOString().split('T')[0]) + 'T00:00:00');
 
   const isExerciseLogged = (plannedExerciseId: string) => {
     return loggedExercises.some(le => le.planned_exercise_id === plannedExerciseId);
