@@ -267,7 +267,6 @@ function ExerciseGridRow({
   notes?: string | null;
   variationNote?: string | null;
 }) {
-  const unitSuffix = unit === 'percentage' ? '%' : '';
   const CELL_W = 30; // px
 
   return (
@@ -278,7 +277,7 @@ function ExerciseGridRow({
         <div className="flex flex-1 flex-wrap">
           {cells.map((c, i) => (
             <div key={i} className="print-cell text-right" style={{ minWidth: CELL_W }}>
-              {typeof c.load === 'number' && c.load === 0 ? '—' : `${c.load}${unitSuffix}`}
+              {typeof c.load === 'number' && c.load === 0 ? '—' : typeof c.load === 'number' ? Math.round(c.load) : c.load}
             </div>
           ))}
         </div>
@@ -496,7 +495,7 @@ export function PrintWeekCompact({
                           <div className="flex flex-1 flex-wrap">
                             {cells.map((c, i) => (
                               <div key={i} className="print-cell text-right">
-                                {c.load === 0 ? '—' : `${c.load}`}
+                                {typeof c.load === 'number' && c.load === 0 ? '—' : typeof c.load === 'number' ? Math.round(c.load) : c.load}
                               </div>
                             ))}
                           </div>
