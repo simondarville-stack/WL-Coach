@@ -50,15 +50,13 @@ export function useTrainingLog() {
       setPlannedExercises([]);
     }
 
-    const selectedDate = new Date(weekStart);
-    selectedDate.setDate(selectedDate.getDate() + selectedDayIndex - 1);
-    const dateISO = toLocalISO(selectedDate);
-
+    // Query by week_start + day_index (slot-based), NOT by calculated calendar date
     const { data: sessionData } = await supabase
       .from('training_log_sessions')
       .select('*')
       .eq('athlete_id', athleteId)
-      .eq('date', dateISO)
+      .eq('week_start', weekStartISO)
+      .eq('day_index', selectedDayIndex)
       .maybeSingle();
 
     if (sessionData) {
@@ -73,7 +71,7 @@ export function useTrainingLog() {
       setSession({
         id: '',
         athlete_id: athleteId,
-        date: dateISO,
+        date: toLocalISO(new Date()),  // actual date = today
         week_start: weekStartISO,
         day_index: selectedDayIndex,
         session_notes: '',
