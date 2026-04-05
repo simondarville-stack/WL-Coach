@@ -2,13 +2,14 @@ import type { WeekdayCell } from '../../lib/restCalculation';
 
 interface RecoveryStripProps {
   cells: WeekdayCell[];
+  columnTemplate: string;
 }
 
-export function RecoveryStrip({ cells }: RecoveryStripProps) {
+export function RecoveryStrip({ cells, columnTemplate }: RecoveryStripProps) {
   if (cells.length === 0) return null;
   return (
     <div className="px-0 pb-2">
-      <div className="grid grid-cols-7 gap-2" style={{ height: 6 }}>
+      <div className="grid gap-2" style={{ height: 6, gridTemplateColumns: columnTemplate }}>
         {cells.map(cell => {
           let bg = 'bg-gray-100';
           if (!cell.isRestDay) {
