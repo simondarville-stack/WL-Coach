@@ -126,6 +126,7 @@ export function useCoachDashboard() {
         .from('training_log_sessions')
         .select('*')
         .eq('athlete_id', athlete.id)
+        .neq('status', 'planned')
         .gte('date', cutoffDate.toISOString().split('T')[0])
         .order('date', { ascending: false });
 
@@ -194,9 +195,17 @@ export function useCoachDashboard() {
   }
 
   async function loadActivityFeed() {
+    const { data: ownerAthletes } = await supabase
+      .from('athletes')
+      .select('id')
+      .eq('owner_id', getOwnerId());
+    const athleteIds = ownerAthletes?.map(a => a.id) || [];
+    const idFilter = athleteIds.length > 0 ? athleteIds : [''];
+
     const { data: sessions } = await supabase
       .from('training_log_sessions')
       .select('*, athlete:athletes(name)')
+      .in('athlete_id', idFilter)
       .order('date', { ascending: false })
       .limit(30);
 
@@ -227,6 +236,7 @@ export function useCoachDashboard() {
     const { data: macrocycles } = await supabase
       .from('macrocycles')
       .select('*, athlete:athletes(name)')
+      .eq('owner_id', getOwnerId())
       .order('created_at', { ascending: false })
       .limit(10);
 

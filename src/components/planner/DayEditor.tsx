@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 import type {
   WeekPlan, PlannedExercise, Exercise,
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
@@ -200,7 +201,7 @@ export function DayEditor({
 
   async function getOrCreateSentinel(code: string): Promise<{ id: string; default_unit: string } | null> {
     const { data: existing } = await supabase
-      .from('exercises').select('id, default_unit').eq('exercise_code', code).maybeSingle();
+      .from('exercises').select('id, default_unit').eq('exercise_code', code).eq('owner_id', getOwnerId()).maybeSingle();
     if (existing) return existing;
     const sentinelDefs: Record<string, { name: string; color: string }> = {
       TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },

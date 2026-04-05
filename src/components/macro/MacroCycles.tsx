@@ -394,7 +394,7 @@ export function MacroCycles() {
   }
 
   const availableExercises = exercises.filter(
-    ex => !trackedExercises.some(te => te.exercise_id === ex.id)
+    ex => ex.category !== '— System' && !trackedExercises.some(te => te.exercise_id === ex.id)
   );
 
   return (

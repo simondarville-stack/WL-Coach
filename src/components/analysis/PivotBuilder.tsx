@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchWeeklyAggregates, type WeeklyAggregate } from '../../hooks/useAnalysis';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 
 interface Props {
   athleteId: string;
@@ -100,9 +101,13 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
 
   // Load exercise list once
   useEffect(() => {
-    supabase.from('exercises').select('id, name, category').order('name').then(({ data }) => {
-      if (data) setExercises(data as typeof exercises);
-    });
+    supabase.from('exercises').select('id, name, category')
+      .eq('owner_id', getOwnerId())
+      .neq('category', '— System')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setExercises(data as typeof exercises);
+      });
   }, []);
 
   // Unique categories derived from the exercise library

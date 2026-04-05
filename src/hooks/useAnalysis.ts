@@ -179,6 +179,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')
       .eq('athlete_id', athleteId)
+      .neq('status', 'planned')
       .gte('date', startDate)
       .lte('date', endDate),
     supabase
@@ -203,7 +204,9 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
   const macroPhases = macroPhasesRes.data ?? [];
   const sessions = sessionsRes.data ?? [];
   const bwEntries = bodyweightRes.data ?? [];
-  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string; category: string; color: string }>;
+  const exercises = (exercisesRes.data ?? []).filter(
+    (e: { id: string; name: string; category: string; color: string }) => e.category !== '— System'
+  ) as Array<{ id: string; name: string; category: string; color: string }>;
 
   const exerciseMap = new Map(exercises.map(e => [e.id, e]));
 
@@ -409,6 +412,7 @@ export async function fetchExerciseTimeSeries(
     .from('training_log_sessions')
     .select('id, date')
     .eq('athlete_id', athleteId)
+    .neq('status', 'planned')
     .gte('date', startDate)
     .lte('date', endDate)
     .order('date');

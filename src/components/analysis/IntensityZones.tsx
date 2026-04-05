@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { fetchWeeklyAggregates, fetchIntensityZones, type WeeklyAggregate, type IntensityZone } from '../../hooks/useAnalysis';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 
 interface Props {
   athleteId: string;
@@ -35,7 +36,8 @@ export function IntensityZones({ athleteId, startDate, endDate }: Props) {
   const [weeklyZones, setWeeklyZones] = useState<Array<Record<string, number | string>>>([]);
 
   useEffect(() => {
-    supabase.from('exercises').select('id, name').order('name')
+    supabase.from('exercises').select('id, name')
+      .eq('owner_id', getOwnerId()).neq('category', '— System').order('name')
       .then(({ data }) => {
         setExercises((data ?? []) as Array<{ id: string; name: string }>);
       });

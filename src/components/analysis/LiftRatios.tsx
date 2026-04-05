@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchLiftRatios, type LiftRatio } from '../../hooks/useAnalysis';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 
 interface Props {
   athleteId: string;
@@ -50,7 +51,7 @@ export function LiftRatios({ athleteId }: Props) {
             .select('exercise_id, pr_value_kg, pr_date')
             .eq('athlete_id', athleteId)
             .order('pr_date'),
-          supabase.from('exercises').select('id, name'),
+          supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId()),
         ]);
 
         setRatios(ratioData);

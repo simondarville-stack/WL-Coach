@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS coach_profiles (
 ALTER TABLE coach_profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for authenticated" ON coach_profiles
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon access" ON coach_profiles
+  FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- 2. Seed a default coach (all existing data will belong to this coach)
 INSERT INTO coach_profiles (id, name, club_name)

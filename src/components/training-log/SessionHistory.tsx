@@ -125,7 +125,7 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
           .order('week_start', { ascending: false }),
       ]);
 
-      const sessions: TrainingLogSession[] = sessionsData || [];
+      const sessions: TrainingLogSession[] = (sessionsData || []).filter(s => s.status !== 'planned');
       const plans: WeekPlan[] = plansData || [];
 
       setAllSessions(sessions);
@@ -172,7 +172,7 @@ export function SessionHistory({ athlete, onOpenSession, onReviewSession }: Sess
       setWeekData({
         weekStartISO: currentWeekStart,
         weekPlan: plan ?? null,
-        sessions: sessList || [],
+        sessions: (sessList || []).filter(s => s.status !== 'planned'),
       });
     };
     load();
