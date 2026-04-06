@@ -335,7 +335,9 @@ export function useMacroCycles() {
       .eq('macrocycle_id', macroWeek.macrocycle_id)
       .order('position');
 
-    const exercises = ((trackedExercisesData || []).map((item: any) => item.exercises).filter(Boolean)) as import('../lib/database.types').Exercise[];
+    type TrackedExerciseRow = { id: string; exercise_id: string; exercises: import('../lib/database.types').Exercise | null };
+    const typedTrackedData = (trackedExercisesData || []) as TrackedExerciseRow[];
+    const exercises = typedTrackedData.map(item => item.exercises).filter((e): e is import('../lib/database.types').Exercise => e !== null);
 
     const { data: targetsData } = await supabase
       .from('macro_targets')
@@ -343,11 +345,11 @@ export function useMacroCycles() {
       .eq('macro_week_id', macroWeek.id);
 
     const trackedExerciseMap: Record<string, string> = {};
-    (trackedExercisesData || []).forEach((te: any) => { trackedExerciseMap[te.exercise_id] = te.id; });
+    typedTrackedData.forEach(te => { trackedExerciseMap[te.exercise_id] = te.id; });
 
     const targetsMap: MacroValidationData['macroTargets'] = {};
-    (targetsData || []).forEach((target: any) => {
-      const trackedEx = (trackedExercisesData || []).find((te: any) => te.id === target.tracked_exercise_id);
+    (targetsData || []).forEach(target => {
+      const trackedEx = typedTrackedData.find(te => te.id === target.tracked_exercise_id);
       if (trackedEx) {
         targetsMap[trackedEx.exercise_id] = { ...target, exercise_id: trackedEx.exercise_id };
       }

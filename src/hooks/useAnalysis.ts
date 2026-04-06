@@ -173,8 +173,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id')
       .gte('week_start', startDate)
       .lte('week_start', endDate),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('macro_phases')
       .select('id, name, color, macrocycle_id'),
     supabase

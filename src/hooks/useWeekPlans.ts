@@ -141,11 +141,12 @@ export function useWeekPlans() {
           .in('planned_exercise_id', comboExs.map(e => e.id))
           .order('position');
         const membersMap: Record<string, ComboMemberEntry[]> = {};
-        (members || []).forEach((m: any) => {
+        type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
+        (members || []).forEach((m: MemberRow) => {
           if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
           membersMap[m.planned_exercise_id].push({
             exerciseId: m.exercise_id,
-            exercise: m.exercise as Exercise,
+            exercise: m.exercise,
             position: m.position,
           });
         });
@@ -272,7 +273,7 @@ export function useWeekPlans() {
       .eq('day_index', dayIndex)
       .order('position');
 
-    const items = (exData || []).sort((a: any, b: any) => a.position - b.position);
+    const items = (exData || []).sort((a, b) => a.position - b.position);
     for (let i = 0; i < items.length; i++) {
       await supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', items[i].id);
     }
@@ -570,7 +571,7 @@ export function useWeekPlans() {
 
       if (members && members.length > 0) {
         await supabase.from('planned_exercise_combo_members').insert(
-          members.map((m: any) => ({
+          members.map((m: { exercise_id: string; position: number }) => ({
             planned_exercise_id: newEx.id,
             exercise_id: m.exercise_id,
             position: m.position,

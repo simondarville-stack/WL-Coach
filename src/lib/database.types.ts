@@ -499,6 +499,11 @@ export interface Database {
         Insert: Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>>;
       };
+      macro_phases: {
+        Row: MacroPhase;
+        Insert: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>>;
+      };
       macro_tracked_exercises: {
         Row: MacroTrackedExercise;
         Insert: Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>;
