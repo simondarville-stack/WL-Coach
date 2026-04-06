@@ -137,6 +137,7 @@ export interface PlannedSetLine {
   reps: number;
   reps_text: string | null;
   load_value: number;
+  load_max: number | null;   // null = fixed load, number = interval upper bound
   position: number;
   notes: string | null;
   created_at: string;
