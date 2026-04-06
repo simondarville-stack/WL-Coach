@@ -153,6 +153,10 @@ export function DayCard({
 
   const daySets = exercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
   const dayReps = exercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
+  const dayTonnage = exercises.reduce((s, ex) => {
+    if (!ex.exercise.counts_towards_totals) return s;
+    return s + (ex.summary_avg_load ?? 0) * (ex.summary_total_reps ?? 0);
+  }, 0);
   const isEmpty = exercises.length === 0;
 
   async function handleAddExercise(exercise: Exercise) {
@@ -289,6 +293,9 @@ export function DayCard({
             <div className="flex items-center gap-2 text-[11px]">
               <span className="text-gray-400">S <span className="text-gray-700 font-medium">{daySets}</span></span>
               <span className="text-gray-400">R <span className="text-gray-700 font-medium">{dayReps}</span></span>
+              {dayTonnage > 0 && (
+                <span className="text-gray-400">T <span className="text-gray-700 font-medium">{dayTonnage >= 1000 ? `${(dayTonnage / 1000).toFixed(1)}t` : `${Math.round(dayTonnage)}kg`}</span></span>
+              )}
             </div>
           )}
           <ChevronRight size={12} className="text-gray-200 group-hover/header:text-gray-400 transition-colors flex-shrink-0" />
