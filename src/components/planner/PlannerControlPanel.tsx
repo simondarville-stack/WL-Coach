@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
   ChevronDown, ChevronRight as ChevronRightSmall,
-  Users,
+  Users, X, User as UserIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -118,6 +118,7 @@ export function PlannerControlPanel({
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
+  const [showAthleteProfile, setShowAthleteProfile] = useState(false);
 
   useEffect(() => { setLocalDesc(weekDescription); }, [weekDescription]);
 
@@ -213,8 +214,13 @@ export function PlannerControlPanel({
       {/* ── ROW 1: Athlete + Week nav + Tools ──────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
 
-        {/* LEFT: avatar + name */}
-        <div className="flex items-center gap-3 flex-shrink-0 min-w-0" style={{ width: 200 }}>
+        {/* LEFT: avatar + name — double-click to view athlete profile */}
+        <div
+          className="flex items-center gap-3 flex-shrink-0 min-w-0"
+          style={{ width: 200 }}
+          onDoubleClick={() => selectedAthlete && setShowAthleteProfile(true)}
+          title={selectedAthlete ? 'Double-click to view athlete profile' : undefined}
+        >
           {selectedGroup ? (
             <>
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -524,6 +530,101 @@ export function PlannerControlPanel({
           style={{ minHeight: '1.5rem' }}
         />
       </div>
+
+      {/* ── Athlete profile dialog ───────────────────────────────────────────── */}
+      {showAthleteProfile && selectedAthlete && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in"
+          onClick={() => setShowAthleteProfile(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-sm animate-dialog-in"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between p-5 pb-4">
+              <div className="flex items-center gap-4">
+                {selectedAthlete.photo_url ? (
+                  <img
+                    src={selectedAthlete.photo_url}
+                    alt={selectedAthlete.name}
+                    className="w-14 h-14 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <UserIcon size={22} className="text-blue-600" />
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900 leading-tight">{selectedAthlete.name}</h2>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                    {athleteAge !== null && (
+                      <span className="text-xs text-gray-500">{athleteAge} y/o</span>
+                    )}
+                    {selectedAthlete.weight_class && (
+                      <span className="text-xs text-gray-500">-{selectedAthlete.weight_class} kg</span>
+                    )}
+                    {selectedAthlete.bodyweight && (
+                      <span className="text-xs text-gray-500">{selectedAthlete.bodyweight} kg</span>
+                    )}
+                    {selectedAthlete.club && (
+                      <span className="text-xs text-gray-400">{selectedAthlete.club}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAthleteProfile(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Competition PRs */}
+            {competitionPRs.length > 0 && (
+              <div className="px-5 pb-4 border-t border-gray-100 pt-4">
+                <div className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-2">Competition lifts</div>
+                <div className="flex flex-wrap gap-3">
+                  {competitionPRs.map(pr => (
+                    <div key={pr.exerciseName} className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                      <div className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">{pr.exerciseName}</div>
+                      <div className="text-lg font-semibold text-gray-900 mt-0.5">{pr.value} <span className="text-sm font-normal text-gray-400">kg</span></div>
+                    </div>
+                  ))}
+                  {competitionPRs.length >= 2 && (
+                    <div className="bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
+                      <div className="text-[10px] text-blue-400 uppercase tracking-wide font-medium">Total</div>
+                      <div className="text-lg font-semibold text-blue-700 mt-0.5">
+                        {competitionPRs.reduce((s, p) => s + p.value, 0)} <span className="text-sm font-normal text-blue-400">kg</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {selectedAthlete.notes && (
+              <div className="px-5 pb-4 border-t border-gray-100 pt-4">
+                <div className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-1.5">Notes</div>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedAthlete.notes}</p>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => { setShowAthleteProfile(false); navigate('/athletes'); }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Open full profile →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
