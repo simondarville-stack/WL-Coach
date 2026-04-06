@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
 import { useCoachProfiles } from './hooks/useCoachProfiles';
@@ -63,14 +64,13 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showNewCoachModal, setShowNewCoachModal] = useState(false);
+  const [coachesLoaded, setCoachesLoaded] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       const coaches = await fetchCoaches();
       setCoaches(coaches);
-      if (!activeCoach && coaches.length > 0) {
-        setActiveCoach(coaches[0]);
-      }
+      setCoachesLoaded(true);
     };
     init();
   }, []);
@@ -123,6 +123,38 @@ function App() {
     setEditingExercise(null);
     setShowFormModal(false);
   };
+
+  // Show spinner while fetching coach profiles on first load
+  if (!coachesLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-6 h-6" />
+      </div>
+    );
+  }
+
+  // No active environment — show the selection start page
+  if (!activeCoach) {
+    return (
+      <>
+        <SelectEnvironmentPage
+          coaches={useCoachStore.getState().coaches}
+          onNewEnvironment={() => setShowNewCoachModal(true)}
+        />
+        {showNewCoachModal && (
+          <CoachProfileModal
+            onClose={() => setShowNewCoachModal(false)}
+            onCreated={(coach) => {
+              setCoaches([...useCoachStore.getState().coaches, coach]);
+              setActiveCoach(coach);
+              setShowNewCoachModal(false);
+              window.location.reload();
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50">
