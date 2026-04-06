@@ -403,7 +403,7 @@ export function useWeekPlans() {
     const parsed = isNonNumeric ? [] : parsePrescription(prescription);
     const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
 
-    if (parsed.length > 0 && !isNonNumeric) {
+    if (parsed.length > 0 && !isNonNumeric && !isFreeTextReps) {
       const lines = parsed.map((line, idx) => ({
         planned_exercise_id: plannedExId,
         sets: line.sets,

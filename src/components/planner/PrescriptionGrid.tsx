@@ -115,10 +115,13 @@ export function PrescriptionGrid({
 
   // Sync when external data changes (but NOT when it's our own save echoing back)
   const prevRawRef = useRef(prescriptionRaw);
+  const prevUnitRef = useRef(unit);
   useEffect(() => {
-    if (prescriptionRaw === prevRawRef.current) return;
+    const unitChanged = unit !== prevUnitRef.current;
+    prevUnitRef.current = unit;
+    if (prescriptionRaw === prevRawRef.current && !unitChanged) return;
     prevRawRef.current = prescriptionRaw;
-    if (prescriptionRaw === lastSentRef.current) return; // ignore round-trip
+    if (!unitChanged && prescriptionRaw === lastSentRef.current) return; // ignore round-trip
     setColumns(parseToColumns(prescriptionRaw, isCombo, unit));
   }, [prescriptionRaw, isCombo, unit]);
 

@@ -1,7 +1,7 @@
 // TODO: Consider extracting set-logging UI (SetRow + completed-set display) into SetLogger component
 // TODO: Consider extracting RPE/RAW scoring section into ReadinessPanel component
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Check, Star, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Check, Star, ChevronDown, ChevronUp, Video, Image as ImageIcon } from 'lucide-react';
 import { RestTimer } from './RestTimer';
 import type { Athlete, PlannedExerciseWithExercise, TrainingLogExerciseWithExercise, TrainingLogSet } from '../../lib/database.types';
 import { useTrainingLog } from '../../hooks/useTrainingLog';
@@ -28,6 +28,18 @@ function formatElapsed(seconds: number): string {
 function formatDateLong(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+type SentinelType = 'text' | 'video' | 'image' | null;
+function getSentinelType(code: string | null | undefined): SentinelType {
+  if (code === 'TEXT') return 'text';
+  if (code === 'VIDEO') return 'video';
+  if (code === 'IMAGE') return 'image';
+  return null;
+}
+function getYouTubeThumbnail(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
 }
 
 function getDefaultRestSeconds(exerciseName: string): number {
@@ -492,24 +504,52 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
               <p className="text-gray-500 italic text-sm">No exercises planned for today</p>
             ) : (
               <div className="space-y-3">
-                {plannedExercises.map((pe, i) => (
-                  <div key={pe.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
-                    <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {i + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 text-sm">{pe.exercise.name}</div>
-                      {pe.variation_note && <div className="text-xs text-gray-500">{pe.variation_note}</div>}
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        <PrescriptionDisplay
-                          prescription={pe.prescription_raw}
-                          unit={pe.unit}
-                          useStackedNotation={false}
-                        />
+                {plannedExercises.map((pe, i) => {
+                  const sentinel = getSentinelType(pe.exercise.exercise_code);
+                  return (
+                    <div key={pe.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-0">
+                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {sentinel === 'text' ? (
+                          <p className="text-sm text-gray-600 italic">{pe.notes || 'No text content'}</p>
+                        ) : sentinel === 'video' ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-sm font-medium text-indigo-600">
+                              <Video size={14} /> Video
+                            </div>
+                            {pe.notes && (() => {
+                              const thumb = getYouTubeThumbnail(pe.notes);
+                              return thumb
+                                ? <img src={thumb} alt="Video thumbnail" className="rounded w-32 object-cover" />
+                                : <p className="text-xs text-gray-500 break-all">{pe.notes}</p>;
+                            })()}
+                          </div>
+                        ) : sentinel === 'image' ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 text-sm font-medium text-pink-600">
+                              <ImageIcon size={14} /> Image
+                            </div>
+                            {pe.notes && <img src={pe.notes} alt="" className="rounded w-32 object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="font-medium text-gray-900 text-sm">{pe.exercise.name}</div>
+                            {pe.variation_note && <div className="text-xs text-gray-500">{pe.variation_note}</div>}
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              <PrescriptionDisplay
+                                prescription={pe.prescription_raw}
+                                unit={pe.unit}
+                                useStackedNotation={false}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -583,67 +623,107 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
         )}
 
         {/* Exercise card */}
-        {currentPlanned && (
+        {currentPlanned && (() => {
+          const currentSentinel = getSentinelType(currentPlanned.exercise.exercise_code);
+          return (
           <div className="mx-4 mt-3 bg-white rounded-lg border border-gray-200">
             <div className="p-4 border-b border-gray-100">
-              <div className="text-lg font-medium text-gray-900">{currentPlanned.exercise.name}</div>
-              {currentPlanned.variation_note && (
-                <div className="text-[13px] text-gray-500 mt-0.5">{currentPlanned.variation_note}</div>
+              {currentSentinel ? null : (
+                <>
+                  <div className="text-lg font-medium text-gray-900">{currentPlanned.exercise.name}</div>
+                  {currentPlanned.variation_note && (
+                    <div className="text-[13px] text-gray-500 mt-0.5">{currentPlanned.variation_note}</div>
+                  )}
+                  {currentPlanned.notes && (
+                    <div className="text-[13px] text-blue-800 bg-blue-50 rounded px-2 py-1 mt-1 italic">
+                      {currentPlanned.notes}
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-500 mt-1">
+                    Planned: <PrescriptionDisplay
+                      prescription={currentPlanned.prescription_raw}
+                      unit={currentPlanned.unit}
+                      useStackedNotation={false}
+                    />
+                  </div>
+                </>
               )}
-              {currentPlanned.notes && (
-                <div className="text-[13px] text-blue-800 bg-blue-50 rounded px-2 py-1 mt-1 italic">
-                  {currentPlanned.notes}
+              {currentSentinel === 'text' && (
+                <div className="text-sm text-gray-700 italic whitespace-pre-wrap">
+                  {currentPlanned.notes || <span className="text-gray-400">No text content</span>}
                 </div>
               )}
-              <div className="text-sm text-gray-500 mt-1">
-                Planned: <PrescriptionDisplay
-                  prescription={currentPlanned.prescription_raw}
-                  unit={currentPlanned.unit}
-                  useStackedNotation={false}
-                />
-              </div>
+              {currentSentinel === 'video' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-base font-medium text-indigo-600">
+                    <Video size={16} /> Video
+                  </div>
+                  {currentPlanned.notes && (() => {
+                    const thumb = getYouTubeThumbnail(currentPlanned.notes);
+                    return thumb
+                      ? <a href={currentPlanned.notes} target="_blank" rel="noopener noreferrer">
+                          <img src={thumb} alt="Video thumbnail" className="rounded w-full max-w-sm object-cover" />
+                        </a>
+                      : <a href={currentPlanned.notes} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 underline break-all">{currentPlanned.notes}</a>;
+                  })()}
+                </div>
+              )}
+              {currentSentinel === 'image' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-base font-medium text-pink-600">
+                    <ImageIcon size={16} /> Image
+                  </div>
+                  {currentPlanned.notes && (
+                    <img src={currentPlanned.notes} alt="" className="rounded w-full max-w-sm object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Sets table */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50 text-xs text-gray-500">
-                    <th className="px-3 py-2 text-left w-8">#</th>
-                    <th className="px-3 py-2 text-left">Planned</th>
-                    <th className="px-3 py-2 text-left">Performed</th>
-                    <th className="px-3 py-2 text-left">RPE</th>
-                    <th className="px-3 py-2 text-left w-20">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {allSets.map((set, i) => (
-                    <SetRow
-                      key={set.id}
-                      set={set}
-                      index={i}
-                      onComplete={handleCompleteSet}
-                      onSkip={skipSet}
-                      prSetId={prSetId}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/* Sets table — only for non-sentinel exercises */}
+            {!currentSentinel && (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 text-xs text-gray-500">
+                        <th className="px-3 py-2 text-left w-8">#</th>
+                        <th className="px-3 py-2 text-left">Planned</th>
+                        <th className="px-3 py-2 text-left">Performed</th>
+                        <th className="px-3 py-2 text-left">RPE</th>
+                        <th className="px-3 py-2 text-left w-20">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {allSets.map((set, i) => (
+                        <SetRow
+                          key={set.id}
+                          set={set}
+                          index={i}
+                          onComplete={handleCompleteSet}
+                          onSkip={skipSet}
+                          prSetId={prSetId}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Add set */}
-            <div className="px-4 py-2 border-t border-gray-100">
-              <button
-                onClick={handleAddSet}
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 min-h-[36px]"
-              >
-                <Plus className="w-4 h-4" />
-                Add set
-              </button>
-            </div>
+                {/* Add set */}
+                <div className="px-4 py-2 border-t border-gray-100">
+                  <button
+                    onClick={handleAddSet}
+                    className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 min-h-[36px]"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add set
+                  </button>
+                </div>
+              </>
+            )}
 
-            {/* Technique rating (shows when all sets done) */}
-            {allSetsDone && (
+            {/* Technique rating (shows when all sets done, not for sentinels) */}
+            {!getSentinelType(currentPlanned?.exercise.exercise_code) && allSetsDone && (
               <div className="px-4 py-3 border-t border-gray-100">
                 <div className="text-xs text-gray-500 mb-2">Technique rating</div>
                 <div className="flex gap-2">
@@ -686,7 +766,8 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Navigation */}
         <div className="mx-4 mt-3 mb-4 flex items-center gap-2">
