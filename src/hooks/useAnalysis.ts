@@ -1,3 +1,4 @@
+// TODO: Consider extracting parsePlannedExercise and parsePerformedRaw into src/lib/calculations.ts
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
@@ -23,6 +24,7 @@ export interface ExerciseBreakdown {
   plannedAvgLoad: number;
   performedSets: number;
   performedReps: number;
+  performedTonnage: number;
   performedMaxLoad: number;
   performedAvgLoad: number;
 }
@@ -173,8 +175,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id')
       .gte('week_start', startDate)
       .lte('week_start', endDate),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('macro_phases')
       .select('id, name, color, macrocycle_id'),
     supabase
@@ -322,7 +323,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
         const bd = exBreakdownMap.get(pe.exercise_id) ?? {
           exerciseId: ex.id, exerciseName: ex.name, category: ex.category, color: ex.color,
           plannedSets: 0, plannedReps: 0, plannedMaxLoad: 0, plannedAvgLoad: 0,
-          performedSets: 0, performedReps: 0, performedMaxLoad: 0, performedAvgLoad: 0,
+          performedSets: 0, performedReps: 0, performedTonnage: 0, performedMaxLoad: 0, performedAvgLoad: 0,
         };
         bd.plannedSets += parsed.sets;
         bd.plannedReps += parsed.reps;
@@ -366,6 +367,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
           };
           bd.performedSets += parsed.sets;
           bd.performedReps += parsed.reps;
+          bd.performedTonnage += parsed.reps * parsed.load;
           bd.performedMaxLoad = Math.max(bd.performedMaxLoad, parsed.load);
           bd.performedAvgLoad = parsed.load;
           exBreakdownMap.set(le.exercise_id, bd);

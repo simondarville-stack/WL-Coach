@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getMondayOfWeek } from '../../lib/dateUtils';
 import {
   BarChart,
   Bar,
@@ -22,14 +23,6 @@ interface WeekCompliance {
   planned: number;
 }
 
-function getMondayOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 
 export function ComplianceChart({ athleteId, weeks = 4 }: ComplianceChartProps) {
   const [data, setData] = useState<WeekCompliance[]>([]);

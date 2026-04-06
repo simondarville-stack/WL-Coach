@@ -121,7 +121,6 @@ export function LiftRatios({ athleteId }: Props) {
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <h3 className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-2">Lift ratios</h3>
         {ratios.map(ratio => {
-          const pct = Math.min(ratio.value, 130); // cap at 130% for bar display
           const barWidth = `${Math.min((ratio.value / 130) * 100, 100)}%`;
           const targetStart = `${(ratio.targetMin / 130) * 100}%`;
           const targetWidth = `${((ratio.targetMax - ratio.targetMin) / 130) * 100}%`;

@@ -42,7 +42,8 @@ export function useCombos() {
       destinationHasData,
     } = params;
 
-    const buildOwnerFilter = (query: any, athleteId: string | null, groupId: string | null) => {
+    type ChainableQuery = { eq(c: string, v: string): ChainableQuery; is(c: string, v: null): ChainableQuery };
+    const buildOwnerFilter = (query: ChainableQuery, athleteId: string | null, groupId: string | null): ChainableQuery => {
       if (athleteId) return query.eq('athlete_id', athleteId).is('group_id', null);
       if (groupId) return query.eq('group_id', groupId).is('athlete_id', null);
       return query.is('athlete_id', null).is('group_id', null);
@@ -112,9 +113,9 @@ export function useCombos() {
         .in('planned_exercise_id', Array.from(exerciseIdMap.keys()));
 
       if (sourceSetLines && sourceSetLines.length > 0) {
-        const newLines = sourceSetLines.map((line: any) => {
+        const newLines = sourceSetLines.map((line: { id: string; created_at: string; updated_at: string; planned_exercise_id: string } & Record<string, unknown>) => {
           const { id: _id, created_at: _c, updated_at: _u, planned_exercise_id: oldExId, ...lineData } = line;
-          return { ...lineData, planned_exercise_id: exerciseIdMap.get(oldExId)! };
+          return { ...lineData, planned_exercise_id: exerciseIdMap.get(oldExId as string)! };
         });
         await supabase.from('planned_set_lines').insert(newLines);
       }
@@ -126,9 +127,9 @@ export function useCombos() {
         .in('planned_exercise_id', Array.from(exerciseIdMap.keys()));
 
       if (sourceMembers && sourceMembers.length > 0) {
-        const newMembers = sourceMembers.map((m: any) => {
+        const newMembers = sourceMembers.map((m: { id: string; created_at: string; planned_exercise_id: string } & Record<string, unknown>) => {
           const { id: _id, created_at: _c, planned_exercise_id: oldExId, ...mData } = m;
-          return { ...mData, planned_exercise_id: exerciseIdMap.get(oldExId)! };
+          return { ...mData, planned_exercise_id: exerciseIdMap.get(oldExId as string)! };
         });
         await supabase.from('planned_exercise_combo_members').insert(newMembers);
       }
@@ -150,15 +151,16 @@ export function useCombos() {
     const { data: members } = await supabase
       .from('planned_exercise_combo_members')
       .select('*, exercise:exercise_id(*)')
-      .in('planned_exercise_id', comboExs.map((e: any) => e.id))
+      .in('planned_exercise_id', comboExs.map((e: { id: string }) => e.id))
       .order('position');
 
     const membersMap: Record<string, ComboMemberEntry[]> = {};
-    (members || []).forEach((m: any) => {
+    type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
+    (members || []).forEach((m: MemberRow) => {
       if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
       membersMap[m.planned_exercise_id].push({
         exerciseId: m.exercise_id,
-        exercise: m.exercise as Exercise,
+        exercise: m.exercise,
         position: m.position,
       });
     });

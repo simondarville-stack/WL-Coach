@@ -378,7 +378,8 @@ export function useCoachDashboard() {
           .select('athlete:athletes(name)')
           .eq('event_id', event.id);
 
-        const athleteNames = eventAthletes?.map((ea: any) => ea.athlete.name).join(', ') || 'All Athletes';
+        type EventAthleteRow = { athlete: { name: string } | null };
+        const athleteNames = eventAthletes?.map((ea: EventAthleteRow) => ea.athlete?.name ?? '').filter(Boolean).join(', ') || 'All Athletes';
 
         const eventDate = new Date(event.event_date);
         eventDate.setHours(0, 0, 0, 0);
@@ -421,10 +422,11 @@ export function useCoachDashboard() {
         .eq('group_id', group.id)
         .is('left_at', null);
 
-      const memberList = (members || []).map((m: any) => ({
-        id: m.athlete.id,
-        name: m.athlete.name,
-      }));
+      type GroupMemberRow = { athlete: { id: string; name: string } | null };
+      const memberList = (members || []).map((m: GroupMemberRow) => ({
+        id: m.athlete?.id ?? '',
+        name: m.athlete?.name ?? '',
+      })).filter(m => m.id);
 
       const { data: currentWeekPlan } = await supabase
         .from('week_plans')

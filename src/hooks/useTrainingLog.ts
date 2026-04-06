@@ -1,13 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
-
-function toLocalISO(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+import { toLocalISO } from '../lib/dateUtils';
 import type {
   WeekPlan,
   PlannedExerciseWithExercise,

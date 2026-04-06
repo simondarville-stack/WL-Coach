@@ -1,3 +1,5 @@
+// TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
+// TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, ArrowLeft, Video, Image as ImageIcon, Upload, Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';

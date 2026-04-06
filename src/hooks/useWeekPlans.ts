@@ -1,3 +1,4 @@
+// TODO: Consider splitting into useWeekPlanData (loading) and useWeekPlanMutations (writes)
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
@@ -141,11 +142,12 @@ export function useWeekPlans() {
           .in('planned_exercise_id', comboExs.map(e => e.id))
           .order('position');
         const membersMap: Record<string, ComboMemberEntry[]> = {};
-        (members || []).forEach((m: any) => {
+        type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
+        (members || []).forEach((m: MemberRow) => {
           if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
           membersMap[m.planned_exercise_id].push({
             exerciseId: m.exercise_id,
-            exercise: m.exercise as Exercise,
+            exercise: m.exercise,
             position: m.position,
           });
         });
@@ -272,7 +274,7 @@ export function useWeekPlans() {
       .eq('day_index', dayIndex)
       .order('position');
 
-    const items = (exData || []).sort((a: any, b: any) => a.position - b.position);
+    const items = (exData || []).sort((a, b) => a.position - b.position);
     for (let i = 0; i < items.length; i++) {
       await supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', items[i].id);
     }
@@ -351,7 +353,8 @@ export function useWeekPlans() {
     const isTextBased = isFreeText || isRPE || isFreeTextReps;
     const isNonNumeric = isFreeText || isOtherUnit;
 
-    await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
+    const { error: deleteError } = await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
+    if (deleteError) throw deleteError;
 
     if (isCombo) {
       const parsed = parseComboPrescription(prescription);
@@ -365,7 +368,8 @@ export function useWeekPlans() {
           load_max: line.loadMax ?? null,
           position: idx + 1,
         }));
-        await supabase.from('planned_set_lines').insert(lines);
+        const { error: insertError } = await supabase.from('planned_set_lines').insert(lines);
+        if (insertError) throw insertError;
 
         const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
         const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.totalReps, 0);
@@ -408,7 +412,8 @@ export function useWeekPlans() {
         load_max: line.loadMax ?? null,
         position: idx + 1,
       }));
-      await supabase.from('planned_set_lines').insert(lines);
+      const { error: insertLinesError } = await supabase.from('planned_set_lines').insert(lines);
+      if (insertLinesError) throw insertLinesError;
 
       const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
       const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.reps, 0);
@@ -546,7 +551,7 @@ export function useWeekPlans() {
         .eq('planned_exercise_id', sourceEx.id);
 
       if (setLines && setLines.length > 0) {
-        await supabase.from('planned_set_lines').insert(
+        const { error: copyLinesError } = await supabase.from('planned_set_lines').insert(
           setLines.map(line => ({
             planned_exercise_id: newEx.id,
             sets: line.sets,
@@ -557,6 +562,7 @@ export function useWeekPlans() {
             position: line.position,
           }))
         );
+        if (copyLinesError) throw copyLinesError;
       }
     }
 
@@ -569,13 +575,14 @@ export function useWeekPlans() {
         .order('position');
 
       if (members && members.length > 0) {
-        await supabase.from('planned_exercise_combo_members').insert(
-          members.map((m: any) => ({
+        const { error: copyMembersError } = await supabase.from('planned_exercise_combo_members').insert(
+          members.map((m: { exercise_id: string; position: number }) => ({
             planned_exercise_id: newEx.id,
             exercise_id: m.exercise_id,
             position: m.position,
           }))
         );
+        if (copyMembersError) throw copyMembersError;
       }
     }
 
@@ -634,8 +641,10 @@ export function useWeekPlans() {
 
   const deleteDayExercises = async (exerciseIds: string[]): Promise<void> => {
     if (exerciseIds.length === 0) return;
-    await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
-    await supabase.from('planned_exercises').delete().in('id', exerciseIds);
+    const { error: delLinesError } = await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
+    if (delLinesError) throw delLinesError;
+    const { error: delExError } = await supabase.from('planned_exercises').delete().in('id', exerciseIds);
+    if (delExError) throw delExError;
   };
 
   const fetchExercisesForDay = async (weekPlanId: string, dayIndex: number): Promise<PlannedExercise[]> => {

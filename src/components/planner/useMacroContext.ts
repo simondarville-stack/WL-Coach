@@ -2,12 +2,23 @@ import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { MacroContext } from './WeeklyPlanner';
 
+// Supabase join result — the generated types don't include joined fields
+type MacroWeekWithJoin = {
+  id: string;
+  macrocycle_id: string;
+  week_number: number;
+  week_type: string | null;
+  week_type_text: string | null;
+  total_reps_target: number | null;
+  macrocycles: { id: string; name: string } | null;
+};
+
 export function useMacroContext() {
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
 
   async function loadMacroContext(athleteId: string, selectedDate: string) {
     try {
-      const { data: mw } = await supabase
+      const { data: mwRaw } = await supabase
         .from('macro_weeks')
         .select(`
           id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target,
@@ -20,10 +31,10 @@ export function useMacroContext() {
         .limit(1)
         .maybeSingle();
 
+      const mw = mwRaw as MacroWeekWithJoin | null;
       if (!mw) { setMacroContext(null); return; }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const macro = (mw as any).macrocycles;
+      const macro = mw.macrocycles;
 
       const [phaseResult, countResult] = await Promise.all([
         supabase

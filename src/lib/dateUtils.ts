@@ -1,3 +1,18 @@
+/** Format a Date object as a local YYYY-MM-DD string (timezone-safe). */
+export function toLocalISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Add (or subtract) weeks from an ISO date string, returning a local ISO string. */
+export function addWeeks(isoDate: string, weeks: number): string {
+  const d = new Date(isoDate + 'T00:00:00');
+  d.setDate(d.getDate() + weeks * 7);
+  return toLocalISO(d);
+}
+
 export function formatDateToDDMMYYYY(dateString: string | null | undefined): string {
   if (!dateString) return '';
   const date = new Date(dateString);
