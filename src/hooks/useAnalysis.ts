@@ -126,8 +126,9 @@ function parsePlannedExercise(pe: {
       if (lines.length > 0) {
         const totalSets = lines.reduce((s, l) => s + l.sets, 0);
         const totalReps = lines.reduce((s, l) => s + l.totalReps * l.sets, 0);
-        const mxLoad = Math.max(...lines.map(l => l.load));
-        const avgL = lines.reduce((s, l) => s + l.load * l.sets, 0) / (totalSets || 1);
+        const mxLoad = Math.max(...lines.map(l => l.loadMax ?? l.load));
+        const effectiveLC = (l: typeof lines[0]) => l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
+        const avgL = lines.reduce((s, l) => s + effectiveLC(l) * l.sets, 0) / (totalSets || 1);
         return { sets: totalSets, reps: totalReps, maxLoad: mxLoad, avgLoad: avgL, tonnage: totalReps * avgL };
       }
     } else {
@@ -135,8 +136,9 @@ function parsePlannedExercise(pe: {
       if (lines.length > 0) {
         const totalSets = lines.reduce((s, l) => s + l.sets, 0);
         const totalReps = lines.reduce((s, l) => s + l.reps * l.sets, 0);
-        const mxLoad = Math.max(...lines.map(l => l.load));
-        const avgL = lines.reduce((s, l) => s + l.load * l.sets, 0) / (totalSets || 1);
+        const mxLoad = Math.max(...lines.map(l => l.loadMax ?? l.load));
+        const effectiveL = (l: typeof lines[0]) => l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
+        const avgL = lines.reduce((s, l) => s + effectiveL(l) * l.sets, 0) / (totalSets || 1);
         return { sets: totalSets, reps: totalReps, maxLoad: mxLoad, avgLoad: avgL, tonnage: totalReps * avgL };
       }
     }
