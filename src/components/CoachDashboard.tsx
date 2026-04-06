@@ -1,3 +1,5 @@
+// TODO: Consider extracting athlete-status loading into useAthleteStatuses hook
+// TODO: Consider extracting group-status section into GroupStatusPanel component
 import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, TrendingUp, TrendingDown, Minus, Calendar, ChevronDown, ChevronRight, ArrowUp, ArrowDown, UsersRound } from 'lucide-react';
 import { fetchWeeklyAggregates } from '../hooks/useAnalysis';

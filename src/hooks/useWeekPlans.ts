@@ -1,3 +1,4 @@
+// TODO: Consider splitting into useWeekPlanData (loading) and useWeekPlanMutations (writes)
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';

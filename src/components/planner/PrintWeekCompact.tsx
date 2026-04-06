@@ -1,3 +1,5 @@
+// TODO: Consider extracting buildGridCells / buildComboGridCells into a shared printUtils module
+// TODO: Consider extracting the athlete-programme and group-programme render paths into sub-components
 import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry } from '../../lib/database.types';
 import { DAYS_OF_WEEK } from '../../lib/constants';

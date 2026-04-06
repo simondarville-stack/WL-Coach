@@ -1,3 +1,4 @@
+// TODO: Consider extracting parsePlannedExercise and parsePerformedRaw into src/lib/calculations.ts
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';

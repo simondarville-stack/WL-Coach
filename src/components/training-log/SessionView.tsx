@@ -1,3 +1,5 @@
+// TODO: Consider extracting set-logging UI (SetRow + completed-set display) into SetLogger component
+// TODO: Consider extracting RPE/RAW scoring section into ReadinessPanel component
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Check, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { RestTimer } from './RestTimer';

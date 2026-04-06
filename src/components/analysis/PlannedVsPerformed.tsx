@@ -24,8 +24,9 @@ function formatWeek(ws: string) {
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip({ active, payload, label }: any) {
+interface TooltipPayloadItem { name: string; value: number; color: string }
+interface CustomTooltipProps { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-md text-[12px]">

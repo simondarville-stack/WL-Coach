@@ -1,3 +1,5 @@
+// TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
+// TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType } from '../../lib/database.types';

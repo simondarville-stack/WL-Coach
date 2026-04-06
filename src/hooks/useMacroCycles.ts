@@ -1,3 +1,4 @@
+// TODO: Consider splitting into useMacroCycleData (read) and useMacroCycleMutations (write/phase ops)
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';

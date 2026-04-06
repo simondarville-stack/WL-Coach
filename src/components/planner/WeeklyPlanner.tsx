@@ -1,3 +1,5 @@
+// TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
+// TODO: Consider extracting print-mode rendering into a PrintManager component
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -241,7 +243,7 @@ export function WeeklyPlanner() {
 
   const loadMacroContext = async (athleteId: string, date: string) => {
     try {
-      const { data: mw } = await supabase
+      const { data: mwRaw } = await supabase
         .from('macro_weeks')
         .select(`
           id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target,
@@ -254,10 +256,15 @@ export function WeeklyPlanner() {
         .limit(1)
         .maybeSingle();
 
+      type MacroWeekWithJoin = {
+        id: string; macrocycle_id: string; week_number: number;
+        week_type: string | null; week_type_text: string | null; total_reps_target: number | null;
+        macrocycles: { id: string; name: string } | null;
+      };
+      const mw = mwRaw as MacroWeekWithJoin | null;
       if (!mw) { setMacroContext(null); return; }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const macro = (mw as any).macrocycles;
+      const macro = mw.macrocycles;
 
       const [phaseResult, countResult] = await Promise.all([
         supabase
