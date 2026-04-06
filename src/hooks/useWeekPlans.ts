@@ -362,19 +362,21 @@ export function useWeekPlans() {
           reps: line.totalReps,
           reps_text: line.repsText,
           load_value: line.load,
+          load_max: line.loadMax ?? null,
           position: idx + 1,
         }));
         await supabase.from('planned_set_lines').insert(lines);
 
         const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
         const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.totalReps, 0);
-        const highestLoad = Math.max(...parsed.map(l => l.load));
-        const weightedSum = parsed.reduce((sum, l) => sum + l.load * l.sets * l.totalReps, 0);
+        const highestLoad = Math.max(...parsed.map(l => l.loadMax ?? l.load));
+        const effectiveLoad = (l: typeof parsed[0]) =>
+          l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
+        const weightedSum = parsed.reduce((sum, l) => sum + effectiveLoad(l) * l.sets * l.totalReps, 0);
         const avgLoad = totalReps > 0 ? weightedSum / totalReps : null;
 
         await supabase.from('planned_exercises').update({
           prescription_raw: prescription,
-
           unit,
           summary_total_sets: totalSets,
           summary_total_reps: totalReps,
@@ -384,7 +386,6 @@ export function useWeekPlans() {
       } else {
         await supabase.from('planned_exercises').update({
           prescription_raw: prescription,
-
           unit,
           summary_total_sets: 0,
           summary_total_reps: 0,
@@ -404,14 +405,17 @@ export function useWeekPlans() {
         sets: line.sets,
         reps: line.reps,
         load_value: line.load,
+        load_max: line.loadMax ?? null,
         position: idx + 1,
       }));
       await supabase.from('planned_set_lines').insert(lines);
 
       const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
       const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.reps, 0);
-      const highestLoad = Math.max(...parsed.map(l => l.load));
-      const weightedSum = parsed.reduce((sum, l) => sum + l.load * l.sets * l.reps, 0);
+      const highestLoad = Math.max(...parsed.map(l => l.loadMax ?? l.load));
+      const effectiveLoad = (l: typeof parsed[0]) =>
+        l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
+      const weightedSum = parsed.reduce((sum, l) => sum + effectiveLoad(l) * l.sets * l.reps, 0);
       const avgLoad = totalReps > 0 ? weightedSum / totalReps : null;
 
       await supabase.from('planned_exercises').update({
@@ -549,6 +553,7 @@ export function useWeekPlans() {
             reps: line.reps,
             reps_text: line.reps_text ?? null,
             load_value: line.load_value,
+            load_max: line.load_max ?? null,
             position: line.position,
           }))
         );
