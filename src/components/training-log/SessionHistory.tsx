@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { toLocalISO, addWeeks } from '../../lib/dateUtils';
+import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import type { Athlete, TrainingLogSession, WeekPlan } from '../../lib/database.types';
 
 interface SessionHistoryProps {
@@ -15,27 +17,6 @@ interface WeekData {
   sessions: TrainingLogSession[];
 }
 
-function toLocalISO(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function getMondayISO(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return toLocalISO(d);
-}
-
-function addWeeks(isoDate: string, weeks: number): string {
-  const d = new Date(isoDate + 'T00:00:00');
-  d.setDate(d.getDate() + weeks * 7);
-  return toLocalISO(d);
-}
 
 function formatWeekRange(weekStartISO: string): string {
   const start = new Date(weekStartISO + 'T00:00:00');
@@ -97,7 +78,7 @@ function computeStreak(sessions: TrainingLogSession[]): number {
 }
 
 export function SessionHistory({ athlete, onOpenSession, onReviewSession }: SessionHistoryProps) {
-  const todayWeekStart = getMondayISO();
+  const todayWeekStart = getMondayOfWeekISO(new Date());
   const [currentWeekStart, setCurrentWeekStart] = useState(todayWeekStart);
   const [weekData, setWeekData] = useState<WeekData | null>(null);
   const [history, setHistory] = useState<WeekData[]>([]);
