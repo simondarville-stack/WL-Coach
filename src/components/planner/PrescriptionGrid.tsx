@@ -11,6 +11,7 @@ import { useShiftHeld } from '../../hooks/useShiftHeld';
 interface GridColumn {
   id: string;
   load: number;
+  loadMax: number | null;    // null = fixed, number = interval upper bound
   loadText: string;
   reps: number;
   repsText: string;  // display: "3" for regular, "2+1" for combo
@@ -47,6 +48,7 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
     return lines.map(line => ({
       id: nextId(),
       load: parseFloat(line.loadText) || 0,
+      loadMax: null,
       loadText: line.loadText,
       reps: line.reps,
       repsText: String(line.reps),
@@ -58,7 +60,10 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
     return lines.map(line => ({
       id: nextId(),
       load: line.load,
-      loadText: line.loadText ?? String(line.load),
+      loadMax: line.loadMax ?? null,
+      loadText: line.loadMax != null
+        ? `${line.load}-${line.loadMax}`
+        : (line.loadText ?? String(line.load)),
       reps: line.totalReps,
       repsText: line.repsText,
       sets: line.sets,
@@ -68,7 +73,8 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
   return lines.map(line => ({
     id: nextId(),
     load: line.load,
-    loadText: String(line.load),
+    loadMax: line.loadMax ?? null,
+    loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : String(line.load),
     reps: line.reps,
     repsText: String(line.reps),
     sets: line.sets,
@@ -76,7 +82,12 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
 }
 
 function columnsToSetLines(cols: GridColumn[]): ParsedSetLine[] {
-  return cols.map(col => ({ load: col.load, reps: col.reps, sets: col.sets }));
+  return cols.map(col => ({
+    load: col.load,
+    loadMax: col.loadMax ?? null,
+    reps: col.reps,
+    sets: col.sets,
+  }));
 }
 
 export function PrescriptionGrid({
@@ -128,6 +139,7 @@ export function PrescriptionGrid({
           repsText: col.repsText,
           totalReps: col.reps,
           load: col.load,
+          loadMax: col.loadMax ?? null,
           ...(isFreeTextReps ? { loadText: col.loadText } : {}),
         })),
         unit,
@@ -166,23 +178,24 @@ export function PrescriptionGrid({
       return;
     }
 
+    const col = columns.find(c => c.id === colId);
+    if (!col) return;
+
     if (e.ctrlKey || e.metaKey) {
-      const col = columns.find(c => c.id === colId);
-      if (!col) return;
       let currentValue: string;
       if (field === 'reps') {
         currentValue = col.repsText;
       } else if (field === 'load' && isFreeTextReps) {
         currentValue = col.loadText;
+      } else if (field === 'load') {
+        // Show interval format if interval, otherwise plain load
+        currentValue = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
       } else {
-        currentValue = String(field === 'load' ? col.load : col.sets);
+        currentValue = String(col.sets);
       }
       setEditing({ colId, field, value: currentValue });
       return;
     }
-
-    const col = columns.find(c => c.id === colId);
-    if (!col) return;
 
     const isRight = e.button === 2;
     const delta = isRight ? -1 : 1;
@@ -192,8 +205,33 @@ export function PrescriptionGrid({
         setEditing({ colId, field: 'load', value: col.loadText });
         return;
       }
-      const next = Math.max(0, col.load + delta);
-      updateColumn(colId, { load: next, loadText: String(next) });
+
+      if (col.loadMax !== null) {
+        // INTERVAL column — determine which half was clicked
+        const rect = (e.target as HTMLElement).getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const isRightHalf = clickX > rect.width / 2;
+
+        if (isRightHalf) {
+          const nextMax = Math.max(col.load, (col.loadMax || 0) + delta);
+          updateColumn(colId, {
+            loadMax: nextMax,
+            loadText: `${col.load}-${nextMax}`,
+          });
+        } else {
+          const nextMin = Math.max(0, col.load + delta);
+          const adjustedMax = Math.max(nextMin, col.loadMax || nextMin);
+          updateColumn(colId, {
+            load: nextMin,
+            loadMax: adjustedMax,
+            loadText: `${nextMin}-${adjustedMax}`,
+          });
+        }
+      } else {
+        // FIXED column — existing behavior
+        const next = Math.max(0, col.load + delta);
+        updateColumn(colId, { load: next, loadMax: null, loadText: String(next) });
+      }
     } else if (field === 'reps') {
       if (isCombo) {
         // Increment first part of the tuple
@@ -239,8 +277,28 @@ export function PrescriptionGrid({
         const text = editing.value.trim();
         updateColumn(editing.colId, { loadText: text, load: parseFloat(text) || 0 });
       } else {
-        const val = Math.max(0, parseFloat(editing.value) || 0);
-        updateColumn(editing.colId, { load: val, loadText: String(val) });
+        const text = editing.value.trim();
+        // Check if it's an interval (contains "-" not at start)
+        const dashIdx = text.indexOf('-', 1);
+        if (dashIdx !== -1) {
+          const minVal = parseFloat(text.slice(0, dashIdx));
+          const maxVal = parseFloat(text.slice(dashIdx + 1));
+          if (!isNaN(minVal) && !isNaN(maxVal) && maxVal >= minVal) {
+            updateColumn(editing.colId, {
+              load: minVal,
+              loadMax: maxVal,
+              loadText: `${minVal}-${maxVal}`,
+            });
+          }
+        } else {
+          // Fixed load — clears interval if present
+          const val = Math.max(0, parseFloat(text) || 0);
+          updateColumn(editing.colId, {
+            load: val,
+            loadMax: null,
+            loadText: String(val),
+          });
+        }
       }
     } else {
       const val = Math.max(1, parseInt(editing.value, 10) || col.sets);
@@ -262,13 +320,35 @@ export function PrescriptionGrid({
   function handleAddColumn() {
     if (disabled) return;
     const last = columns[columns.length - 1];
+
+    let newLoad: number;
+    let newLoadMax: number | null = null;
+    let newLoadText: string;
+
+    if (last?.loadMax !== null && last?.loadMax !== undefined) {
+      // Last column was interval → new column is also interval with +increment
+      newLoad = last.load + loadIncrement;
+      newLoadMax = last.loadMax + loadIncrement;
+      newLoadText = `${newLoad}-${newLoadMax}`;
+    } else if (isFreeTextReps) {
+      newLoad = last?.load ?? 0;
+      newLoadMax = null;
+      newLoadText = last?.loadText ?? '';
+    } else {
+      newLoad = last ? last.load + loadIncrement : loadIncrement;
+      newLoadMax = null;
+      newLoadText = String(newLoad);
+    }
+
     const defaultRepsText = isCombo
       ? (last?.repsText ?? defaultRepsTextForCombo(comboPartCount))
       : String(last?.reps ?? 1);
+
     const newCol: GridColumn = {
       id: nextId(),
-      load: isFreeTextReps ? (last?.load ?? 0) : (last ? last.load + loadIncrement : loadIncrement),
-      loadText: isFreeTextReps ? (last?.loadText ?? '') : (last ? String(last.load + loadIncrement) : String(loadIncrement)),
+      load: newLoad,
+      loadMax: newLoadMax,
+      loadText: newLoadText,
       reps: last ? last.reps : 1,
       repsText: defaultRepsText,
       sets: 1,
@@ -359,7 +439,72 @@ export function PrescriptionGrid({
     );
   }
 
-  function renderCell(col: GridColumn, field: 'load' | 'reps' | 'sets', displayValue: string) {
+  function renderLoadCell(col: GridColumn) {
+    const isEditingThis = editing?.colId === col.id && editing.field === 'load';
+    const isInterval = col.loadMax !== null;
+    const isDeleting = shiftHeld;
+
+    if (isEditingThis) {
+      return (
+        <input
+          ref={inputRef}
+          value={editing!.value}
+          onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={commitEdit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
+          }}
+          className="w-full text-center text-xs font-mono bg-blue-50 border border-blue-400 rounded outline-none"
+          style={{ minWidth: 0 }}
+        />
+      );
+    }
+
+    const loadDisplay = isFreeTextReps
+      ? col.loadText
+      : isInterval
+      ? undefined  // rendered inline below
+      : unit === 'percentage'
+      ? `${col.load}%`
+      : String(col.load);
+
+    return (
+      <button
+        onMouseDown={e => {
+          if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load');
+        }}
+        onContextMenu={e => e.preventDefault()}
+        tabIndex={-1}
+        disabled={disabled}
+        title={isDeleting ? 'Click to delete column' : isInterval ? 'Left half: adjust min · Right half: adjust max · Ctrl+click: edit' : undefined}
+        className={[
+          'w-full text-center text-xs font-mono font-medium select-none transition-colors',
+          isInterval ? 'bg-blue-50/40 border border-blue-100 rounded' : '',
+          isDeleting
+            ? 'text-red-600 hover:bg-red-100 active:bg-red-200 cursor-pointer rounded'
+            : !disabled
+            ? isInterval
+              ? 'hover:bg-blue-100 active:bg-blue-200 cursor-col-resize rounded'
+              : 'hover:bg-blue-50 hover:ring-1 hover:ring-blue-300 active:bg-blue-100 cursor-pointer rounded'
+            : '',
+        ].filter(Boolean).join(' ')}
+        style={{ minHeight: '1.25rem', lineHeight: '1.25rem' }}
+      >
+        {isInterval ? (
+          <span className="select-none">
+            <span className={isDeleting ? 'text-red-600' : 'text-gray-700'}>{col.load}</span>
+            <span className={isDeleting ? 'text-red-400' : 'text-gray-400 mx-0.5'}>-</span>
+            <span className={isDeleting ? 'text-red-600' : 'text-gray-700'}>{col.loadMax}</span>
+          </span>
+        ) : (
+          <span className={isDeleting ? 'text-red-600' : ''}>{loadDisplay}</span>
+        )}
+      </button>
+    );
+  }
+
+  function renderCell(col: GridColumn, field: 'reps' | 'sets', displayValue: string) {
     const isEditingThis = editing?.colId === col.id && editing.field === field;
 
     if (isEditingThis) {
@@ -416,12 +561,6 @@ export function PrescriptionGrid({
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
     >
       {columns.map(col => {
-        const loadDisplay = isFreeTextReps
-          ? col.loadText
-          : unit === 'percentage'
-          ? `${col.load}%`
-          : String(col.load);
-
         const isDeleting = shiftHeld;
 
         return (
@@ -436,8 +575,8 @@ export function PrescriptionGrid({
             onBlur={() => setFocusedColId(prev => prev === col.id ? null : prev)}
           >
             {/* Stacked fraction: load / reps */}
-            <div className="flex flex-col items-center" style={{ minWidth: isCombo ? 'auto' : '2.5rem' }}>
-              <div className="w-full">{renderCell(col, 'load', loadDisplay)}</div>
+            <div className="flex flex-col items-center" style={{ minWidth: isCombo ? 'auto' : col.loadMax !== null ? '3.5rem' : '2.5rem' }}>
+              <div className="w-full">{renderLoadCell(col)}</div>
               <div className={`w-full my-px border-t ${isDeleting ? 'border-red-300' : 'border-gray-400'}`} />
               <div className="w-full">
                 {isCombo ? renderComboRepsCell(col) : renderCell(col, 'reps', col.repsText)}
