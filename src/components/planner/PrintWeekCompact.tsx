@@ -115,10 +115,10 @@ function getExerciseCode(ex: Exercise, usedCodes: Map<string, string>): string {
 function buildGridCells(prescriptionRaw: string | null): GridCell[] {
   if (!prescriptionRaw?.trim()) return [];
   const parsed = parsePrescription(prescriptionRaw);
-  if (parsed.length === 0) return parsed.map(() => ({ load: '?', reps: '?', sets: 1, showSuperscript: false }));
+  if (parsed.length === 0) return [];
 
   return parsed.map(p => ({
-    load: p.load,
+    load: p.loadMax != null ? `${p.load}-${p.loadMax}` : p.load,
     reps: p.reps,
     sets: p.sets,
   }));
@@ -130,7 +130,7 @@ function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
   if (parsed.length === 0) return [];
 
   return parsed.map(p => ({
-    load: p.load,
+    load: p.loadMax != null ? `${p.load}-${p.loadMax}` : p.load,
     reps: p.repsText,
     sets: p.sets,
   }));
