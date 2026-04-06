@@ -86,7 +86,9 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
           <div key={i} className="flex items-center gap-0.5">
             <div className="flex flex-col items-center leading-none" style={{ minWidth: '1.5rem' }}>
               <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">
-                {line.load}{unit === 'percentage' ? '%' : ''}
+                {line.loadMax != null
+                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
+                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
               </span>
               <div className="w-full border-t border-gray-400 my-px" />
               <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.repsText}</span>
@@ -110,7 +112,9 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
         <div key={i} className="flex items-center gap-0.5">
           <div className="flex flex-col items-center leading-none" style={{ minWidth: '1.5rem' }}>
             <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">
-              {line.load}{unit === 'percentage' ? '%' : ''}
+              {line.loadMax != null
+                ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
+                : `${line.load}${unit === 'percentage' ? '%' : ''}`}
             </span>
             <div className="w-full border-t border-gray-400 my-px" />
             <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.reps}</span>
