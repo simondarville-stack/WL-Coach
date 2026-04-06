@@ -352,7 +352,8 @@ export function useWeekPlans() {
     const isTextBased = isFreeText || isRPE || isFreeTextReps;
     const isNonNumeric = isFreeText || isOtherUnit;
 
-    await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
+    const { error: deleteError } = await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
+    if (deleteError) throw deleteError;
 
     if (isCombo) {
       const parsed = parseComboPrescription(prescription);
@@ -366,7 +367,8 @@ export function useWeekPlans() {
           load_max: line.loadMax ?? null,
           position: idx + 1,
         }));
-        await supabase.from('planned_set_lines').insert(lines);
+        const { error: insertError } = await supabase.from('planned_set_lines').insert(lines);
+        if (insertError) throw insertError;
 
         const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
         const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.totalReps, 0);
@@ -409,7 +411,8 @@ export function useWeekPlans() {
         load_max: line.loadMax ?? null,
         position: idx + 1,
       }));
-      await supabase.from('planned_set_lines').insert(lines);
+      const { error: insertLinesError } = await supabase.from('planned_set_lines').insert(lines);
+      if (insertLinesError) throw insertLinesError;
 
       const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
       const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.reps, 0);
@@ -547,7 +550,7 @@ export function useWeekPlans() {
         .eq('planned_exercise_id', sourceEx.id);
 
       if (setLines && setLines.length > 0) {
-        await supabase.from('planned_set_lines').insert(
+        const { error: copyLinesError } = await supabase.from('planned_set_lines').insert(
           setLines.map(line => ({
             planned_exercise_id: newEx.id,
             sets: line.sets,
@@ -558,6 +561,7 @@ export function useWeekPlans() {
             position: line.position,
           }))
         );
+        if (copyLinesError) throw copyLinesError;
       }
     }
 
@@ -570,13 +574,14 @@ export function useWeekPlans() {
         .order('position');
 
       if (members && members.length > 0) {
-        await supabase.from('planned_exercise_combo_members').insert(
+        const { error: copyMembersError } = await supabase.from('planned_exercise_combo_members').insert(
           members.map((m: { exercise_id: string; position: number }) => ({
             planned_exercise_id: newEx.id,
             exercise_id: m.exercise_id,
             position: m.position,
           }))
         );
+        if (copyMembersError) throw copyMembersError;
       }
     }
 
@@ -635,8 +640,10 @@ export function useWeekPlans() {
 
   const deleteDayExercises = async (exerciseIds: string[]): Promise<void> => {
     if (exerciseIds.length === 0) return;
-    await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
-    await supabase.from('planned_exercises').delete().in('id', exerciseIds);
+    const { error: delLinesError } = await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
+    if (delLinesError) throw delLinesError;
+    const { error: delExError } = await supabase.from('planned_exercises').delete().in('id', exerciseIds);
+    if (delExError) throw delExError;
   };
 
   const fetchExercisesForDay = async (weekPlanId: string, dayIndex: number): Promise<PlannedExercise[]> => {
