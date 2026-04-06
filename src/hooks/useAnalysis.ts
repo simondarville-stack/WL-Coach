@@ -23,6 +23,7 @@ export interface ExerciseBreakdown {
   plannedAvgLoad: number;
   performedSets: number;
   performedReps: number;
+  performedTonnage: number;
   performedMaxLoad: number;
   performedAvgLoad: number;
 }
@@ -321,7 +322,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
         const bd = exBreakdownMap.get(pe.exercise_id) ?? {
           exerciseId: ex.id, exerciseName: ex.name, category: ex.category, color: ex.color,
           plannedSets: 0, plannedReps: 0, plannedMaxLoad: 0, plannedAvgLoad: 0,
-          performedSets: 0, performedReps: 0, performedMaxLoad: 0, performedAvgLoad: 0,
+          performedSets: 0, performedReps: 0, performedTonnage: 0, performedMaxLoad: 0, performedAvgLoad: 0,
         };
         bd.plannedSets += parsed.sets;
         bd.plannedReps += parsed.reps;
@@ -365,6 +366,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
           };
           bd.performedSets += parsed.sets;
           bd.performedReps += parsed.reps;
+          bd.performedTonnage += parsed.reps * parsed.load;
           bd.performedMaxLoad = Math.max(bd.performedMaxLoad, parsed.load);
           bd.performedAvgLoad = parsed.load;
           exBreakdownMap.set(le.exercise_id, bd);
