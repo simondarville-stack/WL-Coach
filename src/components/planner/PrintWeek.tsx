@@ -49,7 +49,9 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
         {parsed.map((line, i) => (
           <div key={i} className="flex items-center gap-1.5">
             <div className="inline-flex flex-col items-center">
-              <span className="text-sm font-semibold text-gray-900">{line.load}{unitSym}</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
+              </span>
               <div className="border-t border-gray-400 w-full my-0.5" />
               <span className="text-sm font-semibold text-gray-900">{line.repsText}</span>
             </div>
@@ -66,7 +68,9 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
       {parsed.map((line, i) => (
         <div key={i} className="flex items-center gap-1.5">
           <div className="inline-flex flex-col items-center">
-            <span className="text-sm font-semibold text-gray-900">{line.load}{unitSym}</span>
+            <span className="text-sm font-semibold text-gray-900">
+              {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
+            </span>
             <div className="border-t border-gray-400 w-full my-0.5" />
             <span className="text-sm font-semibold text-gray-900">{line.reps}</span>
           </div>
