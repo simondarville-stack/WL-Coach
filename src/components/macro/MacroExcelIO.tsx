@@ -735,35 +735,43 @@ export function MacroExcelIO({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
+        {/* Export group */}
         <button
           onClick={handleExport}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title="Export to Excel with actuals"
         >
-          <Download size={13} />
+          <Download size={12} />
           Export Excel
         </button>
         <button
           onClick={handleExportTemplate}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           title="Export as percentage-based template"
         >
-          <Download size={13} />
-          Export as template (%)
+          <Download size={12} />
+          Export template (%)
         </button>
+
+        {/* Visual separator */}
+        <span className="text-gray-300 mx-1">|</span>
+
+        {/* Import group */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          title="Import absolute kg targets from Excel"
         >
-          <Upload size={13} />
+          <Upload size={12} />
           Import Excel
         </button>
         <button
           onClick={() => templateFileInputRef.current?.click()}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           title="Import a percentage-based template"
         >
-          <Upload size={13} />
+          <Upload size={12} />
           Import template
         </button>
         <input
