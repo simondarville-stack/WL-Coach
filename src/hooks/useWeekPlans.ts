@@ -454,6 +454,8 @@ export function useWeekPlans() {
         summary_avg_load: null,
       }).eq('id', plannedExId);
     }
+    // Promote group-sourced exercise to individual when coach edits it
+    await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
@@ -462,6 +464,8 @@ export function useWeekPlans() {
       .update({ notes: notes.trim() || null })
       .eq('id', plannedExId);
     if (error) throw error;
+    // Promote group-sourced exercise to individual when coach edits it
+    await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
   const fetchOtherDayPrescriptions = async (
