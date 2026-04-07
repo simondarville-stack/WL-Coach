@@ -11,6 +11,7 @@ import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
+import { parsePrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
@@ -511,6 +512,43 @@ export function WeeklyPlanner() {
     setShowCopyWeekModal(true);
   };
 
+  const handleResolvePercentages = async () => {
+    if (!currentWeekPlan) return;
+    const prMap = new Map<string, number>(
+      athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
+    );
+    const allExercises = Object.values(plannedExercises).flat();
+    const toResolve = allExercises.filter(ex => ex.unit === 'percentage' && ex.prescription_raw);
+
+    for (const ex of toResolve) {
+      // Resolve PR: direct first, then via reference exercise
+      const refId = ex.exercise.pr_reference_exercise_id ?? ex.exercise_id;
+      const prKg = prMap.get(refId) ?? prMap.get(ex.exercise_id);
+      if (!prKg) continue;
+
+      const parsed = parsePrescription(ex.prescription_raw!);
+      if (parsed.length === 0) continue;
+
+      const lines = parsed.map(line => {
+        const kg = Math.round((line.load / 100) * prKg * 2) / 2;
+        const kgMax = line.loadMax != null ? Math.round((line.loadMax / 100) * prKg * 2) / 2 : null;
+        if (kgMax != null) {
+          return `${kg}-${kgMax} × ${line.reps} × ${line.sets}`;
+        }
+        return `${kg} × ${line.reps} × ${line.sets}`;
+      });
+
+      await savePrescription(ex.id, {
+        prescription: lines.join('\n'),
+        unit: 'absolute_kg',
+      });
+    }
+
+    if (toResolve.length > 0) {
+      await handleRefresh();
+    }
+  };
+
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
     if (selection.type === 'individual' && selection.athlete) {
@@ -577,6 +615,7 @@ export function WeeklyPlanner() {
                 onPaste={handlePasteWeek}
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
+                onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
               />
 
             {/* ── Load Distribution (collapsible) ── */}

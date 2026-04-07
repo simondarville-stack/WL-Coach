@@ -85,6 +85,7 @@ export interface PlannerControlPanelProps {
   onPaste: () => void;
   onPrint: () => void;
   onToggleLoadDistribution: () => void;
+  onResolvePercentages?: () => Promise<void>;
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ export function PlannerControlPanel({
   onPaste,
   onPrint,
   onToggleLoadDistribution,
+  onResolvePercentages,
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
@@ -329,6 +331,15 @@ export function PlannerControlPanel({
           >
             <BarChart2 size={16} />
           </button>
+          {onResolvePercentages && selectedAthlete && athletePRs.length > 0 && (
+            <button
+              onClick={onResolvePercentages}
+              title="Convert percentage prescriptions to kg using athlete PRs"
+              className="px-2 py-1 text-xs rounded-lg text-blue-600 hover:bg-blue-50 transition-colors font-medium"
+            >
+              → kg
+            </button>
+          )}
         </div>
       </div>
 
