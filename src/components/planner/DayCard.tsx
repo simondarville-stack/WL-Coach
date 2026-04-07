@@ -10,6 +10,8 @@ import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { RestBadge } from './RestBadge';
 import type { RestInfo } from '../../lib/restCalculation';
+import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { MetricStrip } from '../ui/MetricStrip';
 
 interface DayCardProps {
   dayIndex: number;
@@ -19,6 +21,8 @@ interface DayCardProps {
   comboMembers: Record<string, ComboMemberEntry[]>;
   allExercises: Exercise[];
   restInfo?: RestInfo | null;
+  visibleMetrics?: MetricKey[];
+  competitionTotal?: number | null;
   onNavigateToDay: () => void;
   onNavigateToExercise: (exerciseId: string) => void;
   addExerciseToDay: (
@@ -136,6 +140,8 @@ export function DayCard({
   comboMembers,
   allExercises,
   restInfo,
+  visibleMetrics = DEFAULT_VISIBLE_METRICS,
+  competitionTotal = null,
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
@@ -151,12 +157,7 @@ export function DayCard({
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
   const shiftHeld = useShiftHeld();
 
-  const daySets = exercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
-  const dayReps = exercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
-  const dayTonnage = exercises.reduce((s, ex) => {
-    if (!ex.exercise.counts_towards_totals) return s;
-    return s + (ex.summary_avg_load ?? 0) * (ex.summary_total_reps ?? 0);
-  }, 0);
+  const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
   const isEmpty = exercises.length === 0;
 
   async function handleAddExercise(exercise: Exercise) {
@@ -290,13 +291,12 @@ export function DayCard({
             <RestBadge hours={restInfo.hoursFromPrevious} recoveryLevel={restInfo.recoveryLevel} />
           )}
           {!isEmpty && (
-            <div className="flex items-center gap-2 text-[11px]">
-              <span className="text-gray-400">S <span className="text-gray-700 font-medium">{daySets}</span></span>
-              <span className="text-gray-400">R <span className="text-gray-700 font-medium">{dayReps}</span></span>
-              {dayTonnage > 0 && (
-                <span className="text-gray-400">T <span className="text-gray-700 font-medium">{dayTonnage >= 1000 ? `${(dayTonnage / 1000).toFixed(1)}t` : `${Math.round(dayTonnage)}kg`}</span></span>
-              )}
-            </div>
+            <MetricStrip
+              metrics={dayMetrics}
+              visibleMetrics={visibleMetrics}
+              size="sm"
+              showLabels={true}
+            />
           )}
           <ChevronRight size={12} className="text-gray-200 group-hover/header:text-gray-400 transition-colors flex-shrink-0" />
         </div>

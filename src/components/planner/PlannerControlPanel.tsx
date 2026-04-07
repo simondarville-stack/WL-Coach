@@ -15,6 +15,7 @@ import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { calculateRestInfo } from '../../lib/restCalculation';
+import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -157,20 +158,21 @@ export function PlannerControlPanel({
 
   // ── metrics ──────────────────────────────────────────────────────────────
 
-  const metrics = useMemo(() => {
+  const { metrics, totalStress, categories } = useMemo(() => {
     const prMap = new Map<string, number>(
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
-    let totalSets = 0, totalReps = 0, totalTonnage = 0, totalStress = 0;
+    let totalStress = 0;
     const catMap = new Map<string, { category: string; sets: number; reps: number; tonnage: number }>();
+    const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; unit: string | null; exercise_id: string }> = [];
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
+        allExercises.push({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals });
         if (!ex.exercise.counts_towards_totals) return;
         const s = ex.summary_total_sets ?? 0;
         const r = ex.summary_total_reps ?? 0;
         const avg = ex.summary_avg_load ?? 0;
         const ton = ex.unit === 'absolute_kg' ? avg * r : 0;
-        totalSets += s; totalReps += r; totalTonnage += ton;
         if (ex.unit === 'absolute_kg' && avg > 0) {
           const pr = prMap.get(ex.exercise_id);
           if (pr && pr > 0) totalStress += r * Math.pow(avg / pr, 2);
@@ -182,17 +184,16 @@ export function PlannerControlPanel({
       });
     });
     return {
-      totalSets, totalReps,
-      totalTonnage: Math.round(totalTonnage),
+      metrics: computeMetrics(allExercises, selectedAthlete?.competition_total ?? null),
       totalStress: Math.round(totalStress * 10) / 10,
       categories: Array.from(catMap.values()).sort((a, b) => b.reps - a.reps),
     };
-  }, [plannedExercises, athletePRs]);
+  }, [plannedExercises, athletePRs, selectedAthlete?.competition_total]);
 
-  const visibleMetrics = settings?.visible_summary_metrics ?? ['sets', 'reps', 'tonnage'];
+  const visibleMetrics: MetricKey[] = (settings?.visible_summary_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS;
   const showStress     = settings?.show_stress_metric ?? false;
-  const repsProgress   = macroWeekTarget && metrics.totalReps > 0
-    ? Math.min(100, Math.round((metrics.totalReps / macroWeekTarget) * 100))
+  const repsProgress   = macroWeekTarget && metrics.reps > 0
+    ? Math.min(100, Math.round((metrics.reps / macroWeekTarget) * 100))
     : null;
 
   const athleteInitials = selectedAthlete?.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '';
@@ -337,7 +338,7 @@ export function PlannerControlPanel({
         {visibleMetrics.includes('sets') && (
           <>
             <span className="text-xs uppercase text-gray-400 mr-1 font-medium">S</span>
-            <span className="font-semibold text-gray-900">{metrics.totalSets}</span>
+            <span className="font-semibold text-gray-900">{metrics.sets}</span>
           </>
         )}
 
@@ -345,7 +346,7 @@ export function PlannerControlPanel({
           <>
             <span className="text-gray-300 mx-2.5">·</span>
             <span className="text-xs uppercase text-gray-400 mr-1 font-medium">R</span>
-            <span className="font-semibold text-gray-900">{metrics.totalReps}</span>
+            <span className="font-semibold text-gray-900">{metrics.reps}</span>
             {macroWeekTarget != null && (
               <span className="text-gray-400 ml-1 text-sm">/ {macroWeekTarget}</span>
             )}
@@ -355,24 +356,48 @@ export function PlannerControlPanel({
           </>
         )}
 
-        {visibleMetrics.includes('tonnage') && metrics.totalTonnage > 0 && (
+        {visibleMetrics.includes('max') && metrics.max > 0 && (
+          <>
+            <span className="text-gray-300 mx-2.5">·</span>
+            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Max</span>
+            <span className="font-semibold text-gray-900">{metrics.max}</span>
+          </>
+        )}
+
+        {visibleMetrics.includes('avg') && metrics.avg > 0 && (
+          <>
+            <span className="text-gray-300 mx-2.5">·</span>
+            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Avg</span>
+            <span className="font-semibold text-gray-900">{metrics.avg}</span>
+          </>
+        )}
+
+        {visibleMetrics.includes('tonnage') && metrics.tonnage > 0 && (
           <>
             <span className="text-gray-300 mx-2.5">·</span>
             <span className="text-xs uppercase text-gray-400 mr-1 font-medium">T</span>
-            <span className="font-semibold text-gray-900">{metrics.totalTonnage.toLocaleString()}</span>
+            <span className="font-semibold text-gray-900">{metrics.tonnage.toLocaleString()}</span>
             <span className="text-gray-400 ml-1">kg</span>
           </>
         )}
 
-        {showStress && metrics.totalStress > 0 && (
+        {visibleMetrics.includes('k') && metrics.k != null && (
           <>
             <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Stress</span>
-            <span className="font-semibold text-gray-900">{metrics.totalStress}</span>
+            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">K</span>
+            <span className="font-semibold text-gray-900">{(metrics.k * 100).toFixed(0)}%</span>
           </>
         )}
 
-        {metrics.categories.length > 0 && (
+        {showStress && totalStress > 0 && (
+          <>
+            <span className="text-gray-300 mx-2.5">·</span>
+            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Stress</span>
+            <span className="font-semibold text-gray-900">{totalStress}</span>
+          </>
+        )}
+
+        {categories.length > 0 && (
           <>
             <span className="text-gray-300 mx-2.5">·</span>
             <button
@@ -402,9 +427,9 @@ export function PlannerControlPanel({
       </div>
 
       {/* ── Categories strip (collapsible) ──────────────────────────────────── */}
-      {showCategories && metrics.categories.length > 0 && (
+      {showCategories && categories.length > 0 && (
         <div className="px-4 pb-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-gray-50 pt-2">
-          {metrics.categories.map(cat => (
+          {categories.map(cat => (
             <div key={cat.category} className="flex items-center gap-2.5 text-sm">
               <span className="text-gray-500 truncate max-w-[120px]">{cat.category}</span>
               <span className="text-gray-400">S <span className="text-gray-700 font-medium">{cat.sets}</span></span>
