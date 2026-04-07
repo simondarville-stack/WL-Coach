@@ -7,6 +7,7 @@ interface ExerciseFormModalProps {
   onClose: () => void;
   editingExercise: Exercise | null;
   onSave: (exercise: Partial<Exercise>) => Promise<void>;
+  allExercises?: Exercise[];
 }
 
 export function ExerciseFormModal({
@@ -14,6 +15,7 @@ export function ExerciseFormModal({
   onClose,
   editingExercise,
   onSave,
+  allExercises = [],
 }: ExerciseFormModalProps) {
   if (!isOpen) return null;
 
@@ -38,6 +40,7 @@ export function ExerciseFormModal({
             editingExercise={editingExercise}
             onSave={onSave}
             onCancelEdit={onClose}
+            allExercises={allExercises}
           />
         </div>
       </div>

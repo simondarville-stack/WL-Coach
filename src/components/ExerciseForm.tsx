@@ -7,6 +7,7 @@ interface ExerciseFormProps {
   editingExercise: Exercise | null;
   onSave: (exercise: Partial<Exercise>) => Promise<void>;
   onCancelEdit: () => void;
+  allExercises?: Exercise[];
 }
 
 const PRESET_COLORS = [
@@ -20,7 +21,7 @@ const PRESET_COLORS = [
   { name: 'Indigo', value: '#6366F1' },
 ];
 
-export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: ExerciseFormProps) {
+export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [] }: ExerciseFormProps) {
   const { categories, fetchCategories } = useExercises();
 
   const [name, setName] = useState('');
@@ -33,6 +34,8 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
   const [link, setLink] = useState('');
   const [countsTowardsTotals, setCountsTowardsTotals] = useState(true);
   const [useStackedNotation, setUseStackedNotation] = useState(false);
+  const [trackPr, setTrackPr] = useState(true);
+  const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -51,6 +54,8 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
       setLink(editingExercise.link || '');
       setCountsTowardsTotals(editingExercise.counts_towards_totals);
       setUseStackedNotation(editingExercise.use_stacked_notation || false);
+      setTrackPr(editingExercise.track_pr ?? true);
+      setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
     } else {
       resetForm();
     }
@@ -67,6 +72,8 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
     setLink('');
     setCountsTowardsTotals(true);
     setUseStackedNotation(false);
+    setTrackPr(true);
+    setPrReferenceId(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,6 +91,8 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
         color,
         counts_towards_totals: countsTowardsTotals,
         use_stacked_notation: useStackedNotation,
+        track_pr: trackPr,
+        pr_reference_exercise_id: prReferenceId,
         notes: notes.trim() || null,
         link: link.trim() || null,
       });
@@ -209,6 +218,56 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit }: Exercise
         <p className="text-xs text-gray-500 ml-6">
           Display prescriptions in stacked blocks (load over reps with sets on the right) instead of linear format
         </p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={trackPr}
+            onChange={(e) => setTrackPr(e.target.checked)}
+            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <span className="text-sm font-medium text-gray-700">Track PR</span>
+        </label>
+        <p className="text-xs text-gray-500 ml-6">
+          When enabled, PRs for this exercise are tracked and used for percentage-based calculations
+        </p>
+        {(() => {
+          const eligible = allExercises.filter(e =>
+            e.track_pr &&
+            e.id !== editingExercise?.id &&
+            e.category !== '— System'
+          );
+          const wouldCycle = (id: string) => {
+            const candidate = allExercises.find(e => e.id === id);
+            return candidate?.pr_reference_exercise_id === editingExercise?.id;
+          };
+          if (eligible.length === 0) return null;
+          return (
+            <div className="ml-6">
+              <label htmlFor="prReference" className="block text-xs font-medium text-gray-600 mb-1">
+                PR Reference Exercise (optional)
+              </label>
+              <select
+                id="prReference"
+                value={prReferenceId ?? ''}
+                onChange={(e) => setPrReferenceId(e.target.value || null)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— None (use own PR) —</option>
+                {eligible.map(e => (
+                  <option key={e.id} value={e.id} disabled={wouldCycle(e.id)}>
+                    {e.name}{e.exercise_code ? ` (${e.exercise_code})` : ''}{wouldCycle(e.id) ? ' — would create cycle' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Percentage prescriptions will resolve against this exercise's PR instead of its own
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <div>
