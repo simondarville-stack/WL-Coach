@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
+/** Discriminated union identifying who a macrocycle belongs to */
+export type MacroOwnerTarget = { type: 'athlete'; id: string } | { type: 'group'; id: string };
+
 export interface MacroActuals {
   totalReps: number;
   avgWeight: number;
@@ -32,14 +35,24 @@ export function useMacroCycles() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMacrocycles = async (athleteId: string) => {
+  const fetchMacrocycles = async (
+    target: MacroOwnerTarget | string, // string for backwards compatibility
+  ) => {
     try {
-      const { data, error } = await supabase
-        .from('macrocycles')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .eq('athlete_id', athleteId)
-        .order('start_date', { ascending: false });
+      // Support legacy string call (athleteId)
+      const resolved: MacroOwnerTarget = typeof target === 'string'
+        ? { type: 'athlete', id: target }
+        : target;
+
+      let query = supabase.from('macrocycles').select('*').eq('owner_id', getOwnerId());
+
+      if (resolved.type === 'athlete') {
+        query = query.eq('athlete_id', resolved.id);
+      } else {
+        query = query.eq('group_id', resolved.id);
+      }
+
+      const { data, error } = await query.order('start_date', { ascending: false });
       if (error) throw error;
       setMacrocycles(data || []);
     } catch (err) {
@@ -48,7 +61,7 @@ export function useMacroCycles() {
   };
 
   const createMacrocycle = async (
-    athleteId: string,
+    targetOrAthleteId: MacroOwnerTarget | string,
     name: string,
     startDate: string,
     endDate: string,
@@ -56,9 +69,26 @@ export function useMacroCycles() {
   ): Promise<MacroCycle> => {
     try {
       setLoading(true);
+
+      // Support legacy string call (athleteId)
+      const resolved: MacroOwnerTarget = typeof targetOrAthleteId === 'string'
+        ? { type: 'athlete', id: targetOrAthleteId }
+        : targetOrAthleteId;
+
+      const insertData = {
+        name,
+        start_date: startDate,
+        end_date: endDate,
+        owner_id: getOwnerId(),
+        ...(resolved.type === 'athlete'
+          ? { athlete_id: resolved.id, group_id: null }
+          : { athlete_id: null, group_id: resolved.id }
+        ),
+      };
+
       const { data: macrocycle, error: macroError } = await supabase
         .from('macrocycles')
-        .insert({ athlete_id: athleteId, name, start_date: startDate, end_date: endDate, owner_id: getOwnerId() })
+        .insert(insertData)
         .select()
         .single();
       if (macroError) throw macroError;
@@ -469,7 +499,11 @@ export function useMacroCycles() {
 
   // --- Actuals computation across full macro ---
 
-  const fetchMacroActuals = async (
+  /**
+   * Fetch actuals for a single athlete over the macro's date range.
+   * Extracted from fetchMacroActuals for reuse in group aggregation.
+   */
+  const fetchActualsForAthlete = async (
     athleteId: string,
     macroWeeksData: MacroWeek[],
     trackedExercisesData: MacroTrackedExerciseWithExercise[],
@@ -478,13 +512,11 @@ export function useMacroCycles() {
 
     const startDate = macroWeeksData[0].week_start;
     const lastWeek = macroWeeksData[macroWeeksData.length - 1];
-    // end date = last week start + 6 days
     const endDate = new Date(lastWeek.week_start);
     endDate.setDate(endDate.getDate() + 6);
     const endDateISO = endDate.toISOString().split('T')[0];
 
     try {
-      // Fetch week_plans for this athlete in the macro date range
       const { data: weekPlans } = await supabase
         .from('week_plans')
         .select('id, week_start')
@@ -497,13 +529,11 @@ export function useMacroCycles() {
 
       const weekPlanIds = weekPlans.map(wp => wp.id);
 
-      // Fetch planned_exercises for all these week_plans
       const { data: plannedExercises } = await supabase
         .from('planned_exercises')
         .select('weekplan_id, exercise_id, unit, summary_total_reps, summary_avg_load, summary_highest_load, prescription_raw')
         .in('weekplan_id', weekPlanIds);
 
-      // Fetch combos + items + set_lines
       const { data: combos } = await supabase
         .from('planned_combos')
         .select('id, weekplan_id, unit')
@@ -520,7 +550,6 @@ export function useMacroCycles() {
           : Promise.resolve({ data: [] }),
       ]);
 
-      // Build week_start → week_plan_id map
       const weekStartToWpId = new Map<string, string>();
       weekPlans.forEach(wp => weekStartToWpId.set(wp.week_start, wp.id));
 
@@ -545,7 +574,6 @@ export function useMacroCycles() {
           let maxWeight = 0;
           const allSets: { weight: number; reps: number; sets: number }[] = [];
 
-          // Direct planned exercises
           weekExercises.filter(pe => pe.exercise_id === exerciseId).forEach(pe => {
             totalReps += pe.summary_total_reps || 0;
             if (pe.unit === 'absolute_kg' && pe.summary_avg_load) {
@@ -565,7 +593,6 @@ export function useMacroCycles() {
             }
           });
 
-          // Combo exercises
           weekComboItems.filter(ci => ci.exercise_id === exerciseId).forEach(ci => {
             const combo = weekCombos.find(c => c.id === ci.planned_combo_id);
             if (!combo || combo.unit !== 'absolute_kg') return;
@@ -604,6 +631,86 @@ export function useMacroCycles() {
     } catch {
       return {};
     }
+  };
+
+  /**
+   * Average the MacroActualsMap values across multiple members.
+   * For each week+exercise combination, average the numeric values.
+   * If a member has no data for a week, treat as 0.
+   */
+  const averageActuals = (
+    allActuals: MacroActualsMap[],
+    macroWeeksData: MacroWeek[],
+    trackedExercisesData: MacroTrackedExerciseWithExercise[],
+  ): MacroActualsMap => {
+    if (allActuals.length === 0) return {};
+    const count = allActuals.length;
+    const result: MacroActualsMap = {};
+
+    for (const week of macroWeeksData) {
+      result[week.id] = {};
+      for (const te of trackedExercisesData) {
+        const exerciseId = te.exercise_id;
+        let totalReps = 0;
+        let avgWeight = 0;
+        let maxWeight = 0;
+        let repsAtMax = 0;
+        let setsAtMax = 0;
+
+        for (const memberActuals of allActuals) {
+          const a = memberActuals[week.id]?.[exerciseId];
+          totalReps += a?.totalReps ?? 0;
+          avgWeight += a?.avgWeight ?? 0;
+          maxWeight += a?.maxWeight ?? 0;
+          repsAtMax += a?.repsAtMax ?? 0;
+          setsAtMax += a?.setsAtMax ?? 0;
+        }
+
+        result[week.id][exerciseId] = {
+          totalReps: Math.round(totalReps / count),
+          avgWeight: Math.round((avgWeight / count) * 10) / 10,
+          maxWeight: Math.round(maxWeight / count),
+          repsAtMax: Math.round(repsAtMax / count),
+          setsAtMax: Math.round(setsAtMax / count),
+        };
+      }
+    }
+
+    return result;
+  };
+
+  const fetchMacroActuals = async (
+    targetOrAthleteId: { type: 'athlete'; id: string } | { type: 'group'; id: string } | string,
+    macroWeeksData: MacroWeek[],
+    trackedExercisesData: MacroTrackedExerciseWithExercise[],
+  ): Promise<MacroActualsMap> => {
+    if (macroWeeksData.length === 0 || trackedExercisesData.length === 0) return {};
+
+    // Support legacy string call (athleteId)
+    if (typeof targetOrAthleteId === 'string') {
+      return fetchActualsForAthlete(targetOrAthleteId, macroWeeksData, trackedExercisesData);
+    }
+
+    if (targetOrAthleteId.type === 'athlete') {
+      return fetchActualsForAthlete(targetOrAthleteId.id, macroWeeksData, trackedExercisesData);
+    }
+
+    // Group: fetch members, aggregate actuals across all members
+    const { data: members } = await supabase
+      .from('group_members')
+      .select('athlete_id')
+      .eq('group_id', targetOrAthleteId.id)
+      .is('left_at', null);
+
+    if (!members?.length) return {};
+
+    const allActuals: MacroActualsMap[] = [];
+    for (const m of members) {
+      const a = await fetchActualsForAthlete(m.athlete_id, macroWeeksData, trackedExercisesData);
+      allActuals.push(a);
+    }
+
+    return averageActuals(allActuals, macroWeeksData, trackedExercisesData);
   };
 
   return {
@@ -645,6 +752,7 @@ export function useMacroCycles() {
     updateCompetition,
     deleteCompetition,
     fetchMacroActuals,
+    fetchActualsForAthlete,
     updateMacrocycle,
   };
 }
