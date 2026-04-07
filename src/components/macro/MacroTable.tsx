@@ -85,10 +85,10 @@ export function MacroTable({
       if (target) {
         snapshot[te.id] = {
           target_reps: target.target_reps,
-          target_ave: target.target_ave,
-          target_hi: target.target_hi,
-          target_rhi: target.target_rhi,
-          target_shi: target.target_shi,
+          target_avg: target.target_avg,
+          target_max: target.target_max,
+          target_reps_at_max: target.target_reps_at_max,
+          target_sets_at_max: target.target_sets_at_max,
         };
       }
     });
@@ -126,7 +126,7 @@ export function MacroTable({
 
   const totalCols = 4 + trackedExercises.length * 5 + 1;
 
-  const subHeaders = ['Reps', 'Ave', 'Hi', 'RHi', 'SHi'];
+  const subHeaders = ['Reps', 'Avg', 'Max', 'RMax', 'SMax'];
 
   return (
     <div className="overflow-auto flex-1">

@@ -21,9 +21,9 @@ interface OtherDay {
 
 interface SollTarget {
   reps: number | null;
-  hi: number | null;
-  hiReps: number | null;
-  hiSets: number | null;
+  max: number | null;
+  maxReps: number | null;
+  maxSets: number | null;
   avg: number | null;
 }
 
@@ -156,13 +156,13 @@ export function ExerciseDetail({
     if (!mw) { setSollTarget(null); return; }
     const { data: tgt } = await supabase
       .from('macro_targets')
-      .select('target_reps, target_hi, target_rhi, target_shi, target_ave')
+      .select('target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
       .eq('macro_week_id', mw.id)
       .eq('tracked_exercise_id', te.id)
       .maybeSingle();
     setSollTarget(tgt ? {
-      reps: tgt.target_reps, hi: tgt.target_hi,
-      hiReps: tgt.target_rhi, hiSets: tgt.target_shi, avg: tgt.target_ave,
+      reps: tgt.target_reps, max: tgt.target_max,
+      maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
     } : null);
   }
 
@@ -280,10 +280,10 @@ export function ExerciseDetail({
     onClose(); // Always close immediately — saves happen in the background
   }
 
-  function hiFormat(hi: number | null, hiReps: number | null, hiSets: number | null) {
-    if (hi == null) return '—';
-    if (hiReps != null && hiSets != null) return `${hi}/${hiReps}/${hiSets}`;
-    return `${hi}`;
+  function maxFormat(maxVal: number | null, maxReps: number | null, maxSets: number | null) {
+    if (maxVal == null) return '—';
+    if (maxReps != null && maxSets != null) return `${maxVal}/${maxReps}/${maxSets}`;
+    return `${maxVal}`;
   }
 
   const exerciseName = sentinel === 'text' ? 'Free text'
@@ -531,7 +531,7 @@ export function ExerciseDetail({
                 <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">SOLL</span>
                 <span className="text-gray-500">R <strong className="text-gray-900">{sollTarget.reps ?? '—'}</strong></span>
                 <span className="text-gray-500">Avg <strong className="text-gray-900">{sollTarget.avg ?? '—'}</strong></span>
-                <span className="text-gray-500">Hi <strong className="text-gray-900">{hiFormat(sollTarget.hi, sollTarget.hiReps, sollTarget.hiSets)}</strong></span>
+                <span className="text-gray-500">Max <strong className="text-gray-900">{maxFormat(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)}</strong></span>
               </div>
               <div className="flex gap-3 items-baseline">
                 <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">IST</span>

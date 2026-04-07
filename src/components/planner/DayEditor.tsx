@@ -15,9 +15,9 @@ import { ExerciseFormModal } from '../ExerciseFormModal';
 
 interface MacroTargetData {
   reps: number | null;
-  hi: number | null;
-  hiReps: number | null;
-  hiSets: number | null;
+  max: number | null;
+  maxReps: number | null;
+  maxSets: number | null;
   avg: number | null;
 }
 
@@ -64,10 +64,10 @@ function getYouTubeThumbnail(url: string): string | null {
   return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
 }
 
-function hiLabel(hi: number | null, rhi: number | null, shi: number | null): string {
-  if (hi == null) return '';
-  if (rhi != null && shi != null) return `${hi}/${rhi}/${shi}`;
-  return `${hi}`;
+function maxLabel(maxVal: number | null, rhi: number | null, shi: number | null): string {
+  if (maxVal == null) return '';
+  if (rhi != null && shi != null) return `${maxVal}/${rhi}/${shi}`;
+  return `${maxVal}`;
 }
 
 export function DayEditor({
@@ -122,7 +122,7 @@ export function DayEditor({
 
       const { data: targets } = await supabase
         .from('macro_targets')
-        .select('tracked_exercise_id, target_reps, target_hi, target_rhi, target_shi, target_ave')
+        .select('tracked_exercise_id, target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
         .eq('macro_week_id', mw.id)
         .in('tracked_exercise_id', trackedExs.map(te => te.id));
 
@@ -132,10 +132,10 @@ export function DayEditor({
         if (te) {
           map.set(te.exercise_id, {
             reps: tgt.target_reps,
-            hi: tgt.target_hi,
-            hiReps: tgt.target_rhi,
-            hiSets: tgt.target_shi,
-            avg: tgt.target_ave,
+            max: tgt.target_max,
+            maxReps: tgt.target_reps_at_max,
+            maxSets: tgt.target_sets_at_max,
+            avg: tgt.target_avg,
           });
         }
       }
@@ -403,8 +403,8 @@ export function DayEditor({
                         {macroTgt && (
                           <span className="text-gray-400 border-l border-gray-200 pl-1.5 ml-0.5">
                             Macro: R <span className="text-gray-600">{macroTgt.reps ?? '—'}</span>
-                            {macroTgt.hi && (
-                              <> Hi <span className="text-red-700 font-medium">{hiLabel(macroTgt.hi, macroTgt.hiReps, macroTgt.hiSets)}</span></>
+                            {macroTgt.max && (
+                              <> Max <span className="text-red-700 font-medium">{maxLabel(macroTgt.max, macroTgt.maxReps, macroTgt.maxSets)}</span></>
                             )}
                             {macroTgt.avg && (
                               <> Avg <span className="text-gray-600">{macroTgt.avg}</span></>

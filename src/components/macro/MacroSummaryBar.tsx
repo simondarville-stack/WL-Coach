@@ -25,8 +25,8 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
     const peak = Math.max(
       0,
       ...targets
-        .filter(t => t.tracked_exercise_id === te.id && t.target_hi !== null)
-        .map(t => t.target_hi as number),
+        .filter(t => t.tracked_exercise_id === te.id && t.target_max !== null)
+        .map(t => t.target_max as number),
     );
     return { name: te.exercise.exercise_code || te.exercise.name, color: te.exercise.color, peak };
   }).filter(x => x.peak > 0);
