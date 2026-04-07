@@ -403,6 +403,12 @@ export function DayCard({
                             {ex.variation_note && (
                               <span className="text-[10px] text-gray-400 italic truncate flex-shrink-0">{ex.variation_note}</span>
                             )}
+                            {ex.source === 'group' && (
+                              <span className="text-[8px] px-1 py-px bg-indigo-50 text-indigo-500 rounded font-medium flex-shrink-0">G</span>
+                            )}
+                            {ex.source === 'individual' && (
+                              <span className="text-[8px] px-1 py-px bg-amber-50 text-amber-500 rounded font-medium flex-shrink-0">I</span>
+                            )}
                           </div>
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
                           {ex.notes && (

@@ -95,6 +95,7 @@ export function WeeklyPlanner() {
     copyExerciseWithSetLines,
     copyDayExercises,
     deleteDayExercises,
+    syncGroupPlanToAthletes,
   } = useWeekPlans();
 
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
@@ -109,6 +110,7 @@ export function WeeklyPlanner() {
   const [editingDaySchedule, setEditingDaySchedule] = useState<Record<number, { weekday: number; time: string | null }>>({});
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     fetchExercisesByName();
@@ -549,6 +551,18 @@ export function WeeklyPlanner() {
     }
   };
 
+  const handleSyncGroupPlan = async () => {
+    if (!currentWeekPlan || planSelection.type !== 'group' || !planSelection.group) return;
+    setIsSyncing(true);
+    try {
+      await syncGroupPlanToAthletes(currentWeekPlan.id, planSelection.group.id, selectedDate);
+    } catch (err) {
+      // error shown in hook
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
     if (selection.type === 'individual' && selection.athlete) {
@@ -629,6 +643,34 @@ export function WeeklyPlanner() {
                   dayDisplayOrder={dayDisplayOrder}
                   daySchedule={(currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 />
+              </div>
+            )}
+
+            {/* ── Group plan banner ── */}
+            {planSelection.type === 'group' && planSelection.group && (
+              <div className="mb-3 flex items-center justify-between px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-indigo-800">Group plan:</span>
+                  <span className="text-xs text-indigo-700">{planSelection.group.name}</span>
+                </div>
+                <button
+                  onClick={handleSyncGroupPlan}
+                  disabled={isSyncing}
+                  className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {isSyncing ? 'Syncing…' : 'Sync to athletes'}
+                </button>
+              </div>
+            )}
+
+            {/* ── Linked-to-group banner for individual plans ── */}
+            {planSelection.type === 'individual' && currentWeekPlan?.source_group_plan_id && (
+              <div className="mb-3 px-4 py-2 bg-indigo-50/60 border border-indigo-200 rounded-lg">
+                <span className="text-xs text-indigo-600">Linked to group plan · Exercises with </span>
+                <span className="text-[8px] px-1 py-px bg-indigo-50 text-indigo-500 rounded font-medium">G</span>
+                <span className="text-xs text-indigo-600"> come from the group. Edit to override </span>
+                <span className="text-[8px] px-1 py-px bg-amber-50 text-amber-500 rounded font-medium">I</span>
+                <span className="text-xs text-indigo-600">.</span>
               </div>
             )}
 
