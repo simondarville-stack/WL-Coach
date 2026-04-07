@@ -95,7 +95,8 @@ export function useWeekPlans() {
       setWeekPlan(plan);
       return plan;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load week plan');
+      const msg = (err as { message?: string })?.message || 'Failed to load week plan';
+      setError(msg);
       return null;
     } finally {
       setLoading(false);
@@ -758,17 +759,18 @@ export function useWeekPlans() {
       } else {
         const { data: newPlan, error: createError } = await supabase
           .from('week_plans')
-          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: getOwnerId(), source_group_plan_id: groupPlanId }])
+          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: getOwnerId() }])
           .select('id')
           .single();
         if (createError) throw createError;
         athletePlanId = newPlan.id;
       }
 
-      // 4b. Update source_group_plan_id on the athlete's plan
+      // 4b. Try to update source_group_plan_id (column added in migration 20260406 — best effort)
       await supabase.from('week_plans').update({ source_group_plan_id: groupPlanId }).eq('id', athletePlanId);
 
-      // 4c. Delete existing group-sourced exercises
+      // 4c. Delete existing group-sourced exercises (uses source column — best effort filter)
+      // If source column doesn't exist, the filter returns nothing and we skip deletion safely.
       const { data: existingGroupExs } = await supabase
         .from('planned_exercises')
         .select('id')
@@ -780,7 +782,7 @@ export function useWeekPlans() {
         await supabase.from('planned_exercises').delete().in('id', toDelete);
       }
 
-      // 4d. Insert copies of group exercises with source='group'
+      // 4d. Insert copies of group exercises
       for (const ex of groupExercises || []) {
         const { data: newEx, error: insError } = await supabase
           .from('planned_exercises')
@@ -799,7 +801,6 @@ export function useWeekPlans() {
             is_combo: ex.is_combo,
             combo_notation: ex.combo_notation,
             combo_color: ex.combo_color,
-            source: 'group',
           }])
           .select('id')
           .single();

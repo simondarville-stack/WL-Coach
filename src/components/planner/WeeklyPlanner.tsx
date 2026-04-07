@@ -554,10 +554,11 @@ export function WeeklyPlanner() {
   const handleSyncGroupPlan = async () => {
     if (!currentWeekPlan || planSelection.type !== 'group' || !planSelection.group) return;
     setIsSyncing(true);
+    setError(null);
     try {
       await syncGroupPlanToAthletes(currentWeekPlan.id, planSelection.group.id, selectedDate);
     } catch (err) {
-      // error shown in hook
+      setError(err instanceof Error ? err.message : 'Failed to sync group plan to athletes');
     } finally {
       setIsSyncing(false);
     }
