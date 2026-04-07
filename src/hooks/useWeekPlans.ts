@@ -818,6 +818,7 @@ export function useWeekPlans() {
             is_combo: ex.is_combo,
             combo_notation: ex.combo_notation,
             combo_color: ex.combo_color,
+            source: 'group',
           }])
           .select('id')
           .single();
