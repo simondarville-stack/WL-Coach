@@ -23,6 +23,7 @@ export function Athletes() {
   const [photoUrl, setPhotoUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [trackBodyweight, setTrackBodyweight] = useState(true);
+  const [competitionTotal, setCompetitionTotal] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export function Athletes() {
       setPhotoUrl(editingAthlete.photo_url || '');
       setIsActive(editingAthlete.is_active);
       setTrackBodyweight(editingAthlete.track_bodyweight ?? true);
+      setCompetitionTotal(editingAthlete.competition_total?.toString() || '');
     } else {
       resetForm();
     }
@@ -57,6 +59,7 @@ export function Athletes() {
     setPhotoUrl('');
     setIsActive(true);
     setTrackBodyweight(true);
+    setCompetitionTotal('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,6 +78,7 @@ export function Athletes() {
         photo_url: photoUrl.trim() || null,
         is_active: isActive,
         track_bodyweight: trackBodyweight,
+        competition_total: competitionTotal ? parseFloat(competitionTotal) : null,
       };
 
       if (editingAthlete) {
@@ -301,6 +305,25 @@ export function Athletes() {
               </label>
             </div>
 
+            <div>
+              <label htmlFor="competitionTotal" className="block text-sm font-medium text-gray-700 mb-1">
+                Competition Total (kg)
+              </label>
+              <input
+                type="number"
+                id="competitionTotal"
+                value={competitionTotal}
+                onChange={(e) => setCompetitionTotal(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., 280 (Sn + C&amp;J)"
+                step="0.5"
+                min="0"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Manual override for K-value. Leave blank to auto-derive from Snatch + C&J PRs.
+              </p>
+            </div>
+
             <div className="flex gap-3 pt-4">
               <button
                 type="submit"
@@ -371,6 +394,9 @@ export function Athletes() {
                         )}
                         {athlete.club && (
                           <span>{athlete.club}</span>
+                        )}
+                        {athlete.competition_total && (
+                          <span>Total {athlete.competition_total}kg</span>
                         )}
                       </div>
                       {athlete.notes && (
