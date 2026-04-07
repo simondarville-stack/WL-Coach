@@ -126,7 +126,7 @@ export function MacroTable({
 
   const totalCols = 4 + trackedExercises.length * 5 + 1;
 
-  const subHeaders = ['Reps', 'Avg', 'Max', 'RMax', 'SMax'];
+  const subHeaders = ['Reps', 'Max', 'Sets@Max', 'Reps@Max', 'Avg'];
 
   return (
     <div className="overflow-auto flex-1">

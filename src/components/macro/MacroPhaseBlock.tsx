@@ -183,9 +183,9 @@ export function MacroPhaseBlock({
             {trackedExercises.map((te, teIdx) => {
               const target = getTarget(week.id, te.id);
               const exActuals = weekActuals[te.exercise_id];
-              const fields: (keyof MacroTarget)[] = ['target_reps', 'target_avg', 'target_max', 'target_reps_at_max', 'target_sets_at_max'];
+              const fields: (keyof MacroTarget)[] = ['target_reps', 'target_max', 'target_sets_at_max', 'target_reps_at_max', 'target_avg'];
               const actualValues: (number | null)[] = exActuals
-                ? [exActuals.totalReps, exActuals.avgWeight, exActuals.maxWeight, exActuals.repsAtMax, exActuals.setsAtMax]
+                ? [exActuals.totalReps, exActuals.maxWeight, exActuals.setsAtMax, exActuals.repsAtMax, exActuals.avgWeight]
                 : [null, null, null, null, null];
 
               return (
