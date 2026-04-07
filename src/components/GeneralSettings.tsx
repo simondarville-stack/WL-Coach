@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSettings } from '../hooks/useSettings';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
+import { METRICS, METRIC_ORDER, DEFAULT_VISIBLE_METRICS } from '../lib/metrics';
 
 export function GeneralSettings() {
   const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
@@ -19,7 +20,7 @@ export function GeneralSettings() {
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
   const [showStressMetric, setShowStressMetric] = useState(false);
-  const [visibleMetrics, setVisibleMetrics] = useState<string[]>(['sets', 'reps', 'tonnage']);
+  const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
 
   useEffect(() => {
     fetchSettings();
@@ -422,42 +423,29 @@ export function GeneralSettings() {
           <p className="text-sm text-gray-600 mb-4">Control which metrics are shown in the week summary</p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-2">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Visible summary metrics</label>
-            <div className="flex flex-wrap gap-3">
-              {(['sets', 'reps', 'tonnage'] as const).map(key => (
-                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={visibleMetrics.includes(key)}
-                    onChange={() => void toggleMetric(key)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="capitalize text-gray-700">{key}</span>
-                </label>
-              ))}
+            <label className="block text-sm font-medium text-gray-700 mb-3">Summary metrics</label>
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+              {METRIC_ORDER.map(key => {
+                const def = METRICS.find(m => m.key === key)!;
+                return (
+                  <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={visibleMetrics.includes(key)}
+                      onChange={() => void toggleMetric(key)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-gray-700">{def.label}</span>
+                      {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
+                    </div>
+                    <span className="text-xs text-gray-400">{def.description}</span>
+                  </label>
+                );
+              })}
             </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Show stress metric</p>
-              <p className="text-xs text-gray-500 mt-0.5">sum(reps × (load/PR)²) — requires athlete PRs</p>
-            </div>
-            <button
-              onClick={() => void toggleStressMetric(!showStressMetric)}
-              disabled={saving}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                showStressMetric ? 'bg-blue-600' : 'bg-gray-300'
-              } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  showStressMetric ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
           </div>
         </div>
       </div>
