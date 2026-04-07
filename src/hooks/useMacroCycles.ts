@@ -7,9 +7,9 @@ import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarg
 export interface MacroActuals {
   totalReps: number;
   avgWeight: number;
-  hiWeight: number;
-  repsHi: number;
-  setsHi: number;
+  maxWeight: number;
+  repsAtMax: number;
+  setsAtMax: number;
 }
 
 // weekId → exerciseId → actuals
@@ -242,10 +242,10 @@ export function useMacroCycles() {
 
   interface MacroTargetForExercise {
     target_reps: number | null;
-    target_ave: number | null;
-    target_hi: number | null;
-    target_rhi: number | null;
-    target_shi: number | null;
+    target_avg: number | null;
+    target_max: number | null;
+    target_reps_at_max: number | null;
+    target_sets_at_max: number | null;
   }
 
   const fetchMacroTargetForExercise = async (
@@ -290,7 +290,7 @@ export function useMacroCycles() {
 
       const { data: target } = await supabase
         .from('macro_targets')
-        .select('target_reps, target_ave, target_hi, target_rhi, target_shi')
+        .select('target_reps, target_avg, target_max, target_reps_at_max, target_sets_at_max')
         .eq('macro_week_id', macroWeek.id)
         .eq('tracked_exercise_id', trackedExercise.id)
         .maybeSingle();
@@ -304,8 +304,8 @@ export function useMacroCycles() {
   interface MacroValidationData {
     macroTargets: Record<string, {
       id: string; macro_week_id: string; tracked_exercise_id: string; exercise_id: string;
-      target_reps: number | null; target_ave: number | null; target_hi: number | null;
-      target_rhi: number | null; target_shi: number | null;
+      target_reps: number | null; target_avg: number | null; target_max: number | null;
+      target_reps_at_max: number | null; target_sets_at_max: number | null;
     }>;
     trackedExercises: import('../lib/database.types').Exercise[];
   }
@@ -542,7 +542,7 @@ export function useMacroCycles() {
         for (const exerciseId of trackedExIds) {
           let totalReps = 0;
           let totalWeightedReps = 0;
-          let hiWeight = 0;
+          let maxWeight = 0;
           const allSets: { weight: number; reps: number; sets: number }[] = [];
 
           // Direct planned exercises
@@ -559,7 +559,7 @@ export function useMacroCycles() {
                   const r = parseInt(m[2], 10);
                   const s = m[3] ? parseInt(m[3], 10) : 1;
                   allSets.push({ weight: w, reps: r, sets: s });
-                  if (w > hiWeight) hiWeight = w;
+                  if (w > maxWeight) maxWeight = w;
                 }
               });
             }
@@ -579,24 +579,24 @@ export function useMacroCycles() {
               if (weight > 0) {
                 totalWeightedReps += weight * lineReps;
                 allSets.push({ weight, reps: repsForEx, sets });
-                if (weight > hiWeight) hiWeight = weight;
+                if (weight > maxWeight) maxWeight = weight;
               }
             });
           });
 
-          let repsHi = 0;
-          let setsHi = 0;
-          if (hiWeight > 0) {
+          let repsAtMax = 0;
+          let setsAtMax = 0;
+          if (maxWeight > 0) {
             allSets.forEach(s => {
-              if (s.weight === hiWeight) {
-                if (s.reps > repsHi) repsHi = s.reps;
-                setsHi += s.sets;
+              if (s.weight === maxWeight) {
+                if (s.reps > repsAtMax) repsAtMax = s.reps;
+                setsAtMax += s.sets;
               }
             });
           }
 
           const avgWeight = totalReps > 0 ? Math.round((totalWeightedReps / totalReps) * 10) / 10 : 0;
-          result[macroWeek.id][exerciseId] = { totalReps, avgWeight, hiWeight, repsHi, setsHi };
+          result[macroWeek.id][exerciseId] = { totalReps, avgWeight, maxWeight, repsAtMax, setsAtMax };
         }
       }
 

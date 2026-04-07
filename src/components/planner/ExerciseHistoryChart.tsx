@@ -11,11 +11,11 @@ interface WeekPoint {
   weekStart: string;
   label: string;
   weekNumber: number | null;
-  plan_hi:  number | null;
+  plan_max:  number | null;
   plan_avg: number | null;
-  perf_hi:  number | null;
+  perf_max:  number | null;
   perf_avg: number | null;
-  soll_hi:  number | null;
+  soll_max:  number | null;
   soll_avg: number | null;
 }
 
@@ -48,7 +48,7 @@ function addWeeksUTC(dateStr: string, weeks: number): string {
 export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: ExerciseHistoryChartProps) {
   const [data, setData]     = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView]     = useState<'hi' | 'avg'>('hi');
+  const [view, setView]     = useState<'max' | 'avg'>('max');
 
   useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId]);
 
@@ -70,7 +70,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         .gte('week_start', lookBack)
         .lte('week_start', lookAhead);
 
-      const planByWeek = new Map<string, { hi: number; totalLoad: number; totalReps: number }>();
+      const planByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
 
       if (weekPlans?.length) {
         const wpIds = weekPlans.map(w => w.id);
@@ -89,9 +89,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
           const avg  = row.summary_avg_load ?? 0;
           const reps = row.summary_total_reps ?? 0;
           if (hi <= 0 && avg <= 0) continue;
-          const prev = planByWeek.get(ws) ?? { hi: 0, totalLoad: 0, totalReps: 0 };
+          const prev = planByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
           planByWeek.set(ws, {
-            hi: Math.max(prev.hi, hi),
+            max: Math.max(prev.max, hi),
             totalLoad: prev.totalLoad + avg * reps,
             totalReps: prev.totalReps + reps,
           });
@@ -107,7 +107,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         .eq('session.status', 'completed')
         .gte('session.date', lookBack);
 
-      const perfByWeek = new Map<string, { hi: number; totalLoad: number; totalReps: number }>();
+      const perfByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       for (const row of logRows ?? []) {
         const session = row.session as { date: string } | null;
         if (!session || !row.performed_raw) continue;
@@ -115,9 +115,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         const lines = parsePrescription(row.performed_raw);
         for (const line of lines) {
           if (line.load <= 0) continue;
-          const prev = perfByWeek.get(ws) ?? { hi: 0, totalLoad: 0, totalReps: 0 };
+          const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
           perfByWeek.set(ws, {
-            hi: Math.max(prev.hi, line.load),
+            max: Math.max(prev.max, line.load),
             totalLoad: prev.totalLoad + line.load * line.reps * line.sets,
             totalReps: prev.totalReps + line.reps * line.sets,
           });
@@ -125,7 +125,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
       }
 
       // ── 3. Macro SOLL targets ──────────────────────────────────────────────
-      const sollByWeekStart = new Map<string, { hi: number | null; avg: number | null; weekNumber: number }>();
+      const sollByWeekStart = new Map<string, { max: number | null; avg: number | null; weekNumber: number }>();
 
       if (macroContext) {
         const { data: te } = await supabase
@@ -145,7 +145,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
           if (macroWeeks?.length) {
             const { data: targets } = await supabase
               .from('macro_targets')
-              .select('macro_week_id, target_hi, target_ave')
+              .select('macro_week_id, target_max, target_avg')
               .eq('tracked_exercise_id', te.id)
               .in('macro_week_id', macroWeeks.map(w => w.id));
 
@@ -153,8 +153,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             for (const mw of macroWeeks) {
               const t = targetMap.get(mw.id);
               sollByWeekStart.set(mw.week_start, {
-                hi: t?.target_hi ?? null,
-                avg: t?.target_ave ?? null,
+                max: t?.target_max ?? null,
+                avg: t?.target_avg ?? null,
                 weekNumber: mw.week_number,
               });
             }
@@ -177,11 +177,11 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
           weekStart: ws,
           label:      soll ? `W${soll.weekNumber}` : formatLabel(ws),
           weekNumber: soll?.weekNumber ?? null,
-          plan_hi:  plan && plan.hi > 0 ? plan.hi : null,
+          plan_max:  plan && plan.max > 0 ? plan.max : null,
           plan_avg: plan && plan.totalReps > 0 ? Math.round(plan.totalLoad / plan.totalReps) : null,
-          perf_hi:  perf && perf.hi > 0 ? perf.hi : null,
+          perf_max:  perf && perf.max > 0 ? perf.max : null,
           perf_avg: perf && perf.totalReps > 0 ? Math.round(perf.totalLoad / perf.totalReps) : null,
-          soll_hi:  soll?.hi ?? null,
+          soll_max:  soll?.max ?? null,
           soll_avg: soll?.avg ?? null,
         };
       });
@@ -198,9 +198,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
     return <div className="h-40 flex items-center justify-center text-xs text-gray-400">Loading history…</div>;
   }
 
-  const hasPlan = data.some(d => d.plan_hi !== null || d.plan_avg !== null);
-  const hasPerf = data.some(d => d.perf_hi !== null || d.perf_avg !== null);
-  const hasSoll = data.some(d => d.soll_hi !== null || d.soll_avg !== null);
+  const hasPlan = data.some(d => d.plan_max !== null || d.plan_avg !== null);
+  const hasPerf = data.some(d => d.perf_max !== null || d.perf_avg !== null);
+  const hasSoll = data.some(d => d.soll_max !== null || d.soll_avg !== null);
 
   if (!hasPlan && !hasPerf && !hasSoll) {
     return (
@@ -210,9 +210,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
     );
   }
 
-  const planKey = view === 'hi' ? 'plan_hi'  : 'plan_avg';
-  const perfKey = view === 'hi' ? 'perf_hi'  : 'perf_avg';
-  const sollKey = view === 'hi' ? 'soll_hi'  : 'soll_avg';
+  const planKey = view === 'max' ? 'plan_max'  : 'plan_avg';
+  const perfKey = view === 'max' ? 'perf_max'  : 'perf_avg';
+  const sollKey = view === 'max' ? 'soll_max'  : 'soll_avg';
 
   const allVals = data.flatMap(d => [
     d[planKey as keyof WeekPoint],
@@ -234,9 +234,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Load history</span>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setView('hi')}
+            onClick={() => setView('max')}
             className={`text-[11px] px-2 py-0.5 rounded transition-colors ${
-              view === 'hi' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-400 hover:bg-gray-100'
+              view === 'max' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-400 hover:bg-gray-100'
             }`}
           >
             Hi
@@ -273,11 +273,11 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             contentStyle={{ fontSize: 11, padding: '4px 8px', borderColor: '#e5e7eb' }}
             formatter={(value: number, name: string) => [
               `${value} kg`,
-              name === 'plan_hi'  ? 'Planned hi'
+              name === 'plan_max'  ? 'Planned max'
               : name === 'plan_avg' ? 'Planned avg'
-              : name === 'perf_hi'  ? 'Performed hi'
+              : name === 'perf_max'  ? 'Performed max'
               : name === 'perf_avg' ? 'Performed avg'
-              : name === 'soll_hi'  ? 'SOLL hi'
+              : name === 'soll_max'  ? 'SOLL max'
               : 'SOLL avg',
             ]}
             labelFormatter={(label: string) => `Week: ${label}`}

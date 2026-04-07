@@ -60,7 +60,7 @@ export function MacroGraphView({
     <div className="space-y-4 p-4">
       <div className="flex items-center gap-3 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
         <span>Drag dots to adjust targets.</span>
-        <span className="border-l border-gray-300 pl-3">Hold <kbd className="px-1 py-px bg-gray-100 border border-gray-300 rounded text-[10px]">Ctrl</kbd> while dragging Hi/Ave to move both together.</span>
+        <span className="border-l border-gray-300 pl-3">Hold <kbd className="px-1 py-px bg-gray-100 border border-gray-300 rounded text-[10px]">Ctrl</kbd> while dragging Hi/Avg to move both together.</span>
         <span className="border-l border-gray-300 pl-3">Click exercise badge to link across exercises.</span>
         <span className="ml-auto">Solid = target · Dashed = actual</span>
       </div>
@@ -72,10 +72,10 @@ export function MacroGraphView({
         {...sharedProps}
       />
 
-      {/* Chart 2: Hi + Ave load combined */}
+      {/* Chart 2: Hi + Avg load combined */}
       <MacroDraggableChart
-        metrics={['hi', 'ave']}
-        label="Load (kg) — Hi & Average"
+        metrics={['max', 'avg']}
+        label="Load (kg) — Max & Average"
         {...sharedProps}
       />
     </div>

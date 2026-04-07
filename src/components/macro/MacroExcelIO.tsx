@@ -15,10 +15,10 @@ interface MacroExcelIOProps {
 
 const TARGET_FIELDS: Array<{ field: keyof MacroTarget; label: string }> = [
   { field: 'target_reps', label: 'Target Reps' },
-  { field: 'target_ave', label: 'Target Ave (kg)' },
-  { field: 'target_hi', label: 'Target Hi (kg)' },
-  { field: 'target_rhi', label: 'Target RHi' },
-  { field: 'target_shi', label: 'Target SHi' },
+  { field: 'target_avg', label: 'Target Avg (kg)' },
+  { field: 'target_max', label: 'Target Hi (kg)' },
+  { field: 'target_reps_at_max', label: 'Target RMax' },
+  { field: 'target_sets_at_max', label: 'Target SMax' },
 ];
 
 interface ImportRow {

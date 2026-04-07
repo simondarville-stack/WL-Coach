@@ -229,6 +229,7 @@ function App() {
             onClose={handleCancelEdit}
             editingExercise={editingExercise}
             onSave={handleSave}
+            allExercises={exercises}
           />
 
           {showBulkImportModal && (

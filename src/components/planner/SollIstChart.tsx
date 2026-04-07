@@ -9,9 +9,9 @@ import type { MacroContext } from './WeeklyPlanner';
 interface ChartPoint {
   weekNumber: number;
   label: string;
-  soll_hi: number | null;
+  soll_max: number | null;
   soll_avg: number | null;
-  ist_hi: number | null;
+  ist_max: number | null;
   ist_avg: number | null;
 }
 
@@ -24,7 +24,7 @@ interface SollIstChartProps {
 export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstChartProps) {
   const [data, setData] = useState<ChartPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'hi' | 'avg'>('hi');
+  const [view, setView] = useState<'max' | 'avg'>('max');
 
   useEffect(() => { void loadData(); }, [exerciseId, macroContext.macroId]);
 
@@ -52,7 +52,7 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
       // 3. Load SOLL targets
       const { data: targets } = await supabase
         .from('macro_targets')
-        .select('macro_week_id, target_hi, target_ave')
+        .select('macro_week_id, target_max, target_avg')
         .eq('tracked_exercise_id', te.id)
         .in('macro_week_id', macroWeeks.map(w => w.id));
       const targetMap = new Map((targets || []).map(t => [t.macro_week_id, t]));
@@ -68,7 +68,7 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
 
       // 5. Load planned exercises for all those week plans
       const planIds = Array.from(wpMap.values());
-      let istByWpId = new Map<string, { hi: number; totalLoad: number; totalReps: number }>();
+      let istByWpId = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       if (planIds.length > 0) {
         const { data: pes } = await supabase
           .from('planned_exercises')
@@ -76,9 +76,9 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
           .eq('exercise_id', exerciseId)
           .in('weekplan_id', planIds);
         for (const pe of pes || []) {
-          const prev = istByWpId.get(pe.weekplan_id) || { hi: 0, totalLoad: 0, totalReps: 0 };
+          const prev = istByWpId.get(pe.weekplan_id) || { max: 0, totalLoad: 0, totalReps: 0 };
           istByWpId.set(pe.weekplan_id, {
-            hi: Math.max(prev.hi, pe.summary_highest_load || 0),
+            max: Math.max(prev.max, pe.summary_highest_load || 0),
             totalLoad: prev.totalLoad + (pe.summary_avg_load || 0) * (pe.summary_total_reps || 0),
             totalReps: prev.totalReps + (pe.summary_total_reps || 0),
           });
@@ -92,9 +92,9 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         return {
           weekNumber: week.week_number,
           label: `W${week.week_number}`,
-          soll_hi: soll?.target_hi ?? null,
-          soll_avg: soll?.target_ave ?? null,
-          ist_hi: (ist && ist.hi > 0) ? ist.hi : null,
+          soll_max: soll?.target_max ?? null,
+          soll_avg: soll?.target_avg ?? null,
+          ist_max: (ist && ist.max > 0) ? ist.max : null,
           ist_avg: (ist && ist.totalReps > 0) ? Math.round(ist.totalLoad / ist.totalReps) : null,
         };
       });
@@ -117,8 +117,8 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
     );
   }
 
-  const sollKey = view === 'hi' ? 'soll_hi' : 'soll_avg';
-  const istKey  = view === 'hi' ? 'ist_hi'  : 'ist_avg';
+  const sollKey = view === 'max' ? 'soll_max' : 'soll_avg';
+  const istKey  = view === 'max' ? 'ist_max'  : 'ist_avg';
   const allVals = data.flatMap(d => [d[sollKey as keyof ChartPoint], d[istKey as keyof ChartPoint]])
     .filter((v): v is number => typeof v === 'number');
   const minY = allVals.length > 0 ? Math.max(0, Math.min(...allVals) - 5) : 0;
@@ -130,8 +130,8 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
       {/* Toggle + legend */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setView('hi')}
-          className={`text-xs px-2 py-0.5 rounded transition-colors ${view === 'hi' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
+          onClick={() => setView('max')}
+          className={`text-xs px-2 py-0.5 rounded transition-colors ${view === 'max' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
         >
           Hi
         </button>

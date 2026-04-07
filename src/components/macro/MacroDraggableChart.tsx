@@ -7,24 +7,24 @@ import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithE
 import type { MacroActuals, MacroActualsMap } from '../../hooks/useMacroCycles';
 import { formatDateShort } from '../../lib/dateUtils';
 
-export type ChartMetric = 'reps' | 'hi' | 'ave';
+export type ChartMetric = 'reps' | 'max' | 'avg';
 
 const METRIC_FIELD: Record<ChartMetric, keyof MacroTarget> = {
   reps: 'target_reps',
-  hi: 'target_hi',
-  ave: 'target_ave',
+  max: 'target_max',
+  avg: 'target_avg',
 };
 
 const ACTUAL_KEY: Record<ChartMetric, keyof MacroActuals> = {
   reps: 'totalReps',
-  hi: 'hiWeight',
-  ave: 'avgWeight',
+  max: 'maxWeight',
+  avg: 'avgWeight',
 };
 
 const METRIC_LABEL: Record<ChartMetric, string> = {
   reps: 'Reps',
-  hi: 'Hi (kg)',
-  ave: 'Ave (kg)',
+  max: 'Max (kg)',
+  avg: 'Avg (kg)',
 };
 
 interface DragState {
@@ -43,7 +43,7 @@ interface DragState {
 }
 
 interface MacroDraggableChartProps {
-  metrics: ChartMetric[]; // ['reps'] or ['hi', 'ave']
+  metrics: ChartMetric[]; // ['reps'] or ['max', 'avg']
   label: string;
   macroWeeks: MacroWeek[];
   trackedExercises: MacroTrackedExerciseWithExercise[];
@@ -286,7 +286,7 @@ export function MacroDraggableChart({
           })}
           {metrics.length > 1 && (
             <span className="text-[9px] text-gray-400 ml-1 border border-dashed border-gray-300 px-1.5 py-0.5 rounded">
-              Hold Ctrl while dragging to move Hi+Ave together
+              Hold Ctrl while dragging to move Hi+Avg together
             </span>
           )}
         </div>
@@ -306,7 +306,7 @@ export function MacroDraggableChart({
               </span>
               <span className="flex items-center gap-1">
                 <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke={withOpacity(te.exercise.color, 0.55)} strokeWidth="2" strokeDasharray="4 2"/></svg>
-                Ave
+                Avg
               </span>
             </div>
           ))}
@@ -370,7 +370,7 @@ export function MacroDraggableChart({
                   type="monotone"
                   dataKey={`a_${metric}_${te.id}`}
                   name={`${te.exercise.exercise_code || te.exercise.name} ${METRIC_LABEL[metric]} actual`}
-                  stroke={withOpacity(te.exercise.color, metrics.length > 1 && metric === 'ave' ? 0.4 : 0.55)}
+                  stroke={withOpacity(te.exercise.color, metrics.length > 1 && metric === 'avg' ? 0.4 : 0.55)}
                   strokeWidth={1.5}
                   strokeDasharray="3 2"
                   dot={{ r: 2, fill: te.exercise.color, strokeWidth: 0 }}
@@ -383,18 +383,18 @@ export function MacroDraggableChart({
             {/* Target lines (draggable) */}
             {trackedExercises.map(te =>
               metrics.map(metric => {
-                const isAve = metric === 'ave';
-                const color = isAve ? withOpacity(te.exercise.color, 0.65) : te.exercise.color;
+                const isAvg = metric === 'avg';
+                const color = isAvg ? withOpacity(te.exercise.color, 0.65) : te.exercise.color;
                 return (
                   <Line
                     key={`tgt_${metric}_${te.id}`}
                     type="monotone"
                     dataKey={`t_${metric}_${te.id}`}
                     name={`${te.exercise.exercise_code || te.exercise.name} ${METRIC_LABEL[metric]}`}
-                    stroke={isAve ? te.exercise.color : te.exercise.color}
-                    strokeWidth={isAve ? 1.5 : 2.5}
-                    strokeDasharray={isAve ? '6 3' : undefined}
-                    strokeOpacity={isAve ? 0.65 : 1}
+                    stroke={isAvg ? te.exercise.color : te.exercise.color}
+                    strokeWidth={isAvg ? 1.5 : 2.5}
+                    strokeDasharray={isAvg ? '6 3' : undefined}
+                    strokeOpacity={isAvg ? 0.65 : 1}
                     dot={makeDot(te.id, metric, te.exercise.color)}
                     activeDot={false}
                     connectNulls

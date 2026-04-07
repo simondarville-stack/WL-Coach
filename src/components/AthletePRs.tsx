@@ -116,7 +116,20 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
     }
   };
 
-  const filteredExercises = exercises.filter((ex) => {
+  // Primary exercises: track_pr=true and no reference (own PR)
+  // Derived exercises: pr_reference_exercise_id is set (uses another exercise's PR)
+  // Excluded: track_pr=false
+  const primaryExercises = exercises.filter(ex => ex.track_pr !== false && !ex.pr_reference_exercise_id);
+  const derivedByRef = new Map<string, ExerciseWithPR[]>();
+  exercises.forEach(ex => {
+    if (ex.pr_reference_exercise_id) {
+      const arr = derivedByRef.get(ex.pr_reference_exercise_id) || [];
+      arr.push(ex);
+      derivedByRef.set(ex.pr_reference_exercise_id, arr);
+    }
+  });
+
+  const filteredExercises = primaryExercises.filter((ex) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
       ex.name.toLowerCase().includes(query) ||
@@ -161,10 +174,10 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
                 selectedCategory === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              All ({exercises.length})
+              All ({primaryExercises.length})
             </button>
             {categories.map((cat) => {
-              const count = exercises.filter((ex) => ex.category === cat.name).length;
+              const count = primaryExercises.filter((ex) => ex.category === cat.name).length;
               return (
                 <button
                   key={cat.id}
@@ -205,37 +218,54 @@ export function AthletePRs({ athlete, onClose }: AthletePRsProps) {
                     </td>
                   </tr>
                 ) : (
-                  filteredExercises.map((exercise) => (
-                    <tr key={exercise.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: exercise.color }} />
-                          <span className="font-medium text-gray-900">{exercise.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600 text-sm">{exercise.category}</td>
-                      <td className="py-3 px-4 text-gray-600 text-sm">{exercise.exercise_code || '-'}</td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            value={inputValues[exercise.id] || ''}
-                            onChange={(e) => handleInputChange(exercise.id, e.target.value)}
-                            onBlur={() => handlePRSave(exercise.id)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                            placeholder="--"
-                            className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            step="0.5"
-                            min="0"
-                            disabled={savingExerciseId === exercise.id}
-                          />
-                          {savingExerciseId === exercise.id && (
-                            <span className="text-xs text-gray-500">Saving...</span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  filteredExercises.flatMap((exercise) => {
+                    const derived = derivedByRef.get(exercise.id) || [];
+                    return [
+                      <tr key={exercise.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: exercise.color }} />
+                            <span className="font-medium text-gray-900">{exercise.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-gray-600 text-sm">{exercise.category}</td>
+                        <td className="py-3 px-4 text-gray-600 text-sm">{exercise.exercise_code || '-'}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={inputValues[exercise.id] || ''}
+                              onChange={(e) => handleInputChange(exercise.id, e.target.value)}
+                              onBlur={() => handlePRSave(exercise.id)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              placeholder="--"
+                              className="w-24 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              step="0.5"
+                              min="0"
+                              disabled={savingExerciseId === exercise.id}
+                            />
+                            {savingExerciseId === exercise.id && (
+                              <span className="text-xs text-gray-500">Saving...</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>,
+                      ...derived.map(dep => (
+                        <tr key={dep.id} className="border-b border-gray-50 bg-gray-50/50">
+                          <td className="py-2 px-4 pl-10">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0 opacity-70" style={{ backgroundColor: dep.color }} />
+                              <span className="text-sm text-gray-600">{dep.name}</span>
+                              <span className="text-xs text-blue-500">uses {exercise.exercise_code || exercise.name} PR</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-4 text-gray-400 text-xs">{dep.category}</td>
+                          <td className="py-2 px-4 text-gray-400 text-xs">{dep.exercise_code || '-'}</td>
+                          <td className="py-2 px-4 text-gray-400 text-xs italic">—</td>
+                        </tr>
+                      )),
+                    ];
+                  })
                 )}
               </tbody>
             </table>

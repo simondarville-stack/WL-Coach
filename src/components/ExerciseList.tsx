@@ -130,6 +130,19 @@ export function ExerciseList({ exercises, onEdit, onDelete }: ExerciseListProps)
                     Competition
                   </span>
                 )}
+                {exercise.track_pr === false && (
+                  <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 rounded">
+                    No PR
+                  </span>
+                )}
+                {exercise.pr_reference_exercise_id && (() => {
+                  const ref = exercises.find(e => e.id === exercise.pr_reference_exercise_id);
+                  return ref ? (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 rounded">
+                      PR: {ref.exercise_code || ref.name}
+                    </span>
+                  ) : null;
+                })()}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 <div>

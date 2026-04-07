@@ -26,6 +26,7 @@ export interface Athlete {
   photo_url: string | null;
   is_active: boolean;
   track_bodyweight: boolean;
+  competition_total: number | null;  // manual override for K-value denominator
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +64,8 @@ export interface Exercise {
   notes: string | null;
   link: string | null;
   is_archived: boolean;
+  pr_reference_exercise_id: string | null;  // derives % from this exercise's PR
+  track_pr: boolean;                         // false = excluded from PR table
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +99,7 @@ export interface WeekPlan {
   athlete_id: string | null;
   is_group_plan: boolean;
   group_id: string | null;
+  source_group_plan_id: string | null;  // links individual plan back to its source group plan
   active_days: number[];
   day_labels: Record<number, string> | null;
   day_display_order: number[] | null;
@@ -122,6 +126,7 @@ export interface PlannedExercise {
   is_combo: boolean;
   combo_notation: string | null;
   combo_color: string | null;
+  source: 'group' | 'individual' | null;  // origin of exercise in individual plan
   created_at: string;
   updated_at: string;
 }
@@ -225,10 +230,10 @@ export interface MacroTarget {
   macro_week_id: string;
   tracked_exercise_id: string;
   target_reps: number | null;
-  target_ave: number | null;
-  target_hi: number | null;
-  target_rhi: number | null;
-  target_shi: number | null;
+  target_avg: number | null;
+  target_max: number | null;
+  target_reps_at_max: number | null;
+  target_sets_at_max: number | null;
   created_at: string;
   updated_at: string;
 }

@@ -95,7 +95,8 @@ export function useWeekPlans() {
       setWeekPlan(plan);
       return plan;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load week plan');
+      const msg = (err as { message?: string })?.message || 'Failed to load week plan';
+      setError(msg);
       return null;
     } finally {
       setLoading(false);
@@ -453,6 +454,8 @@ export function useWeekPlans() {
         summary_avg_load: null,
       }).eq('id', plannedExId);
     }
+    // Promote group-sourced exercise to individual when coach edits it
+    await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
@@ -461,6 +464,8 @@ export function useWeekPlans() {
       .update({ notes: notes.trim() || null })
       .eq('id', plannedExId);
     if (error) throw error;
+    // Promote group-sourced exercise to individual when coach edits it
+    await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
   const fetchOtherDayPrescriptions = async (
@@ -501,6 +506,7 @@ export function useWeekPlans() {
       is_combo?: boolean;
       combo_notation?: string | null;
       combo_color?: string | null;
+      source?: 'group' | 'individual' | null;
     },
   ): Promise<PlannedExercise & { id: string }> => {
     const { data, error } = await supabase
@@ -520,6 +526,7 @@ export function useWeekPlans() {
         is_combo: extras?.is_combo ?? false,
         combo_notation: extras?.combo_notation ?? null,
         combo_color: extras?.combo_color ?? null,
+        source: extras?.source ?? null,
       }])
       .select()
       .single();
@@ -703,6 +710,212 @@ export function useWeekPlans() {
     return data || [];
   };
 
+  /**
+   * Sync a group week plan to all active members of the group.
+   * For each athlete, existing `source='group'` exercises are replaced with
+   * a fresh copy from the group plan. Exercises the athlete has individually
+   * overridden (`source='individual'`) are left untouched.
+   */
+  const syncGroupPlanToAthletes = async (groupPlanId: string, groupId: string, weekStart: string): Promise<void> => {
+    // 0. Fetch group plan metadata (active_days, day_labels, day_schedule)
+    // These define which training units exist in the group plan — we must merge them into each
+    // athlete plan so that units like "Extra" are visible even if not previously in the athlete's plan.
+    const { data: groupPlanMeta, error: metaError } = await supabase
+      .from('week_plans')
+      .select('active_days, day_labels, day_schedule')
+      .eq('id', groupPlanId)
+      .single();
+    if (metaError) throw metaError;
+    const groupActiveDays: number[] = groupPlanMeta?.active_days ?? [];
+    const groupDayLabels: Record<string, string> = groupPlanMeta?.day_labels ?? {};
+    const groupDaySchedule: Record<string, { weekday: number; time: string | null }> = groupPlanMeta?.day_schedule ?? {};
+
+    // 1. Fetch group plan exercises
+    const { data: groupExercises, error: exError } = await supabase
+      .from('planned_exercises')
+      .select('*')
+      .eq('weekplan_id', groupPlanId)
+      .order('day_index')
+      .order('position');
+    if (exError) throw exError;
+
+    // 2. Fetch group plan set lines
+    const groupExIds = (groupExercises || []).map(e => e.id);
+    const { data: groupSetLines } = groupExIds.length > 0
+      ? await supabase.from('planned_set_lines').select('*').in('planned_exercise_id', groupExIds)
+      : { data: [] };
+    const setLinesByExId = new Map<string, typeof groupSetLines>();
+    (groupSetLines || []).forEach((l: { planned_exercise_id: string }) => {
+      const arr = setLinesByExId.get(l.planned_exercise_id) || [];
+      arr.push(l);
+      setLinesByExId.set(l.planned_exercise_id, arr);
+    });
+
+    // 3. Fetch group members (active only)
+    const { data: members, error: memError } = await supabase
+      .from('group_members')
+      .select('athlete_id')
+      .eq('group_id', groupId)
+      .is('left_at', null);
+    if (memError) throw memError;
+
+    for (const member of members || []) {
+      const athleteId = member.athlete_id;
+
+      // 4a. Get or create athlete's week plan
+      // Note: do NOT filter by group_id here — the unique constraint covers (owner_id, athlete_id, week_start)
+      // regardless of group_id, so we must find any existing plan for this athlete+week first.
+      const { data: existingPlan } = await supabase
+        .from('week_plans')
+        .select('id')
+        .eq('owner_id', getOwnerId())
+        .eq('athlete_id', athleteId)
+        .eq('week_start', weekStart)
+        .maybeSingle();
+
+      let athletePlanId: string;
+      if (existingPlan) {
+        athletePlanId = existingPlan.id;
+      } else {
+        const { data: newPlan, error: createError } = await supabase
+          .from('week_plans')
+          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: getOwnerId() }])
+          .select('id')
+          .single();
+        if (createError) {
+          if (createError.code === '23505') {
+            // Race condition: plan was created between our check and insert — fetch it
+            const { data: racePlan } = await supabase
+              .from('week_plans')
+              .select('id')
+              .eq('owner_id', getOwnerId())
+              .eq('athlete_id', athleteId)
+              .eq('week_start', weekStart)
+              .maybeSingle();
+            if (!racePlan) throw createError;
+            athletePlanId = racePlan.id;
+          } else {
+            throw createError;
+          }
+        } else {
+          athletePlanId = newPlan.id;
+        }
+      }
+
+      // 4b. Merge group plan structure into athlete plan.
+      // Fetch athlete's current active_days/labels/schedule so we can merge without overwriting their data.
+      const { data: athletePlanMeta } = await supabase
+        .from('week_plans')
+        .select('active_days, day_labels, day_schedule')
+        .eq('id', athletePlanId)
+        .single();
+      const athleteActiveDays: number[] = athletePlanMeta?.active_days ?? [];
+      const athleteDayLabels: Record<string, string> = athletePlanMeta?.day_labels ?? {};
+      const athleteDaySchedule: Record<string, { weekday: number; time: string | null }> = athletePlanMeta?.day_schedule ?? {};
+
+      // Add any group training units the athlete plan doesn't already have
+      const newDays = groupActiveDays.filter(d => !athleteActiveDays.includes(d));
+      if (newDays.length > 0) {
+        const mergedActiveDays = [...athleteActiveDays, ...newDays];
+        const mergedLabels = { ...athleteDayLabels };
+        const mergedSchedule = { ...athleteDaySchedule };
+        for (const d of newDays) {
+          const key = String(d);
+          if (groupDayLabels[key]) mergedLabels[key] = groupDayLabels[key];
+          if (groupDaySchedule[key]) mergedSchedule[key] = groupDaySchedule[key];
+        }
+        await supabase.from('week_plans').update({
+          active_days: mergedActiveDays,
+          day_labels: mergedLabels,
+          day_schedule: mergedSchedule,
+          source_group_plan_id: groupPlanId,
+        }).eq('id', athletePlanId);
+      } else {
+        // No new units — still track source group plan
+        await supabase.from('week_plans').update({ source_group_plan_id: groupPlanId }).eq('id', athletePlanId);
+      }
+
+      // 4c. Delete existing group-sourced exercises (uses source column — best effort filter)
+      // If source column doesn't exist, the filter returns nothing and we skip deletion safely.
+      const { data: existingGroupExs } = await supabase
+        .from('planned_exercises')
+        .select('id')
+        .eq('weekplan_id', athletePlanId)
+        .eq('source', 'group');
+      const toDelete = (existingGroupExs || []).map((e: { id: string }) => e.id);
+      if (toDelete.length > 0) {
+        await supabase.from('planned_set_lines').delete().in('planned_exercise_id', toDelete);
+        await supabase.from('planned_exercises').delete().in('id', toDelete);
+      }
+
+      // 4d. Insert copies of group exercises, skipping any that have an individual override
+      const { data: individualExs } = await supabase
+        .from('planned_exercises')
+        .select('exercise_id, day_index')
+        .eq('weekplan_id', athletePlanId)
+        .eq('source', 'individual');
+      const individualOverrides = new Set(
+        (individualExs || []).map((e: { exercise_id: string; day_index: number }) => `${e.exercise_id}:${e.day_index}`)
+      );
+
+      for (const ex of groupExercises || []) {
+        // Preserve individual overrides — don't replace exercises the coach has customised per-athlete
+        if (individualOverrides.has(`${ex.exercise_id}:${ex.day_index}`)) continue;
+
+        const { data: newEx, error: insError } = await supabase
+          .from('planned_exercises')
+          .insert([{
+            weekplan_id: athletePlanId,
+            exercise_id: ex.exercise_id,
+            day_index: ex.day_index,
+            position: ex.position,
+            unit: ex.unit,
+            prescription_raw: ex.prescription_raw,
+            notes: ex.notes,
+            summary_total_sets: ex.summary_total_sets,
+            summary_total_reps: ex.summary_total_reps,
+            summary_highest_load: ex.summary_highest_load,
+            summary_avg_load: ex.summary_avg_load,
+            is_combo: ex.is_combo,
+            combo_notation: ex.combo_notation,
+            combo_color: ex.combo_color,
+            source: 'group',
+          }])
+          .select('id')
+          .single();
+        if (insError) throw insError;
+
+        // Copy set lines
+        const lines = setLinesByExId.get(ex.id) || [];
+        if (lines.length > 0) {
+          await supabase.from('planned_set_lines').insert(
+            lines.map((l: { sets: number; reps: number; reps_text: string | null; load_value: number; load_max: number | null; position: number }) => ({
+              planned_exercise_id: newEx.id,
+              sets: l.sets,
+              reps: l.reps,
+              reps_text: l.reps_text ?? null,
+              load_value: l.load_value,
+              load_max: l.load_max ?? null,
+              position: l.position,
+            }))
+          );
+        }
+      }
+    }
+  };
+
+  /**
+   * Promote a group-sourced exercise to an individual override.
+   * The exercise will no longer be replaced on next group plan sync.
+   */
+  const promoteToIndividual = async (plannedExerciseId: string): Promise<void> => {
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update({ source: 'individual' })
+      .eq('id', plannedExerciseId);
+    if (error) throw error;
+  };
+
   return {
     weekPlan,
     setWeekPlan,
@@ -748,5 +961,7 @@ export function useWeekPlans() {
     fetchWeekPlanForAthlete,
     fetchPlannedExercisesFlat,
     createComboExercise,
+    syncGroupPlanToAthletes,
+    promoteToIndividual,
   };
 }

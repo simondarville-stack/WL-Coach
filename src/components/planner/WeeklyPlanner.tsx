@@ -11,6 +11,7 @@ import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
+import { parsePrescription, formatPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
@@ -94,7 +95,16 @@ export function WeeklyPlanner() {
     copyExerciseWithSetLines,
     copyDayExercises,
     deleteDayExercises,
+    syncGroupPlanToAthletes,
   } = useWeekPlans();
+
+  // Wrap addExerciseToDay so manually-added exercises on individual plans get source='individual',
+  // giving them the I badge and protecting them from being overwritten on group sync.
+  const addExerciseToDayWrapped: typeof addExerciseToDay = (weekPlanId, dayIndex, exerciseId, position, unit, extras) =>
+    addExerciseToDay(weekPlanId, dayIndex, exerciseId, position, unit, {
+      ...extras,
+      source: planSelection.type === 'individual' ? 'individual' : (extras?.source ?? null),
+    });
 
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -108,6 +118,7 @@ export function WeeklyPlanner() {
   const [editingDaySchedule, setEditingDaySchedule] = useState<Record<number, { weekday: number; time: string | null }>>({});
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     fetchExercisesByName();
@@ -511,6 +522,54 @@ export function WeeklyPlanner() {
     setShowCopyWeekModal(true);
   };
 
+  const handleResolvePercentages = async () => {
+    if (!currentWeekPlan) return;
+    const prMap = new Map<string, number>(
+      athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
+    );
+    const allExercises = Object.values(plannedExercises).flat();
+    const toResolve = allExercises.filter(ex => ex.unit === 'percentage' && ex.prescription_raw);
+
+    for (const ex of toResolve) {
+      // Resolve PR: direct first, then via reference exercise
+      const refId = ex.exercise.pr_reference_exercise_id ?? ex.exercise_id;
+      const prKg = prMap.get(refId) ?? prMap.get(ex.exercise_id);
+      if (!prKg) continue;
+
+      const parsed = parsePrescription(ex.prescription_raw!);
+      if (parsed.length === 0) continue;
+
+      const kgLines = parsed.map(line => ({
+        sets: line.sets,
+        reps: line.reps,
+        load: Math.round((line.load / 100) * prKg * 2) / 2,
+        loadMax: line.loadMax != null ? Math.round((line.loadMax / 100) * prKg * 2) / 2 : null,
+      }));
+
+      await savePrescription(ex.id, {
+        prescription: formatPrescription(kgLines, 'absolute_kg'),
+        unit: 'absolute_kg',
+      });
+    }
+
+    if (toResolve.length > 0) {
+      await handleRefresh();
+    }
+  };
+
+  const handleSyncGroupPlan = async () => {
+    if (!currentWeekPlan || planSelection.type !== 'group' || !planSelection.group) return;
+    setIsSyncing(true);
+    setError(null);
+    try {
+      await syncGroupPlanToAthletes(currentWeekPlan.id, planSelection.group.id, selectedDate);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync group plan to athletes');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handlePlanSelection = (selection: PlanSelection) => {
     setPlanSelection(selection);
     if (selection.type === 'individual' && selection.athlete) {
@@ -577,6 +636,7 @@ export function WeeklyPlanner() {
                 onPaste={handlePasteWeek}
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
+                onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
               />
 
             {/* ── Load Distribution (collapsible) ── */}
@@ -590,6 +650,34 @@ export function WeeklyPlanner() {
                   dayDisplayOrder={dayDisplayOrder}
                   daySchedule={(currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 />
+              </div>
+            )}
+
+            {/* ── Group plan banner ── */}
+            {planSelection.type === 'group' && planSelection.group && (
+              <div className="mb-3 flex items-center justify-between px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-indigo-800">Group plan:</span>
+                  <span className="text-xs text-indigo-700">{planSelection.group.name}</span>
+                </div>
+                <button
+                  onClick={handleSyncGroupPlan}
+                  disabled={isSyncing}
+                  className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {isSyncing ? 'Syncing…' : 'Sync to athletes'}
+                </button>
+              </div>
+            )}
+
+            {/* ── Linked-to-group banner for individual plans ── */}
+            {planSelection.type === 'individual' && currentWeekPlan?.source_group_plan_id && (
+              <div className="mb-3 px-4 py-2 bg-indigo-50/60 border border-indigo-200 rounded-lg">
+                <span className="text-xs text-indigo-600">Linked to group plan · Exercises with </span>
+                <span className="text-[8px] px-1 py-px bg-indigo-50 text-indigo-500 rounded font-medium">G</span>
+                <span className="text-xs text-indigo-600"> come from the group. Edit to override </span>
+                <span className="text-[8px] px-1 py-px bg-amber-50 text-amber-500 rounded font-medium">I</span>
+                <span className="text-xs text-indigo-600">.</span>
               </div>
             )}
 
@@ -608,7 +696,7 @@ export function WeeklyPlanner() {
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
-                addExerciseToDay={addExerciseToDay}
+                addExerciseToDay={addExerciseToDayWrapped}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
                 onDeleteExercise={handleDeleteExercise}
@@ -652,7 +740,7 @@ export function WeeklyPlanner() {
                       handleNavigateToExercise(selectedDayIndex, exerciseId)
                     }
                     onRefresh={handleRefresh}
-                    addExerciseToDay={addExerciseToDay}
+                    addExerciseToDay={addExerciseToDayWrapped}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
