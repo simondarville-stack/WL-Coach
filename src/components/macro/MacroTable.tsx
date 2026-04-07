@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroPhaseBlock } from './MacroPhaseBlock';
+import { ExerciseToggleBar } from './ExerciseToggleBar';
 
 interface MacroTableProps {
   macroWeeks: MacroWeek[];
@@ -167,35 +168,13 @@ export function MacroTable({
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Exercise toggle chips */}
       {trackedExercises.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1 flex-shrink-0">
-          {trackedExercises.map(te => {
-            const visible = visibleExercises.has(te.id);
-            return (
-              <button
-                key={te.id}
-                onClick={() => toggleExercise(te.id)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-colors ${
-                  visible
-                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                    : 'bg-gray-50 text-gray-400 border-gray-200 line-through'
-                }`}
-              >
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle"
-                  style={{ backgroundColor: visible ? te.exercise.color : '#9ca3af' }}
-                />
-                {te.exercise.exercise_code || te.exercise.name}
-              </button>
-            );
-          })}
-          {trackedExercises.some(te => !visibleExercises.has(te.id)) && (
-            <button
-              onClick={showAllExercises}
-              className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600"
-            >
-              Show all
-            </button>
-          )}
+        <div className="px-3 pt-2 pb-1 flex-shrink-0">
+          <ExerciseToggleBar
+            exercises={trackedExercises}
+            visible={visibleExercises}
+            onToggle={toggleExercise}
+            onShowAll={showAllExercises}
+          />
         </div>
       )}
 

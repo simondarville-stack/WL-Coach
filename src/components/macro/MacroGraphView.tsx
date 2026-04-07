@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroDraggableChart } from './MacroDraggableChart';
+import { ExerciseToggleBar } from './ExerciseToggleBar';
 
 interface MacroGraphViewProps {
   macroWeeks: MacroWeek[];
@@ -98,36 +99,12 @@ export function MacroGraphView({
     <div className="space-y-4 p-4">
       {/* Exercise toggle chips */}
       {trackedExercises.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {trackedExercises.map(te => {
-            const visible = visibleExercises.has(te.id);
-            return (
-              <button
-                key={te.id}
-                onClick={() => toggleExercise(te.id)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-colors ${
-                  visible
-                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                    : 'bg-gray-50 text-gray-400 border-gray-200 line-through'
-                }`}
-              >
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle"
-                  style={{ backgroundColor: visible ? te.exercise.color : '#9ca3af' }}
-                />
-                {te.exercise.exercise_code || te.exercise.name}
-              </button>
-            );
-          })}
-          {trackedExercises.some(te => !visibleExercises.has(te.id)) && (
-            <button
-              onClick={showAllExercises}
-              className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600"
-            >
-              Show all
-            </button>
-          )}
-        </div>
+        <ExerciseToggleBar
+          exercises={trackedExercises}
+          visible={visibleExercises}
+          onToggle={toggleExercise}
+          onShowAll={showAllExercises}
+        />
       )}
 
       <div className="flex items-center gap-3 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">

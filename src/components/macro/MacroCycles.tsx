@@ -78,6 +78,18 @@ export function MacroCycles() {
   const [individualViewAthleteId, setIndividualViewAthleteId] = useState<string | null>(null);
   const [individualActuals, setIndividualActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
 
+  // Shared exercise visibility state (lifted here so table and graph share the same state)
+  const [visibleExercises, setVisibleExercises] = useState<Set<string>>(new Set());
+
+  const toggleExercise = (teId: string) => {
+    setVisibleExercises(prev => {
+      const next = new Set(prev);
+      if (next.has(teId)) next.delete(teId);
+      else next.add(teId);
+      return next;
+    });
+  };
+
   // Determine current target (group or individual)
   const macroTarget: MacroOwnerTarget | null = selectedGroup
     ? { type: 'group', id: selectedGroup.id }
@@ -138,6 +150,11 @@ export function MacroCycles() {
       fetchTargets(macroWeeks.map(w => w.id));
     }
   }, [macroWeeks.length]);
+
+  // Initialize visibleExercises when tracked exercises load
+  useEffect(() => {
+    setVisibleExercises(new Set(trackedExercises.map(t => t.id)));
+  }, [trackedExercises.length]);
 
   // Load actuals when weeks + tracked exercises are ready
   useEffect(() => {
@@ -678,6 +695,9 @@ export function MacroCycles() {
           onRemoveExercise={handleRemoveExercise}
           onPasteTargets={handlePasteTargets}
           onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
+          visibleExercises={visibleExercises}
+          onToggleExercise={toggleExercise}
+          onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
         />
       ) : (
         <div className="flex-1 overflow-y-auto">
@@ -690,6 +710,9 @@ export function MacroCycles() {
             actuals={displayedActuals}
             onDragTarget={handleDragTarget}
             focusedExerciseId={focusedExerciseId}
+            visibleExercises={visibleExercises}
+            onToggleExercise={toggleExercise}
+            onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
           />
         </div>
       )}
