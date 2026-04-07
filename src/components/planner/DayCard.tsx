@@ -305,7 +305,7 @@ export function DayCard({
         <div className="flex flex-col flex-1">
           {isEmpty ? (
             <div className="flex-1 flex items-center justify-center py-3 text-xs text-gray-300 italic">
-              {isDragOver ? 'Drop here' : 'Rest day'}
+              {isDragOver ? 'Drop here' : 'No exercises'}
             </div>
           ) : (
             <div className="flex flex-col divide-y divide-gray-50">

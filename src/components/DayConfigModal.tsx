@@ -79,7 +79,7 @@ export function DayConfigModal({
     <ModalShell maxWidth="max-w-2xl">
       <div className="p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-medium text-gray-900">Training Days</h2>
+          <h2 className="text-xl font-medium text-gray-900">Training Units</h2>
           <button onClick={onCancel} className="p-1 hover:bg-gray-100 rounded transition-colors">
             <X size={20} />
           </button>
@@ -94,7 +94,7 @@ export function DayConfigModal({
               onClick={onAddDay}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
             >
-              + Add Day
+              + Add Unit
             </button>
           </div>
 

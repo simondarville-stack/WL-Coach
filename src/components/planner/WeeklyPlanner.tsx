@@ -11,7 +11,7 @@ import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
-import { parsePrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, formatPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
@@ -97,6 +97,14 @@ export function WeeklyPlanner() {
     deleteDayExercises,
     syncGroupPlanToAthletes,
   } = useWeekPlans();
+
+  // Wrap addExerciseToDay so manually-added exercises on individual plans get source='individual',
+  // giving them the I badge and protecting them from being overwritten on group sync.
+  const addExerciseToDayWrapped: typeof addExerciseToDay = (weekPlanId, dayIndex, exerciseId, position, unit, extras) =>
+    addExerciseToDay(weekPlanId, dayIndex, exerciseId, position, unit, {
+      ...extras,
+      source: planSelection.type === 'individual' ? 'individual' : (extras?.source ?? null),
+    });
 
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -531,17 +539,15 @@ export function WeeklyPlanner() {
       const parsed = parsePrescription(ex.prescription_raw!);
       if (parsed.length === 0) continue;
 
-      const lines = parsed.map(line => {
-        const kg = Math.round((line.load / 100) * prKg * 2) / 2;
-        const kgMax = line.loadMax != null ? Math.round((line.loadMax / 100) * prKg * 2) / 2 : null;
-        if (kgMax != null) {
-          return `${kg}-${kgMax} × ${line.reps} × ${line.sets}`;
-        }
-        return `${kg} × ${line.reps} × ${line.sets}`;
-      });
+      const kgLines = parsed.map(line => ({
+        sets: line.sets,
+        reps: line.reps,
+        load: Math.round((line.load / 100) * prKg * 2) / 2,
+        loadMax: line.loadMax != null ? Math.round((line.loadMax / 100) * prKg * 2) / 2 : null,
+      }));
 
       await savePrescription(ex.id, {
-        prescription: lines.join('\n'),
+        prescription: formatPrescription(kgLines, 'absolute_kg'),
         unit: 'absolute_kg',
       });
     }
@@ -690,7 +696,7 @@ export function WeeklyPlanner() {
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
-                addExerciseToDay={addExerciseToDay}
+                addExerciseToDay={addExerciseToDayWrapped}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
                 onDeleteExercise={handleDeleteExercise}
@@ -734,7 +740,7 @@ export function WeeklyPlanner() {
                       handleNavigateToExercise(selectedDayIndex, exerciseId)
                     }
                     onRefresh={handleRefresh}
-                    addExerciseToDay={addExerciseToDay}
+                    addExerciseToDay={addExerciseToDayWrapped}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
