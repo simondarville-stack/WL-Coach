@@ -11,7 +11,10 @@ interface MacroExcelIOProps {
   trackedExercises: MacroTrackedExerciseWithExercise[];
   targets: MacroTarget[];
   phases: MacroPhase[];
+  actuals?: import('../../hooks/useMacroCycles').MacroActualsMap;  // for enhanced export
   cycleNameForFile: string;
+  cycleDateRange?: { start: string; end: string };   // for summary sheet
+  athleteName?: string;            // for summary sheet
   athleteId?: string | null;       // for fetching PRs (null for group macros)
   onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
 }
@@ -80,7 +83,10 @@ export function MacroExcelIO({
   trackedExercises,
   targets,
   phases,
+  actuals,
   cycleNameForFile,
+  cycleDateRange,
+  athleteName,
   athleteId,
   onImportTargets,
 }: MacroExcelIOProps) {
@@ -137,6 +143,43 @@ export function MacroExcelIO({
       const wsInfo = XLSX.utils.aoa_to_sheet(infoRows);
       wsInfo['!cols'] = [{ wch: 18 }, { wch: 40 }];
       XLSX.utils.book_append_sheet(wb, wsInfo, 'Template Info');
+    } else {
+      // ─── Summary sheet ───
+      const summaryRows: (string | number | null)[][] = [];
+      summaryRows.push(['Macrocycle:', cycleNameForFile]);
+      if (athleteName) summaryRows.push(['Athlete:', athleteName]);
+      if (cycleDateRange) {
+        summaryRows.push(['Start:', cycleDateRange.start]);
+        summaryRows.push(['End:', cycleDateRange.end]);
+      }
+      summaryRows.push(['Duration:', `${macroWeeks.length} weeks`]);
+      summaryRows.push([]);
+
+      if (phases.length > 0) {
+        summaryRows.push(['Phase overview:']);
+        phases.forEach(phase => {
+          summaryRows.push([`  ${phase.name} (weeks ${phase.start_week_number}–${phase.end_week_number}):`, phase.notes || phase.phase_type]);
+        });
+        summaryRows.push([]);
+      }
+
+      summaryRows.push(['Weekly totals:']);
+      summaryRows.push(['Week', 'Date', 'Type', 'Target Reps', 'Actual Reps']);
+      macroWeeks.forEach(week => {
+        const weekActuals = actuals?.[week.id] ?? {};
+        const actualReps = Object.values(weekActuals).reduce((sum, a) => sum + a.totalReps, 0);
+        summaryRows.push([
+          week.week_number,
+          formatDateShort(week.week_start),
+          week.week_type,
+          week.total_reps_target ?? '',
+          actualReps > 0 ? actualReps : '',
+        ]);
+      });
+
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+      wsSummary['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
     }
 
     const phaseGroups = new Map<string, { phase: MacroPhase | null; weeks: MacroWeek[] }>();
@@ -154,21 +197,36 @@ export function MacroExcelIO({
         ? phase.name.replace(/[:/\\?*[\]]/g, '').substring(0, 31)
         : 'Unassigned';
 
-      const headerRow1: string[] = ['Wk', 'Date', 'Type', 'Label', 'Total Reps Target'];
+      const headerRow1: string[] = ['Wk', 'Date', 'Type', 'Label', 'Total Reps'];
       const headerRow2: string[] = ['', '', '', '', ''];
 
       trackedExercises.forEach(te => {
         const exName = te.exercise.exercise_code || te.exercise.name;
-        fieldDefs.forEach((f, fi) => {
-          if (fi === 0) headerRow1.push(exName);
-          else headerRow1.push('');
-          headerRow2.push(f.label);
-        });
+        if (!asTemplate) {
+          // Target + Actual columns (5 each = 10 per exercise)
+          fieldDefs.forEach((f, fi) => {
+            if (fi === 0) headerRow1.push(`${exName} (Target)`);
+            else headerRow1.push('');
+            headerRow2.push(f.label);
+          });
+          fieldDefs.forEach((f, fi) => {
+            if (fi === 0) headerRow1.push(`${exName} (Actual)`);
+            else headerRow1.push('');
+            headerRow2.push(f.label.replace('Target ', ''));
+          });
+        } else {
+          fieldDefs.forEach((f, fi) => {
+            if (fi === 0) headerRow1.push(exName);
+            else headerRow1.push('');
+            headerRow2.push(f.label);
+          });
+        }
       });
 
       const rows: (string | number | null)[][] = [headerRow1, headerRow2];
 
       weeks.forEach(week => {
+        const weekActuals = actuals?.[week.id] ?? {};
         const row: (string | number | null)[] = [
           week.week_number,
           formatDateShort(week.week_start),
@@ -178,36 +236,44 @@ export function MacroExcelIO({
         ];
         trackedExercises.forEach(te => {
           const target = targets.find(t => t.macro_week_id === week.id && t.tracked_exercise_id === te.id);
+          const exActuals = weekActuals[te.exercise_id];
           fieldDefs.forEach(f => {
             let val = target?.[f.field] as number | null ?? null;
             if (asTemplate && f.isPercent && val !== null) {
-              // Convert kg to % using athlete PRs
               const pr = athletePRs?.get(te.exercise_id);
               if (pr && pr > 0) {
                 val = Math.round((val / pr) * 100);
-              } else {
-                // No PR available — leave as absolute (will be flagged in comment)
-                // For now, keep the kg value but note it
               }
             }
             row.push(val);
           });
+          if (!asTemplate) {
+            // Actual values alongside targets
+            const actualValues: (number | null)[] = exActuals
+              ? [exActuals.totalReps, exActuals.avgWeight, exActuals.maxWeight, exActuals.repsAtMax, exActuals.setsAtMax]
+              : [null, null, null, null, null];
+            actualValues.forEach(v => row.push(v && v > 0 ? v : null));
+          }
         });
         rows.push(row);
       });
 
       const ws = XLSX.utils.aoa_to_sheet(rows);
 
+      const colsPerEx = asTemplate ? fieldDefs.length : fieldDefs.length * 2;
       const colWidths = [
         { wch: 4 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 14 },
-        ...trackedExercises.flatMap(() => fieldDefs.map(() => ({ wch: 12 }))),
+        ...trackedExercises.flatMap(() => Array(colsPerEx).fill({ wch: 12 })),
       ];
       ws['!cols'] = colWidths;
 
       const merges: XLSX.Range[] = [];
       trackedExercises.forEach((_, idx) => {
-        const startCol = 5 + idx * 5;
-        merges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + 4 } });
+        const startCol = 5 + idx * colsPerEx;
+        merges.push({ s: { r: 0, c: startCol }, e: { r: 0, c: startCol + fieldDefs.length - 1 } });
+        if (!asTemplate) {
+          merges.push({ s: { r: 0, c: startCol + fieldDefs.length }, e: { r: 0, c: startCol + colsPerEx - 1 } });
+        }
       });
       if (merges.length > 0) ws['!merges'] = merges;
 

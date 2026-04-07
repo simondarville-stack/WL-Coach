@@ -589,7 +589,10 @@ export function MacroCycles() {
               trackedExercises={trackedExercises}
               targets={targets}
               phases={phases}
+              actuals={actuals}
               cycleNameForFile={selectedCycle.name}
+              cycleDateRange={{ start: selectedCycle.start_date, end: selectedCycle.end_date }}
+              athleteName={isGroupMode ? selectedGroup?.name : selectedAthlete?.name}
               athleteId={selectedAthlete?.id ?? null}
               onImportTargets={handleImportTargets}
             />
