@@ -590,6 +590,7 @@ export function MacroCycles() {
               targets={targets}
               phases={phases}
               cycleNameForFile={selectedCycle.name}
+              athleteId={selectedAthlete?.id ?? null}
               onImportTargets={handleImportTargets}
             />
 
