@@ -744,13 +744,14 @@ export function useWeekPlans() {
       const athleteId = member.athlete_id;
 
       // 4a. Get or create athlete's week plan
+      // Note: do NOT filter by group_id here — the unique constraint covers (owner_id, athlete_id, week_start)
+      // regardless of group_id, so we must find any existing plan for this athlete+week first.
       const { data: existingPlan } = await supabase
         .from('week_plans')
         .select('id')
         .eq('owner_id', getOwnerId())
         .eq('athlete_id', athleteId)
         .eq('week_start', weekStart)
-        .is('group_id', null)
         .maybeSingle();
 
       let athletePlanId: string;
@@ -762,8 +763,24 @@ export function useWeekPlans() {
           .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: getOwnerId() }])
           .select('id')
           .single();
-        if (createError) throw createError;
-        athletePlanId = newPlan.id;
+        if (createError) {
+          if (createError.code === '23505') {
+            // Race condition: plan was created between our check and insert — fetch it
+            const { data: racePlan } = await supabase
+              .from('week_plans')
+              .select('id')
+              .eq('owner_id', getOwnerId())
+              .eq('athlete_id', athleteId)
+              .eq('week_start', weekStart)
+              .maybeSingle();
+            if (!racePlan) throw createError;
+            athletePlanId = racePlan.id;
+          } else {
+            throw createError;
+          }
+        } else {
+          athletePlanId = newPlan.id;
+        }
       }
 
       // 4b. Try to update source_group_plan_id (column added in migration 20260406 — best effort)
