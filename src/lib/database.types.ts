@@ -249,6 +249,7 @@ export interface GeneralSettings {
   default_tracked_exercise_ids: string[];
   bodyweight_ma_days: number;
   visible_summary_metrics: string[];
+  visible_card_metrics: string[];
   show_stress_metric: boolean;
   dialog_mode: 'center' | 'sidebar';
   created_at: string;

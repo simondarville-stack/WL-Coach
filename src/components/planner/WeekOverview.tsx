@@ -8,6 +8,7 @@ import type {
 import { DayCard } from './DayCard';
 import { calculateRestInfo, buildWeekdayCells } from '../../lib/restCalculation';
 import type { ScheduleEntry } from '../../lib/restCalculation';
+import type { MetricKey } from '../../lib/metrics';
 
 interface WeekOverviewProps {
   weekPlan: WeekPlan | null;
@@ -35,6 +36,8 @@ interface WeekOverviewProps {
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+  visibleCardMetrics?: MetricKey[];
+  competitionTotal?: number | null;
 }
 
 export function WeekOverview({
@@ -52,6 +55,8 @@ export function WeekOverview({
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
+  visibleCardMetrics,
+  competitionTotal,
 }: WeekOverviewProps) {
   if (!weekPlan) {
     return <div className="flex items-center justify-center py-20 text-sm text-gray-400">No plan for this week</div>;
@@ -107,6 +112,8 @@ export function WeekOverview({
                         comboMembers={comboMembers}
                         allExercises={allExercises}
                         restInfo={restInfoMap.get(session.slotIndex)}
+                        visibleMetrics={visibleCardMetrics}
+                        competitionTotal={competitionTotal}
                         onNavigateToDay={() => onNavigateToDay(session.slotIndex)}
                         onNavigateToExercise={id => onNavigateToExercise(session.slotIndex, id)}
                         addExerciseToDay={addExerciseToDay}
@@ -138,6 +145,8 @@ export function WeekOverview({
                   exercises={plannedExercises[day.index] || []}
                   comboMembers={comboMembers}
                   allExercises={allExercises}
+                  visibleMetrics={visibleCardMetrics}
+                  competitionTotal={competitionTotal}
                   onNavigateToDay={() => onNavigateToDay(day.index)}
                   onNavigateToExercise={id => onNavigateToExercise(day.index, id)}
                   addExerciseToDay={addExerciseToDay}
@@ -169,6 +178,8 @@ export function WeekOverview({
             comboMembers={comboMembers}
             allExercises={allExercises}
             restInfo={restInfoMap.get(day.index)}
+            visibleMetrics={visibleCardMetrics}
+            competitionTotal={competitionTotal}
             onNavigateToDay={() => onNavigateToDay(day.index)}
             onNavigateToExercise={id => onNavigateToExercise(day.index, id)}
             addExerciseToDay={addExerciseToDay}

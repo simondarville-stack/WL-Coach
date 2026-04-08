@@ -21,6 +21,7 @@ export function GeneralSettings() {
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
   const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
+  const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
 
   useEffect(() => {
     fetchSettings();
@@ -78,7 +79,8 @@ export function GeneralSettings() {
       setGridClickIncrement(settings.grid_click_increment);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
       setShowStressMetric(settings.show_stress_metric ?? false);
-      setVisibleMetrics(settings.visible_summary_metrics ?? ['sets', 'reps', 'tonnage']);
+      setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
+      setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
     }
   }, [settings]);
 
@@ -125,6 +127,15 @@ export function GeneralSettings() {
       : [...visibleMetrics, key];
     setVisibleMetrics(next);
     await updateSettings(settings.id, { visible_summary_metrics: next });
+  }
+
+  async function toggleCardMetric(key: string) {
+    if (!settings) return;
+    const next = visibleCardMetrics.includes(key)
+      ? visibleCardMetrics.filter(m => m !== key)
+      : [...visibleCardMetrics, key];
+    setVisibleCardMetrics(next);
+    await updateSettings(settings.id, { visible_card_metrics: next });
   }
 
   async function toggleStressMetric(value: boolean) {
@@ -418,14 +429,40 @@ export function GeneralSettings() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
-          <p className="text-sm text-gray-600 mb-4">Control which metrics are shown in the week summary</p>
-        </div>
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
+        <p className="text-sm text-gray-600 mb-5">Control which metrics appear in the planner. K% requires an athlete competition total to be set.</p>
 
-        <div className="space-y-2">
+        <div className="space-y-6">
+          {/* Day card metrics */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">Summary metrics</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Day card — top of card</label>
+            <p className="text-xs text-gray-400 mb-3">Shown in the compact strip at the top of each day card in the week overview.</p>
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+              {METRIC_ORDER.map(key => {
+                const def = METRICS.find(m => m.key === key)!;
+                return (
+                  <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={visibleCardMetrics.includes(key)}
+                      onChange={() => void toggleCardMetric(key)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-gray-700">{def.label}</span>
+                      {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
+                    </div>
+                    <span className="text-xs text-gray-400">{def.description}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Week summary metrics */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Week summary — top of week</label>
+            <p className="text-xs text-gray-400 mb-3">Shown in the week total summary bar above the day cards.</p>
             <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
               {METRIC_ORDER.map(key => {
                 const def = METRICS.find(m => m.key === key)!;

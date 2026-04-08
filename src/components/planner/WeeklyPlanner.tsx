@@ -11,6 +11,7 @@ import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
+import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
@@ -694,6 +695,8 @@ export function WeeklyPlanner() {
                 comboMembers={comboMembers}
                 allExercises={allExercises}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
+                visibleCardMetrics={(settings?.visible_card_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
+                competitionTotal={planSelection.athlete?.competition_total ?? null}
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
                 addExerciseToDay={addExerciseToDayWrapped}
