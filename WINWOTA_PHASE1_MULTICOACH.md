@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — PHASE 1: DATA ISOLATION & ENVIRONMENT SWITCHING
+# EMOS 2.0 — PHASE 1: DATA ISOLATION & ENVIRONMENT SWITCHING
 
 Add `owner_id` to all root tables and an environment switcher in the
 sidebar. No authentication, no login. Coaches switch environments via
@@ -220,7 +220,7 @@ export const useCoachStore = create<CoachState>()(
       setCoaches: (coaches) => set({ coaches }),
     }),
     {
-      name: 'winwota-coach',  // localStorage key
+      name: 'emos-coach',  // localStorage key
     }
   )
 );

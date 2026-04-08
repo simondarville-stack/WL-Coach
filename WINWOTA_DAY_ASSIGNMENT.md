@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — TRAINING DAY ASSIGNMENT & REST VISUALIZATION
+# EMOS 2.0 — TRAINING DAY ASSIGNMENT & REST VISUALIZATION
 
 Add optional weekday assignment to training slots. When assigned, the
 week view shows cards positioned on their actual weekday with rest gaps

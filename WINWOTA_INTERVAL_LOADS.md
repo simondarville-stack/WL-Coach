@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — INTERVAL PRESCRIPTION TYPE
+# EMOS 2.0 — INTERVAL PRESCRIPTION TYPE
 
 Add interval load prescriptions: a set line can have a lower and upper
 bound instead of a single fixed load. This is NOT a new unit type —

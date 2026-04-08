@@ -8,7 +8,7 @@ Delete the existing weekly planner module and rebuild it from scratch. This is t
 ## DESIGN PHILOSOPHY
 
 ### Product identity
-WinWota is a **specialized tool for Olympic weightlifting coaches**. Every design decision should reflect OWL coaching workflows: exercises are prescribed in load/reps/sets notation, combos (complexes) are fundamental, load distribution across a week matters as much as individual prescriptions, and coaches think in terms of volume, intensity, and stress.
+EMOS is a **specialized tool for Olympic weightlifting coaches**. Every design decision should reflect OWL coaching workflows: exercises are prescribed in load/reps/sets notation, combos (complexes) are fundamental, load distribution across a week matters as much as individual prescriptions, and coaches think in terms of volume, intensity, and stress.
 
 ### Engineering principles
 Apply object-oriented design thinking to the UI architecture:

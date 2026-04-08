@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — COMPACT PRINT CLEANUP + NEW BRANCH
+# EMOS 2.0 — COMPACT PRINT CLEANUP + NEW BRANCH
 
 First create a new branch for today's work, then fix the compact print layout.
 
@@ -141,7 +141,7 @@ The "2" after "²" seems to be a frequency or different notation.
 Actually the IAT PDF shows: `65₂ 2` on the load row. Looking at the
 original text: `65 2 2` where the subscript 2 is attached to 65.
 
-Let me simplify: in WinWota, use this convention:
+Let me simplify: in EMOS, use this convention:
 - If a cell has sets > 1, show the sets count as a superscript on the
   REPS value: `3²` means "3 reps × 2 sets"
 - Show it on EVERY cell that has sets > 1 (simpler than IAT grouping)
