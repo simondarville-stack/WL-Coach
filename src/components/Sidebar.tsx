@@ -13,6 +13,7 @@ import {
   BookOpen,
   Settings,
   ChevronsLeft,
+  Calculator,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
@@ -59,9 +60,10 @@ const sections: NavSection[] = [
 
 interface SidebarProps {
   onNewCoach?: () => void;
+  onOpenCalc?: () => void;
 }
 
-export function Sidebar({ onNewCoach }: SidebarProps) {
+export function Sidebar({ onNewCoach, onOpenCalc }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [collapsed, setCollapsed] = useState(() => {
@@ -188,6 +190,28 @@ export function Sidebar({ onNewCoach }: SidebarProps) {
           </div>
         ))}
       </nav>
+
+      {/* Tools section */}
+      <div className="flex-shrink-0 border-t border-gray-200 py-1">
+        {!collapsed && (
+          <div className="px-4 pb-1 pt-3 text-[10px] font-medium text-gray-400 uppercase tracking-widest whitespace-nowrap overflow-hidden">
+            Tools
+          </div>
+        )}
+        {collapsed && <div className="mx-2 my-2 border-t border-gray-200" />}
+        <button
+          onClick={() => onOpenCalc?.()}
+          title={collapsed ? 'xRM Calculator' : undefined}
+          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 text-gray-600 hover:bg-gray-100 hover:text-gray-900 ${
+            collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
+          }`}
+        >
+          <Calculator size={16} className="flex-shrink-0" />
+          {!collapsed && (
+            <span className="whitespace-nowrap overflow-hidden">xRM Calculator</span>
+          )}
+        </button>
+      </div>
 
       {/* Collapse toggle + version */}
       <div className="flex-shrink-0 border-t border-gray-200">
