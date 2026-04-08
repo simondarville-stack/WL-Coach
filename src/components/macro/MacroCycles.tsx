@@ -1,9 +1,10 @@
 // TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil } from 'lucide-react';
-import type { MacroCycle, MacroTarget, WeekType } from '../../lib/database.types';
+import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil, Users } from 'lucide-react';
+import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
+import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
@@ -20,7 +21,7 @@ import { supabase } from '../../lib/supabase';
 type ViewMode = 'table' | 'graph';
 
 export function MacroCycles() {
-  const { selectedAthlete } = useAthleteStore();
+  const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
 
   const {
@@ -56,6 +57,7 @@ export function MacroCycles() {
     updateCompetition,
     deleteCompetition,
     fetchMacroActuals,
+    fetchActualsForAthlete,
     updateMacrocycle,
   } = useMacroCycles();
 
@@ -71,16 +73,57 @@ export function MacroCycles() {
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
 
+  // Group mode state
+  const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
+  const [individualViewAthleteId, setIndividualViewAthleteId] = useState<string | null>(null);
+  const [individualActuals, setIndividualActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
+
+  // Shared exercise visibility state (lifted here so table and graph share the same state)
+  const [visibleExercises, setVisibleExercises] = useState<Set<string>>(new Set());
+
+  const toggleExercise = (teId: string) => {
+    setVisibleExercises(prev => {
+      const next = new Set(prev);
+      if (next.has(teId)) next.delete(teId);
+      else next.add(teId);
+      return next;
+    });
+  };
+
+  // Determine current target (group or individual)
+  const macroTarget: MacroOwnerTarget | null = selectedGroup
+    ? { type: 'group', id: selectedGroup.id }
+    : selectedAthlete
+    ? { type: 'athlete', id: selectedAthlete.id }
+    : null;
+
+  const isGroupMode = macroTarget?.type === 'group';
+
   // Load exercises on mount
   useEffect(() => { fetchExercisesByName(); }, []);
 
-  // Load macrocycles when athlete changes
+  // Load group members when in group mode
   useEffect(() => {
-    if (selectedAthlete) {
-      fetchMacrocycles(selectedAthlete.id);
-      setSelectedCycle(null);
+    if (!selectedGroup) {
+      setGroupMembers([]);
+      return;
     }
-  }, [selectedAthlete?.id]);
+    supabase
+      .from('group_members')
+      .select('*, athlete:athletes(*)')
+      .eq('group_id', selectedGroup.id)
+      .is('left_at', null)
+      .then(({ data }) => setGroupMembers((data as GroupMemberWithAthlete[]) || []));
+  }, [selectedGroup?.id]);
+
+  // Load macrocycles when target changes
+  useEffect(() => {
+    if (macroTarget) {
+      fetchMacrocycles(macroTarget);
+      setSelectedCycle(null);
+      setIndividualViewAthleteId(null);
+    }
+  }, [selectedAthlete?.id, selectedGroup?.id]);
 
   // Auto-select most recent cycle
   useEffect(() => {
@@ -108,11 +151,26 @@ export function MacroCycles() {
     }
   }, [macroWeeks.length]);
 
+  // Initialize visibleExercises when tracked exercises load
+  useEffect(() => {
+    setVisibleExercises(new Set(trackedExercises.map(t => t.id)));
+  }, [trackedExercises.length]);
+
   // Load actuals when weeks + tracked exercises are ready
   useEffect(() => {
-    if (!selectedAthlete || macroWeeks.length === 0 || trackedExercises.length === 0) return;
-    fetchMacroActuals(selectedAthlete.id, macroWeeks, trackedExercises).then(setActuals);
-  }, [selectedAthlete?.id, macroWeeks.length, trackedExercises.length]);
+    if (!macroTarget || macroWeeks.length === 0 || trackedExercises.length === 0) return;
+    fetchMacroActuals(macroTarget, macroWeeks, trackedExercises).then(setActuals);
+  }, [selectedAthlete?.id, selectedGroup?.id, macroWeeks.length, trackedExercises.length]);
+
+  // Load individual athlete actuals for "individual view" in group mode
+  useEffect(() => {
+    if (!individualViewAthleteId || macroWeeks.length === 0 || trackedExercises.length === 0) {
+      setIndividualActuals({});
+      return;
+    }
+    fetchActualsForAthlete(individualViewAthleteId, macroWeeks, trackedExercises)
+      .then(setIndividualActuals);
+  }, [individualViewAthleteId, macroWeeks.length, trackedExercises.length]);
 
   // ─── Create macrocycle ───────────────────────────────────────────────────────
 
@@ -123,7 +181,7 @@ export function MacroCycles() {
     competitions: { name: string; date: string; is_primary: boolean }[];
     phasePreset: 'none' | '8week' | '12week' | 'custom';
   }) => {
-    if (!selectedAthlete) return;
+    if (!macroTarget) return;
 
     const weekInserts = generateMacroWeeks(data.startDate, data.endDate).map(w => ({
       macrocycle_id: '',
@@ -135,7 +193,7 @@ export function MacroCycles() {
     }));
 
     const cycle = await createMacrocycle(
-      selectedAthlete.id, data.name, data.startDate, data.endDate, weekInserts,
+      macroTarget, data.name, data.startDate, data.endDate, weekInserts,
     );
 
     // Create competitions
@@ -277,25 +335,21 @@ export function MacroCycles() {
   }) => {
     if (!selectedCycle) return;
 
-    // Update macrocycle fields
     await updateMacrocycle(selectedCycle.id, {
       name: data.name,
       start_date: data.startDate,
       end_date: data.endDate,
     });
 
-    // Sync competitions: update existing, create new, delete removed
     const originalIds = competitions.map(c => c.id);
     const keptIds = data.competitions.filter(c => c.id).map(c => c.id!);
 
-    // Delete competitions removed from the list
     for (const id of originalIds) {
       if (!keptIds.includes(id)) {
         await deleteCompetition(id);
       }
     }
 
-    // Update existing competitions
     for (const comp of data.competitions) {
       if (comp.id) {
         const original = competitions.find(c => c.id === comp.id);
@@ -312,7 +366,6 @@ export function MacroCycles() {
           });
         }
       } else if (comp.name.trim() && comp.date) {
-        // New competition
         await createCompetition({
           macrocycle_id: selectedCycle.id,
           competition_name: comp.name,
@@ -323,10 +376,8 @@ export function MacroCycles() {
       }
     }
 
-    // Adjust weeks based on end date change
     if (data.endDate !== selectedCycle.end_date) {
       if (data.endDate > selectedCycle.end_date) {
-        // Extend: add new weeks after the last existing week
         const lastWeek = macroWeeks[macroWeeks.length - 1];
         if (lastWeek) {
           const newStart = new Date(lastWeek.week_start);
@@ -345,7 +396,6 @@ export function MacroCycles() {
           }
         }
       } else {
-        // Shorten: delete weeks past the new end date
         await supabase
           .from('macro_weeks')
           .delete()
@@ -354,7 +404,6 @@ export function MacroCycles() {
       }
     }
 
-    // Refresh
     const updated = { ...selectedCycle, name: data.name, start_date: data.startDate, end_date: data.endDate };
     setSelectedCycle(updated);
     await Promise.all([
@@ -387,10 +436,10 @@ export function MacroCycles() {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
-  if (!selectedAthlete) {
+  if (!macroTarget) {
     return (
       <div className="flex items-center justify-center h-64 text-sm text-gray-400">
-        Select an athlete to view macrocycles.
+        Select an athlete or group to view macrocycles.
       </div>
     );
   }
@@ -398,6 +447,9 @@ export function MacroCycles() {
   const availableExercises = exercises.filter(
     ex => ex.category !== '— System' && !trackedExercises.some(te => te.exercise_id === ex.id)
   );
+
+  // Decide which actuals to show in views
+  const displayedActuals = (isGroupMode && individualViewAthleteId) ? individualActuals : actuals;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -433,8 +485,14 @@ export function MacroCycles() {
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
           >
-            <Plus size={14} /> New macrocycle
+            <Plus size={14} />
+            {isGroupMode ? 'New group macro' : 'New macrocycle'}
           </button>
+          {isGroupMode && (
+            <span className="px-2 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded-full border border-purple-200">
+              Group macro
+            </span>
+          )}
         </div>
 
         {selectedCycle && (
@@ -458,6 +516,26 @@ export function MacroCycles() {
                 <BarChart3 size={13} /> Chart
               </button>
             </div>
+
+            {/* Individual view dropdown (group mode only) */}
+            {isGroupMode && groupMembers.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Users size={13} className="text-gray-400" />
+                <select
+                  value={individualViewAthleteId ?? ''}
+                  onChange={e => setIndividualViewAthleteId(e.target.value || null)}
+                  className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  title="Individual view: see one athlete's actuals"
+                >
+                  <option value="">Group average actuals</option>
+                  {groupMembers.map(gm => (
+                    <option key={gm.athlete_id} value={gm.athlete_id}>
+                      {gm.athlete.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Add exercise */}
             {showAddExercise ? (
@@ -511,7 +589,11 @@ export function MacroCycles() {
               trackedExercises={trackedExercises}
               targets={targets}
               phases={phases}
+              actuals={actuals}
               cycleNameForFile={selectedCycle.name}
+              cycleDateRange={{ start: selectedCycle.start_date, end: selectedCycle.end_date }}
+              athleteName={isGroupMode ? selectedGroup?.name : selectedAthlete?.name}
+              athleteId={selectedAthlete?.id ?? null}
               onImportTargets={handleImportTargets}
             />
 
@@ -540,6 +622,19 @@ export function MacroCycles() {
           <span className="font-medium text-gray-800">{selectedCycle.name}</span>
           <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
           <span className="text-gray-400">{macroWeeks.length} weeks</span>
+
+          {/* Group info */}
+          {isGroupMode && selectedGroup && (
+            <span className="flex items-center gap-1 text-purple-600 font-medium">
+              <Users size={11} />
+              {selectedGroup.name}
+              {groupMembers.length > 0 && (
+                <span className="text-gray-400 font-normal ml-1">
+                  ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
+                </span>
+              )}
+            </span>
+          )}
 
           {/* Phase badges */}
           {phases.map(phase => (
@@ -577,7 +672,8 @@ export function MacroCycles() {
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 mx-auto"
             >
-              <Plus size={16} /> Create macrocycle
+              <Plus size={16} />
+              {isGroupMode ? 'Create group macro' : 'Create macrocycle'}
             </button>
           </div>
         </div>
@@ -592,7 +688,7 @@ export function MacroCycles() {
           trackedExercises={trackedExercises}
           targets={targets}
           phases={phases}
-          actuals={actuals}
+          actuals={displayedActuals}
           onUpdateTarget={handleUpdateTarget}
           onUpdateWeekType={handleUpdateWeekType}
           onUpdateWeekLabel={handleUpdateWeekLabel}
@@ -603,6 +699,9 @@ export function MacroCycles() {
           onRemoveExercise={handleRemoveExercise}
           onPasteTargets={handlePasteTargets}
           onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
+          visibleExercises={visibleExercises}
+          onToggleExercise={toggleExercise}
+          onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
         />
       ) : (
         <div className="flex-1 overflow-y-auto">
@@ -612,9 +711,12 @@ export function MacroCycles() {
             targets={targets}
             phases={phases}
             competitions={competitions}
-            actuals={actuals}
+            actuals={displayedActuals}
             onDragTarget={handleDragTarget}
             focusedExerciseId={focusedExerciseId}
+            visibleExercises={visibleExercises}
+            onToggleExercise={toggleExercise}
+            onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
           />
         </div>
       )}
@@ -625,7 +727,7 @@ export function MacroCycles() {
           macroWeeks={macroWeeks}
           targets={targets}
           trackedExercises={trackedExercises}
-          actuals={actuals}
+          actuals={displayedActuals}
         />
       )}
 

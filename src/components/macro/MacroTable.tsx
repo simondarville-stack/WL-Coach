@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroPhaseBlock } from './MacroPhaseBlock';
+import { ExerciseToggleBar } from './ExerciseToggleBar';
 
 interface MacroTableProps {
   macroWeeks: MacroWeek[];
@@ -20,6 +21,10 @@ interface MacroTableProps {
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
+  // Optional controlled visibility state (passed from parent when shared with graph view)
+  visibleExercises?: Set<string>;
+  onToggleExercise?: (teId: string) => void;
+  onShowAllExercises?: () => void;
 }
 
 export function MacroTable({
@@ -38,11 +43,45 @@ export function MacroTable({
   onRemoveExercise,
   onPasteTargets,
   onExerciseDoubleClick,
+  visibleExercises: controlledVisible,
+  onToggleExercise: controlledToggle,
+  onShowAllExercises: controlledShowAll,
 }: MacroTableProps) {
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const [copiedWeekId, setCopiedWeekId] = useState<string | null>(null);
-  // copiedTargets: trackedExId → { field → value }
   const [copiedTargets, setCopiedTargets] = useState<Record<string, Partial<MacroTarget>>>({});
+
+  // Local toggle state — used when parent doesn't pass controlled state
+  const [localVisible, setLocalVisible] = useState<Set<string>>(
+    () => new Set(trackedExercises.map(t => t.id))
+  );
+
+  // Use controlled state if provided, otherwise local state
+  const visibleExercises = controlledVisible ?? localVisible;
+
+  const toggleExercise = (teId: string) => {
+    if (controlledToggle) {
+      controlledToggle(teId);
+    } else {
+      setLocalVisible(prev => {
+        const next = new Set(prev);
+        if (next.has(teId)) next.delete(teId);
+        else next.add(teId);
+        return next;
+      });
+    }
+  };
+
+  const showAllExercises = () => {
+    if (controlledShowAll) {
+      controlledShowAll();
+    } else {
+      setLocalVisible(new Set(trackedExercises.map(t => t.id)));
+    }
+  };
+
+  // Only show exercises that are in the visible set
+  const displayedExercises = trackedExercises.filter(te => visibleExercises.has(te.id));
 
   const handleLocalChange = useCallback((key: string, value: string) => {
     setLocalValues(prev => ({ ...prev, [key]: value }));
@@ -50,7 +89,6 @@ export function MacroTable({
 
   const handleUpdateTarget = useCallback(async (weekId: string, trackedExId: string, field: keyof MacroTarget, value: string) => {
     await onUpdateTarget(weekId, trackedExId, field, value);
-    // Clear local pending value after save
     setLocalValues(prev => {
       const next = { ...prev };
       delete next[`${weekId}_${trackedExId}_${field}`];
@@ -78,7 +116,6 @@ export function MacroTable({
 
   const handleCopyWeek = useCallback((weekId: string) => {
     setCopiedWeekId(weekId);
-    // Snapshot current targets for this week
     const snapshot: Record<string, Partial<MacroTarget>> = {};
     trackedExercises.forEach(te => {
       const target = targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === te.id);
@@ -113,7 +150,6 @@ export function MacroTable({
     }
   }
 
-  // Build phase groups: ordered phases + unassigned
   const phaseGroups: Array<{ phase: MacroPhase | null; weeks: MacroWeek[] }> = sortedPhases.map(phase => ({
     phase,
     weeks: macroWeeks.filter(w => weekToPhase.get(w.id)?.id === phase.id),
@@ -124,149 +160,163 @@ export function MacroTable({
     phaseGroups.push({ phase: null, weeks: unassignedWeeks });
   }
 
-  const totalCols = 4 + trackedExercises.length * 5 + 1;
+  const totalCols = 4 + displayedExercises.length * 5 + 1;
 
   const subHeaders = ['Reps', 'Max', 'Sets@Max', 'Reps@Max', 'Avg'];
 
   return (
-    <div className="overflow-auto flex-1">
-      <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
-        <thead className="sticky top-0 z-20">
-          {/* Exercise group header row */}
-          <tr className="bg-gray-100 border-b border-gray-300">
-            {/* Sticky fixed columns */}
-            <th
-              colSpan={5}
-              className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-medium text-gray-700"
-              style={{ width: 388, minWidth: 388 }}
-            >
-              Week
-            </th>
+    <div className="flex flex-col flex-1 overflow-hidden">
+      {/* Exercise toggle chips */}
+      {trackedExercises.length > 0 && (
+        <div className="px-3 pt-2 pb-1 flex-shrink-0">
+          <ExerciseToggleBar
+            exercises={trackedExercises}
+            visible={visibleExercises}
+            onToggle={toggleExercise}
+            onShowAll={showAllExercises}
+          />
+        </div>
+      )}
 
-            {/* Per-exercise group headers */}
-            {trackedExercises.map((te, idx) => (
+      <div className="overflow-auto flex-1">
+        <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
+          <thead className="sticky top-0 z-20">
+            {/* Exercise group header row */}
+            <tr className="bg-gray-100 border-b border-gray-300">
+              {/* Sticky fixed columns */}
               <th
-                key={te.id}
                 colSpan={5}
-                onDoubleClick={() => onExerciseDoubleClick(te.id)}
-                className="px-1 py-1 border-r border-gray-300 text-center cursor-pointer select-none"
-                style={{ minWidth: '220px' }}
-                title="Double-click to open chart"
+                className="sticky left-0 z-[10] bg-slate-200 border-r border-gray-400 px-2 py-1 text-left text-[10px] font-medium text-gray-700"
+                style={{ width: 388, minWidth: 388 }}
               >
-                <div className="flex items-center justify-between gap-1">
-                  <button
-                    onClick={() => onMoveExerciseLeft(te.id)}
-                    disabled={idx === 0}
-                    title="Move left"
-                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 flex-shrink-0"
-                  >
-                    <ChevronLeft size={12} />
-                  </button>
-                  <div className="flex items-center gap-1 min-w-0">
-                    <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: te.exercise.color }}
-                    />
-                    <span className="text-[10px] font-medium text-gray-800 truncate">
-                      {te.exercise.exercise_code || te.exercise.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-0.5 flex-shrink-0">
-                    <button
-                      onClick={() => onMoveExerciseRight(te.id)}
-                      disabled={idx === trackedExercises.length - 1}
-                      title="Move right"
-                      className="text-gray-400 hover:text-gray-600 disabled:opacity-20"
-                    >
-                      <ChevronRight size={12} />
-                    </button>
-                    <button
-                      onClick={() => onRemoveExercise(te.id)}
-                      title="Remove from tracking"
-                      className="text-gray-300 hover:text-red-500"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                </div>
+                Week
               </th>
+
+              {/* Per-exercise group headers (only displayed exercises) */}
+              {displayedExercises.map((te, idx) => (
+                <th
+                  key={te.id}
+                  colSpan={5}
+                  onDoubleClick={() => onExerciseDoubleClick(te.id)}
+                  className="px-1 py-1 border-r border-gray-300 text-center cursor-pointer select-none"
+                  style={{ minWidth: '220px' }}
+                  title="Double-click to open chart"
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <button
+                      onClick={() => onMoveExerciseLeft(te.id)}
+                      disabled={idx === 0}
+                      title="Move left"
+                      className="text-gray-400 hover:text-gray-600 disabled:opacity-20 flex-shrink-0"
+                    >
+                      <ChevronLeft size={12} />
+                    </button>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: te.exercise.color }}
+                      />
+                      <span className="text-[10px] font-medium text-gray-800 truncate">
+                        {te.exercise.exercise_code || te.exercise.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        onClick={() => onMoveExerciseRight(te.id)}
+                        disabled={idx === displayedExercises.length - 1}
+                        title="Move right"
+                        className="text-gray-400 hover:text-gray-600 disabled:opacity-20"
+                      >
+                        <ChevronRight size={12} />
+                      </button>
+                      <button
+                        onClick={() => onRemoveExercise(te.id)}
+                        title="Remove from tracking"
+                        className="text-gray-300 hover:text-red-500"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  </div>
+                </th>
+              ))}
+
+              {/* Actions column header */}
+              <th className="px-1 py-1 bg-gray-100 text-center text-[10px] text-gray-400" style={{ minWidth: '40px' }} />
+            </tr>
+
+            {/* Sub-column header row */}
+            <tr className="bg-gray-50 border-b-2 border-gray-400">
+              <th className={`sticky left-0 z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 36, minWidth: 36 }}>
+                Wk
+              </th>
+              <th className={`sticky left-[36px] z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 50, minWidth: 50 }}>
+                Date
+              </th>
+              <th className={`sticky left-[86px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 100, minWidth: 100 }}>
+                Type
+              </th>
+              <th className={`sticky left-[186px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ width: 52, minWidth: 52 }}>
+                ΣReps
+              </th>
+              <th className={`sticky left-[238px] z-[10] bg-slate-100 px-1 py-0.5 text-left text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 150, minWidth: 150 }}>
+                Notes
+              </th>
+
+              {displayedExercises.map((te, teIdx) =>
+                subHeaders.map((label, fi) => (
+                  <th
+                    key={`${te.id}_${label}`}
+                    className={`px-0.5 py-0.5 text-center text-[10px] font-medium text-gray-500 ${
+                      fi === subHeaders.length - 1
+                        ? teIdx === displayedExercises.length - 1 ? 'border-r border-gray-300' : 'border-r border-gray-300'
+                        : 'border-r border-gray-200'
+                    }`}
+                    style={{ minWidth: '44px' }}
+                  >
+                    {label}
+                  </th>
+                ))
+              )}
+
+              <th className="px-1 py-0.5 text-center text-[10px] font-medium text-gray-400 border-r border-gray-200" style={{ minWidth: '40px' }}>
+                ⎘
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {phaseGroups.map(({ phase, weeks }) => (
+              <MacroPhaseBlock
+                key={phase?.id ?? '__unassigned__'}
+                phase={phase}
+                weeks={weeks}
+                trackedExercises={displayedExercises}
+                targets={targets}
+                actuals={actuals}
+                localValues={localValues}
+                onLocalChange={handleLocalChange}
+                onUpdateTarget={handleUpdateTarget}
+                onUpdateWeekType={onUpdateWeekType}
+                onUpdateWeekLabel={handleUpdateWeekLabel}
+                onUpdateTotalReps={handleUpdateTotalReps}
+                onUpdateNotes={onUpdateNotes}
+                onCopyWeek={handleCopyWeek}
+                onPasteWeek={handlePasteWeek}
+                copiedWeekId={copiedWeekId}
+              />
             ))}
 
-            {/* Actions column header */}
-            <th className="px-1 py-1 bg-gray-100 text-center text-[10px] text-gray-400" style={{ minWidth: '40px' }} />
-          </tr>
-
-          {/* Sub-column header row */}
-          <tr className="bg-gray-50 border-b-2 border-gray-400">
-            <th className={`sticky left-0 z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 36, minWidth: 36 }}>
-              Wk
-            </th>
-            <th className={`sticky left-[36px] z-[10] bg-slate-100 px-2 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 50, minWidth: 50 }}>
-              Date
-            </th>
-            <th className={`sticky left-[86px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 100, minWidth: 100 }}>
-              Type
-            </th>
-            <th className={`sticky left-[186px] z-[10] bg-slate-100 px-1 py-0.5 text-center text-[10px] font-medium text-gray-600 border-r border-gray-400`} style={{ width: 52, minWidth: 52 }}>
-              ΣReps
-            </th>
-            <th className={`sticky left-[238px] z-[10] bg-slate-100 px-1 py-0.5 text-left text-[10px] font-medium text-gray-600 border-r border-gray-300`} style={{ width: 150, minWidth: 150 }}>
-              Notes
-            </th>
-
-            {trackedExercises.map((te, teIdx) =>
-              subHeaders.map((label, fi) => (
-                <th
-                  key={`${te.id}_${label}`}
-                  className={`px-0.5 py-0.5 text-center text-[10px] font-medium text-gray-500 ${
-                    fi === subHeaders.length - 1
-                      ? teIdx === trackedExercises.length - 1 ? 'border-r border-gray-300' : 'border-r border-gray-300'
-                      : 'border-r border-gray-200'
-                  }`}
-                  style={{ minWidth: '44px' }}
-                >
-                  {label}
-                </th>
-              ))
+            {phaseGroups.length === 0 && (
+              <tr>
+                <td colSpan={totalCols} className="text-center py-8 text-sm text-gray-400">
+                  No weeks found. Create a macrocycle with weeks to get started.
+                </td>
+              </tr>
             )}
-
-            <th className="px-1 py-0.5 text-center text-[10px] font-medium text-gray-400 border-r border-gray-200" style={{ minWidth: '40px' }}>
-              ⎘
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {phaseGroups.map(({ phase, weeks }) => (
-            <MacroPhaseBlock
-              key={phase?.id ?? '__unassigned__'}
-              phase={phase}
-              weeks={weeks}
-              trackedExercises={trackedExercises}
-              targets={targets}
-              actuals={actuals}
-              localValues={localValues}
-              onLocalChange={handleLocalChange}
-              onUpdateTarget={handleUpdateTarget}
-              onUpdateWeekType={onUpdateWeekType}
-              onUpdateWeekLabel={handleUpdateWeekLabel}
-              onUpdateTotalReps={handleUpdateTotalReps}
-              onUpdateNotes={onUpdateNotes}
-              onCopyWeek={handleCopyWeek}
-              onPasteWeek={handlePasteWeek}
-              copiedWeekId={copiedWeekId}
-            />
-          ))}
-
-          {phaseGroups.length === 0 && (
-            <tr>
-              <td colSpan={totalCols} className="text-center py-8 text-sm text-gray-400">
-                No weeks found. Create a macrocycle with weeks to get started.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

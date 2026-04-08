@@ -165,7 +165,8 @@ export type ComboMemberEntry = { exerciseId: string; exercise: Exercise; positio
 
 export interface MacroCycle {
   id: string;
-  athlete_id: string;
+  athlete_id: string | null;   // null for group macros
+  group_id: string | null;     // null for individual macros
   name: string;
   start_date: string;
   end_date: string;
