@@ -3,7 +3,6 @@ import {
   getMondayOfWeekISO,
   findCurrentMacroWeek,
   generateMacroWeeks,
-  getMacroWeekColor,
 } from '../weekUtils';
 
 describe('getMondayOfWeekISO', () => {
@@ -63,29 +62,5 @@ describe('generateMacroWeeks', () => {
     // end date on the 3rd Monday itself — ensures 3 weeks are included
     const weeks = generateMacroWeeks('2026-03-30', '2026-04-13');
     expect(weeks.map(w => w.week_number)).toEqual([1, 2, 3]);
-  });
-});
-
-describe('getMacroWeekColor', () => {
-  it('returns green for deload', () => {
-    expect(getMacroWeekColor('Deload')).toBe('bg-green-50');
-  });
-
-  it('returns green for low', () => {
-    expect(getMacroWeekColor('Low Volume')).toBe('bg-green-50');
-  });
-
-  it('returns orange for high', () => {
-    expect(getMacroWeekColor('High Intensity')).toBe('bg-orange-50');
-  });
-
-  it('returns white for anything else', () => {
-    expect(getMacroWeekColor('Medium')).toBe('bg-white');
-    expect(getMacroWeekColor('Taper')).toBe('bg-white');
-  });
-
-  it('is case-insensitive', () => {
-    expect(getMacroWeekColor('DELOAD')).toBe('bg-green-50');
-    expect(getMacroWeekColor('HIGH')).toBe('bg-orange-50');
   });
 });

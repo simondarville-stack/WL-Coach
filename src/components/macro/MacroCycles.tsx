@@ -2,8 +2,9 @@
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil, Users } from 'lucide-react';
-import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
+import type { MacroCycle, MacroTarget, GroupMemberWithAthlete, WeekTypeConfig } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
+import { useSettings } from '../../hooks/useSettings';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
@@ -20,9 +21,16 @@ import { supabase } from '../../lib/supabase';
 
 type ViewMode = 'table' | 'graph';
 
+const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
+  { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
+  { name: 'Medium', abbreviation: 'm', color: '#EF9F27' },
+  { name: 'Low',    abbreviation: 'g', color: '#1D9E75' },
+];
+
 export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
+  const { settings, fetchSettings } = useSettings();
 
   const {
     macrocycles,
@@ -99,8 +107,10 @@ export function MacroCycles() {
 
   const isGroupMode = macroTarget?.type === 'group';
 
+  const weekTypes: WeekTypeConfig[] = (settings?.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES;
+
   // Load exercises on mount
-  useEffect(() => { fetchExercisesByName(); }, []);
+  useEffect(() => { fetchExercisesByName(); fetchSettings(); }, []);
 
   // Load group members when in group mode
   useEffect(() => {
@@ -187,7 +197,7 @@ export function MacroCycles() {
       macrocycle_id: '',
       week_start: w.week_start,
       week_number: w.week_number,
-      week_type: 'Medium' as WeekType,
+      week_type: 'm',
       week_type_text: '',
       notes: '',
     }));
@@ -230,7 +240,7 @@ export function MacroCycles() {
 
   // ─── Update week ─────────────────────────────────────────────────────────────
 
-  const handleUpdateWeekType = useCallback(async (weekId: string, weekType: WeekType) => {
+  const handleUpdateWeekType = useCallback(async (weekId: string, weekType: string) => {
     await updateMacroWeek(weekId, { week_type: weekType });
   }, [updateMacroWeek]);
 
@@ -388,7 +398,7 @@ export function MacroCycles() {
               macrocycle_id: selectedCycle.id,
               week_start: w.week_start,
               week_number: lastWeek.week_number + 1 + i,
-              week_type: 'Medium' as WeekType,
+              week_type: 'm',
               week_type_text: '',
               notes: '',
             }));
@@ -689,6 +699,7 @@ export function MacroCycles() {
           targets={targets}
           phases={phases}
           actuals={displayedActuals}
+          weekTypes={weekTypes}
           onUpdateTarget={handleUpdateTarget}
           onUpdateWeekType={handleUpdateWeekType}
           onUpdateWeekLabel={handleUpdateWeekLabel}

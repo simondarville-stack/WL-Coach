@@ -11,7 +11,14 @@ export interface CoachProfile {
 
 export type Category = string;
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
-export type WeekType = 'High' | 'Medium' | 'Low' | 'Vacation' | 'Deload' | 'Taper' | 'Competition' | 'Transition' | 'Testing';
+/** @deprecated week_type is now a free string matching a WeekTypeConfig.abbreviation */
+export type WeekType = string;
+
+export interface WeekTypeConfig {
+  name: string;          // "High", "Deload", "Shock"
+  abbreviation: string;  // "h", "dl", "sh" (1-3 chars)
+  color: string;         // hex color "#E24B4A"
+}
 export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition' | 'custom';
 
 export interface Athlete {
@@ -179,7 +186,7 @@ export interface MacroWeek {
   macrocycle_id: string;
   week_start: string;
   week_number: number;
-  week_type: WeekType;
+  week_type: string;
   week_type_text: string;
   notes: string;
   total_reps_target: number | null;
@@ -250,6 +257,7 @@ export interface GeneralSettings {
   bodyweight_ma_days: number;
   visible_summary_metrics: string[];
   visible_card_metrics: string[];
+  week_types: WeekTypeConfig[];
   show_stress_metric: boolean;
   dialog_mode: 'center' | 'sidebar';
   created_at: string;

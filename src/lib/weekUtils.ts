@@ -48,9 +48,8 @@ export function generateMacroWeeks(
   return weeks;
 }
 
-export function getMacroWeekColor(weekTypeText: string): string {
-  const lower = weekTypeText.toLowerCase();
-  if (lower.includes('deload') || lower.includes('low')) return 'bg-green-50';
-  if (lower.includes('high')) return 'bg-orange-50';
-  return 'bg-white';
+export function getWeekTypeColor(abbreviation: string, weekTypes: import('./database.types').WeekTypeConfig[]): string {
+  const wt = weekTypes.find(t => t.abbreviation === abbreviation)
+          ?? weekTypes.find(t => t.name.toLowerCase() === abbreviation.toLowerCase());
+  return wt?.color ?? '#9ca3af';
 }
