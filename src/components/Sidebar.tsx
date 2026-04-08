@@ -86,12 +86,12 @@ export function Sidebar({ onNewCoach }: SidebarProps) {
           collapsed ? 'justify-center px-0 py-3' : 'px-3 py-3'
         }`}
         onClick={() => navigate('/dashboard')}
-        title="WinWota 2.0"
+        title="EMOS"
       >
         <Dumbbell className="text-blue-600 flex-shrink-0" size={20} />
         {!collapsed && (
           <span className="font-medium text-sm text-gray-900 whitespace-nowrap overflow-hidden">
-            WinWota 2.0
+            EMOS
           </span>
         )}
       </div>
