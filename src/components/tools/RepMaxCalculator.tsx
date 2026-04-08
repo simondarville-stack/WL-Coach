@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ─── Formulas ────────────────────────────────────────────────────────────────
 
@@ -89,14 +89,13 @@ interface RepMaxCalculatorProps {
 export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const weightRef = useRef<HTMLInputElement>(null);
 
-  // Focus weight input on open
   useEffect(() => {
     weightRef.current?.focus();
   }, []);
 
-  // Esc closes
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -120,6 +119,20 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
         return { rep, weight: estWeight, isInput, confidence };
       })
     : [];
+
+  // Per-formula 1RM estimates, sorted ascending
+  const formulaBreakdown = hasValidInput
+    ? Object.entries(FORMULAS)
+        .map(([name, fn]) => ({
+          name,
+          value: r === 1 ? w : fn(w, r),
+        }))
+        .sort((a, b) => a.value - b.value)
+    : [];
+
+  const breakdownMin = formulaBreakdown.length ? formulaBreakdown[0].value : 0;
+  const breakdownMax = formulaBreakdown.length ? formulaBreakdown[formulaBreakdown.length - 1].value : 0;
+  const breakdownRange = breakdownMax - breakdownMin || 1;
 
   return (
     <div
@@ -173,7 +186,7 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
       </div>
 
       {/* Results */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-2">
         {!hasValidInput ? (
           <p className="text-xs text-gray-400 text-center py-4">
             Enter weight and reps to see estimates
@@ -194,13 +207,8 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
                 const rowBg = rowBgConfig[confidence];
                 const altRow = idx % 2 === 1 && !isInput ? 'bg-gray-50/50' : '';
                 return (
-                  <tr
-                    key={rep}
-                    className={`${rowBg} ${altRow}`}
-                  >
-                    <td className={`py-[3px] pl-1 font-mono ${txt}`}>
-                      {rep}RM
-                    </td>
+                  <tr key={rep} className={`${rowBg} ${altRow}`}>
+                    <td className={`py-[3px] pl-1 font-mono ${txt}`}>{rep}RM</td>
                     <td className={`py-[3px] text-right font-mono ${txt}`}>
                       {rowWeight} kg
                       {isInput && (
@@ -221,6 +229,85 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
           </table>
         )}
       </div>
+
+      {/* Formula breakdown toggle */}
+      {hasValidInput && (
+        <>
+          <button
+            onClick={() => setShowBreakdown(v => !v)}
+            className="flex items-center gap-1 px-4 py-2 text-[11px] text-gray-400 hover:text-gray-600 transition-colors border-t border-gray-100 hover:bg-gray-50/50 text-left"
+          >
+            {showBreakdown ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            Formula breakdown — 1RM estimates
+          </button>
+
+          {showBreakdown && (
+            <div className="border-t border-gray-100 px-4 pt-2 pb-3 max-h-64 overflow-y-auto">
+              {/* Range summary */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400">
+                  Range: {Math.round(breakdownMin)}–{Math.round(breakdownMax)} kg
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  Spread: ±{Math.round((breakdownMax - breakdownMin) / 2)} kg
+                </span>
+              </div>
+
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left font-medium text-gray-400 pb-1">Formula</th>
+                    <th className="text-right font-medium text-gray-400 pb-1 w-16">1RM</th>
+                    <th className="pb-1 w-20" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {formulaBreakdown.map(({ name, value }) => {
+                    // Bar: position within min–max range
+                    const pct = Math.round(((value - breakdownMin) / breakdownRange) * 100);
+                    // Colour: how close to the average
+                    const diffFromAvg = Math.abs(value - (oneRM ?? value));
+                    const relDiff = diffFromAvg / (oneRM ?? 1);
+                    const dotColor =
+                      relDiff < 0.01 ? 'bg-blue-400' :
+                      relDiff < 0.02 ? 'bg-teal-400' :
+                      relDiff < 0.04 ? 'bg-amber-400' : 'bg-gray-300';
+
+                    return (
+                      <tr key={name} className="hover:bg-gray-50/50">
+                        <td className="py-[3px] text-gray-600">{name}</td>
+                        <td className="py-[3px] text-right font-mono text-gray-700">
+                          {Math.round(value)} kg
+                        </td>
+                        <td className="py-[3px] pl-2 pr-1">
+                          {/* Range bar: dot on a track */}
+                          <div className="relative w-16 h-1.5 bg-gray-100 rounded-full">
+                            <div
+                              className={`absolute top-0 w-1.5 h-1.5 rounded-full ${dotColor}`}
+                              style={{ left: `calc(${pct}% - 3px)` }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* Average row */}
+                  <tr className="border-t border-gray-100 bg-blue-50/60">
+                    <td className="pt-1.5 pb-1 font-medium text-blue-700">Average</td>
+                    <td className="pt-1.5 pb-1 text-right font-mono font-medium text-blue-700">
+                      {Math.round(oneRM ?? 0)} kg
+                    </td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Bottom padding when no breakdown toggle */}
+      {!hasValidInput && <div className="pb-2" />}
     </div>
   );
 }
