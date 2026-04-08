@@ -19,6 +19,7 @@ import { AthleteSelector } from './components/AthleteSelector';
 import { CompetitionCalendar } from './components/calendar/CompetitionCalendar';
 import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
+import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Plus, Settings as SettingsIcon, X, Upload } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
@@ -64,6 +65,7 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [showNewCoachModal, setShowNewCoachModal] = useState(false);
+  const [showRepMaxCalc, setShowRepMaxCalc] = useState(false);
   const [coachesLoaded, setCoachesLoaded] = useState(false);
 
   useEffect(() => {
@@ -158,7 +160,7 @@ function App() {
 
   return (
     <div className="flex h-screen bg-slate-50">
-      <Sidebar onNewCoach={() => setShowNewCoachModal(true)} />
+      <Sidebar onNewCoach={() => setShowNewCoachModal(true)} onOpenCalc={() => setShowRepMaxCalc(true)} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
@@ -272,6 +274,9 @@ function App() {
           )}
         </main>
       </div>
+      {showRepMaxCalc && (
+        <RepMaxCalculator onClose={() => setShowRepMaxCalc(false)} />
+      )}
     </div>
   );
 }
