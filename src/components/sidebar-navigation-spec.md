@@ -97,7 +97,7 @@ Simplified from the current 2-row header to a single slim bar:
 ## Sidebar Head (top of sidebar)
 
 ```
-[⚡ icon] WinWota 2.0
+[⚡ icon] EMOS
 ```
 
 - Dumbbell icon (existing) + app name
@@ -112,7 +112,7 @@ Simplified from the current 2-row header to a single slim bar:
 ### Collapse/Expand
 - Click collapse button → sidebar animates from 200px to 48px (or reverse)
 - CSS transition: `width 150ms ease`
-- Collapsed state persisted in `localStorage` key: `winwota_sidebar_collapsed`
+- Collapsed state persisted in `localStorage` key: `emos_sidebar_collapsed`
 - On page load: read localStorage, default to expanded
 
 ### Navigation
@@ -210,7 +210,7 @@ interface SidebarProps {
 Internal state:
 ```typescript
 const [collapsed, setCollapsed] = useState(() => {
-  return localStorage.getItem('winwota_sidebar_collapsed') === 'true';
+  return localStorage.getItem('emos_sidebar_collapsed') === 'true';
 });
 ```
 
@@ -219,7 +219,7 @@ Persist on toggle:
 function toggleCollapsed() {
   const next = !collapsed;
   setCollapsed(next);
-  localStorage.setItem('winwota_sidebar_collapsed', String(next));
+  localStorage.setItem('emos_sidebar_collapsed', String(next));
 }
 ```
 

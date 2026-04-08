@@ -6,7 +6,7 @@
     - Update all group_members policies to allow anon users (not just authenticated)
     
   2. Security Notes
-    - This matches the security model used throughout WinWota 2.0
+    - This matches the security model used throughout EMOS
     - All other tables (athletes, exercises, week_plans, etc.) allow anon access
     - RLS is still enabled for both tables
 */

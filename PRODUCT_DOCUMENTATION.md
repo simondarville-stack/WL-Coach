@@ -1,8 +1,8 @@
-# WinWota 2.0 - Complete Product Documentation
+# EMOS - Complete Product Documentation
 
 ## Product Overview
 
-WinWota 2.0 is an expert-oriented training planning and monitoring system for Olympic weightlifting coaches and athletes. Built with React, TypeScript, Tailwind CSS, and Supabase, it provides comprehensive tools for program design, athlete management, training logging, and performance tracking.
+EMOS is an expert-oriented training planning and monitoring system for Olympic weightlifting coaches and athletes. Built with React, TypeScript, Tailwind CSS, and Supabase, it provides comprehensive tools for program design, athlete management, training logging, and performance tracking.
 
 ### Target Users
 - Olympic weightlifting coaches
@@ -772,7 +772,7 @@ For data models and types, see `src/lib/database.types.ts`.
 
 ## Summary
 
-WinWota 2.0 is a comprehensive training management system centered around weekly planning with support for long-term periodization, athlete logging, and competition tracking. The architecture separates coach-authored plans from athlete-performed logs, maintaining data integrity while allowing flexible retrospective analysis. The UI prioritizes information density and fast navigation for expert users, with inline editing and minimal modal interference.
+EMOS is a comprehensive training management system centered around weekly planning with support for long-term periodization, athlete logging, and competition tracking. The architecture separates coach-authored plans from athlete-performed logs, maintaining data integrity while allowing flexible retrospective analysis. The UI prioritizes information density and fast navigation for expert users, with inline editing and minimal modal interference.
 
 Key workflows revolve around:
 1. Building weekly plans with prescriptions

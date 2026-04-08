@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — VISUAL POLISH & DIALOG MODE SETTING
+# EMOS 2.0 — VISUAL POLISH & DIALOG MODE SETTING
 
 This prompt fixes the "prototype feel" of the app. The app works functionally
 but lacks visual hierarchy, density control, and interaction feedback.
@@ -229,7 +229,7 @@ Apply consistently across ALL planner components:
 
 Remove ALL instances of font-semibold (600) and font-bold (700).
 Replace with font-medium (500). The only exception: the app name
-"WinWota 2.0" in the sidebar can stay bold.
+"EMOS" in the sidebar can stay bold.
 
 ---
 
@@ -309,7 +309,7 @@ transition-colors duration-100
 - Icon: 18px, same color as text
 
 ### App branding
-- "WinWota 2.0" in top left: text-base font-medium text-gray-900
+- "EMOS" in top left: text-base font-medium text-gray-900
 - Small icon/logo next to it (the existing one is fine)
 - Bottom of sidebar: subtle "v2.0" version text in text-[10px] text-gray-300
 

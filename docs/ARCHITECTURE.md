@@ -1,4 +1,4 @@
-# WinWota 2.0 Architecture
+# EMOS Architecture
 
 ## Stack
 React 18, TypeScript, Vite, Tailwind CSS, Supabase (PostgreSQL + Storage), Recharts, Zustand, React Router

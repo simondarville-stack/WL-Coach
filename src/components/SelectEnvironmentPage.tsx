@@ -31,9 +31,12 @@ export function SelectEnvironmentPage({ coaches, onNewEnvironment }: Props) {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 mb-10">
-        <Dumbbell className="text-blue-600" size={28} />
-        <span className="text-2xl font-semibold text-gray-900">WinWota 2.0</span>
+      <div className="flex flex-col items-center gap-1 mb-10">
+        <div className="flex items-center gap-2.5">
+          <Dumbbell className="text-blue-600" size={28} />
+          <span className="text-2xl font-semibold text-gray-900">EMOS</span>
+        </div>
+        <span className="text-xs text-gray-400">Erfolg Muss Organisiert Sein</span>
       </div>
 
       <div className="w-full max-w-xl">

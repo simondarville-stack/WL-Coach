@@ -65,13 +65,13 @@ export function Sidebar({ onNewCoach }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem('winwota_sidebar_collapsed') === 'true';
+    return localStorage.getItem('emos_sidebar_collapsed') === 'true';
   });
 
   function toggleCollapsed() {
     const next = !collapsed;
     setCollapsed(next);
-    localStorage.setItem('winwota_sidebar_collapsed', String(next));
+    localStorage.setItem('emos_sidebar_collapsed', String(next));
   }
 
   return (
@@ -86,12 +86,12 @@ export function Sidebar({ onNewCoach }: SidebarProps) {
           collapsed ? 'justify-center px-0 py-3' : 'px-3 py-3'
         }`}
         onClick={() => navigate('/dashboard')}
-        title="WinWota 2.0"
+        title="EMOS"
       >
         <Dumbbell className="text-blue-600 flex-shrink-0" size={20} />
         {!collapsed && (
           <span className="font-medium text-sm text-gray-900 whitespace-nowrap overflow-hidden">
-            WinWota 2.0
+            EMOS
           </span>
         )}
       </div>

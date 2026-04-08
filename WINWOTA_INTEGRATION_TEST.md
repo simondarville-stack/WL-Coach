@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — FULL INTEGRATION TEST: SMOLOV PROGRAM
+# EMOS 2.0 — FULL INTEGRATION TEST: SMOLOV PROGRAM
 
 You are going to act as BOTH coach and athlete. Create test data,
 plan a real program, log workouts, and verify the entire system works

@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — CODEBASE REVIEW & CLEANUP
+# EMOS 2.0 — CODEBASE REVIEW & CLEANUP
 
 Full codebase audit: remove dead code, fix type safety, clean up
 imports, verify consistency, and document the architecture.
@@ -369,7 +369,7 @@ Create: `docs/ARCHITECTURE.md`
 Write a concise architecture document covering:
 
 ```markdown
-# WinWota 2.0 Architecture
+# EMOS Architecture
 
 ## Stack
 React 18, TypeScript, Vite, Tailwind CSS, Supabase, Recharts

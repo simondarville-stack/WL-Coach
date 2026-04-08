@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — STREAMLINED METRICS + GROUP PLANS
+# EMOS 2.0 — STREAMLINED METRICS + GROUP PLANS
 
 Two major features in one prompt:
 A) Rename "hi" → "max", standardize metric presentation everywhere,

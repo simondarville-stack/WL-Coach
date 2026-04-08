@@ -1,8 +1,8 @@
-# WINWOTA 2.0 — FIX TRAINING SLOT vs CALENDAR DATE MODEL
+# EMOS 2.0 — FIX TRAINING SLOT vs CALENDAR DATE MODEL
 
 ## The problem
 
-Training days in WinWota are ABSTRACT SLOTS, not calendar weekdays.
+Training days in EMOS are ABSTRACT SLOTS, not calendar weekdays.
 A coach writes "Training 1", "Training 2", "Training 3" — the athlete
 might do Training 2 on Monday, Training 1 on Wednesday, and Training 3
 on Friday. Or do two sessions on the same day. Or skip one entirely.

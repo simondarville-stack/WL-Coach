@@ -1,4 +1,4 @@
-# WINWOTA 2.0 — ANALYSIS MODULE BUILD
+# EMOS 2.0 — ANALYSIS MODULE BUILD
 
 Build a full analysis module for Olympic weightlifting coaches. The module
 has a pivot-style chart builder, pre-built OWL analyses, lift ratio tracking,

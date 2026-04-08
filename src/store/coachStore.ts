@@ -18,7 +18,7 @@ export const useCoachStore = create<CoachState>()(
       setCoaches: (coaches) => set({ coaches }),
     }),
     {
-      name: 'winwota-coach',  // localStorage key
+      name: 'emos-coach',  // localStorage key
     }
   )
 );
