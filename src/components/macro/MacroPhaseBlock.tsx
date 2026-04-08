@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { formatDateShort } from '../../lib/dateUtils';
@@ -57,8 +57,18 @@ export function MacroPhaseBlock({
   onPasteWeek,
   copiedWeekId,
 }: MacroPhaseBlockProps) {
+  const [openDropdownWeekId, setOpenDropdownWeekId] = useState<string | null>(null);
+
   const getTarget = (weekId: string, trackedExId: string) =>
     targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === trackedExId);
+
+  function cycleWeekType(weekId: string, current: string, direction: 1 | -1) {
+    if (weekTypes.length === 0) return;
+    const idx = weekTypes.findIndex(t => t.abbreviation === current);
+    const next = weekTypes[((idx + direction) % weekTypes.length + weekTypes.length) % weekTypes.length];
+    void onUpdateWeekType(weekId, next.abbreviation);
+    void onUpdateWeekLabel(weekId, next.name);
+  }
 
   // Phase summary
   const phaseTargetReps = weeks.reduce((s, w) => s + (w.total_reps_target || 0), 0);
@@ -119,14 +129,54 @@ export function MacroPhaseBlock({
 
             {/* Type */}
             <td className="sticky left-[86px] z-[3] px-1 py-0.5 border-r border-gray-300" style={{ width: 100, minWidth: 100, ...infoStyle }}>
-              <div className="flex flex-col gap-0.5">
-                <select
-                  value={week.week_type}
-                  onChange={e => onUpdateWeekType(week.id, e.target.value)}
-                  className="w-full px-1 py-0.5 text-[10px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-transparent"
+              <div className="flex flex-col gap-0.5 relative">
+                {/* Cycling badge */}
+                <button
+                  onClick={e => {
+                    if (e.ctrlKey || e.metaKey) {
+                      setOpenDropdownWeekId(prev => prev === week.id ? null : week.id);
+                    } else {
+                      cycleWeekType(week.id, week.week_type, 1);
+                    }
+                  }}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    cycleWeekType(week.id, week.week_type, -1);
+                  }}
+                  title="Click to cycle · Right-click to go back · Ctrl+click for list"
+                  className="w-full px-1.5 py-0.5 text-[10px] font-medium rounded text-left select-none"
+                  style={{
+                    backgroundColor: weekColor + '33',
+                    color: weekColor,
+                    border: `1px solid ${weekColor}55`,
+                  }}
                 >
-                  {weekTypes.map(t => <option key={t.abbreviation} value={t.abbreviation}>{t.name}</option>)}
-                </select>
+                  {weekTypes.find(t => t.abbreviation === week.week_type)?.name ?? (week.week_type || '—')}
+                </button>
+
+                {/* Dropdown for Ctrl+click */}
+                {openDropdownWeekId === week.id && (
+                  <div
+                    className="absolute top-full left-0 z-30 mt-0.5 bg-white border border-gray-200 rounded shadow-lg min-w-[90px]"
+                    onMouseLeave={() => setOpenDropdownWeekId(null)}
+                  >
+                    {weekTypes.map(t => (
+                      <button
+                        key={t.abbreviation}
+                        onClick={() => {
+                          void onUpdateWeekType(week.id, t.abbreviation);
+                          void onUpdateWeekLabel(week.id, t.name);
+                          setOpenDropdownWeekId(null);
+                        }}
+                        className="w-full text-left px-2 py-1 text-[10px] hover:bg-gray-50 flex items-center gap-1.5"
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <input
                   type="text"
                   value={getLocalOrDb(localValues, `${week.id}_label`, week.week_type_text)}
