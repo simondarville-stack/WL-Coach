@@ -110,7 +110,8 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
 
   const oneRM = hasValidInput ? estimateAvg1RM(w, r) : null;
 
-  const rows = hasValidInput && oneRM !== null
+  // Main summary rows (1–10RM, averaged across all formulas)
+  const summaryRows = hasValidInput && oneRM !== null
     ? Array.from({ length: 10 }, (_, i) => {
         const rep = i + 1;
         const isInput = rep === r;
@@ -120,23 +121,34 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
       })
     : [];
 
-  // Per-formula 1RM estimates, sorted ascending
-  const formulaBreakdown = hasValidInput
-    ? Object.entries(FORMULAS)
-        .map(([name, fn]) => ({
-          name,
-          value: r === 1 ? w : fn(w, r),
-        }))
-        .sort((a, b) => a.value - b.value)
+  // Per-formula full 1–10RM table.
+  // Each formula uses its own 1RM estimate, then its own reverse to derive all reps.
+  const formulaRows = hasValidInput
+    ? Object.entries(FORMULAS).map(([name, forwardFn]) => {
+        const formula1RM = r === 1 ? w : forwardFn(w, r);
+        const reverseFn = REVERSE_FORMULAS[name];
+        const weights = Array.from({ length: 10 }, (_, i) => {
+          const rep = i + 1;
+          if (rep === 1) return formula1RM;
+          return reverseFn(formula1RM, rep);
+        });
+        return { name, weights };
+      })
     : [];
 
-  const breakdownMin = formulaBreakdown.length ? formulaBreakdown[0].value : 0;
-  const breakdownMax = formulaBreakdown.length ? formulaBreakdown[formulaBreakdown.length - 1].value : 0;
-  const breakdownRange = breakdownMax - breakdownMin || 1;
+  // Average row for the breakdown table
+  const avgWeights = hasValidInput && oneRM !== null
+    ? Array.from({ length: 10 }, (_, i) => {
+        const rep = i + 1;
+        return rep === 1 ? oneRM : estimateWeightAtReps(oneRM, rep);
+      })
+    : [];
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 w-[380px] bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col"
+      className={`fixed bottom-4 right-4 z-50 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col transition-[width] duration-200 ${
+        showBreakdown ? 'w-[620px]' : 'w-[380px]'
+      }`}
       role="dialog"
       aria-label="xRM Calculator"
     >
@@ -185,128 +197,130 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
         </div>
       </div>
 
-      {/* Results */}
-      <div className="px-4 pb-2">
-        {!hasValidInput ? (
-          <p className="text-xs text-gray-400 text-center py-4">
-            Enter weight and reps to see estimates
-          </p>
-        ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left font-medium text-gray-400 pb-1 w-10">RM</th>
-                <th className="text-right font-medium text-gray-400 pb-1">Est. weight</th>
-                <th className="pb-1 w-12" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ rep, weight: rowWeight, isInput, confidence }, idx) => {
-                const bar = barConfig[confidence];
-                const txt = textConfig[confidence];
-                const rowBg = rowBgConfig[confidence];
-                const altRow = idx % 2 === 1 && !isInput ? 'bg-gray-50/50' : '';
-                return (
-                  <tr key={rep} className={`${rowBg} ${altRow}`}>
-                    <td className={`py-[3px] pl-1 font-mono ${txt}`}>{rep}RM</td>
-                    <td className={`py-[3px] text-right font-mono ${txt}`}>
-                      {rowWeight} kg
-                      {isInput && (
-                        <span className="ml-1.5 text-[10px] text-blue-500 font-medium not-italic">
-                          input
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-[3px] pl-2 pr-1">
-                      <div className="w-10 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${bar.color} ${bar.width}`} />
-                      </div>
-                    </td>
+      {/* Main content: summary + optional breakdown side by side when expanded */}
+      <div className={`flex min-h-0 ${showBreakdown ? 'items-start' : ''}`}>
+
+        {/* Summary table (always visible) */}
+        <div className={`px-4 pb-2 flex-shrink-0 ${showBreakdown ? 'w-[200px] border-r border-gray-100' : 'w-full'}`}>
+          {!hasValidInput ? (
+            <p className="text-xs text-gray-400 text-center py-4">
+              Enter weight and reps to see estimates
+            </p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left font-medium text-gray-400 pb-1 w-10">RM</th>
+                  <th className="text-right font-medium text-gray-400 pb-1">Est. weight</th>
+                  <th className="pb-1 w-12" />
+                </tr>
+              </thead>
+              <tbody>
+                {summaryRows.map(({ rep, weight: rowWeight, isInput, confidence }, idx) => {
+                  const bar = barConfig[confidence];
+                  const txt = textConfig[confidence];
+                  const rowBg = rowBgConfig[confidence];
+                  const altRow = idx % 2 === 1 && !isInput ? 'bg-gray-50/50' : '';
+                  return (
+                    <tr key={rep} className={`${rowBg} ${altRow}`}>
+                      <td className={`py-[3px] pl-1 font-mono ${txt}`}>{rep}RM</td>
+                      <td className={`py-[3px] text-right font-mono ${txt}`}>
+                        {rowWeight} kg
+                        {isInput && (
+                          <span className="ml-1.5 text-[10px] text-blue-500 font-medium not-italic">
+                            input
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-[3px] pl-2 pr-1">
+                        <div className="w-10 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${bar.color} ${bar.width}`} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Breakdown matrix (visible when expanded) */}
+        {showBreakdown && hasValidInput && (
+          <div className="flex-1 px-3 pb-2 overflow-x-auto">
+            <table className="text-[10px] w-full">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left font-medium text-gray-400 pb-1 pr-2 whitespace-nowrap w-[72px]">Formula</th>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map(rep => (
+                    <th
+                      key={rep}
+                      className={`text-right font-medium pb-1 px-1 w-[40px] ${
+                        rep === r ? 'text-blue-500' : 'text-gray-400'
+                      }`}
+                    >
+                      {rep}RM
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {formulaRows.map(({ name, weights }, rowIdx) => (
+                  <tr key={name} className={rowIdx % 2 === 1 ? 'bg-gray-50/50' : ''}>
+                    <td className="py-[3px] pr-2 text-gray-600 whitespace-nowrap">{name}</td>
+                    {weights.map((val, i) => {
+                      const rep = i + 1;
+                      const isInputCol = rep === r;
+                      return (
+                        <td
+                          key={rep}
+                          className={`py-[3px] px-1 text-right font-mono ${
+                            isInputCol
+                              ? 'text-blue-600 font-medium bg-blue-50/60'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {Math.round(val)}
+                        </td>
+                      );
+                    })}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+                {/* Average row */}
+                <tr className="border-t border-gray-100 bg-blue-50/60">
+                  <td className="pt-1.5 pb-1 pr-2 font-medium text-blue-700 whitespace-nowrap">Avg</td>
+                  {avgWeights.map((val, i) => {
+                    const rep = i + 1;
+                    const isInputCol = rep === r;
+                    return (
+                      <td
+                        key={rep}
+                        className={`pt-1.5 pb-1 px-1 text-right font-mono font-medium ${
+                          isInputCol ? 'text-blue-700' : 'text-blue-600'
+                        }`}
+                      >
+                        {Math.round(val)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* Formula breakdown toggle */}
+      {/* Toggle button */}
       {hasValidInput && (
-        <>
-          <button
-            onClick={() => setShowBreakdown(v => !v)}
-            className="flex items-center gap-1 px-4 py-2 text-[11px] text-gray-400 hover:text-gray-600 transition-colors border-t border-gray-100 hover:bg-gray-50/50 text-left"
-          >
-            {showBreakdown ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            Formula breakdown — 1RM estimates
-          </button>
-
-          {showBreakdown && (
-            <div className="border-t border-gray-100 px-4 pt-2 pb-3 max-h-64 overflow-y-auto">
-              {/* Range summary */}
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-gray-400">
-                  Range: {Math.round(breakdownMin)}–{Math.round(breakdownMax)} kg
-                </span>
-                <span className="text-[10px] text-gray-400">
-                  Spread: ±{Math.round((breakdownMax - breakdownMin) / 2)} kg
-                </span>
-              </div>
-
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left font-medium text-gray-400 pb-1">Formula</th>
-                    <th className="text-right font-medium text-gray-400 pb-1 w-16">1RM</th>
-                    <th className="pb-1 w-20" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {formulaBreakdown.map(({ name, value }) => {
-                    // Bar: position within min–max range
-                    const pct = Math.round(((value - breakdownMin) / breakdownRange) * 100);
-                    // Colour: how close to the average
-                    const diffFromAvg = Math.abs(value - (oneRM ?? value));
-                    const relDiff = diffFromAvg / (oneRM ?? 1);
-                    const dotColor =
-                      relDiff < 0.01 ? 'bg-blue-400' :
-                      relDiff < 0.02 ? 'bg-teal-400' :
-                      relDiff < 0.04 ? 'bg-amber-400' : 'bg-gray-300';
-
-                    return (
-                      <tr key={name} className="hover:bg-gray-50/50">
-                        <td className="py-[3px] text-gray-600">{name}</td>
-                        <td className="py-[3px] text-right font-mono text-gray-700">
-                          {Math.round(value)} kg
-                        </td>
-                        <td className="py-[3px] pl-2 pr-1">
-                          {/* Range bar: dot on a track */}
-                          <div className="relative w-16 h-1.5 bg-gray-100 rounded-full">
-                            <div
-                              className={`absolute top-0 w-1.5 h-1.5 rounded-full ${dotColor}`}
-                              style={{ left: `calc(${pct}% - 3px)` }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {/* Average row */}
-                  <tr className="border-t border-gray-100 bg-blue-50/60">
-                    <td className="pt-1.5 pb-1 font-medium text-blue-700">Average</td>
-                    <td className="pt-1.5 pb-1 text-right font-mono font-medium text-blue-700">
-                      {Math.round(oneRM ?? 0)} kg
-                    </td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
+        <button
+          onClick={() => setShowBreakdown(v => !v)}
+          className="flex items-center gap-1 px-4 py-2 text-[11px] text-gray-400 hover:text-gray-600 transition-colors border-t border-gray-100 hover:bg-gray-50/50 text-left"
+        >
+          {showBreakdown ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {showBreakdown ? 'Hide formula breakdown' : 'Show formula breakdown'}
+        </button>
       )}
 
-      {/* Bottom padding when no breakdown toggle */}
       {!hasValidInput && <div className="pb-2" />}
     </div>
   );
