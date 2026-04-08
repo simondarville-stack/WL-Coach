@@ -65,13 +65,13 @@ export function Sidebar({ onNewCoach }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem('winwota_sidebar_collapsed') === 'true';
+    return localStorage.getItem('emos_sidebar_collapsed') === 'true';
   });
 
   function toggleCollapsed() {
     const next = !collapsed;
     setCollapsed(next);
-    localStorage.setItem('winwota_sidebar_collapsed', String(next));
+    localStorage.setItem('emos_sidebar_collapsed', String(next));
   }
 
   return (

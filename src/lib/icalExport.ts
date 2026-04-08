@@ -14,7 +14,7 @@ function escapeIcal(s: string): string {
 }
 
 function uid(): string {
-  return `${Date.now()}-wlcoach@winwota`;
+  return `${Date.now()}-events@emos`;
 }
 
 export function exportEventToICal(event: EventWithAthletes): void {
@@ -41,7 +41,7 @@ export function exportEventToICal(event: EventWithAthletes): void {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//WinWota//Competition Calendar//EN',
+    'PRODID:-//EMOS//Competition Calendar//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',
@@ -74,7 +74,7 @@ export function exportAllEventsToICal(events: EventWithAthletes[]): void {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//WinWota//Competition Calendar//EN',
+    'PRODID:-//EMOS//Competition Calendar//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
   ];
@@ -97,7 +97,7 @@ export function exportAllEventsToICal(events: EventWithAthletes[]): void {
 
     lines.push(
       'BEGIN:VEVENT',
-      `UID:${event.id}@winwota`,
+      `UID:${event.id}@emos`,
       `DTSTAMP:${now}`,
       dtStart,
       dtEnd,
