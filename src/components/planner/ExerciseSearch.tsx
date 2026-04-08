@@ -21,6 +21,7 @@ interface ExerciseSearchProps {
   onAdd: (exercise: Exercise) => void;
   onSlashCommand?: (key: string) => void;
   placeholder?: string;
+  disableSlashCommands?: boolean;
 }
 
 export function ExerciseSearch({
@@ -28,6 +29,7 @@ export function ExerciseSearch({
   onAdd,
   onSlashCommand,
   placeholder = 'Add exercise…',
+  disableSlashCommands = false,
 }: ExerciseSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -35,7 +37,7 @@ export function ExerciseSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isSlash = query.startsWith('/');
+  const isSlash = !disableSlashCommands && query.startsWith('/');
 
   const filteredCommands = isSlash
     ? SLASH_COMMANDS.filter(c => c.key.startsWith(query.toLowerCase()))

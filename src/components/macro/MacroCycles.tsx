@@ -17,6 +17,7 @@ import { MacroEditModal } from './MacroEditModal';
 import { MacroPhaseModal } from './MacroPhaseModal';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
+import { ExerciseSearch } from '../planner/ExerciseSearch';
 import { supabase } from '../../lib/supabase';
 
 type ViewMode = 'table' | 'graph';
@@ -78,7 +79,6 @@ export function MacroCycles() {
   const [showPhaseModal, setShowPhaseModal] = useState(false);
   const [editingPhase, setEditingPhase] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
-  const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
 
   // Group mode state
@@ -302,14 +302,13 @@ export function MacroCycles() {
 
   // ─── Exercise management ──────────────────────────────────────────────────────
 
-  const handleAddExercise = async () => {
-    if (!selectedCycle || !selectedExerciseId) return;
+  const handleAddExercise = async (exercise: import('../../lib/database.types').Exercise) => {
+    if (!selectedCycle) return;
     const nextPosition = trackedExercises.length > 0
       ? Math.max(...trackedExercises.map(te => te.position)) + 1
       : 0;
-    await addTrackedExercise(selectedCycle.id, selectedExerciseId, nextPosition);
+    await addTrackedExercise(selectedCycle.id, exercise.id, nextPosition);
     await fetchTrackedExercises(selectedCycle.id);
-    setSelectedExerciseId('');
     setShowAddExercise(false);
   };
 
@@ -549,28 +548,17 @@ export function MacroCycles() {
 
             {/* Add exercise */}
             {showAddExercise ? (
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={selectedExerciseId}
-                  onChange={e => setSelectedExerciseId(e.target.value)}
-                  className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  <option value="">Select exercise…</option>
-                  {availableExercises.map(ex => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.exercise_code ? `${ex.exercise_code} — ` : ''}{ex.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-1" style={{ minWidth: 220 }}>
+                <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
+                  <ExerciseSearch
+                    exercises={availableExercises}
+                    onAdd={ex => void handleAddExercise(ex)}
+                    placeholder="Search exercise…"
+                    disableSlashCommands
+                  />
+                </div>
                 <button
-                  onClick={handleAddExercise}
-                  disabled={!selectedExerciseId}
-                  className="px-2.5 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  Add
-                </button>
-                <button
-                  onClick={() => { setShowAddExercise(false); setSelectedExerciseId(''); }}
+                  onClick={() => setShowAddExercise(false)}
                   className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
                 >
                   Cancel
