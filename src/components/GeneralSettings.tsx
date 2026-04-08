@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
 import { METRICS, METRIC_ORDER, DEFAULT_VISIBLE_METRICS } from '../lib/metrics';
+import type { WeekTypeConfig } from '../lib/database.types';
+
+const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
+  { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
+  { name: 'Medium', abbreviation: 'm', color: '#EF9F27' },
+  { name: 'Low',    abbreviation: 'g', color: '#1D9E75' },
+];
 
 export function GeneralSettings() {
   const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
@@ -22,6 +30,8 @@ export function GeneralSettings() {
   const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
+  const [weekTypes, setWeekTypes] = useState<WeekTypeConfig[]>(DEFAULT_WEEK_TYPES);
+  const [duplicateAbbr, setDuplicateAbbr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -81,6 +91,7 @@ export function GeneralSettings() {
       setShowStressMetric(settings.show_stress_metric ?? false);
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
+      setWeekTypes((settings.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES);
     }
   }, [settings]);
 
@@ -142,6 +153,39 @@ export function GeneralSettings() {
     if (!settings) return;
     setShowStressMetric(value);
     await updateSettings(settings.id, { show_stress_metric: value });
+  }
+
+  async function saveWeekTypes(next: WeekTypeConfig[]) {
+    if (!settings) return;
+    setWeekTypes(next);
+    await updateSettings(settings.id, { week_types: next });
+  }
+
+  async function updateWeekType(idx: number, patch: Partial<WeekTypeConfig>) {
+    const next = weekTypes.map((wt, i) => i === idx ? { ...wt, ...patch } : wt);
+    // Check abbreviation uniqueness
+    if (patch.abbreviation !== undefined) {
+      const abbr = patch.abbreviation.trim().toLowerCase();
+      const dupeIdx = next.findIndex((wt, i) => i !== idx && wt.abbreviation.toLowerCase() === abbr);
+      if (dupeIdx >= 0) {
+        setDuplicateAbbr(patch.abbreviation);
+        setWeekTypes(next); // update local only, don't save
+        return;
+      }
+      setDuplicateAbbr(null);
+    }
+    await saveWeekTypes(next);
+  }
+
+  async function addWeekType() {
+    const next = [...weekTypes, { name: '', abbreviation: '', color: '#888888' }];
+    setWeekTypes(next);
+    // Don't save until user fills fields
+  }
+
+  async function deleteWeekType(idx: number) {
+    const next = weekTypes.filter((_, i) => i !== idx);
+    await saveWeekTypes(next);
   }
 
   if (loading) {
@@ -426,6 +470,75 @@ export function GeneralSettings() {
             );
           })}
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Week types</h2>
+        <p className="text-sm text-gray-600 mb-4">Define the week classification labels used in the macro planner. Each type has a name, abbreviation (1–3 chars), and color.</p>
+
+        <div className="space-y-1 mb-3">
+          {/* Header row */}
+          <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
+            <span>Name</span>
+            <span>Abbr</span>
+            <span>Color</span>
+            <span />
+          </div>
+
+          {weekTypes.map((wt, idx) => (
+            <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
+              <input
+                type="text"
+                value={wt.name}
+                onChange={e => void updateWeekType(idx, { name: e.target.value })}
+                onBlur={e => { if (e.target.value.trim()) void saveWeekTypes(weekTypes); }}
+                placeholder="Name…"
+                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                type="text"
+                value={wt.abbreviation}
+                maxLength={3}
+                onChange={e => void updateWeekType(idx, { abbreviation: e.target.value })}
+                onBlur={() => { if (!duplicateAbbr) void saveWeekTypes(weekTypes); }}
+                placeholder="h"
+                className={`px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                  duplicateAbbr && wt.abbreviation === duplicateAbbr ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                }`}
+              />
+              <label
+                className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
+                style={{ backgroundColor: wt.color }}
+                title={wt.color}
+              >
+                <input
+                  type="color"
+                  value={wt.color}
+                  onChange={e => void updateWeekType(idx, { color: e.target.value })}
+                  className="opacity-0 w-0 h-0"
+                />
+              </label>
+              <button
+                onClick={() => void deleteWeekType(idx)}
+                title="Delete week type"
+                className="text-gray-300 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {duplicateAbbr && (
+          <p className="text-xs text-red-600 mb-3">Abbreviation "{duplicateAbbr}" is already in use. Choose a unique abbreviation.</p>
+        )}
+
+        <button
+          onClick={() => void addWeekType()}
+          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+        >
+          <Plus size={14} /> Add week type
+        </button>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
