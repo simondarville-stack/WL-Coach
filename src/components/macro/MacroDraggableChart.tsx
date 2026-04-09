@@ -253,6 +253,8 @@ export function MacroDraggableChart({
         && activeDrag?.metric === metric;
       const isLinked = linkedExerciseIds.has(trackedExId);
       const r = isActive ? 7 : isPrimary ? 5 : 3;
+      // Only allow dragging metrics that belong to the active mode
+      const isDraggable = metric === 'reps' ? isRepsMode : isLoadMode;
       return (
         <circle
           key={`d_${trackedExId}_${metric}_${week.id}`}
@@ -260,8 +262,8 @@ export function MacroDraggableChart({
           fill={color}
           stroke={isLinked ? '#1d4ed8' : (isPrimary ? 'white' : 'transparent')}
           strokeWidth={isLinked || isActive ? 2 : (isPrimary ? 1.5 : 0)}
-          style={{ cursor: 'ns-resize', userSelect: 'none' }}
-          onMouseDown={e => startDrag(e as unknown as React.MouseEvent, week.id, trackedExId, metric)}
+          style={{ cursor: isDraggable ? 'ns-resize' : 'default', userSelect: 'none' }}
+          onMouseDown={isDraggable ? e => startDrag(e as unknown as React.MouseEvent, week.id, trackedExId, metric) : undefined}
         />
       );
     };
