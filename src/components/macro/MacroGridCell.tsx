@@ -9,12 +9,15 @@ interface MacroGridCellProps {
   prevSets?: number | null;
   onUpdate: (values: { load?: number; reps?: number; sets?: number }) => void;
   disabled?: boolean;
+  deleteMode?: boolean;
+  onDelete?: () => void;
 }
 
 export function MacroGridCell({
   load, reps, sets,
   prevLoad, prevReps, prevSets,
   onUpdate, disabled,
+  deleteMode, onDelete,
 }: MacroGridCellProps) {
   const [editing, setEditing] = useState<'load' | 'reps' | null>(null);
   const loadRef = useRef<HTMLInputElement>(null);
@@ -34,6 +37,7 @@ export function MacroGridCell({
 
   const isEmpty = load === null && reps === null && sets === null;
   const hasPrev = prevLoad !== null && prevLoad !== undefined;
+  const isDeleteMode = deleteMode && !isEmpty && !disabled;
 
   function fillFromPrev(delta: number = 0) {
     const newLoad = (prevLoad ?? 0) + delta;
@@ -46,6 +50,11 @@ export function MacroGridCell({
     e.preventDefault();
     e.stopPropagation();
     if (disabled) return;
+
+    if (isDeleteMode) {
+      onDelete?.();
+      return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
       setEditing('load');
@@ -65,6 +74,11 @@ export function MacroGridCell({
     e.preventDefault();
     e.stopPropagation();
     if (disabled) return;
+
+    if (isDeleteMode) {
+      onDelete?.();
+      return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
       setEditing('reps');
@@ -99,12 +113,14 @@ export function MacroGridCell({
     setEditing(null);
   }
 
+  const setsIsOne = (sets ?? 1) <= 1;
+
   // Empty cell — show ghost of previous week
   if (isEmpty) {
     return (
       <div
-        className="flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-blue-50"
-        style={{ minWidth: 48, height: 34 }}
+        className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-blue-50"
+        style={{ minWidth: 52, height: 36 }}
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
@@ -120,7 +136,7 @@ export function MacroGridCell({
   // Editing load
   if (editing === 'load') {
     return (
-      <div className="flex items-center" style={{ minWidth: 48, height: 34 }}>
+      <div className="group flex items-center" style={{ minWidth: 52, height: 36 }}>
         <div className="flex flex-col items-center flex-1">
           <input
             ref={loadRef}
@@ -141,7 +157,7 @@ export function MacroGridCell({
           <div className="w-[80%] border-t border-gray-200 my-0.5" />
           <div className="text-[9px] font-mono text-gray-400">{reps ?? 1}</div>
         </div>
-        {(sets ?? 1) > 1 && (
+        {!setsIsOne && (
           <div className="text-[9px] font-mono text-gray-400 self-center pl-0.5">{sets}</div>
         )}
       </div>
@@ -151,7 +167,7 @@ export function MacroGridCell({
   // Editing reps + sets
   if (editing === 'reps') {
     return (
-      <div className="flex items-center" style={{ minWidth: 48, height: 34 }}>
+      <div className="group flex items-center" style={{ minWidth: 52, height: 36 }}>
         <div className="flex flex-col items-center flex-1">
           <div className="text-[11px] font-mono font-medium text-gray-900">{load ?? 0}</div>
           <div className="w-[80%] border-t border-gray-200 my-0.5" />
@@ -203,21 +219,29 @@ export function MacroGridCell({
   // Normal display
   return (
     <div
-      className="flex items-center select-none rounded border border-transparent hover:border-gray-200 transition-colors"
-      style={{ minWidth: 48, height: 34 }}
+      className={`group flex items-center select-none rounded border transition-colors ${
+        isDeleteMode
+          ? 'border-red-300 bg-red-50 cursor-pointer'
+          : 'border-transparent hover:border-gray-200'
+      }`}
+      style={{ minWidth: 52, height: 36 }}
     >
       {/* Load / divider / reps stack */}
       <div className="flex flex-col items-center flex-1">
         <div
-          className="text-[11px] font-mono font-medium text-gray-900 cursor-pointer px-2 leading-tight"
+          className={`text-[11px] font-mono font-medium cursor-pointer px-2 leading-tight ${
+            isDeleteMode ? 'text-red-500' : 'text-gray-900'
+          }`}
           onClick={handleLoadClick}
           onContextMenu={handleLoadClick}
         >
           {load ?? 0}
         </div>
-        <div className="w-[80%] border-t border-gray-200" />
+        <div className={`w-[80%] border-t ${isDeleteMode ? 'border-red-200' : 'border-gray-200'}`} />
         <div
-          className="text-[9px] font-mono text-gray-500 cursor-pointer px-2 leading-tight"
+          className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
+            isDeleteMode ? 'text-red-400' : 'text-gray-500'
+          }`}
           onClick={handleRepsClick}
           onContextMenu={handleRepsClick}
         >
@@ -225,24 +249,28 @@ export function MacroGridCell({
         </div>
       </div>
 
-      {/* Sets count — right side, aligned with divider */}
-      {(sets ?? 1) > 1 && (
-        <div
-          className="text-[9px] font-mono text-gray-400 self-center pr-1 cursor-pointer"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) + (e.button === 2 ? -1 : 1)) });
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) - 1) });
-          }}
-        >
-          {sets}
-        </div>
-      )}
+      {/* Sets count — right side; hidden when 1 (hover to reveal), always visible when >1 */}
+      <div
+        className={`text-[9px] font-mono self-center pr-1 cursor-pointer transition-opacity ${
+          setsIsOne
+            ? 'opacity-0 group-hover:opacity-40'
+            : (isDeleteMode ? 'opacity-80 text-red-400' : 'opacity-80 text-gray-400')
+        } ${isDeleteMode && !setsIsOne ? '' : 'text-gray-400'}`}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isDeleteMode) { onDelete?.(); return; }
+          if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) + (e.button === 2 ? -1 : 1)) });
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isDeleteMode) { onDelete?.(); return; }
+          if (!disabled) onUpdate({ sets: Math.max(1, (sets ?? 1) - 1) });
+        }}
+      >
+        {sets ?? 1}
+      </div>
     </div>
   );
 }

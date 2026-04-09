@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
+import { useShiftHeld } from '../../hooks/useShiftHeld';
 
 export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'notes';
 
@@ -81,8 +82,7 @@ export function MacroTableV2({
   visibleExercises,
   visibleColumns,
 }: MacroTableV2Props) {
-  const [copiedWeekId, setCopiedWeekId] = useState<string | null>(null);
-  const [copiedTargets, setCopiedTargets] = useState<Record<string, Partial<MacroTarget>>>({});
+  const deleteMode = useShiftHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
 
@@ -128,24 +128,36 @@ export function MacroTableV2({
     if (values.sets !== undefined) await onUpdateTarget(weekId, teId, 'target_sets_at_max', String(values.sets));
   }, [onUpdateTarget]);
 
-  // Fix phantom +1: when currentValue is null, initialize from prev without applying delta
+  const handleGridDelete = useCallback(async (weekId: string, teId: string) => {
+    await onUpdateTarget(weekId, teId, 'target_max', '');
+    await onUpdateTarget(weekId, teId, 'target_reps_at_max', '');
+    await onUpdateTarget(weekId, teId, 'target_sets_at_max', '');
+  }, [onUpdateTarget]);
+
+  // Fix phantom +1: when currentValue is null, initialize from prev without applying delta.
+  // Fix bubble: in delete mode, clicking clears the value.
   const handleInlineClick = useCallback((
     e: React.MouseEvent, weekId: string, teId: string, field: 'target_reps' | 'target_avg',
     currentValue: number | null, prevValue: number | null,
   ) => {
     e.preventDefault();
+
+    if (deleteMode && currentValue !== null) {
+      onUpdateTarget(weekId, teId, field, '');
+      return;
+    }
+
     if (e.ctrlKey || e.metaKey) {
       setEditingCell(`${weekId}_${teId}_${field}`);
       return;
     }
     if (currentValue === null) {
-      // First activation: just set to prev value, no +1
       onUpdateTarget(weekId, teId, field, String(prevValue ?? 0));
       return;
     }
     const delta = e.button === 2 ? -1 : 1;
     onUpdateTarget(weekId, teId, field, String(Math.max(0, currentValue + delta)));
-  }, [onUpdateTarget]);
+  }, [onUpdateTarget, deleteMode]);
 
   const cycleWeekType = useCallback((weekId: string, current: string) => {
     const idx = WEEK_TYPES.findIndex(t => t === current);
@@ -168,31 +180,57 @@ export function MacroTableV2({
   // Sticky cell class helpers
   function stickyTh(col: MacroTableColumnKey, extra = '') {
     const isLast = col === lastStickyVisible;
-    return `sticky z-[10] bg-slate-100 text-[8px] text-gray-400 font-normal px-1 ${isLast ? 'border-r border-gray-300' : ''} ${extra}`;
+    return `sticky z-[10] bg-slate-100 text-[8px] text-gray-400 font-normal px-1${isLast ? ' border-r border-gray-300' : ''} ${extra}`;
   }
   function stickyTd(col: MacroTableColumnKey, extra = '') {
     const isLast = col === lastStickyVisible;
-    return `sticky z-[5] bg-white ${isLast ? 'border-r border-gray-300' : ''} ${extra}`;
+    return `sticky z-[5] bg-white${isLast ? ' border-r border-gray-300' : ''} ${extra}`;
   }
+
+  // Compute cycle-level totals for summary row
+  const cycleTotals = macroWeeks.reduce((acc, week) => {
+    let wK = 0, wTon = 0;
+    displayed.forEach(te => {
+      const t = getTarget(week.id, te.id);
+      const reps = t?.target_reps ?? 0;
+      const avg = t?.target_avg ?? 0;
+      wK += reps;
+      if (reps > 0 && avg > 0) wTon += reps * avg;
+    });
+    return { k: acc.k + wK, tonnage: acc.tonnage + wTon };
+  }, { k: 0, tonnage: 0 });
+  const cycleAvgInt = cycleTotals.k > 0 && cycleTotals.tonnage > 0
+    ? Math.round(cycleTotals.tonnage / cycleTotals.k) : null;
 
   return (
     <div className="overflow-auto flex-1 border border-gray-200 rounded-lg">
       <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead className="sticky top-0 z-20">
-          {/* Exercise headers */}
+          {/* Top header row: "Week" section + exercise sections */}
           <tr className="bg-gray-100 border-b border-gray-300">
+            {/* Sticky section header */}
             <th
-              colSpan={leftColCount}
-              className="sticky left-0 z-[10] bg-slate-100 border-r border-gray-300 px-2 py-1 text-left text-[10px] font-medium text-gray-600"
-              style={{ minWidth: leftColCount > 0 ? stickyOffset + generalColCount * 50 : 50 }}
+              colSpan={stickyColCount || 1}
+              className="sticky left-0 z-[10] bg-slate-100 px-2 py-1 text-left text-[10px] font-medium text-gray-600"
+              style={{ minWidth: stickyOffset || 40 }}
             >
               Week
             </th>
+            {/* General section header — only if any general columns visible */}
+            {generalColCount > 0 && (
+              <th
+                colSpan={generalColCount}
+                className="bg-blue-50 border-l border-gray-300 px-2 py-1 text-left text-[10px] font-medium text-blue-500"
+              >
+                General
+              </th>
+            )}
+            {/* Exercise section headers */}
             {displayed.map((te, idx) => (
               <th
                 key={te.id}
                 colSpan={3}
-                className="px-1 py-1 border-l border-gray-300 text-center cursor-pointer select-none"
+                className="px-1 py-1 border-l-2 border-gray-300 text-center cursor-pointer select-none"
                 style={{ minWidth: 140 }}
                 onDoubleClick={() => onExerciseDoubleClick(te.id)}
                 title="Double-click to focus chart"
@@ -244,17 +282,17 @@ export function MacroTableV2({
               <th className={stickyTh('k')} style={{ width: 32, left: stickyLeft['k'] }}>K</th>
             )}
             {showCol('tonnage') && (
-              <th className="text-[8px] text-gray-400 font-normal text-center px-1" style={{ minWidth: 50 }}>Ton</th>
+              <th className="bg-blue-50/60 border-l border-gray-300 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
             )}
             {showCol('avg') && (
-              <th className="text-[8px] text-gray-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
+              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
             )}
             {showCol('notes') && (
-              <th className="border-r border-gray-300 text-[8px] text-gray-400 font-normal text-left px-1" style={{ minWidth: 100 }}>Notes</th>
+              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-left px-1" style={{ minWidth: 100 }}>Notes</th>
             )}
-            {displayed.map(te => (
+            {displayed.map((te, idx) => (
               <React.Fragment key={te.id}>
-                <td className="border-l border-gray-300 text-[8px] text-gray-400 font-normal text-center px-1">Reps</td>
+                <td className={`${idx === 0 ? 'border-l-2' : 'border-l'} border-gray-300 text-[8px] text-gray-400 font-normal text-center px-1`}>Reps</td>
                 <td className="text-[8px] text-gray-400 font-normal text-center px-1">Max set</td>
                 <td className="text-[8px] text-gray-400 font-normal text-center px-1">Avg</td>
               </React.Fragment>
@@ -289,7 +327,7 @@ export function MacroTableV2({
                 );
               }
 
-              // Computed week stats
+              // Computed week stats — only count exercises with both reps and avg set
               let weekK = 0;
               let weekTonnage = 0;
               displayed.forEach(te => {
@@ -297,9 +335,9 @@ export function MacroTableV2({
                 const reps = t?.target_reps ?? 0;
                 const avg = t?.target_avg ?? 0;
                 weekK += reps;
-                weekTonnage += reps * avg;
+                if (reps > 0 && avg > 0) weekTonnage += reps * avg;
               });
-              const weekAvgInt = weekK > 0 ? Math.round(weekTonnage / weekK) : null;
+              const weekAvgInt = weekK > 0 && weekTonnage > 0 ? Math.round(weekTonnage / weekK) : null;
 
               const wtColor = getWeekTypeColor(week.week_type);
               const wtAbbr = getWeekTypeAbbr(week.week_type);
@@ -348,40 +386,57 @@ export function MacroTableV2({
                   )}
 
                   {showCol('tonnage') && (
-                    <td className="text-center font-mono text-[10px] text-gray-700 px-1 py-0">
+                    <td className="bg-blue-50/10 border-l border-gray-200 text-center font-mono text-[10px] text-gray-700 px-1 py-0">
                       {weekTonnage > 0 ? weekTonnage.toLocaleString() : ''}
                     </td>
                   )}
 
                   {showCol('avg') && (
-                    <td className="text-center font-mono text-[10px] text-gray-500 px-1 py-0">
+                    <td className="bg-blue-50/10 text-center font-mono text-[10px] text-gray-500 px-1 py-0">
                       {weekAvgInt !== null ? weekAvgInt : ''}
                     </td>
                   )}
 
                   {showCol('notes') && (
-                    <td className="border-r border-gray-200 px-1 py-0" style={{ minWidth: 100 }}>
+                    <td
+                      className={`bg-blue-50/10 px-1 py-0 transition-colors ${
+                        deleteMode && week.notes ? 'bg-red-50' : ''
+                      }`}
+                      style={{ minWidth: 100 }}
+                    >
                       {editingNotesId === week.id ? (
-                        <input
-                          type="text"
-                          defaultValue={week.notes ?? ''}
-                          autoFocus
-                          className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
-                          onBlur={(e) => {
-                            onUpdateNotes(week.id, e.target.value);
-                            setEditingNotesId(null);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                            if (e.key === 'Escape') setEditingNotesId(null);
-                          }}
-                        />
+                        <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            defaultValue={week.notes ?? ''}
+                            autoFocus
+                            className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
+                            onBlur={(e) => {
+                              onUpdateNotes(week.id, e.target.value);
+                              setEditingNotesId(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') setEditingNotesId(null);
+                            }}
+                          />
+                        </div>
                       ) : (
                         <span
-                          className="block truncate text-[10px] text-gray-500 cursor-pointer hover:text-gray-800"
+                          className={`block truncate text-[10px] cursor-pointer transition-colors ${
+                            deleteMode && week.notes
+                              ? 'text-red-500 hover:text-red-700'
+                              : 'text-gray-500 hover:text-gray-800'
+                          }`}
                           style={{ maxWidth: 120 }}
-                          onClick={() => setEditingNotesId(week.id)}
-                          title={week.notes ?? ''}
+                          onClick={() => {
+                            if (deleteMode && week.notes) {
+                              onUpdateNotes(week.id, '');
+                            } else {
+                              setEditingNotesId(week.id);
+                            }
+                          }}
+                          title={deleteMode ? 'Click to clear' : (week.notes ?? '')}
                         >
                           {week.notes || <span className="text-gray-300 italic text-[9px]">—</span>}
                         </span>
@@ -390,7 +445,7 @@ export function MacroTableV2({
                   )}
 
                   {/* Per-exercise columns */}
-                  {displayed.map(te => {
+                  {displayed.map((te, teIdx) => {
                     const target = getTarget(week.id, te.id);
                     const prev = getPrevTarget(week.week_number, te.id);
 
@@ -407,31 +462,41 @@ export function MacroTableV2({
                     const repsEditing = editingCell === `${cellKey}_target_reps`;
                     const avgEditing = editingCell === `${cellKey}_target_avg`;
 
+                    const repsIsDeleteTarget = deleteMode && repsVal !== null;
+                    const avgIsDeleteTarget = deleteMode && avgVal !== null;
+
                     return (
                       <React.Fragment key={te.id}>
                         {/* Reps */}
                         <td
-                          className="border-l border-gray-200 text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 hover:bg-blue-50 transition-colors"
+                          className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 transition-colors ${
+                            repsIsDeleteTarget
+                              ? 'bg-red-50 hover:bg-red-100'
+                              : 'hover:bg-blue-50'
+                          }`}
                           onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
                           onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
+                          title={repsIsDeleteTarget ? 'Click to clear' : undefined}
                         >
                           {repsEditing ? (
-                            <input
-                              type="number"
-                              defaultValue={repsVal ?? ''}
-                              autoFocus
-                              className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
-                              onBlur={(e) => {
-                                onUpdateTarget(week.id, te.id, 'target_reps', e.target.value);
-                                setEditingCell(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                if (e.key === 'Escape') setEditingCell(null);
-                              }}
-                            />
+                            <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                              <input
+                                type="number"
+                                defaultValue={repsVal ?? ''}
+                                autoFocus
+                                className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                                onBlur={(e) => {
+                                  onUpdateTarget(week.id, te.id, 'target_reps', e.target.value);
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                  if (e.key === 'Escape') setEditingCell(null);
+                                }}
+                              />
+                            </div>
                           ) : (
-                            <span className={repsVal !== null ? 'text-gray-900' : 'text-gray-300 italic text-[9px]'}>
+                            <span className={repsVal !== null ? (repsIsDeleteTarget ? 'text-red-500' : 'text-gray-900') : 'text-gray-300 italic text-[9px]'}>
                               {repsVal !== null ? repsVal : (prevReps !== null ? prevReps : '-')}
                             </span>
                           )}
@@ -447,32 +512,41 @@ export function MacroTableV2({
                             prevReps={prev?.target_reps_at_max ?? null}
                             prevSets={prev?.target_sets_at_max ?? null}
                             onUpdate={(vals) => handleGridUpdate(week.id, te.id, vals)}
+                            deleteMode={deleteMode}
+                            onDelete={() => handleGridDelete(week.id, te.id)}
                           />
                         </td>
 
                         {/* Avg */}
                         <td
-                          className="text-center font-mono text-[9px] cursor-pointer select-none px-1 py-0 hover:bg-blue-50 transition-colors"
+                          className={`text-center font-mono text-[9px] cursor-pointer select-none px-1 py-0 transition-colors ${
+                            avgIsDeleteTarget
+                              ? 'bg-red-50 hover:bg-red-100'
+                              : 'hover:bg-blue-50'
+                          }`}
                           onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
                           onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
+                          title={avgIsDeleteTarget ? 'Click to clear' : undefined}
                         >
                           {avgEditing ? (
-                            <input
-                              type="number"
-                              defaultValue={avgVal ?? ''}
-                              autoFocus
-                              className="w-[32px] text-center font-mono text-[9px] border-none outline-none bg-blue-50 rounded"
-                              onBlur={(e) => {
-                                onUpdateTarget(week.id, te.id, 'target_avg', e.target.value);
-                                setEditingCell(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                if (e.key === 'Escape') setEditingCell(null);
-                              }}
-                            />
+                            <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                              <input
+                                type="number"
+                                defaultValue={avgVal ?? ''}
+                                autoFocus
+                                className="w-[32px] text-center font-mono text-[9px] border-none outline-none bg-blue-50 rounded"
+                                onBlur={(e) => {
+                                  onUpdateTarget(week.id, te.id, 'target_avg', e.target.value);
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                  if (e.key === 'Escape') setEditingCell(null);
+                                }}
+                              />
+                            </div>
                           ) : (
-                            <span className={avgVal !== null ? 'text-gray-500' : 'text-gray-300 italic text-[8px]'}>
+                            <span className={avgVal !== null ? (avgIsDeleteTarget ? 'text-red-500' : 'text-gray-500') : 'text-gray-300 italic text-[8px]'}>
                               {avgVal !== null ? avgVal : (prevAvg !== null ? prevAvg : '-')}
                             </span>
                           )}
@@ -484,28 +558,61 @@ export function MacroTableV2({
               );
             });
 
-            // Summary row
+            // Summary / average row — mirrors data row column structure exactly
             rows.push(
               <tr key="avg-row" className="border-t-2 border-gray-300 bg-gray-50">
-                <td
-                  colSpan={leftColCount}
-                  className="sticky left-0 bg-gray-50 border-r border-gray-300 text-center font-medium text-gray-600 text-[10px] px-1 py-1"
-                >
-                  Ø
-                </td>
-                {displayed.map(te => {
+                {showCol('week') && (
+                  <td
+                    className={`${stickyTd('week')} text-center font-medium text-gray-600 text-[10px] px-1 py-1 bg-gray-50`}
+                    style={{ left: stickyLeft['week'] }}
+                  >
+                    Ø
+                  </td>
+                )}
+                {showCol('weektype') && (
+                  <td
+                    className={`${stickyTd('weektype')} bg-gray-50 py-1`}
+                    style={{ left: stickyLeft['weektype'] }}
+                  />
+                )}
+                {showCol('k') && (
+                  <td
+                    className={`${stickyTd('k')} bg-gray-50 text-center font-mono font-medium text-[10px] text-gray-700 px-1 py-1`}
+                    style={{ left: stickyLeft['k'] }}
+                  >
+                    {cycleTotals.k > 0 ? cycleTotals.k : ''}
+                  </td>
+                )}
+                {showCol('tonnage') && (
+                  <td className="bg-blue-50/20 border-l border-gray-200 text-center font-mono text-[10px] text-gray-600 px-1 py-1">
+                    {cycleTotals.tonnage > 0 ? cycleTotals.tonnage.toLocaleString() : ''}
+                  </td>
+                )}
+                {showCol('avg') && (
+                  <td className="bg-blue-50/20 text-center font-mono text-[10px] text-gray-500 px-1 py-1">
+                    {cycleAvgInt !== null ? cycleAvgInt : ''}
+                  </td>
+                )}
+                {showCol('notes') && (
+                  <td className="bg-blue-50/20 px-1 py-1" />
+                )}
+                {/* Per-exercise averages */}
+                {displayed.map((te, teIdx) => {
                   const exTargets = targets.filter(t => t.tracked_exercise_id === te.id);
-                  const weekCount = macroWeeks.length || 1;
-                  const totalReps = exTargets.reduce((s, t) => s + (t.target_reps ?? 0), 0);
-                  const avgReps = Math.round(totalReps / weekCount);
-                  const peakTarget = exTargets.reduce((best, t) =>
-                    (t.target_max ?? 0) > (best?.target_max ?? 0) ? t : best, exTargets[0]);
+                  const weeksWithReps = exTargets.filter(t => (t.target_reps ?? 0) > 0);
+                  const totalReps = weeksWithReps.reduce((s, t) => s + (t.target_reps ?? 0), 0);
+                  const weekCount = weeksWithReps.length || 1;
+                  const avgReps = weeksWithReps.length > 0 ? Math.round(totalReps / weekCount) : 0;
+                  const peakTarget = exTargets.reduce<MacroTarget | undefined>((best, t) =>
+                    (t.target_max ?? 0) > (best?.target_max ?? 0) ? t : best, undefined);
                   const totalAvgLoad = exTargets.reduce((s, t) => s + (t.target_avg ?? 0) * (t.target_reps ?? 0), 0);
                   const avgAvg = totalReps > 0 ? Math.round(totalAvgLoad / totalReps) : 0;
 
                   return (
                     <React.Fragment key={te.id}>
-                      <td className="border-l border-gray-200 text-center font-mono text-[9px] text-gray-600 px-1 py-1">{avgReps}</td>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-gray-600 px-1 py-1`}>
+                        {avgReps > 0 ? avgReps : ''}
+                      </td>
                       <td className="text-center px-0 py-1">
                         <MacroGridCell
                           load={peakTarget?.target_max ?? null}
@@ -515,7 +622,9 @@ export function MacroTableV2({
                           disabled
                         />
                       </td>
-                      <td className="text-center font-mono text-[9px] text-gray-500 px-1 py-1">{avgAvg || ''}</td>
+                      <td className="text-center font-mono text-[9px] text-gray-500 px-1 py-1">
+                        {avgAvg > 0 ? avgAvg : ''}
+                      </td>
                     </React.Fragment>
                   );
                 })}
