@@ -705,25 +705,6 @@ export function MacroCycles() {
         </div>
       ) : (
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Chart panel — collapsible, shown above table */}
-          {showChart && (
-            <div className="flex-shrink-0 border-b border-gray-200 overflow-y-auto" style={{ maxHeight: '45%' }}>
-              <MacroGraphView
-                macroWeeks={macroWeeks}
-                trackedExercises={trackedExercises}
-                targets={targets}
-                phases={phases}
-                competitions={competitions}
-                actuals={displayedActuals}
-                onDragTarget={handleDragTarget}
-                focusedExerciseId={focusedExerciseId}
-                visibleExercises={visibleExercises}
-                onToggleExercise={toggleExercise}
-                onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-              />
-            </div>
-          )}
-
           {/* Exercise toggle bar */}
           {trackedExercises.length > 0 && (
             <div className="px-3 pt-2 pb-1 flex-shrink-0 border-b border-gray-100">
@@ -736,24 +717,49 @@ export function MacroCycles() {
             </div>
           )}
 
-          <MacroTableV2
-            macroWeeks={macroWeeks}
-            trackedExercises={trackedExercises}
-            targets={targets}
-            phases={phases}
-            actuals={displayedActuals}
-            onUpdateTarget={handleUpdateTarget}
-            onUpdateWeekType={handleUpdateWeekType}
-            onUpdateWeekLabel={handleUpdateWeekLabel}
-            onUpdateTotalReps={handleUpdateTotalReps}
-            onUpdateNotes={handleUpdateNotes}
-            onMoveExerciseLeft={handleMoveExerciseLeft}
-            onMoveExerciseRight={handleMoveExerciseRight}
-            onRemoveExercise={handleRemoveExercise}
-            onPasteTargets={handlePasteTargets}
-            onExerciseDoubleClick={handleExerciseDoubleClick}
-            visibleExercises={visibleExercises}
-          />
+          {/* Table + optional chart side panel */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Table */}
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <MacroTableV2
+                macroWeeks={macroWeeks}
+                trackedExercises={trackedExercises}
+                targets={targets}
+                phases={phases}
+                actuals={displayedActuals}
+                onUpdateTarget={handleUpdateTarget}
+                onUpdateWeekType={handleUpdateWeekType}
+                onUpdateWeekLabel={handleUpdateWeekLabel}
+                onUpdateTotalReps={handleUpdateTotalReps}
+                onUpdateNotes={handleUpdateNotes}
+                onMoveExerciseLeft={handleMoveExerciseLeft}
+                onMoveExerciseRight={handleMoveExerciseRight}
+                onRemoveExercise={handleRemoveExercise}
+                onPasteTargets={handlePasteTargets}
+                onExerciseDoubleClick={handleExerciseDoubleClick}
+                visibleExercises={visibleExercises}
+              />
+            </div>
+
+            {/* Chart side panel */}
+            {showChart && (
+              <div className="w-[480px] flex-shrink-0 border-l border-gray-200 overflow-y-auto">
+                <MacroGraphView
+                  macroWeeks={macroWeeks}
+                  trackedExercises={trackedExercises}
+                  targets={targets}
+                  phases={phases}
+                  competitions={competitions}
+                  actuals={displayedActuals}
+                  onDragTarget={handleDragTarget}
+                  focusedExerciseId={focusedExerciseId}
+                  visibleExercises={visibleExercises}
+                  onToggleExercise={toggleExercise}
+                  onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
