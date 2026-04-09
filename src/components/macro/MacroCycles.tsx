@@ -486,6 +486,18 @@ export function MacroCycles() {
     setShowPhaseModal(false);
   };
 
+  // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'c' || e.key === 'C') setShowChart(v => !v);
+      if (e.key === 'd' || e.key === 'D') setShowDistribution(v => { if (!v) setDistKey(k => k + 1); return !v; });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   if (!macroTarget) {

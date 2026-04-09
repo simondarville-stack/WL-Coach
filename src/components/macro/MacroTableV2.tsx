@@ -4,6 +4,7 @@ import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExerci
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { getExerciseCategoryShade } from '../../lib/colorUtils';
 
 export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
 
@@ -284,7 +285,7 @@ export function MacroTableV2({
                     <ChevronLeft size={10} />
                   </button>
                   <div className="flex items-center gap-1 min-w-0">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: te.exercise.color }} />
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, displayed) }} />
                     <span className="text-[10px] font-medium text-gray-800 truncate">
                       {te.exercise.exercise_code || te.exercise.name}
                     </span>
