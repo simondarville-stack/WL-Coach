@@ -1,7 +1,7 @@
 // TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users } from 'lucide-react';
+import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users, PieChart } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
@@ -14,6 +14,9 @@ import { ExerciseToggleBar } from './ExerciseToggleBar';
 import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
 import { MacroGraphView } from './MacroGraphView';
+import { MacroDistributionChart } from './MacroDistributionChart';
+import { Chart as ChartJS, BarController, LineController, DoughnutController } from 'chart.js';
+ChartJS.register(BarController, LineController, DoughnutController);
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
 import { MacroEditModal } from './MacroEditModal';
@@ -68,6 +71,8 @@ export function MacroCycles() {
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
   const [showChart, setShowChart] = useState(false);
+  const [showDistribution, setShowDistribution] = useState(false);
+  const [distKey, setDistKey] = useState(0);
   const [showReps, setShowReps] = useState(true);
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
@@ -554,6 +559,16 @@ export function MacroCycles() {
               <BarChart3 size={13} /> Chart
             </button>
 
+            {/* Distribution toggle */}
+            <button
+              onClick={() => setShowDistribution(v => { if (!v) setDistKey(k => k + 1); return !v; })}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors ${
+                showDistribution ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <PieChart size={13} /> Distribution
+            </button>
+
             {/* Individual view dropdown (group mode only) */}
             {isGroupMode && groupMembers.length > 0 && (
               <div className="flex items-center gap-1.5">
@@ -886,8 +901,20 @@ export function MacroCycles() {
                 onDragTarget={handleDragTarget}
                 focusedExerciseId={focusedExerciseId}
                 visibleExercises={visibleExercises}
-                visibleGeneralMetrics={visibleGeneralMetrics}
                 showReps={showReps}
+              />
+            </div>
+          )}
+
+          {/* Distribution chart */}
+          {showDistribution && (
+            <div key={distKey} className="px-4 pb-4 pt-2">
+              <MacroDistributionChart
+                macroWeeks={macroWeeks}
+                trackedExercises={trackedExercises}
+                targets={targets}
+                phases={phases}
+                visibleExercises={visibleExercises}
               />
             </div>
           )}
