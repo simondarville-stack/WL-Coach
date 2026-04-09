@@ -339,7 +339,7 @@ export function MacroDraggableChart({
               formatter={(value: number, name: string) => [value ?? '—', name]}
             />
 
-            {/* Phase bands — 30% opacity background over their week range */}
+            {/* Phase bands — subtle background over their week range */}
             {phases.map(phase => (
               <ReferenceArea
                 key={`ph_${phase.id}`}
@@ -347,11 +347,8 @@ export function MacroDraggableChart({
                 x1={phase.start_week_number}
                 x2={phase.end_week_number}
                 fill={phase.color || '#d1d5db'}
-                fillOpacity={0.15}
-                stroke={phase.color || '#d1d5db'}
-                strokeOpacity={0.3}
-                strokeWidth={1}
-                label={{ value: phase.name, position: 'insideTopLeft', fontSize: 8, fill: '#6b7280' }}
+                fillOpacity={0.08}
+                stroke="none"
               />
             ))}
 
@@ -378,7 +375,7 @@ export function MacroDraggableChart({
                 fill={withOpacity(te.exercise.color, 0.18)}
                 stroke={withOpacity(te.exercise.color, 0.35)}
                 strokeWidth={1}
-                barSize={6}
+                barSize={16}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />
@@ -394,7 +391,7 @@ export function MacroDraggableChart({
                 fill={withOpacity(te.exercise.color, 0.32)}
                 stroke={withOpacity(te.exercise.color, 0.5)}
                 strokeWidth={1}
-                barSize={6}
+                barSize={16}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />

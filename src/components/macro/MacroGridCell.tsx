@@ -120,7 +120,7 @@ export function MacroGridCell({
     return (
       <div
         className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-blue-50"
-        style={{ minWidth: 52, height: 36 }}
+        style={{ minWidth: 52, height: 38 }}
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
@@ -136,7 +136,7 @@ export function MacroGridCell({
   // Editing load
   if (editing === 'load') {
     return (
-      <div className="group flex items-center" style={{ minWidth: 52, height: 36 }}>
+      <div className="group flex items-center" style={{ minWidth: 52, height: 38 }}>
         <div className="flex flex-col items-center flex-1">
           <input
             ref={loadRef}
@@ -167,7 +167,7 @@ export function MacroGridCell({
   // Editing reps + sets
   if (editing === 'reps') {
     return (
-      <div className="group flex items-center" style={{ minWidth: 52, height: 36 }}>
+      <div className="group flex items-center" style={{ minWidth: 52, height: 38 }}>
         <div className="flex flex-col items-center flex-1">
           <div className="text-[11px] font-mono font-medium text-gray-900">{load ?? 0}</div>
           <div className="w-[80%] border-t border-gray-200 my-0.5" />
@@ -224,7 +224,7 @@ export function MacroGridCell({
           ? 'border-red-300 bg-red-50 cursor-pointer'
           : 'border-transparent hover:border-gray-200'
       }`}
-      style={{ minWidth: 52, height: 36 }}
+      style={{ minWidth: 52, height: 38 }}
     >
       {/* Load / divider / reps stack */}
       <div className="flex flex-col items-center flex-1">
@@ -251,7 +251,7 @@ export function MacroGridCell({
 
       {/* Sets count — right side; hidden when 1 (hover to reveal), always visible when >1 */}
       <div
-        className={`text-[9px] font-mono self-center pr-1 cursor-pointer transition-opacity ${
+        className={`text-[9px] font-mono self-center pr-1.5 pl-1 py-2 cursor-pointer transition-opacity ${
           setsIsOne
             ? 'opacity-0 group-hover:opacity-40'
             : (isDeleteMode ? 'opacity-80 text-red-400' : 'opacity-80 text-gray-400')

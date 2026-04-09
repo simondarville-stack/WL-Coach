@@ -85,6 +85,7 @@ export function MacroTableV2({
   const deleteMode = useShiftHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [editingKWeekId, setEditingKWeekId] = useState<string | null>(null);
 
   const displayed = visibleExercises
     ? trackedExercises.filter(te => visibleExercises.has(te.id))
@@ -342,8 +343,16 @@ export function MacroTableV2({
               const wtColor = getWeekTypeColor(week.week_type);
               const wtAbbr = getWeekTypeAbbr(week.week_type);
 
+              const phaseColor = phase?.color;
+
               rows.push(
-                <tr key={week.id} className="hover:bg-gray-50/50 transition-colors">
+                <tr
+                  key={week.id}
+                  className="transition-colors"
+                  style={phaseColor ? { backgroundColor: phaseColor + '0D' } : undefined}
+                  onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '26' : '#f9fafb'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '0D' : ''; }}
+                >
                   {showCol('week') && (
                     <td
                       className={`${stickyTd('week')} text-center font-medium text-gray-900 text-[11px] px-1 py-0`}
@@ -378,16 +387,36 @@ export function MacroTableV2({
 
                   {showCol('k') && (
                     <td
-                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0`}
+                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0 cursor-pointer hover:bg-blue-50/30`}
                       style={{ width: 32, left: stickyLeft['k'] }}
+                      onClick={(e) => { if (e.ctrlKey || e.metaKey) setEditingKWeekId(week.id); }}
+                      title="Ctrl+click to set reps target"
                     >
-                      {weekK > 0 ? weekK : ''}
+                      {editingKWeekId === week.id ? (
+                        <div onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            defaultValue={week.total_reps_target ?? weekK}
+                            autoFocus
+                            className="w-[28px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            onBlur={(e) => { onUpdateTotalReps(week.id, e.target.value); setEditingKWeekId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') setEditingKWeekId(null);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        week.total_reps_target != null && week.total_reps_target !== weekK
+                          ? <span title={`Computed: ${weekK}`}>{weekK}<span className="text-[8px] text-blue-400 ml-0.5">({week.total_reps_target})</span></span>
+                          : (weekK > 0 ? weekK : '')
+                      )}
                     </td>
                   )}
 
                   {showCol('tonnage') && (
                     <td className="bg-blue-50/10 border-l border-gray-200 text-center font-mono text-[10px] text-gray-700 px-1 py-0">
-                      {weekTonnage > 0 ? weekTonnage.toLocaleString() : ''}
+                      {weekTonnage > 0 ? (weekTonnage / 1000).toFixed(1) : ''}
                     </td>
                   )}
 
@@ -580,12 +609,12 @@ export function MacroTableV2({
                     className={`${stickyTd('k')} bg-gray-50 text-center font-mono font-medium text-[10px] text-gray-700 px-1 py-1`}
                     style={{ left: stickyLeft['k'] }}
                   >
-                    {cycleTotals.k > 0 ? cycleTotals.k : ''}
+                    {cycleTotals.k > 0 ? Math.round(cycleTotals.k / (macroWeeks.length || 1)) : ''}
                   </td>
                 )}
                 {showCol('tonnage') && (
                   <td className="bg-blue-50/20 border-l border-gray-200 text-center font-mono text-[10px] text-gray-600 px-1 py-1">
-                    {cycleTotals.tonnage > 0 ? cycleTotals.tonnage.toLocaleString() : ''}
+                    {cycleTotals.tonnage > 0 ? (cycleTotals.tonnage / (macroWeeks.length || 1) / 1000).toFixed(1) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
