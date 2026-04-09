@@ -223,20 +223,24 @@ export function MacroTableV2({
     return `sticky z-[5] bg-white${isLast ? ' border-r border-gray-300' : ''} ${extra}`;
   }
 
-  // Compute cycle-level totals for summary row
-  const cycleTotals = macroWeeks.reduce((acc, week) => {
-    let wK = 0, wTon = 0;
-    displayed.forEach(te => {
-      const t = getTarget(week.id, te.id);
-      const reps = t?.target_reps ?? 0;
-      const avg = t?.target_avg ?? 0;
-      wK += reps;
-      if (reps > 0 && avg > 0) wTon += reps * avg;
-    });
-    return { k: acc.k + wK, tonnage: acc.tonnage + wTon };
-  }, { k: 0, tonnage: 0 });
-  const cycleAvgInt = cycleTotals.k > 0 && cycleTotals.tonnage > 0
-    ? Math.round(cycleTotals.tonnage / cycleTotals.k) : null;
+  // Summary stats computed from week-level explicit targets (only populated weeks counted)
+  const weeksWithK = macroWeeks.filter(w => w.total_reps_target != null);
+  const avgK = weeksWithK.length > 0
+    ? Math.round(weeksWithK.reduce((s, w) => s + (w.total_reps_target ?? 0), 0) / weeksWithK.length) : null;
+  const maxK = weeksWithK.length > 0
+    ? Math.max(...weeksWithK.map(w => w.total_reps_target ?? 0)) : null;
+
+  const weeksWithTonnage = macroWeeks.filter(w => w.tonnage_target != null);
+  const avgTonnage = weeksWithTonnage.length > 0
+    ? weeksWithTonnage.reduce((s, w) => s + (w.tonnage_target ?? 0), 0) / weeksWithTonnage.length : null;
+  const maxTonnage = weeksWithTonnage.length > 0
+    ? Math.max(...weeksWithTonnage.map(w => w.tonnage_target ?? 0)) : null;
+
+  const weeksWithAvg = macroWeeks.filter(w => w.avg_intensity_target != null);
+  const avgIntTarget = weeksWithAvg.length > 0
+    ? Math.round(weeksWithAvg.reduce((s, w) => s + (w.avg_intensity_target ?? 0), 0) / weeksWithAvg.length) : null;
+  const maxIntTarget = weeksWithAvg.length > 0
+    ? Math.max(...weeksWithAvg.map(w => w.avg_intensity_target ?? 0)) : null;
 
   return (
     <div className="overflow-auto flex-1 border border-gray-200 rounded-lg">
@@ -744,90 +748,137 @@ export function MacroTableV2({
             });
 
             // Summary / average row — distinct bg so it's clearly not a data week
-            const summaryBg = 'bg-indigo-50/50';
+            // ── Average row ────────────────────────────────────────────────────────
+            const avgBg = 'bg-indigo-50/50';
             rows.push(
-              <tr key="avg-row" className={`border-t-2 border-gray-400 ${summaryBg}`}>
+              <tr key="avg-row" className={`border-t-2 border-gray-400 ${avgBg}`}>
                 {showCol('week') && (
-                  <td
-                    className={`${stickyTd('week')} text-center font-medium text-indigo-600 text-[10px] px-1 py-1 ${summaryBg}`}
-                    style={{ left: stickyLeft['week'] }}
-                  >
+                  <td className={`${stickyTd('week')} text-center font-bold text-indigo-600 text-[10px] px-1 py-1 ${avgBg}`} style={{ left: stickyLeft['week'] }}>
                     Ø
                   </td>
                 )}
                 {showCol('weektype') && (
-                  <td
-                    className={`${stickyTd('weektype')} ${summaryBg} py-1`}
-                    style={{ left: stickyLeft['weektype'] }}
-                  />
+                  <td className={`${stickyTd('weektype')} ${avgBg} py-1`} style={{ left: stickyLeft['weektype'] }} />
                 )}
-                {/* Notes sticky — empty in summary */}
                 {showCol('notes') && (
-                  <td
-                    className={`${stickyTd('notes')} ${summaryBg} px-1 py-1 text-[9px] text-indigo-300 italic`}
-                    style={{ left: stickyLeft['notes'] }}
-                  >
-                    avg / peak
+                  <td className={`${stickyTd('notes')} ${avgBg} px-2 py-1 text-[8px] text-indigo-300 italic`} style={{ left: stickyLeft['notes'] }}>
+                    average
                   </td>
                 )}
-                {/* Σreps average in general section */}
                 {showCol('k') && (
-                  <td className={`${summaryBg} border-l border-gray-300 text-center font-mono font-medium text-[10px] text-indigo-700 px-1 py-1`}>
-                    {cycleTotals.k > 0 ? Math.round(cycleTotals.k / (macroWeeks.length || 1)) : ''}
+                  <td className={`${avgBg} border-l border-gray-300 text-center font-mono text-[10px] text-indigo-700 px-1 py-1`}>
+                    {avgK != null ? avgK : ''}
                   </td>
                 )}
                 {showCol('tonnage') && (
-                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
-                    {cycleTotals.tonnage > 0 ? (cycleTotals.tonnage / (macroWeeks.length || 1) / 1000).toFixed(1) : ''}
+                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
+                    {avgTonnage != null ? (avgTonnage / 1000).toFixed(1) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
-                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-500 px-1 py-1`}>
-                    {cycleAvgInt !== null ? cycleAvgInt : ''}
+                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-500 px-1 py-1`}>
+                    {avgIntTarget != null ? avgIntTarget : ''}
                   </td>
                 )}
                 {showCol('kvalue') && (
-                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
-                    {(() => {
-                      if (!competitionTotal || cycleTotals.tonnage === 0) return '';
-                      return (cycleTotals.tonnage / (macroWeeks.length || 1) / competitionTotal).toFixed(1);
-                    })()}
+                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
+                    {avgTonnage != null && competitionTotal ? (avgTonnage / competitionTotal).toFixed(1) : ''}
                   </td>
                 )}
-                {/* Per-exercise averages */}
                 {displayed.map((te, teIdx) => {
                   const exTargets = targets.filter(t => t.tracked_exercise_id === te.id);
-                  const weeksWithReps = exTargets.filter(t => (t.target_reps ?? 0) > 0);
-                  const totalReps = weeksWithReps.reduce((s, t) => s + (t.target_reps ?? 0), 0);
-                  const weekCount = weeksWithReps.length || 1;
-                  const avgReps = weeksWithReps.length > 0 ? Math.round(totalReps / weekCount) : 0;
-                  const peakTarget = exTargets.reduce<MacroTarget | undefined>((best, t) =>
-                    (t.target_max ?? 0) > (best?.target_max ?? 0) ? t : best, undefined);
-                  const totalAvgLoad = exTargets.reduce((s, t) => s + (t.target_avg ?? 0) * (t.target_reps ?? 0), 0);
-                  const avgAvg = totalReps > 0 ? Math.round(totalAvgLoad / totalReps) : 0;
-
+                  const wReps = exTargets.filter(t => (t.target_reps ?? 0) > 0);
+                  const wMax = exTargets.filter(t => (t.target_max ?? 0) > 0);
+                  const wAvg = exTargets.filter(t => (t.target_avg ?? 0) > 0);
+                  const avgReps = wReps.length > 0 ? Math.round(wReps.reduce((s, t) => s + (t.target_reps ?? 0), 0) / wReps.length) : null;
+                  const avgMax = wMax.length > 0 ? Math.round(wMax.reduce((s, t) => s + (t.target_max ?? 0), 0) / wMax.length) : null;
+                  const avgRepsAtMax = wMax.length > 0 ? Math.round(wMax.reduce((s, t) => s + (t.target_reps_at_max ?? 0), 0) / wMax.length) : null;
+                  const avgSetsAtMax = wMax.length > 0 ? Math.round(wMax.reduce((s, t) => s + (t.target_sets_at_max ?? 0), 0) / wMax.length) : null;
+                  const totalRepsForAvg = wAvg.reduce((s, t) => s + (t.target_reps ?? 0), 0);
+                  const avgAvg = totalRepsForAvg > 0
+                    ? Math.round(wAvg.reduce((s, t) => s + (t.target_avg ?? 0) * (t.target_reps ?? 0), 0) / totalRepsForAvg)
+                    : (wAvg.length > 0 ? Math.round(wAvg.reduce((s, t) => s + (t.target_avg ?? 0), 0) / wAvg.length) : null);
                   return (
                     <React.Fragment key={te.id}>
                       <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-indigo-600 px-1 py-1`}>
-                        {avgReps > 0 ? avgReps : ''}
+                        {avgReps != null ? avgReps : ''}
+                      </td>
+                      <td className="text-center px-0 py-1">
+                        <MacroGridCell load={avgMax} reps={avgRepsAtMax} sets={avgSetsAtMax} onUpdate={() => {}} disabled />
+                      </td>
+                      <td className="text-center font-mono text-[9px] text-indigo-500 px-1 py-1">
+                        {avgAvg != null ? avgAvg : ''}
+                      </td>
+                    </React.Fragment>
+                  );
+                })}
+                {onSwapWeeks && <td className={`${avgBg} w-5`} />}
+              </tr>
+            );
+
+            // ── Max / peak row ─────────────────────────────────────────────────────
+            const maxBg = 'bg-orange-50/60';
+            rows.push(
+              <tr key="max-row" className={`border-t border-gray-300 ${maxBg}`}>
+                {showCol('week') && (
+                  <td className={`${stickyTd('week')} text-center font-bold text-orange-500 text-[10px] px-1 py-1 ${maxBg}`} style={{ left: stickyLeft['week'] }}>
+                    ↑
+                  </td>
+                )}
+                {showCol('weektype') && (
+                  <td className={`${stickyTd('weektype')} ${maxBg} py-1`} style={{ left: stickyLeft['weektype'] }} />
+                )}
+                {showCol('notes') && (
+                  <td className={`${stickyTd('notes')} ${maxBg} px-2 py-1 text-[8px] text-orange-300 italic`} style={{ left: stickyLeft['notes'] }}>
+                    peak
+                  </td>
+                )}
+                {showCol('k') && (
+                  <td className={`${maxBg} border-l border-gray-300 text-center font-mono text-[10px] text-orange-600 px-1 py-1`}>
+                    {maxK != null ? maxK : ''}
+                  </td>
+                )}
+                {showCol('tonnage') && (
+                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-500 px-1 py-1`}>
+                    {maxTonnage != null ? (maxTonnage / 1000).toFixed(1) : ''}
+                  </td>
+                )}
+                {showCol('avg') && (
+                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-400 px-1 py-1`}>
+                    {maxIntTarget != null ? maxIntTarget : ''}
+                  </td>
+                )}
+                {showCol('kvalue') && (
+                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-500 px-1 py-1`}>
+                    {maxTonnage != null && competitionTotal ? (maxTonnage / competitionTotal).toFixed(1) : ''}
+                  </td>
+                )}
+                {displayed.map((te, teIdx) => {
+                  const exTargets = targets.filter(t => t.tracked_exercise_id === te.id);
+                  const maxReps = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_reps ?? 0)) : null;
+                  const peakTarget = exTargets.reduce<MacroTarget | undefined>((best, t) =>
+                    (t.target_max ?? 0) > (best?.target_max ?? 0) ? t : best, undefined);
+                  const maxAvg = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_avg ?? 0)) : null;
+                  return (
+                    <React.Fragment key={te.id}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-orange-500 px-1 py-1`}>
+                        {maxReps ? maxReps : ''}
                       </td>
                       <td className="text-center px-0 py-1">
                         <MacroGridCell
                           load={peakTarget?.target_max ?? null}
                           reps={peakTarget?.target_reps_at_max ?? null}
                           sets={peakTarget?.target_sets_at_max ?? null}
-                          onUpdate={() => {}}
-                          disabled
+                          onUpdate={() => {}} disabled
                         />
                       </td>
-                      <td className="text-center font-mono text-[9px] text-indigo-500 px-1 py-1">
-                        {avgAvg > 0 ? avgAvg : ''}
+                      <td className="text-center font-mono text-[9px] text-orange-400 px-1 py-1">
+                        {maxAvg ? maxAvg : ''}
                       </td>
                     </React.Fragment>
                   );
                 })}
-                {/* Empty drag handle cell in summary row */}
-                {onSwapWeeks && <td className={`${summaryBg} w-5`} />}
+                {onSwapWeeks && <td className={`${maxBg} w-5`} />}
               </tr>
             );
 

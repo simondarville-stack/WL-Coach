@@ -169,34 +169,76 @@ export function useMacroCycles() {
     const w2 = macroWeeks.find(w => w.id === weekId2);
     if (!w1 || !w2) return;
     try {
-      // 3-step sequential swap to avoid unique-constraint violations:
-      // Step 1 — move w1 out of the way with a temp value that can't conflict
-      const tempNum = -1;
-      const { error: e0 } = await supabase
-        .from('macro_weeks')
-        .update({ week_number: tempNum, week_start: '1970-01-01' })
-        .eq('id', w1.id);
-      if (e0) throw e0;
+      // Swap only CONTENT — general targets + exercise targets.
+      // week_number, week_start, week_type, week_type_text, notes all stay fixed.
 
-      // Step 2 — w2 takes w1's old slot
-      const { error: e1 } = await supabase
-        .from('macro_weeks')
-        .update({ week_number: w1.week_number, week_start: w1.week_start })
-        .eq('id', w2.id);
-      if (e1) throw e1;
+      // --- 1. Swap general week fields ---
+      const w1Updates = {
+        total_reps_target: w2.total_reps_target ?? null,
+        tonnage_target: (w2 as MacroWeek & { tonnage_target?: number | null }).tonnage_target ?? null,
+        avg_intensity_target: (w2 as MacroWeek & { avg_intensity_target?: number | null }).avg_intensity_target ?? null,
+      };
+      const w2Updates = {
+        total_reps_target: w1.total_reps_target ?? null,
+        tonnage_target: (w1 as MacroWeek & { tonnage_target?: number | null }).tonnage_target ?? null,
+        avg_intensity_target: (w1 as MacroWeek & { avg_intensity_target?: number | null }).avg_intensity_target ?? null,
+      };
+      const [{ error: ge1 }, { error: ge2 }] = await Promise.all([
+        supabase.from('macro_weeks').update(w1Updates).eq('id', weekId1),
+        supabase.from('macro_weeks').update(w2Updates).eq('id', weekId2),
+      ]);
+      if (ge1) throw ge1;
+      if (ge2) throw ge2;
 
-      // Step 3 — w1 takes w2's old slot
-      const { error: e2 } = await supabase
-        .from('macro_weeks')
-        .update({ week_number: w2.week_number, week_start: w2.week_start })
-        .eq('id', w1.id);
-      if (e2) throw e2;
+      // --- 2. Swap exercise targets ---
+      const targetFields = ['target_max', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
+      const weekTargets1 = targets.filter(t => t.macro_week_id === weekId1);
+      const weekTargets2 = targets.filter(t => t.macro_week_id === weekId2);
+      const allTeIds = new Set([
+        ...weekTargets1.map(t => t.tracked_exercise_id),
+        ...weekTargets2.map(t => t.tracked_exercise_id),
+      ]);
 
+      // Snapshot values BEFORE any writes
+      const swaps = Array.from(allTeIds).map(teId => {
+        const t1 = weekTargets1.find(t => t.tracked_exercise_id === teId);
+        const t2 = weekTargets2.find(t => t.tracked_exercise_id === teId);
+        const vals1 = Object.fromEntries(targetFields.map(f => [f, t1?.[f] ?? null]));
+        const vals2 = Object.fromEntries(targetFields.map(f => [f, t2?.[f] ?? null]));
+        return { teId, vals1, vals2, t1, t2 };
+      });
+
+      await Promise.all(swaps.flatMap(({ teId, vals1, vals2, t1, t2 }) => {
+        const writes: Promise<unknown>[] = [];
+        if (t1) writes.push(supabase.from('macro_targets').update(vals2).eq('id', t1.id));
+        if (t2) writes.push(supabase.from('macro_targets').update(vals1).eq('id', t2.id));
+        if (!t1 && t2) writes.push(supabase.from('macro_targets').upsert(
+          { macro_week_id: weekId1, tracked_exercise_id: teId, ...vals2 },
+          { onConflict: 'macro_week_id,tracked_exercise_id' },
+        ));
+        if (!t2 && t1) writes.push(supabase.from('macro_targets').upsert(
+          { macro_week_id: weekId2, tracked_exercise_id: teId, ...vals1 },
+          { onConflict: 'macro_week_id,tracked_exercise_id' },
+        ));
+        return writes;
+      }));
+
+      // Update week-level state
       setMacroWeeks(prev => prev.map(w => {
-        if (w.id === weekId1) return { ...w, week_number: w2.week_number, week_start: w2.week_start };
-        if (w.id === weekId2) return { ...w, week_number: w1.week_number, week_start: w1.week_start };
+        if (w.id === weekId1) return { ...w, ...w1Updates };
+        if (w.id === weekId2) return { ...w, ...w2Updates };
         return w;
       }));
+
+      // Re-fetch targets for both weeks to get accurate IDs for any inserted rows
+      const { data: fresh } = await supabase
+        .from('macro_targets').select('*').in('macro_week_id', [weekId1, weekId2]);
+      if (fresh) {
+        setTargets(prev => [
+          ...prev.filter(t => t.macro_week_id !== weekId1 && t.macro_week_id !== weekId2),
+          ...fresh,
+        ]);
+      }
     } catch (err) {
       setError(errMsg(err, 'Failed to swap weeks'));
       throw err;
