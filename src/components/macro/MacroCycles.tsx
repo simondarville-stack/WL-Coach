@@ -11,6 +11,7 @@ import { generateMacroWeeks } from '../../lib/weekUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
 import type { MacroTableColumnKey } from './MacroTableV2';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
+import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroSummaryBar } from './MacroSummaryBar';
@@ -45,6 +46,7 @@ export function MacroCycles() {
     deleteMacrocycle,
     fetchMacroWeeks,
     updateMacroWeek,
+    swapMacroWeeks,
     fetchTrackedExercises,
     addTrackedExercise,
     swapTrackedExercisePositions,
@@ -88,12 +90,25 @@ export function MacroCycles() {
   const [visibleColumns, setVisibleColumns] = useState<Set<MacroTableColumnKey>>(
     new Set(DEFAULT_MACRO_TABLE_COLUMNS)
   );
+  // General metric visibility in the chart
+  const [visibleGeneralMetrics, setVisibleGeneralMetrics] = useState<Set<GeneralMetricKey>>(
+    new Set<GeneralMetricKey>(['k', 'tonnage', 'avg'])
+  );
 
   const toggleExercise = (teId: string) => {
     setVisibleExercises(prev => {
       const next = new Set(prev);
       if (next.has(teId)) next.delete(teId);
       else next.add(teId);
+      return next;
+    });
+  };
+
+  const toggleGeneralMetric = (metric: GeneralMetricKey) => {
+    setVisibleGeneralMetrics(prev => {
+      const next = new Set(prev);
+      if (next.has(metric)) next.delete(metric);
+      else next.add(metric);
       return next;
     });
   };
@@ -263,6 +278,10 @@ export function MacroCycles() {
   const handleUpdateNotes = useCallback(async (weekId: string, notes: string) => {
     await updateMacroWeek(weekId, { notes });
   }, [updateMacroWeek]);
+
+  const handleSwapWeeks = useCallback(async (weekId1: string, weekId2: string) => {
+    await swapMacroWeeks(weekId1, weekId2);
+  }, [swapMacroWeeks]);
 
   const handleUpdateTonnageTarget = useCallback(async (weekId: string, value: string) => {
     const num = value.trim() === '' ? null : parseFloat(value);
@@ -738,6 +757,9 @@ export function MacroCycles() {
                 visible={visibleExercises}
                 onToggle={toggleExercise}
                 onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+                generalMetrics={['k', 'tonnage', 'avg']}
+                visibleMetrics={visibleGeneralMetrics}
+                onToggleMetric={toggleGeneralMetric}
               />
               {/* Reps toggle chip */}
               <button
@@ -774,6 +796,7 @@ export function MacroCycles() {
               onRemoveExercise={handleRemoveExercise}
               onPasteTargets={handlePasteTargets}
               onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
+              onSwapWeeks={handleSwapWeeks}
               visibleExercises={visibleExercises}
               visibleColumns={visibleColumns}
             />
@@ -792,6 +815,7 @@ export function MacroCycles() {
                 onDragTarget={handleDragTarget}
                 focusedExerciseId={focusedExerciseId}
                 visibleExercises={visibleExercises}
+                visibleGeneralMetrics={visibleGeneralMetrics}
                 showReps={showReps}
               />
             </div>

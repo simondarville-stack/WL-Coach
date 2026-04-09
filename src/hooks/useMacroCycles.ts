@@ -164,6 +164,27 @@ export function useMacroCycles() {
     }
   };
 
+  const swapMacroWeeks = async (weekId1: string, weekId2: string) => {
+    const w1 = macroWeeks.find(w => w.id === weekId1);
+    const w2 = macroWeeks.find(w => w.id === weekId2);
+    if (!w1 || !w2) return;
+    try {
+      const [{ error: e1 }, { error: e2 }] = await Promise.all([
+        supabase.from('macro_weeks').update({ week_number: w2.week_number, week_start: w2.week_start }).eq('id', w1.id),
+        supabase.from('macro_weeks').update({ week_number: w1.week_number, week_start: w1.week_start }).eq('id', w2.id),
+      ]);
+      if (e1 || e2) throw new Error('Swap failed');
+      setMacroWeeks(prev => prev.map(w => {
+        if (w.id === weekId1) return { ...w, week_number: w2.week_number, week_start: w2.week_start };
+        if (w.id === weekId2) return { ...w, week_number: w1.week_number, week_start: w1.week_start };
+        return w;
+      }));
+    } catch (err) {
+      setError(errMsg(err, 'Failed to swap weeks'));
+      throw err;
+    }
+  };
+
   const fetchTrackedExercises = async (macrocycleId: string) => {
     try {
       const { data, error } = await supabase
@@ -744,6 +765,7 @@ export function useMacroCycles() {
     deleteMacrocycle,
     fetchMacroWeeks,
     updateMacroWeek,
+    swapMacroWeeks,
     fetchTrackedExercises,
     addTrackedExercise,
     swapTrackedExercisePositions,

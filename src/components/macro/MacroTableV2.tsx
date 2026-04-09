@@ -36,6 +36,7 @@ interface MacroTableV2Props {
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
+  onSwapWeeks?: (weekId1: string, weekId2: string) => Promise<void>;
   visibleExercises?: Set<string>;
   visibleColumns?: Set<string>;
 }
@@ -61,9 +62,9 @@ function getWeekTypeColor(wt: string): string {
 
 const WEEK_TYPES: WeekType[] = ['High', 'Medium', 'Low', 'Deload', 'Taper', 'Competition', 'Vacation', 'Testing', 'Transition'];
 
-// Sticky column widths in px
-const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'k'];
-const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, weektype: 56, k: 36 };
+// Sticky column widths in px — Notes is sticky; K/Σreps is in the General section
+const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'notes'];
+const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, weektype: 56, notes: 100 };
 
 // ISO calendar week number from a date string
 function getISOWeek(dateStr: string): number {
@@ -104,6 +105,7 @@ export function MacroTableV2({
   onRemoveExercise,
   onPasteTargets,
   onExerciseDoubleClick,
+  onSwapWeeks,
   visibleExercises,
   visibleColumns,
 }: MacroTableV2Props) {
@@ -114,6 +116,8 @@ export function MacroTableV2({
   const [editingTonnageId, setEditingTonnageId] = useState<string | null>(null);
   const [editingAvgTargetId, setEditingAvgTargetId] = useState<string | null>(null);
   const [editingWeekTypeTextId, setEditingWeekTypeTextId] = useState<string | null>(null);
+  const [dragWeekId, setDragWeekId] = useState<string | null>(null);
+  const [dropWeekId, setDropWeekId] = useState<string | null>(null);
 
   const displayed = visibleExercises
     ? trackedExercises.filter(te => visibleExercises.has(te.id))
@@ -135,7 +139,7 @@ export function MacroTableV2({
   const lastStickyVisible = [...STICKY_COL_ORDER].reverse().find(c => showCol(c));
 
   const stickyColCount = STICKY_COL_ORDER.filter(c => showCol(c)).length;
-  const generalCols: MacroTableColumnKey[] = ['tonnage', 'avg', 'notes'];
+  const generalCols: MacroTableColumnKey[] = ['k', 'tonnage', 'avg'];
   const generalColCount = generalCols.filter(c => showCol(c)).length;
   const leftColCount = stickyColCount + generalColCount;
 
@@ -235,9 +239,9 @@ export function MacroTableV2({
     <div className="overflow-auto flex-1 border border-gray-200 rounded-lg">
       <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead className="sticky top-0 z-20">
-          {/* Top header row: "Week" section + exercise sections */}
+          {/* Top header row: "Week" section + General section + exercise sections */}
           <tr className="bg-gray-100 border-b border-gray-300">
-            {/* Sticky section header */}
+            {/* Sticky section header: Week + Type + Notes */}
             <th
               colSpan={stickyColCount || 1}
               className="sticky left-0 z-[10] bg-slate-100 px-2 py-1 text-left text-[10px] font-medium text-gray-600"
@@ -245,7 +249,7 @@ export function MacroTableV2({
             >
               Week
             </th>
-            {/* General section header — only if any general columns visible */}
+            {/* General section header: Σreps + Tonnage + Avg */}
             {generalColCount > 0 && (
               <th
                 colSpan={generalColCount}
@@ -297,6 +301,8 @@ export function MacroTableV2({
                 </div>
               </th>
             ))}
+            {/* Drag handle column header */}
+            {onSwapWeeks && <th className="bg-gray-100 w-5 px-0" />}
           </tr>
 
           {/* Sub-headers */}
@@ -307,17 +313,17 @@ export function MacroTableV2({
             {showCol('weektype') && (
               <th className={stickyTh('weektype')} style={{ width: 56, left: stickyLeft['weektype'] }}>Type</th>
             )}
+            {showCol('notes') && (
+              <th className={stickyTh('notes')} style={{ width: 100, left: stickyLeft['notes'] }}>Notes</th>
+            )}
             {showCol('k') && (
-              <th className={stickyTh('k')} style={{ width: 36, left: stickyLeft['k'] }}>Σreps</th>
+              <th className="bg-blue-50/60 border-l border-gray-300 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
             )}
             {showCol('tonnage') && (
-              <th className="bg-blue-50/60 border-l border-gray-300 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
+              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
             )}
             {showCol('avg') && (
               <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
-            )}
-            {showCol('notes') && (
-              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-left px-1" style={{ minWidth: 100 }}>Notes</th>
             )}
             {displayed.map((te, idx) => (
               <React.Fragment key={te.id}>
@@ -326,6 +332,7 @@ export function MacroTableV2({
                 <td className="text-[8px] text-gray-400 font-normal text-center px-1">Avg</td>
               </React.Fragment>
             ))}
+            {onSwapWeeks && <td className="w-5 px-0" />}
           </tr>
         </thead>
 
@@ -342,7 +349,7 @@ export function MacroTableV2({
                 rows.push(
                   <tr key={`phase-${phase.id}`} className="border-t-2 border-gray-300">
                     <td
-                      colSpan={leftColCount + displayed.length * 3}
+                      colSpan={leftColCount + displayed.length * 3 + (onSwapWeeks ? 1 : 0)}
                       className="sticky left-0 text-left px-2 py-1 text-[9px] font-medium tracking-wide"
                       style={{
                         backgroundColor: phase.color + '25',
@@ -376,9 +383,18 @@ export function MacroTableV2({
               rows.push(
                 <tr
                   key={week.id}
-                  className="transition-colors"
+                  className={`transition-colors ${dropWeekId === week.id && dragWeekId !== week.id ? 'outline outline-2 outline-blue-400 outline-offset-[-1px]' : ''}`}
                   style={phaseColor ? { backgroundColor: phaseColor + '0D' } : undefined}
-                  onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '26' : '#f9fafb'; }}
+                  draggable={!!onSwapWeeks}
+                  onDragStart={() => setDragWeekId(week.id)}
+                  onDragEnd={() => { setDragWeekId(null); setDropWeekId(null); }}
+                  onDragOver={e => { e.preventDefault(); setDropWeekId(week.id); }}
+                  onDragLeave={() => setDropWeekId(null)}
+                  onDrop={() => {
+                    if (dragWeekId && dragWeekId !== week.id) onSwapWeeks?.(dragWeekId, week.id);
+                    setDragWeekId(null); setDropWeekId(null);
+                  }}
+                  onMouseEnter={e => { if (dragWeekId) return; (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '26' : '#f9fafb'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '0D' : ''; }}
                 >
                   {showCol('week') && (
@@ -387,10 +403,9 @@ export function MacroTableV2({
                       style={{ width: 68, left: stickyLeft['week'] }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          W{getISOWeek(week.week_start)}
-                        </span>
-                        <span className="text-[8px] text-gray-400">
+                        <span className="text-[12px] font-bold text-gray-900 leading-none">{week.week_number}</span>
+                        <span className="text-[9px] font-medium text-gray-500 leading-none mt-0.5">W{getISOWeek(week.week_start)}</span>
+                        <span className="text-[7px] text-gray-400 leading-none mt-0.5">
                           {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}
                         </span>
                       </div>
@@ -448,16 +463,52 @@ export function MacroTableV2({
                     </td>
                   )}
 
+                  {/* Notes — now STICKY, part of Week section */}
+                  {showCol('notes') && (
+                    <td
+                      className={`${stickyTd('notes')} px-1 py-0 transition-colors ${deleteMode && week.notes ? 'bg-red-50' : ''}`}
+                      style={{ width: 100, left: stickyLeft['notes'] }}
+                    >
+                      {editingNotesId === week.id ? (
+                        <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            defaultValue={week.notes ?? ''}
+                            autoFocus
+                            className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
+                            onBlur={(e) => { onUpdateNotes(week.id, e.target.value); setEditingNotesId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') setEditingNotesId(null);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span
+                          className={`block truncate text-[10px] cursor-pointer transition-colors ${
+                            deleteMode && week.notes ? 'text-red-500 hover:text-red-700' : 'text-gray-500 hover:text-gray-800'
+                          }`}
+                          style={{ maxWidth: 96 }}
+                          onClick={() => {
+                            if (deleteMode && week.notes) onUpdateNotes(week.id, '');
+                            else setEditingNotesId(week.id);
+                          }}
+                          title={deleteMode ? 'Click to clear' : (week.notes ?? '')}
+                        >
+                          {week.notes || <span className="text-gray-300 italic text-[9px]">—</span>}
+                        </span>
+                      )}
+                    </td>
+                  )}
+
+                  {/* Σreps — now in General section */}
                   {showCol('k') && (
                     <td
-                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-red-50' : ''}`}
-                      style={{ width: 36, left: stickyLeft['k'] }}
+                      className={`bg-blue-50/10 border-l border-gray-300 text-center font-mono font-medium text-[10px] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-red-50' : ''}`}
+                      style={{ minWidth: 44 }}
                       onClick={() => {
-                        if (deleteMode && week.total_reps_target != null) {
-                          onUpdateTotalReps(week.id, '');
-                        } else {
-                          setEditingKWeekId(week.id);
-                        }
+                        if (deleteMode && week.total_reps_target != null) onUpdateTotalReps(week.id, '');
+                        else setEditingKWeekId(week.id);
                       }}
                       title="Click to set Σreps target"
                     >
@@ -467,7 +518,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.total_reps_target ?? ''}
                             autoFocus
-                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            className="w-[38px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
                             onBlur={(e) => { onUpdateTotalReps(week.id, e.target.value); setEditingKWeekId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -476,7 +527,7 @@ export function MacroTableV2({
                           />
                         </div>
                       ) : (
-                        <span className={deleteMode && week.total_reps_target != null ? 'text-red-500' : ''}>
+                        <span className={deleteMode && week.total_reps_target != null ? 'text-red-500' : 'text-gray-900'}>
                           {week.total_reps_target != null ? week.total_reps_target : <span className="text-gray-300 italic text-[8px]">—</span>}
                         </span>
                       )}
@@ -485,14 +536,11 @@ export function MacroTableV2({
 
                   {showCol('tonnage') && (
                     <td
-                      className={`bg-blue-50/10 border-l border-gray-200 text-center font-mono text-[10px] text-gray-700 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-red-50' : ''}`}
+                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-gray-700 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-red-50' : ''}`}
                       style={{ minWidth: 52 }}
                       onClick={() => {
-                        if (deleteMode && week.tonnage_target != null) {
-                          onUpdateTonnageTarget(week.id, '');
-                        } else {
-                          setEditingTonnageId(week.id);
-                        }
+                        if (deleteMode && week.tonnage_target != null) onUpdateTonnageTarget(week.id, '');
+                        else setEditingTonnageId(week.id);
                       }}
                       title="Click to set tonnage target"
                     >
@@ -525,11 +573,8 @@ export function MacroTableV2({
                       className={`bg-blue-50/10 text-center font-mono text-[10px] text-gray-500 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-red-50' : ''}`}
                       style={{ minWidth: 40 }}
                       onClick={() => {
-                        if (deleteMode && week.avg_intensity_target != null) {
-                          onUpdateAvgTarget(week.id, '');
-                        } else {
-                          setEditingAvgTargetId(week.id);
-                        }
+                        if (deleteMode && week.avg_intensity_target != null) onUpdateAvgTarget(week.id, '');
+                        else setEditingAvgTargetId(week.id);
                       }}
                       title="Click to set avg intensity target"
                     >
@@ -552,53 +597,6 @@ export function MacroTableV2({
                           {week.avg_intensity_target != null
                             ? week.avg_intensity_target
                             : <span className="text-gray-300 italic text-[8px]">—</span>}
-                        </span>
-                      )}
-                    </td>
-                  )}
-
-                  {showCol('notes') && (
-                    <td
-                      className={`bg-blue-50/10 px-1 py-0 transition-colors ${
-                        deleteMode && week.notes ? 'bg-red-50' : ''
-                      }`}
-                      style={{ minWidth: 100 }}
-                    >
-                      {editingNotesId === week.id ? (
-                        <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
-                          <input
-                            type="text"
-                            defaultValue={week.notes ?? ''}
-                            autoFocus
-                            className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
-                            onBlur={(e) => {
-                              onUpdateNotes(week.id, e.target.value);
-                              setEditingNotesId(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                              if (e.key === 'Escape') setEditingNotesId(null);
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <span
-                          className={`block truncate text-[10px] cursor-pointer transition-colors ${
-                            deleteMode && week.notes
-                              ? 'text-red-500 hover:text-red-700'
-                              : 'text-gray-500 hover:text-gray-800'
-                          }`}
-                          style={{ maxWidth: 120 }}
-                          onClick={() => {
-                            if (deleteMode && week.notes) {
-                              onUpdateNotes(week.id, '');
-                            } else {
-                              setEditingNotesId(week.id);
-                            }
-                          }}
-                          title={deleteMode ? 'Click to clear' : (week.notes ?? '')}
-                        >
-                          {week.notes || <span className="text-gray-300 italic text-[9px]">—</span>}
                         </span>
                       )}
                     </td>
@@ -714,16 +712,27 @@ export function MacroTableV2({
                       </React.Fragment>
                     );
                   })}
+
+                  {/* Drag handle — rightmost column */}
+                  {onSwapWeeks && (
+                    <td
+                      className="w-5 px-0 text-center text-gray-300 select-none cursor-grab active:cursor-grabbing"
+                      title="Drag to reorder weeks"
+                    >
+                      <span className="text-[10px]">⠿</span>
+                    </td>
+                  )}
                 </tr>
               );
             });
 
-            // Summary / average row — mirrors data row column structure exactly
+            // Summary / average row — distinct bg so it's clearly not a data week
+            const summaryBg = 'bg-indigo-50/50';
             rows.push(
-              <tr key="avg-row" className="border-t-2 border-gray-300 bg-gray-50">
+              <tr key="avg-row" className={`border-t-2 border-gray-400 ${summaryBg}`}>
                 {showCol('week') && (
                   <td
-                    className={`${stickyTd('week')} text-center font-medium text-gray-600 text-[10px] px-1 py-1 bg-gray-50`}
+                    className={`${stickyTd('week')} text-center font-medium text-indigo-600 text-[10px] px-1 py-1 ${summaryBg}`}
                     style={{ left: stickyLeft['week'] }}
                   >
                     Ø
@@ -731,30 +740,34 @@ export function MacroTableV2({
                 )}
                 {showCol('weektype') && (
                   <td
-                    className={`${stickyTd('weektype')} bg-gray-50 py-1`}
+                    className={`${stickyTd('weektype')} ${summaryBg} py-1`}
                     style={{ left: stickyLeft['weektype'] }}
                   />
                 )}
-                {showCol('k') && (
+                {/* Notes sticky — empty in summary */}
+                {showCol('notes') && (
                   <td
-                    className={`${stickyTd('k')} bg-gray-50 text-center font-mono font-medium text-[10px] text-gray-700 px-1 py-1`}
-                    style={{ left: stickyLeft['k'] }}
+                    className={`${stickyTd('notes')} ${summaryBg} px-1 py-1 text-[9px] text-indigo-300 italic`}
+                    style={{ left: stickyLeft['notes'] }}
                   >
+                    avg / peak
+                  </td>
+                )}
+                {/* Σreps average in general section */}
+                {showCol('k') && (
+                  <td className={`${summaryBg} border-l border-gray-300 text-center font-mono font-medium text-[10px] text-indigo-700 px-1 py-1`}>
                     {cycleTotals.k > 0 ? Math.round(cycleTotals.k / (macroWeeks.length || 1)) : ''}
                   </td>
                 )}
                 {showCol('tonnage') && (
-                  <td className="bg-blue-50/20 border-l border-gray-200 text-center font-mono text-[10px] text-gray-600 px-1 py-1">
+                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
                     {cycleTotals.tonnage > 0 ? (cycleTotals.tonnage / (macroWeeks.length || 1) / 1000).toFixed(1) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
-                  <td className="bg-blue-50/20 text-center font-mono text-[10px] text-gray-500 px-1 py-1">
+                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-500 px-1 py-1`}>
                     {cycleAvgInt !== null ? cycleAvgInt : ''}
                   </td>
-                )}
-                {showCol('notes') && (
-                  <td className="bg-blue-50/20 px-1 py-1" />
                 )}
                 {/* Per-exercise averages */}
                 {displayed.map((te, teIdx) => {
@@ -770,7 +783,7 @@ export function MacroTableV2({
 
                   return (
                     <React.Fragment key={te.id}>
-                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-gray-600 px-1 py-1`}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-indigo-600 px-1 py-1`}>
                         {avgReps > 0 ? avgReps : ''}
                       </td>
                       <td className="text-center px-0 py-1">
@@ -782,12 +795,14 @@ export function MacroTableV2({
                           disabled
                         />
                       </td>
-                      <td className="text-center font-mono text-[9px] text-gray-500 px-1 py-1">
+                      <td className="text-center font-mono text-[9px] text-indigo-500 px-1 py-1">
                         {avgAvg > 0 ? avgAvg : ''}
                       </td>
                     </React.Fragment>
                   );
                 })}
+                {/* Empty drag handle cell in summary row */}
+                {onSwapWeeks && <td className={`${summaryBg} w-5`} />}
               </tr>
             );
 

@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActuals, MacroActualsMap } from '../../hooks/useMacroCycles';
+import type { GeneralMetricKey } from './ExerciseToggleBar';
 
 export type ChartMetric = 'reps' | 'max' | 'avg';
 
@@ -50,6 +51,13 @@ interface DragState {
   heightPx: number;
 }
 
+// Colors for general metric lines
+const GENERAL_METRIC_LINE_COLORS: Record<GeneralMetricKey, string> = {
+  k: '#6366f1',
+  tonnage: '#f59e0b',
+  avg: '#10b981',
+};
+
 interface MacroDraggableChartProps {
   macroWeeks: MacroWeek[];
   trackedExercises: MacroTrackedExerciseWithExercise[];
@@ -61,6 +69,7 @@ interface MacroDraggableChartProps {
   linkedExerciseIds: Set<string>;
   onToggleLink: (trackedExId: string) => void;
   focusedExerciseId?: string | null;
+  visibleGeneralMetrics: Set<GeneralMetricKey>;
   showReps: boolean;
 }
 
@@ -78,6 +87,7 @@ export function MacroDraggableChart({
   linkedExerciseIds,
   onToggleLink,
   focusedExerciseId,
+  visibleGeneralMetrics,
   showReps,
 }: MacroDraggableChartProps) {
   const [dragOverrides, setDragOverrides] = useState<Record<string, number>>({});
@@ -174,6 +184,10 @@ export function MacroDraggableChart({
     const point: Record<string, number | string | null> = {
       weekNum: week.week_number,
       weekId: week.id,
+      // General metrics
+      g_k: week.total_reps_target ?? null,
+      g_tonnage: week.tonnage_target != null ? week.tonnage_target / 1000 : null,
+      g_avg: week.avg_intensity_target ?? null,
     };
     trackedExercises.forEach(te => {
       (['max', 'avg', 'reps'] as ChartMetric[]).forEach(metric => {
@@ -436,6 +450,56 @@ export function MacroDraggableChart({
                   isAnimationActive={false}
                 />
               ))
+            )}
+
+            {/* General metric lines — Avg intensity on kg axis, Σreps on reps axis, Tonnage on kg axis (in tonnes) */}
+            {visibleGeneralMetrics.has('avg') && (
+              <Line
+                yAxisId="kg"
+                type="monotone"
+                dataKey="g_avg"
+                name="Avg intensity target"
+                stroke={GENERAL_METRIC_LINE_COLORS.avg}
+                strokeWidth={1.5}
+                strokeDasharray="8 4"
+                strokeOpacity={0.8}
+                dot={{ r: 3, fill: GENERAL_METRIC_LINE_COLORS.avg, strokeWidth: 0 }}
+                activeDot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+            {visibleGeneralMetrics.has('k') && showReps && (
+              <Line
+                yAxisId="reps"
+                type="monotone"
+                dataKey="g_k"
+                name="Σreps target"
+                stroke={GENERAL_METRIC_LINE_COLORS.k}
+                strokeWidth={1.5}
+                strokeDasharray="8 4"
+                strokeOpacity={0.8}
+                dot={{ r: 3, fill: GENERAL_METRIC_LINE_COLORS.k, strokeWidth: 0 }}
+                activeDot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+            {visibleGeneralMetrics.has('tonnage') && (
+              <Line
+                yAxisId="kg"
+                type="monotone"
+                dataKey="g_tonnage"
+                name="Tonnage target (t)"
+                stroke={GENERAL_METRIC_LINE_COLORS.tonnage}
+                strokeWidth={1.5}
+                strokeDasharray="8 4"
+                strokeOpacity={0.8}
+                dot={{ r: 3, fill: GENERAL_METRIC_LINE_COLORS.tonnage, strokeWidth: 0 }}
+                activeDot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
             )}
           </ComposedChart>
         </ResponsiveContainer>
