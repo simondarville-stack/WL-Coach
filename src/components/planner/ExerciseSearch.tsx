@@ -21,6 +21,8 @@ interface ExerciseSearchProps {
   onAdd: (exercise: Exercise) => void;
   onSlashCommand?: (key: string) => void;
   placeholder?: string;
+  disableSlashCommands?: boolean;
+  dropUp?: boolean;
 }
 
 export function ExerciseSearch({
@@ -28,6 +30,8 @@ export function ExerciseSearch({
   onAdd,
   onSlashCommand,
   placeholder = 'Add exercise…',
+  disableSlashCommands = false,
+  dropUp = true,
 }: ExerciseSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -35,7 +39,7 @@ export function ExerciseSearch({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const isSlash = query.startsWith('/');
+  const isSlash = !disableSlashCommands && query.startsWith('/');
 
   const filteredCommands = isSlash
     ? SLASH_COMMANDS.filter(c => c.key.startsWith(query.toLowerCase()))
@@ -126,7 +130,7 @@ export function ExerciseSearch({
       </div>
 
       {open && hasResults && (
-        <div className="absolute bottom-full left-0 right-0 mb-0.5 bg-white border border-gray-200 rounded-lg shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto">
+        <div className={`absolute ${dropUp ? 'bottom-full mb-0.5' : 'top-full mt-0.5'} left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 overflow-hidden max-h-60 overflow-y-auto`}>
           {results.map((item, i) => {
             if (item.type === 'exercise' && item.exercise) {
               const ex = item.exercise;

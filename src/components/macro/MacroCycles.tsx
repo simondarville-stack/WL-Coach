@@ -1,14 +1,18 @@
 // TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil, Users } from 'lucide-react';
+import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
-import { MacroTable } from './MacroTable';
+import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
+import type { MacroTableColumnKey } from './MacroTableV2';
+import { ExerciseToggleBar } from './ExerciseToggleBar';
+import type { GeneralMetricKey } from './ExerciseToggleBar';
+import { useSettings } from '../../hooks/useSettings';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
@@ -18,11 +22,11 @@ import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
 import { supabase } from '../../lib/supabase';
 
-type ViewMode = 'table' | 'graph';
 
 export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
+  const { fetchSettingsSilent } = useSettings();
 
   const {
     macrocycles,
@@ -42,6 +46,7 @@ export function MacroCycles() {
     deleteMacrocycle,
     fetchMacroWeeks,
     updateMacroWeek,
+    swapMacroWeeks,
     fetchTrackedExercises,
     addTrackedExercise,
     swapTrackedExercisePositions,
@@ -62,7 +67,8 @@ export function MacroCycles() {
   } = useMacroCycles();
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [showChart, setShowChart] = useState(false);
+  const [showReps, setShowReps] = useState(true);
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -80,12 +86,29 @@ export function MacroCycles() {
 
   // Shared exercise visibility state (lifted here so table and graph share the same state)
   const [visibleExercises, setVisibleExercises] = useState<Set<string>>(new Set());
+  // Macro table column visibility — loaded from settings
+  const [visibleColumns, setVisibleColumns] = useState<Set<MacroTableColumnKey>>(
+    new Set(DEFAULT_MACRO_TABLE_COLUMNS)
+  );
+  // General metric visibility in the chart
+  const [visibleGeneralMetrics, setVisibleGeneralMetrics] = useState<Set<GeneralMetricKey>>(
+    new Set<GeneralMetricKey>(['k', 'tonnage', 'avg'])
+  );
 
   const toggleExercise = (teId: string) => {
     setVisibleExercises(prev => {
       const next = new Set(prev);
       if (next.has(teId)) next.delete(teId);
       else next.add(teId);
+      return next;
+    });
+  };
+
+  const toggleGeneralMetric = (metric: GeneralMetricKey) => {
+    setVisibleGeneralMetrics(prev => {
+      const next = new Set(prev);
+      if (next.has(metric)) next.delete(metric);
+      else next.add(metric);
       return next;
     });
   };
@@ -99,8 +122,16 @@ export function MacroCycles() {
 
   const isGroupMode = macroTarget?.type === 'group';
 
-  // Load exercises on mount
+  // Load exercises on mount + settings for column visibility
   useEffect(() => { fetchExercisesByName(); }, []);
+
+  useEffect(() => {
+    fetchSettingsSilent().then(s => {
+      if (s?.macro_table_columns && s.macro_table_columns.length > 0) {
+        setVisibleColumns(new Set(s.macro_table_columns as MacroTableColumnKey[]));
+      }
+    });
+  }, []);
 
   // Load group members when in group mode
   useEffect(() => {
@@ -246,6 +277,22 @@ export function MacroCycles() {
 
   const handleUpdateNotes = useCallback(async (weekId: string, notes: string) => {
     await updateMacroWeek(weekId, { notes });
+  }, [updateMacroWeek]);
+
+  const handleSwapWeeks = useCallback(async (weekId1: string, weekId2: string) => {
+    await swapMacroWeeks(weekId1, weekId2);
+  }, [swapMacroWeeks]);
+
+  const handleUpdateTonnageTarget = useCallback(async (weekId: string, value: string) => {
+    const num = value.trim() === '' ? null : parseFloat(value);
+    if (num !== null && isNaN(num)) return;
+    await updateMacroWeek(weekId, { tonnage_target: num });
+  }, [updateMacroWeek]);
+
+  const handleUpdateAvgTarget = useCallback(async (weekId: string, value: string) => {
+    const num = value.trim() === '' ? null : parseFloat(value);
+    if (num !== null && isNaN(num)) return;
+    await updateMacroWeek(weekId, { avg_intensity_target: num });
   }, [updateMacroWeek]);
 
   // ─── Update target ────────────────────────────────────────────────────────────
@@ -497,25 +544,15 @@ export function MacroCycles() {
 
         {selectedCycle && (
           <>
-            {/* View toggle */}
-            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Table2 size={13} /> Table
-              </button>
-              <button
-                onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'graph' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <BarChart3 size={13} /> Chart
-              </button>
-            </div>
+            {/* Chart toggle */}
+            <button
+              onClick={() => setShowChart(v => !v)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors ${
+                showChart ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <BarChart3 size={13} /> Chart
+            </button>
 
             {/* Individual view dropdown (group mode only) */}
             {isGroupMode && groupMembers.length > 0 && (
@@ -616,42 +653,140 @@ export function MacroCycles() {
         )}
       </div>
 
-      {/* Cycle info bar: date range, phases, competitions */}
+      {/* Cycle info + proportional phase bar */}
       {selectedCycle && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex-wrap text-xs text-gray-600">
-          <span className="font-medium text-gray-800">{selectedCycle.name}</span>
-          <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
-          <span className="text-gray-400">{macroWeeks.length} weeks</span>
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          {/* Meta row */}
+          <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
+            <span className="font-medium text-gray-800">{selectedCycle.name}</span>
+            <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
+            <span className="text-gray-400">{macroWeeks.length} weeks</span>
+            {isGroupMode && selectedGroup && (
+              <span className="flex items-center gap-1 text-purple-600 font-medium">
+                <Users size={11} />
+                {selectedGroup.name}
+                {groupMembers.length > 0 && (
+                  <span className="text-gray-400 font-normal ml-1">
+                    ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
+                  </span>
+                )}
+              </span>
+            )}
+            {competitions.map(comp => (
+              <MacroCompetitionBadge key={comp.id} competition={comp} />
+            ))}
+          </div>
 
-          {/* Group info */}
-          {isGroupMode && selectedGroup && (
-            <span className="flex items-center gap-1 text-purple-600 font-medium">
-              <Users size={11} />
-              {selectedGroup.name}
-              {groupMembers.length > 0 && (
-                <span className="text-gray-400 font-normal ml-1">
-                  ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
-                </span>
-              )}
-            </span>
-          )}
+          {/* Detailed phase timeline */}
+          {macroWeeks.length > 0 && (() => {
+            const total = macroWeeks.length;
+            const colPct = 100 / total;
 
-          {/* Phase badges */}
-          {phases.map(phase => (
-            <button
-              key={phase.id}
-              onClick={() => { setEditingPhase(phase); setShowPhaseModal(true); }}
-              className="px-2 py-0.5 rounded text-[10px] font-medium border hover:opacity-80"
-              style={{ backgroundColor: phase.color, borderColor: phase.color }}
-            >
-              {phase.name} (Wk {phase.start_week_number}–{phase.end_week_number})
-            </button>
-          ))}
+            // ISO week helper
+            const isoWeek = (dateStr: string) => {
+              const d = new Date(dateStr);
+              const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+              const day = dt.getUTCDay() || 7;
+              dt.setUTCDate(dt.getUTCDate() + 4 - day);
+              const y0 = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+              return Math.ceil((((dt.getTime() - y0.getTime()) / 86400000) + 1) / 7);
+            };
+            const fmtMD = (dateStr: string) => {
+              const d = new Date(dateStr);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            };
+            const addDays = (dateStr: string, days: number) => {
+              const d = new Date(dateStr);
+              d.setDate(d.getDate() + days);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            };
 
-          {/* Competition badges */}
-          {competitions.map(comp => (
-            <MacroCompetitionBadge key={comp.id} competition={comp} />
-          ))}
+            // Month groups
+            type MonthGroup = { label: string; spanWeeks: number };
+            const monthGroups: MonthGroup[] = [];
+            macroWeeks.forEach(w => {
+              const d = new Date(w.week_start);
+              const label = d.toLocaleString('default', { month: 'short' }) + ' ' + String(d.getFullYear()).slice(2);
+              if (!monthGroups.length || monthGroups[monthGroups.length - 1].label !== label) {
+                monthGroups.push({ label, spanWeeks: 1 });
+              } else {
+                monthGroups[monthGroups.length - 1].spanWeeks++;
+              }
+            });
+
+            // Phase segments
+            const sorted = [...phases].sort((a, b) => a.start_week_number - b.start_week_number);
+            type Seg = { type: 'phase'; phase: typeof phases[0]; startIdx: number; endIdx: number }
+                     | { type: 'gap'; startIdx: number; endIdx: number };
+            const segs: Seg[] = [];
+            let cur = 1;
+            for (const p of sorted) {
+              if (p.start_week_number > cur) segs.push({ type: 'gap', startIdx: cur - 1, endIdx: p.start_week_number - 2 });
+              segs.push({ type: 'phase', phase: p, startIdx: p.start_week_number - 1, endIdx: p.end_week_number - 1 });
+              cur = p.end_week_number + 1;
+            }
+            if (cur <= total) segs.push({ type: 'gap', startIdx: cur - 1, endIdx: total - 1 });
+
+            return (
+              <div className="w-full border-t border-gray-200 overflow-hidden select-none">
+                {/* Month row */}
+                <div className="flex w-full bg-white border-b border-gray-200" style={{ height: 18 }}>
+                  {monthGroups.map((mg, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center border-r border-gray-300 px-1 overflow-hidden flex-shrink-0"
+                      style={{ width: `${mg.spanWeeks * colPct}%` }}
+                    >
+                      <span className="text-[8px] font-semibold text-gray-500 truncate">{mg.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Phase band + week dividers */}
+                <div className="relative w-full flex" style={{ height: 22 }}>
+                  {segs.map((seg, i) => {
+                    const weeks = seg.endIdx - seg.startIdx + 1;
+                    const w = `${weeks * colPct}%`;
+                    if (seg.type === 'phase') {
+                      return (
+                        <button
+                          key={seg.phase.id}
+                          onClick={() => { setEditingPhase(seg.phase); setShowPhaseModal(true); }}
+                          className="relative flex items-center justify-center text-[10px] font-semibold hover:brightness-95 transition-all overflow-hidden flex-shrink-0"
+                          style={{ width: w, backgroundColor: seg.phase.color }}
+                          title={`${seg.phase.name} · Wk ${seg.phase.start_week_number}–${seg.phase.end_week_number}`}
+                        >
+                          <span className="truncate px-1 text-white/90">{seg.phase.name}</span>
+                        </button>
+                      );
+                    }
+                    return <div key={`gap-${i}`} className="bg-gray-200 flex-shrink-0" style={{ width: w }} />;
+                  })}
+                  {/* Week divider lines overlay */}
+                  <div className="absolute inset-0 flex pointer-events-none">
+                    {macroWeeks.map(w => (
+                      <div key={w.id} className="border-r border-white/25 h-full flex-shrink-0" style={{ width: `${colPct}%` }} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Week label row */}
+                <div className="flex w-full bg-white border-t border-gray-200">
+                  {macroWeeks.map(w => (
+                    <div
+                      key={w.id}
+                      className="flex flex-col items-center justify-center border-r border-gray-100 py-0.5 overflow-hidden flex-shrink-0"
+                      style={{ width: `${colPct}%` }}
+                    >
+                      <span className="text-[9px] font-bold text-gray-700 leading-none">{w.week_number}</span>
+                      <span className="text-[7px] text-gray-400 leading-none mt-px">W{isoWeek(w.week_start)}</span>
+                      <span className="text-[7px] text-gray-300 leading-none mt-px">{fmtMD(w.week_start)}–{addDays(w.week_start, 6)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -682,42 +817,80 @@ export function MacroCycles() {
           <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
           Loading…
         </div>
-      ) : viewMode === 'table' ? (
-        <MacroTable
-          macroWeeks={macroWeeks}
-          trackedExercises={trackedExercises}
-          targets={targets}
-          phases={phases}
-          actuals={displayedActuals}
-          onUpdateTarget={handleUpdateTarget}
-          onUpdateWeekType={handleUpdateWeekType}
-          onUpdateWeekLabel={handleUpdateWeekLabel}
-          onUpdateTotalReps={handleUpdateTotalReps}
-          onUpdateNotes={handleUpdateNotes}
-          onMoveExerciseLeft={handleMoveExerciseLeft}
-          onMoveExerciseRight={handleMoveExerciseRight}
-          onRemoveExercise={handleRemoveExercise}
-          onPasteTargets={handlePasteTargets}
-          onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
-          visibleExercises={visibleExercises}
-          onToggleExercise={toggleExercise}
-          onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-        />
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <MacroGraphView
-            macroWeeks={macroWeeks}
-            trackedExercises={trackedExercises}
-            targets={targets}
-            phases={phases}
-            competitions={competitions}
-            actuals={displayedActuals}
-            onDragTarget={handleDragTarget}
-            focusedExerciseId={focusedExerciseId}
-            visibleExercises={visibleExercises}
-            onToggleExercise={toggleExercise}
-            onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-          />
+          {/* Toggle bar: exercises + Reps chip */}
+          {trackedExercises.length > 0 && (
+            <div className="px-3 pt-2 pb-1 flex-shrink-0 flex items-center gap-2 flex-wrap border-b border-gray-100">
+              <ExerciseToggleBar
+                exercises={trackedExercises}
+                visible={visibleExercises}
+                onToggle={toggleExercise}
+                onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+                generalMetrics={['k', 'tonnage', 'avg']}
+                visibleMetrics={visibleGeneralMetrics}
+                onToggleMetric={toggleGeneralMetric}
+              />
+              {/* Reps toggle chip */}
+              <button
+                onClick={() => setShowReps(v => !v)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors flex-shrink-0 ${
+                  showReps
+                    ? 'bg-gray-700 border-gray-700 text-white'
+                    : 'bg-white border-gray-300 text-gray-400 line-through'
+                }`}
+                title="Toggle reps bar in chart"
+              >
+                Reps
+              </button>
+            </div>
+          )}
+
+          {/* Table — always visible */}
+          <div className="px-4 pt-3 pb-2">
+            <MacroTableV2
+              macroWeeks={macroWeeks}
+              trackedExercises={trackedExercises}
+              targets={targets}
+              phases={phases}
+              actuals={displayedActuals}
+              onUpdateTarget={handleUpdateTarget}
+              onUpdateWeekType={handleUpdateWeekType}
+              onUpdateWeekLabel={handleUpdateWeekLabel}
+              onUpdateTotalReps={handleUpdateTotalReps}
+              onUpdateTonnageTarget={handleUpdateTonnageTarget}
+              onUpdateAvgTarget={handleUpdateAvgTarget}
+              onUpdateNotes={handleUpdateNotes}
+              onMoveExerciseLeft={handleMoveExerciseLeft}
+              onMoveExerciseRight={handleMoveExerciseRight}
+              onRemoveExercise={handleRemoveExercise}
+              onPasteTargets={handlePasteTargets}
+              onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
+              onSwapWeeks={handleSwapWeeks}
+              competitionTotal={selectedAthlete?.competition_total ?? null}
+              visibleExercises={visibleExercises}
+              visibleColumns={visibleColumns}
+            />
+          </div>
+
+          {/* Chart — shown below table when toggled */}
+          {showChart && (
+            <div className="px-4 pb-4 pt-2">
+              <MacroGraphView
+                macroWeeks={macroWeeks}
+                trackedExercises={trackedExercises}
+                targets={targets}
+                phases={phases}
+                competitions={competitions}
+                actuals={displayedActuals}
+                onDragTarget={handleDragTarget}
+                focusedExerciseId={focusedExerciseId}
+                visibleExercises={visibleExercises}
+                visibleGeneralMetrics={visibleGeneralMetrics}
+                showReps={showReps}
+              />
+            </div>
+          )}
         </div>
       )}
 

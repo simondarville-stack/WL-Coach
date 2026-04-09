@@ -1,36 +1,9 @@
-import React from 'react';
-import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
+import React, { useState } from 'react';
+import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { formatDateShort } from '../../lib/dateUtils';
 import { MacroWeekNotes } from './MacroWeekNotes';
-
-const WEEK_TYPES: WeekType[] = ['High', 'Medium', 'Low', 'Deload', 'Taper', 'Competition', 'Transition', 'Testing', 'Vacation'];
-
-const WEEK_TYPE_BG: Record<WeekType, string> = {
-  High: 'bg-orange-50',
-  Medium: 'bg-white',
-  Low: 'bg-blue-50',
-  Deload: 'bg-green-50',
-  Taper: 'bg-yellow-50',
-  Competition: 'bg-red-50',
-  Transition: 'bg-gray-50',
-  Testing: 'bg-purple-50',
-  Vacation: 'bg-gray-100',
-};
-
-// Slightly darker shade of the same family — used for the sticky info columns
-// so they're visually distinct from the exercise columns
-const WEEK_TYPE_INFO_BG: Record<WeekType, string> = {
-  High: 'bg-orange-100',
-  Medium: 'bg-gray-100',
-  Low: 'bg-blue-100',
-  Deload: 'bg-green-100',
-  Taper: 'bg-yellow-100',
-  Competition: 'bg-red-100',
-  Transition: 'bg-gray-100',
-  Testing: 'bg-purple-100',
-  Vacation: 'bg-gray-200',
-};
+import { getWeekTypeColor } from '../../lib/weekUtils';
 
 function getCellColor(actual: number, target: number | null): string {
   if (target === null || target === 0) return '';
@@ -48,9 +21,10 @@ interface MacroPhaseBlockProps {
   targets: MacroTarget[];
   actuals: MacroActualsMap;
   localValues: Record<string, string>;
+  weekTypes: WeekTypeConfig[];
   onLocalChange: (key: string, value: string) => void;
   onUpdateTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: string) => Promise<void>;
-  onUpdateWeekType: (weekId: string, weekType: WeekType) => Promise<void>;
+  onUpdateWeekType: (weekId: string, weekType: string) => Promise<void>;
   onUpdateWeekLabel: (weekId: string, label: string) => Promise<void>;
   onUpdateTotalReps: (weekId: string, value: string) => Promise<void>;
   onUpdateNotes: (weekId: string, notes: string) => Promise<void>;
@@ -72,6 +46,7 @@ export function MacroPhaseBlock({
   targets,
   actuals,
   localValues,
+  weekTypes,
   onLocalChange,
   onUpdateTarget,
   onUpdateWeekType,
@@ -82,8 +57,18 @@ export function MacroPhaseBlock({
   onPasteWeek,
   copiedWeekId,
 }: MacroPhaseBlockProps) {
+  const [openDropdownWeekId, setOpenDropdownWeekId] = useState<string | null>(null);
+
   const getTarget = (weekId: string, trackedExId: string) =>
     targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === trackedExId);
+
+  function cycleWeekType(weekId: string, current: string, direction: 1 | -1) {
+    if (weekTypes.length === 0) return;
+    const idx = weekTypes.findIndex(t => t.abbreviation === current);
+    const next = weekTypes[((idx + direction) % weekTypes.length + weekTypes.length) % weekTypes.length];
+    void onUpdateWeekType(weekId, next.abbreviation);
+    void onUpdateWeekLabel(weekId, next.name);
+  }
 
   // Phase summary
   const phaseTargetReps = weeks.reduce((s, w) => s + (w.total_reps_target || 0), 0);
@@ -124,33 +109,74 @@ export function MacroPhaseBlock({
 
       {/* Week rows */}
       {weeks.map(week => {
-        const rowBg = WEEK_TYPE_BG[week.week_type] || 'bg-white';
-        const infoBg = WEEK_TYPE_INFO_BG[week.week_type] || 'bg-gray-100';
+        const weekColor = getWeekTypeColor(week.week_type, weekTypes);
+        const rowStyle = { backgroundColor: weekColor + '1a' };
+        const infoStyle = { backgroundColor: weekColor + '33' };
         const weekActuals = actuals[week.id] || {};
         const isCopied = copiedWeekId === week.id;
 
         return (
-          <tr key={week.id} className={`border-b border-gray-200 ${rowBg} hover:brightness-95 transition-all`}>
+          <tr key={week.id} className="border-b border-gray-200 hover:brightness-95 transition-all" style={rowStyle}>
             {/* Wk */}
-            <td className={`sticky left-0 z-[3] ${infoBg} px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300`} style={{ width: 36, minWidth: 36 }}>
+            <td className="sticky left-0 z-[3] px-2 py-0.5 text-center text-xs font-medium text-gray-900 border-r border-gray-300" style={{ width: 36, minWidth: 36, ...infoStyle }}>
               {week.week_number}
             </td>
 
             {/* Date */}
-            <td className={`sticky left-[36px] z-[3] ${infoBg} px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300`} style={{ width: 50, minWidth: 50 }}>
+            <td className="sticky left-[36px] z-[3] px-2 py-0.5 text-center text-xs text-gray-700 border-r border-gray-300" style={{ width: 50, minWidth: 50, ...infoStyle }}>
               {formatDateShort(week.week_start)}
             </td>
 
             {/* Type */}
-            <td className={`sticky left-[86px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-300`} style={{ width: 100, minWidth: 100 }}>
-              <div className="flex flex-col gap-0.5">
-                <select
-                  value={week.week_type}
-                  onChange={e => onUpdateWeekType(week.id, e.target.value as WeekType)}
-                  className="w-full px-1 py-0.5 text-[10px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 bg-transparent"
+            <td className="sticky left-[86px] z-[3] px-1 py-0.5 border-r border-gray-300" style={{ width: 100, minWidth: 100, ...infoStyle }}>
+              <div className="flex flex-col gap-0.5 relative">
+                {/* Cycling badge */}
+                <button
+                  onClick={e => {
+                    if (e.ctrlKey || e.metaKey) {
+                      setOpenDropdownWeekId(prev => prev === week.id ? null : week.id);
+                    } else {
+                      cycleWeekType(week.id, week.week_type, 1);
+                    }
+                  }}
+                  onContextMenu={e => {
+                    e.preventDefault();
+                    cycleWeekType(week.id, week.week_type, -1);
+                  }}
+                  title="Click to cycle · Right-click to go back · Ctrl+click for list"
+                  className="w-full px-1.5 py-0.5 text-[10px] font-medium rounded text-left select-none"
+                  style={{
+                    backgroundColor: weekColor + '33',
+                    color: weekColor,
+                    border: `1px solid ${weekColor}55`,
+                  }}
                 >
-                  {WEEK_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                  {weekTypes.find(t => t.abbreviation === week.week_type)?.name ?? (week.week_type || '—')}
+                </button>
+
+                {/* Dropdown for Ctrl+click */}
+                {openDropdownWeekId === week.id && (
+                  <div
+                    className="absolute top-full left-0 z-30 mt-0.5 bg-white border border-gray-200 rounded shadow-lg min-w-[90px]"
+                    onMouseLeave={() => setOpenDropdownWeekId(null)}
+                  >
+                    {weekTypes.map(t => (
+                      <button
+                        key={t.abbreviation}
+                        onClick={() => {
+                          void onUpdateWeekType(week.id, t.abbreviation);
+                          void onUpdateWeekLabel(week.id, t.name);
+                          setOpenDropdownWeekId(null);
+                        }}
+                        className="w-full text-left px-2 py-1 text-[10px] hover:bg-gray-50 flex items-center gap-1.5"
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <input
                   type="text"
                   value={getLocalOrDb(localValues, `${week.id}_label`, week.week_type_text)}
@@ -163,7 +189,7 @@ export function MacroPhaseBlock({
             </td>
 
             {/* Σ Reps */}
-            <td className={`sticky left-[186px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-400`} style={{ width: 52, minWidth: 52 }}>
+            <td className="sticky left-[186px] z-[3] px-1 py-0.5 border-r border-gray-400" style={{ width: 52, minWidth: 52, ...infoStyle }}>
               <input
                 type="text"
                 value={getLocalOrDb(localValues, `${week.id}_total_reps`, week.total_reps_target)}
@@ -175,7 +201,7 @@ export function MacroPhaseBlock({
             </td>
 
             {/* Notes — inline visible */}
-            <td className={`sticky left-[238px] z-[3] ${infoBg} px-1 py-0.5 border-r border-gray-300`} style={{ width: 150, minWidth: 150, maxWidth: 150 }}>
+            <td className="sticky left-[238px] z-[3] px-1 py-0.5 border-r border-gray-300" style={{ width: 150, minWidth: 150, maxWidth: 150, ...infoStyle }}>
               <MacroWeekNotes weekId={week.id} notes={week.notes} onSave={onUpdateNotes} />
             </td>
 

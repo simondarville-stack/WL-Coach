@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
+import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroPhaseBlock } from './MacroPhaseBlock';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
@@ -12,7 +12,8 @@ interface MacroTableProps {
   phases: MacroPhase[];
   actuals: MacroActualsMap;
   onUpdateTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: string) => Promise<void>;
-  onUpdateWeekType: (weekId: string, weekType: WeekType) => Promise<void>;
+  weekTypes: WeekTypeConfig[];
+  onUpdateWeekType: (weekId: string, weekType: string) => Promise<void>;
   onUpdateWeekLabel: (weekId: string, label: string) => Promise<void>;
   onUpdateTotalReps: (weekId: string, value: string) => Promise<void>;
   onUpdateNotes: (weekId: string, notes: string) => Promise<void>;
@@ -33,6 +34,7 @@ export function MacroTable({
   targets,
   phases,
   actuals,
+  weekTypes,
   onUpdateTarget,
   onUpdateWeekType,
   onUpdateWeekLabel,
@@ -295,6 +297,7 @@ export function MacroTable({
                 targets={targets}
                 actuals={actuals}
                 localValues={localValues}
+                weekTypes={weekTypes}
                 onLocalChange={handleLocalChange}
                 onUpdateTarget={handleUpdateTarget}
                 onUpdateWeekType={onUpdateWeekType}
