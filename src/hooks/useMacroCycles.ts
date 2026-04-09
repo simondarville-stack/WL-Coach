@@ -247,6 +247,7 @@ export function useMacroCycles() {
   ): Promise<MacroTarget | null> => {
     try {
       if (existingTarget) {
+        // Row is known — simple UPDATE
         const { error } = await supabase
           .from('macro_targets')
           .update({ [field]: numValue })
@@ -255,13 +256,22 @@ export function useMacroCycles() {
         setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
         return { ...existingTarget, [field]: numValue };
       } else {
+        // Row may not exist yet — use true DB upsert so concurrent calls don't conflict
         const { data, error } = await supabase
           .from('macro_targets')
-          .insert({ macro_week_id: weekId, tracked_exercise_id: trackedExId, [field]: numValue })
+          .upsert(
+            { macro_week_id: weekId, tracked_exercise_id: trackedExId, [field]: numValue },
+            { onConflict: 'macro_week_id,tracked_exercise_id' },
+          )
           .select()
           .single();
         if (error) throw error;
-        setTargets(prev => [...prev, data]);
+        setTargets(prev => {
+          const exists = prev.find(t => t.id === data.id);
+          return exists
+            ? prev.map(t => t.id === data.id ? data : t)
+            : [...prev, data];
+        });
         return data;
       }
     } catch (err) {

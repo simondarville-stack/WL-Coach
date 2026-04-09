@@ -557,12 +557,13 @@ export function MacroCycles() {
             {/* Add exercise */}
             {showAddExercise ? (
               <div className="flex items-center gap-1" style={{ minWidth: 220 }}>
-                <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
+                <div className="flex-1 border border-gray-300 rounded-lg">
                   <ExerciseSearch
                     exercises={availableExercises}
                     onAdd={ex => void handleAddExercise(ex)}
                     placeholder="Search exercise…"
                     disableSlashCommands
+                    dropUp={false}
                   />
                 </div>
                 <button
@@ -690,8 +691,8 @@ export function MacroCycles() {
         </div>
       ) : (
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Exercise toggle bar — above both table and graph */}
-          {trackedExercises.length > 0 && (
+          {/* Exercise toggle bar — table mode only; graph mode has its own */}
+          {viewMode === 'table' && trackedExercises.length > 0 && (
             <div className="px-3 pt-2 pb-1 flex-shrink-0 border-b border-gray-100">
               <ExerciseToggleBar
                 exercises={trackedExercises}
