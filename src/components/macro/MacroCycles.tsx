@@ -1,7 +1,7 @@
 // TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, Table2, ChevronDown, Pencil, Users } from 'lucide-react';
+import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
@@ -19,7 +19,6 @@ import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
 import { supabase } from '../../lib/supabase';
 
-type ViewMode = 'table' | 'graph' | 'both';
 
 export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
@@ -63,7 +62,8 @@ export function MacroCycles() {
   } = useMacroCycles();
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('both');
+  const [showChart, setShowChart] = useState(false);
+  const [showReps, setShowReps] = useState(true);
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -498,33 +498,15 @@ export function MacroCycles() {
 
         {selectedCycle && (
           <>
-            {/* View toggle */}
-            <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Table2 size={13} /> Table
-              </button>
-              <button
-                onClick={() => setViewMode('graph')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'graph' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <BarChart3 size={13} /> Chart
-              </button>
-              <button
-                onClick={() => setViewMode('both')}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'both' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                Both
-              </button>
-            </div>
+            {/* Chart toggle */}
+            <button
+              onClick={() => setShowChart(v => !v)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors ${
+                showChart ? 'bg-blue-600 text-white border-blue-600' : 'text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <BarChart3 size={13} /> Chart
+            </button>
 
             {/* Individual view dropdown (group mode only) */}
             {isGroupMode && groupMembers.length > 0 && (
@@ -625,42 +607,70 @@ export function MacroCycles() {
         )}
       </div>
 
-      {/* Cycle info bar: date range, phases, competitions */}
+      {/* Cycle info + proportional phase bar */}
       {selectedCycle && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex-wrap text-xs text-gray-600">
-          <span className="font-medium text-gray-800">{selectedCycle.name}</span>
-          <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
-          <span className="text-gray-400">{macroWeeks.length} weeks</span>
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          {/* Meta row */}
+          <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
+            <span className="font-medium text-gray-800">{selectedCycle.name}</span>
+            <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
+            <span className="text-gray-400">{macroWeeks.length} weeks</span>
+            {isGroupMode && selectedGroup && (
+              <span className="flex items-center gap-1 text-purple-600 font-medium">
+                <Users size={11} />
+                {selectedGroup.name}
+                {groupMembers.length > 0 && (
+                  <span className="text-gray-400 font-normal ml-1">
+                    ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
+                  </span>
+                )}
+              </span>
+            )}
+            {competitions.map(comp => (
+              <MacroCompetitionBadge key={comp.id} competition={comp} />
+            ))}
+          </div>
 
-          {/* Group info */}
-          {isGroupMode && selectedGroup && (
-            <span className="flex items-center gap-1 text-purple-600 font-medium">
-              <Users size={11} />
-              {selectedGroup.name}
-              {groupMembers.length > 0 && (
-                <span className="text-gray-400 font-normal ml-1">
-                  ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
-                </span>
-              )}
-            </span>
+          {/* Proportional phase bar */}
+          {macroWeeks.length > 0 && (
+            <div className="flex w-full h-6 px-0" style={{ gap: 1 }}>
+              {(() => {
+                const total = macroWeeks.length;
+                const sorted = [...phases].sort((a, b) => a.start_week_number - b.start_week_number);
+                type Seg = { type: 'phase'; phase: typeof phases[0]; weeks: number } | { type: 'gap'; weeks: number };
+                const segs: Seg[] = [];
+                let cur = 1;
+                for (const p of sorted) {
+                  if (p.start_week_number > cur) segs.push({ type: 'gap', weeks: p.start_week_number - cur });
+                  segs.push({ type: 'phase', phase: p, weeks: p.end_week_number - p.start_week_number + 1 });
+                  cur = p.end_week_number + 1;
+                }
+                if (cur <= total) segs.push({ type: 'gap', weeks: total - cur + 1 });
+                return segs.map((seg, i) =>
+                  seg.type === 'phase' ? (
+                    <button
+                      key={seg.phase.id}
+                      onClick={() => { setEditingPhase(seg.phase); setShowPhaseModal(true); }}
+                      className="flex items-center justify-center text-[10px] font-semibold text-white hover:brightness-95 transition-all truncate px-1 overflow-hidden"
+                      style={{ width: `${(seg.weeks / total) * 100}%`, backgroundColor: seg.phase.color }}
+                      title={`${seg.phase.name} · Wk ${seg.phase.start_week_number}–${seg.phase.end_week_number}`}
+                    >
+                      <span className="truncate">{seg.phase.name}</span>
+                      <span className="ml-1 opacity-70 text-[9px] flex-shrink-0">
+                        Wk {seg.phase.start_week_number}–{seg.phase.end_week_number}
+                      </span>
+                    </button>
+                  ) : (
+                    <div
+                      key={`gap-${i}`}
+                      className="bg-gray-200"
+                      style={{ width: `${(seg.weeks / total) * 100}%` }}
+                    />
+                  )
+                );
+              })()}
+            </div>
           )}
-
-          {/* Phase badges */}
-          {phases.map(phase => (
-            <button
-              key={phase.id}
-              onClick={() => { setEditingPhase(phase); setShowPhaseModal(true); }}
-              className="px-2 py-0.5 rounded text-[10px] font-medium border hover:opacity-80"
-              style={{ backgroundColor: phase.color, borderColor: phase.color }}
-            >
-              {phase.name} (Wk {phase.start_week_number}–{phase.end_week_number})
-            </button>
-          ))}
-
-          {/* Competition badges */}
-          {competitions.map(comp => (
-            <MacroCompetitionBadge key={comp.id} competition={comp} />
-          ))}
         </div>
       )}
 
@@ -692,19 +702,33 @@ export function MacroCycles() {
           Loading…
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto flex flex-col gap-3 px-4 py-2">
-          {/* Exercise toggle bar */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Toggle bar: exercises + Reps chip */}
           {trackedExercises.length > 0 && (
-            <ExerciseToggleBar
-              exercises={trackedExercises}
-              visible={visibleExercises}
-              onToggle={toggleExercise}
-              onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-            />
+            <div className="px-3 pt-2 pb-1 flex-shrink-0 flex items-center gap-2 flex-wrap border-b border-gray-100">
+              <ExerciseToggleBar
+                exercises={trackedExercises}
+                visible={visibleExercises}
+                onToggle={toggleExercise}
+                onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+              />
+              {/* Reps toggle chip */}
+              <button
+                onClick={() => setShowReps(v => !v)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors flex-shrink-0 ${
+                  showReps
+                    ? 'bg-gray-700 border-gray-700 text-white'
+                    : 'bg-white border-gray-300 text-gray-400 line-through'
+                }`}
+                title="Toggle reps bar in chart"
+              >
+                Reps
+              </button>
+            </div>
           )}
 
-          {/* Table — shown in 'table' and 'both' modes */}
-          {(viewMode === 'table' || viewMode === 'both') && (
+          {/* Table — always visible */}
+          <div className="flex-shrink-0">
             <MacroTableV2
               macroWeeks={macroWeeks}
               trackedExercises={trackedExercises}
@@ -720,26 +744,27 @@ export function MacroCycles() {
               onMoveExerciseRight={handleMoveExerciseRight}
               onRemoveExercise={handleRemoveExercise}
               onPasteTargets={handlePasteTargets}
-              onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
+              onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
               visibleExercises={visibleExercises}
             />
-          )}
+          </div>
 
-          {/* Graph — shown in 'graph' and 'both' modes */}
-          {(viewMode === 'graph' || viewMode === 'both') && (
-            <MacroGraphView
-              macroWeeks={macroWeeks}
-              trackedExercises={trackedExercises}
-              targets={targets}
-              phases={phases}
-              competitions={competitions}
-              actuals={displayedActuals}
-              onDragTarget={handleDragTarget}
-              focusedExerciseId={focusedExerciseId}
-              visibleExercises={visibleExercises}
-              onToggleExercise={toggleExercise}
-              onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-            />
+          {/* Chart — shown below table when toggled */}
+          {showChart && (
+            <div className="px-4 pb-4 pt-2">
+              <MacroGraphView
+                macroWeeks={macroWeeks}
+                trackedExercises={trackedExercises}
+                targets={targets}
+                phases={phases}
+                competitions={competitions}
+                actuals={displayedActuals}
+                onDragTarget={handleDragTarget}
+                focusedExerciseId={focusedExerciseId}
+                visibleExercises={visibleExercises}
+                showReps={showReps}
+              />
+            </div>
           )}
         </div>
       )}
