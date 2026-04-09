@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
-import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { MacroDraggableChart } from './MacroDraggableChart';
 
 interface MacroGraphViewProps {
@@ -14,7 +13,6 @@ interface MacroGraphViewProps {
   onDragTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: number) => Promise<void>;
   focusedExerciseId?: string | null;
   visibleExercises: Set<string>;
-  visibleGeneralMetrics?: Set<GeneralMetricKey>;
   showReps: boolean;
 }
 
@@ -28,7 +26,6 @@ export function MacroGraphView({
   onDragTarget,
   focusedExerciseId,
   visibleExercises,
-  visibleGeneralMetrics,
   showReps,
 }: MacroGraphViewProps) {
   const [linkedExerciseIds, setLinkedExerciseIds] = useState<Set<string>>(new Set());
@@ -72,7 +69,6 @@ export function MacroGraphView({
       linkedExerciseIds={linkedExerciseIds}
       onToggleLink={handleToggleLink}
       focusedExerciseId={focusedExerciseId}
-      visibleGeneralMetrics={visibleGeneralMetrics ?? new Set()}
       showReps={showReps}
     />
   );
