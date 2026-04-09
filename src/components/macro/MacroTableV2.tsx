@@ -5,9 +5,9 @@ import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 
-export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'notes';
+export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
 
-export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'weektype', 'k', 'tonnage', 'avg', 'notes'];
+export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'weektype', 'k', 'tonnage', 'avg', 'kvalue', 'notes'];
 
 export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
   week: 'Week',
@@ -15,6 +15,7 @@ export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
   k: 'Σreps',
   tonnage: 'Tonnage',
   avg: 'Avg intensity',
+  kvalue: 'K-value',
   notes: 'Notes',
 };
 
@@ -37,6 +38,7 @@ interface MacroTableV2Props {
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
   onSwapWeeks?: (weekId1: string, weekId2: string) => Promise<void>;
+  competitionTotal?: number | null;
   visibleExercises?: Set<string>;
   visibleColumns?: Set<string>;
 }
@@ -106,6 +108,7 @@ export function MacroTableV2({
   onPasteTargets,
   onExerciseDoubleClick,
   onSwapWeeks,
+  competitionTotal,
   visibleExercises,
   visibleColumns,
 }: MacroTableV2Props) {
@@ -139,7 +142,7 @@ export function MacroTableV2({
   const lastStickyVisible = [...STICKY_COL_ORDER].reverse().find(c => showCol(c));
 
   const stickyColCount = STICKY_COL_ORDER.filter(c => showCol(c)).length;
-  const generalCols: MacroTableColumnKey[] = ['k', 'tonnage', 'avg'];
+  const generalCols: MacroTableColumnKey[] = ['k', 'tonnage', 'avg', 'kvalue'];
   const generalColCount = generalCols.filter(c => showCol(c)).length;
   const leftColCount = stickyColCount + generalColCount;
 
@@ -324,6 +327,9 @@ export function MacroTableV2({
             )}
             {showCol('avg') && (
               <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
+            )}
+            {showCol('kvalue') && (
+              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>K</th>
             )}
             {displayed.map((te, idx) => (
               <React.Fragment key={te.id}>
@@ -602,6 +608,17 @@ export function MacroTableV2({
                     </td>
                   )}
 
+                  {/* K-value — computed: tonnage / competition_total */}
+                  {showCol('kvalue') && (
+                    <td className="bg-blue-50/10 text-center font-mono text-[10px] text-indigo-600 px-1 py-0" style={{ minWidth: 40 }}>
+                      {(() => {
+                        const ton = week.tonnage_target ?? weekTonnage;
+                        if (!ton || !competitionTotal) return <span className="text-gray-300 italic text-[8px]">—</span>;
+                        return (ton / competitionTotal).toFixed(1);
+                      })()}
+                    </td>
+                  )}
+
                   {/* Per-exercise columns */}
                   {displayed.map((te, teIdx) => {
                     const target = getTarget(week.id, te.id);
@@ -767,6 +784,14 @@ export function MacroTableV2({
                 {showCol('avg') && (
                   <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-500 px-1 py-1`}>
                     {cycleAvgInt !== null ? cycleAvgInt : ''}
+                  </td>
+                )}
+                {showCol('kvalue') && (
+                  <td className={`${summaryBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
+                    {(() => {
+                      if (!competitionTotal || cycleTotals.tonnage === 0) return '';
+                      return (cycleTotals.tonnage / (macroWeeks.length || 1) / competitionTotal).toFixed(1);
+                    })()}
                   </td>
                 )}
                 {/* Per-exercise averages */}

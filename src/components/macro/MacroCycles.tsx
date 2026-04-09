@@ -797,6 +797,7 @@ export function MacroCycles() {
               onPasteTargets={handlePasteTargets}
               onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
               onSwapWeeks={handleSwapWeeks}
+              competitionTotal={selectedAthlete?.competition_total ?? null}
               visibleExercises={visibleExercises}
               visibleColumns={visibleColumns}
             />
