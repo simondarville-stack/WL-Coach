@@ -1,8 +1,21 @@
 import React, { useState, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, X, Copy, ClipboardPaste } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
+
+export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'notes';
+
+export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'weektype', 'k', 'tonnage', 'avg', 'notes'];
+
+export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
+  week: 'Week',
+  weektype: 'Week style',
+  k: 'K-value',
+  tonnage: 'Tonnage',
+  avg: 'Avg intensity',
+  notes: 'Notes',
+};
 
 interface MacroTableV2Props {
   macroWeeks: MacroWeek[];
@@ -21,27 +34,20 @@ interface MacroTableV2Props {
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
   visibleExercises?: Set<string>;
+  visibleColumns?: Set<string>;
 }
 
-// Week type display config — will later come from settings
 const WEEK_TYPE_COLORS: Record<string, string> = {
-  High: '#E24B4A',
-  Medium: '#EF9F27',
-  Low: '#1D9E75',
-  Deload: '#5DCAA5',
-  Competition: '#378ADD',
-  Taper: '#7F77DD',
-  Vacation: '#888780',
-  Testing: '#D85A30',
-  Transition: '#D4537E',
+  High: '#E24B4A', Medium: '#EF9F27', Low: '#1D9E75', Deload: '#5DCAA5',
+  Competition: '#378ADD', Taper: '#7F77DD', Vacation: '#888780',
+  Testing: '#D85A30', Transition: '#D4537E',
 };
 
 function getWeekTypeAbbr(wt: string): string {
   if (!wt) return '-';
   const map: Record<string, string> = {
     High: 'h', Medium: 'm', Low: 'g', Deload: 'dl',
-    Competition: 'c', Taper: 'tp', Vacation: 'v',
-    Testing: 'te', Transition: 'tr',
+    Competition: 'c', Taper: 'tp', Vacation: 'v', Testing: 'te', Transition: 'tr',
   };
   return map[wt] ?? wt.slice(0, 2).toLowerCase();
 }
@@ -50,8 +56,11 @@ function getWeekTypeColor(wt: string): string {
   return WEEK_TYPE_COLORS[wt] ?? '#888780';
 }
 
-// Cycle through week types on click
 const WEEK_TYPES: WeekType[] = ['High', 'Medium', 'Low', 'Deload', 'Taper', 'Competition', 'Vacation', 'Testing', 'Transition'];
+
+// Sticky column widths in px
+const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'k'];
+const STICKY_COL_WIDTHS: Record<string, number> = { week: 26, weektype: 22, k: 32 };
 
 export function MacroTableV2({
   macroWeeks,
@@ -70,44 +79,56 @@ export function MacroTableV2({
   onPasteTargets,
   onExerciseDoubleClick,
   visibleExercises,
+  visibleColumns,
 }: MacroTableV2Props) {
   const [copiedWeekId, setCopiedWeekId] = useState<string | null>(null);
   const [copiedTargets, setCopiedTargets] = useState<Record<string, Partial<MacroTarget>>>({});
   const [editingCell, setEditingCell] = useState<string | null>(null);
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
 
   const displayed = visibleExercises
     ? trackedExercises.filter(te => visibleExercises.has(te.id))
     : trackedExercises;
 
-  // Get target for a week + exercise
-  const getTarget = useCallback((weekId: string, teId: string): MacroTarget | undefined => {
-    return targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === teId);
-  }, [targets]);
+  // Column visibility helper — defaults to all visible
+  const showCol = (col: MacroTableColumnKey): boolean =>
+    !visibleColumns || visibleColumns.size === 0 || visibleColumns.has(col);
 
-  // Get previous week's target for auto-fill
+  // Compute sticky left offsets dynamically
+  const stickyLeft: Record<string, number> = {};
+  let stickyOffset = 0;
+  for (const c of STICKY_COL_ORDER) {
+    if (showCol(c)) {
+      stickyLeft[c] = stickyOffset;
+      stickyOffset += STICKY_COL_WIDTHS[c];
+    }
+  }
+  const lastStickyVisible = [...STICKY_COL_ORDER].reverse().find(c => showCol(c));
+
+  const stickyColCount = STICKY_COL_ORDER.filter(c => showCol(c)).length;
+  const generalCols: MacroTableColumnKey[] = ['tonnage', 'avg', 'notes'];
+  const generalColCount = generalCols.filter(c => showCol(c)).length;
+  const leftColCount = stickyColCount + generalColCount;
+
+  const getTarget = useCallback((weekId: string, teId: string): MacroTarget | undefined =>
+    targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === teId),
+  [targets]);
+
   const getPrevTarget = useCallback((weekNumber: number, teId: string): MacroTarget | undefined => {
     const prevWeek = macroWeeks.find(w => w.week_number === weekNumber - 1);
     if (!prevWeek) return undefined;
     return targets.find(t => t.macro_week_id === prevWeek.id && t.tracked_exercise_id === teId);
   }, [macroWeeks, targets]);
 
-  // Handle grid cell updates — batches into single upsertTarget calls
   const handleGridUpdate = useCallback(async (
     weekId: string, teId: string, values: { load?: number; reps?: number; sets?: number },
   ) => {
-    const existing = getTarget(weekId, teId);
-    if (values.load !== undefined) {
-      await onUpdateTarget(weekId, teId, 'target_max', String(values.load));
-    }
-    if (values.reps !== undefined) {
-      await onUpdateTarget(weekId, teId, 'target_reps_at_max', String(values.reps));
-    }
-    if (values.sets !== undefined) {
-      await onUpdateTarget(weekId, teId, 'target_sets_at_max', String(values.sets));
-    }
-  }, [getTarget, onUpdateTarget]);
+    if (values.load !== undefined) await onUpdateTarget(weekId, teId, 'target_max', String(values.load));
+    if (values.reps !== undefined) await onUpdateTarget(weekId, teId, 'target_reps_at_max', String(values.reps));
+    if (values.sets !== undefined) await onUpdateTarget(weekId, teId, 'target_sets_at_max', String(values.sets));
+  }, [onUpdateTarget]);
 
-  // Inline number edit (for reps and avg columns)
+  // Fix phantom +1: when currentValue is null, initialize from prev without applying delta
   const handleInlineClick = useCallback((
     e: React.MouseEvent, weekId: string, teId: string, field: 'target_reps' | 'target_avg',
     currentValue: number | null, prevValue: number | null,
@@ -117,32 +138,15 @@ export function MacroTableV2({
       setEditingCell(`${weekId}_${teId}_${field}`);
       return;
     }
+    if (currentValue === null) {
+      // First activation: just set to prev value, no +1
+      onUpdateTarget(weekId, teId, field, String(prevValue ?? 0));
+      return;
+    }
     const delta = e.button === 2 ? -1 : 1;
-    const base = currentValue ?? prevValue ?? 0;
-    const newVal = Math.max(0, (currentValue !== null ? currentValue : base) + delta);
-    onUpdateTarget(weekId, teId, field, String(newVal));
+    onUpdateTarget(weekId, teId, field, String(Math.max(0, currentValue + delta)));
   }, [onUpdateTarget]);
 
-  // Copy week
-  const handleCopyWeek = useCallback((weekId: string) => {
-    setCopiedWeekId(weekId);
-    const snapshot: Record<string, Partial<MacroTarget>> = {};
-    trackedExercises.forEach(te => {
-      const target = getTarget(weekId, te.id);
-      if (target) {
-        snapshot[te.id] = {
-          target_reps: target.target_reps,
-          target_avg: target.target_avg,
-          target_max: target.target_max,
-          target_reps_at_max: target.target_reps_at_max,
-          target_sets_at_max: target.target_sets_at_max,
-        };
-      }
-    });
-    setCopiedTargets(snapshot);
-  }, [trackedExercises, getTarget]);
-
-  // Cycle week type
   const cycleWeekType = useCallback((weekId: string, current: string) => {
     const idx = WEEK_TYPES.findIndex(t => t === current);
     const next = WEEK_TYPES[(idx + 1) % WEEK_TYPES.length];
@@ -161,6 +165,16 @@ export function MacroTableV2({
     }
   }
 
+  // Sticky cell class helpers
+  function stickyTh(col: MacroTableColumnKey, extra = '') {
+    const isLast = col === lastStickyVisible;
+    return `sticky z-[10] bg-slate-100 text-[8px] text-gray-400 font-normal px-1 ${isLast ? 'border-r border-gray-300' : ''} ${extra}`;
+  }
+  function stickyTd(col: MacroTableColumnKey, extra = '') {
+    const isLast = col === lastStickyVisible;
+    return `sticky z-[5] bg-white ${isLast ? 'border-r border-gray-300' : ''} ${extra}`;
+  }
+
   return (
     <div className="overflow-auto flex-1 border border-gray-200 rounded-lg">
       <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -168,9 +182,9 @@ export function MacroTableV2({
           {/* Exercise headers */}
           <tr className="bg-gray-100 border-b border-gray-300">
             <th
-              colSpan={3}
+              colSpan={leftColCount}
               className="sticky left-0 z-[10] bg-slate-100 border-r border-gray-300 px-2 py-1 text-left text-[10px] font-medium text-gray-600"
-              style={{ width: 100, minWidth: 100 }}
+              style={{ minWidth: leftColCount > 0 ? stickyOffset + generalColCount * 50 : 50 }}
             >
               Week
             </th>
@@ -217,11 +231,27 @@ export function MacroTableV2({
               </th>
             ))}
           </tr>
+
           {/* Sub-headers */}
           <tr className="bg-gray-50 border-b border-gray-200">
-            <th className="sticky left-0 z-[10] bg-gray-50 text-[8px] text-gray-400 font-normal px-1" style={{ width: 26 }}>Wk</th>
-            <th className="sticky left-[26px] z-[10] bg-gray-50 text-[8px] text-gray-400 font-normal px-1" style={{ width: 22 }}>B</th>
-            <th className="sticky left-[48px] z-[10] bg-gray-50 border-r border-gray-300 text-[8px] text-gray-400 font-normal px-1" style={{ width: 32 }}>K</th>
+            {showCol('week') && (
+              <th className={stickyTh('week')} style={{ width: 26, left: stickyLeft['week'] }}>Wk</th>
+            )}
+            {showCol('weektype') && (
+              <th className={stickyTh('weektype')} style={{ width: 22, left: stickyLeft['weektype'] }}>B</th>
+            )}
+            {showCol('k') && (
+              <th className={stickyTh('k')} style={{ width: 32, left: stickyLeft['k'] }}>K</th>
+            )}
+            {showCol('tonnage') && (
+              <th className="text-[8px] text-gray-400 font-normal text-center px-1" style={{ minWidth: 50 }}>Ton</th>
+            )}
+            {showCol('avg') && (
+              <th className="text-[8px] text-gray-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
+            )}
+            {showCol('notes') && (
+              <th className="border-r border-gray-300 text-[8px] text-gray-400 font-normal text-left px-1" style={{ minWidth: 100 }}>Notes</th>
+            )}
             {displayed.map(te => (
               <React.Fragment key={te.id}>
                 <td className="border-l border-gray-300 text-[8px] text-gray-400 font-normal text-center px-1">Reps</td>
@@ -231,6 +261,7 @@ export function MacroTableV2({
             ))}
           </tr>
         </thead>
+
         <tbody>
           {(() => {
             let lastPhaseId: string | null = null;
@@ -239,13 +270,12 @@ export function MacroTableV2({
             macroWeeks.forEach((week) => {
               const phase = weekToPhase.get(week.id);
 
-              // Phase separator row
               if (phase && phase.id !== lastPhaseId) {
                 lastPhaseId = phase.id ?? null;
                 rows.push(
                   <tr key={`phase-${phase.id}`} className="border-t-2 border-gray-300">
                     <td
-                      colSpan={3 + displayed.length * 3}
+                      colSpan={leftColCount + displayed.length * 3}
                       className="sticky left-0 text-left px-2 py-1 text-[9px] font-medium tracking-wide"
                       style={{
                         backgroundColor: phase.color + '25',
@@ -259,51 +289,105 @@ export function MacroTableV2({
                 );
               }
 
-              // K1-7 total
+              // Computed week stats
               let weekK = 0;
+              let weekTonnage = 0;
               displayed.forEach(te => {
                 const t = getTarget(week.id, te.id);
-                weekK += t?.target_reps ?? 0;
+                const reps = t?.target_reps ?? 0;
+                const avg = t?.target_avg ?? 0;
+                weekK += reps;
+                weekTonnage += reps * avg;
               });
+              const weekAvgInt = weekK > 0 ? Math.round(weekTonnage / weekK) : null;
 
               const wtColor = getWeekTypeColor(week.week_type);
               const wtAbbr = getWeekTypeAbbr(week.week_type);
 
               rows.push(
                 <tr key={week.id} className="hover:bg-gray-50/50 transition-colors">
-                  {/* Week number */}
-                  <td className="sticky left-0 z-[5] bg-white text-center font-medium text-gray-900 text-[11px] px-1 py-0"
-                      style={{ width: 26 }}>
-                    {week.week_number}
-                  </td>
-
-                  {/* Week type badge */}
-                  <td className="sticky left-[26px] z-[5] bg-white text-center px-0.5 py-0" style={{ width: 22 }}>
-                    <span
-                      className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
-                      style={{
-                        backgroundColor: wtColor + '20',
-                        color: wtColor,
-                      }}
-                      onClick={() => cycleWeekType(week.id, week.week_type)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        const idx = WEEK_TYPES.findIndex(t => t === week.week_type);
-                        const prev = WEEK_TYPES[(idx - 1 + WEEK_TYPES.length) % WEEK_TYPES.length];
-                        onUpdateWeekType(week.id, prev);
-                        onUpdateWeekLabel(week.id, prev);
-                      }}
-                      title="Click to cycle week type"
+                  {showCol('week') && (
+                    <td
+                      className={`${stickyTd('week')} text-center font-medium text-gray-900 text-[11px] px-1 py-0`}
+                      style={{ width: 26, left: stickyLeft['week'] }}
                     >
-                      {wtAbbr}
-                    </span>
-                  </td>
+                      {week.week_number}
+                    </td>
+                  )}
 
-                  {/* K1-7 total */}
-                  <td className="sticky left-[48px] z-[5] bg-white border-r border-gray-300 text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0"
-                      style={{ width: 32 }}>
-                    {weekK > 0 ? weekK : ''}
-                  </td>
+                  {showCol('weektype') && (
+                    <td
+                      className={`${stickyTd('weektype')} text-center px-0.5 py-0`}
+                      style={{ width: 22, left: stickyLeft['weektype'] }}
+                    >
+                      <span
+                        className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
+                        style={{ backgroundColor: wtColor + '20', color: wtColor }}
+                        onClick={() => cycleWeekType(week.id, week.week_type)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          const idx = WEEK_TYPES.findIndex(t => t === week.week_type);
+                          const prev = WEEK_TYPES[(idx - 1 + WEEK_TYPES.length) % WEEK_TYPES.length];
+                          onUpdateWeekType(week.id, prev);
+                          onUpdateWeekLabel(week.id, prev);
+                        }}
+                        title="Click to cycle week type"
+                      >
+                        {wtAbbr}
+                      </span>
+                    </td>
+                  )}
+
+                  {showCol('k') && (
+                    <td
+                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0`}
+                      style={{ width: 32, left: stickyLeft['k'] }}
+                    >
+                      {weekK > 0 ? weekK : ''}
+                    </td>
+                  )}
+
+                  {showCol('tonnage') && (
+                    <td className="text-center font-mono text-[10px] text-gray-700 px-1 py-0">
+                      {weekTonnage > 0 ? weekTonnage.toLocaleString() : ''}
+                    </td>
+                  )}
+
+                  {showCol('avg') && (
+                    <td className="text-center font-mono text-[10px] text-gray-500 px-1 py-0">
+                      {weekAvgInt !== null ? weekAvgInt : ''}
+                    </td>
+                  )}
+
+                  {showCol('notes') && (
+                    <td className="border-r border-gray-200 px-1 py-0" style={{ minWidth: 100 }}>
+                      {editingNotesId === week.id ? (
+                        <input
+                          type="text"
+                          defaultValue={week.notes ?? ''}
+                          autoFocus
+                          className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
+                          onBlur={(e) => {
+                            onUpdateNotes(week.id, e.target.value);
+                            setEditingNotesId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            if (e.key === 'Escape') setEditingNotesId(null);
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="block truncate text-[10px] text-gray-500 cursor-pointer hover:text-gray-800"
+                          style={{ maxWidth: 120 }}
+                          onClick={() => setEditingNotesId(week.id)}
+                          title={week.notes ?? ''}
+                        >
+                          {week.notes || <span className="text-gray-300 italic text-[9px]">—</span>}
+                        </span>
+                      )}
+                    </td>
+                  )}
 
                   {/* Per-exercise columns */}
                   {displayed.map(te => {
@@ -400,10 +484,13 @@ export function MacroTableV2({
               );
             });
 
-            // Average row
+            // Summary row
             rows.push(
               <tr key="avg-row" className="border-t-2 border-gray-300 bg-gray-50">
-                <td colSpan={3} className="sticky left-0 bg-gray-50 border-r border-gray-300 text-center font-medium text-gray-600 text-[10px] px-1 py-1">
+                <td
+                  colSpan={leftColCount}
+                  className="sticky left-0 bg-gray-50 border-r border-gray-300 text-center font-medium text-gray-600 text-[10px] px-1 py-1"
+                >
                   Ø
                 </td>
                 {displayed.map(te => {

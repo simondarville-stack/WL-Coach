@@ -260,6 +260,7 @@ export interface GeneralSettings {
   week_types: WeekTypeConfig[];
   show_stress_metric: boolean;
   dialog_mode: 'center' | 'sidebar';
+  macro_table_columns: string[] | null;
   created_at: string;
   updated_at: string;
 }

@@ -5,6 +5,8 @@ import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
 import { METRICS, METRIC_ORDER, DEFAULT_VISIBLE_METRICS } from '../lib/metrics';
 import type { WeekTypeConfig } from '../lib/database.types';
+import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS } from './macro/MacroTableV2';
+import type { MacroTableColumnKey } from './macro/MacroTableV2';
 
 const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
   { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
@@ -32,6 +34,7 @@ export function GeneralSettings() {
   const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [weekTypes, setWeekTypes] = useState<WeekTypeConfig[]>(DEFAULT_WEEK_TYPES);
   const [duplicateAbbr, setDuplicateAbbr] = useState<string | null>(null);
+  const [macroTableColumns, setMacroTableColumns] = useState<MacroTableColumnKey[]>([...DEFAULT_MACRO_TABLE_COLUMNS]);
 
   useEffect(() => {
     fetchSettings();
@@ -92,6 +95,9 @@ export function GeneralSettings() {
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setWeekTypes((settings.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES);
+      if (settings.macro_table_columns && settings.macro_table_columns.length > 0) {
+        setMacroTableColumns(settings.macro_table_columns as MacroTableColumnKey[]);
+      }
     }
   }, [settings]);
 
@@ -153,6 +159,15 @@ export function GeneralSettings() {
     if (!settings) return;
     setShowStressMetric(value);
     await updateSettings(settings.id, { show_stress_metric: value });
+  }
+
+  async function toggleMacroTableColumn(col: MacroTableColumnKey) {
+    if (!settings) return;
+    const next = macroTableColumns.includes(col)
+      ? macroTableColumns.filter(c => c !== col)
+      : [...macroTableColumns, col];
+    setMacroTableColumns(next);
+    await updateSettings(settings.id, { macro_table_columns: next });
   }
 
   async function saveWeekTypes(next: WeekTypeConfig[]) {
@@ -597,6 +612,25 @@ export function GeneralSettings() {
               })}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Macro table columns */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Macro Table Columns</h2>
+        <p className="text-sm text-gray-600 mb-4">Choose which columns appear in the macro cycle table.</p>
+        <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+          {(Object.keys(MACRO_TABLE_COLUMN_LABELS) as MacroTableColumnKey[]).map(col => (
+            <label key={col} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={macroTableColumns.includes(col)}
+                onChange={() => void toggleMacroTableColumn(col)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">{MACRO_TABLE_COLUMN_LABELS[col]}</span>
+            </label>
+          ))}
         </div>
       </div>
     </div>

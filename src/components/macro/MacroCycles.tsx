@@ -8,8 +8,10 @@ import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
-import { MacroTableV2 } from './MacroTableV2';
+import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
+import type { MacroTableColumnKey } from './MacroTableV2';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
+import { useSettings } from '../../hooks/useSettings';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
@@ -23,6 +25,7 @@ import { supabase } from '../../lib/supabase';
 export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
+  const { fetchSettingsSilent } = useSettings();
 
   const {
     macrocycles,
@@ -81,6 +84,10 @@ export function MacroCycles() {
 
   // Shared exercise visibility state (lifted here so table and graph share the same state)
   const [visibleExercises, setVisibleExercises] = useState<Set<string>>(new Set());
+  // Macro table column visibility — loaded from settings
+  const [visibleColumns, setVisibleColumns] = useState<Set<MacroTableColumnKey>>(
+    new Set(DEFAULT_MACRO_TABLE_COLUMNS)
+  );
 
   const toggleExercise = (teId: string) => {
     setVisibleExercises(prev => {
@@ -100,8 +107,16 @@ export function MacroCycles() {
 
   const isGroupMode = macroTarget?.type === 'group';
 
-  // Load exercises on mount
+  // Load exercises on mount + settings for column visibility
   useEffect(() => { fetchExercisesByName(); }, []);
+
+  useEffect(() => {
+    fetchSettingsSilent().then(s => {
+      if (s?.macro_table_columns && s.macro_table_columns.length > 0) {
+        setVisibleColumns(new Set(s.macro_table_columns as MacroTableColumnKey[]));
+      }
+    });
+  }, []);
 
   // Load group members when in group mode
   useEffect(() => {
@@ -728,7 +743,7 @@ export function MacroCycles() {
           )}
 
           {/* Table — always visible */}
-          <div className="flex-shrink-0">
+          <div className="px-4 pt-3 pb-2">
             <MacroTableV2
               macroWeeks={macroWeeks}
               trackedExercises={trackedExercises}
@@ -746,6 +761,7 @@ export function MacroCycles() {
               onPasteTargets={handlePasteTargets}
               onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
               visibleExercises={visibleExercises}
+              visibleColumns={visibleColumns}
             />
           </div>
 

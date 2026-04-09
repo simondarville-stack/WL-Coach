@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ResponsiveContainer,
+  ReferenceLine, ReferenceArea, ResponsiveContainer,
 } from 'recharts';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActuals, MacroActualsMap } from '../../hooks/useMacroCycles';
@@ -339,15 +339,18 @@ export function MacroDraggableChart({
               formatter={(value: number, name: string) => [value ?? '—', name]}
             />
 
-            {/* Phase bands */}
+            {/* Phase bands — 30% opacity background over their week range */}
             {phases.map(phase => (
-              <ReferenceLine
+              <ReferenceArea
                 key={`ph_${phase.id}`}
                 yAxisId="kg"
-                x={phase.start_week_number}
+                x1={phase.start_week_number}
+                x2={phase.end_week_number}
+                fill={phase.color || '#d1d5db'}
+                fillOpacity={0.15}
                 stroke={phase.color || '#d1d5db'}
-                strokeWidth={6}
-                strokeOpacity={0.4}
+                strokeOpacity={0.3}
+                strokeWidth={1}
                 label={{ value: phase.name, position: 'insideTopLeft', fontSize: 8, fill: '#6b7280' }}
               />
             ))}
@@ -365,7 +368,7 @@ export function MacroDraggableChart({
               />
             ))}
 
-            {/* Reps bars — target (background) */}
+            {/* Reps bars — target (thin, centered at week point) */}
             {showReps && trackedExercises.map(te => (
               <Bar
                 key={`bar_t_reps_${te.id}`}
@@ -375,6 +378,7 @@ export function MacroDraggableChart({
                 fill={withOpacity(te.exercise.color, 0.18)}
                 stroke={withOpacity(te.exercise.color, 0.35)}
                 strokeWidth={1}
+                barSize={6}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />
@@ -390,6 +394,7 @@ export function MacroDraggableChart({
                 fill={withOpacity(te.exercise.color, 0.32)}
                 stroke={withOpacity(te.exercise.color, 0.5)}
                 strokeWidth={1}
+                barSize={6}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />
