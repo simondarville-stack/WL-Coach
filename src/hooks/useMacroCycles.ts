@@ -169,11 +169,29 @@ export function useMacroCycles() {
     const w2 = macroWeeks.find(w => w.id === weekId2);
     if (!w1 || !w2) return;
     try {
-      const [{ error: e1 }, { error: e2 }] = await Promise.all([
-        supabase.from('macro_weeks').update({ week_number: w2.week_number, week_start: w2.week_start }).eq('id', w1.id),
-        supabase.from('macro_weeks').update({ week_number: w1.week_number, week_start: w1.week_start }).eq('id', w2.id),
-      ]);
-      if (e1 || e2) throw new Error('Swap failed');
+      // 3-step sequential swap to avoid unique-constraint violations:
+      // Step 1 — move w1 out of the way with a temp value that can't conflict
+      const tempNum = -1;
+      const { error: e0 } = await supabase
+        .from('macro_weeks')
+        .update({ week_number: tempNum, week_start: '1970-01-01' })
+        .eq('id', w1.id);
+      if (e0) throw e0;
+
+      // Step 2 — w2 takes w1's old slot
+      const { error: e1 } = await supabase
+        .from('macro_weeks')
+        .update({ week_number: w1.week_number, week_start: w1.week_start })
+        .eq('id', w2.id);
+      if (e1) throw e1;
+
+      // Step 3 — w1 takes w2's old slot
+      const { error: e2 } = await supabase
+        .from('macro_weeks')
+        .update({ week_number: w2.week_number, week_start: w2.week_start })
+        .eq('id', w1.id);
+      if (e2) throw e2;
+
       setMacroWeeks(prev => prev.map(w => {
         if (w.id === weekId1) return { ...w, week_number: w2.week_number, week_start: w2.week_start };
         if (w.id === weekId2) return { ...w, week_number: w1.week_number, week_start: w1.week_start };
