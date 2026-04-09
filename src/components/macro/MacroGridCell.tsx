@@ -11,6 +11,7 @@ interface MacroGridCellProps {
   disabled?: boolean;
   deleteMode?: boolean;
   onDelete?: () => void;
+  compact?: boolean; // summary rows: load only, no reps/sets, reduced height
 }
 
 export function MacroGridCell({
@@ -18,6 +19,7 @@ export function MacroGridCell({
   prevLoad, prevReps, prevSets,
   onUpdate, disabled,
   deleteMode, onDelete,
+  compact,
 }: MacroGridCellProps) {
   const [editing, setEditing] = useState<'load' | 'reps' | null>(null);
   const loadRef = useRef<HTMLInputElement>(null);
@@ -212,6 +214,19 @@ export function MacroGridCell({
             if (e.key === 'Escape') setEditing(null);
           }}
         />
+      </div>
+    );
+  }
+
+  // Compact display — summary rows: load only, no reps/sets
+  if (compact) {
+    return (
+      <div className="flex items-center justify-center" style={{ minWidth: 52, height: 20 }}>
+        {load ? (
+          <span className="text-[8px] font-mono text-gray-400 italic">{load}</span>
+        ) : (
+          <span className="text-[8px] text-gray-200">—</span>
+        )}
       </div>
     );
   }
