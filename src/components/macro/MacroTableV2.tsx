@@ -747,13 +747,14 @@ export function MacroTableV2({
               );
             });
 
-            // Summary / average row — distinct bg so it's clearly not a data week
+            // Summary / average row — grey bg, small italic non-bold text so it reads as metadata not entries
             // ── Average row ────────────────────────────────────────────────────────
-            const avgBg = 'bg-indigo-50/50';
+            const avgBg = 'bg-gray-100';
+            const summaryText = 'font-normal italic text-gray-400 text-[9px]';
             rows.push(
               <tr key="avg-row" className={`border-t-2 border-gray-400 ${avgBg}`}>
                 {showCol('week') && (
-                  <td className={`${stickyTd('week')} text-center font-bold text-indigo-600 text-[10px] px-1 py-1 ${avgBg}`} style={{ left: stickyLeft['week'] }}>
+                  <td className={`${stickyTd('week')} text-center ${summaryText} px-1 py-1 ${avgBg}`} style={{ left: stickyLeft['week'] }}>
                     Ø
                   </td>
                 )}
@@ -761,27 +762,27 @@ export function MacroTableV2({
                   <td className={`${stickyTd('weektype')} ${avgBg} py-1`} style={{ left: stickyLeft['weektype'] }} />
                 )}
                 {showCol('notes') && (
-                  <td className={`${stickyTd('notes')} ${avgBg} px-2 py-1 text-[8px] text-indigo-300 italic`} style={{ left: stickyLeft['notes'] }}>
+                  <td className={`${stickyTd('notes')} ${avgBg} px-2 py-1 ${summaryText}`} style={{ left: stickyLeft['notes'] }}>
                     average
                   </td>
                 )}
                 {showCol('k') && (
-                  <td className={`${avgBg} border-l border-gray-300 text-center font-mono text-[10px] text-indigo-700 px-1 py-1`}>
+                  <td className={`${avgBg} border-l border-gray-300 text-center font-mono ${summaryText} px-1 py-1`}>
                     {avgK != null ? avgK : ''}
                   </td>
                 )}
                 {showCol('tonnage') && (
-                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
+                  <td className={`${avgBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {avgTonnage != null ? (avgTonnage / 1000).toFixed(1) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
-                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-500 px-1 py-1`}>
+                  <td className={`${avgBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {avgIntTarget != null ? avgIntTarget : ''}
                   </td>
                 )}
                 {showCol('kvalue') && (
-                  <td className={`${avgBg} text-center font-mono text-[10px] text-indigo-600 px-1 py-1`}>
+                  <td className={`${avgBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {avgTonnage != null && competitionTotal ? (avgTonnage / competitionTotal).toFixed(1) : ''}
                   </td>
                 )}
@@ -800,13 +801,13 @@ export function MacroTableV2({
                     : (wAvg.length > 0 ? Math.round(wAvg.reduce((s, t) => s + (t.target_avg ?? 0), 0) / wAvg.length) : null);
                   return (
                     <React.Fragment key={te.id}>
-                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-indigo-600 px-1 py-1`}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono ${summaryText} px-1 py-1`}>
                         {avgReps != null ? avgReps : ''}
                       </td>
                       <td className="text-center px-0 py-1">
                         <MacroGridCell load={avgMax} reps={avgRepsAtMax} sets={avgSetsAtMax} onUpdate={() => {}} disabled />
                       </td>
-                      <td className="text-center font-mono text-[9px] text-indigo-500 px-1 py-1">
+                      <td className={`text-center font-mono ${summaryText} px-1 py-1`}>
                         {avgAvg != null ? avgAvg : ''}
                       </td>
                     </React.Fragment>
@@ -817,11 +818,11 @@ export function MacroTableV2({
             );
 
             // ── Max / peak row ─────────────────────────────────────────────────────
-            const maxBg = 'bg-orange-50/60';
+            const maxBg = 'bg-gray-50';
             rows.push(
-              <tr key="max-row" className={`border-t border-gray-300 ${maxBg}`}>
+              <tr key="max-row" className={`border-t border-gray-200 ${maxBg}`}>
                 {showCol('week') && (
-                  <td className={`${stickyTd('week')} text-center font-bold text-orange-500 text-[10px] px-1 py-1 ${maxBg}`} style={{ left: stickyLeft['week'] }}>
+                  <td className={`${stickyTd('week')} text-center ${summaryText} px-1 py-1 ${maxBg}`} style={{ left: stickyLeft['week'] }}>
                     ↑
                   </td>
                 )}
@@ -829,27 +830,27 @@ export function MacroTableV2({
                   <td className={`${stickyTd('weektype')} ${maxBg} py-1`} style={{ left: stickyLeft['weektype'] }} />
                 )}
                 {showCol('notes') && (
-                  <td className={`${stickyTd('notes')} ${maxBg} px-2 py-1 text-[8px] text-orange-300 italic`} style={{ left: stickyLeft['notes'] }}>
+                  <td className={`${stickyTd('notes')} ${maxBg} px-2 py-1 ${summaryText}`} style={{ left: stickyLeft['notes'] }}>
                     peak
                   </td>
                 )}
                 {showCol('k') && (
-                  <td className={`${maxBg} border-l border-gray-300 text-center font-mono text-[10px] text-orange-600 px-1 py-1`}>
+                  <td className={`${maxBg} border-l border-gray-300 text-center font-mono ${summaryText} px-1 py-1`}>
                     {maxK != null ? maxK : ''}
                   </td>
                 )}
                 {showCol('tonnage') && (
-                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-500 px-1 py-1`}>
+                  <td className={`${maxBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {maxTonnage != null ? (maxTonnage / 1000).toFixed(1) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
-                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-400 px-1 py-1`}>
+                  <td className={`${maxBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {maxIntTarget != null ? maxIntTarget : ''}
                   </td>
                 )}
                 {showCol('kvalue') && (
-                  <td className={`${maxBg} text-center font-mono text-[10px] text-orange-500 px-1 py-1`}>
+                  <td className={`${maxBg} text-center font-mono ${summaryText} px-1 py-1`}>
                     {maxTonnage != null && competitionTotal ? (maxTonnage / competitionTotal).toFixed(1) : ''}
                   </td>
                 )}
@@ -861,7 +862,7 @@ export function MacroTableV2({
                   const maxAvg = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_avg ?? 0)) : null;
                   return (
                     <React.Fragment key={te.id}>
-                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[9px] text-orange-500 px-1 py-1`}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono ${summaryText} px-1 py-1`}>
                         {maxReps ? maxReps : ''}
                       </td>
                       <td className="text-center px-0 py-1">
@@ -872,7 +873,7 @@ export function MacroTableV2({
                           onUpdate={() => {}} disabled
                         />
                       </td>
-                      <td className="text-center font-mono text-[9px] text-orange-400 px-1 py-1">
+                      <td className={`text-center font-mono ${summaryText} px-1 py-1`}>
                         {maxAvg ? maxAvg : ''}
                       </td>
                     </React.Fragment>
