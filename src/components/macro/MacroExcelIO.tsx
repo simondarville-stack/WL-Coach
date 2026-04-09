@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Download, Upload, X } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import { Download, Upload, X, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise } from '../../lib/database.types';
 import { formatDateShort } from '../../lib/dateUtils';
@@ -733,61 +733,77 @@ export function MacroExcelIO({
     })
     .filter((e): e is NonNullable<typeof e> => e !== null) ?? [];
 
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+  const importRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+      if (importRef.current && !importRef.current.contains(e.target as Node)) setImportOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   return (
     <>
       <div className="flex items-center gap-1">
-        {/* Export group */}
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          title="Export to Excel with actuals"
-        >
-          <Download size={12} />
-          Export Excel
-        </button>
-        <button
-          onClick={handleExportTemplate}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          title="Export as percentage-based template"
-        >
-          <Download size={12} />
-          Export template (%)
-        </button>
+        {/* Export dropdown */}
+        <div ref={exportRef} className="relative">
+          <button
+            onClick={() => { setExportOpen(o => !o); setImportOpen(false); }}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Download size={12} /> Export <ChevronDown size={10} />
+          </button>
+          {exportOpen && (
+            <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[160px] overflow-hidden">
+              <button
+                onClick={() => { handleExport(); setExportOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Download size={11} /> Excel (with actuals)
+              </button>
+              <button
+                onClick={() => { handleExportTemplate(); setExportOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Download size={11} /> Template (%)
+              </button>
+            </div>
+          )}
+        </div>
 
-        {/* Visual separator */}
-        <span className="text-gray-300 mx-1">|</span>
+        {/* Import dropdown */}
+        <div ref={importRef} className="relative">
+          <button
+            onClick={() => { setImportOpen(o => !o); setExportOpen(false); }}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Upload size={12} /> Import <ChevronDown size={10} />
+          </button>
+          {importOpen && (
+            <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[160px] overflow-hidden">
+              <button
+                onClick={() => { fileInputRef.current?.click(); setImportOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Upload size={11} /> Excel (kg targets)
+              </button>
+              <button
+                onClick={() => { templateFileInputRef.current?.click(); setImportOpen(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+              >
+                <Upload size={11} /> Template (%)
+              </button>
+            </div>
+          )}
+        </div>
 
-        {/* Import group */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          title="Import absolute kg targets from Excel"
-        >
-          <Upload size={12} />
-          Import Excel
-        </button>
-        <button
-          onClick={() => templateFileInputRef.current?.click()}
-          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          title="Import a percentage-based template"
-        >
-          <Upload size={12} />
-          Import template
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <input
-          ref={templateFileInputRef}
-          type="file"
-          accept=".xlsx,.xls"
-          onChange={handleTemplateFileSelect}
-          className="hidden"
-        />
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" />
+        <input ref={templateFileInputRef} type="file" accept=".xlsx,.xls" onChange={handleTemplateFileSelect} className="hidden" />
       </div>
 
       {/* ─── Regular Import Modal ─── */}

@@ -52,13 +52,12 @@ export function MacroGridCell({
       return;
     }
 
-    const delta = e.button === 2 ? -1 : 1;
-
     if (isEmpty) {
-      fillFromPrev(delta);
+      fillFromPrev(0);
       return;
     }
 
+    const delta = e.button === 2 ? -1 : 1;
     onUpdate({ load: Math.max(0, (load ?? 0) + delta) });
   }
 
