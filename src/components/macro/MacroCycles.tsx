@@ -9,7 +9,8 @@ import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
-import { MacroTable } from './MacroTable';
+import { MacroTableV2 } from './MacroTableV2';
+import { ExerciseToggleBar } from './ExerciseToggleBar';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
@@ -431,6 +432,13 @@ export function MacroCycles() {
     setSelectedCycle(null);
   };
 
+  // ─── Exercise double-click → switch to graph focused on that exercise ─────────
+
+  const handleExerciseDoubleClick = useCallback((trackedExId: string) => {
+    setFocusedExerciseId(trackedExId);
+    setViewMode('graph');
+  }, []);
+
   // ─── Phase save ───────────────────────────────────────────────────────────────
 
   const handleSavePhase = async (phaseData: Omit<import('../../lib/database.types').MacroPhase, 'id' | 'created_at' | 'updated_at'>) => {
@@ -680,43 +688,56 @@ export function MacroCycles() {
           <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
           Loading…
         </div>
-      ) : viewMode === 'table' ? (
-        <MacroTable
-          macroWeeks={macroWeeks}
-          trackedExercises={trackedExercises}
-          targets={targets}
-          phases={phases}
-          actuals={displayedActuals}
-          weekTypes={weekTypes}
-          onUpdateTarget={handleUpdateTarget}
-          onUpdateWeekType={handleUpdateWeekType}
-          onUpdateWeekLabel={handleUpdateWeekLabel}
-          onUpdateTotalReps={handleUpdateTotalReps}
-          onUpdateNotes={handleUpdateNotes}
-          onMoveExerciseLeft={handleMoveExerciseLeft}
-          onMoveExerciseRight={handleMoveExerciseRight}
-          onRemoveExercise={handleRemoveExercise}
-          onPasteTargets={handlePasteTargets}
-          onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setViewMode('graph'); }}
-          visibleExercises={visibleExercises}
-          onToggleExercise={toggleExercise}
-          onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-        />
       ) : (
-        <div className="flex-1 overflow-y-auto">
-          <MacroGraphView
-            macroWeeks={macroWeeks}
-            trackedExercises={trackedExercises}
-            targets={targets}
-            phases={phases}
-            competitions={competitions}
-            actuals={displayedActuals}
-            onDragTarget={handleDragTarget}
-            focusedExerciseId={focusedExerciseId}
-            visibleExercises={visibleExercises}
-            onToggleExercise={toggleExercise}
-            onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-          />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Exercise toggle bar — above both table and graph */}
+          {trackedExercises.length > 0 && (
+            <div className="px-3 pt-2 pb-1 flex-shrink-0 border-b border-gray-100">
+              <ExerciseToggleBar
+                exercises={trackedExercises}
+                visible={visibleExercises}
+                onToggle={toggleExercise}
+                onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+              />
+            </div>
+          )}
+
+          {viewMode === 'table' ? (
+            <MacroTableV2
+              macroWeeks={macroWeeks}
+              trackedExercises={trackedExercises}
+              targets={targets}
+              phases={phases}
+              actuals={displayedActuals}
+              onUpdateTarget={handleUpdateTarget}
+              onUpdateWeekType={handleUpdateWeekType}
+              onUpdateWeekLabel={handleUpdateWeekLabel}
+              onUpdateTotalReps={handleUpdateTotalReps}
+              onUpdateNotes={handleUpdateNotes}
+              onMoveExerciseLeft={handleMoveExerciseLeft}
+              onMoveExerciseRight={handleMoveExerciseRight}
+              onRemoveExercise={handleRemoveExercise}
+              onPasteTargets={handlePasteTargets}
+              onExerciseDoubleClick={handleExerciseDoubleClick}
+              visibleExercises={visibleExercises}
+            />
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <MacroGraphView
+                macroWeeks={macroWeeks}
+                trackedExercises={trackedExercises}
+                targets={targets}
+                phases={phases}
+                competitions={competitions}
+                actuals={displayedActuals}
+                onDragTarget={handleDragTarget}
+                focusedExerciseId={focusedExerciseId}
+                visibleExercises={visibleExercises}
+                onToggleExercise={toggleExercise}
+                onShowAllExercises={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
+              />
+            </div>
+          )}
         </div>
       )}
 
