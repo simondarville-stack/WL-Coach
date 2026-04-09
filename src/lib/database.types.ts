@@ -190,6 +190,8 @@ export interface MacroWeek {
   week_type_text: string;
   notes: string;
   total_reps_target: number | null;
+  tonnage_target: number | null;
+  avg_intensity_target: number | null;
   phase_id: string | null;
   volume_multiplier: number;
   created_at: string;

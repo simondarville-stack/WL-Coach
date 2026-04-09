@@ -264,6 +264,18 @@ export function MacroCycles() {
     await updateMacroWeek(weekId, { notes });
   }, [updateMacroWeek]);
 
+  const handleUpdateTonnageTarget = useCallback(async (weekId: string, value: string) => {
+    const num = value.trim() === '' ? null : parseFloat(value);
+    if (num !== null && isNaN(num)) return;
+    await updateMacroWeek(weekId, { tonnage_target: num });
+  }, [updateMacroWeek]);
+
+  const handleUpdateAvgTarget = useCallback(async (weekId: string, value: string) => {
+    const num = value.trim() === '' ? null : parseFloat(value);
+    if (num !== null && isNaN(num)) return;
+    await updateMacroWeek(weekId, { avg_intensity_target: num });
+  }, [updateMacroWeek]);
+
   // ─── Update target ────────────────────────────────────────────────────────────
 
   const handleUpdateTarget = useCallback(async (weekId: string, trackedExId: string, field: keyof MacroTarget, value: string) => {
@@ -754,6 +766,8 @@ export function MacroCycles() {
               onUpdateWeekType={handleUpdateWeekType}
               onUpdateWeekLabel={handleUpdateWeekLabel}
               onUpdateTotalReps={handleUpdateTotalReps}
+              onUpdateTonnageTarget={handleUpdateTonnageTarget}
+              onUpdateAvgTarget={handleUpdateAvgTarget}
               onUpdateNotes={handleUpdateNotes}
               onMoveExerciseLeft={handleMoveExerciseLeft}
               onMoveExerciseRight={handleMoveExerciseRight}

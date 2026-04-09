@@ -12,7 +12,7 @@ export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'week
 export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
   week: 'Week',
   weektype: 'Week style',
-  k: 'K-value',
+  k: 'Σreps',
   tonnage: 'Tonnage',
   avg: 'Avg intensity',
   notes: 'Notes',
@@ -28,6 +28,8 @@ interface MacroTableV2Props {
   onUpdateWeekType: (weekId: string, weekType: WeekType) => Promise<void>;
   onUpdateWeekLabel: (weekId: string, label: string) => Promise<void>;
   onUpdateTotalReps: (weekId: string, value: string) => Promise<void>;
+  onUpdateTonnageTarget: (weekId: string, value: string) => Promise<void>;
+  onUpdateAvgTarget: (weekId: string, value: string) => Promise<void>;
   onUpdateNotes: (weekId: string, notes: string) => Promise<void>;
   onMoveExerciseLeft: (trackedExId: string) => Promise<void>;
   onMoveExerciseRight: (trackedExId: string) => Promise<void>;
@@ -61,7 +63,28 @@ const WEEK_TYPES: WeekType[] = ['High', 'Medium', 'Low', 'Deload', 'Taper', 'Com
 
 // Sticky column widths in px
 const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'k'];
-const STICKY_COL_WIDTHS: Record<string, number> = { week: 26, weektype: 22, k: 32 };
+const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, weektype: 56, k: 36 };
+
+// ISO calendar week number from a date string
+function getISOWeek(dateStr: string): number {
+  const d = new Date(dateStr);
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+function formatDateMD(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
 export function MacroTableV2({
   macroWeeks,
@@ -73,6 +96,8 @@ export function MacroTableV2({
   onUpdateWeekType,
   onUpdateWeekLabel,
   onUpdateTotalReps,
+  onUpdateTonnageTarget,
+  onUpdateAvgTarget,
   onUpdateNotes,
   onMoveExerciseLeft,
   onMoveExerciseRight,
@@ -86,6 +111,9 @@ export function MacroTableV2({
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
   const [editingKWeekId, setEditingKWeekId] = useState<string | null>(null);
+  const [editingTonnageId, setEditingTonnageId] = useState<string | null>(null);
+  const [editingAvgTargetId, setEditingAvgTargetId] = useState<string | null>(null);
+  const [editingWeekTypeTextId, setEditingWeekTypeTextId] = useState<string | null>(null);
 
   const displayed = visibleExercises
     ? trackedExercises.filter(te => visibleExercises.has(te.id))
@@ -274,13 +302,13 @@ export function MacroTableV2({
           {/* Sub-headers */}
           <tr className="bg-gray-50 border-b border-gray-200">
             {showCol('week') && (
-              <th className={stickyTh('week')} style={{ width: 26, left: stickyLeft['week'] }}>Wk</th>
+              <th className={stickyTh('week')} style={{ width: 68, left: stickyLeft['week'] }}>Wk</th>
             )}
             {showCol('weektype') && (
-              <th className={stickyTh('weektype')} style={{ width: 22, left: stickyLeft['weektype'] }}>B</th>
+              <th className={stickyTh('weektype')} style={{ width: 56, left: stickyLeft['weektype'] }}>Type</th>
             )}
             {showCol('k') && (
-              <th className={stickyTh('k')} style={{ width: 32, left: stickyLeft['k'] }}>K</th>
+              <th className={stickyTh('k')} style={{ width: 36, left: stickyLeft['k'] }}>Σreps</th>
             )}
             {showCol('tonnage') && (
               <th className="bg-blue-50/60 border-l border-gray-300 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
@@ -355,50 +383,91 @@ export function MacroTableV2({
                 >
                   {showCol('week') && (
                     <td
-                      className={`${stickyTd('week')} text-center font-medium text-gray-900 text-[11px] px-1 py-0`}
-                      style={{ width: 26, left: stickyLeft['week'] }}
+                      className={`${stickyTd('week')} text-center px-1 py-0.5`}
+                      style={{ width: 68, left: stickyLeft['week'] }}
                     >
-                      {week.week_number}
+                      <div className="flex flex-col items-center leading-tight">
+                        <span className="text-[11px] font-semibold text-gray-900">
+                          W{getISOWeek(week.week_start)}
+                        </span>
+                        <span className="text-[8px] text-gray-400">
+                          {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}
+                        </span>
+                      </div>
                     </td>
                   )}
 
                   {showCol('weektype') && (
                     <td
-                      className={`${stickyTd('weektype')} text-center px-0.5 py-0`}
-                      style={{ width: 22, left: stickyLeft['weektype'] }}
+                      className={`${stickyTd('weektype')} text-center px-0.5 py-0.5`}
+                      style={{ width: 56, left: stickyLeft['weektype'] }}
                     >
-                      <span
-                        className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
-                        style={{ backgroundColor: wtColor + '20', color: wtColor }}
-                        onClick={() => cycleWeekType(week.id, week.week_type)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          const idx = WEEK_TYPES.findIndex(t => t === week.week_type);
-                          const prev = WEEK_TYPES[(idx - 1 + WEEK_TYPES.length) % WEEK_TYPES.length];
-                          onUpdateWeekType(week.id, prev);
-                          onUpdateWeekLabel(week.id, prev);
-                        }}
-                        title="Click to cycle week type"
-                      >
-                        {wtAbbr}
-                      </span>
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span
+                          className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
+                          style={{ backgroundColor: wtColor + '20', color: wtColor }}
+                          onClick={() => cycleWeekType(week.id, week.week_type)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            const idx = WEEK_TYPES.findIndex(t => t === week.week_type);
+                            const prev = WEEK_TYPES[(idx - 1 + WEEK_TYPES.length) % WEEK_TYPES.length];
+                            onUpdateWeekType(week.id, prev);
+                            onUpdateWeekLabel(week.id, prev);
+                          }}
+                          title="Click to cycle week type"
+                        >
+                          {wtAbbr}
+                        </span>
+                        {editingWeekTypeTextId === week.id ? (
+                          <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              defaultValue={week.week_type_text ?? ''}
+                              autoFocus
+                              className="w-[50px] text-center text-[8px] border-none outline-none bg-blue-50 rounded px-0.5 py-px"
+                              onBlur={(e) => {
+                                onUpdateWeekLabel(week.id, e.target.value);
+                                setEditingWeekTypeTextId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                if (e.key === 'Escape') setEditingWeekTypeTextId(null);
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="text-[8px] text-gray-400 cursor-pointer truncate max-w-[52px] hover:text-gray-600"
+                            onClick={() => setEditingWeekTypeTextId(week.id)}
+                            title={week.week_type_text ?? ''}
+                          >
+                            {week.week_type_text || <span className="text-gray-300">—</span>}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   )}
 
                   {showCol('k') && (
                     <td
-                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0 cursor-pointer hover:bg-blue-50/30`}
-                      style={{ width: 32, left: stickyLeft['k'] }}
-                      onClick={(e) => { if (e.ctrlKey || e.metaKey) setEditingKWeekId(week.id); }}
-                      title="Ctrl+click to set reps target"
+                      className={`${stickyTd('k')} text-center font-mono font-medium text-[10px] text-gray-900 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-red-50' : ''}`}
+                      style={{ width: 36, left: stickyLeft['k'] }}
+                      onClick={() => {
+                        if (deleteMode && week.total_reps_target != null) {
+                          onUpdateTotalReps(week.id, '');
+                        } else {
+                          setEditingKWeekId(week.id);
+                        }
+                      }}
+                      title="Click to set Σreps target"
                     >
                       {editingKWeekId === week.id ? (
                         <div onClick={e => e.stopPropagation()}>
                           <input
                             type="number"
-                            defaultValue={week.total_reps_target ?? weekK}
+                            defaultValue={week.total_reps_target ?? ''}
                             autoFocus
-                            className="w-[28px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
                             onBlur={(e) => { onUpdateTotalReps(week.id, e.target.value); setEditingKWeekId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -407,22 +476,84 @@ export function MacroTableV2({
                           />
                         </div>
                       ) : (
-                        week.total_reps_target != null && week.total_reps_target !== weekK
-                          ? <span title={`Computed: ${weekK}`}>{weekK}<span className="text-[8px] text-blue-400 ml-0.5">({week.total_reps_target})</span></span>
-                          : (weekK > 0 ? weekK : '')
+                        <span className={deleteMode && week.total_reps_target != null ? 'text-red-500' : ''}>
+                          {week.total_reps_target != null ? week.total_reps_target : <span className="text-gray-300 italic text-[8px]">—</span>}
+                        </span>
                       )}
                     </td>
                   )}
 
                   {showCol('tonnage') && (
-                    <td className="bg-blue-50/10 border-l border-gray-200 text-center font-mono text-[10px] text-gray-700 px-1 py-0">
-                      {weekTonnage > 0 ? (weekTonnage / 1000).toFixed(1) : ''}
+                    <td
+                      className={`bg-blue-50/10 border-l border-gray-200 text-center font-mono text-[10px] text-gray-700 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-red-50' : ''}`}
+                      style={{ minWidth: 52 }}
+                      onClick={() => {
+                        if (deleteMode && week.tonnage_target != null) {
+                          onUpdateTonnageTarget(week.id, '');
+                        } else {
+                          setEditingTonnageId(week.id);
+                        }
+                      }}
+                      title="Click to set tonnage target"
+                    >
+                      {editingTonnageId === week.id ? (
+                        <div onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            defaultValue={week.tonnage_target ?? ''}
+                            autoFocus
+                            className="w-[44px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            onBlur={(e) => { onUpdateTonnageTarget(week.id, e.target.value); setEditingTonnageId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') setEditingTonnageId(null);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span className={deleteMode && week.tonnage_target != null ? 'text-red-500' : ''}>
+                          {week.tonnage_target != null
+                            ? (week.tonnage_target / 1000).toFixed(1)
+                            : <span className="text-gray-300 italic text-[8px]">—</span>}
+                        </span>
+                      )}
                     </td>
                   )}
 
                   {showCol('avg') && (
-                    <td className="bg-blue-50/10 text-center font-mono text-[10px] text-gray-500 px-1 py-0">
-                      {weekAvgInt !== null ? weekAvgInt : ''}
+                    <td
+                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-gray-500 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-red-50' : ''}`}
+                      style={{ minWidth: 40 }}
+                      onClick={() => {
+                        if (deleteMode && week.avg_intensity_target != null) {
+                          onUpdateAvgTarget(week.id, '');
+                        } else {
+                          setEditingAvgTargetId(week.id);
+                        }
+                      }}
+                      title="Click to set avg intensity target"
+                    >
+                      {editingAvgTargetId === week.id ? (
+                        <div onClick={e => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            defaultValue={week.avg_intensity_target ?? ''}
+                            autoFocus
+                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            onBlur={(e) => { onUpdateAvgTarget(week.id, e.target.value); setEditingAvgTargetId(null); }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') setEditingAvgTargetId(null);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <span className={deleteMode && week.avg_intensity_target != null ? 'text-red-500' : ''}>
+                          {week.avg_intensity_target != null
+                            ? week.avg_intensity_target
+                            : <span className="text-gray-300 italic text-[8px]">—</span>}
+                        </span>
+                      )}
                     </td>
                   )}
 
