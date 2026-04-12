@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAthleteStore } from '../../store/athleteStore';
+import { AthleteCardPicker } from '../AthleteCardPicker';
 import { PivotBuilder } from './PivotBuilder';
 import { QuickAnalyses } from './QuickAnalyses';
 import { LiftRatios } from './LiftRatios';
@@ -51,10 +52,8 @@ export function AnalysisPage() {
 
   if (!selectedAthlete) {
     return (
-      <div className="max-w-[1400px] mx-auto px-4 py-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-12 text-center text-gray-400">
-          Select an athlete to view analysis.
-        </div>
+      <div className="max-w-[1400px] mx-auto px-4 py-8">
+        <AthleteCardPicker />
       </div>
     );
   }

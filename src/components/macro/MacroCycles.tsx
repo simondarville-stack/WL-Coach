@@ -24,6 +24,7 @@ import { MacroPhaseModal } from './MacroPhaseModal';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
 import { supabase } from '../../lib/supabase';
+import { AthleteCardPicker } from '../AthleteCardPicker';
 
 
 export function MacroCycles() {
@@ -502,8 +503,8 @@ export function MacroCycles() {
 
   if (!macroTarget) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
-        Select an athlete or group to view macrocycles.
+      <div className="max-w-[1400px] mx-auto px-4 py-8">
+        <AthleteCardPicker />
       </div>
     );
   }

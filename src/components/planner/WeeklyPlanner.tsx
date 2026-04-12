@@ -20,7 +20,7 @@ import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
-import { User } from 'lucide-react';
+import { AthleteCardPicker } from '../AthleteCardPicker';
 
 export interface MacroContext {
   macroId: string;
@@ -605,12 +605,8 @@ export function WeeklyPlanner() {
         )}
 
         {!planSelection.athlete && !planSelection.group ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-            <User className="mx-auto text-gray-300 mb-4" size={40} />
-            <h2 className="text-lg font-medium text-gray-600 mb-1">Select an athlete</h2>
-            <p className="text-sm text-gray-400">
-              Choose an athlete from the top-right selector to start planning.
-            </p>
+          <div className="py-4">
+            <AthleteCardPicker />
           </div>
         ) : (
           <>
