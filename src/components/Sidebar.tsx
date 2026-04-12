@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  LayoutDashboard,
   Calendar,
   TrendingUp,
   LineChart,
@@ -35,6 +36,7 @@ const sections: NavSection[] = [
     label: 'Planning',
     items: [
       { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+      { path: '/dashboard-v2', label: 'Dashboard V2', icon: LayoutDashboard },
       { path: '/planner', label: 'Weekly planner', icon: Calendar },
       { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
       { path: '/analysis', label: 'Analysis', icon: LineChart },

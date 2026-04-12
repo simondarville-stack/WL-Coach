@@ -15,6 +15,7 @@ import { Settings } from './components/Settings';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
 import { CoachDashboard } from './components/CoachDashboard';
+import { DashboardV2 } from './components/dashboard-v2/DashboardV2';
 import { AnalysisPage } from './components/analysis/AnalysisPage';
 import { AthleteSelector } from './components/AthleteSelector';
 import { CompetitionCalendar } from './components/calendar/CompetitionCalendar';
@@ -33,6 +34,7 @@ import type { Athlete, TrainingGroup } from './lib/database.types';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/dashboard-v2': 'Dashboard V2',
   '/planner': 'Weekly planner',
   '/macrocycles': 'Macro cycles',
   '/events': 'Calendar',
@@ -195,6 +197,7 @@ function CoachApp() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
+              <Route path="/dashboard-v2" element={<DashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/macrocycles" element={<MacroCycles />} />
               <Route path="/events" element={<CompetitionCalendar />} />
