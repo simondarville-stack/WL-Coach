@@ -81,7 +81,7 @@ export function ExerciseToggleBar({
           >
             <span
               className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle"
-              style={{ backgroundColor: isVisible ? getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, trackedExercises) : '#9ca3af' }}
+              style={{ backgroundColor: isVisible ? getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, exercises) : '#9ca3af' }}
             />
             {te.exercise.exercise_code || te.exercise.name}
           </button>
