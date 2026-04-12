@@ -182,7 +182,7 @@ function CoachApp() {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0">
+        <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
           <PageTitle />
           <AthleteSelector />
         </header>
@@ -206,27 +206,27 @@ function CoachApp() {
                   <div className="mb-6 flex items-center gap-3">
                     <button
                       onClick={() => { setEditingExercise(null); setShowFormModal(true); }}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                      className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 font-medium"
                     >
-                      <Plus size={20} />
-                      Add New Exercise
+                      <Plus size={16} />
+                      Add Exercise
                     </button>
                     <button
                       onClick={() => setShowSettingsModal(true)}
-                      className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                      className="px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 font-medium"
                     >
-                      <SettingsIcon size={20} />
-                      Manage Categories
+                      <SettingsIcon size={16} />
+                      Categories
                     </button>
                     <button
                       onClick={() => setShowBulkImportModal(true)}
-                      className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-medium shadow-md"
+                      className="px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1.5 font-medium"
                     >
-                      <Upload size={20} />
-                      Import from Excel
+                      <Upload size={16} />
+                      Import Excel
                     </button>
                   </div>
-                  <div className="bg-white rounded-lg shadow-md p-6">
+                  <div className="bg-white rounded-lg border border-gray-200 p-6">
                     {loading ? (
                       <div className="flex items-center justify-center py-12">
                         <div className="text-gray-500">Loading exercises...</div>

@@ -102,7 +102,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator }: SidebarPro
 
       {/* Environment switcher */}
       {!collapsed && (
-        <div className="px-3 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="px-3 py-2.5 border-b border-gray-200 flex-shrink-0">
           <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">
             Environment
           </div>
@@ -162,14 +162,14 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator }: SidebarPro
                   to={item.path}
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
-                    `w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
+                    `w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 transition-all duration-100 ${
                       collapsed
                         ? 'justify-center py-2 px-0'
                         : 'py-1.5 px-3'
                     } ${
                       isActive
-                        ? 'bg-blue-50 text-blue-700 font-medium'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        ? 'bg-blue-50 text-blue-700 font-medium shadow-sm shadow-blue-100/50'
+                        : 'text-gray-600 hover:bg-gray-100/70 hover:text-gray-900'
                     }`
                   }
                 >
