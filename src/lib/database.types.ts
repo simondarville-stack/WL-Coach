@@ -47,6 +47,17 @@ export interface BodyweightEntry {
   created_at: string;
 }
 
+export interface AthletePRHistory {
+  id: string;
+  athlete_id: string;
+  exercise_id: string;
+  rep_count: number;        // 1–10
+  value_kg: number;
+  achieved_date: string;    // ISO date string
+  notes: string | null;
+  created_at: string;
+}
+
 export interface AthletePR {
   id: string;
   athlete_id: string;
@@ -482,6 +493,11 @@ export interface Database {
         Row: AthletePR;
         Insert: Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      athlete_pr_history: {
+        Row: AthletePRHistory;
+        Insert: Omit<AthletePRHistory, 'id' | 'created_at'>;
+        Update: Partial<Omit<AthletePRHistory, 'id' | 'created_at'>>;
       };
       exercises: {
         Row: Exercise;
