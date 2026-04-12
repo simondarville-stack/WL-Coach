@@ -63,9 +63,10 @@ interface SidebarProps {
   onNewCoach?: () => void;
   onOpenCalc?: () => void;
   onOpenCalculator?: () => void;
+  onOpenCalendarTool?: () => void;
 }
 
-export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator }: SidebarProps) {
+export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [collapsed, setCollapsed] = useState(() => {
@@ -223,6 +224,18 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator }: SidebarPro
           <Hash size={16} className="flex-shrink-0" />
           {!collapsed && (
             <span className="whitespace-nowrap overflow-hidden">Calculator</span>
+          )}
+        </button>
+        <button
+          onClick={() => onOpenCalendarTool?.()}
+          title={collapsed ? 'Calendar' : undefined}
+          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 text-gray-600 hover:bg-gray-100 hover:text-gray-900 ${
+            collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
+          }`}
+        >
+          <CalendarDays size={16} className="flex-shrink-0" />
+          {!collapsed && (
+            <span className="whitespace-nowrap overflow-hidden">Calendar</span>
           )}
         </button>
       </div>

@@ -84,9 +84,10 @@ const rowBgConfig: Record<Confidence, string> = {
 
 interface RepMaxCalculatorProps {
   onClose: () => void;
+  positionClass?: string;
 }
 
-export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
+export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }: RepMaxCalculatorProps) {
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -146,7 +147,7 @@ export function RepMaxCalculator({ onClose }: RepMaxCalculatorProps) {
 
   return (
     <div
-      className={`fixed bottom-4 right-4 z-50 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col transition-[width] duration-200 ${
+      className={`fixed z-50 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col transition-[width] duration-200 ${positionClass} ${
         showBreakdown ? 'w-[620px]' : 'w-[380px]'
       }`}
       role="dialog"

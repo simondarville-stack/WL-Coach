@@ -22,6 +22,7 @@ import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
 import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { Calculator } from './components/tools/Calculator';
+import { CalendarTool } from './components/tools/CalendarTool';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Plus, Settings as SettingsIcon, X, Upload } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
@@ -81,6 +82,7 @@ function CoachApp() {
   const [showNewCoachModal, setShowNewCoachModal] = useState(false);
   const [showRepMaxCalc, setShowRepMaxCalc] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
+  const [showCalendarTool, setShowCalendarTool] = useState(false);
   const [coachesLoaded, setCoachesLoaded] = useState(false);
 
   useEffect(() => {
@@ -179,6 +181,7 @@ function CoachApp() {
         onNewCoach={() => setShowNewCoachModal(true)}
         onOpenCalc={() => setShowRepMaxCalc(true)}
         onOpenCalculator={() => setShowCalculator(true)}
+        onOpenCalendarTool={() => setShowCalendarTool(true)}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -293,13 +296,27 @@ function CoachApp() {
           )}
         </main>
       </div>
+      {showCalendarTool && (
+        <CalendarTool
+          onClose={() => setShowCalendarTool(false)}
+          positionClass="bottom-4 right-4"
+        />
+      )}
       {showRepMaxCalc && (
-        <RepMaxCalculator onClose={() => setShowRepMaxCalc(false)} />
+        <RepMaxCalculator
+          onClose={() => setShowRepMaxCalc(false)}
+          positionClass={showCalendarTool ? 'bottom-4 right-[340px]' : 'bottom-4 right-4'}
+        />
       )}
       {showCalculator && (
         <Calculator
           onClose={() => setShowCalculator(false)}
-          positionClass={showRepMaxCalc ? 'bottom-4 right-[400px]' : 'bottom-4 right-4'}
+          positionClass={
+            showCalendarTool && showRepMaxCalc ? 'bottom-4 right-[740px]'
+            : showCalendarTool ? 'bottom-4 right-[340px]'
+            : showRepMaxCalc ? 'bottom-4 right-[400px]'
+            : 'bottom-4 right-4'
+          }
         />
       )}
     </div>
