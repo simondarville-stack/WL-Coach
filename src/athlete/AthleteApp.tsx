@@ -1,17 +1,27 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { LoginPage } from './components/LoginPage';
+import { ProfilePicker } from './components/ProfilePicker';
 import { AthleteLayout } from './components/AthleteLayout';
 import { TodayScreen } from './components/TodayScreen';
 import { WeekScreen } from './components/WeekScreen';
 import { ProgressScreen } from './components/ProgressScreen';
 import { CycleScreen } from './components/CycleScreen';
 import { ProfileScreen } from './components/ProfileScreen';
-import { Dumbbell } from 'lucide-react';
 
 function AthleteRoutes() {
-  // TODO: Re-enable auth gates when login is ready
-  // const { loading, user, athlete, signOut } = useAuth();
+  const { loading, athlete } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!athlete) {
+    return <ProfilePicker />;
+  }
 
   return (
     <Routes>
