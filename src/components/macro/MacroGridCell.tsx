@@ -237,7 +237,7 @@ export function MacroGridCell({
       className={`group flex items-center select-none rounded border transition-colors ${
         isDeleteMode
           ? 'border-red-300 bg-red-50 cursor-pointer'
-          : 'border-transparent hover:border-gray-200'
+          : 'border-transparent hover:bg-blue-50 hover:border-blue-100'
       }`}
       style={{ minWidth: 52, height: 38 }}
     >

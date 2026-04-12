@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActuals, MacroActualsMap } from '../../hooks/useMacroCycles';
+import { getExerciseCategoryShade } from '../../lib/colorUtils';
 
 export type ChartMetric = 'reps' | 'max' | 'avg';
 
@@ -67,8 +68,8 @@ interface MacroDraggableChartProps {
   showReps: boolean;
 }
 
-const CHART_HEIGHT = 360;
-const MARGIN = { top: 10, right: 44, bottom: 36, left: 0 };
+const CHART_HEIGHT = 480;
+const MARGIN = { top: 10, right: 44, bottom: 52, left: 0 };
 
 export function MacroDraggableChart({
   macroWeeks,
@@ -86,10 +87,21 @@ export function MacroDraggableChart({
   const [dragOverrides, setDragOverrides] = useState<Record<string, number>>({});
   const [activeDrag, setActiveDrag] = useState<DragState | null>(null);
   const [chartMode, setChartMode] = useState<ChartMode>('load');
+  const [visibleSeries, setVisibleSeries] = useState<Set<string>>(() => new Set(['max', 'avg', 'reps']));
   const chartRef = useRef<HTMLDivElement>(null);
 
   const isLoadMode = chartMode === 'load';
   const isRepsMode = chartMode === 'reps';
+
+  const toggleSeries = (key: string) => setVisibleSeries(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const getColor = useCallback((te: MacroTrackedExerciseWithExercise) =>
+    getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, trackedExercises),
+    [trackedExercises]);
 
   const getKey = (weekId: string, teId: string, metric: ChartMetric) => `${weekId}:${teId}:${metric}`;
 
@@ -215,12 +227,13 @@ export function MacroDraggableChart({
     ? activeDrag.yMax
     : (allKgValues.length > 0 ? Math.ceil(Math.max(...allKgValues) * 1.15 / 10) * 10 : 100);
 
-  const stackedRepsPerWeek = chartData.map(p =>
-    trackedExercises.reduce((s, te) => s + ((p[`t_reps_${te.id}`] as number) ?? 0), 0)
+  // Side-by-side bars: use max individual value per week, not sum
+  const maxRepsPerWeek = chartData.map(p =>
+    Math.max(0, ...trackedExercises.map(te => (p[`t_reps_${te.id}`] as number | null) ?? 0))
   );
   const yMaxReps = activeDrag?.yAxisId === 'reps'
     ? activeDrag.yMax
-    : (stackedRepsPerWeek.length > 0 ? Math.ceil(Math.max(...stackedRepsPerWeek) * 1.3 / 10) * 10 : 50);
+    : (maxRepsPerWeek.length > 0 ? Math.ceil(Math.max(...maxRepsPerWeek) * 1.3 / 10) * 10 : 50);
 
   const compMarkers = competitions.map(comp => {
     const week = macroWeeks.find(w => {
@@ -235,13 +248,51 @@ export function MacroDraggableChart({
     const wn = payload?.value ?? 0;
     const week = macroWeeks.find(w => w.week_number === wn);
     const abbr = week ? (WEEK_TYPE_ABBR[week.week_type || ''] ?? week.week_type?.slice(0, 1)?.toUpperCase() ?? '') : '';
+    const notes = week?.notes ? (week.notes.length > 10 ? week.notes.slice(0, 10) + '…' : week.notes) : '';
     return (
       <g transform={`translate(${x},${y})`}>
-        <text textAnchor="middle" fill="#9ca3af" fontSize={9} dy={12}>{wn}</text>
-        {abbr && <text textAnchor="middle" fill="#6b7280" fontSize={8} dy={22}>{abbr}</text>}
+        <text textAnchor="middle" fill="#4b5563" fontSize={10} dy={13}>{wn}</text>
+        {abbr && <text textAnchor="middle" fill="#6b7280" fontSize={9} dy={24}>{abbr}</text>}
+        {notes && <text textAnchor="middle" fill="#9ca3af" fontSize={7} dy={34}>{notes}</text>}
       </g>
     );
   };
+
+  // Custom bar shape: renders the bar rect + a drag handle circle at the bar top
+  const makeBarShape = (te: MacroTrackedExerciseWithExercise) =>
+    (props: any) => {
+      const { x, y, width, height, value } = props;
+      const weekId = props.weekId as string;
+      const color = getColor(te);
+      if (value == null || value === 0 || !width || width <= 0) return <g />;
+
+      const barFillOp = isRepsMode ? 0.5 : 0.12;
+      const barStrokeOp = isRepsMode ? 0.7 : 0.25;
+
+      return (
+        <g>
+          <rect
+            x={x} y={y} width={width} height={Math.max(0, height)}
+            fill={withOpacity(color, barFillOp)}
+            stroke={withOpacity(color, barStrokeOp)}
+            strokeWidth={isRepsMode ? 1 : 0.5}
+            rx={2} ry={2}
+          />
+          {isRepsMode && (
+            <circle
+              cx={x + width / 2}
+              cy={y}
+              r={5}
+              fill={color}
+              stroke="white"
+              strokeWidth={1.5}
+              style={{ cursor: 'ns-resize', userSelect: 'none', outline: 'none' }}
+              onMouseDown={e => startDrag(e as unknown as React.MouseEvent, weekId, te.id, 'reps')}
+            />
+          )}
+        </g>
+      );
+    };
 
   const makeDot = (trackedExId: string, metric: ChartMetric, color: string, isPrimary: boolean) =>
     (props: { cx?: number; cy?: number; index?: number }) => {
@@ -253,7 +304,6 @@ export function MacroDraggableChart({
         && activeDrag?.metric === metric;
       const isLinked = linkedExerciseIds.has(trackedExId);
       const r = isActive ? 7 : isPrimary ? 5 : 3;
-      // Only allow dragging metrics that belong to the active mode
       const isDraggable = metric === 'reps' ? isRepsMode : isLoadMode;
       return (
         <circle
@@ -262,7 +312,7 @@ export function MacroDraggableChart({
           fill={color}
           stroke={isLinked ? '#1d4ed8' : (isPrimary ? 'white' : 'transparent')}
           strokeWidth={isLinked || isActive ? 2 : (isPrimary ? 1.5 : 0)}
-          style={{ cursor: isDraggable ? 'ns-resize' : 'default', userSelect: 'none' }}
+          style={{ cursor: isDraggable ? 'ns-resize' : 'default', userSelect: 'none', outline: 'none' }}
           onMouseDown={isDraggable ? e => startDrag(e as unknown as React.MouseEvent, week.id, trackedExId, metric) : undefined}
         />
       );
@@ -271,23 +321,31 @@ export function MacroDraggableChart({
   const lineOpacity = isLoadMode ? 1 : 0.2;
   const avgLineOpacity = isLoadMode ? 0.6 : 0.12;
   const actualLineOpacity = isLoadMode ? 0.2 : 0.08;
-  const barFillOpacity = isRepsMode ? 0.5 : 0.12;
-  const barStrokeOpacity = isRepsMode ? 0.7 : 0.25;
   const maxLineWidth = isLoadMode ? 2.5 : 1;
   const avgLineWidth = isLoadMode ? 1.5 : 0.8;
+  const barSize = isRepsMode ? 14 : 10;
+
+  const showMaxSeries = visibleSeries.has('max');
+  const showAvgSeries = visibleSeries.has('avg');
+  const showRepsSeries = visibleSeries.has('reps') && showReps;
+
+  const SERIES_LABELS: Record<string, string> = { max: 'Max', avg: 'Avg', reps: 'Reps' };
 
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 flex-wrap gap-2">
         <div className="flex items-center gap-3 text-[10px] text-gray-500">
-          {trackedExercises.map(te => (
-            <span key={te.id} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: te.exercise.color }} />
-              <span className="font-medium" style={{ color: te.exercise.color }}>
-                {te.exercise.exercise_code || te.exercise.name}
+          {trackedExercises.map(te => {
+            const color = getColor(te);
+            return (
+              <span key={te.id} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                <span className="font-medium" style={{ color }}>
+                  {te.exercise.exercise_code || te.exercise.name}
+                </span>
               </span>
-            </span>
-          ))}
+            );
+          })}
           <span className="text-gray-300 mx-0.5">|</span>
           <span className="flex items-center gap-1">
             <svg width="14" height="4"><line x1="0" y1="2" x2="14" y2="2" stroke="#888" strokeWidth="2.5" /></svg>
@@ -300,7 +358,30 @@ export function MacroDraggableChart({
           <span className="text-gray-400 text-[9px]">faded = actual</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Series visibility toggles */}
+          <div className="flex gap-1">
+            {(['max', 'avg', 'reps'] as const).map(key => {
+              const on = visibleSeries.has(key);
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleSeries(key)}
+                  className={`px-2 py-0.5 text-[9px] rounded border transition-colors ${
+                    on
+                      ? 'bg-white border-gray-300 text-gray-700 font-medium shadow-sm'
+                      : 'bg-transparent border-gray-200 text-gray-400 line-through'
+                  }`}
+                >
+                  {SERIES_LABELS[key]}
+                </button>
+              );
+            })}
+          </div>
+
+          <span className="text-gray-200">|</span>
+
+          {/* Load / Reps mode */}
           <div className="flex gap-px bg-gray-200 rounded-md p-0.5">
             <button
               onClick={() => setChartMode('load')}
@@ -320,6 +401,7 @@ export function MacroDraggableChart({
             </button>
           </div>
 
+          {/* Link toggles */}
           {trackedExercises.map(te => {
             const isLinked = linkedExerciseIds.has(te.id);
             return (
@@ -341,7 +423,7 @@ export function MacroDraggableChart({
         </div>
       </div>
 
-      <div ref={chartRef} className="relative select-none" style={{ userSelect: 'none' }}>
+      <div ref={chartRef} className="relative select-none [&_svg_*]:outline-none [&_svg]:outline-none" style={{ userSelect: 'none' }}>
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <ComposedChart data={chartData} margin={MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
@@ -351,14 +433,14 @@ export function MacroDraggableChart({
               tick={renderTick}
               tickLine={false}
               axisLine={{ stroke: '#e5e7eb' }}
-              height={36}
+              height={52}
               interval={0}
             />
 
             <YAxis
               yAxisId="kg"
               domain={[isLoadMode ? yMinKg : 0, yMaxKg]}
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#4b5563' }}
               tickLine={false}
               axisLine={false}
               width={36}
@@ -368,13 +450,14 @@ export function MacroDraggableChart({
               yAxisId="reps"
               orientation="right"
               domain={[0, yMaxReps]}
-              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tick={{ fontSize: 11, fill: '#4b5563' }}
               tickLine={false}
               axisLine={false}
               width={28}
             />
 
             <Tooltip
+              cursor={false}
               contentStyle={{
                 fontSize: 10, padding: '6px 10px',
                 border: '1px solid #e5e7eb', borderRadius: 6,
@@ -427,89 +510,83 @@ export function MacroDraggableChart({
               />
             ))}
 
-            {showReps && trackedExercises.map((te, idx) => (
+            {/* Reps bars — custom shape handles the drag dot at bar top */}
+            {showRepsSeries && trackedExercises.map(te => (
               <Bar
                 key={`bar_t_reps_${te.id}`}
                 yAxisId="reps"
                 dataKey={`t_reps_${te.id}`}
-                stackId="reps_target"
                 name={`${te.exercise.exercise_code || te.exercise.name} Reps`}
-                fill={withOpacity(te.exercise.color, barFillOpacity)}
-                stroke={withOpacity(te.exercise.color, barStrokeOpacity)}
-                strokeWidth={isRepsMode ? 1 : 0.5}
-                barSize={isRepsMode ? 18 : 12}
-                radius={idx === trackedExercises.length - 1 ? ([2, 2, 0, 0] as any) : ([0, 0, 0, 0] as any)}
+                barSize={barSize}
+                shape={makeBarShape(te)}
+                activeBar={false}
                 isAnimationActive={false}
               />
             ))}
 
-            {trackedExercises.flatMap(te =>
-              (['max', 'avg'] as const).map(metric => (
+            {/* Actual lines */}
+            {trackedExercises.flatMap(te => {
+              const color = getColor(te);
+              return (['max', 'avg'] as const).filter(m =>
+                m === 'max' ? showMaxSeries : showAvgSeries
+              ).map(metric => (
                 <Line
                   key={`act_${metric}_${te.id}`}
                   yAxisId="kg"
                   type="monotone"
                   dataKey={`a_${metric}_${te.id}`}
                   name={`${te.exercise.exercise_code || te.exercise.name} ${metric === 'max' ? 'Max' : 'Avg'} actual`}
-                  stroke={withOpacity(te.exercise.color, actualLineOpacity)}
+                  stroke={withOpacity(color, actualLineOpacity)}
                   strokeWidth={1}
                   strokeDasharray="3 2"
-                  dot={{ r: 1.5, fill: withOpacity(te.exercise.color, actualLineOpacity), strokeWidth: 0 }}
+                  dot={{ r: 1.5, fill: withOpacity(color, actualLineOpacity), strokeWidth: 0 }}
                   activeDot={false}
                   connectNulls
                   isAnimationActive={false}
                 />
-              ))
-            )}
+              ));
+            })}
 
-            {trackedExercises.map(te => (
-              <Line
-                key={`tgt_max_${te.id}`}
-                yAxisId="kg"
-                type="monotone"
-                dataKey={`t_max_${te.id}`}
-                name={`${te.exercise.exercise_code || te.exercise.name} Max`}
-                stroke={withOpacity(te.exercise.color, lineOpacity)}
-                strokeWidth={maxLineWidth}
-                dot={makeDot(te.id, 'max', te.exercise.color, isLoadMode)}
-                activeDot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            ))}
+            {/* Target max lines */}
+            {showMaxSeries && trackedExercises.map(te => {
+              const color = getColor(te);
+              return (
+                <Line
+                  key={`tgt_max_${te.id}`}
+                  yAxisId="kg"
+                  type="monotone"
+                  dataKey={`t_max_${te.id}`}
+                  name={`${te.exercise.exercise_code || te.exercise.name} Max`}
+                  stroke={withOpacity(color, lineOpacity)}
+                  strokeWidth={maxLineWidth}
+                  dot={makeDot(te.id, 'max', color, isLoadMode)}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              );
+            })}
 
-            {trackedExercises.map(te => (
-              <Line
-                key={`tgt_avg_${te.id}`}
-                yAxisId="kg"
-                type="monotone"
-                dataKey={`t_avg_${te.id}`}
-                name={`${te.exercise.exercise_code || te.exercise.name} Avg`}
-                stroke={withOpacity(te.exercise.color, avgLineOpacity)}
-                strokeWidth={avgLineWidth}
-                strokeDasharray="6 3"
-                dot={makeDot(te.id, 'avg', withOpacity(te.exercise.color, avgLineOpacity), false)}
-                activeDot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            ))}
-
-            {isRepsMode && trackedExercises.map(te => (
-              <Line
-                key={`reps_drag_${te.id}`}
-                yAxisID="reps"
-                type="monotone"
-                dataKey={`t_reps_${te.id}`}
-                name={`${te.exercise.exercise_code || te.exercise.name} Reps drag`}
-                stroke="transparent"
-                strokeWidth={0}
-                dot={makeDot(te.id, 'reps', te.exercise.color, true)}
-                activeDot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            ))}
+            {/* Target avg lines */}
+            {showAvgSeries && trackedExercises.map(te => {
+              const color = getColor(te);
+              return (
+                <Line
+                  key={`tgt_avg_${te.id}`}
+                  yAxisId="kg"
+                  type="monotone"
+                  dataKey={`t_avg_${te.id}`}
+                  name={`${te.exercise.exercise_code || te.exercise.name} Avg`}
+                  stroke={withOpacity(color, avgLineOpacity)}
+                  strokeWidth={avgLineWidth}
+                  strokeDasharray="6 3"
+                  dot={makeDot(te.id, 'avg', withOpacity(color, avgLineOpacity), false)}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              );
+            })}
           </ComposedChart>
         </ResponsiveContainer>
 

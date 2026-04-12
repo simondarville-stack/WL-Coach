@@ -52,5 +52,9 @@ export function getExerciseCategoryShade(
   if (group.length <= 1) return exerciseColor;
   const idx = group.findIndex(te => te.exercise.id === exerciseId);
   if (idx === -1) return exerciseColor;
-  return generateColorShades(exerciseColor, group.length)[idx];
+  // Use the first exercise's color in the group as the shared base so all
+  // members get distinct shades of the same hue rather than similar-looking
+  // shades of subtly different base colors.
+  const baseColor = group[0].exercise.color;
+  return generateColorShades(baseColor, group.length)[idx];
 }
