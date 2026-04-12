@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  Dumbbell,
   BarChart3,
   Calendar,
   TrendingUp,
@@ -93,10 +92,13 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         onClick={() => navigate('/dashboard')}
         title="EMOS"
       >
-        <Dumbbell className="text-blue-600 flex-shrink-0" size={20} />
-        {!collapsed && (
-          <span className="font-medium text-sm text-gray-900 whitespace-nowrap overflow-hidden">
+        {!collapsed ? (
+          <span className="text-[22px] font-black tracking-[0.15em] text-gray-900 uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif' }}>
             EMOS
+          </span>
+        ) : (
+          <span className="text-[16px] font-black tracking-tight text-gray-900 uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif' }}>
+            E
           </span>
         )}
       </div>
