@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate, matchPath } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { AthleteApp } from './athlete/AthleteApp';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
@@ -51,7 +51,7 @@ function PageTitle() {
 
 function AppRouter() {
   const location = useLocation();
-  if (matchPath('/athlete/*', location.pathname)) {
+  if (location.pathname === '/athlete' || location.pathname.startsWith('/athlete/')) {
     return (
       <Routes>
         <Route path="/athlete/*" element={<AthleteApp />} />
