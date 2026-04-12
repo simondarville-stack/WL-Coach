@@ -15,6 +15,7 @@ import {
   ChevronsLeft,
   Calculator,
   Hash,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
@@ -49,6 +50,7 @@ const sections: NavSection[] = [
       { path: '/athletes', label: 'Roster', icon: Users },
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
       { path: '/training-log', label: 'Training log', icon: ClipboardList },
+      { path: '/prs', label: 'Personal Records', icon: Trophy },
     ],
   },
   {

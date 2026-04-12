@@ -24,6 +24,7 @@ import { Sidebar } from './components/Sidebar';
 import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { Calculator } from './components/tools/Calculator';
 import { CalendarTool } from './components/tools/CalendarTool';
+import { PRPage } from './components/PRPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Plus, Settings as SettingsIcon, X, Upload } from 'lucide-react';
 import { useExercises } from './hooks/useExercises';
@@ -45,6 +46,7 @@ const pageTitles: Record<string, string> = {
   '/library': 'Exercise library',
   '/settings': 'Settings',
   '/analysis': 'Analysis',
+  '/prs': 'Personal Records',
 };
 
 function PageTitle() {
@@ -205,6 +207,7 @@ function CoachApp() {
               <Route path="/training-groups" element={<TrainingGroups />} />
               <Route path="/training-log" element={<TrainingLogPage />} />
               <Route path="/analysis" element={<AnalysisPage />} />
+              <Route path="/prs" element={<PRPage />} />
               <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={
