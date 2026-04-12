@@ -24,6 +24,7 @@ export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition
 export interface Athlete {
   id: string;
   owner_id: string;
+  auth_user_id: string | null;
   name: string;
   birthdate: string | null;
   bodyweight: number | null;
@@ -33,7 +34,7 @@ export interface Athlete {
   photo_url: string | null;
   is_active: boolean;
   track_bodyweight: boolean;
-  competition_total: number | null;  // manual override for K-value denominator
+  competition_total: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -606,6 +607,16 @@ export interface Database {
         Row: GroupMember;
         Insert: Omit<GroupMember, 'id' | 'joined_at'>;
         Update: Partial<Omit<GroupMember, 'id' | 'joined_at'>>;
+      };
+      coach_profiles: {
+        Row: CoachProfile;
+        Insert: Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      macro_competitions: {
+        Row: MacroCompetition;
+        Insert: Omit<MacroCompetition, 'id' | 'created_at'>;
+        Update: Partial<Omit<MacroCompetition, 'id' | 'created_at'>>;
       };
     };
   };

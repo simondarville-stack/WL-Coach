@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation, Navigate, matchPath } from 'react-router-dom';
+import { AthleteApp } from './athlete/AthleteApp';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
@@ -48,7 +49,19 @@ function PageTitle() {
   return <h1 className="font-medium text-gray-900">{pageTitles[location.pathname] ?? ''}</h1>;
 }
 
-function App() {
+function AppRouter() {
+  const location = useLocation();
+  if (matchPath('/athlete/*', location.pathname)) {
+    return (
+      <Routes>
+        <Route path="/athlete/*" element={<AthleteApp />} />
+      </Routes>
+    );
+  }
+  return <CoachApp />;
+}
+
+function CoachApp() {
   const {
     exercises, loading,
     fetchExercises, createExercise, updateExercise, deleteExercise,
@@ -293,4 +306,4 @@ function App() {
   );
 }
 
-export default App;
+export default AppRouter;
