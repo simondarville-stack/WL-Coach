@@ -164,10 +164,11 @@ export function DayCard({
     setAdding(true);
     try {
       await addExerciseToDay(weekPlanId, dayIndex, exercise.id, exercises.length + 1, exercise.default_unit);
-      await onRefresh();
     } finally {
       setAdding(false);
     }
+    // Refresh in background — don't block re-enabling the add button
+    onRefresh();
   }
 
   async function getOrCreateSentinel(code: string): Promise<{ id: string; default_unit: string } | null> {

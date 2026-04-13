@@ -190,6 +190,7 @@ export function MacroAnnualWheel({
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
   const hitZonesRef = useRef<HitZone[]>([]);
+  const rafRef = useRef<number>(0);
 
   // Assign stable colors to macros
   const macroColorMap = useRef(new Map<string, string>());
@@ -643,50 +644,64 @@ export function MacroAnnualWheel({
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { mx, my } = getMousePos(e);
-    const hit = hitTest(mx, my);
+    // Snapshot coords before the event is recycled (React synthetic event pooling)
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
-    if (hit) {
-      canvasRef.current!.style.cursor = 'pointer';
-      const wrapRect = wrapRef.current!.getBoundingClientRect();
-      const x = e.clientX - wrapRect.left + 12;
-      const y = e.clientY - wrapRect.top - 10;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      const wrap = wrapRef.current;
+      if (!canvas || !wrap) return;
 
-      let html = '';
-      if (hit.type === 'macro') {
-        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.macro!.name}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.fullStart} → ${hit.fullEnd}</div>`;
-        if (hit.clampedStart) html += `<div style="font-size:9px;color:var(--color-text-tertiary);margin-top:3px;font-style:italic">← continues from ${year - 1}</div>`;
-        if (hit.clampedEnd) html += `<div style="font-size:9px;color:var(--color-text-tertiary);margin-top:3px;font-style:italic">continues into ${year + 1} →</div>`;
-        html += `<div style="font-size:9px;color:var(--color-text-info);margin-top:4px">Click to open</div>`;
-      } else if (hit.type === 'phase') {
-        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.phase!.name}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.fullStart} → ${hit.fullEnd}</div>`;
-        html += `<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${macroColorMap.current.get(hit.macroId) || '#888'}"></span>${hit.macro!.name}</div>`;
-        html += `<div style="font-size:9px;color:var(--color-text-info);margin-top:4px">Click to open macro</div>`;
-      } else if (hit.type === 'comp') {
-        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.comp.competition_name}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.comp.competition_date}</div>`;
-        html += `<div style="font-size:10px;margin-top:3px">${hit.comp.is_primary ? 'Primary competition' : 'Qualification / secondary'}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary);margin-top:2px">${hit.macroName}</div>`;
-      } else if (hit.type === 'cal_arc') {
-        const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
-        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date} → ${hit.event.end_date}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
-      } else if (hit.type === 'cal_marker') {
-        const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
-        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date}</div>`;
-        html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
+      const rect = canvas.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const sx = SIZE / rect.width;
+      const mx = (clientX - rect.left) * sx;
+      const my = (clientY - rect.top) * sx;
+      const hit = hitTest(mx, my);
+
+      if (hit) {
+        canvas.style.cursor = 'pointer';
+        const x = clientX - wrapRect.left + 12;
+        const y = clientY - wrapRect.top - 10;
+
+        let html = '';
+        if (hit.type === 'macro') {
+          html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.macro!.name}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.fullStart} → ${hit.fullEnd}</div>`;
+          if (hit.clampedStart) html += `<div style="font-size:9px;color:var(--color-text-tertiary);margin-top:3px;font-style:italic">← continues from ${year - 1}</div>`;
+          if (hit.clampedEnd) html += `<div style="font-size:9px;color:var(--color-text-tertiary);margin-top:3px;font-style:italic">continues into ${year + 1} →</div>`;
+          html += `<div style="font-size:9px;color:var(--color-text-info);margin-top:4px">Click to open</div>`;
+        } else if (hit.type === 'phase') {
+          html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.phase!.name}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.fullStart} → ${hit.fullEnd}</div>`;
+          html += `<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${macroColorMap.current.get(hit.macroId) || '#888'}"></span>${hit.macro!.name}</div>`;
+          html += `<div style="font-size:9px;color:var(--color-text-info);margin-top:4px">Click to open macro</div>`;
+        } else if (hit.type === 'comp') {
+          html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.comp.competition_name}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.comp.competition_date}</div>`;
+          html += `<div style="font-size:10px;margin-top:3px">${hit.comp.is_primary ? 'Primary competition' : 'Qualification / secondary'}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary);margin-top:2px">${hit.macroName}</div>`;
+        } else if (hit.type === 'cal_arc') {
+          const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
+          html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date} → ${hit.event.end_date}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
+        } else if (hit.type === 'cal_marker') {
+          const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
+          html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date}</div>`;
+          html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
+        }
+
+        setTooltip({ x: Math.min(x, (wrapRect.width || 600) - 180), y, html });
+      } else {
+        canvas.style.cursor = 'default';
+        setTooltip(null);
       }
-
-      setTooltip({ x: Math.min(x, (wrapRect.width || 600) - 180), y, html });
-    } else {
-      canvasRef.current!.style.cursor = 'default';
-      setTooltip(null);
-    }
-  }, [hitTest, getMousePos, year]);
+    });
+  }, [hitTest, year]);
 
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const { mx, my } = getMousePos(e);
@@ -698,6 +713,7 @@ export function MacroAnnualWheel({
   }, [hitTest, getMousePos, macrocycles, onSelectCycle]);
 
   const handleMouseLeave = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
     setTooltip(null);
     if (canvasRef.current) canvasRef.current.style.cursor = 'default';
   }, []);

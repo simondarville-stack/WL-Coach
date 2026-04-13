@@ -154,11 +154,14 @@ export function useMacroCycles() {
   };
 
   const updateMacroWeek = async (id: string, updates: Partial<MacroWeek>) => {
+    // Optimistic: update UI immediately, rollback on error
+    const original = macroWeeks.find(w => w.id === id);
+    setMacroWeeks(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
     try {
       const { error } = await supabase.from('macro_weeks').update(updates).eq('id', id);
       if (error) throw error;
-      setMacroWeeks(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
     } catch (err) {
+      if (original) setMacroWeeks(prev => prev.map(w => w.id === id ? original : w));
       setError(errMsg(err, 'Failed to update week'));
       throw err;
     }
@@ -183,6 +186,32 @@ export function useMacroCycles() {
         tonnage_target: (w1 as MacroWeek & { tonnage_target?: number | null }).tonnage_target ?? null,
         avg_intensity_target: (w1 as MacroWeek & { avg_intensity_target?: number | null }).avg_intensity_target ?? null,
       };
+      // Optimistic: swap week-level state immediately so the row visually moves at once
+      setMacroWeeks(prev => prev.map(w => {
+        if (w.id === weekId1) return { ...w, ...w1Updates };
+        if (w.id === weekId2) return { ...w, ...w2Updates };
+        return w;
+      }));
+      // Also optimistically swap targets
+      setTargets(prev => {
+        const targetFields2 = ['target_max', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
+        return prev.map(t => {
+          if (t.macro_week_id === weekId1) {
+            const pair = prev.find(t2 => t2.macro_week_id === weekId2 && t2.tracked_exercise_id === t.tracked_exercise_id);
+            return pair
+              ? { ...t, ...Object.fromEntries(targetFields2.map(f => [f, pair[f]])) }
+              : { ...t, ...Object.fromEntries(targetFields2.map(f => [f, null])) };
+          }
+          if (t.macro_week_id === weekId2) {
+            const pair = prev.find(t2 => t2.macro_week_id === weekId1 && t2.tracked_exercise_id === t.tracked_exercise_id);
+            return pair
+              ? { ...t, ...Object.fromEntries(targetFields2.map(f => [f, pair[f]])) }
+              : { ...t, ...Object.fromEntries(targetFields2.map(f => [f, null])) };
+          }
+          return t;
+        });
+      });
+
       const [{ error: ge1 }, { error: ge2 }] = await Promise.all([
         supabase.from('macro_weeks').update(w1Updates).eq('id', weekId1),
         supabase.from('macro_weeks').update(w2Updates).eq('id', weekId2),
@@ -223,14 +252,7 @@ export function useMacroCycles() {
         return writes;
       }));
 
-      // Update week-level state
-      setMacroWeeks(prev => prev.map(w => {
-        if (w.id === weekId1) return { ...w, ...w1Updates };
-        if (w.id === weekId2) return { ...w, ...w2Updates };
-        return w;
-      }));
-
-      // Re-fetch targets for both weeks to get accurate IDs for any inserted rows
+      // Re-fetch targets for both weeks to reconcile IDs for any newly inserted rows
       const { data: fresh } = await supabase
         .from('macro_targets').select('*').in('macro_week_id', [weekId1, weekId2]);
       if (fresh) {
@@ -328,14 +350,18 @@ export function useMacroCycles() {
   ): Promise<MacroTarget | null> => {
     try {
       if (existingTarget) {
-        // Row is known — simple UPDATE
+        // Optimistic: update UI immediately, rollback on error
+        const optimistic = { ...existingTarget, [field]: numValue };
+        setTargets(prev => prev.map(t => t.id === existingTarget.id ? optimistic : t));
         const { error } = await supabase
           .from('macro_targets')
           .update({ [field]: numValue })
           .eq('id', existingTarget.id);
-        if (error) throw error;
-        setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
-        return { ...existingTarget, [field]: numValue };
+        if (error) {
+          setTargets(prev => prev.map(t => t.id === existingTarget.id ? existingTarget : t));
+          throw error;
+        }
+        return optimistic;
       } else {
         // Row may not exist yet — use true DB upsert so concurrent calls don't conflict
         const { data, error } = await supabase

@@ -345,10 +345,11 @@ export function MacroCycles() {
     const nextPosition = trackedExercises.length > 0
       ? Math.max(...trackedExercises.map(te => te.position)) + 1
       : 0;
-    await addTrackedExercise(selectedCycle.id, selectedExerciseId, nextPosition);
-    await fetchTrackedExercises(selectedCycle.id);
+    // Close UI immediately for instant feedback
     setSelectedExerciseId('');
     setShowAddExercise(false);
+    await addTrackedExercise(selectedCycle.id, selectedExerciseId, nextPosition);
+    await fetchTrackedExercises(selectedCycle.id);
   };
 
   const handleMoveExerciseLeft = async (trackedExId: string) => {
