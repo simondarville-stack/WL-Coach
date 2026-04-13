@@ -942,6 +942,8 @@ export function MacroCycles() {
             onCreateCycle={() => setShowCreateModal(true)}
             athleteName={selectedAthlete?.name}
             groupName={selectedGroup?.name}
+            athleteId={selectedAthlete?.id}
+            groupId={selectedGroup?.id}
           />
         </div>
       )}

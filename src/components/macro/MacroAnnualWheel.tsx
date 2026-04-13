@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import type { MacroCycle, MacroPhase, MacroCompetition } from '../../lib/database.types';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 
 interface MacroAnnualWheelProps {
   macrocycles: MacroCycle[];
@@ -9,6 +10,8 @@ interface MacroAnnualWheelProps {
   onCreateCycle: () => void;
   athleteName?: string;
   groupName?: string;
+  athleteId?: string;
+  groupId?: string;
 }
 
 // ── Color palette for macro arcs ───────────────────────────────────
@@ -16,6 +19,24 @@ const MACRO_COLORS = [
   '#378ADD', '#7F77DD', '#D85A30', '#D4537E', '#1D9E75',
   '#EF9F27', '#639922', '#E24B4A', '#888780',
 ];
+
+export const CAL_EVENT_COLORS: Record<string, string> = {
+  competition:   '#E24B4A',
+  training_camp: '#2563eb',
+  seminar:       '#7c3aed',
+  testing_day:   '#d97706',
+  team_meeting:  '#059669',
+  other:         '#6b7280',
+};
+
+const CAL_EVENT_LABELS: Record<string, string> = {
+  competition:   'Competition',
+  training_camp: 'Training Camp',
+  seminar:       'Seminar',
+  testing_day:   'Testing Day',
+  team_meeting:  'Team Meeting',
+  other:         'Event',
+};
 
 const PHASE_COLORS: Record<string, string> = {
   foundation: '#378ADD', grundlage: '#378ADD', grundlagenphase: '#378ADD', base: '#378ADD',
@@ -91,6 +112,7 @@ const R_MONTH = 275, R_MONTH_IN = 258;
 const R_MACRO = 250, R_MACRO_IN = 212;
 const R_PHASE = 207, R_PHASE_IN = 178;
 const R_COMP = 168;
+const R_CAL = 257, R_CAL_IN = 251;
 const R_TODAY = 282;
 const PI2 = Math.PI * 2;
 
@@ -127,7 +149,28 @@ interface CompHitZone {
   macroName: string;
 }
 
-type HitZone = ArcHitZone | CompHitZone;
+// ── Calendar event types ───────────────────────────────────────────
+interface CalendarEvent {
+  id: string;
+  name: string;
+  event_date: string;
+  end_date: string | null;
+  event_type: string;
+  color: string | null;
+}
+
+interface CalArcHitZone {
+  type: 'cal_arc';
+  a1: number; a2: number; rO: number; rI: number;
+  event: CalendarEvent;
+}
+interface CalMarkerHitZone {
+  type: 'cal_marker';
+  cx: number; cy: number; r: number;
+  event: CalendarEvent;
+}
+
+type HitZone = ArcHitZone | CompHitZone | CalArcHitZone | CalMarkerHitZone;
 
 // ── Component ──────────────────────────────────────────────────────
 export function MacroAnnualWheel({
@@ -136,12 +179,15 @@ export function MacroAnnualWheel({
   onCreateCycle,
   athleteName,
   groupName,
+  athleteId,
+  groupId,
 }: MacroAnnualWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [allPhases, setAllPhases] = useState<Record<string, MacroPhase[]>>({});
   const [allComps, setAllComps] = useState<Record<string, MacroCompetition[]>>({});
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
   const hitZonesRef = useRef<HitZone[]>([]);
 
@@ -180,6 +226,40 @@ export function MacroAnnualWheel({
     })();
   }, [macrocycles]);
 
+  // Load calendar events for the athlete / group
+  useEffect(() => {
+    const load = async () => {
+      let athleteIds: string[] = [];
+      if (athleteId) {
+        athleteIds = [athleteId];
+      } else if (groupId) {
+        const { data: members } = await supabase
+          .from('group_members')
+          .select('athlete_id')
+          .eq('group_id', groupId)
+          .is('left_at', null);
+        athleteIds = (members || []).map((m: { athlete_id: string }) => m.athlete_id);
+      }
+      if (athleteIds.length === 0) { setCalendarEvents([]); return; }
+
+      const { data: ea } = await supabase
+        .from('event_athletes')
+        .select('event_id')
+        .in('athlete_id', athleteIds);
+      const eventIds = [...new Set((ea || []).map((e: { event_id: string }) => e.event_id))];
+      if (eventIds.length === 0) { setCalendarEvents([]); return; }
+
+      const { data: evs } = await supabase
+        .from('events')
+        .select('id, name, event_date, end_date, event_type, color')
+        .eq('owner_id', getOwnerId())
+        .in('id', eventIds)
+        .order('event_date');
+      setCalendarEvents((evs as CalendarEvent[]) || []);
+    };
+    load();
+  }, [athleteId, groupId]);
+
   // ── Render ─────────────────────────────────────────────────────
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -200,10 +280,10 @@ export function MacroAnnualWheel({
     ctx.clearRect(0, 0, SIZE, SIZE);
 
     // Rings
-    [R_MONTH, R_MONTH_IN, R_PHASE_IN].forEach(r => {
+    [R_MONTH, R_MONTH_IN, R_CAL, R_CAL_IN, R_PHASE_IN].forEach(r => {
       ctx.beginPath();
       ctx.arc(CX, CY, r, 0, PI2);
-      ctx.strokeStyle = r === R_PHASE_IN ? cBorderL : cBorder;
+      ctx.strokeStyle = (r === R_PHASE_IN || r === R_CAL || r === R_CAL_IN) ? cBorderL : cBorder;
       ctx.lineWidth = 0.5;
       ctx.stroke();
     });
@@ -410,6 +490,75 @@ export function MacroAnnualWheel({
       });
     });
 
+    // ── Calendar events ──────────────────────────────────────────
+    const usedEventIds = new Set(
+      Object.values(allComps).flat().map(c => c.event_id).filter(Boolean),
+    );
+
+    calendarEvents.forEach(ev => {
+      if (!overlapsYear(ev.event_date, ev.end_date || ev.event_date, year)) return;
+
+      const isMultiDay = !!(ev.end_date && ev.end_date > ev.event_date);
+      const color = ev.color || CAL_EVENT_COLORS[ev.event_type] || '#6b7280';
+
+      if (isMultiDay) {
+        const cf1 = Math.max(0, fracOfYear(ev.event_date, year));
+        const cf2 = Math.min(1, fracOfYear(ev.end_date!, year));
+        const ca1 = ang(cf1), ca2 = ang(cf2);
+        drawArc(R_CAL, R_CAL_IN, ca1, ca2, hex2rgba(color, 0.5), color, 0.5);
+
+        if (ca2 - ca1 > 0.12) {
+          const am = (ca1 + ca2) / 2;
+          const lp = polar(CX, CY, (R_CAL + R_CAL_IN) / 2, am);
+          ctx.save();
+          ctx.translate(lp.x, lp.y);
+          const rot = am > Math.PI / 2 && am < Math.PI * 1.5 ? am + Math.PI : am;
+          ctx.rotate(rot);
+          ctx.fillStyle = color;
+          ctx.font = '500 7px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(ev.name, 0, 0);
+          ctx.restore();
+        }
+        hitZones.push({ type: 'cal_arc', a1: ca1, a2: ca2, rO: R_CAL, rI: R_CAL_IN, event: ev });
+      } else {
+        // Single-day
+        if (!dateInYear(ev.event_date, year)) return;
+        const cf = fracOfYear(ev.event_date, year);
+        const ca = ang(cf);
+
+        if (ev.event_type === 'competition' && !usedEventIds.has(ev.id)) {
+          // Calendar competition not linked to a macro: hollow diamond at R_COMP
+          const dp = polar(CX, CY, R_COMP, ca);
+          const r = 7;
+          ctx.beginPath();
+          ctx.moveTo(dp.x, dp.y - r);
+          ctx.lineTo(dp.x + r * 0.6, dp.y);
+          ctx.lineTo(dp.x, dp.y + r);
+          ctx.lineTo(dp.x - r * 0.6, dp.y);
+          ctx.closePath();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          compCount++;
+          hitZones.push({ type: 'cal_marker', cx: dp.x, cy: dp.y, r: 12, event: ev });
+        } else if (ev.event_type !== 'competition') {
+          // Other single-day event: small dot at cal ring midpoint
+          const dp = polar(CX, CY, (R_CAL + R_CAL_IN) / 2, ca);
+          const r = 3.5;
+          ctx.beginPath();
+          ctx.arc(dp.x, dp.y, r, 0, PI2);
+          ctx.fillStyle = hex2rgba(color, 0.9);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+          hitZones.push({ type: 'cal_marker', cx: dp.x, cy: dp.y, r: 10, event: ev });
+        }
+      }
+    });
+
     // ── Today needle ─────────────────────────────────────────────
     const now = new Date();
     if (now.getFullYear() === year) {
@@ -458,7 +607,7 @@ export function MacroAnnualWheel({
     );
 
     hitZonesRef.current = hitZones;
-  }, [year, macrocycles, allPhases, allComps, athleteName, groupName]);
+  }, [year, macrocycles, allPhases, allComps, calendarEvents, athleteName, groupName]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -478,7 +627,7 @@ export function MacroAnnualWheel({
     if (a < -Math.PI / 2) a += PI2;
 
     for (const z of hitZonesRef.current) {
-      if (z.type === 'comp') {
+      if (z.type === 'comp' || z.type === 'cal_marker') {
         if (Math.abs(mx - z.cx) < z.r && Math.abs(my - z.cy) < z.r) return z;
       } else {
         if (dist >= z.rI && dist <= z.rO && a >= z.a1 && a <= z.a2) return z;
@@ -520,6 +669,16 @@ export function MacroAnnualWheel({
         html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.comp.competition_date}</div>`;
         html += `<div style="font-size:10px;margin-top:3px">${hit.comp.is_primary ? 'Primary competition' : 'Qualification / secondary'}</div>`;
         html += `<div style="font-size:10px;color:var(--color-text-secondary);margin-top:2px">${hit.macroName}</div>`;
+      } else if (hit.type === 'cal_arc') {
+        const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
+        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
+        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date} → ${hit.event.end_date}</div>`;
+        html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
+      } else if (hit.type === 'cal_marker') {
+        const typeLabel = CAL_EVENT_LABELS[hit.event.event_type] || 'Event';
+        html = `<div style="font-weight:500;font-size:12px;margin-bottom:3px">${hit.event.name}</div>`;
+        html += `<div style="font-size:10px;color:var(--color-text-secondary)">${hit.event.event_date}</div>`;
+        html += `<div style="font-size:10px;color:var(--color-text-tertiary);margin-top:2px">${typeLabel}</div>`;
       }
 
       setTooltip({ x: Math.min(x, (wrapRect.width || 600) - 180), y, html });
@@ -542,6 +701,45 @@ export function MacroAnnualWheel({
     setTooltip(null);
     if (canvasRef.current) canvasRef.current.style.cursor = 'default';
   }, []);
+
+  // ── Dynamic legend data ──────────────────────────────────────────
+  const legendPhases = useMemo(() => {
+    const seen = new Map<string, { color: string; name: string }>();
+    macrocycles.forEach(mc => {
+      if (!overlapsYear(mc.start_date, mc.end_date, year)) return;
+      (allPhases[mc.id] || []).forEach(phase => {
+        const color = phase.color || getPhaseColor(phase);
+        if (!seen.has(phase.name)) seen.set(phase.name, { color, name: phase.name });
+      });
+    });
+    return Array.from(seen.values());
+  }, [allPhases, macrocycles, year]);
+
+  const hasComps = useMemo(() => {
+    const macroHas = macrocycles.some(mc => {
+      if (!overlapsYear(mc.start_date, mc.end_date, year)) return false;
+      return (allComps[mc.id] || []).some(c => dateInYear(c.competition_date, year));
+    });
+    const calHas = calendarEvents.some(
+      ev => ev.event_type === 'competition' && dateInYear(ev.event_date, year),
+    );
+    return macroHas || calHas;
+  }, [allComps, macrocycles, calendarEvents, year]);
+
+  const legendCalTypes = useMemo(() => {
+    const seen = new Map<string, { color: string; label: string }>();
+    calendarEvents.forEach(ev => {
+      if (ev.event_type === 'competition') return;
+      if (!overlapsYear(ev.event_date, ev.end_date || ev.event_date, year)) return;
+      if (!seen.has(ev.event_type)) {
+        seen.set(ev.event_type, {
+          color: ev.color || CAL_EVENT_COLORS[ev.event_type] || '#6b7280',
+          label: CAL_EVENT_LABELS[ev.event_type] || ev.event_type,
+        });
+      }
+    });
+    return Array.from(seen.values());
+  }, [calendarEvents, year]);
 
   return (
     <div className="flex flex-col items-center gap-4 py-6 px-4">
@@ -590,29 +788,35 @@ export function MacroAnnualWheel({
         )}
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 justify-center text-[10px] text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: '#378ADD' }} />
-          Grundlagenphase
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: '#EF9F27' }} />
-          Aufbauphase
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: '#1D9E75' }} />
-          LAP
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm rotate-45" style={{ backgroundColor: '#E24B4A', width: 7, height: 7 }} />
-          Primary
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-sm rotate-45" style={{ backgroundColor: '#EF9F27', width: 7, height: 7 }} />
-          Qualifier
-        </span>
-      </div>
+      {/* Legend — derived from actual data in the selected year */}
+      {(legendPhases.length > 0 || hasComps || legendCalTypes.length > 0) && (
+        <div className="flex flex-wrap gap-3 justify-center text-[10px] text-gray-500">
+          {legendPhases.map(p => (
+            <span key={p.name} className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: p.color }} />
+              {p.name}
+            </span>
+          ))}
+          {hasComps && (
+            <>
+              <span className="flex items-center gap-1">
+                <span className="rounded-sm rotate-45" style={{ backgroundColor: '#E24B4A', width: 7, height: 7, display: 'inline-block' }} />
+                Primary
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="rounded-sm rotate-45" style={{ backgroundColor: '#EF9F27', width: 7, height: 7, display: 'inline-block' }} />
+                Qualifier
+              </span>
+            </>
+          )}
+          {legendCalTypes.map(ct => (
+            <span key={ct.label} className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: ct.color }} />
+              {ct.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Create button */}
       <button
