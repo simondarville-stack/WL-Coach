@@ -1,7 +1,7 @@
 // TODO: Consider extracting MacroWeekRow and MacroPhaseRow into sub-components
 // TODO: Consider extracting target editing into useMacroTargetEditor hook
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users, PieChart } from 'lucide-react';
+import { Plus, Trash2, BarChart3, ChevronDown, Pencil, Users, PieChart, ArrowLeft } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, GroupMemberWithAthlete } from '../../lib/database.types';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
@@ -25,6 +25,7 @@ import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroExcelIO } from './MacroExcelIO';
 import { supabase } from '../../lib/supabase';
 import { AthleteCardPicker } from '../AthleteCardPicker';
+import { MacroAnnualWheel } from './MacroAnnualWheel';
 
 
 export function MacroCycles() {
@@ -162,12 +163,6 @@ export function MacroCycles() {
     }
   }, [selectedAthlete?.id, selectedGroup?.id]);
 
-  // Auto-select most recent cycle
-  useEffect(() => {
-    if (macrocycles.length > 0 && !selectedCycle) {
-      setSelectedCycle(macrocycles[0]);
-    }
-  }, [macrocycles]);
 
   // Load cycle data when cycle changes
   useEffect(() => {
@@ -518,8 +513,17 @@ export function MacroCycles() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {selectedCycle ? (<>
       {/* Top toolbar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0 flex-wrap">
+        {/* Back to annual wheel */}
+        <button
+          onClick={() => setSelectedCycle(null)}
+          className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg mr-1"
+          title="Back to annual view"
+        >
+          <ArrowLeft size={14} />
+        </button>
         {/* Cycle selector */}
         <div className="flex items-center gap-1">
           {macrocycles.length > 0 && (
@@ -827,20 +831,7 @@ export function MacroCycles() {
       )}
 
       {/* Main content */}
-      {!selectedCycle ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-sm text-gray-400 mb-4">No macrocycle selected.</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 mx-auto"
-            >
-              <Plus size={16} />
-              {isGroupMode ? 'Create group macro' : 'Create macrocycle'}
-            </button>
-          </div>
-        </div>
-      ) : loading ? (
+      {loading ? (
         <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
           <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
           Loading…
@@ -935,13 +926,24 @@ export function MacroCycles() {
       )}
 
       {/* Summary bar */}
-      {selectedCycle && macroWeeks.length > 0 && (
+      {macroWeeks.length > 0 && (
         <MacroSummaryBar
           macroWeeks={macroWeeks}
           targets={targets}
           trackedExercises={trackedExercises}
           actuals={displayedActuals}
         />
+      )}
+      </>) : (
+        <div className="flex-1 overflow-y-auto">
+          <MacroAnnualWheel
+            macrocycles={macrocycles}
+            onSelectCycle={(cycle) => setSelectedCycle(cycle)}
+            onCreateCycle={() => setShowCreateModal(true)}
+            athleteName={selectedAthlete?.name}
+            groupName={selectedGroup?.name}
+          />
+        </div>
       )}
 
       {/* Modals */}
