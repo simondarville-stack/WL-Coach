@@ -625,6 +625,8 @@ export function WeeklyPlanner() {
               setSelectedDate(weekStart);
               setShowWeekList(false);
             }}
+            visibleMetrics={(settings?.visible_card_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
+            competitionTotal={planSelection.athlete?.competition_total ?? null}
           />
         ) : (
           <>

@@ -1,33 +1,67 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
+import {
+  computeMetrics,
+  DEFAULT_VISIBLE_METRICS,
+  type MetricKey,
+  type ComputedMetrics,
+} from '../../lib/metrics';
+import { MetricStrip } from '../ui/MetricStrip';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
 
 // ── Types ──────────────────────────────────────────────────────────
 
+interface ExerciseRaw {
+  dayIndex: number;
+  exerciseId: string;
+  color: string;
+  name: string;
+  code: string;
+  reps: number;
+  sets: number;
+  highestLoad: number;
+  avgLoad: number;
+  tonnage: number;
+  countsTowardsTotals: boolean;
+}
+
+interface ExerciseSummary {
+  exerciseId: string;
+  color: string;
+  name: string;
+  totalReps: number;
+  topSet: number;
+  avgLoad: number;
+}
+
 interface WeekSummary {
-  weekStart: string;           // ISO date string (Monday)
+  weekStart: string;
   weekPlanId: string | null;
   activeDays: number[];
   dayLabels: Record<number, string> | null;
   days: DaySummary[];
   totalReps: number;
-  totalTonnage: number;        // in kg
+  totalTonnage: number;
   avgLoad: number | null;
-  compliance: number | null;   // 0-1, null if no log data
+  compliance: number | null;
   loggedDays: number;
   plannedDays: number;
+  weekMetrics: ComputedMetrics;
+  exerciseSummaries: ExerciseSummary[];
 }
 
 interface DaySummary {
   dayIndex: number;
   exercises: { exerciseId: string; color: string; name: string }[];
+  rawExercises: ExerciseRaw[];
   totalReps: number;
   tonnage: number;
   isRest: boolean;
   isLogged: boolean;
+  dayMetrics: ComputedMetrics;
 }
 
 interface MacroBlock {
@@ -42,14 +76,16 @@ interface PhaseBlock {
   phaseId: string;
   phaseName: string;
   color: string;
-  startWeek: string;  // ISO date
-  endWeek: string;    // ISO date
+  startWeek: string;
+  endWeek: string;
 }
 
 interface PlannerWeekOverviewProps {
   athlete: Athlete | null;
   group: TrainingGroup | null;
   onSelectWeek: (weekStart: string) => void;
+  visibleMetrics?: MetricKey[];
+  competitionTotal?: number | null;
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -57,30 +93,39 @@ interface PlannerWeekOverviewProps {
 const WEEKS_BACK = 4;
 const WEEKS_FORWARD = 8;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const WEEK_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  High: { bg: 'rgba(226,75,74,0.1)', text: '#E24B4A' },
-  Medium: { bg: 'rgba(239,159,39,0.1)', text: '#BA7517' },
-  Low: { bg: 'rgba(29,158,117,0.1)', text: '#1D9E75' },
-  Deload: { bg: 'rgba(93,202,165,0.1)', text: '#0F6E56' },
-  Competition: { bg: 'rgba(55,138,221,0.1)', text: '#185FA5' },
-  Taper: { bg: 'rgba(127,119,221,0.1)', text: '#534AB7' },
-};
 
 function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[d.getMonth()]} ${d.getDate()}`;
 }
 
 function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 
 function addWeeks(dateStr: string, weeks: number): string {
   return addDays(dateStr, weeks * 7);
 }
+
+/** Timezone-safe "Monday of current week" as local YYYY-MM-DD */
+function getTodayMonday(): string {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+const EMPTY_METRICS: ComputedMetrics = { reps: 0, sets: 0, max: 0, avg: 0, tonnage: 0, k: null };
 
 // ── Component ──────────────────────────────────────────────────────
 
@@ -88,22 +133,25 @@ export function PlannerWeekOverview({
   athlete,
   group,
   onSelectWeek,
+  visibleMetrics = DEFAULT_VISIBLE_METRICS,
+  competitionTotal = null,
 }: PlannerWeekOverviewProps) {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [macroBlocks, setMacroBlocks] = useState<MacroBlock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [centerDate, setCenterDate] = useState(() => getMondayOfWeekISO(new Date()));
+  const [centerDate, setCenterDate] = useState(() => getTodayMonday());
+  const currentWeekRef = useRef<HTMLDivElement>(null);
 
-  const today = getMondayOfWeekISO(new Date());
+  const today = getTodayMonday();
   const rangeStart = addWeeks(centerDate, -WEEKS_BACK);
   const rangeEnd = addWeeks(centerDate, WEEKS_FORWARD);
 
   const targetId = athlete?.id || null;
-  const targetType = group ? 'group' : 'athlete';
+  const targetGroupId = group?.id || null;
 
   // ── Load data ────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
-    if (!targetId && !group) {
+    if (!targetId && !targetGroupId) {
       setWeeks([]);
       setMacroBlocks([]);
       setLoading(false);
@@ -140,32 +188,44 @@ export function PlannerWeekOverview({
 
       // 3. Fetch planned exercises for all week plans
       const wpIds = (weekPlans || []).map(wp => wp.id);
-      let exerciseMap = new Map<string, { dayIndex: number; exerciseId: string; color: string; name: string; reps: number; tonnage: number }[]>();
+      const exerciseMap = new Map<string, ExerciseRaw[]>();
 
       if (wpIds.length > 0) {
         const { data: exercises } = await supabase
           .from('planned_exercises')
-          .select('weekplan_id, day_index, exercise_id, summary_total_reps, summary_avg_load, exercises(name, color, exercise_code)')
+          .select(`
+            weekplan_id, day_index, exercise_id,
+            summary_total_reps, summary_total_sets, summary_avg_load, summary_highest_load,
+            counts_towards_totals,
+            exercises(name, color, exercise_code)
+          `)
           .in('weekplan_id', wpIds);
 
         (exercises || []).forEach((ex: any) => {
           const key = ex.weekplan_id;
           if (!exerciseMap.has(key)) exerciseMap.set(key, []);
           const reps = ex.summary_total_reps || 0;
+          const sets = ex.summary_total_sets || 0;
           const avgLoad = ex.summary_avg_load || 0;
+          const highestLoad = ex.summary_highest_load || 0;
           exerciseMap.get(key)!.push({
             dayIndex: ex.day_index,
             exerciseId: ex.exercise_id,
             color: ex.exercises?.color || '#888',
-            name: ex.exercises?.exercise_code || ex.exercises?.name || '?',
+            name: ex.exercises?.name || '?',
+            code: ex.exercises?.exercise_code || '',
             reps,
+            sets,
+            highestLoad,
+            avgLoad,
             tonnage: reps * avgLoad,
+            countsTowardsTotals: ex.counts_towards_totals !== false,
           });
         });
       }
 
       // 4. Fetch training log sessions for compliance
-      let logMap = new Map<string, Set<number>>(); // weekStart → Set of day indices logged
+      const logMap = new Map<string, Set<number>>();
       if (targetId) {
         const { data: sessions } = await supabase
           .from('training_log_sessions')
@@ -244,24 +304,77 @@ export function PlannerWeekOverview({
       // 6. Build week summaries
       const summaries: WeekSummary[] = weekDates.map(ws => {
         const wp = wpMap.get(ws);
-        const wpExercises = wp ? (exerciseMap.get(wp.id) || []) : [];
+        const wpExercises: ExerciseRaw[] = wp ? (exerciseMap.get(wp.id) || []) : [];
         const activeDays = wp?.active_days || [];
         const logged = logMap.get(ws) || new Set<number>();
+
+        // Build per-exercise summary (aggregate across days)
+        const exSummaryMap = new Map<string, {
+          color: string; name: string;
+          totalReps: number; topSet: number;
+          weightedLoadSum: number; tonnage: number;
+        }>();
+        for (const ex of wpExercises) {
+          if (!ex.countsTowardsTotals) continue;
+          if (!exSummaryMap.has(ex.exerciseId)) {
+            exSummaryMap.set(ex.exerciseId, {
+              color: ex.color, name: ex.code || ex.name,
+              totalReps: 0, topSet: 0, weightedLoadSum: 0, tonnage: 0,
+            });
+          }
+          const s = exSummaryMap.get(ex.exerciseId)!;
+          s.totalReps += ex.reps;
+          s.topSet = Math.max(s.topSet, ex.highestLoad);
+          s.weightedLoadSum += ex.avgLoad * ex.reps;
+          s.tonnage += ex.tonnage;
+        }
+        const exerciseSummaries: ExerciseSummary[] = Array.from(exSummaryMap.entries()).map(([id, s]) => ({
+          exerciseId: id,
+          color: s.color,
+          name: s.name,
+          totalReps: s.totalReps,
+          topSet: s.topSet,
+          avgLoad: s.totalReps > 0 ? Math.round(s.weightedLoadSum / s.totalReps) : 0,
+        }));
 
         // Build day summaries
         const days: DaySummary[] = [];
         for (let di = 0; di < 7; di++) {
           const dayExs = wpExercises.filter(e => e.dayIndex === di);
           const isRest = !activeDays.includes(di);
+          const dayMetrics = computeMetrics(
+            dayExs.map(e => ({
+              summary_total_sets: e.sets,
+              summary_total_reps: e.reps,
+              summary_highest_load: e.highestLoad,
+              summary_avg_load: e.avgLoad,
+              counts_towards_totals: e.countsTowardsTotals,
+            })),
+            competitionTotal,
+          );
           days.push({
             dayIndex: di,
             exercises: dayExs.map(e => ({ exerciseId: e.exerciseId, color: e.color, name: e.name })),
+            rawExercises: dayExs,
             totalReps: dayExs.reduce((s, e) => s + e.reps, 0),
             tonnage: dayExs.reduce((s, e) => s + e.tonnage, 0),
             isRest: isRest && dayExs.length === 0,
             isLogged: logged.has(di),
+            dayMetrics,
           });
         }
+
+        // Week-level metrics
+        const weekMetrics = computeMetrics(
+          wpExercises.map(e => ({
+            summary_total_sets: e.sets,
+            summary_total_reps: e.reps,
+            summary_highest_load: e.highestLoad,
+            summary_avg_load: e.avgLoad,
+            counts_towards_totals: e.countsTowardsTotals,
+          })),
+          competitionTotal,
+        );
 
         const totalReps = days.reduce((s, d) => s + d.totalReps, 0);
         const totalTonnage = days.reduce((s, d) => s + d.tonnage, 0);
@@ -282,6 +395,8 @@ export function PlannerWeekOverview({
           compliance,
           loggedDays,
           plannedDays,
+          weekMetrics,
+          exerciseSummaries,
         };
       });
 
@@ -291,7 +406,7 @@ export function PlannerWeekOverview({
     } finally {
       setLoading(false);
     }
-  }, [targetId, group, rangeStart, rangeEnd]);
+  }, [targetId, targetGroupId, rangeStart, rangeEnd, competitionTotal]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -314,14 +429,6 @@ export function PlannerWeekOverview({
     return null;
   }
 
-  function getWeekTypeForWeek(weekStart: string): { type: string; text: string | null } | null {
-    // Check macro_weeks for this week's type
-    // Since we don't have macro_weeks in state, we'll skip for now
-    // Claude Code can wire this up with the actual data
-    return null;
-  }
-
-  // Group weeks by macro/phase for section labels
   function getPhaseLabel(weekStart: string, prevWeekStart: string | null): string | null {
     const current = getPhaseForWeek(weekStart);
     const prev = prevWeekStart ? getPhaseForWeek(prevWeekStart) : null;
@@ -330,7 +437,6 @@ export function PlannerWeekOverview({
       return current.phase.phaseName;
     }
 
-    // Check if entering a new macro
     const currentMacro = getMacroForWeek(weekStart);
     const prevMacro = prevWeekStart ? getMacroForWeek(prevWeekStart) : null;
     if (currentMacro && (!prevMacro || prevMacro.macroId !== currentMacro.macroId)) {
@@ -340,7 +446,15 @@ export function PlannerWeekOverview({
     return null;
   }
 
-  // ── Determine macro context for header ───────────────────────────
+  const handleTodayClick = () => {
+    const newCenter = getTodayMonday();
+    setCenterDate(newCenter);
+    setTimeout(() => {
+      currentWeekRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  };
+
+  // ── Derive macro context for header ─────────────────────────────
   const currentMacro = getMacroForWeek(today);
   const currentPhaseInfo = getPhaseForWeek(today);
 
@@ -362,11 +476,10 @@ export function PlannerWeekOverview({
     );
   }
 
-  // Volume bar data
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
 
   return (
-    <div className="flex flex-col gap-3 py-4 px-4 max-w-[800px] mx-auto">
+    <div className="flex flex-col gap-3 py-4 px-2">
       {/* Macro context bar */}
       {currentMacro && (
         <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
@@ -399,7 +512,7 @@ export function PlannerWeekOverview({
           <ChevronLeft size={14} /> Earlier
         </button>
         <button
-          onClick={() => setCenterDate(getMondayOfWeekISO(new Date()))}
+          onClick={handleTodayClick}
           className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
         >
           <CalendarDays size={13} /> Today
@@ -442,22 +555,22 @@ export function PlannerWeekOverview({
           const isEmpty = week.weekPlanId === null;
           const endDate = addDays(week.weekStart, 6);
 
-          // Phase separator
           const prevWeek = idx > 0 ? weeks[idx - 1].weekStart : null;
           const sectionLabel = getPhaseLabel(week.weekStart, prevWeek);
 
-          // Macro week number
           const macro = getMacroForWeek(week.weekStart);
           let weekNum: string | null = null;
           if (macro) {
-            const macroStart = new Date(macro.startDate);
-            const weekDate = new Date(week.weekStart);
+            const macroStart = new Date(macro.startDate + 'T00:00:00');
+            const weekDate = new Date(week.weekStart + 'T00:00:00');
             const diffWeeks = Math.floor((weekDate.getTime() - macroStart.getTime()) / (7 * 86400000)) + 1;
             if (diffWeeks > 0) weekNum = `W${diffWeeks}`;
           }
 
+          const hasExercises = week.exerciseSummaries.length > 0;
+
           return (
-            <div key={week.weekStart}>
+            <div key={week.weekStart} ref={isCurrent ? currentWeekRef : undefined}>
               {sectionLabel && (
                 <div className="flex items-center gap-2 py-2 mt-2">
                   <span className="text-[10px] text-gray-400 font-medium">{sectionLabel}</span>
@@ -466,129 +579,152 @@ export function PlannerWeekOverview({
               )}
               <div
                 onClick={() => onSelectWeek(week.weekStart)}
-                className={`flex gap-1.5 items-stretch py-2 px-2 -mx-2 rounded-lg cursor-pointer transition-colors ${
+                className={`flex flex-col py-2.5 px-2 -mx-2 rounded-lg cursor-pointer transition-colors ${
                   isCurrent
                     ? 'bg-blue-50 border border-blue-200'
                     : 'hover:bg-gray-50 border border-transparent'
                 }`}
               >
-                {/* Meta column */}
-                <div className="w-[60px] flex-shrink-0 flex flex-col justify-center">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[13px] font-medium text-gray-900">
-                      {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
-                    </span>
-                    {isCurrent && (
-                      <span className="text-[7px] font-medium bg-red-100 text-red-600 px-1 py-px rounded">
-                        now
+                {/* ── Top row: meta + day blocks + stats ── */}
+                <div className="flex gap-2 items-stretch">
+                  {/* Meta column */}
+                  <div className="w-[68px] flex-shrink-0 flex flex-col justify-center">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[13px] font-medium text-gray-900">
+                        {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
                       </span>
-                    )}
-                  </div>
-                  <div className="text-[9px] text-gray-400 mt-0.5">
-                    {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
-                  </div>
-                </div>
-
-                {/* Day blocks */}
-                <div className="flex-1 flex gap-0.5 items-stretch" style={{ minHeight: 44 }}>
-                  {week.days.map((day, di) => {
-                    const dayIsPast = isPast || (isCurrent && di < new Date().getDay() - 1);
-                    const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
-
-                    return (
-                      <div
-                        key={di}
-                        className={`flex-1 rounded flex flex-col p-0.5 min-w-0 ${
-                          day.isRest
-                            ? 'bg-gray-50 opacity-40'
-                            : isEmpty
-                            ? 'border border-dashed border-gray-200'
-                            : dayIsFuture && !isPast
-                            ? 'border border-dashed border-gray-300'
-                            : 'border border-gray-200 bg-white'
-                        }`}
-                      >
-                        <div className="text-[7px] text-gray-400 text-center">{DAY_LABELS[di]}</div>
-                        <div className="flex flex-col gap-px flex-1 mt-0.5">
-                          {day.exercises.slice(0, 5).map((ex, ei) => (
-                            <div
-                              key={ei}
-                              className="h-[3px] rounded-sm"
-                              style={{
-                                backgroundColor: ex.color,
-                                opacity: dayIsFuture && !isPast ? 0.25 : 0.65,
-                              }}
-                            />
-                          ))}
-                        </div>
-                        {day.tonnage > 0 && !day.isRest && (
-                          <div className="text-[7px] font-mono text-gray-400 text-center mt-auto">
-                            {(day.tonnage / 1000).toFixed(1)}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Stats column */}
-                <div className="w-[110px] flex-shrink-0 flex flex-col justify-center gap-0.5 pl-2 border-l border-gray-200">
-                  <div className="flex justify-between text-[9px]">
-                    <span className="text-gray-400">Reps</span>
-                    <span className={`font-mono text-[10px] ${week.totalReps > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
-                      {week.totalReps > 0 ? (
-                        isCurrent && week.compliance !== null && week.compliance < 1
-                          ? `${Math.round(week.totalReps * (week.compliance || 0))} / ${week.totalReps}`
-                          : week.totalReps
-                      ) : (
-                        isEmpty ? '—' : '0'
+                      {isCurrent && (
+                        <span className="text-[7px] font-medium bg-red-100 text-red-600 px-1 py-px rounded">
+                          now
+                        </span>
                       )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[9px]">
-                    <span className="text-gray-400">Tonnage</span>
-                    <span className={`font-mono text-[10px] ${week.totalTonnage > 0 ? 'text-gray-900 font-medium' : 'text-gray-300'}`}>
-                      {week.totalTonnage > 0 ? `${(week.totalTonnage / 1000).toFixed(1)}t` : '—'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[9px]">
-                    <span className="text-gray-400">Avg</span>
-                    <span className={`font-mono text-[10px] ${week.avgLoad ? 'text-gray-700' : 'text-gray-300'}`}>
-                      {week.avgLoad ? `${week.avgLoad} kg` : '—'}
-                    </span>
-                  </div>
-                  {/* Compliance bar */}
-                  <div className="h-[3px] bg-gray-100 rounded-full mt-0.5 overflow-hidden">
+                    </div>
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
+                    </div>
                     {week.compliance !== null && (
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.round(week.compliance * 100)}%`,
-                          backgroundColor: week.compliance >= 0.9 ? '#639922'
-                            : week.compliance >= 0.5 ? '#378ADD'
-                            : '#BA7517',
-                        }}
-                      />
+                      <div className="mt-1">
+                        <div className="h-[3px] bg-gray-100 rounded-full overflow-hidden w-full">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.round(week.compliance * 100)}%`,
+                              backgroundColor: week.compliance >= 0.9 ? '#639922'
+                                : week.compliance >= 0.5 ? '#378ADD'
+                                : '#BA7517',
+                            }}
+                          />
+                        </div>
+                        <span className="text-[8px] text-gray-400">
+                          {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' prog.' : ''}
+                        </span>
+                      </div>
                     )}
                   </div>
-                  {week.compliance !== null && (
-                    <span
-                      className="text-[8px] font-medium px-1 py-px rounded self-start"
-                      style={{
-                        backgroundColor: week.compliance >= 0.9 ? 'rgba(99,153,34,0.1)'
-                          : week.compliance >= 0.5 ? 'rgba(55,138,221,0.1)'
-                          : 'rgba(186,117,23,0.1)',
-                        color: week.compliance >= 0.9 ? '#3B6D11'
-                          : week.compliance >= 0.5 ? '#185FA5'
-                          : '#854F0B',
-                      }}
-                    >
-                      {isCurrent && week.compliance < 1
-                        ? `${Math.round(week.compliance * 100)}% in progress`
-                        : `${Math.round(week.compliance * 100)}% done`}
-                    </span>
-                  )}
+
+                  {/* Day blocks */}
+                  <div className="flex-1 flex gap-0.5 items-stretch" style={{ minHeight: 56 }}>
+                    {week.days.map((day) => {
+                      const di = day.dayIndex;
+                      const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
+                      const hasData = day.exercises.length > 0;
+
+                      return (
+                        <div
+                          key={di}
+                          className={`flex-1 rounded flex flex-col p-0.5 min-w-0 ${
+                            day.isRest
+                              ? 'bg-gray-50 opacity-40'
+                              : isEmpty
+                              ? 'border border-dashed border-gray-200'
+                              : dayIsFuture && !isPast
+                              ? 'border border-dashed border-gray-300'
+                              : 'border border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className="text-[7px] text-gray-400 text-center">{DAY_LABELS[di]}</div>
+                          {/* Exercise color bars */}
+                          <div className="flex flex-col gap-px flex-1 mt-0.5">
+                            {day.exercises.slice(0, 4).map((ex, ei) => (
+                              <div
+                                key={ei}
+                                className="h-[3px] rounded-sm"
+                                style={{
+                                  backgroundColor: ex.color,
+                                  opacity: dayIsFuture && !isPast ? 0.25 : 0.65,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          {/* Metric strip per day */}
+                          {hasData && (
+                            <div className="mt-1">
+                              <MetricStrip
+                                metrics={day.dayMetrics}
+                                visibleMetrics={visibleMetrics}
+                                size="sm"
+                                showLabels={false}
+                                separator="·"
+                                className={`text-[7px] leading-tight justify-center ${
+                                  dayIsFuture && !isPast ? 'opacity-40' : ''
+                                }`}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Stats column */}
+                  <div className="w-[120px] flex-shrink-0 flex flex-col justify-center gap-0.5 pl-2 border-l border-gray-200">
+                    <MetricStrip
+                      metrics={week.weekMetrics}
+                      visibleMetrics={visibleMetrics}
+                      size="sm"
+                      showLabels={true}
+                      separator="·"
+                      className="flex-wrap gap-y-0.5"
+                    />
+                  </div>
                 </div>
+
+                {/* ── Exercise summary grid ── */}
+                {hasExercises && (
+                  <div className="mt-2 ml-[76px] mr-[128px]">
+                    <div className="grid gap-x-3 gap-y-px"
+                      style={{ gridTemplateColumns: 'minmax(60px,1fr) repeat(3, auto)' }}
+                    >
+                      {/* Header */}
+                      <span className="text-[8px] text-gray-400 font-medium">Exercise</span>
+                      <span className="text-[8px] text-gray-400 font-medium text-right">Reps</span>
+                      <span className="text-[8px] text-gray-400 font-medium text-right">Top</span>
+                      <span className="text-[8px] text-gray-400 font-medium text-right">Avg</span>
+
+                      {/* Rows */}
+                      {week.exerciseSummaries.map(ex => (
+                        <>
+                          <div key={`${ex.exerciseId}-name`} className="flex items-center gap-1 min-w-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: ex.color }}
+                            />
+                            <span className="text-[9px] text-gray-700 truncate font-medium">{ex.name}</span>
+                          </div>
+                          <span key={`${ex.exerciseId}-reps`} className="text-[9px] font-mono text-gray-600 text-right">
+                            {ex.totalReps > 0 ? ex.totalReps : '—'}
+                          </span>
+                          <span key={`${ex.exerciseId}-top`} className="text-[9px] font-mono text-gray-600 text-right">
+                            {ex.topSet > 0 ? `${ex.topSet}` : '—'}
+                          </span>
+                          <span key={`${ex.exerciseId}-avg`} className="text-[9px] font-mono text-gray-600 text-right">
+                            {ex.avgLoad > 0 ? `${ex.avgLoad}` : '—'}
+                          </span>
+                        </>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );
