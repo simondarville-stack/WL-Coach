@@ -5,6 +5,8 @@ import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import {
   computeMetrics,
+  formatMetricValue,
+  METRICS,
   DEFAULT_VISIBLE_METRICS,
   type MetricKey,
   type ComputedMetrics,
@@ -37,6 +39,12 @@ interface ExerciseSummary {
   avgLoad: number;
 }
 
+interface MacroTargets {
+  reps: number | null;
+  tonnage: number | null;
+  avg: number | null;
+}
+
 interface WeekSummary {
   weekStart: string;
   weekPlanId: string | null;
@@ -51,6 +59,7 @@ interface WeekSummary {
   plannedDays: number;
   weekMetrics: ComputedMetrics;
   exerciseSummaries: ExerciseSummary[];
+  macroTargets: MacroTargets | null;
 }
 
 interface DaySummary {
@@ -259,6 +268,7 @@ export function PlannerWeekOverview({
 
       const { data: macros } = await macroQuery;
       const blocks: MacroBlock[] = [];
+      const macroWeekTargetMap = new Map<string, MacroTargets>();
 
       if (macros && macros.length > 0) {
         const macroIds = macros.map(m => m.id);
@@ -270,9 +280,18 @@ export function PlannerWeekOverview({
 
         const { data: macroWeeks } = await supabase
           .from('macro_weeks')
-          .select('macrocycle_id, week_number, week_start, week_type')
+          .select('macrocycle_id, week_number, week_start, week_type, total_reps_target, tonnage_target, avg_intensity_target')
           .in('macrocycle_id', macroIds)
           .order('week_number');
+
+        // Build weekStart → macro targets map
+        (macroWeeks || []).forEach((mw: any) => {
+          macroWeekTargetMap.set(mw.week_start, {
+            reps: mw.total_reps_target ?? null,
+            tonnage: mw.tonnage_target ?? null,
+            avg: mw.avg_intensity_target ?? null,
+          });
+        });
 
         macros.forEach(macro => {
           const mPhases = (phases || []).filter(p => p.macrocycle_id === macro.id);
@@ -319,7 +338,7 @@ export function PlannerWeekOverview({
           if (!ex.countsTowardsTotals) continue;
           if (!exSummaryMap.has(ex.exerciseId)) {
             exSummaryMap.set(ex.exerciseId, {
-              color: ex.color, name: ex.code || ex.name,
+              color: ex.color, name: ex.name,
               totalReps: 0, topSet: 0, weightedLoadSum: 0, tonnage: 0,
             });
           }
@@ -398,6 +417,7 @@ export function PlannerWeekOverview({
           plannedDays,
           weekMetrics,
           exerciseSummaries,
+          macroTargets: macroWeekTargetMap.get(ws) ?? null,
         };
       });
 
@@ -582,7 +602,7 @@ export function PlannerWeekOverview({
                 onClick={() => onSelectWeek(week.weekStart)}
                 className={`flex flex-col py-3 px-3 -mx-3 rounded-xl cursor-pointer transition-colors ${
                   isCurrent
-                    ? 'bg-blue-50 border border-blue-200'
+                    ? 'bg-blue-100 border-2 border-blue-400 shadow-sm'
                     : 'hover:bg-gray-50 border border-transparent'
                 }`}
               >
@@ -617,7 +637,7 @@ export function PlannerWeekOverview({
                           />
                         </div>
                         <span className="text-[9px] text-gray-400 mt-0.5">
-                          {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' prog.' : ''}
+                          Done: {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' (prog.)' : ''}
                         </span>
                       </div>
                     )}
@@ -662,7 +682,7 @@ export function PlannerWeekOverview({
                                   className="text-[9px] leading-snug font-semibold truncate"
                                   style={{ color: faded ? '#9ca3af' : '#1f2937' }}
                                 >
-                                  {ex.code || ex.name.slice(0, 5)}
+                                  {ex.name}
                                 </span>
                               </div>
                             ))}
@@ -687,16 +707,34 @@ export function PlannerWeekOverview({
                     })}
                   </div>
 
-                  {/* Stats column — uses visible_summary_metrics */}
-                  <div className="w-[140px] flex-shrink-0 flex flex-col justify-center gap-1.5 pl-3 border-l border-gray-200">
-                    <MetricStrip
-                      metrics={week.weekMetrics}
-                      visibleMetrics={visibleSummaryMetrics}
-                      size="md"
-                      showLabels={true}
-                      separator="·"
-                      className="flex-wrap gap-y-1"
-                    />
+                  {/* Stats column — uses visible_summary_metrics, two columns: target | planned */}
+                  <div className="w-[170px] flex-shrink-0 flex flex-col justify-center pl-3 border-l border-gray-200">
+                    {/* Column headers */}
+                    <div className="flex items-center gap-1 mb-1">
+                      <div className="w-10 text-[8px] text-gray-400" />
+                      <div className="flex-1 text-[8px] text-gray-400 text-right">Target</div>
+                      <div className="flex-1 text-[8px] text-gray-500 font-medium text-right">Planned</div>
+                    </div>
+                    {METRICS.filter(m => (visibleSummaryMetrics as string[]).includes(m.key)).map(m => {
+                      const actualVal = week.weekMetrics[m.key] as number | null;
+                      const targetVal = week.macroTargets
+                        ? m.key === 'reps' ? week.macroTargets.reps
+                          : m.key === 'tonnage' ? week.macroTargets.tonnage
+                          : m.key === 'avg' ? week.macroTargets.avg
+                          : null
+                        : null;
+                      return (
+                        <div key={m.key} className="flex items-center gap-1 py-px">
+                          <div className="w-10 text-[9px] text-gray-500 font-medium">{m.label}</div>
+                          <div className="flex-1 text-[10px] text-gray-400 text-right tabular-nums">
+                            {formatMetricValue(m.key, targetVal)}
+                          </div>
+                          <div className="flex-1 text-[10px] font-semibold text-gray-700 text-right tabular-nums">
+                            {formatMetricValue(m.key, actualVal)}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
