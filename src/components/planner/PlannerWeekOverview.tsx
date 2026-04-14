@@ -580,18 +580,18 @@ export function PlannerWeekOverview({
               )}
               <div
                 onClick={() => onSelectWeek(week.weekStart)}
-                className={`flex flex-col py-2.5 px-2 -mx-2 rounded-lg cursor-pointer transition-colors ${
+                className={`flex flex-col py-3 px-3 -mx-3 rounded-xl cursor-pointer transition-colors ${
                   isCurrent
                     ? 'bg-blue-50 border border-blue-200'
                     : 'hover:bg-gray-50 border border-transparent'
                 }`}
               >
                 {/* ── Top row: meta + day blocks + stats ── */}
-                <div className="flex gap-2 items-stretch">
+                <div className="flex gap-3 items-stretch">
                   {/* Meta column */}
-                  <div className="w-[68px] flex-shrink-0 flex flex-col justify-center">
+                  <div className="w-[76px] flex-shrink-0 flex flex-col justify-center">
                     <div className="flex items-center gap-1">
-                      <span className="text-[13px] font-medium text-gray-900">
+                      <span className="text-sm font-semibold text-gray-900">
                         {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
                       </span>
                       {isCurrent && (
@@ -600,11 +600,11 @@ export function PlannerWeekOverview({
                         </span>
                       )}
                     </div>
-                    <div className="text-[9px] text-gray-400 mt-0.5">
+                    <div className="text-[10px] text-gray-400 mt-0.5">
                       {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
                     </div>
                     {week.compliance !== null && (
-                      <div className="mt-1">
+                      <div className="mt-1.5">
                         <div className="h-[3px] bg-gray-100 rounded-full overflow-hidden w-full">
                           <div
                             className="h-full rounded-full"
@@ -616,7 +616,7 @@ export function PlannerWeekOverview({
                             }}
                           />
                         </div>
-                        <span className="text-[8px] text-gray-400">
+                        <span className="text-[9px] text-gray-400 mt-0.5">
                           {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' prog.' : ''}
                         </span>
                       </div>
@@ -624,7 +624,7 @@ export function PlannerWeekOverview({
                   </div>
 
                   {/* Day blocks */}
-                  <div className="flex-1 flex gap-0.5 items-stretch" style={{ minHeight: 60 }}>
+                  <div className="flex-1 flex gap-1 items-stretch" style={{ minHeight: 90 }}>
                     {week.days.map((day) => {
                       const di = day.dayIndex;
                       const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
@@ -634,37 +634,40 @@ export function PlannerWeekOverview({
                       return (
                         <div
                           key={di}
-                          className={`flex-1 rounded flex flex-col px-0.5 pt-0.5 pb-1 min-w-0 ${
+                          className={`flex-1 rounded-md flex flex-col px-1 pt-1 pb-1.5 min-w-0 ${
                             day.isRest
                               ? 'bg-gray-50 opacity-30'
                               : isEmpty
                               ? 'border border-dashed border-gray-200'
                               : faded
-                              ? 'border border-dashed border-gray-300'
+                              ? 'border border-dashed border-gray-300 bg-gray-50/40'
                               : 'border border-gray-200 bg-white'
                           }`}
                         >
                           {/* Day label */}
-                          <div className="text-[7px] text-gray-400 text-center mb-0.5">{DAY_LABELS[di]}</div>
+                          <div className="text-[8px] font-medium text-gray-500 text-center mb-1">{DAY_LABELS[di]}</div>
 
-                          {/* Exercise names */}
-                          <div className="flex flex-col gap-px flex-1">
-                            {day.exercises.slice(0, 5).map((ex, ei) => (
-                              <div key={ei} className="flex items-center gap-0.5 min-w-0">
+                          {/* Exercise bands — colored stripe + name */}
+                          <div className="flex flex-col gap-0.5 flex-1">
+                            {day.exercises.slice(0, 6).map((ex, ei) => (
+                              <div
+                                key={ei}
+                                className="rounded-sm px-1 py-px flex items-center gap-1 min-w-0"
+                                style={{
+                                  backgroundColor: ex.color + (faded ? '15' : '22'),
+                                  borderLeft: `2.5px solid ${ex.color}${faded ? '55' : 'cc'}`,
+                                }}
+                              >
                                 <span
-                                  className="w-1 h-1 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: ex.color, opacity: faded ? 0.4 : 1 }}
-                                />
-                                <span
-                                  className="text-[8px] leading-tight truncate font-medium"
-                                  style={{ color: faded ? '#9ca3af' : '#374151' }}
+                                  className="text-[9px] leading-snug font-semibold truncate"
+                                  style={{ color: faded ? '#9ca3af' : '#1f2937' }}
                                 >
-                                  {ex.code || ex.name.slice(0, 6)}
+                                  {ex.code || ex.name.slice(0, 5)}
                                 </span>
                               </div>
                             ))}
-                            {day.exercises.length > 5 && (
-                              <span className="text-[7px] text-gray-400">+{day.exercises.length - 5}</span>
+                            {day.exercises.length > 6 && (
+                              <span className="text-[7px] text-gray-400 pl-1">+{day.exercises.length - 6}</span>
                             )}
                           </div>
 
@@ -676,7 +679,7 @@ export function PlannerWeekOverview({
                               size="sm"
                               showLabels={false}
                               separator="·"
-                              className={`text-[7px] leading-tight justify-center mt-0.5 ${faded ? 'opacity-40' : ''}`}
+                              className={`text-[8px] leading-tight justify-center mt-1 ${faded ? 'opacity-40' : ''}`}
                             />
                           )}
                         </div>
@@ -685,14 +688,14 @@ export function PlannerWeekOverview({
                   </div>
 
                   {/* Stats column — uses visible_summary_metrics */}
-                  <div className="w-[120px] flex-shrink-0 flex flex-col justify-center gap-0.5 pl-2 border-l border-gray-200">
+                  <div className="w-[140px] flex-shrink-0 flex flex-col justify-center gap-1.5 pl-3 border-l border-gray-200">
                     <MetricStrip
                       metrics={week.weekMetrics}
                       visibleMetrics={visibleSummaryMetrics}
-                      size="sm"
+                      size="md"
                       showLabels={true}
                       separator="·"
-                      className="flex-wrap gap-y-0.5"
+                      className="flex-wrap gap-y-1"
                     />
                   </div>
                 </div>
