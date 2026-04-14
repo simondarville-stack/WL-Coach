@@ -55,7 +55,7 @@ interface WeekSummary {
 
 interface DaySummary {
   dayIndex: number;
-  exercises: { exerciseId: string; color: string; name: string }[];
+  exercises: { exerciseId: string; color: string; name: string; code: string }[];
   rawExercises: ExerciseRaw[];
   totalReps: number;
   tonnage: number;
@@ -84,7 +84,8 @@ interface PlannerWeekOverviewProps {
   athlete: Athlete | null;
   group: TrainingGroup | null;
   onSelectWeek: (weekStart: string) => void;
-  visibleMetrics?: MetricKey[];
+  visibleMetrics?: MetricKey[];       // day card metrics (visible_card_metrics)
+  visibleSummaryMetrics?: MetricKey[]; // week stats column (visible_summary_metrics)
   competitionTotal?: number | null;
 }
 
@@ -134,6 +135,7 @@ export function PlannerWeekOverview({
   group,
   onSelectWeek,
   visibleMetrics = DEFAULT_VISIBLE_METRICS,
+  visibleSummaryMetrics = DEFAULT_VISIBLE_METRICS,
   competitionTotal = null,
 }: PlannerWeekOverviewProps) {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
@@ -353,7 +355,7 @@ export function PlannerWeekOverview({
           );
           days.push({
             dayIndex: di,
-            exercises: dayExs.map(e => ({ exerciseId: e.exerciseId, color: e.color, name: e.name })),
+            exercises: dayExs.map(e => ({ exerciseId: e.exerciseId, color: e.color, name: e.name, code: e.code })),
             rawExercises: dayExs,
             totalReps: dayExs.reduce((s, e) => s + e.reps, 0),
             tonnage: dayExs.reduce((s, e) => s + e.tonnage, 0),
@@ -622,64 +624,71 @@ export function PlannerWeekOverview({
                   </div>
 
                   {/* Day blocks */}
-                  <div className="flex-1 flex gap-0.5 items-stretch" style={{ minHeight: 56 }}>
+                  <div className="flex-1 flex gap-0.5 items-stretch" style={{ minHeight: 60 }}>
                     {week.days.map((day) => {
                       const di = day.dayIndex;
                       const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
                       const hasData = day.exercises.length > 0;
+                      const faded = dayIsFuture && !isPast;
 
                       return (
                         <div
                           key={di}
-                          className={`flex-1 rounded flex flex-col p-0.5 min-w-0 ${
+                          className={`flex-1 rounded flex flex-col px-0.5 pt-0.5 pb-1 min-w-0 ${
                             day.isRest
-                              ? 'bg-gray-50 opacity-40'
+                              ? 'bg-gray-50 opacity-30'
                               : isEmpty
                               ? 'border border-dashed border-gray-200'
-                              : dayIsFuture && !isPast
+                              : faded
                               ? 'border border-dashed border-gray-300'
                               : 'border border-gray-200 bg-white'
                           }`}
                         >
-                          <div className="text-[7px] text-gray-400 text-center">{DAY_LABELS[di]}</div>
-                          {/* Exercise color bars */}
-                          <div className="flex flex-col gap-px flex-1 mt-0.5">
-                            {day.exercises.slice(0, 4).map((ex, ei) => (
-                              <div
-                                key={ei}
-                                className="h-[3px] rounded-sm"
-                                style={{
-                                  backgroundColor: ex.color,
-                                  opacity: dayIsFuture && !isPast ? 0.25 : 0.65,
-                                }}
-                              />
+                          {/* Day label */}
+                          <div className="text-[7px] text-gray-400 text-center mb-0.5">{DAY_LABELS[di]}</div>
+
+                          {/* Exercise names */}
+                          <div className="flex flex-col gap-px flex-1">
+                            {day.exercises.slice(0, 5).map((ex, ei) => (
+                              <div key={ei} className="flex items-center gap-0.5 min-w-0">
+                                <span
+                                  className="w-1 h-1 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: ex.color, opacity: faded ? 0.4 : 1 }}
+                                />
+                                <span
+                                  className="text-[8px] leading-tight truncate font-medium"
+                                  style={{ color: faded ? '#9ca3af' : '#374151' }}
+                                >
+                                  {ex.code || ex.name.slice(0, 6)}
+                                </span>
+                              </div>
                             ))}
+                            {day.exercises.length > 5 && (
+                              <span className="text-[7px] text-gray-400">+{day.exercises.length - 5}</span>
+                            )}
                           </div>
-                          {/* Metric strip per day */}
+
+                          {/* Metric strip */}
                           {hasData && (
-                            <div className="mt-1">
-                              <MetricStrip
-                                metrics={day.dayMetrics}
-                                visibleMetrics={visibleMetrics}
-                                size="sm"
-                                showLabels={false}
-                                separator="·"
-                                className={`text-[7px] leading-tight justify-center ${
-                                  dayIsFuture && !isPast ? 'opacity-40' : ''
-                                }`}
-                              />
-                            </div>
+                            <MetricStrip
+                              metrics={day.dayMetrics}
+                              visibleMetrics={visibleMetrics}
+                              size="sm"
+                              showLabels={false}
+                              separator="·"
+                              className={`text-[7px] leading-tight justify-center mt-0.5 ${faded ? 'opacity-40' : ''}`}
+                            />
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Stats column */}
+                  {/* Stats column — uses visible_summary_metrics */}
                   <div className="w-[120px] flex-shrink-0 flex flex-col justify-center gap-0.5 pl-2 border-l border-gray-200">
                     <MetricStrip
                       metrics={week.weekMetrics}
-                      visibleMetrics={visibleMetrics}
+                      visibleMetrics={visibleSummaryMetrics}
                       size="sm"
                       showLabels={true}
                       separator="·"
@@ -687,43 +696,6 @@ export function PlannerWeekOverview({
                     />
                   </div>
                 </div>
-
-                {/* ── Exercise summary grid ── */}
-                {hasExercises && (
-                  <div className="mt-2 ml-[76px] mr-[128px]">
-                    <div className="grid gap-x-3 gap-y-px"
-                      style={{ gridTemplateColumns: 'minmax(60px,1fr) repeat(3, auto)' }}
-                    >
-                      {/* Header */}
-                      <span className="text-[8px] text-gray-400 font-medium">Exercise</span>
-                      <span className="text-[8px] text-gray-400 font-medium text-right">Reps</span>
-                      <span className="text-[8px] text-gray-400 font-medium text-right">Top</span>
-                      <span className="text-[8px] text-gray-400 font-medium text-right">Avg</span>
-
-                      {/* Rows */}
-                      {week.exerciseSummaries.map(ex => (
-                        <>
-                          <div key={`${ex.exerciseId}-name`} className="flex items-center gap-1 min-w-0">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: ex.color }}
-                            />
-                            <span className="text-[9px] text-gray-700 truncate font-medium">{ex.name}</span>
-                          </div>
-                          <span key={`${ex.exerciseId}-reps`} className="text-[9px] font-mono text-gray-600 text-right">
-                            {ex.totalReps > 0 ? ex.totalReps : '—'}
-                          </span>
-                          <span key={`${ex.exerciseId}-top`} className="text-[9px] font-mono text-gray-600 text-right">
-                            {ex.topSet > 0 ? `${ex.topSet}` : '—'}
-                          </span>
-                          <span key={`${ex.exerciseId}-avg`} className="text-[9px] font-mono text-gray-600 text-right">
-                            {ex.avgLoad > 0 ? `${ex.avgLoad}` : '—'}
-                          </span>
-                        </>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           );
