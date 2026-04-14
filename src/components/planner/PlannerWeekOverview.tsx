@@ -196,8 +196,7 @@ export function PlannerWeekOverview({
           .select(`
             weekplan_id, day_index, exercise_id,
             summary_total_reps, summary_total_sets, summary_avg_load, summary_highest_load,
-            counts_towards_totals,
-            exercises(name, color, exercise_code)
+            exercises(name, color, exercise_code, counts_towards_totals)
           `)
           .in('weekplan_id', wpIds);
 
@@ -219,7 +218,7 @@ export function PlannerWeekOverview({
             highestLoad,
             avgLoad,
             tonnage: reps * avgLoad,
-            countsTowardsTotals: ex.counts_towards_totals !== false,
+            countsTowardsTotals: ex.exercises?.counts_towards_totals !== false,
           });
         });
       }
