@@ -8,6 +8,7 @@ export interface Category {
   id: string;
   name: string;
   display_order: number;
+  color: string;
   created_at: string;
 }
 
@@ -172,11 +173,11 @@ export function useExercises() {
     }
   };
 
-  const createCategory = async (name: string, displayOrder: number) => {
+  const createCategory = async (name: string, displayOrder: number, color?: string) => {
     try {
       const { error } = await supabase
         .from('categories')
-        .insert([{ name, display_order: displayOrder }]);
+        .insert([{ name, display_order: displayOrder, color: color ?? '#888780' }]);
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add category');
@@ -184,11 +185,13 @@ export function useExercises() {
     }
   };
 
-  const updateCategory = async (id: string, name: string) => {
+  const updateCategory = async (id: string, name: string, color?: string) => {
     try {
+      const patch: Record<string, string> = { name };
+      if (color !== undefined) patch.color = color;
       const { error } = await supabase
         .from('categories')
-        .update({ name })
+        .update(patch)
         .eq('id', id);
       if (error) throw error;
     } catch (err) {
