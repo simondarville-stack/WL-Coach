@@ -656,11 +656,15 @@ export function PlannerWeekOverview({
                           key={di}
                           className={`flex-1 rounded-md flex flex-col px-1 pt-1 pb-1.5 min-w-0 ${
                             day.isRest
-                              ? 'bg-gray-50 opacity-30'
+                              ? isCurrent ? 'bg-blue-50 opacity-40' : 'bg-gray-50 opacity-30'
                               : isEmpty
                               ? 'border border-dashed border-gray-200'
                               : faded
-                              ? 'border border-dashed border-gray-300 bg-gray-50/40'
+                              ? isCurrent
+                                ? 'border border-dashed border-blue-300 bg-white/70'
+                                : 'border border-dashed border-gray-300 bg-gray-50/40'
+                              : isCurrent
+                              ? 'border border-blue-300 bg-white shadow-sm'
                               : 'border border-gray-200 bg-white'
                           }`}
                         >
