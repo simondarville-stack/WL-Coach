@@ -91,8 +91,8 @@ interface PlannerWeekOverviewProps {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const WEEKS_BACK = 4;
-const WEEKS_FORWARD = 8;
+const WEEKS_BACK = 2;
+const WEEKS_FORWARD = 2;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatDateShort(dateStr: string): string {
@@ -507,7 +507,7 @@ export function PlannerWeekOverview({
       {/* Navigation */}
       <div className="flex items-center justify-between">
         <button
-          onClick={() => setCenterDate(addWeeks(centerDate, -4))}
+          onClick={() => setCenterDate(addWeeks(centerDate, -1))}
           className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
         >
           <ChevronLeft size={14} /> Earlier
@@ -519,7 +519,7 @@ export function PlannerWeekOverview({
           <CalendarDays size={13} /> Today
         </button>
         <button
-          onClick={() => setCenterDate(addWeeks(centerDate, 4))}
+          onClick={() => setCenterDate(addWeeks(centerDate, 1))}
           className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
         >
           Later <ChevronRight size={14} />
