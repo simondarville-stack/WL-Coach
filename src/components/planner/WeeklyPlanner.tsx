@@ -20,8 +20,9 @@ import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
+import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { AthleteCardPicker } from '../AthleteCardPicker';
-import { User } from 'lucide-react';
+import { ArrowLeft, User } from 'lucide-react';
 
 export interface MacroContext {
   macroId: string;
@@ -121,6 +122,11 @@ export function WeeklyPlanner() {
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showWeekList, setShowWeekList] = useState(() => {
+    // If navigated here with a specific weekStart (e.g. from macro wheel),
+    // go straight to detail view. Otherwise show the overview.
+    return !initialWeekStart;
+  });
 
   useEffect(() => {
     fetchExercisesByName();
@@ -142,12 +148,14 @@ export function WeeklyPlanner() {
   useEffect(() => {
     if (selectedAthlete && !initialGroupId) {
       setPlanSelection({ type: 'individual', athlete: selectedAthlete, group: null });
+      setShowWeekList(true);
     }
   }, [selectedAthlete]);
 
   useEffect(() => {
     if (storeSelectedGroup) {
       setPlanSelection({ type: 'group', athlete: null, group: storeSelectedGroup });
+      setShowWeekList(true);
     }
   }, [storeSelectedGroup]);
 
@@ -609,8 +617,28 @@ export function WeeklyPlanner() {
           <div className="py-4">
             <AthleteCardPicker />
           </div>
+        ) : showWeekList ? (
+          <PlannerWeekOverview
+            athlete={planSelection.athlete}
+            group={planSelection.group}
+            onSelectWeek={(weekStart) => {
+              setSelectedDate(weekStart);
+              setShowWeekList(false);
+            }}
+          />
         ) : (
           <>
+
+            {/* ── Back to overview ── */}
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={() => setShowWeekList(true)}
+                className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                title="Back to week overview"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            </div>
 
             {/* ── Control Panel ── */}
             <PlannerControlPanel
