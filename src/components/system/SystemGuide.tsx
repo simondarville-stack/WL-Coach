@@ -1,5 +1,18 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Select,
+  Textarea,
+  Badge,
+  ColorDot,
+  Ribbon,
+  StatGrid,
+  StatCard,
+  DataTable,
+  type DataTableColumn,
+} from '../ui';
 
 type Section =
   | 'foundations'
@@ -83,13 +96,13 @@ export function SystemGuide() {
           <Colors />
           <Typography />
           <SpacingAndBorders />
-          <Buttons />
-          <Inputs />
-          <Badges />
-          <ColorDots />
-          <Ribbons />
-          <StatCards />
-          <DataTables />
+          <ButtonsSection />
+          <InputsSection />
+          <BadgesSection />
+          <ColorDotsSection />
+          <RibbonsSection />
+          <StatCardsSection />
+          <DataTablesSection />
           <PanelsAndModals />
           <PageLayout />
         </div>
@@ -140,7 +153,7 @@ function Subhead({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── Section components ─────────────────────────────────────────────
+// ── Token-doc sections (no primitives) ────────────────────────────
 
 function Foundations() {
   return (
@@ -220,7 +233,7 @@ function Colors() {
 
       <Subhead>Entity palette</Subhead>
       <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md) 0' }}>
-        Nine ramps for exercise, category, phase, and athlete colors. Each ramp has seven stops. Entities can also use custom hex codes outside the palette.
+        Nine ramps for exercise, category, phase, and athlete colors. Each ramp has seven stops.
       </p>
       {['blue', 'teal', 'coral', 'pink', 'gray', 'green', 'amber', 'red', 'purple'].map((ramp) => (
         <div key={ramp} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xs)' }}>
@@ -233,15 +246,11 @@ function Colors() {
                 key={stop}
                 title={`var(--color-${ramp}-${stop})`}
                 style={{
-                  flex: 1,
-                  height: '32px',
+                  flex: 1, height: '32px',
                   background: `var(--color-${ramp}-${stop})`,
                   borderRadius: 'var(--radius-sm)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 'var(--text-caption)',
-                  fontFamily: 'var(--font-mono)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)',
                   color: parseInt(stop) >= 400 ? '#FFFFFF' : '#1A1A18',
                 }}
               >
@@ -256,21 +265,13 @@ function Colors() {
 }
 
 function Swatch({ name, value, bg, onDark }: { name: string; value: string; bg: string; onDark?: boolean }) {
+  void onDark;
   return (
-    <div style={{
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: 'var(--radius-md)',
-      overflow: 'hidden',
-      background: 'var(--color-bg-primary)',
-    }}>
+    <div style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-primary)' }}>
       <div style={{ height: '48px', background: bg }} />
       <div style={{ padding: 'var(--space-sm) var(--space-md)' }}>
-        <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: onDark ? 'var(--color-text-primary)' : 'var(--color-text-primary)' }}>
-          {name}
-        </div>
-        <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>
-          {value}
-        </div>
+        <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)' }}>{name}</div>
+        <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>{value}</div>
       </div>
     </div>
   );
@@ -278,60 +279,29 @@ function Swatch({ name, value, bg, onDark }: { name: string; value: string; bg: 
 
 function TextSwatch({ name, value }: { name: string; value: string }) {
   return (
-    <div style={{
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-md)',
-      background: 'var(--color-bg-primary)',
-    }}>
-      <div style={{ fontSize: 'var(--text-body)', color: value, marginBottom: '4px' }}>
-        The quick brown fox
-      </div>
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-        {name}
-      </div>
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-        {value}
-      </div>
+    <div style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', background: 'var(--color-bg-primary)' }}>
+      <div style={{ fontSize: 'var(--text-body)', color: value, marginBottom: '4px' }}>The quick brown fox</div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{name}</div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{value}</div>
     </div>
   );
 }
 
 function BorderSwatch({ name, value }: { name: string; value: string }) {
   return (
-    <div style={{
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-md)',
-      background: 'var(--color-bg-primary)',
-      border: `0.5px solid ${value}`,
-    }}>
+    <div style={{ borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', background: 'var(--color-bg-primary)', border: `0.5px solid ${value}` }}>
       <div style={{ height: '24px', borderBottom: `0.5px solid ${value}`, marginBottom: 'var(--space-sm)' }} />
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-        {name}
-      </div>
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-        {value}
-      </div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{name}</div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{value}</div>
     </div>
   );
 }
 
-function SemanticSwatch({ name, bg, text, border, label }: {
-  name: string; bg: string; text: string; border: string; label: string;
-}) {
+function SemanticSwatch({ name, bg, text, border, label }: { name: string; bg: string; text: string; border: string; label: string }) {
   return (
-    <div style={{
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-md)',
-      background: bg,
-      border: `0.5px solid ${border}`,
-    }}>
-      <div style={{ fontSize: 'var(--text-caption)', fontWeight: 500, color: text, marginBottom: '8px' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: text, opacity: 0.7 }}>
-        {name}
-      </div>
+    <div style={{ borderRadius: 'var(--radius-md)', padding: 'var(--space-md)', background: bg, border: `0.5px solid ${border}` }}>
+      <div style={{ fontSize: 'var(--text-caption)', fontWeight: 500, color: text, marginBottom: '8px' }}>{label}</div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: text, opacity: 0.7 }}>{name}</div>
     </div>
   );
 }
@@ -339,7 +309,6 @@ function SemanticSwatch({ name, bg, text, border, label }: {
 function Typography() {
   return (
     <SectionBlock id="typography" title="Typography" description="Two families, two weights, five sizes.">
-
       <Subhead>Type scale</Subhead>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
         <TypeExample name="page-title" size="22px" weight="500" tracking="-0.01em" sample="Spring block" />
@@ -352,26 +321,14 @@ function Typography() {
       <Subhead>Font families</Subhead>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
         <div style={{ padding: 'var(--space-lg)', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', marginBottom: 'var(--space-sm)' }}>
-            IBM Plex Sans
-          </div>
-          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-            UI chrome · labels · buttons · body text · page titles
-          </div>
-          <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: 'var(--space-sm)' }}>
-            var(--font-sans)
-          </div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', marginBottom: 'var(--space-sm)' }}>IBM Plex Sans</div>
+          <div style={{ fontFamily: 'var(--font-sans)', fontSize: '14px', color: 'var(--color-text-secondary)' }}>UI chrome · labels · buttons · body text · page titles</div>
+          <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: 'var(--space-sm)' }}>var(--font-sans)</div>
         </div>
         <div style={{ padding: 'var(--space-lg)', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', marginBottom: 'var(--space-sm)' }}>
-            IBM Plex Mono
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--color-text-secondary)' }}>
-            Numbers · dates · codes · identifiers · tabular data
-          </div>
-          <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: 'var(--space-sm)' }}>
-            var(--font-mono)
-          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', marginBottom: 'var(--space-sm)' }}>IBM Plex Mono</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--color-text-secondary)' }}>Numbers · dates · codes · identifiers · tabular data</div>
+          <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: 'var(--space-sm)' }}>var(--font-mono)</div>
         </div>
       </div>
 
@@ -383,7 +340,6 @@ function Typography() {
           <div style={{ color: 'var(--color-text-secondary)' }}>Percentage</div><div>92 % · 80 %</div>
           <div style={{ color: 'var(--color-text-secondary)' }}>Date</div><div>Apr 13 · 2026-04-13</div>
           <div style={{ color: 'var(--color-text-secondary)' }}>Date range</div><div>Apr 13 → Jun 28</div>
-          <div style={{ color: 'var(--color-text-secondary)' }}>Time</div><div>09:30</div>
           <div style={{ color: 'var(--color-text-secondary)' }}>Rep × set</div><div>5 × 3</div>
           <div style={{ color: 'var(--color-text-secondary)' }}>Week</div><div>W5 · W11</div>
           <div style={{ color: 'var(--color-text-secondary)' }}>Delta</div><div>+12.4 % · −2.1 kg</div>
@@ -394,26 +350,12 @@ function Typography() {
   );
 }
 
-function TypeExample({ name, size, weight, tracking, sample }: {
-  name: string; size: string; weight: string; tracking?: string; sample: string;
-}) {
+function TypeExample({ name, size, weight, tracking, sample }: { name: string; size: string; weight: string; tracking?: string; sample: string }) {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'baseline',
-      gap: 'var(--space-lg)',
-      paddingBottom: 'var(--space-md)',
-      borderBottom: '0.5px solid var(--color-border-tertiary)',
-    }}>
-      <div style={{ width: '120px', flexShrink: 0, fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-        {name}
-      </div>
-      <div style={{ flex: 1, fontSize: size, fontWeight: weight, letterSpacing: tracking || 0 }}>
-        {sample}
-      </div>
-      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-        {size} · {weight}
-      </div>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--space-lg)', paddingBottom: 'var(--space-md)', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+      <div style={{ width: '120px', flexShrink: 0, fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{name}</div>
+      <div style={{ flex: 1, fontSize: size, fontWeight: weight, letterSpacing: tracking || 0 }}>{sample}</div>
+      <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{size} · {weight}</div>
     </div>
   );
 }
@@ -421,7 +363,6 @@ function TypeExample({ name, size, weight, tracking, sample }: {
 function SpacingAndBorders() {
   return (
     <SectionBlock id="spacing" title="Spacing & borders" description="Six spacing stops. Four radius stops. Hairline borders.">
-
       <Subhead>Spacing scale</Subhead>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-xl)' }}>
         {[
@@ -433,13 +374,9 @@ function SpacingAndBorders() {
           { name: '--space-2xl', value: '32px' },
         ].map(s => (
           <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-            <div style={{ width: '120px', fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-              {s.name}
-            </div>
+            <div style={{ width: '120px', fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{s.name}</div>
             <div style={{ height: '20px', width: s.value, background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', borderRadius: '2px' }} />
-            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-              {s.value}
-            </div>
+            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -452,18 +389,9 @@ function SpacingAndBorders() {
           { name: '--radius-lg', value: '8px' },
           { name: '--radius-xl', value: '12px' },
         ].map(r => (
-          <div key={r.name} style={{
-            padding: 'var(--space-lg)',
-            background: 'var(--color-bg-secondary)',
-            borderRadius: r.value,
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-              {r.name}
-            </div>
-            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>
-              {r.value}
-            </div>
+          <div key={r.name} style={{ padding: 'var(--space-lg)', background: 'var(--color-bg-secondary)', borderRadius: r.value, textAlign: 'center' }}>
+            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{r.name}</div>
+            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>{r.value}</div>
           </div>
         ))}
       </div>
@@ -474,15 +402,8 @@ function SpacingAndBorders() {
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-md)' }}>
         {['tertiary', 'secondary', 'primary'].map(level => (
-          <div key={level} style={{
-            padding: 'var(--space-lg)',
-            border: `0.5px solid var(--color-border-${level})`,
-            borderRadius: 'var(--radius-md)',
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-              --color-border-{level}
-            </div>
+          <div key={level} style={{ padding: 'var(--space-lg)', border: `0.5px solid var(--color-border-${level})`, borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>--color-border-{level}</div>
           </div>
         ))}
       </div>
@@ -490,152 +411,101 @@ function SpacingAndBorders() {
   );
 }
 
-function Buttons() {
-  const btnBase: React.CSSProperties = {
-    fontFamily: 'var(--font-sans)',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    transition: 'all 100ms ease-out',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 'var(--space-xs)',
-  };
+// ── Primitive-using sections ───────────────────────────────────────
 
-  const sizes = {
-    sm: { height: '28px', padding: '4px 10px', fontSize: 'var(--text-caption)' },
-    md: { height: '32px', padding: '6px 14px', fontSize: 'var(--text-label)' },
-    lg: { height: '40px', padding: '10px 18px', fontSize: 'var(--text-body)' },
-  };
-
-  const variants = {
-    primary: { background: 'var(--color-accent)', color: 'var(--color-text-on-accent)', border: 'none', fontWeight: 500 },
-    secondary: { background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)', border: '0.5px solid var(--color-border-secondary)', fontWeight: 400 },
-    ghost: { background: 'transparent', color: 'var(--color-text-secondary)', border: 'none', fontWeight: 400 },
-    danger: { background: 'var(--color-bg-primary)', color: 'var(--color-danger-text)', border: '0.5px solid var(--color-danger-border)', fontWeight: 400 },
-  };
-
+function ButtonsSection() {
   return (
-    <SectionBlock id="buttons" title="Buttons" description="Three variants × three sizes. Primary is the user's accent color.">
+    <SectionBlock id="buttons" title="Buttons" description="Four variants × three sizes. Primary is the user's accent color.">
       {(['sm', 'md', 'lg'] as const).map(size => (
         <div key={size} style={{ marginBottom: 'var(--space-lg)' }}>
           <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-sm)' }}>
             Size: {size}
           </div>
-          <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-            <button style={{ ...btnBase, ...sizes[size], ...variants.primary }}>Open week</button>
-            <button style={{ ...btnBase, ...sizes[size], ...variants.secondary }}>Export</button>
-            <button style={{ ...btnBase, ...sizes[size], ...variants.ghost }}>Cancel</button>
-            <button style={{ ...btnBase, ...sizes[size], ...variants.danger }}>Delete</button>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Button variant="primary" size={size}>Open week</Button>
+            <Button variant="secondary" size={size}>Export</Button>
+            <Button variant="ghost" size={size}>Cancel</Button>
+            <Button variant="danger" size={size}>Delete</Button>
+            <Button variant="primary" size={size} disabled>Disabled</Button>
           </div>
         </div>
       ))}
       <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-md)', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-        <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>Rules:</strong> Medium (32px) is the default. Primary used for the single most important action per page. No shadows. Hover darkens 10 % for primary; shifts to secondary bg for other variants.
+        <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>Rules:</strong> Medium (32px) is the default. Primary for the single most important action per page. No shadows. Hover states via CSS classes in tokens.css.
       </div>
     </SectionBlock>
   );
 }
 
-function Inputs() {
-  const inputStyle: React.CSSProperties = {
-    height: '32px',
-    padding: '6px 12px',
-    border: '0.5px solid var(--color-border-tertiary)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 'var(--text-body)',
-    fontFamily: 'var(--font-sans)',
-    background: 'var(--color-bg-primary)',
-    color: 'var(--color-text-primary)',
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box',
-  };
-
+function InputsSection() {
   return (
-    <SectionBlock id="inputs" title="Inputs" description="Text, number, select, textarea, checkbox. Focus uses accent ring.">
+    <SectionBlock id="inputs" title="Inputs" description="Text, number, select, textarea. Focus uses accent ring via .emos-input CSS class.">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-lg)' }}>
         <div>
-          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-            Text input
-          </label>
-          <input type="text" placeholder="Macro name" style={inputStyle} />
+          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>Text input</label>
+          <Input placeholder="Macro name" />
         </div>
         <div>
-          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-            Number input (mono)
-          </label>
-          <input type="number" defaultValue="82" style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
+          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>Number input (mono)</label>
+          <Input type="number" defaultValue="82" mono />
         </div>
         <div>
-          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-            Select
-          </label>
-          <select style={inputStyle}>
+          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>Select</label>
+          <Select>
             <option>Foundation</option>
             <option>Build</option>
             <option>Peak</option>
-          </select>
+          </Select>
         </div>
         <div>
-          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-            Disabled
-          </label>
-          <input type="text" disabled value="Read-only value" style={{ ...inputStyle, background: 'var(--color-bg-secondary)', color: 'var(--color-text-tertiary)' }} />
+          <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>Disabled</label>
+          <Input disabled value="Read-only value" />
         </div>
       </div>
       <div style={{ marginTop: 'var(--space-lg)' }}>
-        <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-          Textarea
-        </label>
-        <textarea rows={3} placeholder="Coach notes for this phase..." style={{ ...inputStyle, height: 'auto', resize: 'vertical', width: '100%' }} />
+        <label style={{ display: 'block', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>Textarea</label>
+        <Textarea rows={3} placeholder="Coach notes for this phase..." />
       </div>
     </SectionBlock>
   );
 }
 
-function Badges() {
-  const base: React.CSSProperties = {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 'var(--text-caption)',
-    fontWeight: 500,
-    fontFamily: 'var(--font-sans)',
-  };
-
+function BadgesSection() {
   return (
-    <SectionBlock id="badges" title="Badges" description="Small semantic markers. Four semantic variants plus neutral.">
+    <SectionBlock id="badges" title="Badges" description="Small semantic markers. Five variants, rect and pill shapes.">
+      <Subhead>Rect badges</Subhead>
       <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', marginBottom: 'var(--space-lg)' }}>
-        <span style={{ ...base, background: 'var(--color-success-bg)', color: 'var(--color-success-text)' }}>Logged</span>
-        <span style={{ ...base, background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)' }}>Behind</span>
-        <span style={{ ...base, background: 'var(--color-danger-bg)', color: 'var(--color-danger-text)' }}>Missed</span>
-        <span style={{ ...base, background: 'var(--color-info-bg)', color: 'var(--color-info-text)' }}>Planned</span>
-        <span style={{ ...base, background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>Archived</span>
+        <Badge variant="success">Logged</Badge>
+        <Badge variant="warning">Behind</Badge>
+        <Badge variant="danger">Missed</Badge>
+        <Badge variant="info">Planned</Badge>
+        <Badge variant="neutral">Archived</Badge>
       </div>
+      <Subhead>Pill badges</Subhead>
       <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-        <span style={{ ...base, borderRadius: '999px', background: 'var(--color-success-bg)', color: 'var(--color-success-text)' }}>92 % done</span>
-        <span style={{ ...base, borderRadius: '999px', background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)' }}>64 % done</span>
-        <span style={{ ...base, borderRadius: '999px', background: 'var(--color-info-bg)', color: 'var(--color-info-text)' }}>36 % in progress</span>
+        <Badge variant="success" shape="pill">92 % done</Badge>
+        <Badge variant="warning" shape="pill">64 % done</Badge>
+        <Badge variant="info" shape="pill">36 % in progress</Badge>
       </div>
     </SectionBlock>
   );
 }
 
-function ColorDots() {
+function ColorDotsSection() {
   return (
     <SectionBlock id="dots" title="Color dots" description="Dots encode entity identity — the color of the exercise, category, or athlete itself.">
       <Subhead>Sizes</Subhead>
       <div style={{ display: 'flex', gap: 'var(--space-lg)', alignItems: 'center', marginBottom: 'var(--space-xl)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-blue-400)', display: 'inline-block' }} />
+          <ColorDot color="var(--color-blue-400)" size={6} />
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>6px (inline)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-teal-400)', display: 'inline-block' }} />
+          <ColorDot color="var(--color-teal-400)" size={8} />
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>8px (standalone)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--color-coral-400)', display: 'inline-block' }} />
+          <ColorDot color="var(--color-coral-400)" size={10} />
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>10px (prominent)</span>
         </div>
       </div>
@@ -650,7 +520,7 @@ function ColorDots() {
           { dot: 'var(--color-coral-400)', code: 'SnPl', name: 'Snatch Pull' },
         ].map(ex => (
           <div key={ex.code} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: '6px 10px', fontSize: 'var(--text-label)', background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-sm)' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: ex.dot, flexShrink: 0, display: 'inline-block' }} />
+            <ColorDot color={ex.dot} size={6} />
             <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)', minWidth: '40px' }}>{ex.code}</span>
             <span style={{ color: 'var(--color-text-secondary)' }}>{ex.name}</span>
           </div>
@@ -660,7 +530,7 @@ function ColorDots() {
   );
 }
 
-function Ribbons() {
+function RibbonsSection() {
   return (
     <SectionBlock id="ribbons" title="Ribbons" description="Ribbons encode phase, state, or structural context — where an entity sits within a larger structure.">
       <Subhead>Macro phase ribbons (left-border)</Subhead>
@@ -670,16 +540,10 @@ function Ribbons() {
           { color: 'var(--color-amber-400)', name: 'Build', weeks: 'W 7 — 10' },
           { color: 'var(--color-green-400)', name: 'Peak', weeks: 'W 11' },
         ].map(p => (
-          <div key={p.name} style={{
-            padding: 'var(--space-md) var(--space-lg)',
-            background: 'var(--color-bg-primary)',
-            borderLeft: `2px solid ${p.color}`,
-          }}>
+          <Ribbon key={p.name} color={p.color} style={{ padding: 'var(--space-md) var(--space-lg)', background: 'var(--color-bg-primary)' }}>
             <div style={{ fontSize: 'var(--text-label)', fontWeight: 500 }}>{p.name}</div>
-            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>
-              {p.weeks}
-            </div>
-          </div>
+            <div style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>{p.weeks}</div>
+          </Ribbon>
         ))}
       </div>
 
@@ -689,23 +553,21 @@ function Ribbons() {
           {['Week 3', 'Week 4', 'Week 5', 'Week 6'].map((w, i) => {
             const isCurrent = w === 'Week 5';
             return (
-              <div
+              <Ribbon
                 key={w}
+                color={isCurrent ? 'var(--color-accent)' : 'transparent'}
                 style={{
-                  display: 'flex',
-                  gap: 'var(--space-md)',
+                  display: 'flex', gap: 'var(--space-md)',
                   padding: '10px var(--space-md)',
                   background: isCurrent ? 'var(--color-info-bg)' : 'var(--color-bg-primary)',
                   borderRadius: 'var(--radius-sm)',
-                  borderLeft: isCurrent ? '2px solid var(--color-accent)' : '2px solid transparent',
-                  fontSize: 'var(--text-label)',
-                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'var(--text-label)', fontFamily: 'var(--font-mono)',
                   color: isCurrent ? 'var(--color-info-text)' : 'var(--color-text-primary)',
                 }}
               >
                 <span>{w}</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>May {8 + i * 7}</span>
-              </div>
+              </Ribbon>
             );
           })}
         </div>
@@ -718,72 +580,57 @@ function Ribbons() {
   );
 }
 
-function StatCards() {
+function StatCardsSection() {
   return (
-    <SectionBlock id="stat-cards" title="Stat cards" description="Tinted-fill tiles for summary numbers. No border — the grid gap separates them.">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1px', background: 'var(--color-border-tertiary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 'var(--space-lg)' }}>
-        {[
-          { label: 'Total reps', value: '1,648', unit: '', delta: '+8.2 %' },
-          { label: 'Tonnage', value: '148.3', unit: 't', delta: '+12.4 %' },
-          { label: 'Average load', value: '90', unit: 'kg', delta: '−2.1 kg' },
-          { label: 'Compliance', value: '92', unit: '%', delta: '4 of 5 wks' },
-        ].map(s => (
-          <div key={s.label} style={{ padding: '14px 16px', background: 'var(--color-bg-secondary)' }}>
-            <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', marginBottom: '6px' }}>
-              {s.label}
-            </div>
-            <div style={{ fontSize: '22px', fontWeight: 500, fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)', lineHeight: 1.1 }}>
-              {s.value}
-              {s.unit && <sub style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontWeight: 400, marginLeft: '3px', verticalAlign: 'baseline' }}>{s.unit}</sub>}
-            </div>
-            <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
-              {s.delta}
-            </div>
-          </div>
-        ))}
-      </div>
+    <SectionBlock id="stat-cards" title="Stat cards" description="Tinted-fill tiles for summary numbers. StatGrid handles the hairline dividers.">
+      <StatGrid columns={4}>
+        <StatCard label="Total reps" value="1,648" delta="+8.2 %" />
+        <StatCard label="Tonnage" value="148.3" unit="t" delta="+12.4 %" />
+        <StatCard label="Average load" value="90" unit="kg" delta="−2.1 kg" />
+        <StatCard label="Compliance" value="92" unit="%" delta="4 of 5 wks" />
+      </StatGrid>
     </SectionBlock>
   );
 }
 
-function DataTables() {
+type TableRow = { wk: number; type: string; date: string; reps: string; tonnage: string; avg: string; current: boolean };
+
+const TABLE_COLUMNS: DataTableColumn<TableRow>[] = [
+  { key: 'wk', header: 'Wk', width: '40px', render: r => r.wk },
+  { key: 'type', header: 'Type', width: '80px', mono: false, render: r => r.type },
+  { key: 'date', header: 'Date', width: '90px', mono: false, render: r => r.date },
+  { key: 'reps', header: 'Reps', align: 'right', render: r => r.reps },
+  { key: 'tonnage', header: 'Tonnage', align: 'right', render: r => r.tonnage },
+  { key: 'avg', header: 'Avg load', align: 'right', render: r => r.avg },
+];
+
+const TABLE_ROWS: TableRow[] = [
+  { wk: 1, type: 'High', date: 'Apr 13', reps: '136', tonnage: '12.4 t', avg: '91 kg', current: false },
+  { wk: 2, type: 'High', date: 'Apr 20', reps: '168', tonnage: '14.8 t', avg: '88 kg', current: false },
+  { wk: 3, type: 'Low',  date: 'Apr 27', reps: '84',  tonnage: '8.1 t',  avg: '96 kg', current: false },
+  { wk: 4, type: 'High', date: 'May 4',  reps: '182', tonnage: '16.2 t', avg: '89 kg', current: false },
+  { wk: 5, type: 'High', date: 'May 11', reps: '174', tonnage: '15.8 t', avg: '91 kg', current: true  },
+];
+
+const tdSummary: React.CSSProperties = { padding: '12px', borderTop: '0.5px solid var(--color-border-secondary)', fontWeight: 500 };
+
+function DataTablesSection() {
   return (
-    <SectionBlock id="data-tables" title="Data tables" description="Mono cells, right-aligned numbers, hairline row dividers, current-row highlight.">
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label)' }}>
-        <thead>
+    <SectionBlock id="data-tables" title="Data tables" description="Mono cells, right-aligned numbers, hairline row dividers, current-row highlight via DataTable primitive.">
+      <DataTable
+        columns={TABLE_COLUMNS}
+        rows={TABLE_ROWS}
+        getRowKey={r => r.wk}
+        isCurrentRow={r => r.current}
+        summaryRow={
           <tr>
-            {['Wk', 'Type', 'Date', 'Reps', 'Tonnage', 'Avg load'].map((h, i) => (
-              <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', fontFamily: 'var(--font-sans)', fontWeight: 400, fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', padding: '10px 12px 8px', borderBottom: '0.5px solid var(--color-border-secondary)' }}>
-                {h}
-              </th>
-            ))}
+            <td colSpan={3} style={{ ...tdSummary, fontFamily: 'var(--font-sans)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', fontWeight: 400 }}>Average</td>
+            <td style={{ ...tdSummary, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>149</td>
+            <td style={{ ...tdSummary, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>13.5 t</td>
+            <td style={{ ...tdSummary, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>91 kg</td>
           </tr>
-        </thead>
-        <tbody>
-          {[
-            { wk: 1, type: 'High', date: 'Apr 13', reps: '136', tonnage: '12.4 t', avg: '91 kg', current: false },
-            { wk: 2, type: 'High', date: 'Apr 20', reps: '168', tonnage: '14.8 t', avg: '88 kg', current: false },
-            { wk: 3, type: 'Low', date: 'Apr 27', reps: '84', tonnage: '8.1 t', avg: '96 kg', current: false },
-            { wk: 4, type: 'High', date: 'May 4', reps: '182', tonnage: '16.2 t', avg: '89 kg', current: false },
-            { wk: 5, type: 'High', date: 'May 11', reps: '174', tonnage: '15.8 t', avg: '91 kg', current: true },
-          ].map(r => (
-            <tr key={r.wk} style={{ background: r.current ? 'var(--color-info-bg)' : 'transparent' }}>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', borderLeft: r.current ? '2px solid var(--color-accent)' : '2px solid transparent', color: 'var(--color-text-primary)' }}>{r.wk}</td>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-sans)', fontSize: 'var(--text-label)' }}>{r.type}</td>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-sans)', fontSize: 'var(--text-label)' }}>{r.date}</td>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', textAlign: 'right' }}>{r.reps}</td>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', textAlign: 'right' }}>{r.tonnage}</td>
-              <td style={{ padding: '11px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)', textAlign: 'right' }}>{r.avg}</td>
-            </tr>
-          ))}
-          <tr>
-            <td colSpan={3} style={{ padding: '12px', borderTop: '0.5px solid var(--color-border-secondary)', fontFamily: 'var(--font-sans)', fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>Average</td>
-            <td style={{ padding: '12px', borderTop: '0.5px solid var(--color-border-secondary)', textAlign: 'right', fontWeight: 500 }}>149</td>
-            <td style={{ padding: '12px', borderTop: '0.5px solid var(--color-border-secondary)', textAlign: 'right', fontWeight: 500 }}>13.5 t</td>
-            <td style={{ padding: '12px', borderTop: '0.5px solid var(--color-border-secondary)', textAlign: 'right', fontWeight: 500 }}>91 kg</td>
-          </tr>
-        </tbody>
-      </table>
+        }
+      />
     </SectionBlock>
   );
 }
@@ -793,35 +640,26 @@ function PanelsAndModals() {
     <SectionBlock id="panels-modals" title="Panels & modals" description="Side panel for browsing/viewing. Modal for focused creation and destructive confirmation.">
       <Subhead>Side panel (preview)</Subhead>
       <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md) 0' }}>
-        Right-side panel pushes list narrower. No backdrop — page remains interactive.
+        Right-side panel pushes list narrower. No backdrop — page remains interactive. Width variants: detail (320px), editor (480px).
       </p>
-      <div style={{ display: 'flex', gap: 'var(--space-md)', height: '240px', background: 'var(--color-bg-secondary)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-xl)' }}>
+      <div style={{ display: 'flex', gap: 'var(--space-md)', height: '240px', background: 'var(--color-bg-secondary)', padding: 'var(--space-md)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-xl)', overflow: 'hidden' }}>
         <div style={{ flex: 1, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-md)' }}>
-          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-sm)' }}>
-            Exercise list
-          </div>
+          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-sm)' }}>Exercise list</div>
           {[
             { code: 'Sn', name: 'Snatch', pr: '82 kg', selected: false },
             { code: 'BSq', name: 'Back Squat', pr: '155 kg', selected: true },
             { code: 'C&J', name: 'Clean & Jerk', pr: '105 kg', selected: false },
           ].map(e => (
-            <div key={e.code} style={{
-              display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-              padding: '6px 8px', borderRadius: 'var(--radius-sm)',
-              background: e.selected ? 'var(--color-info-bg)' : 'transparent',
-              fontSize: 'var(--text-label)',
-            }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-blue-400)', display: 'inline-block' }} />
+            <div key={e.code} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: e.selected ? 'var(--color-info-bg)' : 'transparent', fontSize: 'var(--text-label)' }}>
+              <ColorDot color="var(--color-blue-400)" size={6} />
               <span style={{ fontFamily: 'var(--font-mono)', minWidth: '36px' }}>{e.code}</span>
               <span style={{ flex: 1, color: 'var(--color-text-secondary)' }}>{e.name}</span>
               <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{e.pr}</span>
             </div>
           ))}
         </div>
-        <div style={{ width: '200px', flexShrink: 0, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-md)', borderLeft: '0.5px solid var(--color-border-tertiary)' }}>
-          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-sm)' }}>
-            Detail panel
-          </div>
+        <div style={{ width: '200px', flexShrink: 0, background: 'var(--color-bg-primary)', borderLeft: '0.5px solid var(--color-border-tertiary)', padding: 'var(--space-md)' }}>
+          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 'var(--space-sm)' }}>Detail panel</div>
           <div style={{ fontSize: 'var(--text-label)', fontWeight: 500, marginBottom: '4px' }}>Back Squat</div>
           <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-md)' }}>Squats · PR tracked</div>
           <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>Current PR</div>
@@ -831,33 +669,19 @@ function PanelsAndModals() {
 
       <Subhead>Modal (preview)</Subhead>
       <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md) 0' }}>
-        Centered overlay with backdrop. Page locked. Use for focused creation or destructive confirmation.
+        Centered overlay with backdrop. Escape-to-close. Sizes: sm (28rem), md (32rem), lg (42rem), xl (56rem).
       </p>
       <div style={{ position: 'relative', height: '240px', background: 'rgba(0,0,0,0.15)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{
-          width: '320px',
-          background: 'var(--color-bg-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--radius-xl)',
-          padding: 'var(--space-lg)',
-        }}>
+        <div style={{ width: '320px', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-xl)', padding: 'var(--space-lg)' }}>
           <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, marginBottom: '4px' }}>New macrocycle</div>
-          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)' }}>
-            Create a training block for this athlete
-          </div>
+          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-lg)' }}>Create a training block for this athlete</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Name</label>
-              <div style={{ height: '24px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)' }} />
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Duration</label>
-              <div style={{ height: '24px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)' }} />
-            </div>
+            <div><label style={{ display: 'block', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Name</label><div style={{ height: '24px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)' }} /></div>
+            <div><label style={{ display: 'block', fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>Duration</label><div style={{ height: '24px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)' }} /></div>
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end', marginTop: 'var(--space-lg)' }}>
-            <button style={{ padding: '6px 14px', fontSize: 'var(--text-label)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)', cursor: 'pointer' }}>Cancel</button>
-            <button style={{ padding: '6px 14px', fontSize: 'var(--text-label)', fontWeight: 500, border: 'none', borderRadius: 'var(--radius-md)', background: 'var(--color-accent)', color: 'var(--color-text-on-accent)', cursor: 'pointer' }}>Create</button>
+            <Button variant="secondary" size="md">Cancel</Button>
+            <Button variant="primary" size="md">Create</Button>
           </div>
         </div>
       </div>
@@ -876,22 +700,18 @@ function PageLayout() {
       <div style={{ background: 'var(--color-bg-page)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', padding: '24px', marginBottom: 'var(--space-xl)' }}>
         <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', minHeight: '140px' }}>
           <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, marginBottom: 'var(--space-sm)' }}>Work surface</div>
-          <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-            Used for: macro detail, exercise library, athlete list, settings.
-          </div>
+          <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>Used for: macro detail, exercise library, athlete list, settings.</div>
         </div>
       </div>
 
       <Subhead>Framing B — dense tool page</Subhead>
       <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md) 0' }}>
-        Edge-to-edge on the right. 24 px gap on the left only. Maximum screen real estate for dense data.
+        Edge-to-edge on the right. 24 px gap on the left only.
       </p>
       <div style={{ background: 'var(--color-bg-page)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', padding: '24px 0 24px 24px', marginBottom: 'var(--space-xl)' }}>
         <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRight: 'none', borderTopLeftRadius: 'var(--radius-lg)', borderBottomLeftRadius: 'var(--radius-lg)', padding: 'var(--space-lg)', minHeight: '140px' }}>
           <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, marginBottom: 'var(--space-sm)' }}>Dense work surface</div>
-          <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-            Used for: weekly planner (detail), macro annual wheel, dense tables.
-          </div>
+          <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>Used for: weekly planner, macro annual wheel, dense tables.</div>
         </div>
       </div>
 
@@ -901,9 +721,7 @@ function PageLayout() {
       </p>
       <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-lg)', minHeight: '140px' }}>
         <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, marginBottom: 'var(--space-sm)' }}>Full-bleed surface</div>
-        <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-          Used for: landing dashboard, print views.
-        </div>
+        <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>Used for: landing dashboard, print views.</div>
       </div>
     </SectionBlock>
   );

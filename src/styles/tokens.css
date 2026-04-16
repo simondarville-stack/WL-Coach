@@ -278,3 +278,83 @@ samp {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
+
+/* ============================================================
+ * Button variants
+ * ============================================================ */
+
+.emos-btn {
+  border: none;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.emos-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.emos-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.emos-btn-primary {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: 500;
+}
+
+.emos-btn-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.emos-btn-secondary {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  border: 0.5px solid var(--color-border-secondary);
+  font-weight: 400;
+}
+
+.emos-btn-secondary:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border-primary);
+}
+
+.emos-btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.emos-btn-ghost:hover:not(:disabled) {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.emos-btn-danger {
+  background: var(--color-bg-primary);
+  color: var(--color-danger-text);
+  border: 0.5px solid var(--color-danger-border);
+  font-weight: 400;
+}
+
+.emos-btn-danger:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+}
+
+/* ============================================================
+ * Input
+ * ============================================================ */
+
+.emos-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.emos-input:hover:not(:disabled):not(:focus) {
+  border-color: var(--color-border-secondary);
+}
+
+.emos-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
