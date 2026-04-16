@@ -171,7 +171,7 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
         padding: '8px 16px',
         background: isSelected
           ? 'var(--color-info-bg)'
-          : (rowIndex % 2 === 0 ? 'transparent' : 'var(--color-bg-secondary)'),
+          : (rowIndex % 2 === 0 ? 'transparent' : 'var(--color-bg-page)'),
         borderLeft: isSelected
           ? '2px solid var(--color-accent)'
           : '2px solid transparent',
@@ -187,7 +187,7 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
         if (!isSelected) {
           e.currentTarget.style.background = rowIndex % 2 === 0
             ? 'transparent'
-            : 'var(--color-bg-secondary)';
+            : 'var(--color-bg-page)';
         }
       }}
     >
