@@ -22,6 +22,7 @@ import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { Calculator } from './components/tools/Calculator';
 import { CalendarTool } from './components/tools/CalendarTool';
 import { PRPage } from './components/PRPage';
+import { SystemGuide } from './components/system/SystemGuide';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAthletes } from './hooks/useAthletes';
 import { useTrainingGroups } from './hooks/useTrainingGroups';
@@ -162,6 +163,7 @@ function CoachApp() {
               <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={<ExerciseLibrary />} />
+              <Route path="/system" element={<SystemGuide />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </ErrorBoundary>
