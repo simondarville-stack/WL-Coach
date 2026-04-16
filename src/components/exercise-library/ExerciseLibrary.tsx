@@ -979,15 +979,27 @@ export function ExerciseLibrary() {
           )}
         </div>
 
-        {/* Detail panel (unchanged — migrated in 4b) */}
-        {selectedExercise && (
+      </div>
+
+      {/* Detail panel — fixed right-edge sidebar */}
+      {selectedExercise && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-end"
+          onKeyDown={e => { if (e.key === 'Escape') setSelectedExerciseId(null); }}
+        >
           <div
+            className="absolute inset-0"
+            style={{ background: 'rgba(0,0,0,0.15)' }}
+            onClick={() => setSelectedExerciseId(null)}
+          />
+          <div
+            className="animate-sidebar-in relative z-10 h-full flex flex-col"
             style={{
-              width: '440px',
-              flexShrink: 0,
-              borderLeft: '0.5px solid var(--color-border-tertiary)',
-              overflowY: 'auto',
+              width: 440,
               background: 'var(--color-bg-primary)',
+              borderLeft: '0.5px solid var(--color-border-tertiary)',
+              boxShadow: '-8px 0 32px rgba(0,0,0,0.10)',
+              overflow: 'hidden',
             }}
           >
             <ExerciseDetailPanel
@@ -1003,8 +1015,8 @@ export function ExerciseLibrary() {
               allExercises={exercises}
             />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showCategoryModal && (
