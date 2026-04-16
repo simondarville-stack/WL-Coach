@@ -317,7 +317,6 @@ export function ExerciseDetailPanel({
   const [athletePRs, setAthletePRs] = useState<AthletePRRow[]>([]);
   const [prHistory, setPrHistory] = useState<Map<number, number>>(new Map());
   const [usageWeeks, setUsageWeeks] = useState<UsageWeek[]>([]);
-  const [athleteCount, setAthleteCount] = useState<number>(0);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState(exercise.notes ?? '');
   const [loadingData, setLoadingData] = useState(true);
@@ -390,9 +389,6 @@ export function ExerciseDetailPanel({
         })
         .sort((a: AthletePRRow, b: AthletePRRow) => (b.pr_value_kg ?? 0) - (a.pr_value_kg ?? 0));
       setAthletePRs(rows);
-
-      const uniqueAthletes = new Set(rows.map(r => r.athlete_id));
-      setAthleteCount(uniqueAthletes.size);
     }
   }
 
@@ -652,10 +648,10 @@ export function ExerciseDetailPanel({
                   fontSize: 24,
                   fontWeight: 700,
                   lineHeight: 1,
-                  color: athleteCount > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                  color: athletePRs.length > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                   fontFamily: 'var(--font-mono)',
                 }}>
-                  {loadingData ? '—' : athleteCount}
+                  {loadingData ? '—' : athletePRs.length}
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
