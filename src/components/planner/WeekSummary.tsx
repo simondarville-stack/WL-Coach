@@ -7,16 +7,16 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 
-function weekTypeBadgeClass(weekType: string): string {
+function weekTypeBadgeStyle(weekType: string): React.CSSProperties {
   switch (weekType) {
-    case 'High':        return 'bg-orange-100 text-orange-700 border-orange-200';
-    case 'Medium':      return 'bg-blue-100 text-blue-700 border-blue-200';
-    case 'Low':         return 'bg-green-100 text-green-700 border-green-200';
-    case 'Deload':      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-    case 'Competition': return 'bg-red-100 text-red-700 border-red-200';
-    case 'Taper':       return 'bg-amber-100 text-amber-700 border-amber-200';
-    case 'Testing':     return 'bg-purple-100 text-purple-700 border-purple-200';
-    default:            return 'bg-gray-100 text-gray-600 border-gray-200';
+    case 'High':        return { background: 'var(--color-warning-bg)',  color: 'var(--color-warning-text)',  border: '1px solid var(--color-warning-border)' };
+    case 'Medium':      return { background: 'var(--color-accent-muted)', color: 'var(--color-accent)',        border: '1px solid var(--color-accent-border)' };
+    case 'Low':         return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '1px solid var(--color-success-border)' };
+    case 'Deload':      return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '1px solid var(--color-success-border)' };
+    case 'Competition': return { background: 'var(--color-danger-bg)',    color: 'var(--color-danger-text)',   border: '1px solid var(--color-danger-border)' };
+    case 'Taper':       return { background: 'var(--color-warning-bg)',   color: 'var(--color-warning-text)',  border: '1px solid var(--color-warning-border)' };
+    case 'Testing':     return { background: 'rgba(139,92,246,0.1)',      color: '#7C3AED',                    border: '1px solid rgba(139,92,246,0.2)' };
+    default:            return { background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-secondary)' };
   }
 }
 
@@ -45,6 +45,7 @@ export function WeekSummary({
   competitionTotal = null,
 }: WeekSummaryProps) {
   const [showCategories, setShowCategories] = useState(false);
+  const [macroBarHovered, setMacroBarHovered] = useState(false);
   const navigate = useNavigate();
 
   const { metrics, totalStress, categories } = useMemo(() => {
@@ -88,129 +89,149 @@ export function WeekSummary({
     ? Math.min(100, Math.round((metrics.reps / macroContext.totalRepsTarget) * 100))
     : null;
 
+  const progressBarColor = repsProgress == null ? '' :
+    repsProgress >= 100 ? 'var(--color-success-text)' :
+    repsProgress >= 75  ? 'var(--color-accent)' :
+    repsProgress >= 40  ? 'var(--color-warning-text)' :
+    'var(--color-border-primary)';
+
   return (
-    <div className="space-y-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {/* Macro context bar */}
       {macroContext && (
         <div
-          className="bg-white rounded-lg border border-gray-200 px-4 py-2.5 space-y-2 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors"
+          style={{
+            background: macroBarHovered ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+            borderRadius: 'var(--radius-lg)',
+            border: macroBarHovered ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
+            padding: '8px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            cursor: 'pointer',
+            transition: 'background 0.15s, border-color 0.15s',
+          }}
           onClick={() => navigate('/macrocycles')}
+          onMouseEnter={() => setMacroBarHovered(true)}
+          onMouseLeave={() => setMacroBarHovered(false)}
           title="Go to Macro Cycles"
         >
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2 py-0.5 rounded border text-xs font-medium ${weekTypeBadgeClass(macroContext.weekType)}`}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{
+              padding: '2px 8px', borderRadius: 'var(--radius-sm)',
+              fontSize: 11, fontWeight: 500,
+              ...weekTypeBadgeStyle(macroContext.weekType),
+            }}>
               {macroContext.weekType}
             </span>
             {macroContext.phaseName && (
-              <span className="text-sm font-medium text-gray-700">{macroContext.phaseName}</span>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)' }}>{macroContext.phaseName}</span>
             )}
-            {macroContext.phaseName && <span className="text-gray-300">·</span>}
-            <span className="text-sm text-gray-500">{macroContext.macroName}</span>
-            <span className="text-gray-300">·</span>
-            <span className="text-sm text-gray-500">
-              Wk <strong className="text-gray-900">{macroContext.weekNumber}</strong>
+            {macroContext.phaseName && <span style={{ color: 'var(--color-border-secondary)' }}>·</span>}
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>{macroContext.macroName}</span>
+            <span style={{ color: 'var(--color-border-secondary)' }}>·</span>
+            <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+              Wk <strong style={{ color: 'var(--color-text-primary)' }}>{macroContext.weekNumber}</strong>
               {macroContext.totalWeeks > 0 && ` / ${macroContext.totalWeeks}`}
             </span>
             {macroContext.totalRepsTarget != null && (
               <>
-                <span className="text-gray-300">·</span>
-                <span className="text-sm text-gray-500">
-                  R <strong className="text-gray-900">{metrics.reps}</strong>
-                  <span className="text-gray-400"> / {macroContext.totalRepsTarget}</span>
+                <span style={{ color: 'var(--color-border-secondary)' }}>·</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                  R <strong style={{ color: 'var(--color-text-primary)' }}>{metrics.reps}</strong>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}> / {macroContext.totalRepsTarget}</span>
                 </span>
               </>
             )}
           </div>
           {macroContext.weekTypeText && (
-            <p className="text-xs text-blue-700 italic">{macroContext.weekTypeText}</p>
+            <p style={{ fontSize: 11, color: 'var(--color-accent)', fontStyle: 'italic', margin: 0 }}>{macroContext.weekTypeText}</p>
           )}
           {repsProgress !== null && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    repsProgress >= 100 ? 'bg-green-500' :
-                    repsProgress >= 75  ? 'bg-blue-500' :
-                    repsProgress >= 40  ? 'bg-amber-400' : 'bg-gray-300'
-                  }`}
-                  style={{ width: `${repsProgress}%` }}
-                />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1, height: 6, background: 'var(--color-bg-secondary)', borderRadius: 99, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 99, width: `${repsProgress}%`, background: progressBarColor, transition: 'width 0.3s' }} />
               </div>
-              <span className="text-xs text-gray-400 w-8 text-right">{repsProgress}%</span>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', width: 32, textAlign: 'right' }}>{repsProgress}%</span>
             </div>
           )}
         </div>
       )}
 
       {/* Metric cards */}
-      <div className="bg-white rounded-lg border border-gray-200 px-4 py-2.5">
-        <div className="flex items-center gap-5 flex-wrap">
+      <div style={{
+        background: 'var(--color-bg-primary)',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--color-border-secondary)',
+        padding: '8px 16px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
           {visibleMetrics.includes('sets') && (
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Sets</span>
-              <span className="text-xl font-medium text-gray-900">{metrics.sets}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sets</span>
+              <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.sets}</span>
             </div>
           )}
           {visibleMetrics.includes('sets') && visibleMetrics.includes('reps') && (
-            <div className="w-px h-8 bg-gray-200" />
+            <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
           )}
           {visibleMetrics.includes('reps') && (
-            <div className="flex flex-col items-center">
-              <span className="text-[10px] text-gray-500 uppercase tracking-wide">Reps</span>
-              <span className="text-xl font-medium text-gray-900">{metrics.reps}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reps</span>
+              <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.reps}</span>
             </div>
           )}
           {macroWeekTarget != null && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Target</span>
-                <span className="text-xl font-medium text-gray-900">{macroWeekTarget}</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{macroWeekTarget}</span>
               </div>
             </>
           )}
           {visibleMetrics.includes('max') && metrics.max > 0 && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Max</span>
-                <span className="text-xl font-medium text-gray-900">{metrics.max}</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Max</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.max}</span>
               </div>
             </>
           )}
           {visibleMetrics.includes('avg') && metrics.avg > 0 && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Avg</span>
-                <span className="text-xl font-medium text-gray-900">{metrics.avg}</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Avg</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.avg}</span>
               </div>
             </>
           )}
           {visibleMetrics.includes('tonnage') && metrics.tonnage > 0 && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Tonnage</span>
-                <span className="text-xl font-medium text-gray-900">{metrics.tonnage.toLocaleString()}</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tonnage</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.tonnage.toLocaleString()}</span>
               </div>
             </>
           )}
           {visibleMetrics.includes('k') && metrics.k != null && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">K</span>
-                <span className="text-xl font-medium text-gray-900">{(metrics.k * 100).toFixed(0)}%</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>K</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{(metrics.k * 100).toFixed(0)}%</span>
               </div>
             </>
           )}
           {showStress && totalStress > 0 && (
             <>
-              <div className="w-px h-8 bg-gray-200" />
-              <div className="flex flex-col items-center">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wide">Stress</span>
-                <span className="text-xl font-medium text-gray-900">{totalStress}</span>
+              <div style={{ width: 1, height: 32, background: 'var(--color-border-secondary)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stress</span>
+                <span style={{ fontSize: 20, fontWeight: 500, color: 'var(--color-text-primary)' }}>{totalStress}</span>
               </div>
             </>
           )}
@@ -218,7 +239,13 @@ export function WeekSummary({
           {categories.length > 0 && (
             <button
               onClick={() => setShowCategories(v => !v)}
-              className="ml-auto flex items-center gap-0.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2,
+                fontSize: 11, color: 'var(--color-text-tertiary)', background: 'none', border: 'none',
+                cursor: 'pointer', padding: 4, borderRadius: 'var(--radius-sm)',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
             >
               {showCategories ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               Categories
@@ -227,14 +254,14 @@ export function WeekSummary({
         </div>
 
         {showCategories && categories.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border-tertiary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {categories.map(cat => (
-              <div key={cat.category} className="flex items-center gap-3 text-xs">
-                <span className="text-gray-600 flex-1 truncate">{cat.category}</span>
-                <span className="text-gray-500">S <strong className="text-gray-900">{cat.sets}</strong></span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{cat.reps}</strong></span>
+              <div key={cat.category} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11 }}>
+                <span style={{ color: 'var(--color-text-secondary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.category}</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>S <strong style={{ color: 'var(--color-text-primary)' }}>{cat.sets}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{cat.reps}</strong></span>
                 {cat.tonnage > 0 && (
-                  <span className="text-gray-500">T <strong className="text-gray-900">{cat.tonnage.toLocaleString()}</strong></span>
+                  <span style={{ color: 'var(--color-text-secondary)' }}>T <strong style={{ color: 'var(--color-text-primary)' }}>{cat.tonnage.toLocaleString()}</strong></span>
                 )}
               </div>
             ))}

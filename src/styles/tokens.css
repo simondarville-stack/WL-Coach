@@ -362,3 +362,84 @@ samp {
 .planner-week-notes::placeholder {
   color: var(--color-text-tertiary);
 }
+
+/* ============================================================
+ * PrescriptionGrid interactive cells
+ * ============================================================ */
+
+.pgrid-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  user-select: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  transition: background 0.1s;
+  min-height: 1.25rem;
+  line-height: 1.25rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.pgrid-btn:hover:not(:disabled) {
+  background: var(--color-accent-muted);
+  outline: 1px solid var(--color-accent-border);
+}
+.pgrid-btn-del {
+  color: var(--color-danger-text) !important;
+}
+.pgrid-btn-del:hover:not(:disabled) {
+  background: var(--color-danger-bg) !important;
+  outline: none !important;
+}
+.pgrid-btn-sets {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  opacity: 0.8;
+}
+.pgrid-interval {
+  background: rgba(59,130,246,0.04);
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: var(--radius-sm);
+}
+.pgrid-interval:hover:not(:disabled) {
+  background: var(--color-accent-muted);
+  cursor: col-resize;
+  outline: none;
+}
+.pgrid-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border-secondary);
+  color: var(--color-text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.pgrid-add-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-muted);
+}
+/* Group-hover for sets=1 cell */
+.pgrid-col { position: relative; }
+.pgrid-sets-1 { opacity: 0; transition: opacity 0.1s; }
+.pgrid-col:hover .pgrid-sets-1 { opacity: 0.4; }
+.pgrid-editing {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--color-accent-muted);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  min-width: 0;
+  min-height: 1.25rem;
+}

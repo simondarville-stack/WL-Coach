@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, Video, Image as ImageIcon, AlignLeft, ChevronRight } from 'lucide-react';
+import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
@@ -62,18 +62,18 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
 
   if (unit === 'free_text_reps') {
     const lines = parseFreeTextPrescription(raw);
-    if (lines.length === 0) return <span className="text-[10px] text-gray-400 italic">{raw}</span>;
+    if (lines.length === 0) return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {lines.map((line, i) => (
-          <div key={i} className="flex items-center gap-0.5">
-            <div className="flex flex-col items-center leading-none" style={{ minWidth: '1.5rem' }}>
-              <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.loadText}</span>
-              <div className="w-full border-t border-gray-400 my-px" />
-              <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.reps}</span>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.loadText}</span>
+              <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
             </div>
             {line.sets > 1 && (
-              <span className="text-[9px] text-gray-700 font-medium self-center leading-none">{line.sets}</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
             )}
           </div>
         ))}
@@ -83,22 +83,22 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
 
   if (isCombo) {
     const lines = parseComboPrescription(raw);
-    if (lines.length === 0) return <span className="text-[10px] text-gray-400 italic">{raw}</span>;
+    if (lines.length === 0) return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
     return (
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {lines.map((line, i) => (
-          <div key={i} className="flex items-center gap-0.5">
-            <div className="flex flex-col items-center leading-none" style={{ minWidth: '1.5rem' }}>
-              <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
                 {line.loadMax != null
                   ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
                   : `${line.load}${unit === 'percentage' ? '%' : ''}`}
               </span>
-              <div className="w-full border-t border-gray-400 my-px" />
-              <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.repsText}</span>
+              <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.repsText}</span>
             </div>
             {line.sets > 1 && (
-              <span className="text-[9px] text-gray-700 font-medium self-center leading-none">{line.sets}</span>
+              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
             )}
           </div>
         ))}
@@ -108,23 +108,23 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
 
   const lines = parsePrescription(raw);
   if (lines.length === 0) {
-    return <span className="text-[10px] text-gray-400 italic">{raw}</span>;
+    return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
   }
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
       {lines.map((line, i) => (
-        <div key={i} className="flex items-center gap-0.5">
-          <div className="flex flex-col items-center leading-none" style={{ minWidth: '1.5rem' }}>
-            <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
               {line.loadMax != null
                 ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
                 : `${line.load}${unit === 'percentage' ? '%' : ''}`}
             </span>
-            <div className="w-full border-t border-gray-400 my-px" />
-            <span className="font-mono text-[10px] text-gray-900 font-medium leading-tight">{line.reps}</span>
+            <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
           </div>
           {line.sets > 1 && (
-            <span className="text-[9px] text-gray-700 font-medium self-center leading-none">{line.sets}</span>
+            <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
           )}
         </div>
       ))}
@@ -155,6 +155,8 @@ export function DayCard({
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
+  const [headerHovered, setHeaderHovered] = useState(false);
+  const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const shiftHeld = useShiftHeld();
 
   const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
@@ -167,7 +169,6 @@ export function DayCard({
     } finally {
       setAdding(false);
     }
-    // Refresh in background — don't block re-enabling the add button
     onRefresh();
   }
 
@@ -183,14 +184,8 @@ export function DayCard({
     const def = sentinelDefs[code];
     if (!def) return null;
     const { data: created } = await supabase.from('exercises').insert({
-      name: def.name,
-      category: '— System',
-      default_unit: 'other',
-      color: def.color,
-      exercise_code: code,
-      use_stacked_notation: false,
-      counts_towards_totals: false,
-      is_competition_lift: false,
+      name: def.name, category: '— System', default_unit: 'other', color: def.color,
+      exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
     }).select('id, default_unit').single();
     return created ?? null;
   }
@@ -205,7 +200,6 @@ export function DayCard({
     try {
       const sentinel = await getOrCreateSentinel(code);
       if (!sentinel) return;
-      // Always use free_text so PrescriptionGrid renders a textarea, not a numeric grid
       await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, exercises.length + 1, 'free_text');
       await onRefresh();
     } finally {
@@ -268,11 +262,15 @@ export function DayCard({
   return (
     <>
       <div
-        className={[
-          'bg-white rounded-lg border flex flex-col transition-all duration-150',
-          isEmpty ? 'min-h-[120px]' : 'min-h-[160px]',
-          isDragOver ? 'border-blue-400 shadow-md bg-blue-50/30' : 'border-gray-200 hover:border-gray-300 hover:shadow-sm',
-        ].join(' ')}
+        style={{
+          background: isDragOver ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+          borderRadius: 'var(--radius-md)',
+          border: isDragOver ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
+          boxShadow: isDragOver ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+          display: 'flex', flexDirection: 'column',
+          minHeight: isEmpty ? 120 : 160,
+          transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
+        }}
         onDragOver={handleCardDragOver}
         onDragLeave={handleCardDragLeave}
         onDrop={handleCardDrop}
@@ -284,10 +282,20 @@ export function DayCard({
             e.dataTransfer.setData('text/plain', `DAY:${dayIndex}`);
             e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
           }}
-          className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors rounded-t-lg group/header"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px',
+            borderBottom: '1px solid var(--color-border-tertiary)',
+            cursor: 'pointer',
+            background: headerHovered ? 'var(--color-bg-secondary)' : 'transparent',
+            borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+            transition: 'background 0.1s',
+          }}
+          onMouseEnter={() => setHeaderHovered(true)}
+          onMouseLeave={() => setHeaderHovered(false)}
           onClick={onNavigateToDay}
         >
-          <span className="text-sm font-medium text-gray-900 flex-1">{dayName}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>{dayName}</span>
           {restInfo && restInfo.hoursFromPrevious !== null && (
             <RestBadge hours={restInfo.hoursFromPrevious} recoveryLevel={restInfo.recoveryLevel} />
           )}
@@ -299,27 +307,28 @@ export function DayCard({
               showLabels={true}
             />
           )}
-          <ChevronRight size={12} className="text-gray-200 group-hover/header:text-gray-400 transition-colors flex-shrink-0" />
+          <ChevronRight size={12} style={{ color: headerHovered ? 'var(--color-text-tertiary)' : 'var(--color-border-secondary)', flexShrink: 0, transition: 'color 0.1s' }} />
         </div>
 
         {/* Exercise list */}
-        <div className="flex flex-col flex-1">
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
           {isEmpty ? (
-            <div className="flex-1 flex items-center justify-center py-3 text-xs text-gray-300 italic">
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 0', fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
               {isDragOver ? 'Drop here' : 'No exercises'}
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-gray-50">
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
               {exercises.map(ex => {
                 const sentinel = getSentinelType(ex.exercise.exercise_code);
                 const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
                 const borderColor = sentinel === 'text'
                   ? 'transparent'
                   : sentinel
-                  ? '#d1d5db'
+                  ? 'var(--color-border-primary)'
                   : ex.is_combo
                   ? (ex.combo_color || (members?.[0]?.exercise.color) || '#94a3b8')
                   : (ex.exercise.color || '#94a3b8');
+                const isHovered = hoveredExId === ex.id;
 
                 return (
                   <div
@@ -330,90 +339,91 @@ export function DayCard({
                       e.dataTransfer.setData('text/plain', `${dayIndex}:exercise:${ex.id}`);
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
                     }}
-                    className={[
-                      'flex items-start gap-1.5 px-2 py-1.5 group transition-colors cursor-pointer border-b border-gray-50 last:border-b-0',
-                      shiftHeld ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50',
-                    ].join(' ')}
-                    style={{ borderLeft: `3px solid ${borderColor}` }}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
+                      borderBottom: '1px solid var(--color-border-tertiary)',
+                      borderLeft: `3px solid ${borderColor}`,
+                      background: shiftHeld
+                        ? (isHovered ? 'var(--color-danger-bg)' : 'rgba(240,149,149,0.06)')
+                        : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
+                      cursor: 'pointer',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={() => setHoveredExId(ex.id)}
+                    onMouseLeave={() => setHoveredExId(null)}
                     onClick={e => {
                       e.stopPropagation();
                       if (shiftHeld) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
                       onNavigateToExercise(ex.id);
                     }}
                   >
-                    <div className="flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 group-hover:text-gray-400 mt-0.5 touch-none">
+                    <div style={{ flexShrink: 0, cursor: 'grab', color: isHovered ? 'var(--color-text-tertiary)' : 'var(--color-border-secondary)', marginTop: 2 }}>
                       <GripVertical size={11} />
                     </div>
-                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                       {sentinel === 'text' ? (
-                        <p className="text-xs text-gray-500 italic leading-snug line-clamp-3">
+                        <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0 }}>
                           {ex.notes || 'Free text…'}
                         </p>
                       ) : sentinel === 'video' ? (
-                        <div className="flex items-center gap-1.5">
-                          <Video size={11} className="text-indigo-400 flex-shrink-0" />
-                          <span className="text-xs text-gray-500">Video</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Video size={11} style={{ color: '#6366F1', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Video</span>
                           {ex.notes && (() => {
                             const thumb = getYouTubeThumbnail(ex.notes);
-                            return thumb
-                              ? <img src={thumb} alt="" className="w-14 h-9 object-cover rounded flex-shrink-0" />
-                              : null;
+                            return thumb ? <img src={thumb} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} /> : null;
                           })()}
                         </div>
                       ) : sentinel === 'image' ? (
-                        <div className="flex items-center gap-1.5">
-                          <ImageIcon size={11} className="text-pink-400 flex-shrink-0" />
-                          <span className="text-xs text-gray-500">Image</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <ImageIcon size={11} style={{ color: '#EC4899', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Image</span>
                           {ex.notes && (
-                            <img src={ex.notes} alt="" className="w-14 h-9 object-cover rounded flex-shrink-0" onError={e => { e.currentTarget.style.display = 'none'; }} />
+                            <img src={ex.notes} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
                         </div>
                       ) : ex.is_combo && members ? (
                         <>
-                          <div className="flex items-baseline gap-1 min-w-0">
-                            <div className="flex gap-0.5 items-center flex-shrink-0">
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, minWidth: 0 }}>
+                            <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
                               {members.map(m => (
-                                <div
-                                  key={m.position}
-                                  className="w-1.5 h-1.5 rounded-full"
-                                  style={{ backgroundColor: m.exercise.color || '#94a3b8' }}
-                                />
+                                <div key={m.position} style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.exercise.color || '#94a3b8' }} />
                               ))}
                             </div>
-                            <span className="text-xs font-medium text-gray-900 truncate leading-tight">
+                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
-                            <span className="text-[9px] px-1.5 py-px bg-blue-50 text-blue-700 rounded font-medium flex-shrink-0">
+                            <span style={{ fontSize: 9, padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>
                               Combo
                             </span>
                           </div>
                           {ex.variation_note && (
-                            <p className="text-[10px] text-gray-400 italic leading-tight truncate">{ex.variation_note}</p>
+                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
                           )}
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={true} />
                           {ex.notes && (
-                            <p className="text-[10px] text-gray-400 italic leading-tight line-clamp-1">{ex.notes}</p>
+                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
                         </>
                       ) : (
                         <>
-                          <div className="flex items-baseline gap-1 min-w-0">
-                            <span className="text-xs font-medium text-gray-900 truncate leading-tight">
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, minWidth: 0 }}>
+                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.exercise.name}
                             </span>
                             {ex.variation_note && (
-                              <span className="text-[10px] text-gray-400 italic truncate flex-shrink-0">{ex.variation_note}</span>
+                              <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
                             )}
                             {ex.source === 'group' && (
-                              <span className="text-[8px] px-1 py-px bg-indigo-50 text-indigo-500 rounded font-medium flex-shrink-0">G</span>
+                              <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>G</span>
                             )}
                             {ex.source === 'individual' && (
-                              <span className="text-[8px] px-1 py-px bg-amber-50 text-amber-500 rounded font-medium flex-shrink-0">I</span>
+                              <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
                             )}
                           </div>
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
                           {ex.notes && (
-                            <p className="text-[10px] text-gray-400 italic leading-tight line-clamp-1">{ex.notes}</p>
+                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
                         </>
                       )}
@@ -423,7 +433,7 @@ export function DayCard({
               })}
 
               {isDragOver && (
-                <div className="px-3 py-2 text-xs text-blue-500 text-center bg-blue-50/50">
+                <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--color-accent)', textAlign: 'center', background: 'var(--color-accent-muted)' }}>
                   Drop to move here
                 </div>
               )}
@@ -432,7 +442,7 @@ export function DayCard({
         </div>
 
         {/* Search */}
-        <div className="mt-auto pt-0.5">
+        <div style={{ marginTop: 'auto', paddingTop: 2 }}>
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}

@@ -65,6 +65,7 @@ export function LoadDistribution({
   daySchedule,
 }: LoadDistributionProps) {
   const [showStressCurve, setShowStressCurve] = useState(false);
+  const [stressToggleHovered, setStressToggleHovered] = useState(false);
 
   const isCalendarMapped = !!daySchedule && Object.keys(daySchedule).length > 0;
 
@@ -73,7 +74,6 @@ export function LoadDistribution({
     athletePRs.forEach(pr => { if (pr.pr_value_kg) prMap.set(pr.exercise_id, pr.pr_value_kg); });
 
     if (isCalendarMapped && daySchedule) {
-      // Build 7-column calendar data
       return WEEKDAYS.map((name, wd): DayData => {
         const slots = Object.entries(daySchedule)
           .filter(([, e]) => e.weekday === wd && activeDays.includes(Number(Object.keys(daySchedule).find(k => daySchedule[Number(k)] === e) ?? -1)))
@@ -85,7 +85,6 @@ export function LoadDistribution({
       });
     }
 
-    // Abstract mode
     const visibleDays = dayDisplayOrder
       .filter(d => activeDays.includes(d))
       .map(d => ({ index: d, name: dayLabels[d] || `Day ${d}` }));
@@ -112,28 +111,45 @@ export function LoadDistribution({
     tooltip: { contentStyle: { fontSize: 12 } },
   };
 
-  // In calendar mode, dim rest-day bars (value 0) — handled by showing nothing
-  const getBarFill = (entry: DayData, color: string) => entry.isRest ? 'transparent' : color;
+  const panelStyle: React.CSSProperties = {
+    background: 'var(--color-bg-secondary)',
+    padding: 12,
+    borderRadius: 'var(--radius-md)',
+  };
+
+  const subHeaderStyle: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 500,
+    color: 'var(--color-text-secondary)',
+    marginBottom: 8,
+  };
 
   return (
-    <div className="bg-white border-t border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-gray-700">Weekly Load Distribution</h3>
+    <div style={{ borderTop: '1px solid var(--color-border-secondary)', padding: 16, background: 'var(--color-bg-primary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)', margin: 0 }}>Weekly Load Distribution</h3>
         {isCalendarMapped && (
           <button
             onClick={() => setShowStressCurve(s => !s)}
-            className={`text-xs px-2 py-1 rounded border transition-colors ${
-              showStressCurve ? 'bg-red-50 text-red-600 border-red-200' : 'text-gray-500 border-gray-200 hover:bg-gray-50'
-            }`}
+            onMouseEnter={() => setStressToggleHovered(true)}
+            onMouseLeave={() => setStressToggleHovered(false)}
+            style={{
+              fontSize: 11, padding: '4px 8px', borderRadius: 'var(--radius-sm)',
+              border: showStressCurve ? '1px solid var(--color-danger-border)' : '1px solid var(--color-border-secondary)',
+              background: showStressCurve ? 'var(--color-danger-bg)' : stressToggleHovered ? 'var(--color-bg-secondary)' : 'transparent',
+              color: showStressCurve ? 'var(--color-danger-text)' : 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              transition: 'background 0.1s',
+            }}
           >
             {showStressCurve ? 'Hide' : 'Show'} stress curve
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         {/* Load */}
-        <div className="bg-gray-50 p-3 rounded-lg">
-          <h4 className="text-xs font-medium text-gray-600 mb-2">Load by Day (kg)</h4>
+        <div style={panelStyle}>
+          <h4 style={subHeaderStyle}>Load by Day (kg)</h4>
           <ResponsiveContainer width="100%" height={180}>
             {showStressCurve ? (
               <ComposedChart data={chartDataWithCurve}>
@@ -158,8 +174,8 @@ export function LoadDistribution({
         </div>
 
         {/* Reps */}
-        <div className="bg-gray-50 p-3 rounded-lg">
-          <h4 className="text-xs font-medium text-gray-600 mb-2">Reps by Day</h4>
+        <div style={panelStyle}>
+          <h4 style={subHeaderStyle}>Reps by Day</h4>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={distributionData}>
               <CartesianGrid {...chartProps.cartesianGrid} />
@@ -172,8 +188,8 @@ export function LoadDistribution({
         </div>
 
         {/* Stress */}
-        <div className="bg-gray-50 p-3 rounded-lg">
-          <h4 className="text-xs font-medium text-gray-600 mb-2">Stress by Day</h4>
+        <div style={panelStyle}>
+          <h4 style={subHeaderStyle}>Stress by Day</h4>
           <ResponsiveContainer width="100%" height={180}>
             {showStressCurve ? (
               <ComposedChart data={chartDataWithCurve}>
@@ -197,9 +213,9 @@ export function LoadDistribution({
           </ResponsiveContainer>
         </div>
       </div>
-      <div className="mt-3 text-[10px] text-gray-400 space-y-0.5">
-        <p><strong>Load:</strong> sum(avg_load × reps) for kg-based exercises{isCalendarMapped ? ' · Rest days shown as empty columns' : ''}</p>
-        <p><strong>Stress:</strong> sum(reps × (load/PR)²) — requires athlete PRs</p>
+      <div style={{ marginTop: 12, fontSize: 10, color: 'var(--color-text-tertiary)', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <p style={{ margin: 0 }}><strong>Load:</strong> sum(avg_load × reps) for kg-based exercises{isCalendarMapped ? ' · Rest days shown as empty columns' : ''}</p>
+        <p style={{ margin: 0 }}><strong>Stress:</strong> sum(reps × (load/PR)²) — requires athlete PRs</p>
       </div>
     </div>
   );

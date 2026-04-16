@@ -603,18 +603,18 @@ export function WeeklyPlanner() {
   const dayLabels: Record<number, string> = currentWeekPlan?.day_labels ?? {};
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-5">
-      <div className="max-w-[1600px] mx-auto">
+    <div style={{ minHeight: '100vh', background: 'var(--color-bg-secondary)', padding: 16 }}>
+      <div style={{ maxWidth: 1600, margin: '0 auto' }}>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-md)', color: 'var(--color-danger-text)', fontSize: 13 }}>
             {error}
-            <button onClick={() => setError(null)} className="ml-2 underline text-xs">Dismiss</button>
+            <button onClick={() => setError(null)} style={{ marginLeft: 8, textDecoration: 'underline', fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger-text)' }}>Dismiss</button>
           </div>
         )}
 
         {!planSelection.athlete && !planSelection.group ? (
-          <div className="py-4">
+          <div style={{ paddingTop: 16, paddingBottom: 16 }}>
             <AthleteCardPicker />
           </div>
         ) : showWeekList ? (
@@ -633,10 +633,12 @@ export function WeeklyPlanner() {
           <>
 
             {/* ── Back to overview ── */}
-            <div className="flex items-center gap-2 mb-2">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <button
                 onClick={() => setShowWeekList(true)}
-                className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11, color: 'var(--color-text-secondary)', background: 'transparent', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'background 0.1s, color 0.1s' }}
+                onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-primary)'; el.style.background = 'var(--color-bg-tertiary)'; }}
+                onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-secondary)'; el.style.background = 'transparent'; }}
                 title="Back to week overview"
               >
                 <ArrowLeft size={14} />
@@ -671,7 +673,7 @@ export function WeeklyPlanner() {
 
             {/* ── Load Distribution (collapsible) ── */}
             {currentWeekPlan && showLoadDistribution && planSelection.type === 'individual' && planSelection.athlete && (
-              <div className="mb-4 bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div style={{ marginBottom: 16, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
                 <LoadDistribution
                   plannedExercises={plannedExercises}
                   athletePRs={athletePRs}
@@ -685,15 +687,19 @@ export function WeeklyPlanner() {
 
             {/* ── Group plan banner ── */}
             {planSelection.type === 'group' && planSelection.group && (
-              <div className="mb-3 flex items-center justify-between px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-indigo-800">Group plan:</span>
-                  <span className="text-xs text-indigo-700">{planSelection.group.name}</span>
+              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#3730a3' }}>Group plan:</span>
+                  <span style={{ fontSize: 11, color: '#4338ca' }}>{planSelection.group.name}</span>
                 </div>
                 <button
-                  onClick={handleSyncGroupPlan}
+                  onClick={() => void handleSyncGroupPlan()}
                   disabled={isSyncing}
-                  className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  style={{
+                    fontSize: 11, padding: '4px 12px', background: '#4f46e5', color: '#fff',
+                    border: 'none', borderRadius: 'var(--radius-md)', cursor: isSyncing ? 'not-allowed' : 'pointer',
+                    opacity: isSyncing ? 0.5 : 1, transition: 'opacity 0.1s',
+                  }}
                 >
                   {isSyncing ? 'Syncing…' : 'Sync to athletes'}
                 </button>
@@ -702,19 +708,19 @@ export function WeeklyPlanner() {
 
             {/* ── Linked-to-group banner for individual plans ── */}
             {planSelection.type === 'individual' && currentWeekPlan?.source_group_plan_id && (
-              <div className="mb-3 px-4 py-2 bg-indigo-50/60 border border-indigo-200 rounded-lg">
-                <span className="text-xs text-indigo-600">Linked to group plan · Exercises with </span>
-                <span className="text-[8px] px-1 py-px bg-indigo-50 text-indigo-500 rounded font-medium">G</span>
-                <span className="text-xs text-indigo-600"> come from the group. Edit to override </span>
-                <span className="text-[8px] px-1 py-px bg-amber-50 text-amber-500 rounded font-medium">I</span>
-                <span className="text-xs text-indigo-600">.</span>
+              <div style={{ marginBottom: 12, padding: '8px 16px', background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: 11, color: '#4338ca' }}>Linked to group plan · Exercises with </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>G</span>
+                <span style={{ fontSize: 11, color: '#4338ca' }}> come from the group. Edit to override </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>I</span>
+                <span style={{ fontSize: 11, color: '#4338ca' }}>.</span>
               </div>
             )}
 
             {/* ── Week Overview (always visible) ── */}
             {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="text-sm text-gray-400">Loading week plan...</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
+                <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>Loading week plan...</div>
               </div>
             ) : (
               <WeekOverview
@@ -742,9 +748,10 @@ export function WeeklyPlanner() {
               const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
               return (
               <div
-                className={isSidebar
-                  ? 'fixed inset-0 z-50 flex items-start justify-end animate-backdrop-in'
-                  : 'fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in'}
+                className="animate-backdrop-in"
+                style={isSidebar
+                  ? { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }
+                  : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -752,10 +759,12 @@ export function WeeklyPlanner() {
                   }
                 }}
               >
-                <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className={isSidebar
-                  ? 'relative z-10 w-full max-w-lg h-full bg-white shadow-xl border-l border-gray-200 overflow-y-auto flex flex-col animate-sidebar-in'
-                  : 'relative z-10 w-full max-w-4xl max-h-[85vh] bg-white shadow-lg flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in'}
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }} onClick={() => void closeDialog()} />
+                <div
+                  className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
+                  style={isSidebar
+                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.16)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
                   tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
@@ -791,9 +800,10 @@ export function WeeklyPlanner() {
               const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
               return (
               <div
-                className={isSidebar
-                  ? 'fixed inset-0 z-50 flex items-start justify-end animate-backdrop-in'
-                  : 'fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in'}
+                className="animate-backdrop-in"
+                style={isSidebar
+                  ? { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }
+                  : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
                     e.preventDefault();
@@ -801,10 +811,12 @@ export function WeeklyPlanner() {
                   }
                 }}
               >
-                <div className="absolute inset-0 bg-black/20" onClick={closeDialog} />
-                <div className={isSidebar
-                  ? 'relative z-10 w-full max-w-lg h-full bg-white shadow-xl border-l border-gray-200 overflow-y-auto flex flex-col animate-sidebar-in'
-                  : 'relative z-10 w-full max-w-3xl max-h-[85vh] bg-white shadow-lg flex flex-col overflow-y-auto rounded-xl border border-gray-200 animate-dialog-in'}
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }} onClick={() => void closeDialog()} />
+                <div
+                  className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
+                  style={isSidebar
+                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.16)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
                   tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}

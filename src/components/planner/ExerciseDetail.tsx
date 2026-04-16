@@ -1,7 +1,7 @@
 // TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ArrowLeft, Video, Image as ImageIcon, Upload, Save } from 'lucide-react';
+import { X, ArrowLeft, Video, Upload, Save } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -139,27 +139,16 @@ export function ExerciseDetail({
 
   async function loadSollTarget() {
     if (!macroContext || !plannedExercise) return;
-    const { data: te } = await supabase
-      .from('macro_tracked_exercises')
-      .select('id')
-      .eq('macrocycle_id', macroContext.macroId)
-      .eq('exercise_id', plannedExercise.exercise_id)
-      .maybeSingle();
+    const { data: te } = await supabase.from('macro_tracked_exercises').select('id')
+      .eq('macrocycle_id', macroContext.macroId).eq('exercise_id', plannedExercise.exercise_id).maybeSingle();
     if (!te) { setSollTarget(null); setTrackedExId(null); return; }
     setTrackedExId(te.id);
-    const { data: mw } = await supabase
-      .from('macro_weeks')
-      .select('id')
-      .eq('macrocycle_id', macroContext.macroId)
-      .eq('week_number', macroContext.weekNumber)
-      .maybeSingle();
+    const { data: mw } = await supabase.from('macro_weeks').select('id')
+      .eq('macrocycle_id', macroContext.macroId).eq('week_number', macroContext.weekNumber).maybeSingle();
     if (!mw) { setSollTarget(null); return; }
-    const { data: tgt } = await supabase
-      .from('macro_targets')
+    const { data: tgt } = await supabase.from('macro_targets')
       .select('target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
-      .eq('macro_week_id', mw.id)
-      .eq('tracked_exercise_id', te.id)
-      .maybeSingle();
+      .eq('macro_week_id', mw.id).eq('tracked_exercise_id', te.id).maybeSingle();
     setSollTarget(tgt ? {
       reps: tgt.target_reps, max: tgt.target_max,
       maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
@@ -176,26 +165,16 @@ export function ExerciseDetail({
     if (!plannedExercise || members.length === 0) return;
     const currentMemberIds = members.map(m => m.exerciseId).sort().join(',');
     const { data: otherCombos } = await supabase
-      .from('planned_exercises')
-      .select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
-      .eq('weekplan_id', weekPlanId)
-      .eq('is_combo', true)
-      .neq('id', plannedExercise.id);
+      .from('planned_exercises').select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
+      .eq('weekplan_id', weekPlanId).eq('is_combo', true).neq('id', plannedExercise.id);
     if (!otherCombos?.length) { setOtherDays([]); return; }
     const matching: OtherDay[] = [];
     for (const combo of otherCombos) {
       const { data: memberData } = await supabase
-        .from('planned_exercise_combo_members')
-        .select('exercise_id')
-        .eq('planned_exercise_id', combo.id);
+        .from('planned_exercise_combo_members').select('exercise_id').eq('planned_exercise_id', combo.id);
       const theirIds = (memberData || []).map((m: { exercise_id: string }) => m.exercise_id).sort().join(',');
       if (theirIds === currentMemberIds) {
-        matching.push({
-          dayIndex: combo.day_index,
-          prescriptionRaw: combo.prescription_raw,
-          totalSets: combo.summary_total_sets,
-          totalReps: combo.summary_total_reps,
-        });
+        matching.push({ dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw, totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps });
       }
     }
     setOtherDays(matching);
@@ -205,16 +184,10 @@ export function ExerciseDetail({
     if (!plannedExercise) return;
     setSaving(true);
     try {
-      await savePrescription(plannedExercise.id, {
-        prescription: textValue,
-        unit: (unit as DefaultUnit) || 'absolute_kg',
-        isCombo,
-      });
+      await savePrescription(plannedExercise.id, { prescription: textValue, unit: (unit as DefaultUnit) || 'absolute_kg', isCombo });
       await onSaved();
       setTextMode(false);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function saveSentinelNotes() {
@@ -224,9 +197,7 @@ export function ExerciseDetail({
       await saveNotes(plannedExercise.id, notes);
       await onSaved();
       onClose();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -245,26 +216,19 @@ export function ExerciseDetail({
       onClose();
     } catch (err) {
       console.error('Upload failed:', err);
-    } finally {
-      setUploading(false);
-    }
+    } finally { setUploading(false); }
   }
 
-  // Saves a single field to DB. Unit changes also trigger a full refresh (affects grid rendering).
-  // variation_note / combo_notation do NOT refresh — to avoid racing with in-flight savePrescription calls.
   async function saveSettingsField(field: 'unit' | 'variation_note' | 'combo_notation', value: string) {
     if (!plannedExercise) return;
     await supabase.from('planned_exercises').update({ [field]: value || null }).eq('id', plannedExercise.id);
     if (field === 'unit') await onSaved();
   }
 
-  // Close immediately, flush pending timers, save in background, then refresh parent.
   function handleClose() {
-    // Cancel all pending debounce timers
     [variationNoteTimerRef, comboNameTimerRef, notesTimerRef, refreshTimerRef].forEach(r => {
       if (r.current) { clearTimeout(r.current); r.current = null; }
     });
-    // Fire-and-forget: save current state then refresh parent (always, even on error)
     if (plannedExercise) {
       const id = plannedExercise.id;
       void Promise.all([
@@ -277,7 +241,7 @@ export function ExerciseDetail({
     } else {
       void onSaved();
     }
-    onClose(); // Always close immediately — saves happen in the background
+    onClose();
   }
 
   function maxFormat(maxVal: number | null, maxReps: number | null, maxSets: number | null) {
@@ -293,9 +257,25 @@ export function ExerciseDetail({
     ? (plannedExercise?.combo_notation || members.map(m => m.exercise.name).join(' + '))
     : (plannedExercise?.exercise.name ?? 'Exercise');
 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '6px 8px', fontSize: 13,
+    border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)',
+    outline: 'none', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+    boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 4,
+  };
+
+  const sectionHeaderStyle: React.CSSProperties = {
+    fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)',
+    textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8,
+  };
+
   return (
     <div
-      className="flex flex-col h-full bg-white"
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-primary)' }}
       onKeyDown={e => {
         if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) {
           e.preventDefault();
@@ -304,141 +284,158 @@ export function ExerciseDetail({
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
-        <div className="flex items-center gap-2">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--color-border-secondary)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {onBack && (
-            <button onClick={onBack} className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-500" title="Back to day editor">
+            <button
+              onClick={onBack}
+              style={{ padding: 4, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              title="Back to day editor"
+            >
               <ArrowLeft size={16} />
             </button>
           )}
           <div>
-            <h2 className="text-base font-medium text-gray-900 leading-tight">{exerciseName}</h2>
+            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
             {plannedExercise?.variation_note && (
-              <p className="text-xs text-gray-400 italic">{plannedExercise.variation_note}</p>
+              <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>{plannedExercise.variation_note}</p>
             )}
           </div>
         </div>
-        <button onClick={() => void handleClose()} className="p-1 rounded hover:bg-gray-100 transition-colors text-gray-500">
+        <button
+          onClick={() => void handleClose()}
+          style={{ padding: 4, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+        >
           <X size={18} />
         </button>
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-        {/* ── Combo: component exercise list ── */}
+        {/* Combo: component exercise list */}
         {isCombo && members.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {members.map(m => (
-              <div key={m.position} className="flex items-center gap-1.5 text-xs text-gray-600">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.exercise.color || '#94a3b8' }} />
+              <div key={m.position} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, backgroundColor: m.exercise.color || '#94a3b8' }} />
                 {m.exercise.name}
               </div>
             ))}
           </div>
         )}
 
-        {/* ── Content: sentinel-specific or prescription grid ── */}
+        {/* Sentinel: text */}
         {plannedExercise && sentinel === 'text' && (
-          <div className="space-y-2">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Text content</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={sectionHeaderStyle}>Text content</span>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={6}
               placeholder="Type your notes or instructions…"
-              className="w-full text-sm text-gray-700 italic border border-gray-200 rounded px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+              className="planner-week-notes"
+              style={{ ...inputStyle, resize: 'none', fontStyle: 'italic', lineHeight: 1.55 }}
             />
           </div>
         )}
 
+        {/* Sentinel: video */}
         {plannedExercise && sentinel === 'video' && (
-          <div className="space-y-2">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Video URL</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={sectionHeaderStyle}>Video URL</span>
             <input
               type="url"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="Paste YouTube or video URL…"
-              className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
+              style={inputStyle}
             />
             {notes && (() => {
               const thumb = getYouTubeThumbnail(notes);
               return thumb
-                ? <img src={thumb} alt="Video thumbnail" className="rounded w-full max-w-xs object-cover" />
-                : <p className="text-xs text-gray-500 flex items-center gap-1 break-all"><Video size={12} className="text-indigo-400 flex-shrink-0" />{notes}</p>;
+                ? <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} />
+                : <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', margin: 0 }}>
+                    <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />{notes}
+                  </p>;
             })()}
           </div>
         )}
 
+        {/* Sentinel: image */}
         {plannedExercise && sentinel === 'image' && (
-          <div className="space-y-2">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Image</span>
-            <input
-              type="url"
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Paste image URL…"
-              className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-300"
-            />
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">or upload:</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={sectionHeaderStyle}>Image</span>
+            <input type="url" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Paste image URL…" style={inputStyle} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>or upload:</span>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded transition-colors disabled:opacity-50"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                  background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-secondary)',
+                  borderRadius: 'var(--radius-md)', cursor: uploading ? 'not-allowed' : 'pointer',
+                  fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)',
+                  opacity: uploading ? 0.5 : 1,
+                }}
               >
                 <Upload size={12} />
                 {uploading ? 'Uploading…' : 'Upload file'}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={e => void handleImageUpload(e)}
-              />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => void handleImageUpload(e)} />
             </div>
             {notes && (
-              <img src={notes} alt="" className="rounded w-full max-w-xs object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+              <img src={notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
             )}
           </div>
         )}
 
+        {/* Prescription */}
         {plannedExercise && !sentinel && (
           <div>
-            <ExerciseHistoryChart
-              exerciseId={plannedExercise.exercise_id}
-              athleteId={athleteId}
-              macroContext={macroContext}
-            />
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Prescription</span>
+            <ExerciseHistoryChart exerciseId={plannedExercise.exercise_id} athleteId={athleteId} macroContext={macroContext} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={sectionHeaderStyle}>Prescription</span>
               <button
                 onClick={() => { setTextMode(v => !v); setTextValue(plannedExercise.prescription_raw ?? ''); }}
-                className="text-[10px] text-gray-400 hover:text-blue-600 transition-colors"
+                style={{ fontSize: 10, color: 'var(--color-text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
               >
                 {textMode ? 'Grid mode' : 'Text mode'}
               </button>
             </div>
             {textMode ? (
-              <div className="space-y-2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <textarea
                   value={textValue}
                   onChange={e => setTextValue(e.target.value)}
                   rows={3}
-                  className="w-full text-sm border border-gray-200 rounded px-3 py-2 font-mono resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)', resize: 'none', lineHeight: 1.55 }}
                   placeholder={isCombo ? '80×2+1, 90×2+1×2' : '80x5, 85x3x2'}
                 />
-                <div className="flex gap-2">
+                <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     onClick={() => void applyText()}
                     disabled={saving}
-                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded transition-colors"
+                    style={{
+                      padding: '4px 12px', background: saving ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+                      color: saving ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+                      border: 'none', borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 500,
+                      cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1,
+                    }}
                   >
                     {saving ? 'Saving…' : 'Apply'}
                   </button>
-                  <button onClick={() => setTextMode(false)} className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700">
+                  <button
+                    onClick={() => setTextMode(false)}
+                    style={{ padding: '4px 12px', background: 'none', border: 'none', fontSize: 11, color: 'var(--color-text-secondary)', cursor: 'pointer', borderRadius: 'var(--radius-md)' }}
+                  >
                     Cancel
                   </button>
                 </div>
@@ -451,11 +448,7 @@ export function ExerciseDetail({
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}
                 onSave={raw => {
-                  void savePrescription(plannedExercise.id, {
-                    prescription: raw,
-                    unit: (unit as DefaultUnit) || 'absolute_kg',
-                    isCombo,
-                  });
+                  void savePrescription(plannedExercise.id, { prescription: raw, unit: (unit as DefaultUnit) || 'absolute_kg', isCombo });
                   debouncedRefresh();
                 }}
               />
@@ -463,54 +456,55 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Variation note (right below prescription) ── */}
+        {/* Variation note */}
         {!sentinel && plannedExercise && (
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Variation note</label>
+            <label style={labelStyle}>Variation note</label>
             <input
               type="text"
               value={variationNote}
               onChange={e => { setVariationNote(e.target.value); saveVariationNoteDebounced(e.target.value); }}
               onBlur={() => { if (variationNoteTimerRef.current) clearTimeout(variationNoteTimerRef.current); void saveSettingsField('variation_note', variationNote); }}
               placeholder="e.g. pause at knee, blocks"
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+              style={inputStyle}
             />
           </div>
         )}
 
-        {/* ── Coach notes ── */}
+        {/* Coach notes */}
         {!sentinel && plannedExercise && (
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Coach notes</label>
+            <label style={labelStyle}>Coach notes</label>
             <textarea
               value={notes}
               onChange={e => { notesRef.current = e.target.value; setNotes(e.target.value); saveNotesDebounced(plannedExercise.id, e.target.value); }}
               onBlur={() => { if (notesTimerRef.current) clearTimeout(notesTimerRef.current); void saveNotes(plannedExercise.id, notesRef.current); }}
               rows={3}
               placeholder="Notes visible to athlete…"
-              className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-300"
+              className="planner-week-notes"
+              style={{ ...inputStyle, resize: 'none', lineHeight: 1.55 }}
             />
           </div>
         )}
 
-        {/* ── Other days (regular and combo, not sentinels) ── */}
+        {/* Other days */}
         {!sentinel && plannedExercise && (
-          <div className="border-t border-gray-100 pt-4">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Other days this week</span>
+          <div style={{ borderTop: '1px solid var(--color-border-tertiary)', paddingTop: 16 }}>
+            <span style={sectionHeaderStyle}>Other days this week</span>
             {otherDays.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">Only planned on {dayName} this week</p>
+              <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>Only planned on {dayName} this week</p>
             ) : (
-              <table className="w-full text-xs">
+              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
                 <tbody>
                   {otherDays.sort((a, b) => a.dayIndex - b.dayIndex).map(d => {
                     const label = dayLabels[d.dayIndex] || `Day ${d.dayIndex}`;
                     return (
-                      <tr key={d.dayIndex} className="border-b border-gray-100 last:border-0">
-                        <td className="py-1.5 text-gray-700 font-medium w-24">{label}</td>
-                        <td className="py-1.5 font-mono text-gray-600">
-                          {d.prescriptionRaw ?? <span className="text-gray-400 italic font-sans">not yet planned</span>}
+                      <tr key={d.dayIndex} style={{ borderBottom: '1px solid var(--color-border-tertiary)' }}>
+                        <td style={{ padding: '6px 0', color: 'var(--color-text-secondary)', fontWeight: 500, width: 96 }}>{label}</td>
+                        <td style={{ padding: '6px 0', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
+                          {d.prescriptionRaw ?? <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontFamily: 'var(--font-sans)' }}>not yet planned</span>}
                         </td>
-                        <td className="py-1.5 text-gray-500 text-right whitespace-nowrap">
+                        <td style={{ padding: '6px 0', color: 'var(--color-text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {d.totalSets != null && d.totalReps != null ? `S${d.totalSets} R${d.totalReps}` : ''}
                         </td>
                       </tr>
@@ -522,22 +516,26 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── SOLL / IST (macro, regular exercise only) ── */}
+        {/* SOLL / IST */}
         {hasMacro && sollTarget && (
-          <div className="border-t border-gray-100 pt-4">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Macro targets</span>
-            <div className="bg-gray-50 rounded-lg px-4 py-3 font-mono text-sm space-y-1.5 mb-3">
-              <div className="flex gap-3 items-baseline">
-                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">SOLL</span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{sollTarget.reps ?? '—'}</strong></span>
-                <span className="text-gray-500">Avg <strong className="text-gray-900">{sollTarget.avg ?? '—'}</strong></span>
-                <span className="text-gray-500">Max <strong className="text-gray-900">{maxFormat(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)}</strong></span>
+          <div style={{ borderTop: '1px solid var(--color-border-tertiary)', paddingTop: 16 }}>
+            <span style={sectionHeaderStyle}>Macro targets</span>
+            <div style={{
+              background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)',
+              padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 13,
+              display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12,
+            }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>SOLL</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.reps ?? '—'}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.avg ?? '—'}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Max <strong style={{ color: 'var(--color-text-primary)' }}>{maxFormat(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)}</strong></span>
               </div>
-              <div className="flex gap-3 items-baseline">
-                <span className="text-xs font-sans text-gray-500 w-8 flex-shrink-0">IST</span>
-                <span className="text-gray-500">R <strong className="text-gray-900">{plannedExercise?.summary_total_reps ?? '—'}</strong></span>
-                <span className="text-gray-500">Avg <strong className="text-gray-900">{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
-                <span className="text-gray-500">Hi <strong className="text-gray-900">{plannedExercise?.summary_highest_load ?? '—'}</strong></span>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>IST</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_total_reps ?? '—'}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Hi <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_highest_load ?? '—'}</strong></span>
               </div>
             </div>
             {trackedExId !== null && (
@@ -546,47 +544,52 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* ── Settings (not for sentinels) ── */}
+        {/* Settings */}
         {!sentinel && plannedExercise && (
-          <div className="border-t border-gray-100 pt-4 space-y-4">
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide block">Settings</span>
-
+          <div style={{ borderTop: '1px solid var(--color-border-tertiary)', paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <span style={sectionHeaderStyle}>Settings</span>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Unit</label>
+              <label style={labelStyle}>Unit</label>
               <select
                 value={unit}
                 onChange={e => { setUnit(e.target.value); void saveSettingsField('unit', e.target.value); }}
-                className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
+                style={{ ...inputStyle, appearance: 'auto' }}
               >
                 {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-
             {isCombo && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Combo name</label>
+                <label style={labelStyle}>Combo name</label>
                 <input
                   type="text"
                   value={comboName}
                   onChange={e => { setComboName(e.target.value); saveComboNameDebounced(e.target.value); }}
                   onBlur={() => { if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current); void saveSettingsField('combo_notation', comboName); }}
                   placeholder={members.map(m => m.exercise.name).join(' + ')}
-                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                  style={inputStyle}
                 />
               </div>
             )}
           </div>
         )}
-
       </div>
 
       {/* Footer — Save button for sentinels only */}
       {sentinel && plannedExercise && (
-        <div className="flex-shrink-0 border-t border-gray-200 px-4 py-3 flex justify-end bg-white">
+        <div style={{ flexShrink: 0, borderTop: '1px solid var(--color-border-secondary)', padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', background: 'var(--color-bg-primary)' }}>
           <button
             onClick={() => void saveSentinelNotes()}
             disabled={saving || uploading}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+              background: saving || uploading ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+              color: saving || uploading ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+              border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500,
+              cursor: saving || uploading ? 'not-allowed' : 'pointer',
+              opacity: saving || uploading ? 0.5 : 1,
+              transition: 'background 0.1s',
+            }}
           >
             <Save size={14} />
             {saving ? 'Saving…' : 'Save'}

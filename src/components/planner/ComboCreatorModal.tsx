@@ -79,35 +79,71 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
 
   const autoName = selectedExercises.map(e => e.exercise.name).join(' + ');
 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 12px', fontSize: 13,
+    border: '1px solid var(--color-border-secondary)',
+    borderRadius: 'var(--radius-md)', outline: 'none',
+    background: 'var(--color-bg-primary)',
+    color: 'var(--color-text-primary)',
+    boxSizing: 'border-box',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: 11, fontWeight: 500,
+    color: 'var(--color-text-secondary)', marginBottom: 4,
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className="bg-white rounded-xl shadow-xl border border-gray-200 max-w-lg w-full max-h-[90vh] overflow-y-auto animate-dialog-in">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-medium text-gray-900">Create Combo</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded transition-colors">
+    <div
+      className="animate-backdrop-in"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
+    >
+      <div
+        className="animate-dialog-in"
+        style={{
+          background: 'var(--color-bg-primary)',
+          borderRadius: 'var(--radius-xl)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.16)',
+          border: '1px solid var(--color-border-secondary)',
+          maxWidth: 512, width: '100%', maxHeight: '90vh', overflowY: 'auto',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          position: 'sticky', top: 0, background: 'var(--color-bg-primary)',
+          borderBottom: '1px solid var(--color-border-secondary)',
+          padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <h2 style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Create Combo</h2>
+          <button
+            onClick={onClose}
+            style={{ padding: 6, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+          >
             <X size={18} />
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4">
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Combo Name (optional)</label>
+            <label style={labelStyle}>Combo Name (optional)</label>
             <input
               type="text"
               value={comboName}
               onChange={(e) => setComboName(e.target.value)}
               placeholder={autoName || 'Auto-generated from exercises'}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={inputStyle}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
+              <label style={labelStyle}>Unit</label>
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value as DefaultUnit)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ ...inputStyle, appearance: 'auto' }}
               >
                 <option value="absolute_kg">kg</option>
                 <option value="percentage">%</option>
@@ -116,17 +152,19 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Ribbon Color</label>
-              <div className="flex gap-1.5 flex-wrap">
+              <label style={labelStyle}>Ribbon Color</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {PRESET_COLORS.map(presetColor => (
                   <button
                     key={presetColor}
                     type="button"
                     onClick={() => setColor(presetColor)}
-                    className={`w-7 h-7 rounded border-2 transition-all ${
-                      color === presetColor ? 'border-gray-900 scale-110' : 'border-gray-300 hover:border-gray-400'
-                    }`}
-                    style={{ backgroundColor: presetColor }}
+                    style={{
+                      width: 28, height: 28, borderRadius: 4, border: `2px solid ${color === presetColor ? '#111' : 'var(--color-border-secondary)'}`,
+                      backgroundColor: presetColor, cursor: 'pointer',
+                      transform: color === presetColor ? 'scale(1.1)' : 'scale(1)',
+                      transition: 'transform 0.1s, border-color 0.1s',
+                    }}
                     title={presetColor}
                   />
                 ))}
@@ -135,26 +173,30 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-2">
+            <label style={labelStyle}>
               Exercises ({selectedExercises.length} selected)
             </label>
 
             {selectedExercises.length > 0 && (
-              <div className="space-y-1 mb-3">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
                 {selectedExercises.map((item, index) => (
-                  <div key={`${item.exercise.id}-${index}`} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                    <GripVertical size={14} className="text-gray-400 flex-shrink-0" />
-                    <span className="text-xs font-medium text-gray-500 w-5">{index + 1}.</span>
-                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: item.exercise.color }} />
-                    <span className="text-sm text-gray-900 flex-1 truncate">{item.exercise.name}</span>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => moveExercise(index, -1)} disabled={index === 0} className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                  <div key={`${item.exercise.id}-${index}`} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-secondary)',
+                    borderRadius: 'var(--radius-md)', padding: '8px 12px',
+                  }}>
+                    <GripVertical size={14} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-tertiary)', width: 20 }}>{index + 1}.</span>
+                    <div style={{ width: 10, height: 10, borderRadius: 2, flexShrink: 0, backgroundColor: item.exercise.color ?? '#94a3b8' }} />
+                    <span style={{ fontSize: 13, color: 'var(--color-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.exercise.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <button onClick={() => moveExercise(index, -1)} disabled={index === 0} style={{ padding: 2, background: 'none', border: 'none', cursor: index === 0 ? 'not-allowed' : 'pointer', color: 'var(--color-text-tertiary)', opacity: index === 0 ? 0.3 : 1, display: 'flex' }}>
                         <ArrowUp size={14} />
                       </button>
-                      <button onClick={() => moveExercise(index, 1)} disabled={index === selectedExercises.length - 1} className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30">
+                      <button onClick={() => moveExercise(index, 1)} disabled={index === selectedExercises.length - 1} style={{ padding: 2, background: 'none', border: 'none', cursor: index === selectedExercises.length - 1 ? 'not-allowed' : 'pointer', color: 'var(--color-text-tertiary)', opacity: index === selectedExercises.length - 1 ? 0.3 : 1, display: 'flex' }}>
                         <ArrowDown size={14} />
                       </button>
-                      <button onClick={() => removeExercise(index)} className="p-0.5 text-red-400 hover:text-red-600 ml-1">
+                      <button onClick={() => removeExercise(index)} style={{ padding: 2, marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-danger-text)', display: 'flex' }}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -163,7 +205,7 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
               </div>
             )}
 
-            <div className="relative">
+            <div style={{ position: 'relative' }}>
               <input
                 ref={searchRef}
                 type="text"
@@ -171,29 +213,43 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="Search exercises to add..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={inputStyle}
               />
               {searchQuery && searchResults.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                <div style={{
+                  position: 'absolute', zIndex: 10, width: '100%', marginTop: 4,
+                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)',
+                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  maxHeight: 192, overflowY: 'auto',
+                }}>
                   {searchResults.map((ex, index) => (
                     <button
                       key={ex.id}
                       onClick={() => addExercise(ex)}
-                      className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 transition-colors ${
-                        index === selectedSearchIndex ? 'bg-blue-100 text-blue-900' : 'hover:bg-blue-50'
-                      }`}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 13,
+                        background: index === selectedSearchIndex ? 'var(--color-accent-muted)' : 'transparent',
+                        color: index === selectedSearchIndex ? 'var(--color-accent)' : 'var(--color-text-primary)',
+                        border: 'none', borderBottom: index < searchResults.length - 1 ? '1px solid var(--color-border-tertiary)' : 'none',
+                        cursor: 'pointer',
+                      }}
                     >
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: ex.color }} />
-                        <span className="font-medium text-gray-900">{ex.name}</span>
-                        {ex.exercise_code && <span className="text-xs text-gray-500 ml-auto">{ex.exercise_code}</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: 2, flexShrink: 0, backgroundColor: ex.color ?? '#94a3b8' }} />
+                        <span style={{ fontWeight: 500 }}>{ex.name}</span>
+                        {ex.exercise_code && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{ex.exercise_code}</span>}
                       </div>
                     </button>
                   ))}
                 </div>
               )}
               {searchQuery && searchResults.length === 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg px-3 py-2 text-sm text-gray-500">
+                <div style={{
+                  position: 'absolute', zIndex: 10, width: '100%', marginTop: 4,
+                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)',
+                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  padding: '8px 12px', fontSize: 13, color: 'var(--color-text-secondary)',
+                }}>
                   No matches
                 </div>
               )}
@@ -201,14 +257,33 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-5 py-3 flex items-center justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-200 rounded transition-colors">
+        {/* Footer */}
+        <div style={{
+          position: 'sticky', bottom: 0, background: 'var(--color-bg-secondary)',
+          borderTop: '1px solid var(--color-border-secondary)',
+          padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 16px', fontSize: 13, color: 'var(--color-text-secondary)',
+              background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: 'var(--radius-md)',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+          >
             Cancel
           </button>
           <button
             onClick={() => void handleSave()}
             disabled={isSaving || selectedExercises.length < 2}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', fontSize: 13,
+              background: isSaving || selectedExercises.length < 2 ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+              color: isSaving || selectedExercises.length < 2 ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+              border: 'none', borderRadius: 'var(--radius-md)', cursor: isSaving || selectedExercises.length < 2 ? 'not-allowed' : 'pointer',
+              transition: 'background 0.1s',
+            }}
           >
             <Plus size={16} />
             {isSaving ? 'Creating...' : 'Create Combo'}

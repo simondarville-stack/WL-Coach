@@ -173,7 +173,7 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-gray-400">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
         Loading PRs…
       </div>
     );
@@ -181,32 +181,46 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
 
   if (exercises.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
-        <Trophy size={28} className="text-gray-300" />
-        <p className="text-sm text-gray-500">No PR-tracked exercises found.</p>
-        <p className="text-xs text-gray-400">Enable PR tracking on exercises in the exercise settings.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', gap: 8 }}>
+        <Trophy size={28} style={{ color: 'var(--color-border-secondary)' }} />
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>No PR-tracked exercises found.</p>
+        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0 }}>Enable PR tracking on exercises in the exercise settings.</p>
       </div>
     );
   }
 
   const logExercise = exercises.find(e => e.id === logForm?.exerciseId);
 
+  const inputStyle: React.CSSProperties = {
+    padding: '4px 8px', fontSize: 12,
+    border: '1px solid var(--color-border-secondary)',
+    borderRadius: 'var(--radius-md)', outline: 'none',
+    background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+  };
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div style={{ background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-        <div className="flex items-center gap-2">
-          <Trophy size={15} className="text-amber-500" />
-          <span className="text-sm font-semibold text-gray-800">Personal Records</span>
-          <span className="text-xs text-gray-400">— {athlete.name}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-secondary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Trophy size={15} style={{ color: '#F59E0B' }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Personal Records</span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>— {athlete.name}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-gray-400 italic">
-            Solid = actual PR · <span className="text-gray-300">~italic = estimated</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+            Solid = actual PR · <span style={{ color: 'var(--color-border-secondary)' }}>~italic = estimated</span>
           </span>
           <button
             onClick={() => openLogForm(exercises[0].id, 1)}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+              fontSize: 11, background: 'var(--color-accent)', color: 'var(--color-text-on-accent)',
+              border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
           >
             <Plus size={12} />
             Log PR
@@ -215,19 +229,19 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-2 text-[11px] font-semibold text-gray-500 w-[220px]">
+            <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border-secondary)' }}>
+              <th style={{ textAlign: 'left', padding: '8px 16px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', width: 220 }}>
                 Exercise
               </th>
               {REP_COUNTS.map(rc => (
-                <th key={rc} className="text-center px-3 py-2 text-[11px] font-semibold text-gray-500 min-w-[90px]">
+                <th key={rc} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 90 }}>
                   {rc}RM
                 </th>
               ))}
-              <th className="text-center px-3 py-2 text-[11px] font-semibold text-gray-500 min-w-[80px]">
+              <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 80 }}>
                 Impl. 1RM
               </th>
             </tr>
@@ -239,22 +253,21 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
                 <>
                   <tr
                     key={row.exercise.id}
-                    className={`border-b border-gray-100 transition-colors ${ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'} hover:bg-blue-50/30`}
+                    style={{ borderBottom: '1px solid var(--color-border-tertiary)', background: ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'var(--color-accent-muted)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)'; }}
                   >
                     {/* Exercise name */}
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: row.exercise.color }}
-                        />
+                    <td style={{ padding: '8px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', backgroundColor: row.exercise.color ?? '#94a3b8' }} />
                         <div>
-                          <div className="text-[12px] font-medium text-gray-800">
+                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
                             {row.exercise.exercise_code
-                              ? <><span className="font-mono">{row.exercise.exercise_code}</span><span className="text-gray-400 ml-1 font-normal">{row.exercise.name}</span></>
+                              ? <><span style={{ fontFamily: 'var(--font-mono)' }}>{row.exercise.exercise_code}</span><span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4, fontWeight: 400 }}>{row.exercise.name}</span></>
                               : row.exercise.name}
                           </div>
-                          <div className="text-[9px] text-gray-400">{row.exercise.category}</div>
+                          <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>{row.exercise.category}</div>
                         </div>
                       </div>
                     </td>
@@ -265,80 +278,96 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
                       const displayValue = isReal ? cell.real!.value_kg : cell.phantom;
 
                       return (
-                        <td key={cell.repCount} className="px-2 py-1.5 text-center">
+                        <td key={cell.repCount} style={{ padding: '4px 8px', textAlign: 'center' }}>
                           <button
-                            className={`group relative w-full flex flex-col items-center gap-px px-2 py-1.5 rounded-lg transition-colors border ${
-                              isReal
-                                ? 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                            style={{
+                              position: 'relative', width: '100%', display: 'flex', flexDirection: 'column',
+                              alignItems: 'center', gap: 2, padding: '6px 8px', borderRadius: 'var(--radius-md)',
+                              border: isReal
+                                ? '1px solid var(--color-border-secondary)'
                                 : displayValue
-                                  ? 'bg-gray-50/60 border-gray-100 hover:border-blue-200 hover:bg-blue-50/40'
-                                  : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
-                            }`}
+                                  ? '1px solid var(--color-border-tertiary)'
+                                  : '1px solid transparent',
+                              background: isReal ? 'var(--color-bg-primary)' : displayValue ? 'var(--color-bg-secondary)' : 'transparent',
+                              cursor: 'pointer', transition: 'background 0.1s, border-color 0.1s',
+                            }}
+                            onMouseEnter={e => {
+                              const el = e.currentTarget as HTMLButtonElement;
+                              el.style.background = 'var(--color-accent-muted)';
+                              el.style.borderColor = 'var(--color-accent-border)';
+                            }}
+                            onMouseLeave={e => {
+                              const el = e.currentTarget as HTMLButtonElement;
+                              el.style.background = isReal ? 'var(--color-bg-primary)' : displayValue ? 'var(--color-bg-secondary)' : 'transparent';
+                              el.style.borderColor = isReal ? 'var(--color-border-secondary)' : displayValue ? 'var(--color-border-tertiary)' : 'transparent';
+                            }}
                             onClick={() => openLogForm(row.exercise.id, cell.repCount, displayValue ? Math.round(displayValue) : undefined)}
                             title={isReal ? `${cell.real!.value_kg} kg on ${formatDate(cell.real!.achieved_date)}${cell.real!.notes ? ' — ' + cell.real!.notes : ''}` : 'Click to log PR'}
                           >
                             {displayValue !== null ? (
                               <>
-                                <span className={`font-mono font-semibold text-[13px] leading-tight ${isReal ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 13, lineHeight: 1.25, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', fontStyle: isReal ? 'normal' : 'italic' }}>
                                   {isReal ? displayValue : `~${displayValue}`}
-                                  <span className="text-[9px] font-normal ml-0.5 not-italic text-gray-400">kg</span>
+                                  <span style={{ fontSize: 9, fontWeight: 400, marginLeft: 2, fontStyle: 'normal', color: 'var(--color-text-tertiary)' }}>kg</span>
                                 </span>
                                 {isReal && (
-                                  <span className="text-[8px] text-gray-400 leading-none">
+                                  <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>
                                     {formatDate(cell.real!.achieved_date)}
                                   </span>
                                 )}
                               </>
                             ) : (
-                              <span className="text-gray-200 text-[11px]">—</span>
+                              <span style={{ color: 'var(--color-border-secondary)', fontSize: 11 }}>—</span>
                             )}
-                            <Plus size={9} className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-40 transition-opacity text-blue-500" />
+                            <Plus size={9} style={{ position: 'absolute', top: 2, right: 2, opacity: 0, color: 'var(--color-accent)', transition: 'opacity 0.1s' }} />
                           </button>
                         </td>
                       );
                     })}
 
                     {/* Implied 1RM */}
-                    <td className="px-3 py-2 text-center">
+                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                       {row.implied1RM !== null ? (
-                        <span className="text-[12px] font-mono font-medium text-gray-500">
+                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
                           {row.implied1RM}
-                          <span className="text-[9px] text-gray-400 ml-0.5">kg</span>
+                          <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginLeft: 2 }}>kg</span>
                         </span>
                       ) : (
-                        <span className="text-gray-200 text-[11px]">—</span>
+                        <span style={{ color: 'var(--color-border-secondary)', fontSize: 11 }}>—</span>
                       )}
                     </td>
                   </tr>
 
                   {/* Inline log form — expands below the active row */}
                   {isLogging && logForm && (
-                    <tr key={`${row.exercise.id}_form`} className="bg-blue-50/50 border-b border-blue-100">
-                      <td colSpan={REP_COUNTS.length + 2} className="px-4 py-3">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <div className="flex items-center gap-1.5 text-xs text-blue-700 font-medium min-w-[140px]">
+                    <tr key={`${row.exercise.id}_form`} style={{ background: 'var(--color-accent-muted)', borderBottom: '1px solid var(--color-accent-border)' }}>
+                      <td colSpan={REP_COUNTS.length + 2} style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-accent)', fontWeight: 500, minWidth: 140 }}>
                             <TrendingUp size={12} />
                             {logExercise?.exercise_code || logExercise?.name} — {logForm.repCount}RM
                           </div>
 
                           {/* Rep count selector */}
-                          <div className="flex gap-1">
+                          <div style={{ display: 'flex', gap: 4 }}>
                             {REP_COUNTS.map(rc => (
                               <button
                                 key={rc}
                                 onClick={() => setLogForm(f => f ? { ...f, repCount: rc } : f)}
-                                className={`w-7 h-7 text-[11px] rounded font-medium transition-colors ${
-                                  logForm.repCount === rc
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-white text-gray-600 border border-gray-200 hover:border-blue-300'
-                                }`}
+                                style={{
+                                  width: 28, height: 28, fontSize: 11, borderRadius: 'var(--radius-sm)',
+                                  fontWeight: 500, cursor: 'pointer', transition: 'background 0.1s',
+                                  background: logForm.repCount === rc ? 'var(--color-accent)' : 'var(--color-bg-primary)',
+                                  color: logForm.repCount === rc ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                                  border: logForm.repCount === rc ? 'none' : '1px solid var(--color-border-secondary)',
+                                }}
                               >
                                 {rc}
                               </button>
                             ))}
                           </div>
 
-                          <div className="flex items-center gap-1">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <input
                               type="number"
                               step="0.5"
@@ -346,42 +375,50 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
                               placeholder="kg"
                               value={logForm.value}
                               onChange={e => setLogForm(f => f ? { ...f, value: e.target.value } : f)}
-                              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 font-mono"
+                              style={{ ...inputStyle, width: 80, fontFamily: 'var(--font-mono)' }}
                               autoFocus
                               onKeyDown={e => { if (e.key === 'Enter') saveLogForm(); if (e.key === 'Escape') setLogForm(null); }}
                             />
-                            <span className="text-xs text-gray-500">kg</span>
+                            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>kg</span>
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="date"
-                              value={logForm.date}
-                              onChange={e => setLogForm(f => f ? { ...f, date: e.target.value } : f)}
-                              className="px-2 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-                            />
-                          </div>
+                          <input
+                            type="date"
+                            value={logForm.date}
+                            onChange={e => setLogForm(f => f ? { ...f, date: e.target.value } : f)}
+                            style={inputStyle}
+                          />
 
                           <input
                             type="text"
                             placeholder="Notes (optional)"
                             value={logForm.notes}
                             onChange={e => setLogForm(f => f ? { ...f, notes: e.target.value } : f)}
-                            className="flex-1 min-w-[120px] max-w-[200px] px-2 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                            style={{ ...inputStyle, flex: 1, minWidth: 120, maxWidth: 200 }}
                           />
 
-                          <div className="flex items-center gap-1.5 ml-auto">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                             <button
-                              onClick={saveLogForm}
+                              onClick={() => void saveLogForm()}
                               disabled={saving || !logForm.value}
-                              className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px',
+                                fontSize: 11, background: saving || !logForm.value ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+                                color: saving || !logForm.value ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+                                border: 'none', borderRadius: 'var(--radius-md)',
+                                cursor: saving || !logForm.value ? 'not-allowed' : 'pointer',
+                                opacity: saving || !logForm.value ? 0.5 : 1,
+                                transition: 'background 0.1s',
+                              }}
                             >
                               <Check size={11} />
                               {saving ? 'Saving…' : 'Save'}
                             </button>
                             <button
                               onClick={() => setLogForm(null)}
-                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                              style={{ padding: 4, color: 'var(--color-text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', borderRadius: 'var(--radius-sm)' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
                             >
                               <X size={14} />
                             </button>
@@ -399,22 +436,28 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
 
       {/* Recent entries footer */}
       {history.length > 0 && (
-        <div className="border-t border-gray-100 px-4 py-2 bg-gray-50/30">
-          <div className="flex items-center gap-1 mb-1.5">
-            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Recent entries</span>
+        <div style={{ borderTop: '1px solid var(--color-border-tertiary)', padding: '8px 16px', background: 'var(--color-bg-secondary)' }}>
+          <div style={{ marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent entries</span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {history.slice(0, 8).map(entry => {
               const ex = exercises.find(e => e.id === entry.exercise_id);
               return (
-                <div key={entry.id} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-gray-200 rounded-md text-[10px] group">
-                  <span className="font-mono font-medium text-gray-700">{entry.value_kg}kg</span>
-                  <span className="text-gray-400">@ {entry.rep_count}RM</span>
-                  <span className="text-gray-500 font-medium">{ex?.exercise_code || ex?.name}</span>
-                  <span className="text-gray-300">{formatDate(entry.achieved_date)}</span>
+                <div
+                  key={entry.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', fontSize: 10 }}
+                  className="group"
+                >
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{entry.value_kg}kg</span>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>@ {entry.rep_count}RM</span>
+                  <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{ex?.exercise_code || ex?.name}</span>
+                  <span style={{ color: 'var(--color-border-secondary)' }}>{formatDate(entry.achieved_date)}</span>
                   <button
-                    onClick={() => deleteEntry(entry.id)}
-                    className="opacity-0 group-hover:opacity-60 hover:opacity-100 text-red-400 transition-opacity ml-0.5"
+                    onClick={() => void deleteEntry(entry.id)}
+                    style={{ color: 'var(--color-danger-text)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', opacity: 0.6, marginLeft: 2 }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'; }}
                     title="Remove entry"
                   >
                     <X size={9} />

@@ -128,39 +128,70 @@ export function CopyWeekModal({
     (targetType === 'athlete' && !!selectedTargetAthleteId) ||
     (targetType === 'group' && !!selectedTargetGroupId);
 
+  const selectStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 12px', fontSize: 13,
+    border: '1px solid var(--color-border-secondary)',
+    borderRadius: 'var(--radius-md)', outline: 'none',
+    background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+    appearance: 'auto', boxSizing: 'border-box',
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className="bg-white rounded-xl shadow-xl border border-gray-200 max-w-md w-full animate-dialog-in">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <Clipboard size={20} className="text-blue-600" />
-            <h2 className="text-lg font-medium text-gray-900">Paste Week</h2>
+    <div
+      className="animate-backdrop-in"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
+    >
+      <div
+        className="animate-dialog-in"
+        style={{
+          background: 'var(--color-bg-primary)',
+          borderRadius: 'var(--radius-xl)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.16)',
+          border: '1px solid var(--color-border-secondary)',
+          maxWidth: 448, width: '100%',
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottom: '1px solid var(--color-border-secondary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Clipboard size={20} style={{ color: 'var(--color-accent)' }} />
+            <h2 style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Paste Week</h2>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'flex', padding: 4, borderRadius: 'var(--radius-sm)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
+          >
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-sm text-blue-900">
-              <span className="font-medium">Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Source info */}
+          <div style={{ background: 'var(--color-accent-muted)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+            <p style={{ fontSize: 13, color: 'var(--color-accent)', margin: 0 }}>
+              <span style={{ fontWeight: 500 }}>Source:</span> {sourceLabel} — {formatDateRange(sourceWeekStart)}
             </p>
           </div>
 
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-gray-700">Paste to</label>
-            <div className="flex gap-2">
+          {/* Target selection */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-secondary)' }}>Paste to</label>
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => {
                   setTargetType('athlete');
-                  if (!selectedTargetAthleteId && allAthletes.length > 0) {
-                    setSelectedTargetAthleteId(allAthletes[0].id);
-                  }
+                  if (!selectedTargetAthleteId && allAthletes.length > 0) setSelectedTargetAthleteId(allAthletes[0].id);
                 }}
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
-                  targetType === 'athlete' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
+                style={{
+                  flex: 1, padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                  borderRadius: 'var(--radius-md)',
+                  border: targetType === 'athlete' ? '1px solid var(--color-accent)' : '1px solid var(--color-border-secondary)',
+                  background: targetType === 'athlete' ? 'var(--color-accent)' : 'transparent',
+                  color: targetType === 'athlete' ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                  cursor: 'pointer', transition: 'all 0.1s',
+                }}
               >
                 Athlete
               </button>
@@ -168,13 +199,16 @@ export function CopyWeekModal({
                 <button
                   onClick={() => {
                     setTargetType('group');
-                    if (!selectedTargetGroupId && allGroups.length > 0) {
-                      setSelectedTargetGroupId(allGroups[0].id);
-                    }
+                    if (!selectedTargetGroupId && allGroups.length > 0) setSelectedTargetGroupId(allGroups[0].id);
                   }}
-                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
-                    targetType === 'group' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
+                  style={{
+                    flex: 1, padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                    borderRadius: 'var(--radius-md)',
+                    border: targetType === 'group' ? '1px solid var(--color-accent)' : '1px solid var(--color-border-secondary)',
+                    background: targetType === 'group' ? 'var(--color-accent)' : 'transparent',
+                    color: targetType === 'group' ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                    cursor: 'pointer', transition: 'all 0.1s',
+                  }}
                 >
                   Group
                 </button>
@@ -182,22 +216,14 @@ export function CopyWeekModal({
             </div>
 
             {targetType === 'athlete' && (
-              <select
-                value={selectedTargetAthleteId}
-                onChange={(e) => setSelectedTargetAthleteId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
+              <select value={selectedTargetAthleteId} onChange={(e) => setSelectedTargetAthleteId(e.target.value)} style={selectStyle}>
                 <option value="">Select athlete...</option>
                 {allAthletes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             )}
 
             {targetType === 'group' && (
-              <select
-                value={selectedTargetGroupId}
-                onChange={(e) => setSelectedTargetGroupId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
+              <select value={selectedTargetGroupId} onChange={(e) => setSelectedTargetGroupId(e.target.value)} style={selectStyle}>
                 <option value="">Select group...</option>
                 {allGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
@@ -205,53 +231,70 @@ export function CopyWeekModal({
           </div>
 
           {hasValidTarget && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center gap-2">
-              <ArrowRight size={16} className="text-gray-400 flex-shrink-0" />
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">Destination:</span> {targetLabel} — {formatDateRange(destinationWeekStart)}
+            <div style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ArrowRight size={16} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>
+                <span style={{ fontWeight: 500 }}>Destination:</span> {targetLabel} — {formatDateRange(destinationWeekStart)}
               </p>
             </div>
           )}
 
           {isCrossContext && hasValidTarget && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+            <div style={{ background: 'var(--color-accent-muted)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)', padding: 12, fontSize: 13, color: 'var(--color-accent)' }}>
               Cross-context paste: exercises and structure will be copied from <strong>{sourceLabel}</strong> to <strong>{targetLabel}</strong>.
             </div>
           )}
 
           {destinationHasData && hasValidTarget && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex gap-2">
-              <AlertTriangle size={18} className="text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-yellow-800">
-                <p className="font-medium">Warning: Destination week has existing data</p>
-                <p className="text-xs mt-1">All existing exercises and combos will be deleted and replaced.</p>
+            <div style={{ background: 'var(--color-warning-bg)', border: '1px solid var(--color-warning-border)', borderRadius: 'var(--radius-md)', padding: 12, display: 'flex', gap: 8 }}>
+              <AlertTriangle size={18} style={{ color: 'var(--color-warning-text)', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, color: 'var(--color-warning-text)' }}>
+                <p style={{ fontWeight: 500, margin: '0 0 4px 0' }}>Warning: Destination week has existing data</p>
+                <p style={{ fontSize: 11, margin: 0 }}>All existing exercises and combos will be deleted and replaced.</p>
               </div>
             </div>
           )}
 
           {isSameContext && hasValidTarget && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            <div style={{ background: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-md)', padding: 12, fontSize: 13, color: 'var(--color-danger-text)' }}>
               Source and destination are identical. Select a different athlete, group, or week.
             </div>
           )}
         </div>
 
-        <div className="flex gap-2 p-4 border-t border-gray-200">
+        {/* Footer */}
+        <div style={{ display: 'flex', gap: 8, padding: 16, borderTop: '1px solid var(--color-border-secondary)' }}>
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             disabled={pasting}
+            style={{
+              flex: 1, padding: '8px 16px', fontSize: 13, fontWeight: 500,
+              color: 'var(--color-text-secondary)', background: 'var(--color-bg-primary)',
+              border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)',
+              cursor: pasting ? 'not-allowed' : 'pointer', transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { if (!pasting) (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; }}
           >
             Cancel
           </button>
           <button
             onClick={() => void handlePaste()}
             disabled={pasting || isSameContext || !hasValidTarget}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            style={{
+              flex: 1, padding: '8px 16px', fontSize: 13, fontWeight: 500,
+              background: pasting || isSameContext || !hasValidTarget ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+              color: pasting || isSameContext || !hasValidTarget ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+              border: 'none', borderRadius: 'var(--radius-md)',
+              cursor: pasting || isSameContext || !hasValidTarget ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              opacity: pasting || isSameContext || !hasValidTarget ? 0.6 : 1,
+              transition: 'background 0.1s',
+            }}
           >
             {pasting ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="animate-spin" style={{ width: 16, height: 16, border: '2px solid var(--color-text-on-accent)', borderTopColor: 'transparent', borderRadius: '50%' }} />
                 Pasting...
               </>
             ) : (

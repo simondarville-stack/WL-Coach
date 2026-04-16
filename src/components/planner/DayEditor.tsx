@@ -107,35 +107,23 @@ export function DayEditor({
     if (!macroContext) return;
     try {
       const { data: mw } = await supabase
-        .from('macro_weeks')
-        .select('id')
-        .eq('macrocycle_id', macroContext.macroId)
-        .eq('week_number', macroContext.weekNumber)
-        .maybeSingle();
+        .from('macro_weeks').select('id')
+        .eq('macrocycle_id', macroContext.macroId).eq('week_number', macroContext.weekNumber).maybeSingle();
       if (!mw) return;
-
       const { data: trackedExs } = await supabase
-        .from('macro_tracked_exercises')
-        .select('id, exercise_id')
-        .eq('macrocycle_id', macroContext.macroId);
+        .from('macro_tracked_exercises').select('id, exercise_id').eq('macrocycle_id', macroContext.macroId);
       if (!trackedExs?.length) return;
-
       const { data: targets } = await supabase
         .from('macro_targets')
         .select('tracked_exercise_id, target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
-        .eq('macro_week_id', mw.id)
-        .in('tracked_exercise_id', trackedExs.map(te => te.id));
-
+        .eq('macro_week_id', mw.id).in('tracked_exercise_id', trackedExs.map(te => te.id));
       const map = new Map<string, MacroTargetData>();
       for (const tgt of targets || []) {
         const te = trackedExs.find(t => t.id === tgt.tracked_exercise_id);
         if (te) {
           map.set(te.exercise_id, {
-            reps: tgt.target_reps,
-            max: tgt.target_max,
-            maxReps: tgt.target_reps_at_max,
-            maxSets: tgt.target_sets_at_max,
-            avg: tgt.target_avg,
+            reps: tgt.target_reps, max: tgt.target_max,
+            maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
           });
         }
       }
@@ -145,7 +133,6 @@ export function DayEditor({
 
   const sortedExercises = exercises.slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  // Day totals — all exercises including combos (summary fields already computed)
   const totalSets = exercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
   const totalReps = exercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
   const totalTonnage = exercises.reduce((s, ex) =>
@@ -211,14 +198,8 @@ export function DayEditor({
     const def = sentinelDefs[code];
     if (!def) return null;
     const { data: created } = await supabase.from('exercises').insert({
-      name: def.name,
-      category: '— System',
-      default_unit: 'other',
-      color: def.color,
-      exercise_code: code,
-      use_stacked_notation: false,
-      counts_towards_totals: false,
-      is_competition_lift: false,
+      name: def.name, category: '— System', default_unit: 'other', color: def.color,
+      exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
     }).select('id, default_unit').single();
     return created ?? null;
   }
@@ -233,7 +214,6 @@ export function DayEditor({
     try {
       const sentinel = await getOrCreateSentinel(code);
       if (!sentinel) return;
-      // Always use free_text so PrescriptionGrid renders a textarea, not a numeric grid
       await addExerciseToDay(weekPlan.id, dayIndex, sentinel.id, exercises.length + 1, 'free_text');
       await onRefresh();
     } finally {
@@ -264,9 +244,7 @@ export function DayEditor({
     await onRefresh();
   }
 
-  function handleExerciseDragStart(id: string) {
-    setDraggedId(id);
-  }
+  function handleExerciseDragStart(id: string) { setDraggedId(id); }
 
   function handleExerciseDragOver(e: React.DragEvent, id: string) {
     e.preventDefault();
@@ -287,57 +265,78 @@ export function DayEditor({
     await handleDragEnd(reordered);
   }
 
+  const itemHeaderStyle = (isDragging: boolean, isDragTarget: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+    borderBottom: '1px solid var(--color-border-tertiary)',
+    borderRadius: '4px 4px 0 0',
+    background: shiftHeld
+      ? 'rgba(240,149,149,0.06)'
+      : isDragging ? 'var(--color-bg-tertiary)' : 'var(--color-bg-secondary)',
+    cursor: shiftHeld ? 'pointer' : 'grab',
+    opacity: isDragging ? 0.5 : 1,
+  });
+
   return (
     <>
-      <div className="flex flex-col h-full bg-gray-50">
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg-secondary)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-medium text-gray-900">{dayName}</h2>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', borderBottom: '1px solid var(--color-border-secondary)',
+          background: 'var(--color-bg-primary)', flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>{dayName}</h2>
             {(totalSets > 0 || totalReps > 0) && (
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-gray-500">S <strong className="text-gray-900 font-medium">{totalSets}</strong></span>
-                <span className="text-gray-500">R <strong className="text-gray-900 font-medium">{totalReps}</strong></span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11 }}>
+                <span style={{ color: 'var(--color-text-secondary)' }}>S <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{totalSets}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{totalReps}</strong></span>
                 {totalTonnage > 0 && (
-                  <span className="text-gray-500">T <strong className="text-gray-900 font-medium">{Math.round(totalTonnage).toLocaleString()}</strong></span>
+                  <span style={{ color: 'var(--color-text-secondary)' }}>T <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{Math.round(totalTonnage).toLocaleString()}</strong></span>
                 )}
               </div>
             )}
           </div>
-          <button onClick={() => void flushAndClose()} className="p-1.5 rounded hover:bg-gray-100 transition-colors text-gray-500">
+          <button
+            onClick={() => void flushAndClose()}
+            style={{ padding: 6, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+          >
             <X size={16} />
           </button>
         </div>
 
         {/* Exercise list */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sortedExercises.length === 0 && (
-            <p className="text-sm text-gray-400 italic text-center py-8">No exercises yet — search below to add</p>
+            <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', fontStyle: 'italic', textAlign: 'center', padding: '32px 0', margin: 0 }}>No exercises yet — search below to add</p>
           )}
 
           {sortedExercises.map(ex => {
             const sentinel = getSentinelType(ex.exercise.exercise_code);
             const macroTgt = !ex.is_combo && !sentinel ? macroTargets.get(ex.exercise_id) : undefined;
             const isDraggingOver = dragOverId === ex.id;
+            const isDragging = draggedId === ex.id;
             const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
             const borderColor = sentinel === 'text'
               ? 'transparent'
-              : sentinel
-              ? '#d1d5db'
-              : ex.is_combo
-              ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8')
+              : sentinel ? 'var(--color-border-primary)'
+              : ex.is_combo ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8')
               : (ex.exercise.color || '#94a3b8');
 
             return (
               <div
                 key={ex.id}
-                className={[
-                  'rounded-md border transition-all',
-                  isDraggingOver ? 'border-blue-400 shadow-sm' : 'border-gray-200',
-                  draggedId === ex.id ? 'opacity-50' : '',
-                  shiftHeld ? 'bg-red-50' : 'bg-white',
-                ].join(' ')}
-                style={{ borderLeft: `3px solid ${borderColor}` }}
+                style={{
+                  borderRadius: 'var(--radius-md)',
+                  border: isDraggingOver ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
+                  borderLeft: `3px solid ${borderColor}`,
+                  boxShadow: isDraggingOver ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+                  background: shiftHeld ? 'rgba(240,149,149,0.04)' : 'var(--color-bg-primary)',
+                  opacity: isDragging ? 0.5 : 1,
+                  transition: 'border-color 0.1s, opacity 0.1s',
+                }}
                 onDragOver={e => handleExerciseDragOver(e, ex.id)}
                 onDrop={() => void handleExerciseDrop(ex.id)}
               >
@@ -347,67 +346,64 @@ export function DayEditor({
                   onDragStart={() => handleExerciseDragStart(ex.id)}
                   onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
                   onClick={() => { if (shiftHeld) void handleDeleteExercise(ex.id); }}
-                  className={[
-                    'flex items-center gap-2 px-2.5 py-1.5 border-b border-gray-100 rounded-t-sm',
-                    shiftHeld ? 'cursor-pointer bg-red-50 hover:bg-red-100' : 'cursor-grab active:cursor-grabbing bg-gray-50/70',
-                  ].join(' ')}
+                  style={itemHeaderStyle(isDragging, isDraggingOver)}
                 >
-                  <GripVertical size={12} className="text-gray-400 flex-shrink-0" />
+                  <GripVertical size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
                   {sentinel === 'text' ? (
                     <>
-                      <AlignLeft size={12} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-xs text-gray-400 italic flex-1">Free text</span>
+                      <AlignLeft size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', flex: 1 }}>Free text</span>
                     </>
                   ) : sentinel === 'video' ? (
                     <>
-                      <Video size={12} className="text-indigo-400 flex-shrink-0" />
-                      <span className="text-xs text-gray-500 flex-1">Video</span>
+                      <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', flex: 1 }}>Video</span>
                     </>
                   ) : sentinel === 'image' ? (
                     <>
-                      <ImageIcon size={12} className="text-pink-400 flex-shrink-0" />
-                      <span className="text-xs text-gray-500 flex-1">Image</span>
+                      <ImageIcon size={12} style={{ color: '#EC4899', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', flex: 1 }}>Image</span>
                     </>
                   ) : ex.is_combo && members ? (
                     <>
-                      <div className="flex gap-0.5 items-center flex-shrink-0">
+                      <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
                         {members.map(m => (
-                          <div key={m.position} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.exercise.color || '#94a3b8' }} />
+                          <div key={m.position} style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.exercise.color || '#94a3b8' }} />
                         ))}
                       </div>
-                      <span className="text-xs font-medium text-gray-900 truncate flex-1">
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                         {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                       </span>
-                      <span className="text-[9px] bg-blue-50 text-blue-600 font-medium px-1.5 py-0.5 rounded flex-shrink-0">Combo</span>
+                      <span style={{ fontSize: 9, background: 'var(--color-accent-muted)', color: 'var(--color-accent)', fontWeight: 500, padding: '2px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0 }}>Combo</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-xs font-medium text-gray-900 truncate flex-1">{ex.exercise.name}</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{ex.exercise.name}</span>
                       {ex.variation_note && (
-                        <span className="text-[10px] text-gray-400 italic truncate">{ex.variation_note}</span>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.variation_note}</span>
                       )}
                       {ex.unit && ex.unit !== 'absolute_kg' && (
-                        <span className="text-[9px] bg-gray-100 text-gray-600 font-medium px-1.5 py-0.5 rounded flex-shrink-0">
+                        <span style={{ fontSize: 9, background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)', fontWeight: 500, padding: '2px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0 }}>
                           {UNIT_BADGE[ex.unit] ?? ex.unit}
                         </span>
                       )}
                     </>
                   )}
-                  <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
                     {!sentinel && (ex.summary_total_sets != null && ex.summary_total_sets > 0) && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                        <span>S <strong className="text-gray-900 font-medium">{ex.summary_total_sets}</strong></span>
-                        <span>R <strong className="text-gray-900 font-medium">{ex.summary_total_reps}</strong></span>
-                        {ex.summary_highest_load && <span>Hi <strong className="text-gray-900 font-medium">{ex.summary_highest_load}</strong></span>}
-                        {ex.summary_avg_load && <span>Avg <strong className="text-gray-900 font-medium">{Math.round(ex.summary_avg_load)}</strong></span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-text-secondary)' }}>
+                        <span>S <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_sets}</strong></span>
+                        <span>R <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_reps}</strong></span>
+                        {ex.summary_highest_load && <span>Hi <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_highest_load}</strong></span>}
+                        {ex.summary_avg_load && <span>Avg <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{Math.round(ex.summary_avg_load)}</strong></span>}
                         {macroTgt && (
-                          <span className="text-gray-400 border-l border-gray-200 pl-1.5 ml-0.5">
-                            Macro: R <span className="text-gray-600">{macroTgt.reps ?? '—'}</span>
+                          <span style={{ color: 'var(--color-text-tertiary)', borderLeft: '1px solid var(--color-border-secondary)', paddingLeft: 6, marginLeft: 2 }}>
+                            Macro: R <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.reps ?? '—'}</span>
                             {macroTgt.max && (
-                              <> Max <span className="text-red-700 font-medium">{maxLabel(macroTgt.max, macroTgt.maxReps, macroTgt.maxSets)}</span></>
+                              <> Max <span style={{ color: 'var(--color-danger-text)', fontWeight: 500 }}>{maxLabel(macroTgt.max, macroTgt.maxReps, macroTgt.maxSets)}</span></>
                             )}
                             {macroTgt.avg && (
-                              <> Avg <span className="text-gray-600">{macroTgt.avg}</span></>
+                              <> Avg <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.avg}</span></>
                             )}
                           </span>
                         )}
@@ -415,14 +411,18 @@ export function DayEditor({
                     )}
                     <button
                       onClick={() => onNavigateToExercise(ex.id)}
-                      className="p-0.5 text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
+                      style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
                       title="Detail"
                     >
                       <GearIcon size={12} />
                     </button>
                     <button
                       onClick={() => void handleDeleteExercise(ex.id)}
-                      className="p-0.5 text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                      style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-border-primary)', display: 'flex', flexShrink: 0 }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-border-primary)'; }}
                       title="Remove"
                     >
                       <Trash2 size={12} />
@@ -430,51 +430,64 @@ export function DayEditor({
                   </div>
                 </div>
 
-                {/* Body — sentinels get custom rendering; exercises + combos get grid + notes */}
+                {/* Body */}
                 {sentinel === 'text' ? (
-                  <div className="px-3 py-2">
+                  <div style={{ padding: '8px 12px' }}>
                     <textarea
                       defaultValue={ex.notes ?? ''}
                       onBlur={e => handleNotesBlur(ex, e.target.value)}
                       placeholder="Type your notes…"
                       rows={2}
-                      className="w-full text-sm text-gray-600 italic placeholder-gray-300 border-0 bg-transparent resize-none focus:outline-none focus:ring-0 leading-snug"
-                      style={{ minHeight: '2.5rem' }}
+                      className="planner-week-notes"
+                      style={{
+                        width: '100%', fontSize: 13, color: 'var(--color-text-secondary)', fontStyle: 'italic',
+                        border: 'none', background: 'transparent', resize: 'none', outline: 'none',
+                        lineHeight: 1.375, minHeight: '2.5rem', boxSizing: 'border-box',
+                      }}
                     />
                   </div>
                 ) : sentinel === 'video' ? (
-                  <div className="px-3 py-2 space-y-1.5">
+                  <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <input
                       type="url"
                       defaultValue={ex.notes ?? ''}
                       onBlur={e => void saveNotes(ex.id, e.target.value)}
                       placeholder="Paste YouTube or video URL…"
-                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                      style={{
+                        width: '100%', fontSize: 11,
+                        border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
+                        padding: '4px 8px', outline: 'none', background: 'var(--color-bg-primary)',
+                        color: 'var(--color-text-primary)', boxSizing: 'border-box',
+                      }}
                     />
                     {ex.notes && (() => {
                       const thumb = getYouTubeThumbnail(ex.notes);
                       return thumb
-                        ? <img src={thumb} alt="Video thumbnail" className="rounded w-full max-w-[200px] object-cover" />
-                        : <p className="text-[10px] text-gray-400 truncate">{ex.notes}</p>;
+                        ? <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 200, objectFit: 'cover' }} />
+                        : <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.notes}</p>;
                     })()}
                   </div>
                 ) : sentinel === 'image' ? (
-                  <div className="px-3 py-2 space-y-1.5">
+                  <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <input
                       type="url"
                       defaultValue={ex.notes ?? ''}
                       onBlur={e => void saveNotes(ex.id, e.target.value)}
                       placeholder="Paste image URL…"
-                      className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                      style={{
+                        width: '100%', fontSize: 11,
+                        border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
+                        padding: '4px 8px', outline: 'none', background: 'var(--color-bg-primary)',
+                        color: 'var(--color-text-primary)', boxSizing: 'border-box',
+                      }}
                     />
                     {ex.notes && (
-                      <img src={ex.notes} alt="" className="rounded w-full max-w-[200px] object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+                      <img src={ex.notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 200, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                     )}
                   </div>
                 ) : (
                   <>
-                    {/* Grid */}
-                    <div className="px-3 py-2">
+                    <div style={{ padding: '8px 12px' }}>
                       <PrescriptionGrid
                         prescriptionRaw={ex.prescription_raw}
                         unit={ex.unit}
@@ -484,15 +497,18 @@ export function DayEditor({
                         onSave={raw => handleGridSave(ex, raw)}
                       />
                     </div>
-                    {/* Notes — shown for both regular exercises and combos */}
-                    <div className="px-3 pb-2">
+                    <div style={{ padding: '0 12px 8px' }}>
                       <textarea
                         defaultValue={ex.notes ?? ''}
                         onBlur={e => handleNotesBlur(ex, e.target.value)}
                         placeholder="Notes…"
                         rows={1}
-                        className="w-full text-[10px] text-gray-500 placeholder-gray-300 italic border-0 bg-transparent resize-none focus:outline-none focus:ring-0 leading-tight"
-                        style={{ minHeight: '1rem' }}
+                        className="planner-week-notes"
+                        style={{
+                          width: '100%', fontSize: 10, color: 'var(--color-text-secondary)', fontStyle: 'italic',
+                          border: 'none', background: 'transparent', resize: 'none', outline: 'none',
+                          lineHeight: 1.25, minHeight: '1rem', boxSizing: 'border-box',
+                        }}
                       />
                     </div>
                   </>
@@ -503,7 +519,7 @@ export function DayEditor({
         </div>
 
         {/* Search input */}
-        <div className="border-t border-gray-200 bg-white flex-shrink-0">
+        <div style={{ borderTop: '1px solid var(--color-border-secondary)', background: 'var(--color-bg-primary)', flexShrink: 0 }}>
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}
