@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Search, Plus, ChevronRight, Grid3X3, List, Upload,
-  Layers, ChevronUp, ChevronDown, Trash2, Check, X as XIcon,
+  Search, Plus, Grid3X3, List, Upload,
+  ChevronRight, Layers, Trash2, Check, X as XIcon, GripVertical,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useExercises } from '../../hooks/useExercises';
@@ -21,9 +21,12 @@ const PRESET_COLORS = [
   '#F59E0B', '#8B5CF6', '#EC4899', '#888780',
 ];
 
-// Hide categories whose name contains "system" (case-insensitive)
 function isSystemCategory(cat: Category): boolean {
   return cat.name.toLowerCase().includes('system');
+}
+
+function isProtectedCategory(cat: Category): boolean {
+  return isSystemCategory(cat) || cat.name === 'Unspecified';
 }
 
 // ── ExerciseCard ───────────────────────────────────────────────────
@@ -66,34 +69,82 @@ function ExerciseCard({ exercise, isSelected, athletePR, onClick }: ExerciseCard
 
 // ── ExerciseListRow ────────────────────────────────────────────────
 
+const UNIT_LABELS: Record<string, string> = {
+  absolute_kg: 'kg',
+  percentage: '%',
+  rpe: 'RPE',
+  free_text: 'text',
+  free_text_reps: 'reps',
+  other: 'other',
+};
+
 interface ExerciseListRowProps {
   exercise: Exercise;
   isSelected: boolean;
   athletePR: { pr_value_kg: number | null } | null;
   onClick: () => void;
+  rowIndex: number;
 }
 
-function ExerciseListRow({ exercise, isSelected, athletePR, onClick }: ExerciseListRowProps) {
+function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }: ExerciseListRowProps) {
+  const catName = exercise.category as unknown as string;
+  const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
+  const isEven = rowIndex % 2 === 0;
+  const bg = isSelected
+    ? 'bg-blue-50 border-l-2 border-l-blue-400'
+    : isEven ? 'bg-white' : 'bg-gray-50/70';
+
   return (
     <div
       onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-        isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
-      }`}
+      className={`flex items-center px-2 py-1.5 cursor-pointer transition-colors hover:bg-blue-50/40 ${bg}`}
     >
-      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: exercise.color }} />
-      <span className="font-mono text-[11px] font-medium w-[44px] flex-shrink-0 text-gray-900">
-        {exercise.exercise_code || '—'}
+      {/* Color dot */}
+      <span className="w-6 flex-shrink-0 flex justify-center">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: exercise.color }} />
       </span>
-      <span className="flex-1 text-[11px] text-gray-600 truncate">{exercise.name}</span>
-      {exercise.is_competition_lift && (
-        <span className="text-[7px] font-medium bg-red-50 text-red-500 px-1 rounded flex-shrink-0">COMP</span>
-      )}
-      {athletePR?.pr_value_kg != null && (
-        <span className="font-mono text-[11px] font-medium w-[52px] text-right flex-shrink-0 text-gray-700">
-          {athletePR.pr_value_kg} kg
-        </span>
-      )}
+      {/* Code */}
+      <span className="w-12 flex-shrink-0 font-mono text-[11px] font-medium text-gray-600 truncate">
+        {exercise.exercise_code ?? ''}
+      </span>
+      {/* Name */}
+      <span className="flex-1 min-w-0 text-[12px] text-gray-800 font-medium truncate pr-3">
+        {exercise.name}
+      </span>
+      {/* Unit */}
+      <span className="w-10 flex-shrink-0 text-[10px] text-gray-400 text-center">
+        {unitLabel}
+      </span>
+      {/* Category */}
+      <span className="w-[90px] flex-shrink-0 text-[10px] text-gray-500 truncate pr-1">
+        {catName || '—'}
+      </span>
+      {/* COMP badge */}
+      <span className="w-10 flex-shrink-0 flex justify-center">
+        {exercise.is_competition_lift && (
+          <span className="text-[7px] font-medium bg-red-50 text-red-500 px-1 py-px rounded border border-red-100">COMP</span>
+        )}
+      </span>
+      {/* PR */}
+      <span className="w-16 flex-shrink-0 text-right font-mono text-[11px] font-semibold text-blue-600">
+        {athletePR?.pr_value_kg != null ? `${athletePR.pr_value_kg} kg` : ''}
+      </span>
+    </div>
+  );
+}
+
+// ── ListViewHeader ─────────────────────────────────────────────────
+
+function ListViewHeader() {
+  return (
+    <div className="flex items-center px-2 py-1.5 bg-gray-100 border-b border-gray-200 sticky top-0 z-10">
+      <span className="w-6 flex-shrink-0" />
+      <span className="w-12 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide">Code</span>
+      <span className="flex-1 min-w-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide pr-3">Name</span>
+      <span className="w-10 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-center">Unit</span>
+      <span className="w-[90px] flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
+      <span className="w-10 flex-shrink-0" />
+      <span className="w-16 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">PR</span>
     </div>
   );
 }
@@ -105,35 +156,70 @@ interface CategoryManagerModalProps {
   exerciseCounts: Map<string, number>;
   onRename: (id: string, name: string) => Promise<void>;
   onRecolor: (id: string, color: string) => Promise<void>;
-  onMoveUp: (idx: number) => Promise<void>;
-  onMoveDown: (idx: number) => Promise<void>;
+  onReorder: (fromIdx: number, toIdx: number) => Promise<void>;
   onAdd: (name: string, color: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
 }
 
+interface ColorPickerPos {
+  id: string;
+  top: number;
+  left: number;
+}
+
 function CategoryManagerModal({
   categories, exerciseCounts,
-  onRename, onRecolor, onMoveUp, onMoveDown, onAdd, onDelete, onClose,
+  onRename, onRecolor, onReorder, onAdd, onDelete, onClose,
 }: CategoryManagerModalProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [colorPickerId, setColorPickerId] = useState<string | null>(null);
+  const [colorPickerPos, setColorPickerPos] = useState<ColorPickerPos | null>(null);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  const visible = categories.filter(c => !isSystemCategory(c));
+  const visible = categories.filter(c => !isProtectedCategory(c));
   const sorted = [...visible].sort((a, b) => a.display_order - b.display_order);
 
+  const pickerCat = colorPickerPos
+    ? sorted.find(c => c.id === colorPickerPos.id)
+    : null;
+
+  function openColorPicker(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    if (colorPickerPos?.id === id) {
+      setColorPickerPos(null);
+    } else {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setColorPickerPos({ id, top: rect.bottom + 4, left: rect.left });
+    }
+  }
+
+  function openNewColorPicker(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (colorPickerPos?.id === '__new') {
+      setColorPickerPos(null);
+    } else {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setColorPickerPos({ id: '__new', top: rect.top - 148, left: rect.left });
+    }
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={() => setColorPickerPos(null)}>
+      <div className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}>
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Layers size={15} className="text-gray-500" />
             <span className="text-sm font-semibold text-gray-900">Manage categories</span>
+            <span className="text-[10px] text-gray-400 ml-1">Drag to reorder</span>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded">
             <XIcon size={16} />
@@ -144,32 +230,37 @@ function CategoryManagerModal({
           {sorted.map((cat, idx) => {
             const count = exerciseCounts.get(cat.id) ?? 0;
             const isEditing = editingId === cat.id;
-            const showColorPicker = colorPickerId === cat.id;
             const isConfirming = confirmDeleteId === cat.id;
+            const isDragOver = dragOverIdx === idx && dragIdx !== idx;
 
             return (
-              <div key={cat.id} className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 group">
+              <div
+                key={cat.id}
+                draggable
+                onDragStart={() => setDragIdx(idx)}
+                onDragEnter={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                onDragOver={(e) => e.preventDefault()}
+                onDragEnd={async () => {
+                  if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
+                    await onReorder(dragIdx, dragOverIdx);
+                  }
+                  setDragIdx(null);
+                  setDragOverIdx(null);
+                }}
+                className={`flex items-center gap-2.5 px-2 py-2 rounded-lg group transition-colors ${
+                  isDragOver ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
+                } ${dragIdx === idx ? 'opacity-40' : ''}`}
+              >
+                {/* Drag handle */}
+                <GripVertical size={13} className="text-gray-300 cursor-grab flex-shrink-0" />
+
                 {/* Color swatch */}
-                <div className="relative">
-                  <button
-                    onClick={() => setColorPickerId(showColorPicker ? null : cat.id)}
-                    className="w-5 h-5 rounded border border-black/10 flex-shrink-0 hover:scale-110 transition-transform"
-                    style={{ backgroundColor: cat.color ?? '#888780' }}
-                    title="Change color"
-                  />
-                  {showColorPicker && (
-                    <div className="absolute left-0 top-7 z-20 bg-white border border-gray-200 rounded-lg p-2 shadow-lg flex flex-wrap gap-1 w-[132px]">
-                      {PRESET_COLORS.map(c => (
-                        <button
-                          key={c}
-                          onClick={async () => { await onRecolor(cat.id, c); setColorPickerId(null); }}
-                          className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${cat.color === c ? 'border-gray-700' : 'border-transparent'}`}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  onClick={(e) => openColorPicker(e, cat.id)}
+                  className="w-5 h-5 rounded border border-black/10 flex-shrink-0 hover:scale-110 transition-transform"
+                  style={{ backgroundColor: cat.color ?? '#888780' }}
+                  title="Change color"
+                />
 
                 {/* Name */}
                 {isEditing ? (
@@ -195,24 +286,19 @@ function CategoryManagerModal({
 
                 <span className="text-[10px] text-gray-400 w-6 text-right">{count}</span>
 
-                {/* Reorder */}
-                <button onClick={() => onMoveUp(idx)} disabled={idx === 0}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ChevronUp size={13} />
-                </button>
-                <button onClick={() => onMoveDown(idx)} disabled={idx === sorted.length - 1}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ChevronDown size={13} />
-                </button>
-
                 {/* Delete */}
                 {isConfirming ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-orange-600">
-                      {count > 0 ? `Move ${count} exercises to Unspecified?` : 'Delete?'}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <span className="text-[10px] text-orange-600 whitespace-nowrap">
+                      {count > 0 ? `Move ${count} to Unspecified?` : 'Delete?'}
                     </span>
-                    <button onClick={async () => { await onDelete(cat.id); setConfirmDeleteId(null); }}
-                      className="text-[10px] text-red-500 font-medium hover:text-red-700 px-1">Yes</button>
+                    <button
+                      onClick={async () => {
+                        try { await onDelete(cat.id); } catch {}
+                        setConfirmDeleteId(null);
+                      }}
+                      className="text-[10px] text-red-500 font-medium hover:text-red-700 px-1"
+                    >Yes</button>
                     <button onClick={() => setConfirmDeleteId(null)}
                       className="text-[10px] text-gray-400 hover:text-gray-600 px-1">No</button>
                   </div>
@@ -220,7 +306,7 @@ function CategoryManagerModal({
                   <button
                     onClick={() => setConfirmDeleteId(cat.id)}
                     title="Delete category"
-                    className="p-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="p-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -232,24 +318,12 @@ function CategoryManagerModal({
 
         {/* Add new category */}
         <div className="flex items-center gap-2.5 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-          <div className="relative">
-            <button
-              onClick={() => setColorPickerId(colorPickerId === '__new' ? null : '__new')}
-              className="w-5 h-5 rounded border border-black/10 hover:scale-110 transition-transform"
-              style={{ backgroundColor: newColor }}
-            />
-            {colorPickerId === '__new' && (
-              <div className="absolute left-0 bottom-7 z-20 bg-white border border-gray-200 rounded-lg p-2 shadow-lg flex flex-wrap gap-1 w-[132px]">
-                {PRESET_COLORS.map(c => (
-                  <button key={c}
-                    onClick={() => { setNewColor(c); setColorPickerId(null); }}
-                    className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${newColor === c ? 'border-gray-700' : 'border-transparent'}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          <button
+            onClick={openNewColorPicker}
+            className="w-5 h-5 rounded border border-black/10 hover:scale-110 transition-transform flex-shrink-0"
+            style={{ backgroundColor: newColor }}
+            title="Pick color"
+          />
           <input
             className="flex-1 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
             placeholder="New category name…"
@@ -268,6 +342,40 @@ function CategoryManagerModal({
           </button>
         </div>
       </div>
+
+      {/* Color picker — fixed position to avoid overflow clipping */}
+      {colorPickerPos && (
+        <>
+          <div className="fixed inset-0 z-[199]" onClick={() => setColorPickerPos(null)} />
+          <div
+            className="fixed bg-white border border-gray-200 rounded-lg p-2 shadow-xl flex flex-wrap gap-1 w-[132px] z-[200]"
+            style={{ top: colorPickerPos.top, left: colorPickerPos.left }}
+            onClick={e => e.stopPropagation()}
+          >
+            {PRESET_COLORS.map(c => {
+              const currentColor = colorPickerPos.id === '__new' ? newColor : (pickerCat?.color ?? '#888780');
+              const isActive = currentColor === c;
+              return (
+                <button
+                  key={c}
+                  onClick={async () => {
+                    if (colorPickerPos.id === '__new') {
+                      setNewColor(c);
+                      setColorPickerPos(null);
+                    } else {
+                      const id = colorPickerPos.id;
+                      setColorPickerPos(null);
+                      await onRecolor(id, c);
+                    }
+                  }}
+                  className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${isActive ? 'border-gray-700' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -283,7 +391,7 @@ export function ExerciseLibrary() {
     fetchExercises, fetchCategories,
     createExercise, updateExercise, deleteExercise,
     createCategory, updateCategory, deleteCategory,
-    swapCategoryOrder,
+    swapCategoryOrder, bulkReorderCategories,
   } = useExercises();
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -314,7 +422,7 @@ export function ExerciseLibrary() {
   // ── Derived ─────────────────────────────────────────────────────
 
   const visibleCategories = categories
-    .filter(c => !isSystemCategory(c))
+    .filter(c => !isProtectedCategory(c))
     .sort((a, b) => a.display_order - b.display_order);
 
   const knownCategoryNames = new Set(categories.map(c => c.name));
@@ -326,10 +434,10 @@ export function ExerciseLibrary() {
       })
     : exercises;
 
-  // Exercises with no matching category → "Unspecified" bucket
-  const unspecifiedExercises = filteredExercises.filter(
-    ex => !knownCategoryNames.has(ex.category as unknown as string) || (ex.category as unknown as string) === 'Unspecified'
-  );
+  const unspecifiedExercises = filteredExercises.filter(ex => {
+    const cat = ex.category as unknown as string | null;
+    return !cat || cat === 'Unspecified' || !knownCategoryNames.has(cat);
+  });
 
   const exerciseCategoryCount = new Map<string, number>();
   for (const cat of categories) {
@@ -382,19 +490,11 @@ export function ExerciseLibrary() {
     await fetchCategories();
   };
 
-  const handleCatMoveUp = async (idx: number) => {
+  const handleCatReorder = async (fromIdx: number, toIdx: number) => {
     const sorted = [...visibleCategories];
-    if (idx <= 0) return;
-    const a = sorted[idx], b = sorted[idx - 1];
-    await swapCategoryOrder(a.id, b.display_order, b.id, a.display_order);
-    await fetchCategories();
-  };
-
-  const handleCatMoveDown = async (idx: number) => {
-    const sorted = [...visibleCategories];
-    if (idx >= sorted.length - 1) return;
-    const a = sorted[idx], b = sorted[idx + 1];
-    await swapCategoryOrder(a.id, b.display_order, b.id, a.display_order);
+    const [moved] = sorted.splice(fromIdx, 1);
+    sorted.splice(toIdx, 0, moved);
+    await bulkReorderCategories(sorted.map(c => c.id));
     await fetchCategories();
   };
 
@@ -406,12 +506,35 @@ export function ExerciseLibrary() {
 
   const handleCatDelete = async (id: string) => {
     const cat = categories.find(c => c.id === id);
-    if (cat) {
-      // Move all exercises in this category to "Unspecified"
-      const affected = exercises.filter(e => (e.category as unknown as string) === cat.name);
-      await Promise.all(affected.map(e => updateExercise(e.id, { category: 'Unspecified' } as any)));
+    if (!cat) return;
+
+    // Move ALL exercises (including archived) that reference this category.
+    // Must query DB directly — in-memory exercises list excludes archived rows.
+    const { data: allAffected } = await supabase
+      .from('exercises')
+      .select('id')
+      .eq('category', cat.name as any);
+
+    if (allAffected && allAffected.length > 0) {
+      // Ensure an Unspecified category exists (FK requires a valid category name)
+      let unspecCat = categories.find(c => c.name === 'Unspecified');
+      if (!unspecCat) {
+        const maxOrder = categories.reduce((m, c) => Math.max(m, c.display_order), -1);
+        const { data: created } = await supabase
+          .from('categories')
+          .insert([{ name: 'Unspecified', display_order: maxOrder + 1, color: '#888780' }])
+          .select()
+          .single();
+        if (created) unspecCat = created as any;
+      }
+
+      await supabase
+        .from('exercises')
+        .update({ category: 'Unspecified' } as any)
+        .in('id', allAffected.map((e: any) => e.id));
     }
-    await deleteCategory(id);
+
+    await supabase.from('categories').delete().eq('id', id);
     await fetchExercises();
     await fetchCategories();
   };
@@ -435,14 +558,15 @@ export function ExerciseLibrary() {
       );
     }
     return (
-      <div className="pb-4">
-        {exList.map(ex => (
+      <div>
+        {exList.map((ex, idx) => (
           <ExerciseListRow
             key={ex.id}
             exercise={ex}
             isSelected={selectedExerciseId === ex.id}
             athletePR={athletePRMap.get(ex.id) ?? null}
             onClick={() => setSelectedExerciseId(ex.id === selectedExerciseId ? null : ex.id)}
+            rowIndex={idx}
           />
         ))}
       </div>
@@ -506,7 +630,9 @@ export function ExerciseLibrary() {
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Exercise list */}
-        <div className="flex-1 overflow-y-auto pt-1">
+        <div className="flex-1 overflow-y-auto">
+          {/* List view column header */}
+          {viewMode === 'list' && <ListViewHeader />}
 
           {/* Named category sections */}
           {visibleCategories.map(cat => {
@@ -515,9 +641,11 @@ export function ExerciseLibrary() {
             const isCollapsed = collapsedCategories.has(cat.id);
 
             return (
-              <div key={cat.id} className="px-4">
+              <div key={cat.id} className={viewMode === 'list' ? '' : 'px-4'}>
                 <div
-                  className="flex items-center gap-2 py-2.5 cursor-pointer select-none group"
+                  className={`flex items-center gap-2 py-2 cursor-pointer select-none group ${
+                    viewMode === 'list' ? 'px-3 border-b border-gray-100 bg-gray-50/80' : 'py-2.5'
+                  }`}
                   onClick={() => toggleCollapse(cat.id)}
                 >
                   <ChevronRight size={12}
@@ -528,18 +656,20 @@ export function ExerciseLibrary() {
                   <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 rounded-full">
                     {catExercises.length}
                   </span>
-                  <span className="flex-1 h-px bg-gray-100" />
+                  {viewMode !== 'list' && <span className="flex-1 h-px bg-gray-100" />}
                 </div>
                 {!isCollapsed && renderExercises(catExercises)}
               </div>
             );
           })}
 
-          {/* Unspecified bucket */}
+          {/* Unspecified bucket — always shown if there are unspecified exercises */}
           {unspecifiedExercises.length > 0 && (
-            <div className="px-4">
+            <div className={viewMode === 'list' ? '' : 'px-4'}>
               <div
-                className="flex items-center gap-2 py-2.5 cursor-pointer select-none"
+                className={`flex items-center gap-2 cursor-pointer select-none ${
+                  viewMode === 'list' ? 'px-3 py-2 border-b border-gray-100 bg-gray-50/80' : 'py-2.5'
+                }`}
                 onClick={() => toggleCollapse('__unspecified')}
               >
                 <ChevronRight size={12}
@@ -549,7 +679,7 @@ export function ExerciseLibrary() {
                 <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 rounded-full">
                   {unspecifiedExercises.length}
                 </span>
-                <span className="flex-1 h-px bg-gray-100" />
+                {viewMode !== 'list' && <span className="flex-1 h-px bg-gray-100" />}
               </div>
               {!collapsedCategories.has('__unspecified') && renderExercises(unspecifiedExercises)}
             </div>
@@ -588,8 +718,7 @@ export function ExerciseLibrary() {
           exerciseCounts={exerciseCategoryCount}
           onRename={handleCatRename}
           onRecolor={handleCatRecolor}
-          onMoveUp={handleCatMoveUp}
-          onMoveDown={handleCatMoveDown}
+          onReorder={handleCatReorder}
           onAdd={handleCatAdd}
           onDelete={handleCatDelete}
           onClose={() => setShowCategoryModal(false)}

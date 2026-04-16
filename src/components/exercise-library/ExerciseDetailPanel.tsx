@@ -38,6 +38,15 @@ interface ExerciseDetailPanelProps {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
+const UNIT_DISPLAY: Record<string, string> = {
+  absolute_kg: 'kg',
+  percentage: '%',
+  rpe: 'RPE',
+  free_text: 'Free text',
+  free_text_reps: 'Reps',
+  other: 'Other',
+};
+
 function initials(name: string): string {
   return name.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }
@@ -277,44 +286,32 @@ export function ExerciseDetailPanel({
 
       <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
 
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1.5">
-          {exercise.is_competition_lift && (
-            <span className="px-2.5 py-1 text-[10px] font-medium bg-red-50 text-red-600 border border-red-200 rounded-full">
-              Competition lift
-            </span>
-          )}
-          {exercise.track_pr && (
-            <span className="px-2.5 py-1 text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200 rounded-full">
-              PR tracked
-            </span>
-          )}
-          {exercise.counts_towards_totals && (
-            <span className="px-2.5 py-1 text-[10px] font-medium bg-green-50 text-green-600 border border-green-200 rounded-full">
-              Counts totals
-            </span>
-          )}
-          {exercise.default_unit && exercise.default_unit !== 'kg' && (
-            <span className="px-2.5 py-1 text-[10px] font-medium bg-gray-100 text-gray-600 rounded-full">
-              {exercise.default_unit}
-            </span>
-          )}
-          {category && (
-            <span
-              className="px-2.5 py-1 text-[10px] font-medium rounded-full border"
-              style={{ color: category.color ?? '#888', borderColor: (category.color ?? '#888') + '55', backgroundColor: (category.color ?? '#888') + '15' }}
-            >
-              {category.name}
-            </span>
-          )}
-        </div>
-
-        {/* PR reference */}
-        {prRefExercise && (
-          <div className="text-[11px] text-gray-500">
-            Derives % from: <span className="font-medium text-gray-700">{prRefExercise.name}</span>
-          </div>
-        )}
+        {/* Structured exercise properties */}
+        {(() => {
+          const catName = exercise.category as unknown as string;
+          const unitLabel = UNIT_DISPLAY[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
+          const rows: { label: string; value: string; mono?: boolean; valueColor?: string }[] = [
+            { label: 'Category', value: category?.name ?? catName ?? '—' },
+            { label: 'Default unit', value: unitLabel },
+            { label: 'Track PR', value: exercise.track_pr ? 'Yes' : 'No', valueColor: exercise.track_pr ? 'text-blue-600' : 'text-gray-400' },
+            { label: 'Counts towards totals', value: exercise.counts_towards_totals ? 'Yes' : 'No', valueColor: exercise.counts_towards_totals ? 'text-green-600' : 'text-gray-400' },
+            { label: 'Competition lift', value: exercise.is_competition_lift ? 'Yes' : 'No', valueColor: exercise.is_competition_lift ? 'text-red-600' : 'text-gray-400' },
+            ...(exercise.exercise_code ? [{ label: 'Code', value: exercise.exercise_code, mono: true }] : []),
+            ...(prRefExercise ? [{ label: '% derived from', value: prRefExercise.name }] : []),
+          ];
+          return (
+            <div className="rounded-lg border border-gray-100 overflow-hidden">
+              {rows.map(({ label, value, mono, valueColor }, i) => (
+                <div key={label} className={`flex items-center px-3 py-2 ${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                  <span className="w-[148px] flex-shrink-0 text-[11px] text-gray-400">{label}</span>
+                  <span className={`text-[11px] font-medium truncate ${valueColor ?? 'text-gray-800'} ${mono ? 'font-mono' : ''}`}>
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* ── Athlete view ───────────────────────────────────────── */}
         {athlete ? (

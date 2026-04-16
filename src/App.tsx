@@ -34,7 +34,7 @@ const pageTitles: Record<string, string> = {
   '/planner': 'Weekly planner',
   '/macrocycles': 'Macro cycles',
   '/events': 'Calendar',
-  '/athletes': 'Roster',
+  '/athletes': 'Athletes',
   '/training-groups': 'Training groups',
   '/training-log': 'Training log',
   '/athlete-log': 'Training log',

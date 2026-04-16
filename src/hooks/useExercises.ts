@@ -210,6 +210,18 @@ export function useExercises() {
     }
   };
 
+  const bulkReorderCategories = async (orderedIds: string[]) => {
+    try {
+      for (let i = 0; i < orderedIds.length; i++) {
+        const { error } = await supabase.from('categories').update({ display_order: i }).eq('id', orderedIds[i]);
+        if (error) throw error;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reorder categories');
+      throw err;
+    }
+  };
+
   const swapCategoryOrder = async (
     catId: string, catNewOrder: number,
     swapId: string, swapNewOrder: number,
@@ -254,5 +266,6 @@ export function useExercises() {
     updateCategory,
     deleteCategory,
     swapCategoryOrder,
+    bulkReorderCategories,
   };
 }
