@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { Button } from '../ui';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -483,7 +484,10 @@ export function PlannerWeekOverview({
 
   if (!athlete && !group) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: 256, fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
+      }}>
         Select an athlete or group to view the weekly overview.
       </div>
     );
@@ -491,7 +495,10 @@ export function PlannerWeekOverview({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-gray-400">
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: 256, fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
+      }}>
         Loading weeks...
       </div>
     );
@@ -500,54 +507,66 @@ export function PlannerWeekOverview({
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
 
   return (
-    <div className="flex flex-col gap-3 py-4 px-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 8px' }}>
       {/* Macro context bar */}
       {currentMacro && (
-        <div className="flex items-center gap-2 pb-3 border-b border-gray-200">
-          <span className="px-2.5 py-0.5 text-[10px] font-medium rounded-full border"
-            style={{
-              color: currentPhaseInfo?.phase.color || '#7F77DD',
-              borderColor: currentPhaseInfo?.phase.color || '#7F77DD',
-              backgroundColor: (currentPhaseInfo?.phase.color || '#7F77DD') + '15',
-            }}
-          >
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          paddingBottom: 12, borderBottom: '0.5px solid var(--color-border-tertiary)',
+        }}>
+          <span style={{
+            padding: '2px 10px', fontSize: 10, fontWeight: 500,
+            borderRadius: 99, border: `1px solid ${currentPhaseInfo?.phase.color || '#7F77DD'}`,
+            color: currentPhaseInfo?.phase.color || '#7F77DD',
+            backgroundColor: (currentPhaseInfo?.phase.color || '#7F77DD') + '15',
+          }}>
             {currentMacro.macroName}
           </span>
           {currentPhaseInfo && (
-            <span className="text-[11px] text-gray-500">
+            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
               {currentPhaseInfo.phase.phaseName}
             </span>
           )}
-          <span className="ml-auto text-[10px] text-gray-400">
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
             {formatDateShort(currentMacro.startDate)} – {formatDateShort(currentMacro.endDate)}
           </span>
         </div>
       )}
 
       {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <button
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<ChevronLeft size={14} />}
           onClick={() => setCenterDate(addWeeks(centerDate, -1))}
-          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
         >
-          <ChevronLeft size={14} /> Earlier
-        </button>
-        <button
+          Earlier
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<CalendarDays size={13} />}
           onClick={handleTodayClick}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50"
         >
-          <CalendarDays size={13} /> Today
-        </button>
-        <button
+          Today
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<ChevronRight size={14} />}
+          iconPosition="right"
           onClick={() => setCenterDate(addWeeks(centerDate, 1))}
-          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg"
         >
-          Later <ChevronRight size={14} />
-        </button>
+          Later
+        </Button>
       </div>
 
       {/* Volume ribbon */}
-      <div className="flex gap-0.5 items-end h-7 px-[72px]">
+      <div style={{
+        display: 'flex', gap: 2, alignItems: 'flex-end',
+        height: 28, padding: '0 72px',
+      }}>
         {weeks.map(w => {
           const h = maxTonnage > 0 ? (w.totalTonnage / maxTonnage) * 100 : 0;
           const phaseInfo = getPhaseForWeek(w.weekStart);
@@ -556,11 +575,13 @@ export function PlannerWeekOverview({
           return (
             <div
               key={w.weekStart}
-              className="flex-1 rounded-t-sm transition-all"
               style={{
+                flex: 1,
+                borderRadius: '2px 2px 0 0',
                 height: `${Math.max(h, 2)}%`,
                 backgroundColor: color + (isCurrent ? '50' : '25'),
                 border: isCurrent ? `1px solid ${color}80` : 'none',
+                transition: 'height 0.2s',
               }}
             />
           );
@@ -568,7 +589,7 @@ export function PlannerWeekOverview({
       </div>
 
       {/* Week rows */}
-      <div className="flex flex-col">
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
         {weeks.map((week, idx) => {
           const isCurrent = week.weekStart === today;
           const isPast = week.weekStart < today;
@@ -588,55 +609,77 @@ export function PlannerWeekOverview({
             if (diffWeeks > 0) weekNum = `W${diffWeeks}`;
           }
 
-          const hasExercises = week.exerciseSummaries.length > 0;
-
           return (
             <div key={week.weekStart} ref={isCurrent ? currentWeekRef : undefined}>
               {sectionLabel && (
-                <div className="flex items-center gap-2 py-2 mt-2">
-                  <span className="text-[10px] text-gray-400 font-medium">{sectionLabel}</span>
-                  <span className="flex-1 h-px bg-gray-200" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', marginTop: 8 }}>
+                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+                    {sectionLabel}
+                  </span>
+                  <span style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
                 </div>
               )}
               <div
                 onClick={() => onSelectWeek(week.weekStart)}
-                className={`flex flex-col py-3 px-3 -mx-3 rounded-xl cursor-pointer transition-colors ${
-                  isCurrent
-                    ? 'bg-blue-100 border-2 border-blue-400 shadow-sm'
-                    : 'hover:bg-gray-50 border border-transparent'
-                }`}
+                style={{
+                  display: 'flex', flexDirection: 'column',
+                  padding: '12px', margin: '0 -12px',
+                  borderRadius: 'var(--radius-lg)',
+                  cursor: 'pointer',
+                  border: isCurrent
+                    ? '2px solid var(--color-accent-border)'
+                    : '1px solid transparent',
+                  background: isCurrent ? 'var(--color-accent-muted)' : 'transparent',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => {
+                  if (!isCurrent) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-bg-secondary)';
+                }}
+                onMouseLeave={e => {
+                  if (!isCurrent) (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+                }}
               >
                 {/* ── Top row: meta + day blocks + stats ── */}
-                <div className="flex gap-3 items-stretch">
+                <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
                   {/* Meta column */}
-                  <div className="w-[76px] flex-shrink-0 flex flex-col justify-center">
-                    <div className="flex items-center gap-1">
-                      <span className="text-sm font-semibold text-gray-900">
+                  <div style={{ width: 76, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
                         {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
                       </span>
                       {isCurrent && (
-                        <span className="text-[7px] font-medium bg-red-100 text-red-600 px-1 py-px rounded">
+                        <span style={{
+                          fontSize: 7, fontWeight: 500, padding: '1px 4px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--color-danger-bg)',
+                          color: 'var(--color-danger-text)',
+                        }}>
                           now
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-gray-400 mt-0.5">
+                    <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
                       {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
                     </div>
                     {week.compliance !== null && (
-                      <div className="mt-1.5">
-                        <div className="h-[3px] bg-gray-100 rounded-full overflow-hidden w-full">
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{
+                          height: 3, background: 'var(--color-bg-tertiary)',
+                          borderRadius: 99, overflow: 'hidden', width: '100%',
+                        }}>
                           <div
-                            className="h-full rounded-full"
                             style={{
+                              height: '100%', borderRadius: 99,
                               width: `${Math.round(week.compliance * 100)}%`,
-                              backgroundColor: week.compliance >= 0.9 ? '#639922'
-                                : week.compliance >= 0.5 ? '#378ADD'
-                                : '#BA7517',
+                              backgroundColor: week.compliance >= 0.9
+                                ? 'var(--color-success-text)'
+                                : week.compliance >= 0.5
+                                ? 'var(--color-accent)'
+                                : 'var(--color-warning-text)',
                             }}
                           />
                         </div>
-                        <span className="text-[9px] text-gray-400 mt-0.5">
+                        <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2, display: 'block' }}>
                           Done: {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' (prog.)' : ''}
                         </span>
                       </div>
@@ -644,80 +687,122 @@ export function PlannerWeekOverview({
                   </div>
 
                   {/* Day blocks */}
-                  <div className="flex-1 flex gap-1 items-stretch" style={{ minHeight: 90 }}>
+                  <div style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'stretch', minHeight: 90 }}>
                     {week.days.map((day) => {
                       const di = day.dayIndex;
                       const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
                       const hasData = day.exercises.length > 0;
                       const faded = dayIsFuture && !isPast;
 
+                      let dayBlockStyle: React.CSSProperties;
+                      if (day.isRest) {
+                        dayBlockStyle = {
+                          background: isCurrent ? 'var(--color-accent-muted)' : 'var(--color-bg-secondary)',
+                          opacity: isCurrent ? 0.4 : 0.3,
+                          border: 'none',
+                        };
+                      } else if (isEmpty) {
+                        dayBlockStyle = {
+                          border: '1px dashed var(--color-border-tertiary)',
+                          background: 'transparent',
+                        };
+                      } else if (faded) {
+                        dayBlockStyle = {
+                          border: `1px dashed ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'}`,
+                          background: isCurrent ? 'rgba(255,255,255,0.7)' : 'var(--color-bg-secondary)',
+                          opacity: 0.6,
+                        };
+                      } else {
+                        dayBlockStyle = {
+                          border: `1px solid ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'}`,
+                          background: 'var(--color-bg-primary)',
+                          boxShadow: isCurrent ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                        };
+                      }
+
                       return (
                         <div
                           key={di}
-                          className={`flex-1 rounded-md flex flex-col px-1 pt-1 pb-1.5 min-w-0 ${
-                            day.isRest
-                              ? isCurrent ? 'bg-blue-50 opacity-40' : 'bg-gray-50 opacity-30'
-                              : isEmpty
-                              ? 'border border-dashed border-gray-200'
-                              : faded
-                              ? isCurrent
-                                ? 'border border-dashed border-blue-300 bg-white/70'
-                                : 'border border-dashed border-gray-300 bg-gray-50/40'
-                              : isCurrent
-                              ? 'border border-blue-300 bg-white shadow-sm'
-                              : 'border border-gray-200 bg-white'
-                          }`}
+                          style={{
+                            flex: 1, borderRadius: 'var(--radius-md)',
+                            display: 'flex', flexDirection: 'column',
+                            padding: '4px 4px 6px', minWidth: 0,
+                            ...dayBlockStyle,
+                          }}
                         >
                           {/* Day label */}
-                          <div className="text-[8px] font-medium text-gray-500 text-center mb-1">{DAY_LABELS[di]}</div>
+                          <div style={{
+                            fontSize: 8, fontWeight: 500,
+                            color: 'var(--color-text-secondary)',
+                            textAlign: 'center', marginBottom: 4,
+                          }}>
+                            {DAY_LABELS[di]}
+                          </div>
 
-                          {/* Exercise bands — colored stripe + name */}
-                          <div className="flex flex-col gap-0.5 flex-1">
+                          {/* Exercise bands */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
                             {day.exercises.slice(0, 6).map((ex, ei) => (
                               <div
                                 key={ei}
-                                className="rounded-sm px-1 py-px flex items-center gap-1 min-w-0"
                                 style={{
+                                  borderRadius: 2, padding: '1px 4px',
+                                  display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
                                   backgroundColor: ex.color + (faded ? '15' : '22'),
                                   borderLeft: `2.5px solid ${ex.color}${faded ? '55' : 'cc'}`,
                                 }}
                               >
-                                <span
-                                  className="text-[9px] leading-snug font-semibold truncate"
-                                  style={{ color: faded ? '#9ca3af' : '#1f2937' }}
-                                >
+                                <span style={{
+                                  fontSize: 9, lineHeight: 1.3, fontWeight: 500,
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  color: faded ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
+                                }}>
                                   {ex.name}
                                 </span>
                               </div>
                             ))}
                             {day.exercises.length > 6 && (
-                              <span className="text-[7px] text-gray-400 pl-1">+{day.exercises.length - 6}</span>
+                              <span style={{ fontSize: 7, color: 'var(--color-text-tertiary)', paddingLeft: 4 }}>
+                                +{day.exercises.length - 6}
+                              </span>
                             )}
                           </div>
 
                           {/* Metric strip */}
                           {hasData && (
-                            <MetricStrip
-                              metrics={day.dayMetrics}
-                              visibleMetrics={visibleMetrics}
-                              size="sm"
-                              showLabels={false}
-                              separator="·"
-                              className={`text-[8px] leading-tight justify-center mt-1 ${faded ? 'opacity-40' : ''}`}
-                            />
+                            <div style={{ opacity: faded ? 0.4 : 1, marginTop: 4 }}>
+                              <MetricStrip
+                                metrics={day.dayMetrics}
+                                visibleMetrics={visibleMetrics}
+                                size="sm"
+                                showLabels={false}
+                                separator="·"
+                                className="text-[8px] leading-tight justify-center"
+                              />
+                            </div>
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Stats column — uses visible_summary_metrics, two columns: target | planned */}
-                  <div className="w-[170px] flex-shrink-0 flex flex-col justify-center pl-3 border-l border-gray-200">
+                  {/* Stats column */}
+                  <div style={{
+                    width: 170, flexShrink: 0, display: 'flex', flexDirection: 'column',
+                    justifyContent: 'center', paddingLeft: 12,
+                    borderLeft: '0.5px solid var(--color-border-tertiary)',
+                  }}>
                     {/* Column headers */}
-                    <div className="flex items-center gap-1 mb-1">
-                      <div className="w-10 text-[8px] text-gray-400" />
-                      <div className="flex-1 text-[8px] text-gray-400 text-right">Target</div>
-                      <div className="flex-1 text-[8px] text-gray-500 font-medium text-right">Planned</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                      <div style={{ width: 40, fontSize: 8, color: 'var(--color-text-tertiary)' }} />
+                      <div style={{ flex: 1, fontSize: 8, color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
+                        Target
+                      </div>
+                      <div style={{
+                        flex: 1, fontSize: 8, fontWeight: 500,
+                        color: 'var(--color-text-secondary)', textAlign: 'right',
+                      }}>
+                        Planned
+                      </div>
                     </div>
                     {METRICS.filter(m => (visibleSummaryMetrics as string[]).includes(m.key)).map(m => {
                       const actualVal = week.weekMetrics[m.key] as number | null;
@@ -728,12 +813,24 @@ export function PlannerWeekOverview({
                           : null
                         : null;
                       return (
-                        <div key={m.key} className="flex items-center gap-1 py-px">
-                          <div className="w-10 text-[9px] text-gray-500 font-medium">{m.label}</div>
-                          <div className="flex-1 text-[10px] text-gray-400 text-right tabular-nums">
+                        <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
+                          <div style={{
+                            width: 40, fontSize: 9, fontWeight: 500,
+                            color: 'var(--color-text-secondary)',
+                          }}>
+                            {m.label}
+                          </div>
+                          <div style={{
+                            flex: 1, fontSize: 10, color: 'var(--color-text-tertiary)',
+                            textAlign: 'right', fontFamily: 'var(--font-mono)',
+                          }}>
                             {formatMetricValue(m.key, targetVal)}
                           </div>
-                          <div className="flex-1 text-[10px] font-semibold text-gray-700 text-right tabular-nums">
+                          <div style={{
+                            flex: 1, fontSize: 10, fontWeight: 600,
+                            color: 'var(--color-text-primary)',
+                            textAlign: 'right', fontFamily: 'var(--font-mono)',
+                          }}>
                             {formatMetricValue(m.key, actualVal)}
                           </div>
                         </div>
@@ -748,7 +845,7 @@ export function PlannerWeekOverview({
       </div>
 
       {/* Hint */}
-      <div className="text-[9px] text-gray-400 text-center pt-2">
+      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', textAlign: 'center', paddingTop: 8 }}>
         Click any week to open the planner
       </div>
     </div>
