@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Grid3X3, List, Upload,
-  ChevronRight, Layers, Trash2, Check, X as XIcon, GripVertical,
+  ChevronRight, Layers, Trash2, Check, X as XIcon, GripVertical, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useExercises } from '../../hooks/useExercises';
@@ -37,9 +37,10 @@ interface ExerciseCardProps {
   isSelected: boolean;
   athletePR: { pr_value_kg: number | null; pr_date: string | null } | null;
   onClick: () => void;
+  isDuplicate?: boolean;
 }
 
-function ExerciseCard({ exercise, isSelected, athletePR, onClick }: ExerciseCardProps) {
+function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDuplicate }: ExerciseCardProps) {
   return (
     <div
       onClick={onClick}
@@ -94,6 +95,13 @@ function ExerciseCard({ exercise, isSelected, athletePR, onClick }: ExerciseCard
         </span>
         {exercise.is_competition_lift && (
           <Badge variant="danger">COMP</Badge>
+        )}
+        {isDuplicate && (
+          <AlertTriangle
+            size={11}
+            style={{ color: 'var(--color-warning-text)', flexShrink: 0 }}
+            title="Duplicate exercise name"
+          />
         )}
       </div>
 
@@ -154,9 +162,10 @@ interface ExerciseListRowProps {
   isSelected: boolean;
   athletePR: { pr_value_kg: number | null } | null;
   onClick: () => void;
+  isDuplicate?: boolean;
 }
 
-function ExerciseListRow({ exercise, isSelected, athletePR, onClick }: ExerciseListRowProps) {
+function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDuplicate }: ExerciseListRowProps) {
   const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
 
   return (
@@ -203,9 +212,16 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick }: ExerciseL
         </span>
       </div>
 
-      {/* COMP badge */}
-      <div>
+      {/* COMP badge / duplicate warning */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
+        {isDuplicate && !exercise.is_competition_lift && (
+          <AlertTriangle
+            size={11}
+            style={{ color: 'var(--color-warning-text)' }}
+            title="Duplicate exercise name"
+          />
+        )}
       </div>
 
       {/* Name */}
@@ -738,6 +754,7 @@ export function ExerciseLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  const [showEmptyCategories, setShowEmptyCategories] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -778,6 +795,19 @@ export function ExerciseLibrary() {
     const cat = ex.category as unknown as string | null;
     return !cat || cat === 'Unspecified' || !knownCategoryNames.has(cat);
   });
+
+  // Duplicate name detection (case-insensitive)
+  const nameCounts = new Map<string, number>();
+  for (const ex of exercises) {
+    const key = ex.name.toLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const duplicateNames = new Set([...nameCounts.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+
+  // Count categories that have no exercises (against full unfiltered list)
+  const emptyCategoryCount = visibleCategories.filter(
+    cat => exercises.filter(ex => (ex.category as unknown as string) === cat.name).length === 0
+  ).length;
 
   const selectedExercise = exercises.find(e => e.id === selectedExerciseId) ?? null;
   const selectedCategory = selectedExercise
@@ -891,6 +921,7 @@ export function ExerciseLibrary() {
               isSelected={selectedExerciseId === ex.id}
               athletePR={athletePRMap.get(ex.id) ?? null}
               onClick={() => setSelectedExerciseId(ex.id === selectedExerciseId ? null : ex.id)}
+              isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
             />
           ))}
         </div>
@@ -905,6 +936,7 @@ export function ExerciseLibrary() {
             isSelected={selectedExerciseId === ex.id}
             athletePR={athletePRMap.get(ex.id) ?? null}
             onClick={() => setSelectedExerciseId(ex.id === selectedExerciseId ? null : ex.id)}
+            isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
           />
         ))}
       </div>
@@ -1044,7 +1076,7 @@ export function ExerciseLibrary() {
 
           {visibleCategories.map(cat => {
             const catExercises = filteredExercises.filter(ex => (ex.category as unknown as string) === cat.name);
-            if (catExercises.length === 0 && searchQuery.trim()) return null;
+            if (catExercises.length === 0 && (searchQuery.trim() || !showEmptyCategories)) return null;
             const isCollapsed = collapsedCategories.has(cat.id);
 
             return (
@@ -1083,6 +1115,31 @@ export function ExerciseLibrary() {
               </div>
             );
           })()}
+
+          {/* Empty category toggle */}
+          {!searchQuery.trim() && emptyCategoryCount > 0 && (
+            <button
+              onClick={() => setShowEmptyCategories(v => !v)}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: 'var(--space-sm) var(--space-lg)',
+                fontSize: 'var(--text-caption)',
+                color: 'var(--color-text-tertiary)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'color 100ms ease-out',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
+            >
+              {showEmptyCategories
+                ? `Hide ${emptyCategoryCount} empty ${emptyCategoryCount === 1 ? 'category' : 'categories'}`
+                : `${emptyCategoryCount} empty ${emptyCategoryCount === 1 ? 'category' : 'categories'} hidden · Show`}
+            </button>
+          )}
 
           {/* Empty state */}
           {filteredExercises.length === 0 && (

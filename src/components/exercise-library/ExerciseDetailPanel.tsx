@@ -633,97 +633,136 @@ export function ExerciseDetailPanel({
           <>
             {/* Roster stats */}
             <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
               background: 'var(--color-bg-secondary)',
               borderRadius: 'var(--radius-lg)',
               padding: 14,
             }}>
-              <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
-                Athletes using
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-tertiary)',
+                  marginBottom: 4,
+                }}>
+                  Athletes with a PR
+                </div>
+                <div style={{
+                  fontSize: 24,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  color: athleteCount > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {loadingData ? '—' : athleteCount}
+                </div>
               </div>
-              <div style={{
-                fontSize: 24,
-                fontWeight: 700,
-                color: 'var(--color-text-primary)',
-                fontFamily: 'var(--font-mono)',
-              }}>
-                {loadingData ? '—' : `${athleteCount} / ${allAthletes.filter(a => a.is_active).length}`}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                  of {allAthletes.filter(a => a.is_active).length} active
+                </div>
+                {!loadingData && athletePRs.length > 0 && (
+                  <div style={{
+                    fontSize: 'var(--text-label)',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 600,
+                    color: 'var(--color-text-secondary)',
+                    marginTop: 2,
+                  }}>
+                    Best: {athletePRs[0].pr_value_kg} kg
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Roster PR table */}
-            {athletePRs.length > 0 && (
-              <div>
-                <SectionLabel>Roster PRs</SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {athletePRs.map(row => (
-                    <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: '50%',
-                        background: 'var(--color-bg-secondary)',
-                        border: '0.5px solid var(--color-border-tertiary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 9,
-                        fontWeight: 700,
-                        color: 'var(--color-text-secondary)',
-                        flexShrink: 0,
-                      }}>
-                        {row.athleteInitials}
-                      </div>
-                      <span style={{
-                        flex: 1,
-                        fontSize: 'var(--text-caption)',
-                        color: 'var(--color-text-secondary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {row.athleteName}
-                      </span>
-                      <span style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 'var(--text-body)',
-                        fontWeight: 600,
-                        color: 'var(--color-text-primary)',
-                      }}>
-                        {row.pr_value_kg} kg
-                      </span>
-                      <span style={{
-                        fontSize: 9,
-                        color: 'var(--color-text-tertiary)',
-                        width: 56,
-                        textAlign: 'right',
-                      }}>
-                        {formatDate(row.pr_date)}
-                      </span>
-                    </div>
-                  ))}
+            <div>
+              <SectionLabel>Roster PRs</SectionLabel>
+              {loadingData ? (
+                <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)' }}>Loading…</div>
+              ) : athletePRs.length === 0 ? (
+                <div style={{
+                  fontSize: 'var(--text-label)',
+                  color: 'var(--color-text-tertiary)',
+                  fontStyle: 'italic',
+                  padding: '4px 0',
+                }}>
+                  No PRs recorded yet.
                 </div>
-
-                {/* Bar chart */}
-                <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 2, height: 32 }}>
-                  {athletePRs.slice(0, 14).map(row => {
-                    const pct = maxPR > 0 ? ((row.pr_value_kg ?? 0) / maxPR) * 100 : 0;
-                    return (
-                      <div
-                        key={row.id}
-                        style={{
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {athletePRs.map(row => (
+                      <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: 'var(--color-bg-secondary)',
+                          border: '0.5px solid var(--color-border-tertiary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: 'var(--color-text-secondary)',
+                          flexShrink: 0,
+                        }}>
+                          {row.athleteInitials}
+                        </div>
+                        <span style={{
                           flex: 1,
-                          borderRadius: '2px 2px 0 0',
-                          height: `${Math.max(pct, 4)}%`,
-                          background: (category?.color ?? 'var(--color-accent)'),
-                          opacity: 0.6,
-                        }}
-                        title={`${row.athleteName}: ${row.pr_value_kg} kg`}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                          fontSize: 'var(--text-caption)',
+                          color: 'var(--color-text-secondary)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {row.athleteName}
+                        </span>
+                        <span style={{
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 'var(--text-body)',
+                          fontWeight: 600,
+                          color: 'var(--color-text-primary)',
+                        }}>
+                          {row.pr_value_kg} kg
+                        </span>
+                        <span style={{
+                          fontSize: 9,
+                          color: 'var(--color-text-tertiary)',
+                          width: 56,
+                          textAlign: 'right',
+                        }}>
+                          {formatDate(row.pr_date)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Bar chart */}
+                  <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 2, height: 32 }}>
+                    {athletePRs.slice(0, 14).map(row => {
+                      const pct = maxPR > 0 ? ((row.pr_value_kg ?? 0) / maxPR) * 100 : 0;
+                      return (
+                        <div
+                          key={row.id}
+                          style={{
+                            flex: 1,
+                            borderRadius: '2px 2px 0 0',
+                            height: `${Math.max(pct, 4)}%`,
+                            background: (category?.color ?? 'var(--color-accent)'),
+                            opacity: 0.6,
+                          }}
+                          title={`${row.athleteName}: ${row.pr_value_kg} kg`}
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Roster usage chart */}
             {usageWeeks.length > 0 && (
@@ -832,15 +871,16 @@ export function ExerciseDetailPanel({
         flexShrink: 0,
       }}>
         <Button
-          variant="secondary"
+          variant="primary"
           size="sm"
+          icon={<Edit2 size={13} />}
           style={{ flex: 1 }}
           onClick={() => onEdit(exercise)}
         >
           Edit
         </Button>
         <Button
-          variant="danger"
+          variant="secondary"
           size="sm"
           icon={<Archive size={13} />}
           onClick={() => onArchive(exercise.id)}
