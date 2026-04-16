@@ -2,6 +2,13 @@ import type { ReactNode } from 'react';
 
 interface StandardPageProps {
   children: ReactNode;
+  /**
+   * When true, the work surface becomes edge-to-edge with no border/radius.
+   * Use when a side panel is open — the panel becomes the dominant surface
+   * and the underlying list recedes to background.
+   * Defaults to false (framed card treatment).
+   */
+  hasSidePanel?: boolean;
 }
 
 /**
@@ -9,14 +16,19 @@ interface StandardPageProps {
  *
  * Used for: macro detail, exercise library, athlete list, settings.
  *
- * Structure:
+ * Default (framed):
  * - Off-white page background (--color-bg-page)
- * - White work surface card inset by 24px
- * - 8px radius, 0.5px hairline border
- * - Max width 1400px centered
- * - Children fill the work surface with their own padding
+ * - White work surface card with hairline border and 8px radius
+ * - Symmetric 24px vertical, 48px horizontal padding from viewport edges
+ * - Work surface fills available width (no max-width cap)
+ *
+ * When hasSidePanel=true (edge-to-edge):
+ * - Same off-white page background
+ * - No border, no radius, no horizontal padding — list goes to the viewport edge
+ * - Keeps 24px top/bottom padding for breathing room from chrome
+ * - Signals that the panel is the dominant focus; this list is background
  */
-export function StandardPage({ children }: StandardPageProps) {
+export function StandardPage({ children, hasSidePanel = false }: StandardPageProps) {
   return (
     <div
       style={{
@@ -28,9 +40,9 @@ export function StandardPage({ children }: StandardPageProps) {
     >
       <div
         style={{
-          maxWidth: 'var(--work-area-max-width)',
-          margin: '0 auto',
-          padding: 'var(--space-xl)',
+          padding: hasSidePanel
+            ? 'var(--space-xl) 0'
+            : 'var(--space-xl) 48px',
           height: '100%',
           boxSizing: 'border-box',
         }}
@@ -38,8 +50,12 @@ export function StandardPage({ children }: StandardPageProps) {
         <div
           style={{
             background: 'var(--color-bg-primary)',
-            border: '0.5px solid var(--color-border-tertiary)',
-            borderRadius: 'var(--radius-lg)',
+            border: hasSidePanel
+              ? 'none'
+              : '0.5px solid var(--color-border-tertiary)',
+            borderRadius: hasSidePanel
+              ? 0
+              : 'var(--radius-lg)',
             minHeight: 'calc(100% - 2px)',
             display: 'flex',
             flexDirection: 'column',

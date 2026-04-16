@@ -12,7 +12,7 @@ import { ExerciseBulkImportModal } from '../ExerciseBulkImportModal';
 import { ExerciseDetailPanel } from './ExerciseDetailPanel';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
-import { StandardPage, Button, Input, Badge, ColorDot } from '../ui';
+import { StandardPage, Button, Input, Badge, ColorDot, Modal } from '../ui';
 
 // ── Color presets ─────────────────────────────────────────────────
 
@@ -154,10 +154,9 @@ interface ExerciseListRowProps {
   isSelected: boolean;
   athletePR: { pr_value_kg: number | null } | null;
   onClick: () => void;
-  rowIndex: number;
 }
 
-function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }: ExerciseListRowProps) {
+function ExerciseListRow({ exercise, isSelected, athletePR, onClick }: ExerciseListRowProps) {
   const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
 
   return (
@@ -165,11 +164,13 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
       onClick={onClick}
       style={{
         display: 'grid',
-        gridTemplateColumns: '60px 56px 1fr 60px 80px 120px',
+        gridTemplateColumns: '60px 56px 1fr 60px 80px',
         alignItems: 'center',
         gap: 'var(--space-md)',
-        padding: '8px 16px',
-        background: isSelected ? 'var(--color-info-bg)' : 'transparent',
+        padding: '8px var(--space-lg)',
+        background: isSelected
+          ? 'var(--color-info-bg)'
+          : 'transparent',
         borderLeft: isSelected
           ? '2px solid var(--color-accent)'
           : '2px solid transparent',
@@ -198,7 +199,7 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
             whiteSpace: 'nowrap',
           }}
         >
-          {exercise.exercise_code || '—'}
+          {exercise.exercise_code || ''}
         </span>
       </div>
 
@@ -258,9 +259,6 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
           <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
         )}
       </div>
-
-      {/* Spacer — category column removed (redundant under category headers) */}
-      <div />
     </div>
   );
 }
@@ -273,15 +271,17 @@ function ListViewHeader() {
     fontSize: 'var(--text-caption)',
     fontWeight: 400,
     color: 'var(--color-text-secondary)',
+    letterSpacing: '0',
+    textTransform: 'none',
   };
 
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '60px 56px 1fr 60px 80px 120px',
+        gridTemplateColumns: '60px 56px 1fr 60px 80px',
         gap: 'var(--space-md)',
-        padding: '10px 16px 8px',
+        padding: 'var(--space-sm) var(--space-lg)',
         borderBottom: '0.5px solid var(--color-border-secondary)',
         position: 'sticky',
         top: 0,
@@ -294,7 +294,6 @@ function ListViewHeader() {
       <div style={cell}>Name</div>
       <div style={cell}>Unit</div>
       <div style={{ ...cell, textAlign: 'right' }}>PR</div>
-      <div />
     </div>
   );
 }
@@ -365,7 +364,7 @@ function CategorySectionHeader({ category, count, isCollapsed, onToggle }: Categ
 
 interface CategoryManagerModalProps {
   categories: Category[];
-  exerciseCounts: Map<string, number>;
+  exercises: Exercise[];
   onRename: (id: string, name: string) => Promise<void>;
   onRecolor: (id: string, color: string) => Promise<void>;
   onReorder: (fromIdx: number, toIdx: number) => Promise<void>;
@@ -374,71 +373,117 @@ interface CategoryManagerModalProps {
   onClose: () => void;
 }
 
-interface ColorPickerPos {
-  id: string;
-  top: number;
-  left: number;
-}
-
 function CategoryManagerModal({
-  categories, exerciseCounts,
-  onRename, onRecolor, onReorder, onAdd, onDelete, onClose,
+  categories,
+  exercises,
+  onClose,
+  onRename,
+  onRecolor,
+  onReorder,
+  onAdd,
+  onDelete,
 }: CategoryManagerModalProps) {
+  const visible = categories.filter(c => !isProtectedCategory(c));
+  const sorted = [...visible].sort((a, b) => a.display_order - b.display_order);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [colorPickerPos, setColorPickerPos] = useState<ColorPickerPos | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState<string>(PRESET_COLORS[0]);
+  const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  const visible = categories.filter(c => !isProtectedCategory(c));
-  const sorted = [...visible].sort((a, b) => a.display_order - b.display_order);
-
-  const pickerCat = colorPickerPos
-    ? sorted.find(c => c.id === colorPickerPos.id)
-    : null;
+  const exerciseCounts = new Map<string, number>();
+  for (const cat of sorted) {
+    exerciseCounts.set(cat.id, exercises.filter(e => (e.category as unknown as string) === cat.name).length);
+  }
 
   function openColorPicker(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    if (colorPickerPos?.id === id) {
-      setColorPickerPos(null);
-    } else {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setColorPickerPos({ id, top: rect.bottom + 4, left: rect.left });
-    }
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    setColorPickerPos({ x: rect.left, y: rect.bottom + 4, targetId: id });
   }
 
   function openNewColorPicker(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (colorPickerPos?.id === '__new') {
-      setColorPickerPos(null);
-    } else {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setColorPickerPos({ id: '__new', top: rect.top - 148, left: rect.left });
-    }
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    setColorPickerPos({ x: rect.left, y: rect.top - 140, targetId: null });
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      onClick={() => setColorPickerPos(null)}>
-      <div className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col"
-        onClick={e => e.stopPropagation()}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <Layers size={15} className="text-gray-500" />
-            <span className="text-sm font-semibold text-gray-900">Manage categories</span>
-            <span className="text-[10px] text-gray-400 ml-1">Drag to reorder</span>
+    <>
+      <Modal
+        isOpen={true}
+        onClose={onClose}
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <Layers size={14} style={{ color: 'var(--color-text-secondary)' }} />
+            <span>Manage categories</span>
+            <span
+              style={{
+                fontSize: 'var(--text-caption)',
+                color: 'var(--color-text-tertiary)',
+                fontWeight: 400,
+                marginLeft: 'var(--space-xs)',
+              }}
+            >
+              Drag to reorder
+            </span>
+          </span>
+        }
+        size="md"
+        footer={
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              width: '100%',
+            }}
+          >
+            <button
+              onClick={openNewColorPicker}
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: 'var(--radius-sm)',
+                border: '0.5px solid var(--color-border-secondary)',
+                background: newColor,
+                cursor: 'pointer',
+                flexShrink: 0,
+                padding: 0,
+              }}
+              title="Pick color"
+            />
+            <Input
+              placeholder="New category name…"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && newName.trim()) {
+                  onAdd(newName.trim(), newColor);
+                  setNewName('');
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Check size={12} />}
+              disabled={!newName.trim()}
+              onClick={() => {
+                if (newName.trim()) {
+                  onAdd(newName.trim(), newColor);
+                  setNewName('');
+                }
+              }}
+            >
+              Add
+            </Button>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded">
-            <XIcon size={16} />
-          </button>
-        </div>
-
-        <div className="overflow-y-auto flex-1 px-3 py-2">
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {sorted.map((cat, idx) => {
             const count = exerciseCounts.get(cat.id) ?? 0;
             const isEditing = editingId === cat.id;
@@ -459,26 +504,60 @@ function CategoryManagerModal({
                   setDragIdx(null);
                   setDragOverIdx(null);
                 }}
-                className={`flex items-center gap-2.5 px-2 py-2 rounded-lg group transition-colors ${
-                  isDragOver ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-                } ${dragIdx === idx ? 'opacity-40' : ''}`}
+                className="group"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-sm)',
+                  padding: '8px var(--space-sm)',
+                  borderRadius: 'var(--radius-md)',
+                  background: isDragOver ? 'var(--color-info-bg)' : 'transparent',
+                  border: isDragOver
+                    ? '0.5px solid var(--color-info-border)'
+                    : '0.5px solid transparent',
+                  opacity: dragIdx === idx ? 0.4 : 1,
+                  transition: 'background 100ms ease-out',
+                }}
+                onMouseEnter={e => {
+                  if (!isDragOver) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                }}
+                onMouseLeave={e => {
+                  if (!isDragOver) e.currentTarget.style.background = 'transparent';
+                }}
               >
                 {/* Drag handle */}
-                <GripVertical size={13} className="text-gray-300 cursor-grab flex-shrink-0" />
+                <GripVertical
+                  size={13}
+                  style={{
+                    color: 'var(--color-text-tertiary)',
+                    cursor: 'grab',
+                    flexShrink: 0,
+                  }}
+                />
 
-                {/* Color swatch */}
+                {/* Color swatch — button to open picker */}
                 <button
                   onClick={(e) => openColorPicker(e, cat.id)}
-                  className="w-5 h-5 rounded border border-black/10 flex-shrink-0 hover:scale-110 transition-transform"
-                  style={{ backgroundColor: cat.color ?? '#888780' }}
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '0.5px solid var(--color-border-secondary)',
+                    background: cat.color ?? 'var(--color-gray-400)',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    padding: 0,
+                    transition: 'transform 100ms ease-out',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                   title="Change color"
                 />
 
                 {/* Name */}
                 {isEditing ? (
-                  <input
+                  <Input
                     autoFocus
-                    className="flex-1 text-sm border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
                     onKeyDown={e => {
@@ -486,39 +565,84 @@ function CategoryManagerModal({
                       if (e.key === 'Escape') setEditingId(null);
                     }}
                     onBlur={() => { if (editName.trim()) onRename(cat.id, editName); setEditingId(null); }}
+                    style={{ flex: 1 }}
                   />
                 ) : (
                   <span
-                    className="flex-1 text-sm text-gray-700 cursor-text hover:text-gray-900"
                     onClick={() => { setEditName(cat.name); setEditingId(cat.id); }}
+                    style={{
+                      flex: 1,
+                      fontSize: 'var(--text-body)',
+                      color: 'var(--color-text-primary)',
+                      cursor: 'text',
+                    }}
                   >
                     {cat.name}
                   </span>
                 )}
 
-                <span className="text-[10px] text-gray-400 w-6 text-right">{count}</span>
+                {/* Count */}
+                <span
+                  style={{
+                    fontSize: 'var(--text-caption)',
+                    color: 'var(--color-text-tertiary)',
+                    fontFamily: 'var(--font-mono)',
+                    width: '24px',
+                    textAlign: 'right',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {count}
+                </span>
 
                 {/* Delete */}
                 {isConfirming ? (
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <span className="text-[10px] text-orange-600 whitespace-nowrap">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', flexShrink: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 'var(--text-caption)',
+                        color: 'var(--color-warning-text)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
                       {count > 0 ? `Move ${count} to Unspecified?` : 'Delete?'}
                     </span>
-                    <button
+                    <Button
+                      variant="danger"
+                      size="sm"
                       onClick={async () => {
                         try { await onDelete(cat.id); } catch {}
                         setConfirmDeleteId(null);
                       }}
-                      className="text-[10px] text-red-500 font-medium hover:text-red-700 px-1"
-                    >Yes</button>
-                    <button onClick={() => setConfirmDeleteId(null)}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 px-1">No</button>
+                    >
+                      Yes
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      No
+                    </Button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setConfirmDeleteId(cat.id)}
                     title="Delete category"
-                    className="p-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    style={{
+                      padding: '2px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--color-text-tertiary)',
+                      cursor: 'pointer',
+                      opacity: 0,
+                      transition: 'opacity 100ms ease-out, color 100ms ease-out',
+                      flexShrink: 0,
+                      display: 'flex',
+                    }}
+                    className="group-hover:opacity-100"
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-danger-text)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -527,68 +651,72 @@ function CategoryManagerModal({
             );
           })}
         </div>
+      </Modal>
 
-        {/* Add new category */}
-        <div className="flex items-center gap-2.5 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-          <button
-            onClick={openNewColorPicker}
-            className="w-5 h-5 rounded border border-black/10 hover:scale-110 transition-transform flex-shrink-0"
-            style={{ backgroundColor: newColor }}
-            title="Pick color"
-          />
-          <input
-            className="flex-1 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
-            placeholder="New category name…"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && newName.trim()) { onAdd(newName.trim(), newColor); setNewName(''); }
-            }}
-          />
-          <button
-            onClick={() => { if (newName.trim()) { onAdd(newName.trim(), newColor); setNewName(''); } }}
-            disabled={!newName.trim()}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-40"
-          >
-            <Check size={13} /> Add
-          </button>
-        </div>
-      </div>
-
-      {/* Color picker — fixed position to avoid overflow clipping */}
+      {/* Color picker popover — unchanged, still fixed-positioned */}
       {colorPickerPos && (
         <>
-          <div className="fixed inset-0 z-[199]" onClick={() => setColorPickerPos(null)} />
           <div
-            className="fixed bg-white border border-gray-200 rounded-lg p-2 shadow-xl flex flex-wrap gap-1 w-[132px] z-[200]"
-            style={{ top: colorPickerPos.top, left: colorPickerPos.left }}
-            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 190,
+            }}
+            onClick={() => setColorPickerPos(null)}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: colorPickerPos.x,
+              top: colorPickerPos.y,
+              background: 'var(--color-bg-primary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-md)',
+              padding: 'var(--space-sm)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px',
+              width: '132px',
+              zIndex: 200,
+            }}
           >
-            {PRESET_COLORS.map(c => {
-              const currentColor = colorPickerPos.id === '__new' ? newColor : (pickerCat?.color ?? '#888780');
-              const isActive = currentColor === c;
+            {PRESET_COLORS.map(color => {
+              const isActive = colorPickerPos.targetId
+                ? categories.find(c => c.id === colorPickerPos.targetId)?.color === color
+                : newColor === color;
               return (
                 <button
-                  key={c}
-                  onClick={async () => {
-                    if (colorPickerPos.id === '__new') {
-                      setNewColor(c);
-                      setColorPickerPos(null);
+                  key={color}
+                  onClick={() => {
+                    if (colorPickerPos.targetId) {
+                      onRecolor(colorPickerPos.targetId, color);
                     } else {
-                      const id = colorPickerPos.id;
-                      setColorPickerPos(null);
-                      await onRecolor(id, c);
+                      setNewColor(color);
                     }
+                    setColorPickerPos(null);
                   }}
-                  className={`w-6 h-6 rounded border-2 transition-transform hover:scale-110 ${isActive ? 'border-gray-700' : 'border-transparent'}`}
-                  style={{ backgroundColor: c }}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: isActive
+                      ? '2px solid var(--color-text-primary)'
+                      : '2px solid transparent',
+                    background: color,
+                    cursor: 'pointer',
+                    transition: 'transform 100ms ease-out',
+                    padding: 0,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 />
               );
             })}
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -650,11 +778,6 @@ export function ExerciseLibrary() {
     const cat = ex.category as unknown as string | null;
     return !cat || cat === 'Unspecified' || !knownCategoryNames.has(cat);
   });
-
-  const exerciseCategoryCount = new Map<string, number>();
-  for (const cat of categories) {
-    exerciseCategoryCount.set(cat.id, exercises.filter(ex => (ex.category as unknown as string) === cat.name).length);
-  }
 
   const selectedExercise = exercises.find(e => e.id === selectedExerciseId) ?? null;
   const selectedCategory = selectedExercise
@@ -775,14 +898,13 @@ export function ExerciseLibrary() {
     }
     return (
       <div>
-        {exList.map((ex, idx) => (
+        {exList.map(ex => (
           <ExerciseListRow
             key={ex.id}
             exercise={ex}
             isSelected={selectedExerciseId === ex.id}
             athletePR={athletePRMap.get(ex.id) ?? null}
             onClick={() => setSelectedExerciseId(ex.id === selectedExerciseId ? null : ex.id)}
-            rowIndex={idx}
           />
         ))}
       </div>
@@ -792,7 +914,7 @@ export function ExerciseLibrary() {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <StandardPage>
+    <StandardPage hasSidePanel={selectedExerciseId !== null}>
       {/* Toolbar */}
       <div
         style={{
@@ -1022,7 +1144,7 @@ export function ExerciseLibrary() {
       {showCategoryModal && (
         <CategoryManagerModal
           categories={categories}
-          exerciseCounts={exerciseCategoryCount}
+          exercises={exercises}
           onRename={handleCatRename}
           onRecolor={handleCatRecolor}
           onReorder={handleCatReorder}
