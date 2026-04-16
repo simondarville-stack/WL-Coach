@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, ExternalLink, Edit2, Archive, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
-import { estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
+import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
 import type { Exercise, Athlete } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { Button, ColorDot, Textarea } from '../ui';
@@ -82,16 +82,47 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ── xRM Table Modal ────────────────────────────────────────────────
 
-function XrmTableModal({ oneRM, exerciseName, onClose }: {
-  oneRM: number;
+function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
+  oneRM: number | null;
+  prHistory: Map<number, number>;
   exerciseName: string;
   onClose: () => void;
 }) {
+  // Merge athlete_prs 1RM into the history map (history wins if it has a 1RM entry)
+  const actualPRs = new Map(prHistory);
+  if (oneRM !== null && !actualPRs.has(1)) {
+    actualPRs.set(1, oneRM);
+  }
+
+  // Reference 1RM for percentage bars
+  let ref1RM = 1;
+  if (actualPRs.has(1)) {
+    ref1RM = actualPRs.get(1)!;
+  } else if (actualPRs.size > 0) {
+    ref1RM = Math.max(...[...actualPRs.entries()].map(([rep, kg]) => estimate1RM(kg, rep)));
+  }
+
+  const actualRepsSorted = [...actualPRs.keys()].sort((a, b) => a - b);
+
   const rows = Array.from({ length: 10 }, (_, i) => {
     const reps = i + 1;
-    const weight = reps === 1 ? oneRM : roundToHalf(estimateWeightAtReps(oneRM, reps));
-    const pct = Math.round((weight / oneRM) * 100);
-    return { reps, weight, pct };
+
+    if (actualPRs.has(reps)) {
+      const weight = actualPRs.get(reps)!;
+      const pct = Math.round((weight / ref1RM) * 100);
+      return { reps, weight, pct, isActual: true };
+    }
+
+    // Theoretical: use nearest actual PR(s) as reference
+    const minDist = Math.min(...actualRepsSorted.map(r => Math.abs(r - reps)));
+    const nearest = actualRepsSorted.filter(r => Math.abs(r - reps) === minDist);
+    const estimates = nearest.map(refRep => {
+      const implied1RM = estimate1RM(actualPRs.get(refRep)!, refRep);
+      return estimateWeightAtReps(implied1RM, reps);
+    });
+    const weight = roundToHalf(estimates.reduce((a, b) => a + b, 0) / estimates.length);
+    const pct = Math.round((weight / ref1RM) * 100);
+    return { reps, weight, pct, isActual: false };
   });
 
   return (
@@ -131,7 +162,7 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
               xRM Table
             </div>
             <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-              {exerciseName} · 1RM = {oneRM} kg
+              {exerciseName} · 1RM ≈ {Math.round(ref1RM)} kg
             </div>
           </div>
           <button
@@ -153,7 +184,7 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
 
         {/* Rows */}
         <div style={{ padding: '8px 16px' }}>
-          {rows.map(({ reps, weight, pct }, i) => (
+          {rows.map(({ reps, weight, pct, isActual }, i) => (
             <div
               key={reps}
               style={{
@@ -167,8 +198,9 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
               <div style={{
                 width: 32,
                 fontSize: 'var(--text-caption)',
-                fontWeight: 500,
-                color: 'var(--color-text-tertiary)',
+                fontWeight: isActual ? 700 : 400,
+                fontStyle: isActual ? 'normal' : 'italic',
+                color: isActual ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                 fontFamily: 'var(--font-mono)',
               }}>
                 {reps}RM
@@ -178,13 +210,15 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
                   height: 6,
                   borderRadius: 3,
                   width: `${pct}%`,
-                  background: reps === 1 ? 'var(--color-accent)' : 'var(--color-info-border)',
+                  background: isActual ? 'var(--color-accent)' : 'var(--color-info-border)',
+                  opacity: isActual ? 1 : 0.5,
                 }} />
               </div>
               <div style={{
                 fontSize: 'var(--text-caption)',
-                fontWeight: 600,
-                color: 'var(--color-text-primary)',
+                fontWeight: isActual ? 700 : 400,
+                fontStyle: isActual ? 'normal' : 'italic',
+                color: isActual ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                 width: 56,
                 textAlign: 'right',
                 fontFamily: 'var(--font-mono)',
@@ -281,6 +315,7 @@ export function ExerciseDetailPanel({
   allExercises,
 }: ExerciseDetailPanelProps) {
   const [athletePRs, setAthletePRs] = useState<AthletePRRow[]>([]);
+  const [prHistory, setPrHistory] = useState<Map<number, number>>(new Map());
   const [usageWeeks, setUsageWeeks] = useState<UsageWeek[]>([]);
   const [athleteCount, setAthleteCount] = useState<number>(0);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -310,17 +345,31 @@ export function ExerciseDetailPanel({
 
   async function loadPRs() {
     if (athlete) {
-      const { data } = await supabase
-        .from('athlete_prs')
-        .select('*')
-        .eq('athlete_id', athlete.id)
-        .eq('exercise_id', exercise.id)
-        .limit(1);
+      const [{ data }, { data: histData }] = await Promise.all([
+        supabase
+          .from('athlete_prs')
+          .select('*')
+          .eq('athlete_id', athlete.id)
+          .eq('exercise_id', exercise.id)
+          .limit(1),
+        supabase
+          .from('athlete_pr_history')
+          .select('rep_count, value_kg')
+          .eq('athlete_id', athlete.id)
+          .eq('exercise_id', exercise.id),
+      ]);
       setAthletePRs((data || []).map(r => ({
         ...r,
         athleteName: athlete.name,
         athleteInitials: initials(athlete.name),
       })));
+      // Build best-per-rep map from history
+      const bestByRep = new Map<number, number>();
+      for (const r of (histData || []) as { rep_count: number; value_kg: number }[]) {
+        const prev = bestByRep.get(r.rep_count) ?? 0;
+        if (r.value_kg > prev) bestByRep.set(r.rep_count, r.value_kg);
+      }
+      setPrHistory(bestByRep);
     } else {
       const { data } = await supabase
         .from('athlete_prs')
@@ -371,7 +420,7 @@ export function ExerciseDetailPanel({
 
   const currentPR = athlete ? athletePRs[0] : null;
   const maxPR = Math.max(...athletePRs.map(r => r.pr_value_kg ?? 0), 1);
-  const hasPR = currentPR?.pr_value_kg != null;
+  const hasPR = currentPR?.pr_value_kg != null || prHistory.size > 0;
 
   const catName = exercise.category as unknown as string;
   const unitLabel = UNIT_DISPLAY[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
@@ -801,9 +850,10 @@ export function ExerciseDetailPanel({
       </div>
 
       {/* xRM Modal */}
-      {showXrmModal && currentPR?.pr_value_kg != null && (
+      {showXrmModal && (
         <XrmTableModal
-          oneRM={currentPR.pr_value_kg}
+          oneRM={currentPR?.pr_value_kg ?? null}
+          prHistory={prHistory}
           exerciseName={exercise.name}
           onClose={() => setShowXrmModal(false)}
         />
