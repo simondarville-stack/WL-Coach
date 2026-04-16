@@ -358,3 +358,7 @@ samp {
   border-color: var(--color-accent);
   box-shadow: var(--focus-ring);
 }
+
+.planner-week-notes::placeholder {
+  color: var(--color-text-tertiary);
+}

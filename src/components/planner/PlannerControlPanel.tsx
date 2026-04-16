@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
   ChevronDown, ChevronRight as ChevronRightSmall,
-  Users, X, User as UserIcon,
+  Users, User as UserIcon,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -16,6 +16,7 @@ import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { Button, Modal } from '../ui';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -31,23 +32,148 @@ function abbreviateExercise(name: string): string {
   return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3);
 }
 
-function weekTypeBadgeStyle(weekType: string): string {
+// Maps macro week type to token-based colors for the badge pill.
+function weekTypeBadgeColor(weekType: string): { bg: string; text: string } {
   switch (weekType) {
-    case 'High':        return 'bg-orange-100 text-orange-700 border-orange-200';
-    case 'Medium':      return 'bg-blue-100 text-blue-700 border-blue-200';
-    case 'Low':         return 'bg-green-100 text-green-700 border-green-200';
-    case 'Deload':      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-    case 'Competition': return 'bg-red-100 text-red-700 border-red-200';
-    case 'Taper':       return 'bg-amber-100 text-amber-700 border-amber-200';
-    case 'Testing':     return 'bg-purple-100 text-purple-700 border-purple-200';
-    default:            return 'bg-gray-100 text-gray-600 border-gray-200';
+    case 'High':        return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
+    case 'Medium':      return { bg: 'var(--color-blue-50)',   text: 'var(--color-blue-800)' };
+    case 'Low':         return { bg: 'var(--color-green-50)',  text: 'var(--color-green-800)' };
+    case 'Deload':      return { bg: 'var(--color-teal-50)',   text: 'var(--color-teal-800)' };
+    case 'Competition': return { bg: 'var(--color-red-50)',    text: 'var(--color-red-800)' };
+    case 'Taper':       return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
+    case 'Testing':     return { bg: 'var(--color-purple-50)', text: 'var(--color-purple-800)' };
+    default:            return { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' };
   }
 }
 
-function complianceColor(pct: number): string {
-  if (pct >= 90) return 'text-green-600';
-  if (pct >= 70) return 'text-amber-500';
-  return 'text-red-500';
+// Compliance color (for the percentage after the reps count)
+function complianceColorToken(pct: number): string {
+  if (pct >= 90) return 'var(--color-success-text)';
+  if (pct >= 70) return 'var(--color-warning-text)';
+  return 'var(--color-danger-text)';
+}
+
+// ─── local UI helpers ────────────────────────────────────────────────────────
+
+interface IconButtonProps {
+  children: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  disabled?: boolean;
+  highlight?: 'success' | 'info';
+}
+
+function IconButton({ children, onClick, title, disabled, highlight }: IconButtonProps) {
+  const [hovered, setHovered] = useState(false);
+
+  const bg = highlight === 'success'
+    ? 'var(--color-success-bg)'
+    : highlight === 'info'
+    ? 'var(--color-info-bg)'
+    : hovered && !disabled
+    ? 'var(--color-bg-secondary)'
+    : 'transparent';
+
+  const color = highlight === 'success'
+    ? 'var(--color-success-text)'
+    : highlight === 'info'
+    ? 'var(--color-info-text)'
+    : disabled
+    ? 'var(--color-text-tertiary)'
+    : hovered
+    ? 'var(--color-text-primary)'
+    : 'var(--color-text-secondary)';
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: 'var(--space-sm)',
+        border: 'none',
+        background: bg,
+        color,
+        borderRadius: 'var(--radius-md)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all 100ms ease-out',
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface MetricItemProps {
+  label: string;
+  value: React.ReactNode;
+}
+
+function MetricItem({ label, value }: MetricItemProps) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '6px' }}>
+      <span
+        style={{
+          fontSize: 'var(--text-caption)',
+          color: 'var(--color-text-tertiary)',
+          fontWeight: 500,
+          letterSpacing: '0.02em',
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums',
+          fontWeight: 500,
+          color: 'var(--color-text-primary)',
+        }}
+      >
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function MetricSeparator() {
+  return (
+    <span
+      style={{
+        color: 'var(--color-border-tertiary)',
+        margin: '0 var(--space-sm)',
+        userSelect: 'none',
+      }}
+    >
+      ·
+    </span>
+  );
+}
+
+function CategoryMetric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
+      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-caption)' }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontVariantNumeric: 'tabular-nums',
+          fontWeight: 500,
+          color: 'var(--color-text-primary)',
+        }}
+      >
+        {value}
+      </span>
+    </span>
+  );
 }
 
 // ─── types ───────────────────────────────────────────────────────────────────
@@ -55,12 +181,6 @@ function complianceColor(pct: number): string {
 interface CompetitionPR {
   exerciseName: string;
   value: number;
-}
-
-interface AdjacentWeek {
-  weekNumber: number;
-  weekType: string;
-  totalRepsTarget: number | null;
 }
 
 export interface PlannerControlPanelProps {
@@ -212,25 +332,70 @@ export function PlannerControlPanel({
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="bg-white border-b border-gray-200 flex-shrink-0">
+    <div
+      style={{
+        background: 'var(--color-bg-primary)',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+      }}
+    >
 
-      {/* ── ROW 1: Athlete + Week nav + Tools ──────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+      {/* ── ROW 1: Athlete + Week nav + Tools ─────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-md)',
+          padding: 'var(--space-md) var(--space-lg)',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+        }}
+      >
 
-        {/* LEFT: avatar + name — double-click to view athlete profile */}
+        {/* LEFT: avatar + name */}
         <div
-          className="flex items-center gap-3 flex-shrink-0 min-w-0"
-          style={{ width: 200 }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-md)',
+            flexShrink: 0,
+            minWidth: 0,
+            width: 200,
+            cursor: selectedAthlete ? 'pointer' : 'default',
+          }}
           onDoubleClick={() => selectedAthlete && setShowAthleteProfile(true)}
           title={selectedAthlete ? 'Double-click to view athlete profile' : undefined}
         >
           {selectedGroup ? (
             <>
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <Users size={18} className="text-blue-600" />
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'var(--color-accent-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Users size={18} style={{ color: 'var(--color-accent)' }} />
               </div>
-              <div className="min-w-0">
-                <p className="text-base font-semibold text-gray-900 truncate leading-tight">{selectedGroup.name}</p>
+              <div style={{ minWidth: 0 }}>
+                <p
+                  style={{
+                    fontSize: 'var(--text-section)',
+                    fontWeight: 500,
+                    color: 'var(--color-text-primary)',
+                    lineHeight: 1.2,
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {selectedGroup.name}
+                </p>
               </div>
             </>
           ) : selectedAthlete ? (
@@ -239,181 +404,298 @@ export function PlannerControlPanel({
                 <img
                   src={selectedAthlete.photo_url}
                   alt={selectedAthlete.name}
-                  className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-gray-200"
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    flexShrink: 0,
+                    border: '0.5px solid var(--color-border-tertiary)',
+                  }}
                   onError={e => { e.currentTarget.style.display = 'none'; }}
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-semibold text-blue-700 flex-shrink-0">
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    background: 'var(--color-accent-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 'var(--text-label)',
+                    fontWeight: 500,
+                    color: 'var(--color-accent)',
+                    flexShrink: 0,
+                  }}
+                >
                   {athleteInitials}
                 </div>
               )}
-              <div className="min-w-0">
-                <p className="text-base font-semibold text-gray-900 truncate leading-tight">{selectedAthlete.name}</p>
-                {subLabel && <p className="text-xs text-gray-400 leading-tight truncate mt-0.5">{subLabel}</p>}
+              <div style={{ minWidth: 0 }}>
+                <p
+                  style={{
+                    fontSize: 'var(--text-section)',
+                    fontWeight: 500,
+                    color: 'var(--color-text-primary)',
+                    lineHeight: 1.2,
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {selectedAthlete.name}
+                </p>
+                {subLabel && (
+                  <p
+                    style={{
+                      fontSize: 'var(--text-caption)',
+                      color: 'var(--color-text-tertiary)',
+                      lineHeight: 1.2,
+                      margin: '2px 0 0',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {subLabel}
+                  </p>
+                )}
               </div>
             </>
           ) : null}
         </div>
 
         {/* CENTER: week navigation */}
-        <div className="flex-1 flex items-center justify-center gap-2">
-          <button
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 'var(--space-sm)',
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<ChevronLeft size={14} />}
             onClick={onPrevWeek}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <ChevronLeft size={15} />
-            <span>Prev</span>
-          </button>
+            Prev
+          </Button>
 
-          <div className="flex flex-col items-center px-3">
-            <span className="text-base font-semibold text-gray-900 leading-tight select-none">
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '0 var(--space-md)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 'var(--text-section)',
+                fontWeight: 500,
+                color: 'var(--color-text-primary)',
+                lineHeight: 1.2,
+                fontFamily: 'var(--font-mono)',
+                fontVariantNumeric: 'tabular-nums',
+                userSelect: 'none',
+              }}
+            >
               {formatDateRange(selectedDate, 7)}
             </span>
             {macroContext && (
-              <span className="text-xs text-gray-400 leading-none mt-0.5">
+              <span
+                style={{
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-tertiary)',
+                  lineHeight: 1,
+                  marginTop: '2px',
+                }}
+              >
                 Week {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? ` of ${macroContext.totalWeeks}` : ''}
               </span>
             )}
           </div>
 
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<ChevronRight size={14} />}
+            iconPosition="right"
             onClick={onNextWeek}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <span>Next</span>
-            <ChevronRight size={15} />
-          </button>
+            Next
+          </Button>
         </div>
 
         {/* RIGHT: tool buttons */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button
-            onClick={onDayConfig}
-            title="Day settings"
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-          >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            flexShrink: 0,
+          }}
+        >
+          <IconButton title="Day settings" onClick={onDayConfig}>
             <Settings2 size={16} />
-          </button>
+          </IconButton>
+
           {canCopyPaste && (
             <>
-              <button
-                onClick={() => { onCopy(); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1200); }}
+              <IconButton
                 title="Copy week"
-                className={`p-2 rounded-lg transition-colors ${copyFlash ? 'bg-green-50 text-green-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}
+                onClick={() => { onCopy(); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1200); }}
+                highlight={copyFlash ? 'success' : undefined}
               >
                 <Copy size={16} />
-              </button>
-              <button
+              </IconButton>
+              <IconButton
+                title="Paste week"
                 onClick={onPaste}
                 disabled={!copiedWeekStart}
-                title="Paste week"
-                className={`p-2 rounded-lg transition-colors ${
-                  copiedWeekStart ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-900' : 'text-gray-300 cursor-not-allowed'
-                }`}
               >
                 <ClipboardPaste size={16} />
-              </button>
+              </IconButton>
             </>
           )}
-          <button
-            onClick={onPrint}
-            title="Print week"
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-          >
+
+          <IconButton title="Print week" onClick={onPrint}>
             <Printer size={16} />
-          </button>
-          <button
-            onClick={onToggleLoadDistribution}
+          </IconButton>
+
+          <IconButton
             title="Load distribution chart"
-            className={`p-2 rounded-lg transition-colors ${
-              showLoadDistribution ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
-            }`}
+            onClick={onToggleLoadDistribution}
+            highlight={showLoadDistribution ? 'info' : undefined}
           >
             <BarChart2 size={16} />
-          </button>
+          </IconButton>
+
           {onResolvePercentages && selectedAthlete && athletePRs.length > 0 && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onResolvePercentages}
               title="Convert percentage prescriptions to kg using athlete PRs"
-              className="px-2 py-1 text-xs rounded-lg text-blue-600 hover:bg-blue-50 transition-colors font-medium"
             >
               → kg
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
-      {/* ── ROW 2: Metrics strip ─────────────────────────────────────────────── */}
-      <div className="px-4 py-2 flex items-center gap-0 text-sm">
-
+      {/* ── ROW 2: Metrics strip ───────────────────────────────────────────── */}
+      <div
+        style={{
+          padding: 'var(--space-sm) var(--space-lg)',
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 'var(--space-xs)',
+          fontSize: 'var(--text-label)',
+        }}
+      >
         {visibleMetrics.includes('sets') && (
-          <>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">S</span>
-            <span className="font-semibold text-gray-900">{metrics.sets}</span>
-          </>
+          <MetricItem label="S" value={metrics.sets} />
         )}
 
         {visibleMetrics.includes('reps') && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">R</span>
-            <span className="font-semibold text-gray-900">{metrics.reps}</span>
-            {macroWeekTarget != null && (
-              <span className="text-gray-400 ml-1 text-sm">/ {macroWeekTarget}</span>
-            )}
-            {repsProgress !== null && (
-              <span className={`ml-1.5 font-semibold text-sm ${complianceColor(repsProgress)}`}>({repsProgress}%)</span>
-            )}
+            {visibleMetrics.includes('sets') && <MetricSeparator />}
+            <MetricItem
+              label="R"
+              value={
+                <>
+                  <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.reps}</span>
+                  {macroWeekTarget != null && (
+                    <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>/ {macroWeekTarget}</span>
+                  )}
+                  {repsProgress !== null && (
+                    <span
+                      style={{
+                        marginLeft: '6px',
+                        fontWeight: 500,
+                        color: complianceColorToken(repsProgress),
+                      }}
+                    >
+                      ({repsProgress}%)
+                    </span>
+                  )}
+                </>
+              }
+            />
           </>
         )}
 
         {visibleMetrics.includes('max') && metrics.max > 0 && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Max</span>
-            <span className="font-semibold text-gray-900">{metrics.max}</span>
+            <MetricSeparator />
+            <MetricItem label="Max" value={metrics.max} />
           </>
         )}
 
         {visibleMetrics.includes('avg') && metrics.avg > 0 && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Avg</span>
-            <span className="font-semibold text-gray-900">{metrics.avg}</span>
+            <MetricSeparator />
+            <MetricItem label="Avg" value={metrics.avg} />
           </>
         )}
 
         {visibleMetrics.includes('tonnage') && metrics.tonnage > 0 && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">T</span>
-            <span className="font-semibold text-gray-900">{metrics.tonnage.toLocaleString()}</span>
-            <span className="text-gray-400 ml-1">kg</span>
+            <MetricSeparator />
+            <MetricItem
+              label="T"
+              value={
+                <>
+                  <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.tonnage.toLocaleString()}</span>
+                  <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>kg</span>
+                </>
+              }
+            />
           </>
         )}
 
         {visibleMetrics.includes('k') && metrics.k != null && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">K</span>
-            <span className="font-semibold text-gray-900">{(metrics.k * 100).toFixed(0)}%</span>
+            <MetricSeparator />
+            <MetricItem label="K" value={`${(metrics.k * 100).toFixed(0)}%`} />
           </>
         )}
 
         {showStress && totalStress > 0 && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
-            <span className="text-xs uppercase text-gray-400 mr-1 font-medium">Stress</span>
-            <span className="font-semibold text-gray-900">{totalStress}</span>
+            <MetricSeparator />
+            <MetricItem label="Stress" value={totalStress} />
           </>
         )}
 
         {categories.length > 0 && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
+            <MetricSeparator />
             <button
               onClick={() => setShowCategories(v => !v)}
-              className="flex items-center gap-1 text-gray-400 hover:text-gray-700 transition-colors text-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                background: 'transparent',
+                border: 'none',
+                padding: '2px 4px',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                fontSize: 'var(--text-label)',
+                color: 'var(--color-text-tertiary)',
+                transition: 'color 100ms ease-out',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
             >
               {showCategories ? <ChevronDown size={12} /> : <ChevronRightSmall size={12} />}
               <span>Categories</span>
@@ -423,31 +705,98 @@ export function PlannerControlPanel({
 
         {macroContext && (
           <>
-            <span className="text-gray-300 mx-2.5">·</span>
+            <MetricSeparator />
             <button
               onClick={() => navigate('/macrocycles')}
-              className="text-sm text-gray-400 hover:text-gray-700 transition-colors truncate flex items-center gap-1.5"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'transparent',
+                border: 'none',
+                padding: '2px 4px',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                fontSize: 'var(--text-label)',
+                color: 'var(--color-text-tertiary)',
+                transition: 'color 100ms ease-out',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '100%',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
             >
-              {macroContext.macroName}
-              <span className={`inline-block font-medium px-1.5 py-0.5 rounded border text-[10px] ${weekTypeBadgeStyle(macroContext.weekType)}`}>
-                {macroContext.weekTypeText || macroContext.weekType}
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {macroContext.macroName}
               </span>
+              {(() => {
+                const { bg, text } = weekTypeBadgeColor(macroContext.weekType);
+                return (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '1px 6px',
+                      borderRadius: '999px',
+                      fontSize: 'var(--text-caption)',
+                      fontWeight: 500,
+                      background: bg,
+                      color: text,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {macroContext.weekTypeText || macroContext.weekType}
+                  </span>
+                );
+              })()}
             </button>
           </>
         )}
       </div>
 
-      {/* ── Categories strip (collapsible) ──────────────────────────────────── */}
+      {/* ── Categories strip (collapsible) ───────────────────────────────── */}
       {showCategories && categories.length > 0 && (
-        <div className="px-4 pb-2 flex flex-wrap gap-x-5 gap-y-1 border-t border-gray-50 pt-2">
+        <div
+          style={{
+            padding: 'var(--space-sm) var(--space-lg) var(--space-md)',
+            display: 'flex',
+            flexWrap: 'wrap',
+            columnGap: 'var(--space-xl)',
+            rowGap: '4px',
+            borderTop: '0.5px solid var(--color-border-tertiary)',
+          }}
+        >
           {categories.map(cat => (
-            <div key={cat.category} className="flex items-center gap-2.5 text-sm">
-              <span className="text-gray-500 truncate max-w-[120px]">{cat.category}</span>
-              <span className="text-gray-400">S <span className="text-gray-700 font-medium">{cat.sets}</span></span>
-              <span className="text-gray-400">R <span className="text-gray-700 font-medium">{cat.reps}</span></span>
-              {cat.tonnage > 0 && (
-                <span className="text-gray-400">T <span className="text-gray-700 font-medium">{cat.tonnage.toLocaleString()}</span></span>
-              )}
+            <div
+              key={cat.category}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-sm)',
+                fontSize: 'var(--text-label)',
+              }}
+            >
+              <span
+                style={{
+                  color: 'var(--color-text-secondary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: '120px',
+                }}
+              >
+                {cat.category}
+              </span>
+              <CategoryMetric label="S" value={cat.sets} />
+              <CategoryMetric label="R" value={cat.reps} />
+              {cat.tonnage > 0 && <CategoryMetric label="T" value={cat.tonnage.toLocaleString()} />}
             </div>
           ))}
         </div>
@@ -466,21 +815,52 @@ export function PlannerControlPanel({
           ? Math.round(avgRest.reduce((s, r) => s + r.hoursFromPrevious!, 0) / avgRest.length)
           : null;
         return (
-          <div className="px-4 py-1.5 border-t border-gray-100 flex items-center gap-2 text-[10px] text-gray-400 flex-wrap">
+          <div
+            style={{
+              padding: '6px var(--space-lg)',
+              borderTop: '0.5px solid var(--color-border-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-sm)',
+              flexWrap: 'wrap',
+              fontSize: 'var(--text-caption)',
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
             {slots.map(s => {
               const e = daySchedule[s];
               return (
-                <span key={s} className="text-gray-600 font-medium">
+                <span
+                  key={s}
+                  style={{
+                    color: 'var(--color-text-secondary)',
+                    fontWeight: 500,
+                    fontFamily: 'var(--font-mono)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
                   {WEEKDAY_SHORT[e.weekday]}{e.time ? ` ${e.time}` : ''}
                 </span>
               );
             }).reduce((acc: React.ReactNode[], el, i) => {
-              if (i > 0) acc.push(<span key={`dot-${i}`} className="text-gray-200">·</span>);
+              if (i > 0) acc.push(
+                <span
+                  key={`dot-${i}`}
+                  style={{ color: 'var(--color-border-tertiary)', userSelect: 'none' }}
+                >
+                  ·
+                </span>
+              );
               acc.push(el);
               return acc;
             }, [])}
             {avgRestHours !== null && (
-              <span className="ml-auto text-gray-400">{avgRestHours}h avg rest</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--color-text-tertiary)' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
+                  {avgRestHours}h
+                </span>
+                <span style={{ marginLeft: '4px' }}>avg rest</span>
+              </span>
             )}
           </div>
         );
@@ -489,10 +869,15 @@ export function PlannerControlPanel({
       {/* ── MACRO phase + week timeline ──────────────────────────────────────── */}
       {macroContext && totalWeeks > 0 && (
         <div
-          className="flex cursor-pointer overflow-hidden"
-          style={{ height: 32 }}
           onClick={() => navigate('/macrocycles')}
           title="Open macro cycles"
+          style={{
+            display: 'flex',
+            cursor: 'pointer',
+            overflow: 'hidden',
+            height: '28px',
+            borderTop: '0.5px solid var(--color-border-tertiary)',
+          }}
         >
           {Array.from({ length: totalWeeks }, (_, i) => {
             const weekNum = i + 1;
@@ -500,7 +885,6 @@ export function PlannerControlPanel({
             const baseColor = phase?.color || macroContext.phaseColor || '#93C5FD';
             const isCurrentWeek = weekNum === macroContext.weekNumber;
 
-            // Show phase label on the first week of each phase (if phase is wide enough)
             const isFirstOfPhase = phase ? weekNum === phase.start_week_number : false;
             const phaseDuration = phase ? phase.end_week_number - phase.start_week_number + 1 : 0;
             const showPhaseLabel = isFirstOfPhase && phaseDuration >= Math.ceil(totalWeeks * 0.12);
@@ -513,19 +897,43 @@ export function PlannerControlPanel({
                   width: `${100 / totalWeeks}%`,
                   backgroundColor: baseColor,
                   borderRight: i < totalWeeks - 1 ? '1px solid rgba(255,255,255,0.3)' : undefined,
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
                 title={`Week ${weekNum}${phase ? ` · ${phase.name}` : ''}`}
               >
                 {/* Current-week highlight overlay */}
                 {isCurrentWeek && (
-                  <div className="absolute inset-0" style={{ backgroundColor: 'rgba(255,255,255,0.28)' }} />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundColor: 'rgba(255,255,255,0.28)',
+                    }}
+                  />
                 )}
 
-                {/* Phase name label (positioned at start of phase, spanning full phase) */}
+                {/* Phase name label */}
                 {showPhaseLabel && (
                   <span
-                    className="absolute left-1 top-0.5 text-[9px] font-semibold text-white/90 leading-none truncate pointer-events-none z-10"
-                    style={{ whiteSpace: 'nowrap' }}
+                    style={{
+                      position: 'absolute',
+                      left: '4px',
+                      top: '3px',
+                      fontSize: 'var(--text-caption)',
+                      fontWeight: 500,
+                      color: 'rgba(255, 255, 255, 0.9)',
+                      lineHeight: 1,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      pointerEvents: 'none',
+                      zIndex: 10,
+                      maxWidth: 'calc(100% - 8px)',
+                    }}
                   >
                     {phase!.name}
                   </span>
@@ -533,16 +941,33 @@ export function PlannerControlPanel({
 
                 {/* Week number */}
                 <span
-                  className={`text-[11px] leading-none z-10 relative select-none ${
-                    isCurrentWeek ? 'font-bold text-white drop-shadow' : 'font-semibold text-white/85'
-                  }`}
+                  style={{
+                    fontSize: 'var(--text-caption)',
+                    fontFamily: 'var(--font-mono)',
+                    fontVariantNumeric: 'tabular-nums',
+                    lineHeight: 1,
+                    zIndex: 10,
+                    position: 'relative',
+                    userSelect: 'none',
+                    fontWeight: 500,
+                    color: isCurrentWeek ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.85)',
+                  }}
                 >
                   {weekNum}
                 </span>
 
                 {/* Current-week bottom accent bar */}
                 {isCurrentWeek && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/60" />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: '2px',
+                      background: 'rgba(255, 255, 255, 0.75)',
+                    }}
+                  />
                 )}
               </div>
             );
@@ -550,8 +975,14 @@ export function PlannerControlPanel({
         </div>
       )}
 
-      {/* ── WEEK NOTES: between bar and cards ───────────────────────────────── */}
-      <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50/40">
+      {/* ── WEEK NOTES ───────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          padding: '10px var(--space-lg)',
+          borderTop: '0.5px solid var(--color-border-tertiary)',
+          background: 'var(--color-bg-secondary)',
+        }}
+      >
         <textarea
           value={localDesc}
           onChange={e => {
@@ -562,104 +993,217 @@ export function PlannerControlPanel({
           onBlur={e => { void onSaveWeekDescription(e.target.value); }}
           placeholder="Week brief — tell the athlete what to expect this week…"
           rows={1}
-          className="w-full text-sm text-gray-700 placeholder-gray-300 bg-transparent border-0 focus:outline-none leading-relaxed resize-none overflow-hidden"
-          style={{ minHeight: '1.5rem' }}
+          className="planner-week-notes"
+          style={{
+            width: '100%',
+            fontSize: 'var(--text-body)',
+            color: 'var(--color-text-primary)',
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            resize: 'none',
+            overflow: 'hidden',
+            lineHeight: 1.55,
+            minHeight: '1.5rem',
+            fontFamily: 'var(--font-sans)',
+          }}
         />
       </div>
 
       {/* ── Athlete profile dialog ───────────────────────────────────────────── */}
       {showAthleteProfile && selectedAthlete && (
-        <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in"
-          onClick={() => setShowAthleteProfile(false)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-sm animate-dialog-in"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between p-5 pb-4">
-              <div className="flex items-center gap-4">
-                {selectedAthlete.photo_url ? (
-                  <img
-                    src={selectedAthlete.photo_url}
-                    alt={selectedAthlete.name}
-                    className="w-14 h-14 rounded-full object-cover border border-gray-200 flex-shrink-0"
-                    onError={e => { e.currentTarget.style.display = 'none'; }}
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <UserIcon size={22} className="text-blue-600" />
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-base font-semibold text-gray-900 leading-tight">{selectedAthlete.name}</h2>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                    {athleteAge !== null && (
-                      <span className="text-xs text-gray-500">{athleteAge} y/o</span>
-                    )}
-                    {selectedAthlete.weight_class && (
-                      <span className="text-xs text-gray-500">-{selectedAthlete.weight_class} kg</span>
-                    )}
-                    {selectedAthlete.bodyweight && (
-                      <span className="text-xs text-gray-500">{selectedAthlete.bodyweight} kg</span>
-                    )}
-                    {selectedAthlete.club && (
-                      <span className="text-xs text-gray-400">{selectedAthlete.club}</span>
-                    )}
-                  </div>
+        <Modal
+          isOpen={true}
+          onClose={() => setShowAthleteProfile(false)}
+          size="sm"
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+              {selectedAthlete.photo_url ? (
+                <img
+                  src={selectedAthlete.photo_url}
+                  alt={selectedAthlete.name}
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '0.5px solid var(--color-border-tertiary)',
+                  }}
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    background: 'var(--color-accent-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <UserIcon size={18} style={{ color: 'var(--color-accent)' }} />
                 </div>
-              </div>
-              <button
-                onClick={() => setShowAthleteProfile(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Competition PRs */}
-            {competitionPRs.length > 0 && (
-              <div className="px-5 pb-4 border-t border-gray-100 pt-4">
-                <div className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-2">Competition lifts</div>
-                <div className="flex flex-wrap gap-3">
-                  {competitionPRs.map(pr => (
-                    <div key={pr.exerciseName} className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
-                      <div className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">{pr.exerciseName}</div>
-                      <div className="text-lg font-semibold text-gray-900 mt-0.5">{pr.value} <span className="text-sm font-normal text-gray-400">kg</span></div>
-                    </div>
-                  ))}
-                  {competitionPRs.length >= 2 && (
-                    <div className="bg-blue-50 rounded-lg px-3 py-2 border border-blue-100">
-                      <div className="text-[10px] text-blue-400 uppercase tracking-wide font-medium">Total</div>
-                      <div className="text-lg font-semibold text-blue-700 mt-0.5">
-                        {competitionPRs.reduce((s, p) => s + p.value, 0)} <span className="text-sm font-normal text-blue-400">kg</span>
-                      </div>
-                    </div>
+              )}
+              <div>
+                <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.2 }}>
+                  {selectedAthlete.name}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '0 var(--space-md)',
+                    marginTop: '4px',
+                    fontSize: 'var(--text-caption)',
+                    color: 'var(--color-text-tertiary)',
+                    fontFamily: 'var(--font-mono)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {athleteAge !== null && <span>{athleteAge} y/o</span>}
+                  {selectedAthlete.weight_class && <span>−{selectedAthlete.weight_class} kg</span>}
+                  {selectedAthlete.bodyweight && <span>{selectedAthlete.bodyweight} kg</span>}
+                  {selectedAthlete.club && (
+                    <span style={{ fontFamily: 'var(--font-sans)' }}>{selectedAthlete.club}</span>
                   )}
                 </div>
               </div>
-            )}
-
-            {/* Notes */}
-            {selectedAthlete.notes && (
-              <div className="px-5 pb-4 border-t border-gray-100 pt-4">
-                <div className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-1.5">Notes</div>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{selectedAthlete.notes}</p>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
-              <button
-                onClick={() => { setShowAthleteProfile(false); navigate('/athletes'); }}
-                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Open full profile →
-              </button>
             </div>
-          </div>
-        </div>
+          }
+          footer={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setShowAthleteProfile(false); navigate('/athletes'); }}
+            >
+              Open full profile →
+            </Button>
+          }
+        >
+          {/* Competition PRs */}
+          {competitionPRs.length > 0 && (
+            <div style={{ marginBottom: 'var(--space-lg)' }}>
+              <div
+                style={{
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-tertiary)',
+                  fontWeight: 500,
+                  marginBottom: 'var(--space-sm)',
+                }}
+              >
+                Competition lifts
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
+                {competitionPRs.map(pr => (
+                  <div
+                    key={pr.exerciseName}
+                    style={{
+                      background: 'var(--color-bg-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: 'var(--space-sm) var(--space-md)',
+                      border: '0.5px solid var(--color-border-tertiary)',
+                      minWidth: '80px',
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                      {pr.exerciseName}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 500,
+                        color: 'var(--color-text-primary)',
+                        fontFamily: 'var(--font-mono)',
+                        fontVariantNumeric: 'tabular-nums',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {pr.value}
+                      <span
+                        style={{
+                          fontSize: 'var(--text-label)',
+                          fontWeight: 400,
+                          color: 'var(--color-text-tertiary)',
+                          fontFamily: 'var(--font-sans)',
+                          marginLeft: '3px',
+                        }}
+                      >
+                        kg
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {competitionPRs.length >= 2 && (
+                  <div
+                    style={{
+                      background: 'var(--color-info-bg)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: 'var(--space-sm) var(--space-md)',
+                      border: '0.5px solid var(--color-info-border)',
+                      minWidth: '80px',
+                    }}
+                  >
+                    <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-info-text)' }}>
+                      Total
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '18px',
+                        fontWeight: 500,
+                        color: 'var(--color-info-text)',
+                        fontFamily: 'var(--font-mono)',
+                        fontVariantNumeric: 'tabular-nums',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {competitionPRs.reduce((s, p) => s + p.value, 0)}
+                      <span
+                        style={{
+                          fontSize: 'var(--text-label)',
+                          fontWeight: 400,
+                          opacity: 0.7,
+                          fontFamily: 'var(--font-sans)',
+                          marginLeft: '3px',
+                        }}
+                      >
+                        kg
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          {selectedAthlete.notes && (
+            <div>
+              <div
+                style={{
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-tertiary)',
+                  fontWeight: 500,
+                  marginBottom: '6px',
+                }}
+              >
+                Notes
+              </div>
+              <p
+                style={{
+                  fontSize: 'var(--text-body)',
+                  color: 'var(--color-text-secondary)',
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-line',
+                  margin: 0,
+                }}
+              >
+                {selectedAthlete.notes}
+              </p>
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   );
