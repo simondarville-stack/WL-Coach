@@ -14,6 +14,7 @@ export type { DataTableColumn } from './DataTable';
 export { Modal } from './Modal';
 export { SidePanel } from './SidePanel';
 export { Card } from './Card';
+export { StandardPage } from './StandardPage';
 
 // Existing primitives (don't remove)
 export { Spinner } from './Spinner';

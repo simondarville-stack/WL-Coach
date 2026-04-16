@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Search, Plus, Grid3X3, List, Upload,
   ChevronRight, Layers, Trash2, Check, X as XIcon, GripVertical,
@@ -12,6 +12,7 @@ import { ExerciseBulkImportModal } from '../ExerciseBulkImportModal';
 import { ExerciseDetailPanel } from './ExerciseDetailPanel';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
+import { StandardPage, Button, Input, Badge, ColorDot } from '../ui';
 
 // ── Color presets ─────────────────────────────────────────────────
 
@@ -42,25 +43,95 @@ function ExerciseCard({ exercise, isSelected, athletePR, onClick }: ExerciseCard
   return (
     <div
       onClick={onClick}
-      className={`border rounded-lg p-2.5 cursor-pointer transition-colors ${
-        isSelected
-          ? 'border-blue-400 bg-blue-50'
-          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-      }`}
+      style={{
+        border: isSelected
+          ? '0.5px solid var(--color-accent)'
+          : '0.5px solid var(--color-border-tertiary)',
+        background: isSelected ? 'var(--color-info-bg)' : 'var(--color-bg-primary)',
+        borderRadius: 'var(--radius-md)',
+        padding: '10px 12px',
+        cursor: 'pointer',
+        transition: 'all 100ms ease-out',
+      }}
+      onMouseEnter={e => {
+        if (!isSelected) {
+          e.currentTarget.style.borderColor = 'var(--color-border-secondary)';
+          e.currentTarget.style.background = 'var(--color-bg-secondary)';
+        }
+      }}
+      onMouseLeave={e => {
+        if (!isSelected) {
+          e.currentTarget.style.borderColor = 'var(--color-border-tertiary)';
+          e.currentTarget.style.background = 'var(--color-bg-primary)';
+        }
+      }}
     >
-      <div className="flex items-center gap-1.5 mb-1">
-        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: exercise.color }} />
-        <span className="font-mono text-[11px] font-medium text-gray-900 truncate flex-1">
+      {/* Top line: dot + code + COMP badge */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-xs)',
+          marginBottom: '4px',
+          minWidth: 0,
+        }}
+      >
+        <ColorDot color={exercise.color || 'var(--color-gray-400)'} size={6} />
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-label)',
+            fontWeight: 500,
+            color: 'var(--color-text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
           {exercise.exercise_code || exercise.name}
         </span>
         {exercise.is_competition_lift && (
-          <span className="text-[7px] font-medium bg-red-50 text-red-500 px-1 rounded ml-auto flex-shrink-0">COMP</span>
+          <Badge variant="danger">COMP</Badge>
         )}
       </div>
-      <div className="text-[10px] text-gray-500 mb-1.5 truncate">{exercise.name}</div>
+
+      {/* Exercise name (only shown if distinct from code) */}
+      {exercise.exercise_code && exercise.exercise_code !== exercise.name && (
+        <div
+          style={{
+            fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-secondary)',
+            marginBottom: athletePR?.pr_value_kg != null ? '6px' : 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {exercise.name}
+        </div>
+      )}
+
+      {/* PR line (only shown if athlete has PR) */}
       {athletePR?.pr_value_kg != null && (
-        <div className="text-[9px] text-gray-400">
-          <span className="font-mono font-semibold text-gray-700">{athletePR.pr_value_kg}</span> kg PR
+        <div
+          style={{
+            fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-tertiary)',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 500,
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {athletePR.pr_value_kg}
+          </span>
+          <span style={{ marginLeft: '3px' }}>kg PR</span>
         </div>
       )}
     </div>
@@ -87,48 +158,115 @@ interface ExerciseListRowProps {
 }
 
 function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }: ExerciseListRowProps) {
-  const catName = exercise.category as unknown as string;
   const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
-  const isEven = rowIndex % 2 === 0;
-  const bg = isSelected
-    ? 'bg-blue-50 border-l-2 border-l-blue-400'
-    : isEven ? 'bg-white' : 'bg-gray-50/70';
 
   return (
     <div
       onClick={onClick}
-      className={`flex items-center px-2 py-1.5 cursor-pointer transition-colors hover:bg-blue-50/40 ${bg}`}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '60px 56px 1fr 60px 80px 120px',
+        alignItems: 'center',
+        gap: 'var(--space-md)',
+        padding: '8px 16px',
+        background: isSelected
+          ? 'var(--color-info-bg)'
+          : (rowIndex % 2 === 0 ? 'transparent' : 'var(--color-bg-secondary)'),
+        borderLeft: isSelected
+          ? '2px solid var(--color-accent)'
+          : '2px solid transparent',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        cursor: 'pointer',
+        transition: 'background 100ms ease-out',
+        fontSize: 'var(--text-label)',
+      }}
+      onMouseEnter={e => {
+        if (!isSelected) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+      }}
+      onMouseLeave={e => {
+        if (!isSelected) {
+          e.currentTarget.style.background = rowIndex % 2 === 0
+            ? 'transparent'
+            : 'var(--color-bg-secondary)';
+        }
+      }}
     >
-      {/* Color dot */}
-      <span className="w-6 flex-shrink-0 flex justify-center">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: exercise.color }} />
-      </span>
-      {/* Code */}
-      <span className="w-12 flex-shrink-0 font-mono text-[11px] font-medium text-gray-600 truncate">
-        {exercise.exercise_code ?? ''}
-      </span>
-      {/* Name */}
-      <span className="flex-1 min-w-0 text-[12px] text-gray-800 font-medium truncate pr-3">
-        {exercise.name}
-      </span>
-      {/* Unit */}
-      <span className="w-10 flex-shrink-0 text-[10px] text-gray-400 text-center">
-        {unitLabel}
-      </span>
-      {/* Category */}
-      <span className="w-[90px] flex-shrink-0 text-[10px] text-gray-500 truncate pr-1">
-        {catName || '—'}
-      </span>
+      {/* Dot + code */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', minWidth: 0 }}>
+        <ColorDot color={exercise.color || 'var(--color-gray-400)'} size={6} />
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--text-label)',
+            color: 'var(--color-text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {exercise.exercise_code || '—'}
+        </span>
+      </div>
+
       {/* COMP badge */}
-      <span className="w-10 flex-shrink-0 flex justify-center">
-        {exercise.is_competition_lift && (
-          <span className="text-[7px] font-medium bg-red-50 text-red-500 px-1 py-px rounded border border-red-100">COMP</span>
+      <div>
+        {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
+      </div>
+
+      {/* Name */}
+      <div
+        style={{
+          color: 'var(--color-text-primary)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {exercise.name}
+      </div>
+
+      {/* Unit */}
+      <div
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 'var(--text-caption)',
+          color: 'var(--color-text-tertiary)',
+        }}
+      >
+        {unitLabel}
+      </div>
+
+      {/* PR (athlete) */}
+      <div
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 'var(--text-label)',
+          color: 'var(--color-text-primary)',
+          textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {athletePR?.pr_value_kg != null ? (
+          <>
+            <span style={{ fontWeight: 500 }}>{athletePR.pr_value_kg}</span>
+            <span
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontSize: 'var(--text-caption)',
+                color: 'var(--color-text-tertiary)',
+                marginLeft: '3px',
+              }}
+            >
+              kg
+            </span>
+          </>
+        ) : (
+          <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
         )}
-      </span>
-      {/* PR */}
-      <span className="w-16 flex-shrink-0 text-right font-mono text-[11px] font-semibold text-blue-600">
-        {athletePR?.pr_value_kg != null ? `${athletePR.pr_value_kg} kg` : ''}
-      </span>
+      </div>
+
+      {/* Spacer — category column removed (redundant under category headers) */}
+      <div />
     </div>
   );
 }
@@ -136,15 +274,95 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
 // ── ListViewHeader ─────────────────────────────────────────────────
 
 function ListViewHeader() {
+  const cell: React.CSSProperties = {
+    fontFamily: 'var(--font-sans)',
+    fontSize: 'var(--text-caption)',
+    fontWeight: 400,
+    color: 'var(--color-text-secondary)',
+  };
+
   return (
-    <div className="flex items-center px-2 py-1.5 bg-gray-100 border-b border-gray-200 sticky top-0 z-10">
-      <span className="w-6 flex-shrink-0" />
-      <span className="w-12 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide">Code</span>
-      <span className="flex-1 min-w-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide pr-3">Name</span>
-      <span className="w-10 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-center">Unit</span>
-      <span className="w-[90px] flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide">Category</span>
-      <span className="w-10 flex-shrink-0" />
-      <span className="w-16 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">PR</span>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '60px 56px 1fr 60px 80px 120px',
+        gap: 'var(--space-md)',
+        padding: '10px 16px 8px',
+        borderBottom: '0.5px solid var(--color-border-secondary)',
+        position: 'sticky',
+        top: 0,
+        background: 'var(--color-bg-primary)',
+        zIndex: 2,
+      }}
+    >
+      <div style={cell}>Code</div>
+      <div style={cell}></div>
+      <div style={cell}>Name</div>
+      <div style={cell}>Unit</div>
+      <div style={{ ...cell, textAlign: 'right' }}>PR</div>
+      <div />
+    </div>
+  );
+}
+
+// ── CategorySectionHeader ──────────────────────────────────────────
+
+interface CategorySectionHeaderProps {
+  category: Category;
+  count: number;
+  isCollapsed: boolean;
+  onToggle: () => void;
+}
+
+function CategorySectionHeader({ category, count, isCollapsed, onToggle }: CategorySectionHeaderProps) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-sm)',
+        padding: 'var(--space-md) var(--space-lg)',
+        cursor: 'pointer',
+        userSelect: 'none',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        background: 'var(--color-bg-secondary)',
+      }}
+    >
+      <ChevronRight
+        size={12}
+        style={{
+          color: 'var(--color-text-tertiary)',
+          transition: 'transform 100ms ease-out',
+          transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+          flexShrink: 0,
+        }}
+      />
+      <ColorDot color={category.color || 'var(--color-gray-400)'} size={8} />
+      <span
+        style={{
+          fontSize: 'var(--text-label)',
+          fontWeight: 500,
+          color: 'var(--color-text-primary)',
+          letterSpacing: 'var(--tracking-section)',
+        }}
+      >
+        {category.name}
+      </span>
+      <span
+        style={{
+          fontSize: 'var(--text-caption)',
+          color: 'var(--color-text-tertiary)',
+          fontFamily: 'var(--font-mono)',
+          background: 'var(--color-bg-primary)',
+          padding: '1px 6px',
+          borderRadius: '999px',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {count}
+      </span>
+      <span style={{ flex: 1, height: '0.5px', background: 'var(--color-border-tertiary)' }} />
     </div>
   );
 }
@@ -389,9 +607,9 @@ export function ExerciseLibrary() {
   const {
     exercises, categories,
     fetchExercises, fetchCategories,
-    createExercise, updateExercise, deleteExercise,
+    createExercise, updateExercise,
     createCategory, updateCategory, deleteCategory,
-    swapCategoryOrder, bulkReorderCategories,
+    bulkReorderCategories,
   } = useExercises();
 
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -508,15 +726,12 @@ export function ExerciseLibrary() {
     const cat = categories.find(c => c.id === id);
     if (!cat) return;
 
-    // Move ALL exercises (including archived) that reference this category.
-    // Must query DB directly — in-memory exercises list excludes archived rows.
     const { data: allAffected } = await supabase
       .from('exercises')
       .select('id')
       .eq('category', cat.name as any);
 
     if (allAffected && allAffected.length > 0) {
-      // Ensure an Unspecified category exists (FK requires a valid category name)
       let unspecCat = categories.find(c => c.name === 'Unspecified');
       if (!unspecCat) {
         const maxOrder = categories.reduce((m, c) => Math.max(m, c.display_order), -1);
@@ -544,7 +759,14 @@ export function ExerciseLibrary() {
   function renderExercises(exList: Exercise[]) {
     if (viewMode === 'grid') {
       return (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-1.5 pb-4">
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: 'var(--space-sm)',
+            padding: 'var(--space-md) var(--space-lg)',
+          }}
+        >
           {exList.map(ex => (
             <ExerciseCard
               key={ex.id}
@@ -576,125 +798,204 @@ export function ExerciseLibrary() {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-white">
+    <StandardPage>
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0">
-        <div className="relative flex-1">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-sm)',
+          padding: 'var(--space-md) var(--space-lg)',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+          flexShrink: 0,
+        }}
+      >
+        {/* Search */}
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search
+            size={14}
+            style={{
+              position: 'absolute',
+              left: '10px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--color-text-tertiary)',
+              pointerEvents: 'none',
+            }}
+          />
+          <Input
             type="text"
             placeholder="Search exercises…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+            style={{ paddingLeft: '32px', paddingRight: searchQuery ? '28px' : '12px' }}
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                color: 'var(--color-text-tertiary)',
+                display: 'flex',
+              }}
+              aria-label="Clear search"
+            >
               <XIcon size={12} />
             </button>
           )}
         </div>
 
-        <div className="flex gap-px bg-gray-100 rounded-md p-0.5">
-          <button onClick={() => setViewMode('grid')}
-            className={`px-2.5 py-1 text-[10px] rounded flex items-center gap-1 ${viewMode === 'grid' ? 'bg-white text-gray-900 font-medium shadow-sm' : 'text-gray-500'}`}>
-            <Grid3X3 size={11} /> Grid
+        {/* View toggle (grid / list) */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '1px',
+            background: 'var(--color-bg-secondary)',
+            borderRadius: 'var(--radius-md)',
+            padding: '2px',
+          }}
+        >
+          <button
+            onClick={() => setViewMode('grid')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 10px',
+              fontSize: 'var(--text-caption)',
+              fontFamily: 'var(--font-sans)',
+              background: viewMode === 'grid' ? 'var(--color-bg-primary)' : 'transparent',
+              color: viewMode === 'grid' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              fontWeight: viewMode === 'grid' ? 500 : 400,
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              transition: 'all 100ms ease-out',
+            }}
+          >
+            <Grid3X3 size={12} /> Grid
           </button>
-          <button onClick={() => setViewMode('list')}
-            className={`px-2.5 py-1 text-[10px] rounded flex items-center gap-1 ${viewMode === 'list' ? 'bg-white text-gray-900 font-medium shadow-sm' : 'text-gray-500'}`}>
-            <List size={11} /> List
+          <button
+            onClick={() => setViewMode('list')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 10px',
+              fontSize: 'var(--text-caption)',
+              fontFamily: 'var(--font-sans)',
+              background: viewMode === 'list' ? 'var(--color-bg-primary)' : 'transparent',
+              color: viewMode === 'list' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              fontWeight: viewMode === 'list' ? 500 : 400,
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              transition: 'all 100ms ease-out',
+            }}
+          >
+            <List size={12} /> List
           </button>
         </div>
 
-        <button
-          onClick={() => setShowCategoryModal(true)}
-          className="px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1"
-        >
-          <Layers size={12} /> Categories
-        </button>
+        <Button variant="secondary" size="sm" icon={<Layers size={12} />}
+          onClick={() => setShowCategoryModal(true)}>
+          Categories
+        </Button>
 
-        <button onClick={() => setShowBulkImport(true)}
-          className="px-2.5 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 flex items-center gap-1">
-          <Upload size={12} /> Import
-        </button>
+        <Button variant="secondary" size="sm" icon={<Upload size={12} />}
+          onClick={() => setShowBulkImport(true)}>
+          Import
+        </Button>
 
-        <button
-          onClick={() => { setEditingExercise(null); setShowCreateModal(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          <Plus size={14} /> Add exercise
-        </button>
+        <Button variant="primary" size="md" icon={<Plus size={14} />}
+          onClick={() => { setEditingExercise(null); setShowCreateModal(true); }}>
+          Add exercise
+        </Button>
       </div>
 
-      {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Main content — list/detail */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Exercise list */}
-        <div className="flex-1 overflow-y-auto">
-          {/* List view column header */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {viewMode === 'list' && <ListViewHeader />}
 
-          {/* Named category sections */}
           {visibleCategories.map(cat => {
             const catExercises = filteredExercises.filter(ex => (ex.category as unknown as string) === cat.name);
             if (catExercises.length === 0 && searchQuery.trim()) return null;
             const isCollapsed = collapsedCategories.has(cat.id);
 
             return (
-              <div key={cat.id} className={viewMode === 'list' ? '' : 'px-4'}>
-                <div
-                  className={`flex items-center gap-2 py-2 cursor-pointer select-none group ${
-                    viewMode === 'list' ? 'px-3 border-b border-gray-100 bg-gray-50/80' : 'py-2.5'
-                  }`}
-                  onClick={() => toggleCollapse(cat.id)}
-                >
-                  <ChevronRight size={12}
-                    className={`text-gray-400 transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
-                  <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
-                    style={{ backgroundColor: cat.color ?? '#888780' }} />
-                  <span className="text-xs font-semibold text-gray-800">{cat.name}</span>
-                  <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 rounded-full">
-                    {catExercises.length}
-                  </span>
-                  {viewMode !== 'list' && <span className="flex-1 h-px bg-gray-100" />}
-                </div>
+              <div key={cat.id}>
+                <CategorySectionHeader
+                  category={cat}
+                  count={catExercises.length}
+                  isCollapsed={isCollapsed}
+                  onToggle={() => toggleCollapse(cat.id)}
+                />
                 {!isCollapsed && renderExercises(catExercises)}
               </div>
             );
           })}
 
-          {/* Unspecified bucket — always shown if there are unspecified exercises */}
-          {unspecifiedExercises.length > 0 && (
-            <div className={viewMode === 'list' ? '' : 'px-4'}>
-              <div
-                className={`flex items-center gap-2 cursor-pointer select-none ${
-                  viewMode === 'list' ? 'px-3 py-2 border-b border-gray-100 bg-gray-50/80' : 'py-2.5'
-                }`}
-                onClick={() => toggleCollapse('__unspecified')}
-              >
-                <ChevronRight size={12}
-                  className={`text-gray-400 transition-transform ${collapsedCategories.has('__unspecified') ? '' : 'rotate-90'}`} />
-                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0 bg-gray-300" />
-                <span className="text-xs font-semibold text-gray-500">Unspecified</span>
-                <span className="text-[9px] text-gray-400 bg-gray-100 px-1.5 rounded-full">
-                  {unspecifiedExercises.length}
-                </span>
-                {viewMode !== 'list' && <span className="flex-1 h-px bg-gray-100" />}
-              </div>
-              {!collapsedCategories.has('__unspecified') && renderExercises(unspecifiedExercises)}
-            </div>
-          )}
+          {/* Unspecified / orphan exercises */}
+          {unspecifiedExercises.length > 0 && (() => {
+            const orphanCat: Category = {
+              id: '__unspecified__',
+              name: 'Unspecified',
+              color: 'var(--color-gray-400)',
+              display_order: 9999,
+              created_at: '',
+            };
+            const isCollapsed = collapsedCategories.has(orphanCat.id);
 
+            return (
+              <div>
+                <CategorySectionHeader
+                  category={orphanCat}
+                  count={unspecifiedExercises.length}
+                  isCollapsed={isCollapsed}
+                  onToggle={() => toggleCollapse(orphanCat.id)}
+                />
+                {!isCollapsed && renderExercises(unspecifiedExercises)}
+              </div>
+            );
+          })()}
+
+          {/* Empty state */}
           {filteredExercises.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-              {searchQuery ? `No exercises match "${searchQuery}"` : 'No exercises yet.'}
+            <div
+              style={{
+                padding: 'var(--space-2xl)',
+                textAlign: 'center',
+                fontSize: 'var(--text-body)',
+                color: 'var(--color-text-tertiary)',
+              }}
+            >
+              {searchQuery.trim()
+                ? `No exercises match "${searchQuery}"`
+                : 'No exercises yet. Click "Add exercise" to create one.'}
             </div>
           )}
         </div>
 
-        {/* Detail panel */}
+        {/* Detail panel (unchanged — migrated in 4b) */}
         {selectedExercise && (
-          <div className="w-[440px] flex-shrink-0 border-l border-gray-200 overflow-y-auto bg-white">
+          <div
+            style={{
+              width: '440px',
+              flexShrink: 0,
+              borderLeft: '0.5px solid var(--color-border-tertiary)',
+              overflowY: 'auto',
+              background: 'var(--color-bg-primary)',
+            }}
+          >
             <ExerciseDetailPanel
               exercise={selectedExercise}
               category={selectedCategory}
@@ -739,6 +1040,6 @@ export function ExerciseLibrary() {
           onComplete={async () => { await fetchExercises(); setShowBulkImport(false); }}
         />
       )}
-    </div>
+    </StandardPage>
   );
 }
