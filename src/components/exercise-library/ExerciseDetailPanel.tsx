@@ -5,6 +5,7 @@ import { getOwnerId } from '../../lib/ownerContext';
 import { estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
 import type { Exercise, Athlete } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
+import { Button, ColorDot, Textarea } from '../ui';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -62,6 +63,23 @@ function formatWeekLabel(dateStr: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
+// ── Section label ──────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 'var(--text-label)',
+      fontWeight: 600,
+      color: 'var(--color-text-tertiary)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      marginBottom: 'var(--space-sm)',
+    }}>
+      {children}
+    </div>
+  );
+}
+
 // ── xRM Table Modal ────────────────────────────────────────────────
 
 function XrmTableModal({ oneRM, exerciseName, onClose }: {
@@ -77,31 +95,110 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
   });
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-72 overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+        padding: 'var(--space-md)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--color-bg-primary)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+          width: 288,
+          overflow: 'hidden',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Modal header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+        }}>
           <div>
-            <div className="text-sm font-semibold text-gray-900">xRM Table</div>
-            <div className="text-[10px] text-gray-500">{exerciseName} · 1RM = {oneRM} kg</div>
+            <div style={{ fontSize: 'var(--text-body)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+              xRM Table
+            </div>
+            <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+              {exerciseName} · 1RM = {oneRM} kg
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded">
+          <button
+            onClick={onClose}
+            style={{
+              color: 'var(--color-text-tertiary)',
+              padding: 4,
+              borderRadius: 'var(--radius-sm)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
             <X size={15} />
           </button>
         </div>
-        <div className="px-4 py-2">
-          {rows.map(({ reps, weight, pct }) => (
-            <div key={reps} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
-              <div className="w-8 text-[11px] font-medium text-gray-500">{reps}RM</div>
-              <div className="flex-1">
-                <div
-                  className="h-1.5 rounded-full"
-                  style={{ width: `${pct}%`, backgroundColor: reps === 1 ? '#3B82F6' : '#93c5fd' }}
-                />
+
+        {/* Rows */}
+        <div style={{ padding: '8px 16px' }}>
+          {rows.map(({ reps, weight, pct }, i) => (
+            <div
+              key={reps}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 0',
+                borderBottom: i < rows.length - 1 ? '0.5px solid var(--color-border-tertiary)' : 'none',
+              }}
+            >
+              <div style={{
+                width: 32,
+                fontSize: 'var(--text-caption)',
+                fontWeight: 500,
+                color: 'var(--color-text-tertiary)',
+                fontFamily: 'var(--font-mono)',
+              }}>
+                {reps}RM
               </div>
-              <div className="text-[11px] font-semibold text-gray-900 w-16 text-right tabular-nums">
+              <div style={{ flex: 1 }}>
+                <div style={{
+                  height: 6,
+                  borderRadius: 3,
+                  width: `${pct}%`,
+                  background: reps === 1 ? 'var(--color-accent)' : 'var(--color-info-border)',
+                }} />
+              </div>
+              <div style={{
+                fontSize: 'var(--text-caption)',
+                fontWeight: 600,
+                color: 'var(--color-text-primary)',
+                width: 56,
+                textAlign: 'right',
+                fontFamily: 'var(--font-mono)',
+              }}>
                 {weight} kg
               </div>
-              <div className="text-[9px] text-gray-400 w-8 text-right">{pct}%</div>
+              <div style={{
+                fontSize: 9,
+                color: 'var(--color-text-tertiary)',
+                width: 32,
+                textAlign: 'right',
+              }}>
+                {pct}%
+              </div>
             </div>
           ))}
         </div>
@@ -115,15 +212,20 @@ function XrmTableModal({ oneRM, exerciseName, onClose }: {
 function UsageHistoryChart({ weeks }: { weeks: UsageWeek[] }) {
   if (weeks.length === 0) {
     return (
-      <div className="text-[10px] text-gray-400 italic py-2">No usage history found.</div>
+      <div style={{
+        fontSize: 'var(--text-label)',
+        color: 'var(--color-text-tertiary)',
+        fontStyle: 'italic',
+        padding: '8px 0',
+      }}>
+        No usage history found.
+      </div>
     );
   }
 
-  // Group by week, show last 24 weeks
   const sorted = [...weeks].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   const uniqueWeeks = [...new Set(sorted.map(w => w.weekStart))].slice(-24);
 
-  // Count sessions per week
   const countMap = new Map<string, number>();
   for (const w of weeks) {
     countMap.set(w.weekStart, (countMap.get(w.weekStart) ?? 0) + 1);
@@ -133,28 +235,31 @@ function UsageHistoryChart({ weeks }: { weeks: UsageWeek[] }) {
 
   return (
     <div>
-      <div className="flex items-end gap-px h-10 mt-1">
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 40, marginTop: 4 }}>
         {uniqueWeeks.map(ws => {
           const count = countMap.get(ws) ?? 0;
           const h = (count / maxCount) * 100;
           return (
             <div
               key={ws}
-              className="flex-1 rounded-t-sm min-w-0 transition-all group relative"
               style={{
+                flex: 1,
+                borderRadius: '2px 2px 0 0',
+                minWidth: 0,
                 height: `${Math.max(h, 8)}%`,
-                backgroundColor: '#3B82F6cc',
+                background: 'var(--color-info-border)',
+                opacity: 0.8,
               }}
               title={`${formatWeekLabel(ws)}: ${count} session${count !== 1 ? 's' : ''}`}
             />
           );
         })}
       </div>
-      <div className="flex justify-between mt-1">
-        <span className="text-[8px] text-gray-400">{formatWeekLabel(uniqueWeeks[0])}</span>
-        <span className="text-[8px] text-gray-400">{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[0])}</span>
+        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
       </div>
-      <div className="text-[9px] text-gray-400 mt-0.5">
+      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
         {uniqueWeeks.length} weeks · {weeks.length} total sessions
       </div>
     </div>
@@ -182,6 +287,7 @@ export function ExerciseDetailPanel({
   const [notesValue, setNotesValue] = useState(exercise.notes ?? '');
   const [loadingData, setLoadingData] = useState(true);
   const [showXrmModal, setShowXrmModal] = useState(false);
+  const [prCardHover, setPrCardHover] = useState(false);
 
   const prRefExercise = exercise.pr_reference_exercise_id
     ? allExercises.find(e => e.id === exercise.pr_reference_exercise_id)
@@ -242,7 +348,6 @@ export function ExerciseDetailPanel({
   }
 
   async function loadUsage() {
-    // day_index lives on planned_exercises, week_start/athlete_id on week_plans
     const { data } = await supabase
       .from('planned_exercises')
       .select('day_index, week_plans(week_start, athlete_id)')
@@ -266,80 +371,196 @@ export function ExerciseDetailPanel({
 
   const currentPR = athlete ? athletePRs[0] : null;
   const maxPR = Math.max(...athletePRs.map(r => r.pr_value_kg ?? 0), 1);
+  const hasPR = currentPR?.pr_value_kg != null;
+
+  const catName = exercise.category as unknown as string;
+  const unitLabel = UNIT_DISPLAY[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
+
+  const propRows: { label: string; value: string; mono?: boolean; valueColor?: string }[] = [
+    { label: 'Category', value: category?.name ?? catName ?? '—' },
+    { label: 'Default unit', value: unitLabel },
+    {
+      label: 'Track PR',
+      value: exercise.track_pr ? 'Yes' : 'No',
+      valueColor: exercise.track_pr ? 'var(--color-info-text)' : 'var(--color-text-tertiary)',
+    },
+    {
+      label: 'Counts towards totals',
+      value: exercise.counts_towards_totals ? 'Yes' : 'No',
+      valueColor: exercise.counts_towards_totals ? 'var(--color-success-text)' : 'var(--color-text-tertiary)',
+    },
+    {
+      label: 'Competition lift',
+      value: exercise.is_competition_lift ? 'Yes' : 'No',
+      valueColor: exercise.is_competition_lift ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)',
+    },
+    ...(exercise.exercise_code ? [{ label: 'Code', value: exercise.exercise_code, mono: true }] : []),
+    ...(prRefExercise ? [{ label: '% derived from', value: prRefExercise.name }] : []),
+  ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-gray-200 flex-shrink-0">
-        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: exercise.color }} />
-        <div className="flex-1 min-w-0">
-          <div className="text-base font-semibold text-gray-900 truncate">{exercise.name}</div>
-          <div className="text-[11px] text-gray-500">
-            {exercise.exercise_code && <span className="font-mono">{exercise.exercise_code} · </span>}
-            {exercise.category as unknown as string}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '12px 16px',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+      }}>
+        <ColorDot size={12} color={exercise.color} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 'var(--text-body)',
+            fontWeight: 600,
+            color: 'var(--color-text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {exercise.name}
+          </div>
+          <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+            {exercise.exercise_code && (
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{exercise.exercise_code} · </span>
+            )}
+            {catName}
           </div>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded">
+        <button
+          onClick={onClose}
+          style={{
+            color: 'var(--color-text-tertiary)',
+            padding: 4,
+            borderRadius: 'var(--radius-sm)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
           <X size={16} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-5">
+      {/* Scrollable body */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+      }}>
 
-        {/* Structured exercise properties */}
-        {(() => {
-          const catName = exercise.category as unknown as string;
-          const unitLabel = UNIT_DISPLAY[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
-          const rows: { label: string; value: string; mono?: boolean; valueColor?: string }[] = [
-            { label: 'Category', value: category?.name ?? catName ?? '—' },
-            { label: 'Default unit', value: unitLabel },
-            { label: 'Track PR', value: exercise.track_pr ? 'Yes' : 'No', valueColor: exercise.track_pr ? 'text-blue-600' : 'text-gray-400' },
-            { label: 'Counts towards totals', value: exercise.counts_towards_totals ? 'Yes' : 'No', valueColor: exercise.counts_towards_totals ? 'text-green-600' : 'text-gray-400' },
-            { label: 'Competition lift', value: exercise.is_competition_lift ? 'Yes' : 'No', valueColor: exercise.is_competition_lift ? 'text-red-600' : 'text-gray-400' },
-            ...(exercise.exercise_code ? [{ label: 'Code', value: exercise.exercise_code, mono: true }] : []),
-            ...(prRefExercise ? [{ label: '% derived from', value: prRefExercise.name }] : []),
-          ];
-          return (
-            <div className="rounded-lg border border-gray-100 overflow-hidden">
-              {rows.map(({ label, value, mono, valueColor }, i) => (
-                <div key={label} className={`flex items-center px-3 py-2 ${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
-                  <span className="w-[148px] flex-shrink-0 text-[11px] text-gray-400">{label}</span>
-                  <span className={`text-[11px] font-medium truncate ${valueColor ?? 'text-gray-800'} ${mono ? 'font-mono' : ''}`}>
-                    {value}
-                  </span>
-                </div>
-              ))}
+        {/* Properties table */}
+        <div style={{
+          border: '0.5px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--radius-md)',
+          overflow: 'hidden',
+        }}>
+          {propRows.map(({ label, value, mono, valueColor }, i) => (
+            <div
+              key={label}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '8px 12px',
+                background: i % 2 === 0 ? 'var(--color-bg-secondary)' : 'var(--color-bg-primary)',
+              }}
+            >
+              <span style={{
+                width: 148,
+                flexShrink: 0,
+                fontSize: 'var(--text-caption)',
+                color: 'var(--color-text-tertiary)',
+              }}>
+                {label}
+              </span>
+              <span style={{
+                fontSize: 'var(--text-caption)',
+                fontWeight: 500,
+                color: valueColor ?? 'var(--color-text-primary)',
+                fontFamily: mono ? 'var(--font-mono)' : undefined,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {value}
+              </span>
             </div>
-          );
-        })()}
+          ))}
+        </div>
 
-        {/* ── Athlete view ───────────────────────────────────────── */}
+        {/* ── Athlete view ──────────────────────────────────────── */}
         {athlete ? (
           <>
             {/* Current PR — clickable to open xRM table */}
             <div>
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Personal Record</div>
+              <SectionLabel>Personal Record</SectionLabel>
               <button
-                onClick={() => currentPR?.pr_value_kg != null && setShowXrmModal(true)}
-                disabled={currentPR?.pr_value_kg == null}
-                className={`w-full text-left p-4 rounded-xl border-2 transition-colors ${
-                  currentPR?.pr_value_kg != null
-                    ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 cursor-pointer'
-                    : 'border-gray-100 bg-gray-50 cursor-default'
-                }`}
+                onClick={() => hasPR && setShowXrmModal(true)}
+                disabled={!hasPR}
+                onMouseEnter={() => hasPR && setPrCardHover(true)}
+                onMouseLeave={() => setPrCardHover(false)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: 16,
+                  borderRadius: 'var(--radius-lg)',
+                  border: `2px solid ${hasPR ? 'var(--color-info-border)' : 'var(--color-border-tertiary)'}`,
+                  background: hasPR
+                    ? (prCardHover ? 'var(--color-info-bg)' : 'var(--color-info-bg)')
+                    : 'var(--color-bg-secondary)',
+                  cursor: hasPR ? 'pointer' : 'default',
+                  transition: 'background 100ms ease-out',
+                  opacity: hasPR && prCardHover ? 0.85 : 1,
+                }}
               >
-                <div className="flex items-end justify-between">
+                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                   <div>
-                    <div className={`text-3xl font-bold tabular-nums ${currentPR?.pr_value_kg != null ? 'text-blue-700' : 'text-gray-400'}`}>
-                      {currentPR?.pr_value_kg != null ? `${currentPR.pr_value_kg}` : '—'}
-                      {currentPR?.pr_value_kg != null && <span className="text-base font-medium ml-1 text-blue-500">kg</span>}
+                    <div style={{
+                      fontSize: 30,
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      color: hasPR ? 'var(--color-info-text)' : 'var(--color-text-tertiary)',
+                      lineHeight: 1,
+                    }}>
+                      {hasPR ? `${currentPR!.pr_value_kg}` : '—'}
+                      {hasPR && (
+                        <span style={{
+                          fontSize: 'var(--text-body)',
+                          fontWeight: 500,
+                          marginLeft: 4,
+                          color: 'var(--color-info-border)',
+                        }}>
+                          kg
+                        </span>
+                      )}
                     </div>
                     {currentPR?.pr_date && (
-                      <div className="text-[10px] text-blue-400 mt-0.5">{formatDate(currentPR.pr_date)}</div>
+                      <div style={{
+                        fontSize: 'var(--text-label)',
+                        color: 'var(--color-info-text)',
+                        marginTop: 2,
+                        opacity: 0.7,
+                      }}>
+                        {formatDate(currentPR.pr_date)}
+                      </div>
                     )}
                   </div>
-                  {currentPR?.pr_value_kg != null && (
-                    <div className="flex items-center gap-1 text-[10px] text-blue-400">
+                  {hasPR && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 'var(--text-label)',
+                      color: 'var(--color-info-text)',
+                      opacity: 0.7,
+                    }}>
                       <span>xRM table</span>
                       <ChevronRight size={12} />
                     </div>
@@ -350,21 +571,32 @@ export function ExerciseDetailPanel({
 
             {/* Usage history chart */}
             <div>
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Usage history</div>
+              <SectionLabel>Usage history</SectionLabel>
               {loadingData ? (
-                <div className="text-[10px] text-gray-400">Loading…</div>
+                <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)' }}>Loading…</div>
               ) : (
                 <UsageHistoryChart weeks={usageWeeks} />
               )}
             </div>
           </>
         ) : (
-          /* ── Coach view ──────────────────────────────────────── */
+          /* ── Coach view ────────────────────────────────────────── */
           <>
             {/* Roster stats */}
-            <div className="bg-gray-50 rounded-xl p-3.5">
-              <div className="text-[9px] text-gray-400 mb-1">Athletes using</div>
-              <div className="text-2xl font-bold text-gray-900">
+            <div style={{
+              background: 'var(--color-bg-secondary)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 14,
+            }}>
+              <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
+                Athletes using
+              </div>
+              <div style={{
+                fontSize: 24,
+                fontWeight: 700,
+                color: 'var(--color-text-primary)',
+                fontFamily: 'var(--font-mono)',
+              }}>
                 {loadingData ? '—' : `${athleteCount} / ${allAthletes.filter(a => a.is_active).length}`}
               </div>
             </div>
@@ -372,29 +604,71 @@ export function ExerciseDetailPanel({
             {/* Roster PR table */}
             {athletePRs.length > 0 && (
               <div>
-                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Roster PRs</div>
-                <div className="flex flex-col gap-1.5">
+                <SectionLabel>Roster PRs</SectionLabel>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {athletePRs.map(row => (
-                    <div key={row.id} className="flex items-center gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-bold text-gray-600 flex-shrink-0">
+                    <div key={row.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        background: 'var(--color-bg-secondary)',
+                        border: '0.5px solid var(--color-border-tertiary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: 'var(--color-text-secondary)',
+                        flexShrink: 0,
+                      }}>
                         {row.athleteInitials}
                       </div>
-                      <span className="flex-1 text-[11px] text-gray-700 truncate">{row.athleteName}</span>
-                      <span className="font-mono text-sm font-semibold text-gray-900">
+                      <span style={{
+                        flex: 1,
+                        fontSize: 'var(--text-caption)',
+                        color: 'var(--color-text-secondary)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {row.athleteName}
+                      </span>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 'var(--text-body)',
+                        fontWeight: 600,
+                        color: 'var(--color-text-primary)',
+                      }}>
                         {row.pr_value_kg} kg
                       </span>
-                      <span className="text-[9px] text-gray-400 w-16 text-right">{formatDate(row.pr_date)}</span>
+                      <span style={{
+                        fontSize: 9,
+                        color: 'var(--color-text-tertiary)',
+                        width: 56,
+                        textAlign: 'right',
+                      }}>
+                        {formatDate(row.pr_date)}
+                      </span>
                     </div>
                   ))}
                 </div>
+
                 {/* Bar chart */}
-                <div className="mt-3 flex items-end gap-0.5 h-8">
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-end', gap: 2, height: 32 }}>
                   {athletePRs.slice(0, 14).map(row => {
                     const pct = maxPR > 0 ? ((row.pr_value_kg ?? 0) / maxPR) * 100 : 0;
                     return (
-                      <div key={row.id} className="flex-1 rounded-t-sm"
+                      <div
+                        key={row.id}
+                        style={{
+                          flex: 1,
+                          borderRadius: '2px 2px 0 0',
+                          height: `${Math.max(pct, 4)}%`,
+                          background: (category?.color ?? 'var(--color-accent)'),
+                          opacity: 0.6,
+                        }}
                         title={`${row.athleteName}: ${row.pr_value_kg} kg`}
-                        style={{ height: `${Math.max(pct, 4)}%`, backgroundColor: (category?.color ?? '#888') + '99' }}
                       />
                     );
                   })}
@@ -405,7 +679,7 @@ export function ExerciseDetailPanel({
             {/* Roster usage chart */}
             {usageWeeks.length > 0 && (
               <div>
-                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Usage history (all athletes)</div>
+                <SectionLabel>Usage history (all athletes)</SectionLabel>
                 <UsageHistoryChart weeks={usageWeeks} />
               </div>
             )}
@@ -415,18 +689,10 @@ export function ExerciseDetailPanel({
         {/* Related exercises */}
         {relatedExercises.length > 0 && (
           <div>
-            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              Related ({exercise.category as unknown as string})
-            </div>
-            <div className="flex flex-wrap gap-1.5">
+            <SectionLabel>Related ({catName})</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {relatedExercises.map(rex => (
-                <button key={rex.id}
-                  onClick={() => onSelectExercise(rex.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-full text-[10px] text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: rex.color }} />
-                  {rex.exercise_code || rex.name}
-                </button>
+                <RelatedChip key={rex.id} rex={rex} onSelect={onSelectExercise} />
               ))}
             </div>
           </div>
@@ -434,27 +700,49 @@ export function ExerciseDetailPanel({
 
         {/* Notes */}
         <div>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Notes</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <SectionLabel>Notes</SectionLabel>
             {!editingNotes && (
-              <button onClick={() => setEditingNotes(true)} className="text-gray-400 hover:text-gray-600 p-px">
+              <button
+                onClick={() => setEditingNotes(true)}
+                style={{
+                  color: 'var(--color-text-tertiary)',
+                  padding: 2,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginTop: -14,
+                }}
+              >
                 <Edit2 size={10} />
               </button>
             )}
           </div>
           {editingNotes ? (
-            <textarea
+            <Textarea
               autoFocus
-              className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
               rows={3}
               value={notesValue}
               onChange={e => setNotesValue(e.target.value)}
               onBlur={saveNotes}
             />
           ) : (
-            <p className="text-sm text-gray-500 cursor-text min-h-[28px] leading-relaxed"
-              onClick={() => setEditingNotes(true)}>
-              {notesValue || <span className="italic text-gray-300 text-[11px]">Click to add notes…</span>}
+            <p
+              style={{
+                fontSize: 'var(--text-body)',
+                color: notesValue ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)',
+                fontStyle: notesValue ? 'normal' : 'italic',
+                cursor: 'text',
+                minHeight: 28,
+                lineHeight: 'var(--leading-body)',
+                margin: 0,
+              }}
+              onClick={() => setEditingNotes(true)}
+            >
+              {notesValue || 'Click to add notes…'}
             </p>
           )}
         </div>
@@ -462,10 +750,24 @@ export function ExerciseDetailPanel({
         {/* External link */}
         {exercise.link && (
           <div>
-            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Reference</div>
-            <a href={exercise.link} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 truncate">
-              <ExternalLink size={12} />
+            <SectionLabel>Reference</SectionLabel>
+            <a
+              href={exercise.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 'var(--text-body)',
+                color: 'var(--color-accent)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                textDecoration: 'none',
+              }}
+            >
+              <ExternalLink size={12} style={{ flexShrink: 0 }} />
               {exercise.link}
             </a>
           </div>
@@ -473,16 +775,29 @@ export function ExerciseDetailPanel({
       </div>
 
       {/* Footer */}
-      <div className="flex gap-2 px-4 py-3 border-t border-gray-200 flex-shrink-0">
-        <button onClick={() => onEdit(exercise)}
-          className="flex-1 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50">
+      <div style={{
+        display: 'flex',
+        gap: 8,
+        padding: '12px 16px',
+        borderTop: '0.5px solid var(--color-border-tertiary)',
+        flexShrink: 0,
+      }}>
+        <Button
+          variant="secondary"
+          size="sm"
+          style={{ flex: 1 }}
+          onClick={() => onEdit(exercise)}
+        >
           Edit
-        </button>
-        <button onClick={() => onArchive(exercise.id)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
-          <Archive size={13} />
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          icon={<Archive size={13} />}
+          onClick={() => onArchive(exercise.id)}
+        >
           Archive
-        </button>
+        </Button>
       </div>
 
       {/* xRM Modal */}
@@ -494,5 +809,40 @@ export function ExerciseDetailPanel({
         />
       )}
     </div>
+  );
+}
+
+// ── Related chip (needs hover state) ──────────────────────────────
+
+function RelatedChip({
+  rex,
+  onSelect,
+}: {
+  rex: Exercise;
+  onSelect: (id: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={() => onSelect(rex.id)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px',
+        border: `0.5px solid ${hovered ? 'var(--color-border-primary)' : 'var(--color-border-tertiary)'}`,
+        borderRadius: 'var(9999px)',
+        fontSize: 'var(--text-label)',
+        color: 'var(--color-text-secondary)',
+        background: hovered ? 'var(--color-bg-secondary)' : 'transparent',
+        cursor: 'pointer',
+        transition: 'all 100ms ease-out',
+      }}
+    >
+      <ColorDot size={6} color={rex.color} />
+      {rex.exercise_code || rex.name}
+    </button>
   );
 }
