@@ -367,8 +367,8 @@ export function MacroDistributionChart({
                   className="flex items-center justify-center text-[8px] font-medium"
                   style={{
                     flex: span,
-                    backgroundColor: p.color + '30',
-                    color: p.color,
+                    backgroundColor: p.color,
+                    color: '#1f2937',
                   }}
                 >
                   {p.name} (W{p.start_week_number}–{p.end_week_number})

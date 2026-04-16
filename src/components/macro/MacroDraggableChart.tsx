@@ -483,13 +483,13 @@ export function MacroDraggableChart({
                 x1={phase.start_week_number}
                 x2={phase.end_week_number}
                 fill={phase.color || '#d1d5db'}
-                fillOpacity={0.08}
+                fillOpacity={0.35}
                 stroke="none"
                 label={{
                   value: phase.name,
                   position: 'insideTopLeft',
                   fontSize: 8,
-                  fill: withOpacity(phase.color || '#888', 0.5),
+                  fill: withOpacity(phase.color || '#888', 0.9),
                   fontWeight: 500,
                 }}
               />
