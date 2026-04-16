@@ -169,9 +169,7 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
         alignItems: 'center',
         gap: 'var(--space-md)',
         padding: '8px 16px',
-        background: isSelected
-          ? 'var(--color-info-bg)'
-          : (rowIndex % 2 === 0 ? 'transparent' : 'var(--color-bg-page)'),
+        background: isSelected ? 'var(--color-info-bg)' : 'transparent',
         borderLeft: isSelected
           ? '2px solid var(--color-accent)'
           : '2px solid transparent',
@@ -184,11 +182,7 @@ function ExerciseListRow({ exercise, isSelected, athletePR, onClick, rowIndex }:
         if (!isSelected) e.currentTarget.style.background = 'var(--color-bg-secondary)';
       }}
       onMouseLeave={e => {
-        if (!isSelected) {
-          e.currentTarget.style.background = rowIndex % 2 === 0
-            ? 'transparent'
-            : 'var(--color-bg-page)';
-        }
+        if (!isSelected) e.currentTarget.style.background = 'transparent';
       }}
     >
       {/* Dot + code */}
