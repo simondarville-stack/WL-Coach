@@ -1,6 +1,6 @@
 export { MacroPhaseBar } from './MacroPhaseBar';
 export type {
   MacroPhaseBarProps,
-  MacroWeekEntry,
+  MacroPhaseBarCell,
   MacroPhaseBarEvent,
 } from './MacroPhaseBar';

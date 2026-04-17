@@ -4,75 +4,65 @@ import { getISOWeek } from '../../lib/dateUtils';
 // Types
 // ───────────────────────────────────────────────────────────────
 
-export interface MacroWeekEntry {
-  /** 1-indexed week number within the macro */
-  n: number;
-  /** Phase display name, e.g. "Loading", "Build" */
-  phase: string;
-  /** Phase color (hex or CSS color string) */
+/**
+ * One cell in the bar. Can belong to a macro week (with phase + type)
+ * or be a gap cell (no macro active that week).
+ */
+export interface MacroPhaseBarCell {
+  /** The macro week's week_start (YYYY-MM-DD). Identifies the week. */
+  weekStart: string;
+  /** Phase name to show in the label strip. Null for gap cells. */
+  phase: string | null;
+  /** Phase color. Use a neutral color for gap cells. */
   color: string;
-  /** Week type display name, e.g. "High", "Testing", "Deload" */
-  type: string;
+  /** Week-type abbreviation to show under the week number. Empty string = none. */
+  typeAbbr: string;
+  /** Full week-type name for the tooltip. Empty string = none. */
+  typeName: string;
+  /** The macro this week belongs to, if any. Null for gap cells. */
+  macroId: string | null;
+  /** The macro's display name, if any. */
+  macroName: string | null;
+  /** Display label for the cell — typically "W{n}" where n is the week's position in its macro, or blank for gaps. */
+  label: string;
 }
 
 export interface MacroPhaseBarEvent {
   id: string;
   kind: 'point' | 'range';
-  /** For point events: the macro week number (1-indexed) and day 0-6 */
-  week?: number;
+  /** For point events: a weekStart (YYYY-MM-DD) and day 0-6 */
+  weekStart?: string;
   day?: number;
-  /** For range events: start/end macro week + day */
-  startWeek?: number;
+  /** For range events: start + end weekStart and start + end day */
+  startWeekStart?: string;
   startDay?: number;
-  endWeek?: number;
+  endWeekStart?: string;
   endDay?: number;
   /** Display name shown in the tooltip */
   title: string;
 }
 
 export interface MacroPhaseBarProps {
-  /** One entry per week of the macro, in order */
-  weeks: MacroWeekEntry[];
+  /** One cell per week, in chronological order */
+  cells: MacroPhaseBarCell[];
   /** Optional events to mark with top-right dots + tooltip lines */
   events?: MacroPhaseBarEvent[];
-  /** The macro's start date (Monday of week 1) as YYYY-MM-DD. Optional — tooltip skips date line when absent. */
-  macroStartDate?: string | null;
-  /** Currently selected (or viewed) week — 1-indexed. Null if none. */
-  selectedWeek?: number | null;
-  /** Callback fired when a week cell is clicked */
-  onWeekClick?: (weekNum: number) => void;
-  /**
-   * Coach-defined week-type abbreviation map. Example:
-   *   { High: 'H', Medium: 'M', Deload: 'D', Testing: 'Ts', Taper: 'Tp' }
-   * If not provided, sensible defaults are used.
-   */
-  weekTypeAbbreviations?: Record<string, string>;
+  /** The weekStart of the currently selected week. Null if none selected. */
+  selectedWeekStart?: string | null;
+  /** Called when a cell is clicked */
+  onCellClick?: (cell: MacroPhaseBarCell) => void;
   /** Optional className for the outer wrapper */
   className?: string;
-  /** Optional style overrides for the outer wrapper */
+  /** Optional inline style overrides */
   style?: React.CSSProperties;
 }
 
 // ───────────────────────────────────────────────────────────────
-// Defaults
+// Helpers
 // ───────────────────────────────────────────────────────────────
-
-const DEFAULT_WEEK_TYPE_ABBR: Record<string, string> = {
-  High: 'H',
-  Medium: 'M',
-  Low: 'L',
-  Deload: 'D',
-  Taper: 'Tp',
-  Testing: 'Ts',
-  Competition: 'C',
-};
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// ───────────────────────────────────────────────────────────────
-// Helpers
-// ───────────────────────────────────────────────────────────────
 
 function addDays(d: Date, days: number): Date {
   const r = new Date(d);
@@ -86,18 +76,33 @@ function formatDateEU(d: Date): string {
 
 interface PhaseGroup {
   phase: string;
-  color: string;
-  startIdx: number;   // 0-indexed position of first week in this phase
+  startIdx: number;
   weekCount: number;
 }
 
-function computePhaseGroups(weeks: MacroWeekEntry[]): PhaseGroup[] {
+/**
+ * Group consecutive cells by (macroId, phase). A boundary happens
+ * when either the macroId changes OR the phase changes. Gap cells
+ * (phase=null) are their own group and carry no label.
+ */
+function computePhaseGroups(cells: MacroPhaseBarCell[]): PhaseGroup[] {
   const groups: PhaseGroup[] = [];
   let current: PhaseGroup | null = null;
-  weeks.forEach((w, i) => {
-    if (!current || current.phase !== w.phase) {
-      current = { phase: w.phase, color: w.color, startIdx: i, weekCount: 1 };
+  let currentMacroId: string | null = null;
+  cells.forEach((c, i) => {
+    const phaseKey = c.phase ?? '';
+    if (
+      !current ||
+      current.phase !== phaseKey ||
+      currentMacroId !== c.macroId
+    ) {
+      current = {
+        phase: phaseKey,
+        startIdx: i,
+        weekCount: 1,
+      };
       groups.push(current);
+      currentMacroId = c.macroId;
     } else {
       current.weekCount++;
     }
@@ -105,13 +110,14 @@ function computePhaseGroups(weeks: MacroWeekEntry[]): PhaseGroup[] {
   return groups;
 }
 
-function eventsForWeek(
-  weekNum: number,
+function eventsForCell(
+  cell: MacroPhaseBarCell,
   events: MacroPhaseBarEvent[]
 ): MacroPhaseBarEvent[] {
   return events.filter(ev => {
-    if (ev.kind === 'point') return ev.week === weekNum;
-    return weekNum >= (ev.startWeek ?? 0) && weekNum <= (ev.endWeek ?? 0);
+    if (ev.kind === 'point') return ev.weekStart === cell.weekStart;
+    if (!ev.startWeekStart || !ev.endWeekStart) return false;
+    return cell.weekStart >= ev.startWeekStart && cell.weekStart <= ev.endWeekStart;
   });
 }
 
@@ -120,30 +126,32 @@ function eventsForWeek(
 // ───────────────────────────────────────────────────────────────
 
 export function MacroPhaseBar({
-  weeks,
+  cells,
   events = [],
-  macroStartDate,
-  selectedWeek = null,
-  onWeekClick,
-  weekTypeAbbreviations,
+  selectedWeekStart = null,
+  onCellClick,
   className,
   style,
 }: MacroPhaseBarProps) {
-  const totalWeeks = weeks.length;
-  if (totalWeeks === 0) return null;
+  const total = cells.length;
+  if (total === 0) return null;
 
-  const abbr = weekTypeAbbreviations ?? DEFAULT_WEEK_TYPE_ABBR;
-  const groups = computePhaseGroups(weeks);
+  const groups = computePhaseGroups(cells);
 
-  const buildTooltip = (w: MacroWeekEntry, cellEvents: MacroPhaseBarEvent[]): string => {
-    const lines = [`W${w.n}`, `${w.phase} · ${w.type}`];
-    if (macroStartDate) {
-      const startDate = new Date(macroStartDate + 'T00:00:00');
-      const weekStart = addDays(startDate, (w.n - 1) * 7);
-      const weekEnd = addDays(weekStart, 6);
-      const cw = getISOWeek(weekStart);
-      lines.push(`Week ${cw} · ${formatDateEU(weekStart)} — ${formatDateEU(weekEnd)}`);
-    }
+  const buildTooltip = (c: MacroPhaseBarCell, cellEvents: MacroPhaseBarEvent[]): string => {
+    const lines: string[] = [];
+    if (c.label) lines.push(c.label);
+    const metaParts: string[] = [];
+    if (c.macroName) metaParts.push(c.macroName);
+    if (c.phase) metaParts.push(c.phase);
+    if (c.typeName) metaParts.push(c.typeName);
+    if (metaParts.length) lines.push(metaParts.join(' · '));
+
+    const weekStart = new Date(c.weekStart + 'T00:00:00');
+    const weekEnd = addDays(weekStart, 6);
+    const cw = getISOWeek(weekStart);
+    lines.push(`Week ${cw} · ${formatDateEU(weekStart)} — ${formatDateEU(weekEnd)}`);
+
     cellEvents.forEach(ev => lines.push(`• ${ev.title}`));
     return lines.join('\n');
   };
@@ -158,20 +166,14 @@ export function MacroPhaseBar({
         ...style,
       }}
     >
-      {/* ── Phase label strip ── */}
-      <div
-        style={{
-          display: 'flex',
-          position: 'relative',
-          height: '16px',
-        }}
-      >
+      {/* Phase label strip */}
+      <div style={{ display: 'flex', position: 'relative', height: '16px' }}>
         {groups.map((g, i) => {
-          const leftPct = (g.startIdx / totalWeeks) * 100;
-          const widthPct = (g.weekCount / totalWeeks) * 100;
+          const leftPct = (g.startIdx / total) * 100;
+          const widthPct = (g.weekCount / total) * 100;
           return (
             <div
-              key={`${g.phase}-${i}`}
+              key={`ph-${i}`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -199,9 +201,8 @@ export function MacroPhaseBar({
         })}
       </div>
 
-      {/* ── Bar ── */}
+      {/* Bar */}
       <div style={{ position: 'relative' }}>
-        {/* Cells */}
         <div
           style={{
             display: 'flex',
@@ -211,22 +212,23 @@ export function MacroPhaseBar({
             overflow: 'hidden',
           }}
         >
-          {weeks.map(w => {
-            const cellEvents = eventsForWeek(w.n, events);
-            const tooltip = buildTooltip(w, cellEvents);
-            const isSelected = selectedWeek != null && w.n === selectedWeek;
+          {cells.map(c => {
+            const cellEvents = eventsForCell(c, events);
+            const tooltip = buildTooltip(c, cellEvents);
+            const isSelected = selectedWeekStart != null && c.weekStart === selectedWeekStart;
+            const isGap = c.phase === null;
 
             return (
               <div
-                key={w.n}
+                key={c.weekStart}
                 title={tooltip}
-                onClick={() => onWeekClick?.(w.n)}
+                onClick={() => onCellClick?.(c)}
                 style={{
                   flex: 1,
                   position: 'relative',
-                  background: w.color,
+                  background: c.color,
                   opacity: isSelected ? 1 : 0.7,
-                  cursor: onWeekClick ? 'pointer' : 'default',
+                  cursor: onCellClick ? 'pointer' : 'default',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -237,21 +239,23 @@ export function MacroPhaseBar({
                 onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
                 onMouseLeave={e => { e.currentTarget.style.filter = 'none'; }}
               >
-                <span
-                  style={{
-                    fontSize: 'var(--text-caption)',
-                    fontFamily: 'var(--font-mono)',
-                    lineHeight: 1,
-                    color: 'rgba(255, 255, 255, 0.95)',
-                    fontWeight: 500,
-                    letterSpacing: '0.02em',
-                    pointerEvents: 'none',
-                    userSelect: 'none',
-                  }}
-                >
-                  {w.n}
-                </span>
-                {abbr[w.type] && (
+                {!isGap && c.label && (
+                  <span
+                    style={{
+                      fontSize: 'var(--text-caption)',
+                      fontFamily: 'var(--font-mono)',
+                      lineHeight: 1,
+                      color: 'rgba(255, 255, 255, 0.95)',
+                      fontWeight: 500,
+                      letterSpacing: '0.02em',
+                      pointerEvents: 'none',
+                      userSelect: 'none',
+                    }}
+                  >
+                    {c.label}
+                  </span>
+                )}
+                {!isGap && c.typeAbbr && (
                   <span
                     style={{
                       fontSize: '9px',
@@ -263,7 +267,7 @@ export function MacroPhaseBar({
                       letterSpacing: '0.04em',
                     }}
                   >
-                    {abbr[w.type]}
+                    {c.typeAbbr}
                   </span>
                 )}
                 {cellEvents.length > 0 && (
@@ -286,16 +290,19 @@ export function MacroPhaseBar({
           })}
         </div>
 
-        {/* Dividers: regular week boundaries inside the bar, phase changes extending up */}
-        {weeks.slice(1).map((w, idx) => {
+        {/* Dividers */}
+        {cells.slice(1).map((c, idx) => {
           const i = idx + 1;
-          const isPhaseChange = w.phase !== weeks[i - 1].phase;
-          const leftCalc = `calc(${(i / totalWeeks) * 100}% - 0.25px)`;
+          const prev = cells[i - 1];
+          const isMacroChange = c.macroId !== prev.macroId;
+          const isPhaseChange = (c.phase ?? '') !== (prev.phase ?? '');
+          const raised = isMacroChange || isPhaseChange;
+          const leftCalc = `calc(${(i / total) * 100}% - 0.25px)`;
 
-          if (isPhaseChange) {
+          if (raised) {
             return (
               <div
-                key={`phase-div-${i}`}
+                key={`d-${i}`}
                 style={{
                   position: 'absolute',
                   top: '-20px',
@@ -311,7 +318,7 @@ export function MacroPhaseBar({
           }
           return (
             <div
-              key={`week-div-${i}`}
+              key={`d-${i}`}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -326,22 +333,27 @@ export function MacroPhaseBar({
           );
         })}
 
-        {/* Playhead — extends 4px above and below the bar */}
-        {selectedWeek != null && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '-4px',
-              bottom: '-4px',
-              left: `calc(${((selectedWeek - 1) + 0.5) * (100 / totalWeeks)}% - 1px)`,
-              width: '2px',
-              background: 'var(--color-text-primary)',
-              borderRadius: '1px',
-              pointerEvents: 'none',
-              zIndex: 6,
-            }}
-          />
-        )}
+        {/* Playhead */}
+        {selectedWeekStart && (() => {
+          const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
+          if (selIdx < 0) return null;
+          const leftPct = (selIdx + 0.5) * (100 / total);
+          return (
+            <div
+              style={{
+                position: 'absolute',
+                top: '-4px',
+                bottom: '-4px',
+                left: `calc(${leftPct}% - 1px)`,
+                width: '2px',
+                background: 'var(--color-text-primary)',
+                borderRadius: '1px',
+                pointerEvents: 'none',
+                zIndex: 6,
+              }}
+            />
+          );
+        })()}
       </div>
     </div>
   );

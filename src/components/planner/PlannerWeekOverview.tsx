@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { StandardPage, Button } from '../ui';
-import { MacroPhaseBar, type MacroWeekEntry } from '../planning';
+import { MacroPhaseBar } from '../planning';
+import { buildCellsForWeekRange } from '../../lib/macroPhaseBarData';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -14,7 +15,7 @@ import {
   type ComputedMetrics,
 } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
-import type { Athlete, TrainingGroup } from '../../lib/database.types';
+import type { Athlete, TrainingGroup, MacroCycle, MacroPhase, MacroWeek, WeekTypeConfig } from '../../lib/database.types';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -151,6 +152,10 @@ export function PlannerWeekOverview({
 }: PlannerWeekOverviewProps) {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [macroBlocks, setMacroBlocks] = useState<MacroBlock[]>([]);
+  const [rawMacros, setRawMacros] = useState<MacroCycle[]>([]);
+  const [rawPhases, setRawPhases] = useState<MacroPhase[]>([]);
+  const [rawMacroWeeks, setRawMacroWeeks] = useState<MacroWeek[]>([]);
+  const [weekTypeConfigs, setWeekTypeConfigs] = useState<WeekTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [centerDate, setCenterDate] = useState(() => getTodayMonday());
   const currentWeekRef = useRef<HTMLDivElement>(null);
@@ -319,9 +324,24 @@ export function PlannerWeekOverview({
             phases: phaseBlocks,
           });
         });
+
+        setRawPhases((phases || []) as MacroPhase[]);
+        setRawMacroWeeks((macroWeeks || []) as MacroWeek[]);
+      } else {
+        setRawPhases([]);
+        setRawMacroWeeks([]);
       }
 
       setMacroBlocks(blocks);
+      setRawMacros((macros || []) as MacroCycle[]);
+
+      // Fetch coach week-type configs from settings
+      const { data: settingsRow } = await supabase
+        .from('general_settings')
+        .select('week_types')
+        .eq('owner_id', getOwnerId())
+        .maybeSingle();
+      setWeekTypeConfigs((settingsRow?.week_types as WeekTypeConfig[] | undefined) ?? []);
 
       // 6. Build week summaries
       const summaries: WeekSummary[] = weekDates.map(ws => {
@@ -511,20 +531,11 @@ export function PlannerWeekOverview({
 
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
 
-  const phaseBarWeeks: MacroWeekEntry[] = currentMacro
-    ? weeks.map(w => {
-        const phaseInfo = getPhaseForWeek(w.weekStart);
-        const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
-        const weekDate = new Date(w.weekStart + 'T00:00:00');
-        const diffWeeks = Math.floor((weekDate.getTime() - macroStart.getTime()) / (7 * 86400000)) + 1;
-        return {
-          n: Math.max(1, diffWeeks),
-          phase: phaseInfo?.phase.phaseName ?? '—',
-          color: phaseInfo?.phase.color ?? '#7F77DD',
-          type: '',
-        };
-      })
-    : [];
+  const phaseBarCells = buildCellsForWeekRange(
+    weeks.map(w => w.weekStart),
+    { macros: rawMacros, phases: rawPhases, weeks: rawMacroWeeks, weekTypeConfigs }
+  );
+  const selectedWeekStart = weeks.find(w => w.weekStart === today)?.weekStart ?? null;
 
   return (
     <StandardPage>
@@ -586,26 +597,14 @@ export function PlannerWeekOverview({
         </Button>
       </div>
 
-      {/* Macro phase bar (replaces volume ribbon) */}
-      {phaseBarWeeks.length > 0 && currentMacro && (
+      {/* Macro phase bar */}
+      {phaseBarCells.length > 0 && (
         <div style={{ paddingLeft: '76px', paddingRight: '170px' }}>
           <MacroPhaseBar
-            weeks={phaseBarWeeks}
+            cells={phaseBarCells}
             events={[]}
-            macroStartDate={currentMacro.startDate}
-            selectedWeek={(() => {
-              const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
-              const todayDate = new Date(today + 'T00:00:00');
-              const diffWeeks = Math.floor((todayDate.getTime() - macroStart.getTime()) / (7 * 86400000)) + 1;
-              return Math.max(1, diffWeeks);
-            })()}
-            onWeekClick={(weekNum) => {
-              const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
-              const targetDate = new Date(macroStart);
-              targetDate.setDate(macroStart.getDate() + (weekNum - 1) * 7);
-              const weekStartStr = targetDate.toISOString().split('T')[0];
-              onSelectWeek(weekStartStr);
-            }}
+            selectedWeekStart={selectedWeekStart}
+            onCellClick={(cell) => onSelectWeek(cell.weekStart)}
           />
         </div>
       )}

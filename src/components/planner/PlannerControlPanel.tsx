@@ -9,7 +9,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import type {
   Athlete, TrainingGroup, AthletePR, Exercise, PlannedExercise,
-  GeneralSettings, MacroPhase,
+  GeneralSettings, MacroPhase, MacroCycle, MacroWeek,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
@@ -17,7 +17,8 @@ import { calculateAge } from '../../lib/calculations';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
-import { MacroPhaseBar, type MacroWeekEntry, type MacroPhaseBarEvent } from '../planning';
+import { MacroPhaseBar, type MacroPhaseBarCell, type MacroPhaseBarEvent } from '../planning';
+import { buildCellsForSingleMacro } from '../../lib/macroPhaseBarData';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -207,7 +208,6 @@ export interface PlannerControlPanelProps {
   onPrint: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: () => Promise<void>;
-  weekTypesByNum?: Record<number, string>;
   macroEvents?: MacroPhaseBarEvent[];
 }
 
@@ -236,13 +236,13 @@ export function PlannerControlPanel({
   onPrint,
   onToggleLoadDistribution,
   onResolvePercentages,
-  weekTypesByNum,
   macroEvents = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
   const [competitionPRs, setCompetitionPRs] = useState<CompetitionPR[]>([]);
   const [phases, setPhases]                 = useState<MacroPhase[]>([]);
+  const [currentMacroWeeks, setCurrentMacroWeeks] = useState<MacroWeek[]>([]);
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
@@ -256,8 +256,9 @@ export function PlannerControlPanel({
   }, [selectedAthlete?.id]);
 
   useEffect(() => {
-    if (!macroContext) { setPhases([]); return; }
+    if (!macroContext) { setPhases([]); setCurrentMacroWeeks([]); return; }
     void loadPhases(macroContext.macroId);
+    void loadMacroWeeks(macroContext.macroId);
   }, [macroContext?.macroId]);
 
   async function loadCompetitionPRs(athleteId: string) {
@@ -281,6 +282,15 @@ export function PlannerControlPanel({
       .eq('macrocycle_id', macroId)
       .order('start_week_number');
     setPhases((data as MacroPhase[]) ?? []);
+  }
+
+  async function loadMacroWeeks(macroId: string) {
+    const { data } = await supabase
+      .from('macro_weeks')
+      .select('*')
+      .eq('macrocycle_id', macroId)
+      .order('week_number');
+    setCurrentMacroWeeks((data as MacroWeek[]) ?? []);
   }
 
   // ── metrics ──────────────────────────────────────────────────────────────
@@ -327,18 +337,22 @@ export function PlannerControlPanel({
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
   const totalWeeks      = macroContext?.totalWeeks ?? 1;
 
-  const phaseBarWeeks: MacroWeekEntry[] = macroContext && totalWeeks > 0
-    ? Array.from({ length: totalWeeks }, (_, i) => {
-        const weekNum = i + 1;
-        const phase = phases.find(p => weekNum >= p.start_week_number && weekNum <= p.end_week_number);
-        return {
-          n: weekNum,
-          phase: phase?.name ?? macroContext.phaseName ?? '—',
-          color: phase?.color ?? macroContext.phaseColor ?? '#7F77DD',
-          type: weekTypesByNum?.[weekNum] ?? '',
-        };
+  const macroForBar = macroContext
+    ? { id: macroContext.macroId, name: macroContext.macroName } as MacroCycle
+    : null;
+
+  const phaseBarCells: MacroPhaseBarCell[] = macroForBar && currentMacroWeeks.length > 0
+    ? buildCellsForSingleMacro(macroForBar, {
+        macros: [macroForBar],
+        phases,
+        weeks: currentMacroWeeks,
+        weekTypeConfigs: settings?.week_types ?? [],
       })
     : [];
+
+  const selectedWeekStart = macroContext
+    ? currentMacroWeeks.find(w => w.week_number === macroContext.weekNumber)?.week_start ?? null
+    : null;
 
   const subLabel = [
     athleteAge !== null ? `${athleteAge} yr` : null,
@@ -885,7 +899,7 @@ export function PlannerControlPanel({
       })()}
 
       {/* ── MACRO phase + week timeline ──────────────────────────────────────── */}
-      {macroContext && totalWeeks > 0 && phaseBarWeeks.length > 0 && (
+      {phaseBarCells.length > 0 && (
         <div
           style={{
             padding: 'var(--space-sm) var(--space-lg)',
@@ -893,12 +907,10 @@ export function PlannerControlPanel({
           }}
         >
           <MacroPhaseBar
-            weeks={phaseBarWeeks}
+            cells={phaseBarCells}
             events={macroEvents}
-            macroStartDate={(phases[0] as (typeof phases[0] & { start_date?: string }))?.start_date ?? null}
-            selectedWeek={macroContext.weekNumber}
-            onWeekClick={() => navigate('/macrocycles')}
-            weekTypeAbbreviations={undefined}
+            selectedWeekStart={selectedWeekStart}
+            onCellClick={() => navigate('/macrocycles')}
           />
         </div>
       )}
