@@ -1,27 +1,38 @@
 import type { MacroPhaseBarCell } from '../components/planning/MacroPhaseBar';
 import type {
-  MacroCycle,
+  Macrocycle,
   MacroPhase,
   MacroWeek,
   WeekTypeConfig,
 } from './database.types';
 
+/** Neutral gap color for weeks without a macro. */
+const GAP_COLOR = 'var(--color-bg-secondary)';
+
 export interface MacroPhaseBarSource {
-  macros: MacroCycle[];
+  /** All macros the athlete has (can be >1 for cross-macro views). */
+  macros: Pick<Macrocycle, 'id' | 'name'>[];
+  /** All phases across all macros in `macros`. */
   phases: MacroPhase[];
+  /** All macro_weeks rows across all macros in `macros`. */
   weeks: MacroWeek[];
+  /** Coach-defined week type config list (from GeneralSettings.week_types). */
   weekTypeConfigs: WeekTypeConfig[];
 }
 
-/** Neutral gap color for weeks without a macro. */
-const GAP_COLOR = 'var(--color-border-secondary)';
-
-function findPhaseForWeek(phases: MacroPhase[], macroId: string, weekNumber: number): MacroPhase | null {
-  return phases.find(p =>
-    p.macrocycle_id === macroId &&
-    weekNumber >= p.start_week_number &&
-    weekNumber <= p.end_week_number
-  ) ?? null;
+function findPhaseForWeek(
+  phases: MacroPhase[],
+  macroId: string,
+  weekNumber: number
+): MacroPhase | null {
+  return (
+    phases.find(
+      p =>
+        p.macrocycle_id === macroId &&
+        weekNumber >= p.start_week_number &&
+        weekNumber <= p.end_week_number
+    ) ?? null
+  );
 }
 
 function resolveWeekType(
@@ -29,19 +40,28 @@ function resolveWeekType(
   configs: WeekTypeConfig[]
 ): { abbr: string; name: string } {
   if (!abbr) return { abbr: '', name: '' };
-  const wt = configs.find(c => c.abbreviation === abbr)
-         ?? configs.find(c => c.name.toLowerCase() === abbr.toLowerCase());
+  const wt =
+    configs.find(c => c.abbreviation === abbr) ??
+    configs.find(c => c.name.toLowerCase() === abbr.toLowerCase());
+  // Strict: only render types that exist in the coach's config.
+  // Unknown values (stale data, invalid input) render as empty so the
+  // cell stays clean. Raw value is still visible in the tooltip
+  // because we preserve it in typeName when the config doesn't match.
+  if (!wt) return { abbr: '', name: '' };
   return {
-    abbr: wt?.abbreviation ?? abbr,
-    name: wt?.name ?? abbr,
+    abbr: wt.abbreviation,
+    name: wt.name,
   };
 }
 
 /**
- * Given a contiguous range of week_start dates (Mondays), return one
+ * Given a chronological list of week_start dates (Mondays), return one
  * MacroPhaseBarCell per week. Weeks that fall inside a macro get the
  * macro's phase color + label "W{n}". Weeks outside any macro get a
  * gap cell (null phase, neutral color, empty label).
+ *
+ * Used by the weekly planner overview where the visible range may
+ * span multiple macros or include gap weeks.
  */
 export function buildCellsForWeekRange(
   weekStarts: string[],
@@ -86,10 +106,10 @@ export function buildCellsForWeekRange(
 
 /**
  * Build cells for a single macro from its first to last week.
- * Used by the weekly planner detail view which locks to one macro.
+ * Used by the weekly planner detail view, which locks to one macro.
  */
 export function buildCellsForSingleMacro(
-  macro: MacroCycle,
+  macro: Pick<Macrocycle, 'id' | 'name'>,
   source: MacroPhaseBarSource
 ): MacroPhaseBarCell[] {
   const macroWeeks = source.weeks
@@ -99,5 +119,8 @@ export function buildCellsForSingleMacro(
   if (macroWeeks.length === 0) return [];
 
   const weekStarts = macroWeeks.map(w => w.week_start);
-  return buildCellsForWeekRange(weekStarts, source);
+  return buildCellsForWeekRange(weekStarts, {
+    ...source,
+    macros: [macro],
+  });
 }

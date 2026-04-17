@@ -57,12 +57,10 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
     try {
       const todayStr  = new Date().toISOString().slice(0, 10);
       const lookBack  = addWeeksUTC(todayStr, -WINDOW_WEEKS);
-      // Look ahead to cover future macro weeks too
       const lookAhead = macroContext
         ? addWeeksUTC(todayStr, macroContext.totalWeeks - macroContext.weekNumber + 2)
         : addWeeksUTC(todayStr, 4);
 
-      // ── 1. Planned data (week_plans + planned_exercises) ──────────────────
       const { data: weekPlans } = await supabase
         .from('week_plans')
         .select('id, week_start')
@@ -98,7 +96,6 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         }
       }
 
-      // ── 2. Performed data (training log, completed sessions only) ─────────
       const { data: logRows } = await supabase
         .from('training_log_exercises')
         .select('performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
@@ -124,7 +121,6 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         }
       }
 
-      // ── 3. Macro SOLL targets ──────────────────────────────────────────────
       const sollByWeekStart = new Map<string, { max: number | null; avg: number | null; weekNumber: number }>();
 
       if (macroContext) {
@@ -162,7 +158,6 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
         }
       }
 
-      // ── 4. Merge all three sources ────────────────────────────────────────
       const allWeeks = new Set<string>([
         ...planByWeek.keys(),
         ...perfByWeek.keys(),
@@ -195,7 +190,11 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
   }
 
   if (loading) {
-    return <div className="h-40 flex items-center justify-center text-xs text-gray-400">Loading history…</div>;
+    return (
+      <div style={{ height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+        Loading history…
+      </div>
+    );
   }
 
   const hasPlan = data.some(d => d.plan_max !== null || d.plan_avg !== null);
@@ -204,7 +203,11 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
 
   if (!hasPlan && !hasPerf && !hasSoll) {
     return (
-      <div className="h-28 flex items-center justify-center text-xs text-gray-400 italic border border-dashed border-gray-200 rounded-lg mb-3">
+      <div style={{
+        height: 112, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 12, color: 'var(--color-text-tertiary)', fontStyle: 'italic',
+        border: '1px dashed var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', marginBottom: 12,
+      }}>
         No planned or logged data found for this exercise
       </div>
     );
@@ -229,46 +232,35 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
     : data.find(d => d.weekStart === nowWeekStart)?.label;
 
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Load history</span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setView('max')}
-            className={`text-[11px] px-2 py-0.5 rounded transition-colors ${
-              view === 'max' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-400 hover:bg-gray-100'
-            }`}
-          >
-            Hi
-          </button>
-          <button
-            onClick={() => setView('avg')}
-            className={`text-[11px] px-2 py-0.5 rounded transition-colors ${
-              view === 'avg' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-400 hover:bg-gray-100'
-            }`}
-          >
-            Avg
-          </button>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', letterSpacing: '0.05em' }}>
+          Load history
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {(['max', 'avg'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              style={{
+                fontSize: 11, padding: '2px 8px', borderRadius: 'var(--radius-sm)',
+                border: 'none', cursor: 'pointer',
+                background: view === v ? 'var(--color-accent-muted)' : 'transparent',
+                color: view === v ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                fontWeight: view === v ? 500 : 400,
+              }}
+            >
+              {v === 'max' ? 'Hi' : 'Avg'}
+            </button>
+          ))}
         </div>
       </div>
 
       <ResponsiveContainer width="100%" height={180}>
         <ComposedChart data={data} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey="label"
-            tick={{ fontSize: 10, fill: '#9ca3af' }}
-            stroke="#e5e7eb"
-            tickLine={false}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            domain={[minY, maxY]}
-            tick={{ fontSize: 10, fill: '#9ca3af' }}
-            stroke="#e5e7eb"
-            tickLine={false}
-            width={32}
-          />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} interval="preserveStartEnd" />
+          <YAxis domain={[minY, maxY]} tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} width={32} />
           <Tooltip
             contentStyle={{ fontSize: 11, padding: '4px 8px', borderColor: '#e5e7eb' }}
             formatter={(value: number, name: string) => [
@@ -283,78 +275,42 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
             labelFormatter={(label: string) => `Week: ${label}`}
           />
           {nowLabel && (
-            <ReferenceLine
-              x={nowLabel}
-              stroke="#f97316"
-              strokeWidth={1.5}
-              strokeDasharray="4 2"
-              label={{ value: 'Now', position: 'top', fontSize: 9, fill: '#f97316' }}
-            />
+            <ReferenceLine x={nowLabel} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
+              label={{ value: 'Now', position: 'top', fontSize: 9, fill: '#f97316' }} />
           )}
-
-          {/* SOLL macro targets — orange dashed */}
           {hasSoll && (
-            <Line
-              type="stepAfter"
-              dataKey={sollKey}
-              stroke="#fb923c"
-              strokeWidth={1.5}
-              strokeDasharray="5 3"
-              dot={false}
-              connectNulls
-              name={sollKey}
-              legendType="none"
-            />
+            <Line type="stepAfter" dataKey={sollKey} stroke="#fb923c" strokeWidth={1.5}
+              strokeDasharray="5 3" dot={false} connectNulls name={sollKey} legendType="none" />
           )}
-
-          {/* Planned — gray line with open dots */}
           {hasPlan && (
-            <Line
-              type="monotone"
-              dataKey={planKey}
-              stroke="#94a3b8"
-              strokeWidth={1.5}
+            <Line type="monotone" dataKey={planKey} stroke="#94a3b8" strokeWidth={1.5}
               dot={{ r: 3, fill: '#fff', stroke: '#94a3b8', strokeWidth: 1.5 }}
-              activeDot={{ r: 4 }}
-              connectNulls
-              name={planKey}
-              legendType="none"
-            />
+              activeDot={{ r: 4 }} connectNulls name={planKey} legendType="none" />
           )}
-
-          {/* Performed — blue filled dots */}
           {hasPerf && (
-            <Line
-              type="monotone"
-              dataKey={perfKey}
-              stroke="#3b82f6"
-              strokeWidth={2}
+            <Line type="monotone" dataKey={perfKey} stroke="#3b82f6" strokeWidth={2}
               dot={{ r: 3.5, fill: '#3b82f6', strokeWidth: 0 }}
-              activeDot={{ r: 5 }}
-              connectNulls
-              name={perfKey}
-              legendType="none"
-            />
+              activeDot={{ r: 5 }} connectNulls name={perfKey} legendType="none" />
           )}
         </ComposedChart>
       </ResponsiveContainer>
 
-      <div className="flex items-center gap-4 mt-1 text-[10px] text-gray-500">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4, fontSize: 10, color: 'var(--color-text-secondary)' }}>
         {hasPlan && (
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-px bg-slate-400 rounded" style={{ height: 1.5 }} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-block', width: 12, height: 1.5, backgroundColor: '#94a3b8', borderRadius: 1 }} />
             Planned
           </span>
         )}
         {hasPerf && (
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 rounded" style={{ height: 2, backgroundColor: '#3b82f6' }} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-block', width: 12, height: 2, backgroundColor: '#3b82f6', borderRadius: 1 }} />
             Performed
           </span>
         )}
         {hasSoll && (
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 border-t border-dashed border-orange-400" />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ display: 'inline-block', width: 12, borderTop: '1.5px dashed #fb923c' }} />
             SOLL
           </span>
         )}

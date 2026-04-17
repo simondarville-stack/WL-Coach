@@ -59,7 +59,14 @@ export function WeekOverview({
   competitionTotal,
 }: WeekOverviewProps) {
   if (!weekPlan) {
-    return <div className="flex items-center justify-center py-20 text-sm text-gray-400">No plan for this week</div>;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '80px 0', fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
+      }}>
+        No plan for this week
+      </div>
+    );
   }
 
   const activeSlots = visibleDays.map(d => d.index);
@@ -74,35 +81,38 @@ export function WeekOverview({
   // ── Calendar-mapped view ──────────────────────────────────────────────────
   if (isCalendarMapped) {
     const cells = buildWeekdayCells(activeSlots, schedule);
-
-    // Slots not in schedule — show below as "Unscheduled"
     const unscheduledDays = visibleDays.filter(d => !schedule![d.index]);
 
     return (
-      <div className="p-4">
-        {/* Day cards — flex-wrap so training cards keep min width and spill to next row */}
-        <div className="flex flex-wrap gap-2">
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {cells.map(cell => (
             cell.isRestDay ? (
-              /* Thin vertical separator — stays narrow, wraps with the row */
               <div
                 key={cell.weekday}
-                className="flex flex-col items-center gap-1 self-stretch py-1"
-                style={{ flex: '0 0 2rem' }}
+                style={{ flex: '0 0 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, alignSelf: 'stretch', padding: '4px 0' }}
               >
-                <div className="flex-1 border-l border-dashed border-gray-200 w-0" />
-                <span className="text-[8px] text-gray-300 select-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                <div style={{ flex: 1, borderLeft: '1px dashed var(--color-border-tertiary)', width: 0 }} />
+                <span style={{
+                  fontSize: 8, color: 'var(--color-text-tertiary)', userSelect: 'none',
+                  writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+                }}>
                   {cell.weekdayName}
                 </span>
               </div>
             ) : (
-              <div key={cell.weekday} className="space-y-2" style={{ flex: '1 1 180px' }}>
+              <div key={cell.weekday} style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {cell.trainingSessions.map(session => {
                   const dayEntry = visibleDays.find(d => d.index === session.slotIndex);
                   return (
                     <div key={session.slotIndex}>
                       {cell.trainingSessions.length > 1 && session.time && (
-                        <div className="text-[9px] text-gray-400 font-medium mb-0.5 text-center">{session.time}</div>
+                        <div style={{
+                          fontSize: 9, color: 'var(--color-text-tertiary)', fontWeight: 500,
+                          marginBottom: 2, textAlign: 'center',
+                        }}>
+                          {session.time}
+                        </div>
                       )}
                       <DayCard
                         dayIndex={session.slotIndex}
@@ -131,11 +141,15 @@ export function WeekOverview({
           ))}
         </div>
 
-        {/* Unscheduled slots */}
         {unscheduledDays.length > 0 && (
-          <div className="mt-4">
-            <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-2">Unscheduled</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div style={{ marginTop: 16 }}>
+            <p style={{
+              fontSize: 10, fontWeight: 500, color: 'var(--color-text-tertiary)',
+              letterSpacing: '0.05em', marginBottom: 8,
+            }}>
+              Unscheduled
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
               {unscheduledDays.map(day => (
                 <DayCard
                   key={day.index}
@@ -164,10 +178,10 @@ export function WeekOverview({
     );
   }
 
-  // ── Abstract mode (default) ───────────────────────────────────────────────
+  // ── Abstract mode ──────────────────────────────────────────────────────────
   return (
-    <div className="p-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
         {visibleDays.map(day => (
           <DayCard
             key={day.index}

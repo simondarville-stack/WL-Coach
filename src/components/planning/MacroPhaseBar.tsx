@@ -5,35 +5,40 @@ import { getISOWeek } from '../../lib/dateUtils';
 // ───────────────────────────────────────────────────────────────
 
 /**
- * One cell in the bar. Can belong to a macro week (with phase + type)
- * or be a gap cell (no macro active that week).
+ * One cell in the bar. Each cell represents a single week.
+ *
+ * A cell can belong to a macro (phase + type + label populated) or be
+ * a "gap" cell for weeks that fall outside any macro (phase = null,
+ * neutral color, no label/type). Gap cells are used in the overview
+ * to render the space between macros — in the detail view, all cells
+ * should belong to the current macro.
  */
 export interface MacroPhaseBarCell {
-  /** The macro week's week_start (YYYY-MM-DD). Identifies the week. */
+  /** The week's week_start as YYYY-MM-DD (Monday). */
   weekStart: string;
-  /** Phase name to show in the label strip. Null for gap cells. */
+  /** Phase display name. Null = gap cell. */
   phase: string | null;
-  /** Phase color. Use a neutral color for gap cells. */
+  /** Phase color (hex or CSS). Gap cells use a neutral token. */
   color: string;
-  /** Week-type abbreviation to show under the week number. Empty string = none. */
+  /** Week-type abbreviation shown under the week label. Empty = none. */
   typeAbbr: string;
-  /** Full week-type name for the tooltip. Empty string = none. */
+  /** Full week-type name used in the tooltip. Empty = none. */
   typeName: string;
-  /** The macro this week belongs to, if any. Null for gap cells. */
+  /** Macro ID the cell belongs to, null for gap cells. */
   macroId: string | null;
-  /** The macro's display name, if any. */
+  /** Macro display name for the tooltip. Null for gap cells. */
   macroName: string | null;
-  /** Display label for the cell — typically "W{n}" where n is the week's position in its macro, or blank for gaps. */
+  /** Label shown inside the cell, e.g. "W3". Empty for gap cells. */
   label: string;
 }
 
 export interface MacroPhaseBarEvent {
   id: string;
   kind: 'point' | 'range';
-  /** For point events: a weekStart (YYYY-MM-DD) and day 0-6 */
+  /** For point events: the week's weekStart + day 0-6 */
   weekStart?: string;
   day?: number;
-  /** For range events: start + end weekStart and start + end day */
+  /** For range events: start/end weekStart + start/end day 0-6 */
   startWeekStart?: string;
   startDay?: number;
   endWeekStart?: string;
@@ -47,7 +52,7 @@ export interface MacroPhaseBarProps {
   cells: MacroPhaseBarCell[];
   /** Optional events to mark with top-right dots + tooltip lines */
   events?: MacroPhaseBarEvent[];
-  /** The weekStart of the currently selected week. Null if none selected. */
+  /** weekStart of the currently selected week. Null if none. */
   selectedWeekStart?: string | null;
   /** Called when a cell is clicked */
   onCellClick?: (cell: MacroPhaseBarCell) => void;
@@ -81,9 +86,9 @@ interface PhaseGroup {
 }
 
 /**
- * Group consecutive cells by (macroId, phase). A boundary happens
- * when either the macroId changes OR the phase changes. Gap cells
- * (phase=null) are their own group and carry no label.
+ * Group consecutive cells that share (macroId, phase). A new group
+ * starts when either changes. Gap cells (phase = null) form their own
+ * groups with empty phase names — they carry no label.
  */
 function computePhaseGroups(cells: MacroPhaseBarCell[]): PhaseGroup[] {
   const groups: PhaseGroup[] = [];
@@ -91,16 +96,8 @@ function computePhaseGroups(cells: MacroPhaseBarCell[]): PhaseGroup[] {
   let currentMacroId: string | null = null;
   cells.forEach((c, i) => {
     const phaseKey = c.phase ?? '';
-    if (
-      !current ||
-      current.phase !== phaseKey ||
-      currentMacroId !== c.macroId
-    ) {
-      current = {
-        phase: phaseKey,
-        startIdx: i,
-        weekCount: 1,
-      };
+    if (!current || current.phase !== phaseKey || currentMacroId !== c.macroId) {
+      current = { phase: phaseKey, startIdx: i, weekCount: 1 };
       groups.push(current);
       currentMacroId = c.macroId;
     } else {
@@ -138,9 +135,13 @@ export function MacroPhaseBar({
 
   const groups = computePhaseGroups(cells);
 
-  const buildTooltip = (c: MacroPhaseBarCell, cellEvents: MacroPhaseBarEvent[]): string => {
+  const buildTooltip = (
+    c: MacroPhaseBarCell,
+    cellEvents: MacroPhaseBarEvent[]
+  ): string => {
     const lines: string[] = [];
     if (c.label) lines.push(c.label);
+
     const metaParts: string[] = [];
     if (c.macroName) metaParts.push(c.macroName);
     if (c.phase) metaParts.push(c.phase);
@@ -195,7 +196,7 @@ export function MacroPhaseBar({
                 userSelect: 'none',
               }}
             >
-              {g.weekCount >= 2 ? g.phase : ''}
+              {g.phase}
             </div>
           );
         })}
@@ -215,7 +216,8 @@ export function MacroPhaseBar({
           {cells.map(c => {
             const cellEvents = eventsForCell(c, events);
             const tooltip = buildTooltip(c, cellEvents);
-            const isSelected = selectedWeekStart != null && c.weekStart === selectedWeekStart;
+            const isSelected =
+              selectedWeekStart != null && c.weekStart === selectedWeekStart;
             const isGap = c.phase === null;
 
             return (
@@ -234,10 +236,15 @@ export function MacroPhaseBar({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '1px',
-                  transition: 'filter 100ms ease-out, opacity 100ms ease-out',
+                  transition:
+                    'filter 100ms ease-out, opacity 100ms ease-out',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.filter = 'brightness(1.1)'; }}
-                onMouseLeave={e => { e.currentTarget.style.filter = 'none'; }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.filter = 'brightness(1.1)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.filter = 'none';
+                }}
               >
                 {!isGap && c.label && (
                   <span
@@ -334,26 +341,27 @@ export function MacroPhaseBar({
         })}
 
         {/* Playhead */}
-        {selectedWeekStart && (() => {
-          const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
-          if (selIdx < 0) return null;
-          const leftPct = (selIdx + 0.5) * (100 / total);
-          return (
-            <div
-              style={{
-                position: 'absolute',
-                top: '-4px',
-                bottom: '-4px',
-                left: `calc(${leftPct}% - 1px)`,
-                width: '2px',
-                background: 'var(--color-text-primary)',
-                borderRadius: '1px',
-                pointerEvents: 'none',
-                zIndex: 6,
-              }}
-            />
-          );
-        })()}
+        {selectedWeekStart &&
+          (() => {
+            const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
+            if (selIdx < 0) return null;
+            const leftPct = (selIdx + 0.5) * (100 / total);
+            return (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  bottom: '-4px',
+                  left: `calc(${leftPct}% - 1px)`,
+                  width: '2px',
+                  background: 'var(--color-text-primary)',
+                  borderRadius: '1px',
+                  pointerEvents: 'none',
+                  zIndex: 6,
+                }}
+              />
+            );
+          })()}
       </div>
     </div>
   );

@@ -31,7 +31,6 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
   async function loadData() {
     setLoading(true);
     try {
-      // 1. Find tracked exercise for this macrocycle
       const { data: te } = await supabase
         .from('macro_tracked_exercises')
         .select('id')
@@ -41,7 +40,6 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         .maybeSingle();
       if (!te) { setData([]); return; }
 
-      // 2. Load all macro weeks for this macrocycle
       const { data: macroWeeks } = await supabase
         .from('macro_weeks')
         .select('id, week_number, week_start')
@@ -49,7 +47,6 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         .order('week_number');
       if (!macroWeeks?.length) { setData([]); return; }
 
-      // 3. Load SOLL targets
       const { data: targets } = await supabase
         .from('macro_targets')
         .select('macro_week_id, target_max, target_avg')
@@ -57,7 +54,6 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         .in('macro_week_id', macroWeeks.map(w => w.id));
       const targetMap = new Map((targets || []).map(t => [t.macro_week_id, t]));
 
-      // 4. Load IST: find week_plans for this athlete matching week_starts
       const weekStarts = macroWeeks.map(w => w.week_start);
       const { data: weekPlans } = await supabase
         .from('week_plans')
@@ -66,7 +62,6 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         .in('week_start', weekStarts);
       const wpMap = new Map((weekPlans || []).map(wp => [wp.week_start, wp.id]));
 
-      // 5. Load planned exercises for all those week plans
       const planIds = Array.from(wpMap.values());
       let istByWpId = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       if (planIds.length > 0) {
@@ -107,11 +102,15 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
   }
 
   if (loading) {
-    return <div className="h-44 flex items-center justify-center text-xs text-gray-400">Loading chart…</div>;
+    return (
+      <div style={{ height: 176, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+        Loading chart…
+      </div>
+    );
   }
   if (!data.length) {
     return (
-      <div className="h-44 flex items-center justify-center text-xs text-gray-400 italic">
+      <div style={{ height: 176, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
         This exercise is not tracked in the macrocycle
       </div>
     );
@@ -126,28 +125,31 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
   const nowLabel = `W${macroContext.weekNumber}`;
 
   return (
-    <div className="space-y-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {/* Toggle + legend */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setView('max')}
-          className={`text-xs px-2 py-0.5 rounded transition-colors ${view === 'max' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
-        >
-          Hi
-        </button>
-        <button
-          onClick={() => setView('avg')}
-          className={`text-xs px-2 py-0.5 rounded transition-colors ${view === 'avg' ? 'bg-blue-100 text-blue-700 font-medium' : 'text-gray-500 hover:bg-gray-100'}`}
-        >
-          Avg
-        </button>
-        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-px bg-blue-500 inline-block" style={{ height: 2 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {(['max', 'avg'] as const).map(v => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            style={{
+              fontSize: 12, padding: '2px 8px', borderRadius: 'var(--radius-sm)',
+              border: 'none', cursor: 'pointer',
+              background: view === v ? 'var(--color-accent-muted)' : 'transparent',
+              color: view === v ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+              fontWeight: view === v ? 500 : 400,
+            }}
+          >
+            {v === 'max' ? 'Hi' : 'Avg'}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ display: 'inline-block', width: 12, height: 2, backgroundColor: '#3b82f6' }} />
             SOLL
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-3 h-px bg-green-500 inline-block" style={{ height: 2 }} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ display: 'inline-block', width: 12, height: 2, backgroundColor: '#10b981' }} />
             IST
           </span>
         </div>
@@ -172,24 +174,10 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
             strokeDasharray="4 2"
             label={{ value: 'Now', position: 'top', fontSize: 9, fill: '#f97316' }}
           />
-          <Line
-            type="monotone"
-            dataKey={sollKey}
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={{ r: 3, fill: '#3b82f6' }}
-            connectNulls
-            activeDot={{ r: 4 }}
-          />
-          <Line
-            type="monotone"
-            dataKey={istKey}
-            stroke="#10b981"
-            strokeWidth={2}
-            dot={{ r: 3, fill: '#10b981' }}
-            connectNulls
-            activeDot={{ r: 4 }}
-          />
+          <Line type="monotone" dataKey={sollKey} stroke="#3b82f6" strokeWidth={2}
+            dot={{ r: 3, fill: '#3b82f6' }} connectNulls activeDot={{ r: 4 }} />
+          <Line type="monotone" dataKey={istKey} stroke="#10b981" strokeWidth={2}
+            dot={{ r: 3, fill: '#10b981' }} connectNulls activeDot={{ r: 4 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>

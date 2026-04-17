@@ -15,7 +15,7 @@ import {
   type ComputedMetrics,
 } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
-import type { Athlete, TrainingGroup, MacroCycle, MacroPhase, MacroWeek, WeekTypeConfig } from '../../lib/database.types';
+import type { Athlete, TrainingGroup } from '../../lib/database.types';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -152,10 +152,10 @@ export function PlannerWeekOverview({
 }: PlannerWeekOverviewProps) {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [macroBlocks, setMacroBlocks] = useState<MacroBlock[]>([]);
-  const [rawMacros, setRawMacros] = useState<MacroCycle[]>([]);
-  const [rawPhases, setRawPhases] = useState<MacroPhase[]>([]);
-  const [rawMacroWeeks, setRawMacroWeeks] = useState<MacroWeek[]>([]);
-  const [weekTypeConfigs, setWeekTypeConfigs] = useState<WeekTypeConfig[]>([]);
+  const [rawMacros, setRawMacros] = useState<Array<{ id: string; name: string }>>([]);
+  const [rawPhases, setRawPhases] = useState<import('../../lib/database.types').MacroPhase[]>([]);
+  const [rawMacroWeeks, setRawMacroWeeks] = useState<import('../../lib/database.types').MacroWeek[]>([]);
+  const [weekTypeConfigs, setWeekTypeConfigs] = useState<import('../../lib/database.types').WeekTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [centerDate, setCenterDate] = useState(() => getTodayMonday());
   const currentWeekRef = useRef<HTMLDivElement>(null);
@@ -172,6 +172,9 @@ export function PlannerWeekOverview({
     if (!targetId && !targetGroupId) {
       setWeeks([]);
       setMacroBlocks([]);
+      setRawMacros([]);
+      setRawPhases([]);
+      setRawMacroWeeks([]);
       setLoading(false);
       return;
     }
@@ -287,9 +290,13 @@ export function PlannerWeekOverview({
 
         const { data: macroWeeks } = await supabase
           .from('macro_weeks')
-          .select('macrocycle_id, week_number, week_start, week_type, total_reps_target, tonnage_target, avg_intensity_target')
+          .select('*')
           .in('macrocycle_id', macroIds)
           .order('week_number');
+
+        setRawMacros(macros.map(m => ({ id: m.id, name: m.name })));
+        setRawPhases((phases as import('../../lib/database.types').MacroPhase[]) ?? []);
+        setRawMacroWeeks((macroWeeks as import('../../lib/database.types').MacroWeek[]) ?? []);
 
         // Build weekStart → macro targets map
         (macroWeeks || []).forEach((mw: any) => {
@@ -324,24 +331,13 @@ export function PlannerWeekOverview({
             phases: phaseBlocks,
           });
         });
-
-        setRawPhases((phases || []) as MacroPhase[]);
-        setRawMacroWeeks((macroWeeks || []) as MacroWeek[]);
       } else {
+        setRawMacros([]);
         setRawPhases([]);
         setRawMacroWeeks([]);
       }
 
       setMacroBlocks(blocks);
-      setRawMacros((macros || []) as MacroCycle[]);
-
-      // Fetch coach week-type configs from settings
-      const { data: settingsRow } = await supabase
-        .from('general_settings')
-        .select('week_types')
-        .eq('owner_id', getOwnerId())
-        .maybeSingle();
-      setWeekTypeConfigs((settingsRow?.week_types as WeekTypeConfig[] | undefined) ?? []);
 
       // 6. Build week summaries
       const summaries: WeekSummary[] = weekDates.map(ws => {
@@ -444,6 +440,16 @@ export function PlannerWeekOverview({
       });
 
       setWeeks(summaries);
+
+      // Load coach-defined week type configs for the MacroPhaseBar
+      const { data: settings } = await supabase
+        .from('general_settings')
+        .select('week_types')
+        .eq('owner_id', getOwnerId())
+        .maybeSingle();
+      setWeekTypeConfigs(
+        (settings?.week_types as import('../../lib/database.types').WeekTypeConfig[] | undefined) ?? []
+      );
     } catch (err) {
       console.error('Failed to load week overview:', err);
     } finally {
@@ -533,9 +539,13 @@ export function PlannerWeekOverview({
 
   const phaseBarCells = buildCellsForWeekRange(
     weeks.map(w => w.weekStart),
-    { macros: rawMacros, phases: rawPhases, weeks: rawMacroWeeks, weekTypeConfigs }
+    {
+      macros: rawMacros,
+      phases: rawPhases,
+      weeks: rawMacroWeeks,
+      weekTypeConfigs,
+    }
   );
-  const selectedWeekStart = weeks.find(w => w.weekStart === today)?.weekStart ?? null;
 
   return (
     <StandardPage>
@@ -597,13 +607,13 @@ export function PlannerWeekOverview({
         </Button>
       </div>
 
-      {/* Macro phase bar */}
+      {/* Macro phase bar (replaces volume ribbon) */}
       {phaseBarCells.length > 0 && (
         <div style={{ paddingLeft: '76px', paddingRight: '170px' }}>
           <MacroPhaseBar
             cells={phaseBarCells}
             events={[]}
-            selectedWeekStart={selectedWeekStart}
+            selectedWeekStart={today}
             onCellClick={(cell) => onSelectWeek(cell.weekStart)}
           />
         </div>
