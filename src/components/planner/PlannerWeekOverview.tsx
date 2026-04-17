@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
-import { Button } from '../ui';
+import { StandardPage, Button } from '../ui';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -484,50 +484,58 @@ export function PlannerWeekOverview({
 
   if (!athlete && !group) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: 256, fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
-      }}>
-        Select an athlete or group to view the weekly overview.
-      </div>
+      <StandardPage>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '16rem', fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
+        }}>
+          Select an athlete or group to view the weekly overview.
+        </div>
+      </StandardPage>
     );
   }
 
   if (loading) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: 256, fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
-      }}>
-        Loading weeks...
-      </div>
+      <StandardPage>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '16rem', fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
+        }}>
+          Loading weeks…
+        </div>
+      </StandardPage>
     );
   }
 
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 8px' }}>
+    <StandardPage>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', padding: 'var(--space-lg)' }}>
       {/* Macro context bar */}
       {currentMacro && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          paddingBottom: 12, borderBottom: '0.5px solid var(--color-border-tertiary)',
+          display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+          paddingBottom: 'var(--space-md)', borderBottom: '0.5px solid var(--color-border-tertiary)',
         }}>
           <span style={{
-            padding: '2px 10px', fontSize: 10, fontWeight: 500,
-            borderRadius: 99, border: `1px solid ${currentPhaseInfo?.phase.color || '#7F77DD'}`,
+            padding: '2px 10px', fontSize: 'var(--text-caption)', fontWeight: 500,
+            borderRadius: '999px', border: `0.5px solid ${currentPhaseInfo?.phase.color || '#7F77DD'}`,
             color: currentPhaseInfo?.phase.color || '#7F77DD',
-            backgroundColor: (currentPhaseInfo?.phase.color || '#7F77DD') + '15',
+            background: `${currentPhaseInfo?.phase.color || '#7F77DD'}15`,
           }}>
             {currentMacro.macroName}
           </span>
           {currentPhaseInfo && (
-            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+            <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
               {currentPhaseInfo.phase.phaseName}
             </span>
           )}
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+          <span style={{
+            marginLeft: 'auto', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+            fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+          }}>
             {formatDateShort(currentMacro.startDate)} – {formatDateShort(currentMacro.endDate)}
           </span>
         </div>
@@ -544,7 +552,7 @@ export function PlannerWeekOverview({
           Earlier
         </Button>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           icon={<CalendarDays size={13} />}
           onClick={handleTodayClick}
@@ -565,12 +573,12 @@ export function PlannerWeekOverview({
       {/* Volume ribbon */}
       <div style={{
         display: 'flex', gap: 2, alignItems: 'flex-end',
-        height: 28, padding: '0 72px',
+        height: '28px', paddingLeft: '76px', paddingRight: '170px',
       }}>
         {weeks.map(w => {
           const h = maxTonnage > 0 ? (w.totalTonnage / maxTonnage) * 100 : 0;
           const phaseInfo = getPhaseForWeek(w.weekStart);
-          const color = phaseInfo?.phase.color || '#888';
+          const color = phaseInfo?.phase.color || 'var(--color-gray-400)';
           const isCurrent = w.weekStart === today;
           return (
             <div
@@ -579,9 +587,9 @@ export function PlannerWeekOverview({
                 flex: 1,
                 borderRadius: '2px 2px 0 0',
                 height: `${Math.max(h, 2)}%`,
-                backgroundColor: color + (isCurrent ? '50' : '25'),
-                border: isCurrent ? `1px solid ${color}80` : 'none',
-                transition: 'height 0.2s',
+                background: color + (isCurrent ? '50' : '25'),
+                border: isCurrent ? `0.5px solid ${color}80` : 'none',
+                transition: 'all 100ms ease-out',
               }}
             />
           );
@@ -612,25 +620,25 @@ export function PlannerWeekOverview({
           return (
             <div key={week.weekStart} ref={isCurrent ? currentWeekRef : undefined}>
               {sectionLabel && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', marginTop: 8 }}>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0', marginTop: 'var(--space-sm)' }}>
+                  <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
                     {sectionLabel}
                   </span>
-                  <span style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
+                  <span style={{ flex: 1, height: '0.5px', background: 'var(--color-border-tertiary)' }} />
                 </div>
               )}
               <div
                 onClick={() => onSelectWeek(week.weekStart)}
                 style={{
                   display: 'flex', flexDirection: 'column',
-                  padding: '12px', margin: '0 -12px',
+                  padding: 'var(--space-md)', margin: '0 calc(-1 * var(--space-md))',
                   borderRadius: 'var(--radius-lg)',
                   cursor: 'pointer',
                   border: isCurrent
-                    ? '2px solid var(--color-accent-border)'
-                    : '1px solid transparent',
-                  background: isCurrent ? 'var(--color-accent-muted)' : 'transparent',
-                  transition: 'background 0.15s',
+                    ? '0.5px solid var(--color-accent)'
+                    : '0.5px solid transparent',
+                  background: isCurrent ? 'var(--color-info-bg)' : 'transparent',
+                  transition: 'background 100ms ease-out, border-color 100ms ease-out',
                 }}
                 onMouseEnter={e => {
                   if (!isCurrent) (e.currentTarget as HTMLDivElement).style.background = 'var(--color-bg-secondary)';
@@ -643,43 +651,38 @@ export function PlannerWeekOverview({
                 <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
                   {/* Meta column */}
                   <div style={{ width: 76, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                        {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
-                      </span>
-                      {isCurrent && (
-                        <span style={{
-                          fontSize: 7, fontWeight: 500, padding: '1px 4px',
-                          borderRadius: 'var(--radius-sm)',
-                          background: 'var(--color-danger-bg)',
-                          color: 'var(--color-danger-text)',
-                        }}>
-                          now
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+                    <span style={{
+                      fontSize: 'var(--text-body)', fontWeight: 500,
+                      color: 'var(--color-text-primary)',
+                      fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                    }}>
+                      {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
+                    </span>
+                    <div style={{
+                      fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2,
+                      fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                    }}>
                       {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
                     </div>
                     {week.compliance !== null && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{
                           height: 3, background: 'var(--color-bg-tertiary)',
-                          borderRadius: 99, overflow: 'hidden', width: '100%',
+                          borderRadius: '999px', overflow: 'hidden', width: '100%',
                         }}>
                           <div
                             style={{
-                              height: '100%', borderRadius: 99,
+                              height: '100%', borderRadius: '999px',
                               width: `${Math.round(week.compliance * 100)}%`,
-                              backgroundColor: week.compliance >= 0.9
-                                ? 'var(--color-success-text)'
+                              background: week.compliance >= 0.9
+                                ? 'var(--color-success-border)'
                                 : week.compliance >= 0.5
                                 ? 'var(--color-accent)'
-                                : 'var(--color-warning-text)',
+                                : 'var(--color-warning-border)',
                             }}
                           />
                         </div>
-                        <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2, display: 'block' }}>
+                        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2, display: 'block' }}>
                           Done: {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' (prog.)' : ''}
                         </span>
                       </div>
@@ -697,26 +700,25 @@ export function PlannerWeekOverview({
                       let dayBlockStyle: React.CSSProperties;
                       if (day.isRest) {
                         dayBlockStyle = {
-                          background: isCurrent ? 'var(--color-accent-muted)' : 'var(--color-bg-secondary)',
-                          opacity: isCurrent ? 0.4 : 0.3,
+                          background: 'var(--color-bg-secondary)',
+                          opacity: 0.35,
                           border: 'none',
                         };
                       } else if (isEmpty) {
                         dayBlockStyle = {
-                          border: '1px dashed var(--color-border-tertiary)',
+                          border: '0.5px dashed var(--color-border-tertiary)',
                           background: 'transparent',
                         };
                       } else if (faded) {
                         dayBlockStyle = {
-                          border: `1px dashed ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'}`,
+                          border: `0.5px dashed ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'}`,
                           background: isCurrent ? 'rgba(255,255,255,0.7)' : 'var(--color-bg-secondary)',
                           opacity: 0.6,
                         };
                       } else {
                         dayBlockStyle = {
-                          border: `1px solid ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'}`,
+                          border: `0.5px solid ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'}`,
                           background: 'var(--color-bg-primary)',
-                          boxShadow: isCurrent ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                         };
                       }
 
@@ -788,17 +790,17 @@ export function PlannerWeekOverview({
                   {/* Stats column */}
                   <div style={{
                     width: 170, flexShrink: 0, display: 'flex', flexDirection: 'column',
-                    justifyContent: 'center', paddingLeft: 12,
+                    justifyContent: 'center', paddingLeft: 'var(--space-md)',
                     borderLeft: '0.5px solid var(--color-border-tertiary)',
                   }}>
                     {/* Column headers */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                      <div style={{ width: 40, fontSize: 8, color: 'var(--color-text-tertiary)' }} />
-                      <div style={{ flex: 1, fontSize: 8, color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
+                      <div style={{ width: 40 }} />
+                      <div style={{ flex: 1, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
                         Target
                       </div>
                       <div style={{
-                        flex: 1, fontSize: 8, fontWeight: 500,
+                        flex: 1, fontSize: 'var(--text-caption)', fontWeight: 500,
                         color: 'var(--color-text-secondary)', textAlign: 'right',
                       }}>
                         Planned
@@ -815,21 +817,21 @@ export function PlannerWeekOverview({
                       return (
                         <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '1px 0' }}>
                           <div style={{
-                            width: 40, fontSize: 9, fontWeight: 500,
+                            width: 40, fontSize: 'var(--text-caption)', fontWeight: 500,
                             color: 'var(--color-text-secondary)',
                           }}>
                             {m.label}
                           </div>
                           <div style={{
-                            flex: 1, fontSize: 10, color: 'var(--color-text-tertiary)',
-                            textAlign: 'right', fontFamily: 'var(--font-mono)',
+                            flex: 1, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+                            textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                           }}>
                             {formatMetricValue(m.key, targetVal)}
                           </div>
                           <div style={{
-                            flex: 1, fontSize: 10, fontWeight: 600,
+                            flex: 1, fontSize: 'var(--text-caption)', fontWeight: 500,
                             color: 'var(--color-text-primary)',
-                            textAlign: 'right', fontFamily: 'var(--font-mono)',
+                            textAlign: 'right', fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                           }}>
                             {formatMetricValue(m.key, actualVal)}
                           </div>
@@ -845,9 +847,10 @@ export function PlannerWeekOverview({
       </div>
 
       {/* Hint */}
-      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', textAlign: 'center', paddingTop: 8 }}>
+      <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textAlign: 'center', paddingTop: 'var(--space-sm)' }}>
         Click any week to open the planner
       </div>
     </div>
+    </StandardPage>
   );
 }
