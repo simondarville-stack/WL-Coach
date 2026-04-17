@@ -53,6 +53,21 @@ export function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
+/**
+ * ISO 8601 week number. Week starts Monday. Week 1 of a year is the
+ * week containing the first Thursday (equivalently, 4 Jan).
+ */
+export function getISOWeek(date: Date): number {
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  // Thursday in current ISO week
+  target.setDate(target.getDate() + 3 - ((target.getDay() + 6) % 7));
+  const jan4 = new Date(target.getFullYear(), 0, 4);
+  const jan4Monday = new Date(jan4);
+  jan4Monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  return 1 + Math.round((target.getTime() - jan4Monday.getTime()) / (7 * 86400000));
+}
+
 export function formatDateRange(startDateStr: string, numDays: number = 7): string {
   const start = new Date(startDateStr);
   const end = new Date(start);

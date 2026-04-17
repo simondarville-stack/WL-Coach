@@ -17,6 +17,7 @@ import { calculateAge } from '../../lib/calculations';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
+import { MacroPhaseBar, type MacroWeekEntry, type MacroPhaseBarEvent } from '../planning';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -206,6 +207,8 @@ export interface PlannerControlPanelProps {
   onPrint: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: () => Promise<void>;
+  weekTypesByNum?: Record<number, string>;
+  macroEvents?: MacroPhaseBarEvent[];
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -233,6 +236,8 @@ export function PlannerControlPanel({
   onPrint,
   onToggleLoadDistribution,
   onResolvePercentages,
+  weekTypesByNum,
+  macroEvents = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
@@ -321,6 +326,19 @@ export function PlannerControlPanel({
   const athleteInitials = selectedAthlete?.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '';
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
   const totalWeeks      = macroContext?.totalWeeks ?? 1;
+
+  const phaseBarWeeks: MacroWeekEntry[] = macroContext && totalWeeks > 0
+    ? Array.from({ length: totalWeeks }, (_, i) => {
+        const weekNum = i + 1;
+        const phase = phases.find(p => weekNum >= p.start_week_number && weekNum <= p.end_week_number);
+        return {
+          n: weekNum,
+          phase: phase?.name ?? macroContext.phaseName ?? '—',
+          color: phase?.color ?? macroContext.phaseColor ?? '#7F77DD',
+          type: weekTypesByNum?.[weekNum] ?? '',
+        };
+      })
+    : [];
 
   const subLabel = [
     athleteAge !== null ? `${athleteAge} yr` : null,
@@ -867,111 +885,21 @@ export function PlannerControlPanel({
       })()}
 
       {/* ── MACRO phase + week timeline ──────────────────────────────────────── */}
-      {macroContext && totalWeeks > 0 && (
+      {macroContext && totalWeeks > 0 && phaseBarWeeks.length > 0 && (
         <div
-          onClick={() => navigate('/macrocycles')}
-          title="Open macro cycles"
           style={{
-            display: 'flex',
-            cursor: 'pointer',
-            overflow: 'hidden',
-            height: '28px',
+            padding: 'var(--space-sm) var(--space-lg)',
             borderTop: '0.5px solid var(--color-border-tertiary)',
           }}
         >
-          {Array.from({ length: totalWeeks }, (_, i) => {
-            const weekNum = i + 1;
-            const phase = phases.find(p => weekNum >= p.start_week_number && weekNum <= p.end_week_number);
-            const baseColor = phase?.color || macroContext.phaseColor || '#93C5FD';
-            const isCurrentWeek = weekNum === macroContext.weekNumber;
-
-            const isFirstOfPhase = phase ? weekNum === phase.start_week_number : false;
-            const phaseDuration = phase ? phase.end_week_number - phase.start_week_number + 1 : 0;
-            const showPhaseLabel = isFirstOfPhase && phaseDuration >= Math.ceil(totalWeeks * 0.12);
-
-            return (
-              <div
-                key={weekNum}
-                className="relative flex items-center justify-center flex-shrink-0"
-                style={{
-                  width: `${100 / totalWeeks}%`,
-                  backgroundColor: baseColor,
-                  borderRight: i < totalWeeks - 1 ? '1px solid rgba(255,255,255,0.3)' : undefined,
-                  position: 'relative',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-                title={`Week ${weekNum}${phase ? ` · ${phase.name}` : ''}`}
-              >
-                {/* Current-week highlight overlay */}
-                {isCurrentWeek && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      backgroundColor: 'rgba(255,255,255,0.28)',
-                    }}
-                  />
-                )}
-
-                {/* Phase name label */}
-                {showPhaseLabel && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      left: '4px',
-                      top: '3px',
-                      fontSize: 'var(--text-caption)',
-                      fontWeight: 500,
-                      color: 'rgba(255, 255, 255, 0.9)',
-                      lineHeight: 1,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      pointerEvents: 'none',
-                      zIndex: 10,
-                      maxWidth: 'calc(100% - 8px)',
-                    }}
-                  >
-                    {phase!.name}
-                  </span>
-                )}
-
-                {/* Week number */}
-                <span
-                  style={{
-                    fontSize: 'var(--text-caption)',
-                    fontFamily: 'var(--font-mono)',
-                    fontVariantNumeric: 'tabular-nums',
-                    lineHeight: 1,
-                    zIndex: 10,
-                    position: 'relative',
-                    userSelect: 'none',
-                    fontWeight: 500,
-                    color: isCurrentWeek ? 'rgba(255, 255, 255, 1)' : 'rgba(255, 255, 255, 0.85)',
-                  }}
-                >
-                  {weekNum}
-                </span>
-
-                {/* Current-week bottom accent bar */}
-                {isCurrentWeek && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      height: '2px',
-                      background: 'rgba(255, 255, 255, 0.75)',
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })}
+          <MacroPhaseBar
+            weeks={phaseBarWeeks}
+            events={macroEvents}
+            macroStartDate={(phases[0] as (typeof phases[0] & { start_date?: string }))?.start_date ?? null}
+            selectedWeek={macroContext.weekNumber}
+            onWeekClick={() => navigate('/macrocycles')}
+            weekTypeAbbreviations={undefined}
+          />
         </div>
       )}
 

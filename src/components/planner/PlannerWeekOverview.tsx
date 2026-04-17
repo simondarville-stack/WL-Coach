@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { StandardPage, Button } from '../ui';
+import { MacroPhaseBar, type MacroWeekEntry } from '../planning';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -510,6 +511,21 @@ export function PlannerWeekOverview({
 
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
 
+  const phaseBarWeeks: MacroWeekEntry[] = currentMacro
+    ? weeks.map(w => {
+        const phaseInfo = getPhaseForWeek(w.weekStart);
+        const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
+        const weekDate = new Date(w.weekStart + 'T00:00:00');
+        const diffWeeks = Math.floor((weekDate.getTime() - macroStart.getTime()) / (7 * 86400000)) + 1;
+        return {
+          n: Math.max(1, diffWeeks),
+          phase: phaseInfo?.phase.phaseName ?? '—',
+          color: phaseInfo?.phase.color ?? '#7F77DD',
+          type: '',
+        };
+      })
+    : [];
+
   return (
     <StandardPage>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', padding: 'var(--space-lg)' }}>
@@ -570,31 +586,29 @@ export function PlannerWeekOverview({
         </Button>
       </div>
 
-      {/* Volume ribbon */}
-      <div style={{
-        display: 'flex', gap: 2, alignItems: 'flex-end',
-        height: '28px', paddingLeft: '76px', paddingRight: '170px',
-      }}>
-        {weeks.map(w => {
-          const h = maxTonnage > 0 ? (w.totalTonnage / maxTonnage) * 100 : 0;
-          const phaseInfo = getPhaseForWeek(w.weekStart);
-          const color = phaseInfo?.phase.color || 'var(--color-gray-400)';
-          const isCurrent = w.weekStart === today;
-          return (
-            <div
-              key={w.weekStart}
-              style={{
-                flex: 1,
-                borderRadius: '2px 2px 0 0',
-                height: `${Math.max(h, 2)}%`,
-                background: color + (isCurrent ? '50' : '25'),
-                border: isCurrent ? `0.5px solid ${color}80` : 'none',
-                transition: 'all 100ms ease-out',
-              }}
-            />
-          );
-        })}
-      </div>
+      {/* Macro phase bar (replaces volume ribbon) */}
+      {phaseBarWeeks.length > 0 && currentMacro && (
+        <div style={{ paddingLeft: '76px', paddingRight: '170px' }}>
+          <MacroPhaseBar
+            weeks={phaseBarWeeks}
+            events={[]}
+            macroStartDate={currentMacro.startDate}
+            selectedWeek={(() => {
+              const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
+              const todayDate = new Date(today + 'T00:00:00');
+              const diffWeeks = Math.floor((todayDate.getTime() - macroStart.getTime()) / (7 * 86400000)) + 1;
+              return Math.max(1, diffWeeks);
+            })()}
+            onWeekClick={(weekNum) => {
+              const macroStart = new Date(currentMacro.startDate + 'T00:00:00');
+              const targetDate = new Date(macroStart);
+              targetDate.setDate(macroStart.getDate() + (weekNum - 1) * 7);
+              const weekStartStr = targetDate.toISOString().split('T')[0];
+              onSelectWeek(weekStartStr);
+            }}
+          />
+        </div>
+      )}
 
       {/* Week rows */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
