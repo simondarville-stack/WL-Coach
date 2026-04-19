@@ -204,12 +204,14 @@ export function MacroAnnualWheel({
   useEffect(() => {
     if (macrocycles.length === 0) return;
     const ids = macrocycles.map(mc => mc.id);
+    let cancelled = false;
 
     (async () => {
       const [phasesRes, compsRes] = await Promise.all([
-        supabase.from('macro_phases').select('*').in('macrocycle_id', ids).order('position'),
-        supabase.from('macro_competitions').select('*').in('macrocycle_id', ids).order('competition_date'),
+        supabase.from('macro_phases').select('*').in('macrocycle_id', ids).eq('owner_id', getOwnerId()).order('position'),
+        supabase.from('macro_competitions').select('*').in('macrocycle_id', ids).eq('owner_id', getOwnerId()).order('competition_date'),
       ]);
+      if (cancelled) return;
 
       const pMap: Record<string, MacroPhase[]> = {};
       (phasesRes.data || []).forEach(p => {
@@ -225,10 +227,12 @@ export function MacroAnnualWheel({
       });
       setAllComps(cMap);
     })();
+    return () => { cancelled = true; };
   }, [macrocycles]);
 
   // Load calendar events for the athlete / group
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
       let athleteIds: string[] = [];
       if (athleteId) {
@@ -241,6 +245,7 @@ export function MacroAnnualWheel({
           .is('left_at', null);
         athleteIds = (members || []).map((m: { athlete_id: string }) => m.athlete_id);
       }
+      if (cancelled) return;
       if (athleteIds.length === 0) { setCalendarEvents([]); return; }
 
       const { data: ea } = await supabase
@@ -248,6 +253,7 @@ export function MacroAnnualWheel({
         .select('event_id')
         .in('athlete_id', athleteIds);
       const eventIds = [...new Set((ea || []).map((e: { event_id: string }) => e.event_id))];
+      if (cancelled) return;
       if (eventIds.length === 0) { setCalendarEvents([]); return; }
 
       const { data: evs } = await supabase
@@ -256,9 +262,10 @@ export function MacroAnnualWheel({
         .eq('owner_id', getOwnerId())
         .in('id', eventIds)
         .order('event_date');
-      setCalendarEvents((evs as CalendarEvent[]) || []);
+      if (!cancelled) setCalendarEvents((evs as CalendarEvent[]) || []);
     };
     load();
+    return () => { cancelled = true; };
   }, [athleteId, groupId]);
 
   // ── Render ─────────────────────────────────────────────────────
