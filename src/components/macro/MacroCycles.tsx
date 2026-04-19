@@ -212,11 +212,12 @@ export function MacroCycles() {
   }) => {
     if (!macroTarget) return;
 
+    const defaultWeekType = (settings?.week_types?.[0]?.abbreviation ?? '') as WeekType;
     const weekInserts = generateMacroWeeks(data.startDate, data.endDate).map(w => ({
       macrocycle_id: '',
       week_start: w.week_start,
       week_number: w.week_number,
-      week_type: 'Medium' as WeekType,
+      week_type: defaultWeekType,
       week_type_text: '',
       notes: '',
     }));
