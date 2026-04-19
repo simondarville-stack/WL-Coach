@@ -459,8 +459,8 @@ export function MacroDraggableChart({
             <Tooltip
               cursor={false}
               contentStyle={{
-                fontSize: 10, padding: '6px 10px',
-                border: '0.5px solid var(--color-border-primary)', borderRadius: 6,
+                fontSize: 'var(--text-caption)', padding: '6px 10px',
+                border: '0.5px solid var(--color-border-secondary)', borderRadius: 6,
               }}
               labelFormatter={(wn: number) => {
                 const week = macroWeeks.find(w => w.week_number === wn);
