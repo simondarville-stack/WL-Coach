@@ -99,7 +99,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         title="EMOS"
       >
         {!collapsed ? (
-          {/* wordmark: font-medium per TASK-024 decision; Arial Black retained for visual weight */}
+          /* wordmark: font-medium per TASK-024 decision; Arial Black retained for visual weight */
           <span className="text-[22px] font-medium tracking-[0.15em] uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif', color: 'var(--color-text-primary)' }}>
             EMOS
           </span>
