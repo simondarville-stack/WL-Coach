@@ -1,13 +1,4 @@
-import type { Category, DefaultUnit } from './database.types';
-
-export const CATEGORIES: Category[] = [
-  'Snatch',
-  'Clean & Jerk',
-  'Squat',
-  'Pull',
-  'Press',
-  'Accessory',
-];
+import type { DefaultUnit } from './database.types';
 
 export const DEFAULT_UNITS: { value: DefaultUnit; label: string }[] = [
   { value: 'percentage', label: 'Percentage (%)' },

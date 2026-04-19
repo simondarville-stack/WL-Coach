@@ -44,18 +44,23 @@ const EXAMPLE_ROW = [
   '',
 ];
 
-const HINT_ROW = [
-  'Required. Exercise name.',
-  'Optional. Short code (max 10 chars).',
-  'Required. e.g. Snatch / Clean & Jerk / Squat / Pull / Press / Accessory',
-  'Required. TRUE or FALSE',
-  'Required. One of: percentage / absolute_kg / rpe / free_text / other',
-  'Optional. Hex color e.g. #3B82F6. Defaults to blue if blank.',
-  'Required. TRUE or FALSE',
-  'Required. TRUE or FALSE',
-  'Optional.',
-  'Optional. Video URL.',
-];
+function buildHintRow(categoryNames: string[]): string[] {
+  const catHint = categoryNames.length > 0
+    ? `Required. e.g. ${categoryNames.slice(0, 4).join(' / ')}${categoryNames.length > 4 ? ' / …' : ''}`
+    : 'Required. e.g. Snatch / Clean & Jerk / Squat';
+  return [
+    'Required. Exercise name.',
+    'Optional. Short code (max 10 chars).',
+    catHint,
+    'Required. TRUE or FALSE',
+    'Required. One of: percentage / absolute_kg / rpe / free_text / other',
+    'Optional. Hex color e.g. #3B82F6. Defaults to blue if blank.',
+    'Required. TRUE or FALSE',
+    'Required. TRUE or FALSE',
+    'Optional.',
+    'Optional. Video URL.',
+  ];
+}
 
 function parseBoolean(val: unknown): boolean | null {
   if (val === null || val === undefined || val === '') return null;
@@ -129,7 +134,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, HINT_ROW, EXAMPLE_ROW]);
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, buildHintRow(categories.map(c => c.name)), EXAMPLE_ROW]);
 
     // Column widths
     ws['!cols'] = [
