@@ -1,3 +1,6 @@
+/* Isolation model: AthletePR rows isolate by athlete_id. Athletes are
+ * owner-scoped so AthletePR is transitively owner-scoped.
+ * Direct owner_id on athlete_prs is deferred — see REVIEW_PLAN.md DAT-013. */
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Athlete, AthletePR } from '../lib/database.types';

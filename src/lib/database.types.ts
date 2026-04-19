@@ -425,6 +425,9 @@ export interface EventVideo {
   created_at: string;
 }
 
+/* ExerciseComboTemplate: currently global (no owner_id). Intentionally
+ * shared across coaches until DAT-014 decision is made.
+ * See REVIEW_PLAN.md DAT-014. */
 export interface ExerciseComboTemplate {
   id: string;
   name: string;

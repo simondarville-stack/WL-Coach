@@ -2,6 +2,10 @@
  * useBodyweight — fetch, upsert, update, and remove bodyweight entries
  * for a single athlete.
  *
+ * Isolation model: BodyweightEntry rows isolate by athlete_id; athletes
+ * are themselves owner-scoped. Defense-in-depth owner_id on
+ * bodyweight_entries is deferred — see REVIEW_PLAN.md DAT-012.
+ *
  * Cleanup note: fetchEntries is wrapped in useCallback with a stable
  * athleteId dependency. Callers that invoke it inside a useEffect should
  * guard with isMounted / AbortController if state updates after unmount
