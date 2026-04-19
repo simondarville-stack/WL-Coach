@@ -690,7 +690,7 @@ export function WeeklyPlanner() {
             {planSelection.type === 'group' && planSelection.group && (
               <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#3730a3' }}>Group plan:</span>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: '#3730a3' }}>Group plan:</span>
                   <span style={{ fontSize: 11, color: '#4338ca' }}>{planSelection.group.name}</span>
                 </div>
                 <button

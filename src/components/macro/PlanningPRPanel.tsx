@@ -75,7 +75,7 @@ export function PlanningPRPanel({
 
   return (
     <div>
-      <h3 className="text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+      <h3 className="text-xs font-medium text-gray-700 mb-1 uppercase tracking-wide">
         Reference PRs for resolution
       </h3>
       <p className="text-xs text-gray-500 mb-3">

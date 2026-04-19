@@ -63,7 +63,7 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
-          <span className="text-sm font-semibold text-gray-900">
+          <span className="text-sm font-medium text-gray-900">
             {editingAthlete ? 'Edit athlete' : 'Add athlete'}
           </span>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded">
@@ -250,12 +250,12 @@ function AthleteListHeader() {
   return (
     <div className="flex items-center px-3 py-1.5 bg-gray-100 border-b border-gray-200 sticky top-0 z-10">
       <span className="w-8 flex-shrink-0" />
-      <span className="flex-1 min-w-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide pr-3">Name</span>
-      <span className="w-10 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-center">Age</span>
-      <span className="w-16 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-center">BW (kg)</span>
-      <span className="w-16 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-center">Class</span>
-      <span className="w-24 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide">Club</span>
-      <span className="w-16 flex-shrink-0 text-[9px] font-bold text-gray-400 uppercase tracking-wide text-right">Total</span>
+      <span className="flex-1 min-w-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide pr-3">Name</span>
+      <span className="w-10 flex-shrink-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide text-center">Age</span>
+      <span className="w-16 flex-shrink-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide text-center">BW (kg)</span>
+      <span className="w-16 flex-shrink-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide text-center">Class</span>
+      <span className="w-24 flex-shrink-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide">Club</span>
+      <span className="w-16 flex-shrink-0 text-[9px] font-medium text-gray-400 uppercase tracking-wide text-right">Total</span>
       <span className="w-20 flex-shrink-0" />
     </div>
   );
@@ -298,7 +298,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
             onError={e => { e.currentTarget.style.display = 'none'; }}
           />
         ) : (
-          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[9px] font-bold text-blue-700 flex-shrink-0">
+          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[9px] font-medium text-blue-700 flex-shrink-0">
             {initials}
           </div>
         )}
@@ -335,7 +335,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
       </span>
 
       {/* Competition total */}
-      <span className="w-16 flex-shrink-0 text-right font-mono text-[11px] font-semibold text-blue-600">
+      <span className="w-16 flex-shrink-0 text-right font-mono text-[11px] font-medium text-blue-600">
         {athlete.competition_total ? `${athlete.competition_total}` : ''}
       </span>
 
@@ -393,13 +393,13 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
               onError={e => { e.currentTarget.style.display = 'none'; }}
             />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
               {initials}
             </div>
           )}
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold text-gray-900">{athlete.name}</span>
+              <span className="text-sm font-medium text-gray-900">{athlete.name}</span>
               {!athlete.is_active && (
                 <span className="text-[9px] font-medium bg-gray-200 text-gray-500 px-1.5 py-px rounded">
                   Inactive
@@ -454,7 +454,7 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
       {/* Notes */}
       {athlete.notes && (
         <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-          <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Notes</div>
+          <div className="text-[9px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Notes</div>
           <p className="text-xs text-gray-600 leading-relaxed">{athlete.notes}</p>
         </div>
       )}
@@ -476,7 +476,7 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
 function StatRow({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wide">{label}</div>
+      <div className="text-[9px] font-medium text-gray-400 uppercase tracking-wide">{label}</div>
       <div className="flex items-center gap-1 text-xs text-gray-700 font-medium mt-0.5">
         {icon}
         {value}

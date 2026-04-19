@@ -206,7 +206,7 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Trophy size={15} style={{ color: '#F59E0B' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Personal Records</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Personal Records</span>
           <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>— {athlete.name}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -235,15 +235,15 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
         <table style={{ width: '100%', fontSize: 13, borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead>
             <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border-secondary)' }}>
-              <th style={{ textAlign: 'left', padding: '8px 16px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', width: 220 }}>
+              <th style={{ textAlign: 'left', padding: '8px 16px', fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', width: 220 }}>
                 Exercise
               </th>
               {REP_COUNTS.map(rc => (
-                <th key={rc} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 90 }}>
+                <th key={rc} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', minWidth: 90 }}>
                   {rc}RM
                 </th>
               ))}
-              <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 80 }}>
+              <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', minWidth: 80 }}>
                 Impl. 1RM
               </th>
             </tr>
@@ -308,7 +308,7 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
                           >
                             {displayValue !== null ? (
                               <>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 13, lineHeight: 1.25, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', fontStyle: isReal ? 'normal' : 'italic' }}>
+                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 13, lineHeight: 1.25, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', fontStyle: isReal ? 'normal' : 'italic' }}>
                                   {isReal ? displayValue : `~${displayValue}`}
                                   <span style={{ fontSize: 9, fontWeight: 400, marginLeft: 2, fontStyle: 'normal', color: 'var(--color-text-tertiary)' }}>kg</span>
                                 </span>
@@ -440,7 +440,7 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
       {history.length > 0 && (
         <div style={{ borderTop: '1px solid var(--color-border-tertiary)', padding: '8px 16px', background: 'var(--color-bg-secondary)' }}>
           <div style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent entries</span>
+            <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent entries</span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {history.slice(0, 8).map(entry => {

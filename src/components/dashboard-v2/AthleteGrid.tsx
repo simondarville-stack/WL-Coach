@@ -38,7 +38,7 @@ export function AthleteGrid({ athletes, rawEnabled, onNavigateToPlanner }: Props
   return (
     <div className="bg-white border border-gray-200 rounded-lg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Athletes</h3>
+        <h3 className="text-xs font-medium text-gray-700 uppercase tracking-wide">Athletes</h3>
         <div className="flex items-center gap-2">
           {allGroups.length > 0 && (
             <select
@@ -136,7 +136,7 @@ function AthleteRow({ snap, rawEnabled, onNavigateToPlanner }: {
       <div className="hidden sm:flex items-center gap-4 flex-shrink-0">
         {rawEnabled && (
           <div className="text-center w-12">
-            <div className={`text-xs font-bold ${getRawColor(snap.rawAverage)}`}>
+            <div className={`text-xs font-medium ${getRawColor(snap.rawAverage)}`}>
               {snap.rawAverage !== null ? snap.rawAverage.toFixed(1) : '-'}
             </div>
             <div className="text-[9px] text-gray-400">RAW</div>

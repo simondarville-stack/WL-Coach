@@ -403,7 +403,7 @@ export function MacroTableV2({
                       style={{ width: 68, left: stickyLeft['week'] }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[12px] font-bold text-gray-900 leading-none">{week.week_number}</span>
+                        <span className="text-[12px] font-medium text-gray-900 leading-none">{week.week_number}</span>
                         <span className="text-[9px] font-medium text-gray-500 leading-none mt-0.5">W{getISOWeek(week.week_start)}</span>
                         <span className="text-[7px] text-gray-400 leading-none mt-0.5">
                           {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}

@@ -193,7 +193,7 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
         ].map(({ label, value, warn }) => (
           <div key={label} className="bg-white rounded-lg border border-gray-200 py-2.5 px-4 hover:border-gray-300 transition-colors">
             <div className="text-[10px] text-gray-400 uppercase tracking-wider font-medium">{label}</div>
-            <div className={`text-xl font-semibold tabular-nums ${warn ? 'text-red-600' : 'text-gray-900'}`}>{value}</div>
+            <div className={`text-xl font-medium tabular-nums ${warn ? 'text-red-600' : 'text-gray-900'}`}>{value}</div>
           </div>
         ))}
       </div>
