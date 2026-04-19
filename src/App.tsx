@@ -157,8 +157,9 @@ function CoachApp() {
               <Route path="/events" element={<CompetitionCalendar />} />
               <Route path="/athletes" element={<Athletes />} />
               <Route path="/training-groups" element={<TrainingGroups />} />
-              <Route path="/training-log" element={<TrainingLogPage />} />
-              <Route path="/analysis" element={<AnalysisPage />} />
+              {/* hidden: out of scope — keep imports and files, redirect to dashboard */}
+              <Route path="/training-log" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
               <Route path="/prs" element={<PRPage />} />
               <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />

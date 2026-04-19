@@ -4,6 +4,7 @@ import {
   ChevronRight, Layers, Trash2, Check, X as XIcon, GripVertical, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useAthletes } from '../../hooks/useAthletes';
@@ -872,11 +873,13 @@ export function ExerciseLibrary() {
   const handleCatDelete = async (id: string) => {
     const cat = categories.find(c => c.id === id);
     if (!cat) return;
+    const ownerId = getOwnerId();
 
     const { data: allAffected } = await supabase
       .from('exercises')
       .select('id')
-      .eq('category', cat.name as any);
+      .eq('category', cat.name)
+      .eq('owner_id', ownerId);
 
     if (allAffected && allAffected.length > 0) {
       let unspecCat = categories.find(c => c.name === 'Unspecified');
@@ -887,13 +890,14 @@ export function ExerciseLibrary() {
           .insert([{ name: 'Unspecified', display_order: maxOrder + 1, color: '#888780' }])
           .select()
           .single();
-        if (created) unspecCat = created as any;
+        if (created) unspecCat = created;
       }
 
       await supabase
         .from('exercises')
-        .update({ category: 'Unspecified' } as any)
-        .in('id', allAffected.map((e: any) => e.id));
+        .update({ category: 'Unspecified' })
+        .in('id', allAffected.map((e: { id: string }) => e.id))
+        .eq('owner_id', ownerId);
     }
 
     await supabase.from('categories').delete().eq('id', id);

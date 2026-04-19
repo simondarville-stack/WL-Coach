@@ -172,12 +172,14 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .order('week_start'),
     supabase
       .from('macro_weeks')
-      .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id')
+      .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id, macrocycles!inner(owner_id)')
+      .eq('macrocycles.owner_id', getOwnerId())
       .gte('week_start', startDate)
       .lte('week_start', endDate),
     supabase
       .from('macro_phases')
-      .select('id, name, color, macrocycle_id'),
+      .select('id, name, color, macrocycle_id')
+      .eq('owner_id', getOwnerId()),
     supabase
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')

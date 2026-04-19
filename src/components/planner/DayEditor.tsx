@@ -200,6 +200,7 @@ export function DayEditor({
     const { data: created } = await supabase.from('exercises').insert({
       name: def.name, category: '— System', default_unit: 'other', color: def.color,
       exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
+      owner_id: getOwnerId(),
     }).select('id, default_unit').single();
     return created ?? null;
   }
@@ -222,7 +223,7 @@ export function DayEditor({
   }
 
   async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
-    const { data, error } = await supabase.from('exercises').insert([exerciseData]).select().single();
+    const { data, error } = await supabase.from('exercises').insert([{ ...exerciseData, owner_id: getOwnerId() }]).select().single();
     if (error) throw new Error(error.message);
     setShowNewExerciseModal(false);
     if (data) {

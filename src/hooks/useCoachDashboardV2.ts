@@ -82,12 +82,15 @@ export function useCoachDashboardV2() {
       const ownerId = getOwnerId();
       const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
 
-      const [settingsRes, athletesRes, groupsRes, membersRes] = await Promise.all([
+      const [settingsRes, athletesRes, groupsRes] = await Promise.all([
         supabase.from('general_settings').select('*').eq('owner_id', ownerId).maybeSingle(),
         supabase.from('athletes').select('*').eq('owner_id', ownerId).eq('is_active', true).order('name'),
         supabase.from('training_groups').select('*').eq('owner_id', ownerId).order('name'),
-        supabase.from('group_members').select('group_id, athlete_id').is('left_at', null),
       ]);
+      const groupIds = (groupsRes.data || []).map(g => g.id);
+      const membersRes = groupIds.length > 0
+        ? await supabase.from('group_members').select('group_id, athlete_id').is('left_at', null).in('group_id', groupIds)
+        : { data: [] };
 
       const s = settingsRes.data;
       setSettings(s);
@@ -126,15 +129,15 @@ export function useCoachDashboardV2() {
 
       const planIds = plans.map(p => p.id);
       const { data: plannedExercises } = planIds.length > 0
-        ? await supabase.from('planned_exercises').select('weekplan_id, total_reps, total_sets, highest_load, avg_load').in('weekplan_id', planIds)
+        ? await supabase.from('planned_exercises').select('weekplan_id, summary_total_reps, summary_total_sets, summary_highest_load, summary_avg_load').in('weekplan_id', planIds)
         : { data: [] };
       const peList = plannedExercises || [];
 
       const planExerciseMap = new Map<string, { reps: number; tonnage: number; count: number }>();
       for (const pe of peList) {
         const existing = planExerciseMap.get(pe.weekplan_id) || { reps: 0, tonnage: 0, count: 0 };
-        existing.reps += pe.total_reps || 0;
-        existing.tonnage += (pe.total_reps || 0) * (pe.avg_load || 0);
+        existing.reps += pe.summary_total_reps || 0;
+        existing.tonnage += (pe.summary_total_reps || 0) * (pe.summary_avg_load || 0);
         existing.count += 1;
         planExerciseMap.set(pe.weekplan_id, existing);
       }

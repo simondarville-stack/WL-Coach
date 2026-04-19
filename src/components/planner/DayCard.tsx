@@ -62,18 +62,18 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
 
   if (unit === 'free_text_reps') {
     const lines = parseFreeTextPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
+    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {lines.map((line, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.loadText}</span>
-              <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.loadText}</span>
+              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
             </div>
             {line.sets > 1 && (
-              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
             )}
           </div>
         ))}
@@ -83,22 +83,22 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
 
   if (isCombo) {
     const lines = parseComboPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
+    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {lines.map((line, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
                 {line.loadMax != null
                   ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
                   : `${line.load}${unit === 'percentage' ? '%' : ''}`}
               </span>
-              <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.repsText}</span>
+              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.repsText}</span>
             </div>
             {line.sets > 1 && (
-              <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
             )}
           </div>
         ))}
@@ -124,7 +124,7 @@ function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: str
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
           </div>
           {line.sets > 1 && (
-            <span style={{ fontSize: 9, color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
+            <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
           )}
         </div>
       ))}
@@ -157,6 +157,8 @@ export function DayCard({
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
   const [headerHovered, setHeaderHovered] = useState(false);
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
+  const [draggingExId, setDraggingExId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
   const shiftHeld = useShiftHeld();
 
   const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
@@ -186,6 +188,7 @@ export function DayCard({
     const { data: created } = await supabase.from('exercises').insert({
       name: def.name, category: '— System', default_unit: 'other', color: def.color,
       exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
+      owner_id: getOwnerId(),
     }).select('id, default_unit').single();
     return created ?? null;
   }
@@ -208,7 +211,7 @@ export function DayCard({
   }
 
   async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
-    const { data, error } = await supabase.from('exercises').insert([exerciseData]).select().single();
+    const { data, error } = await supabase.from('exercises').insert([{ ...exerciseData, owner_id: getOwnerId() }]).select().single();
     if (error) throw new Error(error.message);
     setShowNewExerciseModal(false);
     if (data) {
@@ -226,6 +229,19 @@ export function DayCard({
     await createComboExercise(weekPlanId, dayIndex, exercises.length + 1, data);
     await onRefresh();
     setShowComboModal(false);
+  }
+
+  async function handleReorder(draggedId: string, targetId: string, pos: 'before' | 'after') {
+    const ids = exercises.map(e => e.id);
+    const fromIdx = ids.indexOf(draggedId);
+    if (fromIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    const toIdx = pos === 'before' ? ids.indexOf(targetId) : ids.indexOf(targetId) + 1;
+    ids.splice(toIdx, 0, draggedId);
+    await Promise.all(ids.map((id, i) =>
+      supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id)
+    ));
+    await onRefresh();
   }
 
   function handleCardDragOver(e: React.DragEvent) {
@@ -265,8 +281,7 @@ export function DayCard({
         style={{
           background: isDragOver ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-md)',
-          border: isDragOver ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
-          boxShadow: isDragOver ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
+          border: isDragOver ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-secondary)',
           display: 'flex', flexDirection: 'column',
           minHeight: isEmpty ? 120 : 160,
           transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
@@ -285,7 +300,7 @@ export function DayCard({
           style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 12px',
-            borderBottom: '1px solid var(--color-border-tertiary)',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
             cursor: 'pointer',
             background: headerHovered ? 'var(--color-bg-secondary)' : 'transparent',
             borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
@@ -338,16 +353,61 @@ export function DayCard({
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', `${dayIndex}:exercise:${ex.id}`);
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
+                      setDraggingExId(ex.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingExId(null);
+                      setDropIndicator(null);
+                    }}
+                    onDragOver={e => {
+                      if (!draggingExId || draggingExId === ex.id) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                      if (dropIndicator?.targetId !== ex.id || dropIndicator.position !== pos) {
+                        setDropIndicator({ targetId: ex.id, position: pos });
+                      }
+                    }}
+                    onDragLeave={e => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        setDropIndicator(null);
+                      }
+                    }}
+                    onDrop={e => {
+                      const data = e.dataTransfer.getData('text/plain');
+                      const parts = data.split(':');
+                      if (parts.length >= 3) {
+                        const fromDay = parseInt(parts[0], 10);
+                        const dragType = parts[1];
+                        const itemId = parts[2];
+                        if (fromDay === dayIndex && dragType === 'exercise' && itemId !== ex.id) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const pos = dropIndicator?.position ?? 'after';
+                          setDropIndicator(null);
+                          setDraggingExId(null);
+                          void handleReorder(itemId, ex.id, pos);
+                          return;
+                        }
+                      }
+                      setDropIndicator(null);
+                      setDraggingExId(null);
                     }}
                     style={{
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
-                      borderBottom: '1px solid var(--color-border-tertiary)',
+                      borderBottom: '0.5px solid var(--color-border-tertiary)',
                       borderLeft: `3px solid ${borderColor}`,
                       background: shiftHeld
-                        ? (isHovered ? 'var(--color-danger-bg)' : 'rgba(240,149,149,0.06)')
+                        ? (isHovered ? 'var(--color-danger-bg)' : 'transparent')
                         : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
                       cursor: 'pointer',
                       transition: 'background 0.1s',
+                      boxShadow: dropIndicator?.targetId === ex.id
+                        ? dropIndicator.position === 'before'
+                          ? 'inset 0 2px 0 0 var(--color-accent)'
+                          : 'inset 0 -2px 0 0 var(--color-accent)'
+                        : 'none',
                     }}
                     onMouseEnter={() => setHoveredExId(ex.id)}
                     onMouseLeave={() => setHoveredExId(null)}
@@ -393,16 +453,16 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
-                            <span style={{ fontSize: 9, padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>
+                            <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>
                               Combo
                             </span>
                           </div>
                           {ex.variation_note && (
-                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
                           )}
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={true} />
                           {ex.notes && (
-                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
                         </>
                       ) : (
@@ -412,18 +472,18 @@ export function DayCard({
                               {ex.exercise.name}
                             </span>
                             {ex.variation_note && (
-                              <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
+                              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
                             )}
                             {ex.source === 'group' && (
-                              <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>G</span>
+                              <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>G</span>
                             )}
                             {ex.source === 'individual' && (
-                              <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
+                              <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
                             )}
                           </div>
                           <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
                           {ex.notes && (
-                            <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
                         </>
                       )}

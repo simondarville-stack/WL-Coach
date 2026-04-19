@@ -40,7 +40,7 @@ const sections: NavSection[] = [
       { path: '/dashboard-v2', label: 'Dashboard V2', icon: LayoutDashboard },
       { path: '/planner', label: 'Weekly planner', icon: Calendar },
       { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
-      { path: '/analysis', label: 'Analysis', icon: LineChart },
+      // { path: '/analysis', label: 'Analysis', icon: LineChart }, // hidden: out of scope
       { path: '/events', label: 'Calendar', icon: CalendarDays },
     ],
   },
@@ -49,7 +49,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/athletes', label: 'Athletes', icon: Users },
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
-      { path: '/training-log', label: 'Training log', icon: ClipboardList },
+      // { path: '/training-log', label: 'Training log', icon: ClipboardList }, // hidden: out of scope
       { path: '/prs', label: 'Personal Records', icon: Trophy },
     ],
   },

@@ -514,6 +514,7 @@ export function useMacroCycles() {
         .from('macro_phases')
         .select('*')
         .eq('macrocycle_id', macrocycleId)
+        .eq('owner_id', getOwnerId())
         .order('position');
       if (error) throw error;
       setPhases(data || []);
@@ -524,9 +525,10 @@ export function useMacroCycles() {
 
   const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>): Promise<MacroPhase> => {
     try {
+      const phaseWithOwner = { ...phase, owner_id: getOwnerId() };
       const { data, error } = await supabase
         .from('macro_phases')
-        .insert(phase)
+        .insert(phaseWithOwner)
         .select()
         .single();
       if (error) throw error;
@@ -568,6 +570,7 @@ export function useMacroCycles() {
         .from('macro_competitions')
         .select('*')
         .eq('macrocycle_id', macrocycleId)
+        .eq('owner_id', getOwnerId())
         .order('competition_date');
       if (error) throw error;
       setCompetitions(data || []);
@@ -578,9 +581,10 @@ export function useMacroCycles() {
 
   const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at'>): Promise<MacroCompetition> => {
     try {
+      const compWithOwner = { ...comp, owner_id: getOwnerId() };
       const { data, error } = await supabase
         .from('macro_competitions')
-        .insert(comp)
+        .insert(compWithOwner)
         .select()
         .single();
       if (error) throw error;

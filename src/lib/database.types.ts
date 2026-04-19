@@ -212,6 +212,7 @@ export interface MacroWeek {
 
 export interface MacroPhase {
   id: string;
+  owner_id: string;
   macrocycle_id: string;
   name: string;
   phase_type: PhaseType;
@@ -226,6 +227,7 @@ export interface MacroPhase {
 
 export interface MacroCompetition {
   id: string;
+  owner_id: string;
   macrocycle_id: string;
   competition_name: string;
   competition_date: string;
@@ -281,6 +283,7 @@ export interface GeneralSettings {
 
 export interface TrainingLogSession {
   id: string;
+  owner_id: string;
   athlete_id: string;
   date: string;
   week_start: string;
