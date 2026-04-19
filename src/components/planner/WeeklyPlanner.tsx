@@ -688,18 +688,18 @@ export function WeeklyPlanner() {
 
             {/* ── Group plan banner ── */}
             {planSelection.type === 'group' && planSelection.group && (
-              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 500, color: '#3730a3' }}>Group plan:</span>
-                  <span style={{ fontSize: 11, color: '#4338ca' }}>{planSelection.group.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-accent-hover)' }}>Group plan:</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>{planSelection.group.name}</span>
                 </div>
                 <button
                   onClick={() => void handleSyncGroupPlan()}
                   disabled={isSyncing}
                   style={{
-                    fontSize: 11, padding: '4px 12px', background: '#4f46e5', color: '#fff',
+                    fontSize: 11, padding: '4px 12px', background: 'var(--color-accent)', color: 'var(--color-text-on-accent)',
                     border: 'none', borderRadius: 'var(--radius-md)', cursor: isSyncing ? 'not-allowed' : 'pointer',
-                    opacity: isSyncing ? 0.5 : 1, transition: 'opacity 0.1s',
+                    opacity: isSyncing ? 0.5 : 1, transition: 'opacity var(--transition-fast)',
                   }}
                 >
                   {isSyncing ? 'Syncing…' : 'Sync to athletes'}
@@ -709,12 +709,12 @@ export function WeeklyPlanner() {
 
             {/* ── Linked-to-group banner for individual plans ── */}
             {planSelection.type === 'individual' && currentWeekPlan?.source_group_plan_id && (
-              <div style={{ marginBottom: 12, padding: '8px 16px', background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)' }}>
-                <span style={{ fontSize: 11, color: '#4338ca' }}>Linked to group plan · Exercises with </span>
-                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>G</span>
-                <span style={{ fontSize: 11, color: '#4338ca' }}> come from the group. Edit to override </span>
-                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>I</span>
-                <span style={{ fontSize: 11, color: '#4338ca' }}>.</span>
+              <div style={{ marginBottom: 12, padding: '8px 16px', background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>Linked to group plan · Exercises with </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>G</span>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}> come from the group. Edit to override </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>I</span>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>.</span>
               </div>
             )}
 

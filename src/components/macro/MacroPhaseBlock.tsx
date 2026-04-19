@@ -148,7 +148,7 @@ export function MacroPhaseBlock({
                   style={{
                     backgroundColor: weekColor + '33',
                     color: weekColor,
-                    border: `1px solid ${weekColor}55`,
+                    border: `0.5px solid ${weekColor}55`,
                   }}
                 >
                   {weekTypes.find(t => t.abbreviation === week.week_type)?.name ?? (week.week_type || '—')}

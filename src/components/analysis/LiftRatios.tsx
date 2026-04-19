@@ -164,9 +164,9 @@ export function LiftRatios({ athleteId }: Props) {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={prHistory} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit="%" width={40} domain={[70, 95]} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} formatter={(v: number) => [`${v}%`, 'Sn/CJ']} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit="%" width={40} domain={[70, 95]} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} formatter={(v: number) => [`${v}%`, 'Sn/CJ']} />
               <Line type="monotone" dataKey="snCj" name="Sn/CJ" stroke="#378ADD" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>

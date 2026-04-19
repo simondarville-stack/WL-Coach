@@ -179,12 +179,12 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
                 <XAxis
                   dataKey="date"
                   tickFormatter={formatDateShort}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   domain={[yMin, yMax]}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
                   tickFormatter={(v) => `${v}`}
                   width={35}
                 />

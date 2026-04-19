@@ -568,7 +568,7 @@ export function ExerciseDetailPanel({
                 <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{
-                      fontSize: 30,
+                      fontSize: 'var(--text-page-title)',
                       fontWeight: 500,
                       fontFamily: 'var(--font-mono)',
                       color: hasPR ? 'var(--color-info-text)' : 'var(--color-text-tertiary)',
@@ -645,7 +645,7 @@ export function ExerciseDetailPanel({
                   Athletes with a PR
                 </div>
                 <div style={{
-                  fontSize: 24,
+                  fontSize: 'var(--text-page-title)',
                   fontWeight: 500,
                   lineHeight: 1,
                   color: athletePRs.length > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',

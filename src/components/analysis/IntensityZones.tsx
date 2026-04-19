@@ -147,9 +147,9 @@ export function IntensityZones({ athleteId, startDate, endDate }: Props) {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={weeklyZones} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
-                  <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} />
+                  <XAxis dataKey="week" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+                  <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {ZONES.map((zone, i) => (
                     <Bar key={zone} dataKey={zone} stackId="z" fill={ZONE_COLORS[i]} name={zone} />

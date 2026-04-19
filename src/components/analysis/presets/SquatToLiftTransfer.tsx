@@ -57,10 +57,10 @@ export function SquatToLiftTransfer({ athleteId, startDate, endDate }: Props) {
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={data} margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit=" kg" width={48} />
-          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit=" kg" width={40} />
-          <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+          <YAxis yAxisId="left" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit=" kg" width={48} />
+          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit=" kg" width={40} />
+          <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Line yAxisId="left" type="monotone" dataKey="squat" name="Back squat" stroke="#9b5de5" strokeWidth={2} dot={{ r: 3 }} connectNulls />
           <Line yAxisId="right" type="monotone" dataKey="snatch" name="Snatch" stroke="#378ADD" strokeWidth={2} dot={{ r: 3 }} connectNulls />

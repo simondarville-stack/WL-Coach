@@ -9,14 +9,14 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 
 function weekTypeBadgeStyle(weekType: string): React.CSSProperties {
   switch (weekType) {
-    case 'High':        return { background: 'var(--color-warning-bg)',  color: 'var(--color-warning-text)',  border: '1px solid var(--color-warning-border)' };
-    case 'Medium':      return { background: 'var(--color-accent-muted)', color: 'var(--color-accent)',        border: '1px solid var(--color-accent-border)' };
-    case 'Low':         return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '1px solid var(--color-success-border)' };
-    case 'Deload':      return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '1px solid var(--color-success-border)' };
-    case 'Competition': return { background: 'var(--color-danger-bg)',    color: 'var(--color-danger-text)',   border: '1px solid var(--color-danger-border)' };
-    case 'Taper':       return { background: 'var(--color-warning-bg)',   color: 'var(--color-warning-text)',  border: '1px solid var(--color-warning-border)' };
-    case 'Testing':     return { background: 'rgba(139,92,246,0.1)',      color: '#7C3AED',                    border: '1px solid rgba(139,92,246,0.2)' };
-    default:            return { background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-secondary)' };
+    case 'High':        return { background: 'var(--color-warning-bg)',  color: 'var(--color-warning-text)',  border: '0.5px solid var(--color-warning-border)' };
+    case 'Medium':      return { background: 'var(--color-accent-muted)', color: 'var(--color-accent)',        border: '0.5px solid var(--color-accent-border)' };
+    case 'Low':         return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '0.5px solid var(--color-success-border)' };
+    case 'Deload':      return { background: 'var(--color-success-bg)',   color: 'var(--color-success-text)',  border: '0.5px solid var(--color-success-border)' };
+    case 'Competition': return { background: 'var(--color-danger-bg)',    color: 'var(--color-danger-text)',   border: '0.5px solid var(--color-danger-border)' };
+    case 'Taper':       return { background: 'var(--color-warning-bg)',   color: 'var(--color-warning-text)',  border: '0.5px solid var(--color-warning-border)' };
+    case 'Testing':     return { background: 'var(--color-purple-50)',     color: 'var(--color-purple-600)',     border: '0.5px solid var(--color-purple-200)' };
+    default:            return { background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '0.5px solid var(--color-border-secondary)' };
   }
 }
 
@@ -162,7 +162,7 @@ export function WeekSummary({
       <div style={{
         background: 'var(--color-bg-primary)',
         borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--color-border-secondary)',
+        border: '0.5px solid var(--color-border-secondary)',
         padding: '8px 16px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>

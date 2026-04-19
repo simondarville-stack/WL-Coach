@@ -81,9 +81,9 @@ export function CompetitionLiftTrends({ athleteId, startDate, endDate }: Props) 
             <ReferenceArea key={p.name} x1={p.start} x2={p.end} fill={p.color} fillOpacity={0.1} label={{ value: p.name, fontSize: 10, fill: '#6b7280' }} />
           ))}
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit=" kg" width={52} />
-          <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} />
+          <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit=" kg" width={52} />
+          <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Line type="monotone" dataKey="snatch" name="Snatch max" stroke="#378ADD" strokeWidth={2} dot={{ r: 3 }} connectNulls />
           <Line type="monotone" dataKey="cj" name="C&J max" stroke="#1D9E75" strokeWidth={2} dot={{ r: 3 }} connectNulls />
