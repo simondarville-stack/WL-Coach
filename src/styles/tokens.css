@@ -68,6 +68,11 @@
   --color-accent-hover: #0C447C;
   --color-accent-muted: rgba(24, 95, 165, 0.08);
   --color-accent-border: rgba(24, 95, 165, 0.2);
+  --color-accent-subtle: rgba(24, 95, 165, 0.06); /* very light tint for active nav */
+
+  /* -- Colors: text selection -- */
+  --color-selection-bg: #dbeafe;
+  --color-selection-text: #1e3a5f;
 
   /* -- Colors: semantic (light mode) --
    *

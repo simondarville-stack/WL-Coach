@@ -102,7 +102,7 @@ function CoachApp() {
   // Show spinner while fetching coach profiles on first load
   if (!coachesLoaded) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg-page)' }}>
         <div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-6 h-6" />
       </div>
     );
@@ -132,7 +132,7 @@ function CoachApp() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen" style={{ backgroundColor: 'var(--color-bg-page)' }}>
       <Sidebar
         onNewCoach={() => setShowNewCoachModal(true)}
         onOpenCalc={() => setShowRepMaxCalc(true)}
@@ -141,7 +141,7 @@ function CoachApp() {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white flex-shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+        <header className="flex items-center justify-between px-4 py-2 flex-shrink-0" style={{ backgroundColor: 'var(--color-bg-primary)', borderBottom: '0.5px solid var(--color-border-primary)' }}>
           <PageTitle />
           <AthleteSelector />
         </header>

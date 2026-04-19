@@ -84,24 +84,27 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
 
   return (
     <aside
-      className={`flex flex-col flex-shrink-0 bg-gray-50 border-r border-gray-200 transition-all duration-150 ease-in-out overflow-hidden ${
+      className={`flex flex-col flex-shrink-0 transition-all duration-150 ease-in-out overflow-hidden ${
         collapsed ? 'w-12' : 'w-[200px]'
       }`}
+      style={{ backgroundColor: 'var(--color-bg-secondary)', borderRight: '0.5px solid var(--color-border-primary)' }}
     >
       {/* Logo / App name */}
       <div
-        className={`flex items-center gap-2 border-b border-gray-200 cursor-pointer flex-shrink-0 ${
+        className={`flex items-center gap-2 cursor-pointer flex-shrink-0 ${
           collapsed ? 'justify-center px-0 py-3' : 'px-3 py-3'
         }`}
+        style={{ borderBottom: '0.5px solid var(--color-border-primary)' }}
         onClick={() => navigate('/dashboard')}
         title="EMOS"
       >
         {!collapsed ? (
-          <span className="text-[22px] font-black tracking-[0.15em] text-gray-900 uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif' }}>
+          {/* wordmark: font-medium per TASK-024 decision; Arial Black retained for visual weight */}
+          <span className="text-[22px] font-medium tracking-[0.15em] uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif', color: 'var(--color-text-primary)' }}>
             EMOS
           </span>
         ) : (
-          <span className="text-[16px] font-black tracking-tight text-gray-900 uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif' }}>
+          <span className="text-[16px] font-medium tracking-tight uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif', color: 'var(--color-text-primary)' }}>
             E
           </span>
         )}
@@ -109,8 +112,8 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
 
       {/* Environment switcher */}
       {!collapsed && (
-        <div className="px-3 py-2.5 border-b border-gray-200 flex-shrink-0">
-          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-2">
+        <div className="px-3 py-2.5 flex-shrink-0" style={{ borderBottom: '0.5px solid var(--color-border-primary)' }}>
+          <div className="text-[11px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-caption)' }}>
             Environment
           </div>
           <select
@@ -123,8 +126,8 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                 window.location.reload();
               }
             }}
-            className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5
-                       bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none"
+            style={{ border: '0.5px solid var(--color-border-primary)', backgroundColor: 'var(--color-bg-primary)', color: 'var(--color-text-primary)' }}
           >
             {coaches.map(c => (
               <option key={c.id} value={c.id}>
@@ -148,13 +151,14 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
             {/* Section header */}
             {collapsed ? (
               sIdx > 0 && (
-                <div className="mx-2 my-2 border-t border-gray-200" />
+                <div className="mx-2 my-2" style={{ borderTop: '0.5px solid var(--color-border-primary)' }} />
               )
             ) : (
               <div
-                className={`px-4 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-widest whitespace-nowrap overflow-hidden ${
+                className={`px-4 pb-1 font-medium uppercase tracking-widest whitespace-nowrap overflow-hidden ${
                   sIdx === 0 ? 'pt-2' : 'pt-4'
                 }`}
+                style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}
               >
                 {section.label}
               </div>
@@ -175,9 +179,13 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                         : 'py-1.5 px-3'
                     } ${
                       isActive
-                        ? 'bg-blue-50 text-blue-700 font-medium shadow-sm shadow-blue-100/50'
-                        : 'text-gray-600 hover:bg-gray-100/70 hover:text-gray-900'
+                        ? 'font-medium'
+                        : ''
                     }`
+                  }
+                  style={({ isActive }) => isActive
+                    ? { backgroundColor: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }
+                    : { color: 'var(--color-text-secondary)' }
                   }
                 >
                   {({ isActive }) => (
@@ -201,19 +209,20 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
       </nav>
 
       {/* Tools section */}
-      <div className="flex-shrink-0 border-t border-gray-200 py-1">
+      <div className="flex-shrink-0 py-1" style={{ borderTop: '0.5px solid var(--color-border-primary)' }}>
         {!collapsed && (
-          <div className="px-4 pb-1 pt-3 text-[10px] font-medium text-gray-400 uppercase tracking-widest whitespace-nowrap overflow-hidden">
+          <div className="px-4 pb-1 pt-3 font-medium uppercase tracking-widest whitespace-nowrap overflow-hidden" style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
             Tools
           </div>
         )}
-        {collapsed && <div className="mx-2 my-2 border-t border-gray-200" />}
+        {collapsed && <div className="mx-2 my-2" style={{ borderTop: '0.5px solid var(--color-border-primary)' }} />}
         <button
           onClick={() => onOpenCalc?.()}
           title={collapsed ? 'xRM Calculator' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 text-gray-600 hover:bg-gray-100 hover:text-gray-900 ${
+          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
             collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
           }`}
+          style={{ color: 'var(--color-text-secondary)' }}
         >
           <Calculator size={16} className="flex-shrink-0" />
           {!collapsed && (
@@ -223,9 +232,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         <button
           onClick={() => onOpenCalculator?.()}
           title={collapsed ? 'Calculator' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 text-gray-600 hover:bg-gray-100 hover:text-gray-900 ${
+          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
             collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
           }`}
+          style={{ color: 'var(--color-text-secondary)' }}
         >
           <Hash size={16} className="flex-shrink-0" />
           {!collapsed && (
@@ -235,9 +245,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         <button
           onClick={() => onOpenCalendarTool?.()}
           title={collapsed ? 'Calendar' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 text-gray-600 hover:bg-gray-100 hover:text-gray-900 ${
+          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
             collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
           }`}
+          style={{ color: 'var(--color-text-secondary)' }}
         >
           <CalendarDays size={16} className="flex-shrink-0" />
           {!collapsed && (
@@ -247,16 +258,17 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
       </div>
 
       {/* Collapse toggle + version */}
-      <div className="flex-shrink-0 border-t border-gray-200">
+      <div className="flex-shrink-0" style={{ borderTop: '0.5px solid var(--color-border-primary)' }}>
         {!collapsed && (
-          <div className="px-4 pt-2 text-[10px] text-gray-300 select-none">v2.0</div>
+          <div className="px-4 pt-2 select-none" style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>v2.0</div>
         )}
         <button
           onClick={toggleCollapsed}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className={`w-full flex items-center gap-2 text-gray-400 hover:text-gray-600 transition-colors duration-100 ${
+          className={`w-full flex items-center gap-2 transition-colors duration-100 ${
             collapsed ? 'justify-center py-2.5 px-0' : 'py-2 px-3'
           }`}
+          style={{ color: 'var(--color-text-tertiary)' }}
         >
           <ChevronsLeft
             size={16}
