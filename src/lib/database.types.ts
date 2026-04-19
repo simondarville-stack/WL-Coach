@@ -287,6 +287,10 @@ export interface GeneralSettings {
   show_stress_metric: boolean;
   dialog_mode: 'center' | 'sidebar';
   macro_table_columns: string[] | null;
+  lift_ratio_targets: Record<string, { min: number; max: number }> | null;
+  intensity_zones: Array<{ zone: string; min: number; max: number }> | null;
+  compliance_warning_threshold: number | null;
+  low_intensity_zone_max_pct: number | null;
   created_at: string;
   updated_at: string;
 }

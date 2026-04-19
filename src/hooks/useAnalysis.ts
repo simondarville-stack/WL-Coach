@@ -460,21 +460,26 @@ export async function fetchExerciseTimeSeries(
     }));
 }
 
+// Default intensity zone boundaries — used when general_settings.intensity_zones is null.
+const DEFAULT_INTENSITY_ZONES = [
+  { zone: '<70%',   min: 0,   max: 0.7,      reps: 0 },
+  { zone: '70-80%', min: 0.7, max: 0.8,      reps: 0 },
+  { zone: '80-90%', min: 0.8, max: 0.9,      reps: 0 },
+  { zone: '90%+',   min: 0.9, max: Infinity,  reps: 0 },
+];
+
 export async function fetchIntensityZones(
   athleteId: string,
   exerciseId: string,
   startDate: string,
   endDate: string,
-  oneRepMax: number
+  oneRepMax: number,
+  intensityZoneConfig?: Array<{ zone: string; min: number; max: number }> | null,
 ): Promise<IntensityZone[]> {
   const timeSeries = await fetchExerciseTimeSeries(athleteId, exerciseId, startDate, endDate);
 
-  const zones = [
-    { zone: '<70%', min: 0, max: 0.7, reps: 0 },
-    { zone: '70-80%', min: 0.7, max: 0.8, reps: 0 },
-    { zone: '80-90%', min: 0.8, max: 0.9, reps: 0 },
-    { zone: '90%+', min: 0.9, max: Infinity, reps: 0 },
-  ];
+  const zoneDefs = (intensityZoneConfig ?? DEFAULT_INTENSITY_ZONES).map(z => ({ ...z, reps: 0, max: z.max ?? Infinity }));
+  const zones = zoneDefs.length > 0 ? zoneDefs : DEFAULT_INTENSITY_ZONES.map(z => ({ ...z }));
 
   for (const entry of timeSeries) {
     if (!entry.avgLoad || !oneRepMax) continue;
@@ -491,7 +496,20 @@ export async function fetchIntensityZones(
   }));
 }
 
-export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
+// Default lift ratio targets — used when general_settings.lift_ratio_targets is null.
+const DEFAULT_LIFT_RATIO_TARGETS: Record<string, { min: number; max: number }> = {
+  'Snatch / C&J':               { min: 80,  max: 85  },
+  'Snatch / Back squat':        { min: 65,  max: 70  },
+  'C&J / Back squat':           { min: 78,  max: 83  },
+  'Front squat / Back squat':   { min: 83,  max: 87  },
+  'Snatch pull / Snatch':       { min: 105, max: 110 },
+  'Clean pull / C&J':           { min: 110, max: 115 },
+};
+
+export async function fetchLiftRatios(
+  athleteId: string,
+  liftRatioTargets?: Record<string, { min: number; max: number }> | null,
+): Promise<LiftRatio[]> {
   const [prsRes, exercisesRes] = await Promise.all([
     supabase
       .from('athlete_prs')
@@ -558,12 +576,24 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
     });
   }
 
-  addRatio('Snatch / C&J', snatch, cj, 80, 85);
-  addRatio('Snatch / Back squat', snatch, bsq, 65, 70);
-  addRatio('C&J / Back squat', cj, bsq, 78, 83);
-  addRatio('Front squat / Back squat', fsq, bsq, 83, 87);
-  addRatio('Snatch pull / Snatch', snPull, snatch, 105, 110);
-  addRatio('Clean pull / C&J', clPull, cj, 110, 115);
+  const targets = liftRatioTargets ?? DEFAULT_LIFT_RATIO_TARGETS;
+
+  function getTarget(name: string): { min: number; max: number } {
+    return targets[name] ?? DEFAULT_LIFT_RATIO_TARGETS[name] ?? { min: 0, max: 100 };
+  }
+
+  const ratioEntries: Array<[string, number, number]> = [
+    ['Snatch / C&J',             snatch, cj],
+    ['Snatch / Back squat',      snatch, bsq],
+    ['C&J / Back squat',         cj,     bsq],
+    ['Front squat / Back squat', fsq,    bsq],
+    ['Snatch pull / Snatch',     snPull, snatch],
+    ['Clean pull / C&J',         clPull, cj],
+  ];
+  for (const [name, num, den] of ratioEntries) {
+    const { min, max } = getTarget(name);
+    addRatio(name, num, den, min, max);
+  }
 
   return ratios;
 }
