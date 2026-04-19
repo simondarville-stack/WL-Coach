@@ -30,6 +30,10 @@ export interface MacroPhaseBarCell {
   macroName: string | null;
   /** Label shown inside the cell, e.g. "W3". Empty for gap cells. */
   label: string;
+  /** True when the week has a week_type value that doesn't match any WeekTypeConfig entry. */
+  warning?: boolean;
+  /** Raw week_type value, preserved for tooltip display even when unrecognised. */
+  rawWeekType?: string | null;
 }
 
 export interface MacroPhaseBarEvent {
@@ -152,7 +156,11 @@ export function MacroPhaseBar({
     const metaParts: string[] = [];
     if (c.macroName) metaParts.push(c.macroName);
     if (c.phase) metaParts.push(c.phase);
-    if (c.typeName) metaParts.push(c.typeName);
+    if (c.warning && c.rawWeekType) {
+      metaParts.push(`⚠ Unknown week type: "${c.rawWeekType}"`);
+    } else if (c.typeName) {
+      metaParts.push(c.typeName);
+    }
     if (metaParts.length) lines.push(metaParts.join(' · '));
 
     const weekStart = new Date(c.weekStart + 'T00:00:00');
@@ -275,13 +283,14 @@ export function MacroPhaseBar({
                       fontSize: '9px',
                       fontFamily: 'var(--font-mono)',
                       lineHeight: 1,
-                      color: 'rgba(255, 255, 255, 0.75)',
+                      color: c.warning ? 'var(--color-warning-text)' : 'rgba(255, 255, 255, 0.75)',
                       pointerEvents: 'none',
                       userSelect: 'none',
                       letterSpacing: '0.04em',
+                      fontWeight: c.warning ? 700 : undefined,
                     }}
                   >
-                    {c.typeAbbr}
+                    {c.warning ? '?' : c.typeAbbr}
                   </span>
                 )}
                 {cellEvents.length > 0 && (
