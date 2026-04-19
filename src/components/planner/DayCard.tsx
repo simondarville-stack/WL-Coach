@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
+import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel, type SentinelType } from './plannerUtils';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
@@ -32,6 +32,7 @@ interface DayCardProps {
     position: number,
     unit: DefaultUnit,
   ) => Promise<unknown>;
+  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -44,18 +45,6 @@ interface DayCardProps {
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
 }
 
-function getYouTubeThumbnail(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-}
-
-type SentinelType = 'text' | 'video' | 'image' | null;
-function getSentinelType(exerciseCode: string | null): SentinelType {
-  if (exerciseCode === 'TEXT') return 'text';
-  if (exerciseCode === 'VIDEO') return 'video';
-  if (exerciseCode === 'IMAGE') return 'image';
-  return null;
-}
 
 function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: string | null; isCombo?: boolean }) {
   if (!raw) return null;
@@ -145,6 +134,7 @@ export function DayCard({
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
+  createExercise,
   createComboExercise,
   onRefresh,
   onDeleteExercise,
@@ -174,25 +164,6 @@ export function DayCard({
     onRefresh();
   }
 
-  async function getOrCreateSentinel(code: string): Promise<{ id: string; default_unit: string } | null> {
-    const { data: existing } = await supabase
-      .from('exercises').select('id, default_unit').eq('exercise_code', code).eq('owner_id', getOwnerId()).maybeSingle();
-    if (existing) return existing;
-    const sentinelDefs: Record<string, { name: string; color: string }> = {
-      TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
-      VIDEO: { name: 'Video',             color: '#6366F1' },
-      IMAGE: { name: 'Image',             color: '#EC4899' },
-    };
-    const def = sentinelDefs[code];
-    if (!def) return null;
-    const { data: created } = await supabase.from('exercises').insert({
-      name: def.name, category: '— System', default_unit: 'other', color: def.color,
-      exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
-      owner_id: getOwnerId(),
-    }).select('id, default_unit').single();
-    return created ?? null;
-  }
-
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
     if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
@@ -211,8 +182,7 @@ export function DayCard({
   }
 
   async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
-    const { data, error } = await supabase.from('exercises').insert([{ ...exerciseData, owner_id: getOwnerId() }]).select().single();
-    if (error) throw new Error(error.message);
+    const data = await createExercise(exerciseData);
     setShowNewExerciseModal(false);
     if (data) {
       await addExerciseToDay(weekPlanId, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);

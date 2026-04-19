@@ -61,7 +61,7 @@ export function WeeklyPlanner() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { exercises: allExercises, fetchExercisesByName, createExercise } = useExercises();
   const { athletes, fetchAllAthletes } = useAthletes();
   const { groups, fetchGroups } = useTrainingGroups();
 
@@ -735,6 +735,7 @@ export function WeeklyPlanner() {
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
                 addExerciseToDay={addExerciseToDayWrapped}
+                createExercise={createExercise}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
                 onDeleteExercise={handleDeleteExercise}
@@ -782,6 +783,7 @@ export function WeeklyPlanner() {
                     }
                     onRefresh={handleRefresh}
                     addExerciseToDay={addExerciseToDayWrapped}
+                    createExercise={createExercise}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}

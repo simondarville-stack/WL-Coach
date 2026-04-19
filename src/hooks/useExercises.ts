@@ -55,10 +55,15 @@ export function useExercises() {
     }
   };
 
-  const createExercise = async (exerciseData: Partial<Exercise>) => {
+  const createExercise = async (exerciseData: Partial<Exercise>): Promise<Exercise | null> => {
     try {
-      const { error } = await supabase.from('exercises').insert([{ ...exerciseData, owner_id: getOwnerId() }]);
+      const { data, error } = await supabase
+        .from('exercises')
+        .insert([{ ...exerciseData, owner_id: getOwnerId() }])
+        .select()
+        .single();
       if (error) throw error;
+      return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save exercise');
       throw err;
