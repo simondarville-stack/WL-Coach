@@ -212,10 +212,11 @@ export function useExercises() {
 
   const bulkReorderCategories = async (orderedIds: string[]) => {
     try {
-      for (let i = 0; i < orderedIds.length; i++) {
-        const { error } = await supabase.from('categories').update({ display_order: i }).eq('id', orderedIds[i]);
-        if (error) throw error;
-      }
+      const results = await Promise.all(
+        orderedIds.map((id, i) => supabase.from('categories').update({ display_order: i }).eq('id', id))
+      );
+      const firstError = results.find(r => r.error)?.error;
+      if (firstError) throw firstError;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reorder categories');
       throw err;
