@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Check, X, Trophy, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
 
@@ -68,6 +69,7 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
           .select('*')
           .eq('track_pr', true)
           .eq('is_archived', false)
+          .eq('owner_id', getOwnerId())
           .order('category')
           .order('name'),
         supabase
