@@ -13,6 +13,7 @@ import type { MacroTableColumnKey } from './MacroTableV2';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
 import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
+import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { MacroGraphView } from './MacroGraphView';
 import { MacroDistributionChart } from './MacroDistributionChart';
 import { Chart as ChartJS, BarController, LineController, DoughnutController } from 'chart.js';
@@ -32,6 +33,7 @@ export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
   const { fetchSettingsSilent } = useSettings();
+  const { groupMembers: hookGroupMembers, fetchGroupMembers } = useTrainingGroups();
 
   const {
     macrocycles,
@@ -69,6 +71,8 @@ export function MacroCycles() {
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
+    extendCycle,
+    trimCycle,
   } = useMacroCycles();
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
@@ -86,8 +90,8 @@ export function MacroCycles() {
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
 
-  // Group mode state
-  const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
+  // Group mode state — members come from useTrainingGroups
+  const groupMembers = hookGroupMembers;
   const [individualViewAthleteId, setIndividualViewAthleteId] = useState<string | null>(null);
   const [individualActuals, setIndividualActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
 
@@ -142,16 +146,9 @@ export function MacroCycles() {
 
   // Load group members when in group mode
   useEffect(() => {
-    if (!selectedGroup) {
-      setGroupMembers([]);
-      return;
+    if (selectedGroup) {
+      fetchGroupMembers(selectedGroup.id);
     }
-    supabase
-      .from('group_members')
-      .select('*, athlete:athletes(*)')
-      .eq('group_id', selectedGroup.id)
-      .is('left_at', null)
-      .then(({ data }) => setGroupMembers((data as GroupMemberWithAthlete[]) || []));
   }, [selectedGroup?.id]);
 
   // Load macrocycles when target changes
@@ -429,27 +426,12 @@ export function MacroCycles() {
       if (data.endDate > selectedCycle.end_date) {
         const lastWeek = macroWeeks[macroWeeks.length - 1];
         if (lastWeek) {
-          const newStart = new Date(lastWeek.week_start);
-          newStart.setDate(newStart.getDate() + 7);
-          const newWeeks = generateMacroWeeks(newStart.toISOString().slice(0, 10), data.endDate);
-          if (newWeeks.length > 0) {
-            const inserts = newWeeks.map((w, i) => ({
-              macrocycle_id: selectedCycle.id,
-              week_start: w.week_start,
-              week_number: lastWeek.week_number + 1 + i,
-              week_type: 'Medium' as WeekType,
-              week_type_text: '',
-              notes: '',
-            }));
-            await supabase.from('macro_weeks').insert(inserts);
-          }
+          const s = await fetchSettingsSilent();
+          const defaultWeekType = s?.week_types?.[0]?.abbreviation ?? '';
+          await extendCycle(selectedCycle.id, lastWeek.week_number, lastWeek.week_start, data.endDate, defaultWeekType);
         }
       } else {
-        await supabase
-          .from('macro_weeks')
-          .delete()
-          .eq('macrocycle_id', selectedCycle.id)
-          .gt('week_start', data.endDate);
+        await trimCycle(selectedCycle.id, data.endDate);
       }
     }
 

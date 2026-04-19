@@ -506,6 +506,43 @@ export function useMacroCycles() {
     return { macroTargets: targetsMap, trackedExercises: exercises };
   };
 
+  // --- Cycle extend / trim ---
+
+  const extendCycle = async (cycleId: string, lastWeekNumber: number, lastWeekStart: string, newEndDate: string, defaultWeekType: string): Promise<void> => {
+    const newStart = new Date(lastWeekStart);
+    newStart.setDate(newStart.getDate() + 7);
+    const startISO = newStart.toISOString().slice(0, 10);
+    // Build weeks from startISO to newEndDate
+    const weeks: { week_start: string; week_number: number; week_type: string; week_type_text: string; notes: string; macrocycle_id: string }[] = [];
+    const d = new Date(startISO + 'T00:00:00');
+    const end = new Date(newEndDate + 'T00:00:00');
+    let weekNum = lastWeekNumber + 1;
+    while (d <= end) {
+      weeks.push({
+        macrocycle_id: cycleId,
+        week_start: d.toISOString().slice(0, 10),
+        week_number: weekNum++,
+        week_type: defaultWeekType,
+        week_type_text: '',
+        notes: '',
+      });
+      d.setDate(d.getDate() + 7);
+    }
+    if (weeks.length > 0) {
+      const { error } = await supabase.from('macro_weeks').insert(weeks);
+      if (error) throw error;
+    }
+  };
+
+  const trimCycle = async (cycleId: string, newEndDate: string): Promise<void> => {
+    const { error } = await supabase
+      .from('macro_weeks')
+      .delete()
+      .eq('macrocycle_id', cycleId)
+      .gt('week_start', newEndDate);
+    if (error) throw error;
+  };
+
   // --- Phase operations ---
 
   const fetchPhases = async (macrocycleId: string) => {
@@ -876,5 +913,7 @@ export function useMacroCycles() {
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
+    extendCycle,
+    trimCycle,
   };
 }
