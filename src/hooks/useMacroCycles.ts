@@ -461,10 +461,12 @@ export function useMacroCycles() {
     athleteId: string,
     weekStart: string,
   ): Promise<MacroValidationData> => {
+    // Owner scope: verify macrocycle belongs to this owner before querying macro_weeks
     const { data: macroWeeks, error: macroError } = await supabase
       .from('macro_weeks')
-      .select(`id, macrocycle_id, week_start, macrocycles!inner(athlete_id, start_date, end_date)`)
+      .select(`id, macrocycle_id, week_start, macrocycles!inner(athlete_id, owner_id, start_date, end_date)`)
       .eq('macrocycles.athlete_id', athleteId)
+      .eq('macrocycles.owner_id', getOwnerId())
       .lte('week_start', weekStart)
       .gte('week_start', new Date(new Date(weekStart).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
       .lte('macrocycles.start_date', weekStart)
