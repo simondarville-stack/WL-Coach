@@ -864,13 +864,16 @@ export function useWeekPlans() {
         (individualExs || []).map((e: { exercise_id: string; day_index: number }) => `${e.exercise_id}:${e.day_index}`)
       );
 
-      for (const ex of groupExercises || []) {
-        // Preserve individual overrides — don't replace exercises the coach has customised per-athlete
-        if (individualOverrides.has(`${ex.exercise_id}:${ex.day_index}`)) continue;
+      // Collect exercises to copy (excluding individual overrides)
+      const exsToCopy = (groupExercises || []).filter(
+        ex => !individualOverrides.has(`${ex.exercise_id}:${ex.day_index}`)
+      );
 
-        const { data: newEx, error: insError } = await supabase
+      if (exsToCopy.length > 0) {
+        // Batch insert all exercises at once; track source group ex id per inserted row via order
+        const { data: insertedExs, error: insError } = await supabase
           .from('planned_exercises')
-          .insert([{
+          .insert(exsToCopy.map(ex => ({
             weekplan_id: athletePlanId,
             exercise_id: ex.exercise_id,
             day_index: ex.day_index,
@@ -886,16 +889,18 @@ export function useWeekPlans() {
             combo_notation: ex.combo_notation,
             combo_color: ex.combo_color,
             source: 'group',
-          }])
-          .select('id')
-          .single();
+          })))
+          .select('id');
         if (insError) throw insError;
 
-        // Copy set lines
-        const lines = setLinesByExId.get(ex.id) || [];
-        if (lines.length > 0) {
-          await supabase.from('planned_set_lines').insert(
-            lines.map((l: { sets: number; reps: number; reps_text: string | null; load_value: number; load_max: number | null; position: number }) => ({
+        // Batch insert all set lines for all newly inserted exercises
+        type SetLineRow = { sets: number; reps: number; reps_text: string | null; load_value: number; load_max: number | null; position: number };
+        const allSetLines: Array<SetLineRow & { planned_exercise_id: string }> = [];
+        (insertedExs || []).forEach((newEx, idx) => {
+          const srcExId = exsToCopy[idx].id;
+          const lines: SetLineRow[] = setLinesByExId.get(srcExId) || [];
+          for (const l of lines) {
+            allSetLines.push({
               planned_exercise_id: newEx.id,
               sets: l.sets,
               reps: l.reps,
@@ -903,8 +908,12 @@ export function useWeekPlans() {
               load_value: l.load_value,
               load_max: l.load_max ?? null,
               position: l.position,
-            }))
-          );
+            });
+          }
+        });
+        if (allSetLines.length > 0) {
+          const { error: linesError } = await supabase.from('planned_set_lines').insert(allSetLines);
+          if (linesError) throw linesError;
         }
       }
     }
