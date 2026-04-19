@@ -32,7 +32,7 @@ import { MacroAnnualWheel } from './MacroAnnualWheel';
 export function MacroCycles() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
-  const { fetchSettingsSilent } = useSettings();
+  const { settings, fetchSettingsSilent } = useSettings();
   const { groupMembers: hookGroupMembers, fetchGroupMembers } = useTrainingGroups();
 
   const {
@@ -872,6 +872,7 @@ export function MacroCycles() {
               competitionTotal={selectedAthlete?.competition_total ?? null}
               visibleExercises={visibleExercises}
               visibleColumns={visibleColumns}
+              weekTypes={settings?.week_types ?? []}
             />
           </div>
 
