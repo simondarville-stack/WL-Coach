@@ -542,7 +542,7 @@ export function MacroCycles() {
             {isGroupMode ? 'New group macro' : 'New macrocycle'}
           </button>
           {isGroupMode && (
-            <span className="px-2 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded-full border border-purple-200">
+            <span className="px-2 py-0.5 text-[11px] font-medium bg-purple-100 text-purple-700 rounded-full border border-purple-200">
               Group macro
             </span>
           )}
@@ -753,7 +753,7 @@ export function MacroCycles() {
                       className="flex items-center border-r border-gray-300 px-1 overflow-hidden flex-shrink-0"
                       style={{ width: `${mg.spanWeeks * colPct}%` }}
                     >
-                      <span className="text-[8px] font-medium text-gray-500 truncate">{mg.label}</span>
+                      <span className="text-[11px] font-medium text-gray-500 truncate">{mg.label}</span>
                     </div>
                   ))}
                 </div>
@@ -768,7 +768,7 @@ export function MacroCycles() {
                         <button
                           key={seg.phase.id}
                           onClick={() => { setEditingPhase(seg.phase); setShowPhaseModal(true); }}
-                          className="relative flex items-center justify-center text-[10px] font-medium hover:brightness-95 transition-all overflow-hidden flex-shrink-0"
+                          className="relative flex items-center justify-center text-[11px] font-medium hover:brightness-95 transition-all overflow-hidden flex-shrink-0"
                           style={{ width: w, backgroundColor: seg.phase.color }}
                           title={`${seg.phase.name} · Wk ${seg.phase.start_week_number}–${seg.phase.end_week_number}`}
                         >
@@ -794,7 +794,7 @@ export function MacroCycles() {
                       className="flex flex-col items-center justify-center border-r border-gray-100 py-0.5 overflow-hidden flex-shrink-0"
                       style={{ width: `${colPct}%` }}
                     >
-                      <span className="text-[9px] font-medium text-gray-700 leading-none">{w.week_number}</span>
+                      <span className="text-[11px] font-medium text-gray-700 leading-none">{w.week_number}</span>
                       <span className="text-[7px] text-gray-400 leading-none mt-px">W{isoWeek(w.week_start)}</span>
                       <span className="text-[7px] text-gray-300 leading-none mt-px">{fmtMD(w.week_start)}–{addDays(w.week_start, 6)}</span>
                     </div>

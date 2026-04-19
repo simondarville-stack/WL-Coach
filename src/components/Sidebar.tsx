@@ -137,7 +137,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
           </select>
           <button
             onClick={() => onNewCoach?.()}
-            className="w-full mt-1.5 text-[10px] text-blue-600 hover:text-blue-700 text-left px-1"
+            className="w-full mt-1.5 text-[11px] text-blue-600 hover:text-blue-700 text-left px-1"
           >
             + New environment
           </button>

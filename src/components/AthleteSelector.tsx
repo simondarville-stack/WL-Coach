@@ -48,7 +48,7 @@ export function AthleteSelector() {
           {displayText}
         </span>
         {selectedGroup && (
-          <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Group</span>
+          <span className="text-[11px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Group</span>
         )}
         <ChevronDown size={14} className={`text-gray-500 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -68,7 +68,7 @@ export function AthleteSelector() {
 
           {groups.length > 0 && (
             <div className="p-2 border-b border-gray-100">
-              <p className="px-2 py-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Training groups</p>
+              <p className="px-2 py-1 text-[11px] font-medium text-gray-400 uppercase tracking-wide">Training groups</p>
               {groups.map(group => (
                 <button
                   key={group.id}
@@ -95,7 +95,7 @@ export function AthleteSelector() {
           )}
 
           <div className="p-2">
-            <p className="px-2 py-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide">Individual athletes</p>
+            <p className="px-2 py-1 text-[11px] font-medium text-gray-400 uppercase tracking-wide">Individual athletes</p>
             {activeAthletes.length === 0 ? (
               <p className="px-2 py-3 text-sm text-gray-400 text-center">No athletes available</p>
             ) : (

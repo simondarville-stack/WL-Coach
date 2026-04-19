@@ -226,7 +226,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
                 {weight} kg
               </div>
               <div style={{
-                fontSize: 9,
+                fontSize: 'var(--text-caption)',
                 color: 'var(--color-text-tertiary)',
                 width: 32,
                 textAlign: 'right',
@@ -290,10 +290,10 @@ function UsageHistoryChart({ weeks }: { weeks: UsageWeek[] }) {
         })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[0])}</span>
-        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[0])}</span>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
       </div>
-      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+      <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>
         {uniqueWeeks.length} weeks · {weeks.length} total sessions
       </div>
     </div>
@@ -700,7 +700,7 @@ export function ExerciseDetailPanel({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 9,
+                          fontSize: 'var(--text-caption)',
                           fontWeight: 500,
                           color: 'var(--color-text-secondary)',
                           flexShrink: 0,
@@ -726,7 +726,7 @@ export function ExerciseDetailPanel({
                           {row.pr_value_kg} kg
                         </span>
                         <span style={{
-                          fontSize: 9,
+                          fontSize: 'var(--text-caption)',
                           color: 'var(--color-text-tertiary)',
                           width: 56,
                           textAlign: 'right',

@@ -294,8 +294,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
                     <td className="py-1.5 text-right">
                       {deleteConfirmId === entry.id ? (
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => handleDelete(entry.id)} className="text-red-600 hover:text-red-700 text-[10px] font-medium">Yes</button>
-                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 text-[10px]">No</button>
+                          <button onClick={() => handleDelete(entry.id)} className="text-red-600 hover:text-red-700 text-[11px] font-medium">Yes</button>
+                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 text-[11px]">No</button>
                         </div>
                       ) : (
                         <button onClick={() => setDeleteConfirmId(entry.id)} className="text-gray-300 hover:text-red-500 transition-colors">
