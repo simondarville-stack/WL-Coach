@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import type { Athlete, BodyweightEntry } from '../lib/database.types';
-import { supabase } from '../lib/supabase';
+import { useBodyweight } from '../hooks/useBodyweight';
 import { formatDateToDDMMYYYY, formatDateShort } from '../lib/dateUtils';
 
 type TimeRange = '30d' | '90d' | '6m' | '1y' | 'All';
@@ -32,8 +32,7 @@ function filterByRange(entries: BodyweightEntry[], range: TimeRange): Bodyweight
 }
 
 export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupProps) {
-  const [allEntries, setAllEntries] = useState<BodyweightEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { entries: allEntries, loading, fetchEntries, upsert, update, remove } = useBodyweight(athlete.id);
   const [timeRange, setTimeRange] = useState<TimeRange>('90d');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -42,19 +41,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadEntries();
-  }, [athlete.id]);
-
-  async function loadEntries() {
-    setLoading(true);
-    const { data } = await supabase
-      .from('bodyweight_entries')
-      .select('*')
-      .eq('athlete_id', athlete.id)
-      .order('date', { ascending: true });
-    setAllEntries(data || []);
-    setLoading(false);
-  }
+    fetchEntries();
+  }, [fetchEntries]);
 
   const filtered = useMemo(() => filterByRange(allEntries, timeRange), [allEntries, timeRange]);
 
@@ -102,28 +90,20 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
   async function handleAddEntry() {
     const val = parseFloat(newWeight);
     if (!newDate || isNaN(val)) return;
-    await supabase.from('bodyweight_entries').upsert(
-      { athlete_id: athlete.id, date: newDate, weight_kg: val },
-      { onConflict: 'athlete_id,date' }
-    );
+    await upsert(newDate, val);
     setNewWeight('');
-    await loadEntries();
   }
 
   async function handleEditSave(entry: BodyweightEntry) {
     const val = parseFloat(editValue);
     if (isNaN(val)) { setEditingId(null); return; }
-    await supabase.from('bodyweight_entries')
-      .update({ weight_kg: val })
-      .eq('id', entry.id);
+    await update(entry.id, val);
     setEditingId(null);
-    await loadEntries();
   }
 
   async function handleDelete(id: string) {
-    await supabase.from('bodyweight_entries').delete().eq('id', id);
+    await remove(id);
     setDeleteConfirmId(null);
-    await loadEntries();
   }
 
   const sortedDesc = [...allEntries].reverse();
