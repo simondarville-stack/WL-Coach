@@ -14,12 +14,16 @@ export function SquatToLiftTransfer({ athleteId, startDate, endDate }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const { data: exercises } = await supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId());
-        const exList = (exercises ?? []) as Array<{ id: string; name: string }>;
+        const { data: exercises } = await supabase.from('exercises').select('id, name, lift_slot').eq('owner_id', getOwnerId());
+        const exList = (exercises ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
 
-        const bsqEx = exList.find(e => e.name.toLowerCase().includes('back squat'));
-        const snEx = exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull'));
-        const cjEx = exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
+        // Primary: lift_slot; fallback: name heuristic
+        const bsqEx = exList.find(e => e.lift_slot === 'back_squat')
+          ?? exList.find(e => e.name.toLowerCase().includes('back squat'));
+        const snEx = exList.find(e => e.lift_slot === 'snatch')
+          ?? exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull'));
+        const cjEx = exList.find(e => e.lift_slot === 'clean_and_jerk')
+          ?? exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
 
         const [bsqSeries, snSeries, cjSeries] = await Promise.all([
           bsqEx ? fetchExerciseTimeSeries(athleteId, bsqEx.id, startDate, endDate) : Promise.resolve([]),

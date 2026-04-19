@@ -19,13 +19,16 @@ export function CompetitionLiftTrends({ athleteId, startDate, endDate }: Props) 
       setLoading(true);
       try {
         const [exRes, aggRes] = await Promise.all([
-          supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId()),
+          supabase.from('exercises').select('id, name, lift_slot').eq('owner_id', getOwnerId()),
           fetchWeeklyAggregates({ athleteId, startDate, endDate }),
         ]);
 
-        const exercises = (exRes.data ?? []) as Array<{ id: string; name: string }>;
-        const snatchEx = exercises.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
-        const cjEx = exercises.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
+        const exercises = (exRes.data ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
+        // Primary: lift_slot; fallback: name heuristic
+        const snatchEx = exercises.find(e => e.lift_slot === 'snatch')
+          ?? exercises.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
+        const cjEx = exercises.find(e => e.lift_slot === 'clean_and_jerk')
+          ?? exercises.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
 
         const [snatchSeries, cjSeries] = await Promise.all([
           snatchEx ? fetchExerciseTimeSeries(athleteId, snatchEx.id, startDate, endDate) : Promise.resolve([]),

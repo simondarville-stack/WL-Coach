@@ -51,15 +51,17 @@ export function LiftRatios({ athleteId }: Props) {
             .select('exercise_id, pr_value_kg, pr_date')
             .eq('athlete_id', athleteId)
             .order('pr_date'),
-          supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId()),
+          supabase.from('exercises').select('id, name, lift_slot').eq('owner_id', getOwnerId()),
         ]);
 
         setRatios(ratioData);
 
-        // Build Sn/CJ ratio history
-        const exList = (exercisesRes.data ?? []) as Array<{ id: string; name: string }>;
-        const snEx = exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
-        const cjEx = exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
+        // Build Sn/CJ ratio history — primary: lift_slot, fallback: name heuristic
+        const exList = (exercisesRes.data ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
+        const snEx = exList.find(e => e.lift_slot === 'snatch')
+          ?? exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
+        const cjEx = exList.find(e => e.lift_slot === 'clean_and_jerk')
+          ?? exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
 
         if (snEx && cjEx) {
           const prs = prsRes.data ?? [];

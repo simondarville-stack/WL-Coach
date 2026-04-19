@@ -93,6 +93,7 @@ export interface Exercise {
   is_archived: boolean;
   pr_reference_exercise_id: string | null;  // derives % from this exercise's PR
   track_pr: boolean;                         // false = excluded from PR table
+  lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
   created_at: string;
   updated_at: string;
 }

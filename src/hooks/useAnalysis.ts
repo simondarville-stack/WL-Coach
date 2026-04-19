@@ -499,13 +499,13 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
       .eq('athlete_id', athleteId),
     supabase
       .from('exercises')
-      .select('id, name'),
+      .select('id, name, lift_slot'),
   ]);
 
   const prs = prsRes.data ?? [];
-  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string }>;
+  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
 
-  const exMap = new Map(exercises.map(e => [e.id, e.name.toLowerCase()]));
+  const exMap = new Map(exercises.map(e => [e.id, { name: e.name.toLowerCase(), liftSlot: e.lift_slot }]));
 
   // Group PRs by exercise, take highest pr_value_kg
   const bestPR = new Map<string, number>();
@@ -515,22 +515,31 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
     if (pr.pr_value_kg > current) bestPR.set(pr.exercise_id, pr.pr_value_kg);
   }
 
-  // Find best load for each lift type by name pattern
-  function findBest(pattern: (name: string) => boolean): number {
+  // Find best load for each lift slot — primary: lift_slot, fallback: name heuristic
+  function findBySlot(slot: string): number {
     let best = 0;
     for (const [exId, load] of bestPR.entries()) {
-      const name = exMap.get(exId) ?? '';
-      if (pattern(name) && load > best) best = load;
+      if ((exMap.get(exId)?.liftSlot ?? null) === slot && load > best) best = load;
+    }
+    return best;
+  }
+  function findByName(pattern: (name: string) => boolean): number {
+    let best = 0;
+    for (const [exId, load] of bestPR.entries()) {
+      const ex = exMap.get(exId);
+      // Skip exercises that already have a lift_slot — already handled above
+      if (ex?.liftSlot) continue;
+      if (pattern(ex?.name ?? '') && load > best) best = load;
     }
     return best;
   }
 
-  const snatch = findBest(n => n.includes('snatch') && !n.includes('pull') && !n.includes('press') && !n.includes('balance'));
-  const cj = findBest(n => n.includes('clean') && n.includes('jerk'));
-  const bsq = findBest(n => n.includes('back squat'));
-  const fsq = findBest(n => n.includes('front squat'));
-  const snPull = findBest(n => n.includes('snatch pull'));
-  const clPull = findBest(n => n.includes('clean pull'));
+  const snatch  = findBySlot('snatch')        || findByName(n => n.includes('snatch') && !n.includes('pull') && !n.includes('press') && !n.includes('balance'));
+  const cj      = findBySlot('clean_and_jerk') || findByName(n => n.includes('clean') && n.includes('jerk'));
+  const bsq     = findBySlot('back_squat')    || findByName(n => n.includes('back squat'));
+  const fsq     = findBySlot('front_squat')   || findByName(n => n.includes('front squat'));
+  const snPull  = findBySlot('snatch_pull')   || findByName(n => n.includes('snatch pull'));
+  const clPull  = findBySlot('clean_pull')    || findByName(n => n.includes('clean pull'));
 
   const ratios: LiftRatio[] = [];
 

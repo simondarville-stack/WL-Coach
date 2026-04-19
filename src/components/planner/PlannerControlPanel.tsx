@@ -15,6 +15,7 @@ import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
+import { abbreviateExercise } from './plannerUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
@@ -32,16 +33,6 @@ function getTodayISO(): string {
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-
-function abbreviateExercise(name: string): string {
-  const l = name.toLowerCase();
-  if (l.includes('snatch'))                     return 'Sn';
-  if (l.includes('clean') && l.includes('jerk')) return 'C&J';
-  if (l.includes('clean'))                      return 'Clean';
-  if (l.includes('jerk'))                       return 'Jerk';
-  if (l.includes('squat'))                      return 'Sq';
-  return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3);
-}
 
 // Badge colors derived from coach-configured WeekTypeConfig; uses a 10% opacity tint.
 function weekTypeBadgeColor(weekType: string, weekTypes: WeekTypeConfig[]): { bg: string; text: string } {
@@ -183,6 +174,8 @@ function CategoryMetric({ label, value }: { label: string; value: React.ReactNod
 
 interface CompetitionPR {
   exerciseName: string;
+  exerciseCode: string | null;
+  category: string;
   value: number;
 }
 
@@ -285,13 +278,13 @@ export function PlannerControlPanel({
   async function loadCompetitionPRs(athleteId: string) {
     const { data } = await supabase
       .from('athlete_prs')
-      .select('pr_value_kg, exercise:exercises(name, is_competition_lift)')
+      .select('pr_value_kg, exercise:exercises(name, exercise_code, category, is_competition_lift)')
       .eq('athlete_id', athleteId)
       .not('pr_value_kg', 'is', null);
     if (!data) return;
-    const prs = (data as Array<{ pr_value_kg: number; exercise: { name: string; is_competition_lift: boolean } | null }>)
+    const prs = (data as Array<{ pr_value_kg: number; exercise: { name: string; exercise_code: string | null; category: string; is_competition_lift: boolean } | null }>)
       .filter(d => d.exercise?.is_competition_lift)
-      .map(d => ({ exerciseName: d.exercise!.name, value: d.pr_value_kg }))
+      .map(d => ({ exerciseName: d.exercise!.name, exerciseCode: d.exercise!.exercise_code, category: d.exercise!.category, value: d.pr_value_kg }))
       .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
     setCompetitionPRs(prs);
   }
@@ -378,7 +371,7 @@ export function PlannerControlPanel({
     athleteAge !== null ? `${athleteAge} yr` : null,
     selectedAthlete?.bodyweight ? `${selectedAthlete.bodyweight} kg` : null,
     selectedAthlete?.weight_class ? `-${selectedAthlete.weight_class}` : null,
-    ...competitionPRs.slice(0, 2).map(pr => `${abbreviateExercise(pr.exerciseName)} ${pr.value}`),
+    ...competitionPRs.slice(0, 2).map(pr => `${abbreviateExercise({ name: pr.exerciseName, exercise_code: pr.exerciseCode, category: pr.category })} ${pr.value}`),
   ].filter(Boolean).join(' · ');
 
   // ── render ────────────────────────────────────────────────────────────────

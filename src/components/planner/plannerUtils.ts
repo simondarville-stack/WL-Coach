@@ -4,6 +4,47 @@
  */
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
+import type { Exercise } from '../../lib/database.types';
+
+// ---------------------------------------------------------------------------
+// Exercise abbreviation — consolidates PlannerControlPanel and PrintWeekCompact
+// DOM-012/013: check exercise_code first, then category map, then initials.
+// ---------------------------------------------------------------------------
+
+const CATEGORY_ABBREVIATIONS: Record<string, string> = {
+  'Snatch': 'Sn',
+  'Clean': 'Cl',
+  'Jerk': 'Jk',
+  'Clean & Jerk': 'C&J',
+  'Squat': 'Sq',
+  'Back Squat': 'BSq',
+  'Front Squat': 'FSq',
+  'Overhead Squat': 'OSq',
+  'Pull': 'Pull',
+  'Snatch Pull': 'SnP',
+  'Clean Pull': 'ClP',
+  'Press': 'Pr',
+  'Push Press': 'PP',
+  'Jerk from rack': 'JkR',
+  'Accessories': 'Acc',
+  'General': 'Gen',
+  'Strength': 'Str',
+  'Conditioning': 'Cond',
+  'Technique': 'Tech',
+};
+
+/**
+ * Return a short abbreviation for an exercise suitable for compact UI.
+ * Priority: exercise_code → category abbreviation map → name initials.
+ */
+export function abbreviateExercise(exercise: Pick<Exercise, 'name' | 'exercise_code' | 'category'>): string {
+  if (exercise.exercise_code) return exercise.exercise_code;
+  const catAbbr = CATEGORY_ABBREVIATIONS[exercise.category];
+  if (catAbbr) return catAbbr;
+  const words = exercise.name.trim().split(/\s+/);
+  if (words.length >= 2) return words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
+  return exercise.name.slice(0, 3).toUpperCase();
+}
 
 export type SentinelType = 'text' | 'video' | 'image' | null;
 
