@@ -1,3 +1,14 @@
+/**
+ * useBodyweight — fetch, upsert, update, and remove bodyweight entries
+ * for a single athlete.
+ *
+ * Cleanup note: fetchEntries is wrapped in useCallback with a stable
+ * athleteId dependency. Callers that invoke it inside a useEffect should
+ * guard with isMounted / AbortController if state updates after unmount
+ * become a concern. Currently the consumer (BodyweightPopup) does:
+ *   useEffect(() => { fetchEntries(); }, [fetchEntries]);
+ * which is safe as long as the component is unmounted promptly on close.
+ */
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { BodyweightEntry } from '../lib/database.types';

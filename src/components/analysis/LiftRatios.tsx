@@ -44,6 +44,7 @@ export function LiftRatios({ athleteId }: Props) {
   useEffect(() => { fetchExercises(); }, [fetchExercises]);
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       setLoading(true);
       try {
@@ -56,6 +57,7 @@ export function LiftRatios({ athleteId }: Props) {
             .order('pr_date'),
         ]);
 
+        if (cancelled) return;
         setRatios(ratioData);
 
         // Build Sn/CJ ratio history — primary: lift_slot, fallback: name heuristic
@@ -87,13 +89,14 @@ export function LiftRatios({ athleteId }: Props) {
               history.push({ date: date.slice(5), snCj: Math.round((bestSn / bestCj) * 1000) / 10 });
             }
           }
-          setPrHistory(history);
+          if (!cancelled) setPrHistory(history);
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    load();
+    void load();
+    return () => { cancelled = true; };
   }, [athleteId, storeExercises]);
 
   if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
