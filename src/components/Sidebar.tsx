@@ -173,9 +173,9 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                   to={item.path}
                   title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
-                    `w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 transition-all duration-100 ${
+                    `w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
                       collapsed
-                        ? 'justify-center py-2 px-0'
+                        ? 'justify-center'
                         : 'py-1.5 px-3'
                     } ${
                       isActive
@@ -183,10 +183,15 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                         : ''
                     }`
                   }
-                  style={({ isActive }) => isActive
-                    ? { backgroundColor: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }
-                    : { color: 'var(--color-text-secondary)' }
-                  }
+                  style={({ isActive }) => ({
+                    ...(isActive
+                      ? { backgroundColor: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }
+                      : { color: 'var(--color-text-secondary)' }),
+                    transition: 'background var(--transition-fast), color var(--transition-fast)',
+                    ...(collapsed
+                      ? { width: 40, height: 40, padding: 0, justifyContent: 'center' }
+                      : { minHeight: 36 }),
+                  })}
                 >
                   {({ isActive }) => (
                     <>
@@ -219,10 +224,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         <button
           onClick={() => onOpenCalc?.()}
           title={collapsed ? 'xRM Calculator' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
-            collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
+          className={`w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
+            collapsed ? 'justify-center' : 'py-1.5 px-3'
           }`}
-          style={{ color: 'var(--color-text-secondary)' }}
+          style={{ color: 'var(--color-text-secondary)', transition: 'background var(--transition-fast), color var(--transition-fast)', ...(collapsed ? { width: 40, height: 40, padding: 0, justifyContent: 'center' } : { minHeight: 36 }) }}
         >
           <Calculator size={16} className="flex-shrink-0" />
           {!collapsed && (
@@ -232,10 +237,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         <button
           onClick={() => onOpenCalculator?.()}
           title={collapsed ? 'Calculator' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
-            collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
+          className={`w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
+            collapsed ? 'justify-center' : 'py-1.5 px-3'
           }`}
-          style={{ color: 'var(--color-text-secondary)' }}
+          style={{ color: 'var(--color-text-secondary)', transition: 'background var(--transition-fast), color var(--transition-fast)', ...(collapsed ? { width: 40, height: 40, padding: 0, justifyContent: 'center' } : { minHeight: 36 }) }}
         >
           <Hash size={16} className="flex-shrink-0" />
           {!collapsed && (
@@ -245,10 +250,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         <button
           onClick={() => onOpenCalendarTool?.()}
           title={collapsed ? 'Calendar' : undefined}
-          className={`w-full flex items-center gap-2 text-[13px] transition-colors duration-100 rounded-lg mx-1 ${
-            collapsed ? 'justify-center py-2 px-0' : 'py-1.5 px-3'
+          className={`w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
+            collapsed ? 'justify-center' : 'py-1.5 px-3'
           }`}
-          style={{ color: 'var(--color-text-secondary)' }}
+          style={{ color: 'var(--color-text-secondary)', transition: 'background var(--transition-fast), color var(--transition-fast)', ...(collapsed ? { width: 40, height: 40, padding: 0, justifyContent: 'center' } : { minHeight: 36 }) }}
         >
           <CalendarDays size={16} className="flex-shrink-0" />
           {!collapsed && (
