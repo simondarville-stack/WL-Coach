@@ -59,7 +59,7 @@ export function DashboardV2({ onNavigateToPlanner, onNavigateToGroupPlanner }: P
     <div className="max-w-[1600px] mx-auto px-4 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">
+          <h2 className="text-base font-medium text-gray-900">
             {getGreeting()}
           </h2>
           <p className="text-xs text-gray-400 mt-0.5">{formatDateToDDMMYYYY(new Date().toISOString())}</p>

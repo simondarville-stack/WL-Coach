@@ -44,18 +44,23 @@ const EXAMPLE_ROW = [
   '',
 ];
 
-const HINT_ROW = [
-  'Required. Exercise name.',
-  'Optional. Short code (max 10 chars).',
-  'Required. e.g. Snatch / Clean & Jerk / Squat / Pull / Press / Accessory',
-  'Required. TRUE or FALSE',
-  'Required. One of: percentage / absolute_kg / rpe / free_text / other',
-  'Optional. Hex color e.g. #3B82F6. Defaults to blue if blank.',
-  'Required. TRUE or FALSE',
-  'Required. TRUE or FALSE',
-  'Optional.',
-  'Optional. Video URL.',
-];
+function buildHintRow(categoryNames: string[]): string[] {
+  const catHint = categoryNames.length > 0
+    ? `Required. e.g. ${categoryNames.slice(0, 4).join(' / ')}${categoryNames.length > 4 ? ' / …' : ''}`
+    : 'Required. e.g. Snatch / Clean & Jerk / Squat';
+  return [
+    'Required. Exercise name.',
+    'Optional. Short code (max 10 chars).',
+    catHint,
+    'Required. TRUE or FALSE',
+    'Required. One of: percentage / absolute_kg / rpe / free_text / other',
+    'Optional. Hex color e.g. #3B82F6. Defaults to blue if blank.',
+    'Required. TRUE or FALSE',
+    'Required. TRUE or FALSE',
+    'Optional.',
+    'Optional. Video URL.',
+  ];
+}
 
 function parseBoolean(val: unknown): boolean | null {
   if (val === null || val === undefined || val === '') return null;
@@ -129,7 +134,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, HINT_ROW, EXAMPLE_ROW]);
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, buildHintRow(categories.map(c => c.name)), EXAMPLE_ROW]);
 
     // Column widths
     ws['!cols'] = [
@@ -190,7 +195,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
   if (importResult !== null) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8 text-center">
+        <div className="rounded-lg max-w-md w-full p-8 text-center" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
           <CheckCircle size={48} className="text-green-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-900 mb-2">Import complete</h2>
           <p className="text-gray-600 mb-6">{importResult} exercise{importResult !== 1 ? 's' : ''} imported successfully.</p>
@@ -207,7 +212,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-2">

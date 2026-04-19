@@ -334,7 +334,7 @@ export function MacroDraggableChart({
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 flex-wrap gap-2">
-        <div className="flex items-center gap-3 text-[10px] text-gray-500">
+        <div className="flex items-center gap-3 text-[11px] text-gray-500">
           {trackedExercises.map(te => {
             const color = getColor(te);
             return (
@@ -355,7 +355,7 @@ export function MacroDraggableChart({
             <svg width="14" height="4"><line x1="0" y1="2" x2="14" y2="2" stroke="#888" strokeWidth="1.5" strokeDasharray="5 2" /></svg>
             Avg
           </span>
-          <span className="text-gray-400 text-[9px]">faded = actual</span>
+          <span className="text-gray-400 text-[11px]">faded = actual</span>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -367,7 +367,7 @@ export function MacroDraggableChart({
                 <button
                   key={key}
                   onClick={() => toggleSeries(key)}
-                  className={`px-2 py-0.5 text-[9px] rounded border transition-colors ${
+                  className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
                     on
                       ? 'bg-white border-gray-300 text-gray-700 font-medium shadow-sm'
                       : 'bg-transparent border-gray-200 text-gray-400 line-through'
@@ -385,7 +385,7 @@ export function MacroDraggableChart({
           <div className="flex gap-px bg-gray-200 rounded-md p-0.5">
             <button
               onClick={() => setChartMode('load')}
-              className={`px-2.5 py-0.5 text-[9px] rounded transition-colors ${
+              className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                 isLoadMode ? 'bg-white text-gray-900 font-medium shadow-sm' : 'text-gray-500'
               }`}
             >
@@ -393,7 +393,7 @@ export function MacroDraggableChart({
             </button>
             <button
               onClick={() => setChartMode('reps')}
-              className={`px-2.5 py-0.5 text-[9px] rounded transition-colors ${
+              className={`px-2.5 py-0.5 text-[11px] rounded transition-colors ${
                 isRepsMode ? 'bg-white text-gray-900 font-medium shadow-sm' : 'text-gray-500'
               }`}
             >
@@ -408,7 +408,7 @@ export function MacroDraggableChart({
               <button
                 key={te.id}
                 onClick={() => onToggleLink(te.id)}
-                className={`px-1.5 py-0.5 rounded-full text-[9px] border transition-colors ${
+                className={`px-1.5 py-0.5 rounded-full text-[11px] border transition-colors ${
                   isLinked
                     ? 'border-blue-300 bg-blue-50 text-blue-600'
                     : 'border-gray-200 text-gray-400 hover:border-gray-300'
@@ -419,7 +419,7 @@ export function MacroDraggableChart({
               </button>
             );
           })}
-          <span className="text-[8px] text-gray-400">Ctrl+drag = Hi+Avg</span>
+          <span className="text-[11px] text-gray-400">Ctrl+drag = Hi+Avg</span>
         </div>
       </div>
 
@@ -459,9 +459,8 @@ export function MacroDraggableChart({
             <Tooltip
               cursor={false}
               contentStyle={{
-                fontSize: 10, padding: '6px 10px',
-                border: '1px solid #e5e7eb', borderRadius: 6,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                fontSize: 'var(--text-caption)', padding: '6px 10px',
+                border: '0.5px solid var(--color-border-secondary)', borderRadius: 6,
               }}
               labelFormatter={(wn: number) => {
                 const week = macroWeeks.find(w => w.week_number === wn);
@@ -488,7 +487,7 @@ export function MacroDraggableChart({
                 label={{
                   value: phase.name,
                   position: 'insideTopLeft',
-                  fontSize: 8,
+                  fontSize: 11,
                   fill: withOpacity(phase.color || '#888', 0.9),
                   fontWeight: 500,
                 }}
@@ -504,7 +503,7 @@ export function MacroDraggableChart({
                 strokeDasharray="3 2"
                 strokeWidth={1.5}
                 label={{
-                  value: cw.name, position: 'insideTopRight', fontSize: 8,
+                  value: cw.name, position: 'insideTopRight', fontSize: 11,
                   fill: cw.isPrimary ? '#dc2626' : '#f59e0b',
                 }}
               />
@@ -592,7 +591,7 @@ export function MacroDraggableChart({
 
         {activeDrag && (
           <div
-            className="fixed z-50 pointer-events-none bg-gray-900 text-white text-[10px] px-2 py-1 rounded shadow-lg"
+            className="fixed z-50 pointer-events-none bg-gray-900 text-white text-[11px] px-2 py-1 rounded shadow-lg"
             style={{ left: activeDrag.clientX + 12, top: activeDrag.clientY - 8 }}
           >
             <div>
@@ -610,7 +609,7 @@ export function MacroDraggableChart({
         {activeDrag && <div className="absolute inset-0 cursor-ns-resize" style={{ userSelect: 'none' }} />}
       </div>
 
-      <div className="text-[9px] text-gray-400 text-center py-1.5 border-t border-gray-100">
+      <div className="text-[11px] text-gray-400 text-center py-1.5 border-t border-gray-100">
         {isLoadMode
           ? 'Drag dots to adjust intensity \u2014 hold Ctrl to move Max and Avg together'
           : 'Drag dots at bar tops to adjust reps per exercise'}

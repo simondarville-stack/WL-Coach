@@ -10,6 +10,14 @@ export interface CoachProfile {
 }
 
 export type Category = string;
+
+export interface CategoryRow {
+  id: string;
+  name: string;
+  display_order: number;
+  color: string;
+  created_at: string;
+}
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
 /** @deprecated week_type is now a free string matching a WeekTypeConfig.abbreviation */
 export type WeekType = string;
@@ -19,7 +27,9 @@ export interface WeekTypeConfig {
   abbreviation: string;  // "h", "dl", "sh" (1-3 chars)
   color: string;         // hex color "#E24B4A"
 }
-export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition' | 'custom';
+/** Open string — the four preset values ('preparatory', 'strength', 'competition', 'transition')
+ * are suggestions only; free-text entry is allowed. See REVIEW_PLAN.md ENG-037. */
+export type PhaseType = string;
 
 export interface Athlete {
   id: string;
@@ -85,6 +95,7 @@ export interface Exercise {
   is_archived: boolean;
   pr_reference_exercise_id: string | null;  // derives % from this exercise's PR
   track_pr: boolean;                         // false = excluded from PR table
+  lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
   created_at: string;
   updated_at: string;
 }
@@ -184,6 +195,7 @@ export type ComboMemberEntry = { exerciseId: string; exercise: Exercise; positio
 
 export interface MacroCycle {
   id: string;
+  owner_id: string;
   athlete_id: string | null;   // null for group macros
   group_id: string | null;     // null for individual macros
   name: string;
@@ -212,6 +224,7 @@ export interface MacroWeek {
 
 export interface MacroPhase {
   id: string;
+  owner_id: string;
   macrocycle_id: string;
   name: string;
   phase_type: PhaseType;
@@ -226,6 +239,7 @@ export interface MacroPhase {
 
 export interface MacroCompetition {
   id: string;
+  owner_id: string;
   macrocycle_id: string;
   competition_name: string;
   competition_date: string;
@@ -275,12 +289,17 @@ export interface GeneralSettings {
   show_stress_metric: boolean;
   dialog_mode: 'center' | 'sidebar';
   macro_table_columns: string[] | null;
+  lift_ratio_targets: Record<string, { min: number; max: number }> | null;
+  intensity_zones: Array<{ zone: string; min: number; max: number }> | null;
+  compliance_warning_threshold: number | null;
+  low_intensity_zone_max_pct: number | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface TrainingLogSession {
   id: string;
+  owner_id: string;
   athlete_id: string;
   date: string;
   week_start: string;
@@ -406,6 +425,9 @@ export interface EventVideo {
   created_at: string;
 }
 
+/* ExerciseComboTemplate: currently global (no owner_id). Intentionally
+ * shared across coaches until DAT-014 decision is made.
+ * See REVIEW_PLAN.md DAT-014. */
 export interface ExerciseComboTemplate {
   id: string;
   name: string;
@@ -479,6 +501,11 @@ export interface PlannedComboWithDetails extends PlannedCombo {
 export interface Database {
   public: {
     Tables: {
+      categories: {
+        Row: CategoryRow;
+        Insert: Omit<CategoryRow, 'id' | 'created_at'>;
+        Update: Partial<Omit<CategoryRow, 'id' | 'created_at'>>;
+      };
       athletes: {
         Row: Athlete;
         Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>;

@@ -84,7 +84,7 @@ export function StatsBar({ athletes, weekOverview, upcomingEvents, attentionItem
               </div>
               <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{card.label}</span>
             </div>
-            <div className="text-lg font-bold text-gray-900 leading-tight">{card.value}</div>
+            <div className="text-lg font-medium text-gray-900 leading-tight">{card.value}</div>
             <div className="text-[11px] text-gray-400 mt-0.5">{card.sub}</div>
           </div>
         );

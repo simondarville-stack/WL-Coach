@@ -49,7 +49,7 @@ export function ExerciseToggleBar({
           <button
             key={metric}
             onClick={() => onToggleMetric(metric)}
-            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-colors ${
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
               isVisible
                 ? 'border-current'
                 : 'bg-gray-50 text-gray-400 border-gray-200 line-through'
@@ -63,7 +63,7 @@ export function ExerciseToggleBar({
 
       {/* Divider between general metrics and exercises */}
       {generalMetrics?.length && exercises.length > 0 && (
-        <span className="text-gray-200 text-[10px] select-none">|</span>
+        <span className="text-gray-200 text-[11px] select-none">|</span>
       )}
 
       {/* Exercise toggles */}
@@ -73,7 +73,7 @@ export function ExerciseToggleBar({
           <button
             key={te.id}
             onClick={() => onToggle(te.id)}
-            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-colors ${
+            className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
               isVisible
                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                 : 'bg-gray-50 text-gray-400 border-gray-200 line-through'
@@ -90,7 +90,7 @@ export function ExerciseToggleBar({
       {hasHidden && (
         <button
           onClick={onShowAll}
-          className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600"
+          className="px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600"
         >
           Show all
         </button>

@@ -41,19 +41,19 @@ function findPhaseForWeek(
 function resolveWeekType(
   abbr: string | null | undefined,
   configs: WeekTypeConfig[]
-): { abbr: string; name: string } {
-  if (!abbr) return { abbr: '', name: '' };
+): { abbr: string; name: string; warning: boolean } {
+  if (!abbr) return { abbr: '', name: '', warning: false };
   const wt =
     configs.find(c => c.abbreviation === abbr) ??
     configs.find(c => c.name.toLowerCase() === abbr.toLowerCase());
-  // Strict: only render types that exist in the coach's config.
-  // Unknown values (stale data, invalid input) render as empty so the
-  // cell stays clean. Raw value is still visible in the tooltip
-  // because we preserve it in typeName when the config doesn't match.
-  if (!wt) return { abbr: '', name: '' };
+  if (!wt) {
+    // Unknown week type: signal with warning flag so the cell can render "?"
+    return { abbr: '?', name: abbr, warning: true };
+  }
   return {
     abbr: wt.abbreviation,
     name: wt.name,
+    warning: false,
   };
 }
 
@@ -97,12 +97,14 @@ export function buildCellsForWeekRange(
     return {
       weekStart: ws,
       phase: phase?.name ?? null,
-      color: phase?.color ?? GAP_COLOR,
+      color: type.warning ? 'var(--color-warning-border)' : (phase?.color ?? GAP_COLOR),
       typeAbbr: type.abbr,
       typeName: type.name,
       macroId: macro.id,
       macroName: macro.name,
       label: `W${weekRow.week_number}`,
+      warning: type.warning || undefined,
+      rawWeekType: weekRow.week_type,
     };
   });
 }

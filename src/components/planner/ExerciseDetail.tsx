@@ -8,6 +8,7 @@ import type {
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
+import { getSentinelType, getYouTubeThumbnail } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
@@ -49,16 +50,6 @@ interface ExerciseDetailProps {
 }
 
 type SentinelType = 'text' | 'video' | 'image' | null;
-function getSentinelType(code: string | null | undefined): SentinelType {
-  if (code === 'TEXT') return 'text';
-  if (code === 'VIDEO') return 'video';
-  if (code === 'IMAGE') return 'image';
-  return null;
-}
-function getYouTubeThumbnail(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-}
 
 const UNIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'absolute_kg', label: 'kg' },
@@ -132,9 +123,12 @@ export function ExerciseDetail({
   const loadIncrement = settings?.grid_load_increment ?? 5;
 
   useEffect(() => {
+    let cancelled = false;
     if (hasMacro && plannedExercise) void loadSollTarget();
     if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
     if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [macroContext?.macroId, plannedExercise?.id]);
 
   async function loadSollTarget() {
@@ -168,11 +162,21 @@ export function ExerciseDetail({
       .from('planned_exercises').select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
       .eq('weekplan_id', weekPlanId).eq('is_combo', true).neq('id', plannedExercise.id);
     if (!otherCombos?.length) { setOtherDays([]); return; }
+    // Batch-fetch all combo members in one query (fixes N+1)
+    const comboIds = otherCombos.map(c => c.id);
+    const { data: allMembers } = await supabase
+      .from('planned_exercise_combo_members')
+      .select('planned_exercise_id, exercise_id')
+      .in('planned_exercise_id', comboIds);
+    const memberMap = new Map<string, string[]>();
+    for (const m of allMembers || []) {
+      const list = memberMap.get(m.planned_exercise_id) || [];
+      list.push(m.exercise_id);
+      memberMap.set(m.planned_exercise_id, list);
+    }
     const matching: OtherDay[] = [];
     for (const combo of otherCombos) {
-      const { data: memberData } = await supabase
-        .from('planned_exercise_combo_members').select('exercise_id').eq('planned_exercise_id', combo.id);
-      const theirIds = (memberData || []).map((m: { exercise_id: string }) => m.exercise_id).sort().join(',');
+      const theirIds = (memberMap.get(combo.id) || []).sort().join(',');
       if (theirIds === currentMemberIds) {
         matching.push({ dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw, totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps });
       }

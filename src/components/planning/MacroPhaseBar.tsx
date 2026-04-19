@@ -30,6 +30,10 @@ export interface MacroPhaseBarCell {
   macroName: string | null;
   /** Label shown inside the cell, e.g. "W3". Empty for gap cells. */
   label: string;
+  /** True when the week has a week_type value that doesn't match any WeekTypeConfig entry. */
+  warning?: boolean;
+  /** Raw week_type value, preserved for tooltip display even when unrecognised. */
+  rawWeekType?: string | null;
 }
 
 export interface MacroPhaseBarEvent {
@@ -54,6 +58,12 @@ export interface MacroPhaseBarProps {
   events?: MacroPhaseBarEvent[];
   /** weekStart of the currently selected week. Null if none. */
   selectedWeekStart?: string | null;
+  /**
+   * Exact YYYY-MM-DD date for the playhead. When provided, the playhead
+   * is positioned at the day within the cell rather than the cell center.
+   * Falls back to the center of selectedWeekStart when omitted.
+   */
+  playheadDate?: string | null;
   /** Called when a cell is clicked */
   onCellClick?: (cell: MacroPhaseBarCell) => void;
   /** Optional className for the outer wrapper */
@@ -126,6 +136,7 @@ export function MacroPhaseBar({
   cells,
   events = [],
   selectedWeekStart = null,
+  playheadDate = null,
   onCellClick,
   className,
   style,
@@ -145,7 +156,11 @@ export function MacroPhaseBar({
     const metaParts: string[] = [];
     if (c.macroName) metaParts.push(c.macroName);
     if (c.phase) metaParts.push(c.phase);
-    if (c.typeName) metaParts.push(c.typeName);
+    if (c.warning && c.rawWeekType) {
+      metaParts.push(`⚠ Unknown week type: "${c.rawWeekType}"`);
+    } else if (c.typeName) {
+      metaParts.push(c.typeName);
+    }
     if (metaParts.length) lines.push(metaParts.join(' · '));
 
     const weekStart = new Date(c.weekStart + 'T00:00:00');
@@ -268,13 +283,14 @@ export function MacroPhaseBar({
                       fontSize: '9px',
                       fontFamily: 'var(--font-mono)',
                       lineHeight: 1,
-                      color: 'rgba(255, 255, 255, 0.75)',
+                      color: c.warning ? 'var(--color-warning-text)' : 'rgba(255, 255, 255, 0.75)',
                       pointerEvents: 'none',
                       userSelect: 'none',
                       letterSpacing: '0.04em',
+                      fontWeight: c.warning ? 700 : undefined,
                     }}
                   >
-                    {c.typeAbbr}
+                    {c.warning ? '?' : c.typeAbbr}
                   </span>
                 )}
                 {cellEvents.length > 0 && (
@@ -345,7 +361,15 @@ export function MacroPhaseBar({
           (() => {
             const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
             if (selIdx < 0) return null;
-            const leftPct = (selIdx + 0.5) * (100 / total);
+            let dayFraction = 0.5;
+            if (playheadDate) {
+              const cellDate = new Date(cells[selIdx].weekStart + 'T00:00:00');
+              const today = new Date(playheadDate + 'T00:00:00');
+              const diffDays = Math.round((today.getTime() - cellDate.getTime()) / 86400000);
+              const clampedDiff = Math.max(0, Math.min(6, diffDays));
+              dayFraction = (clampedDiff + 0.5) / 7;
+            }
+            const leftPct = (selIdx + dayFraction) * (100 / total);
             return (
               <div
                 style={{

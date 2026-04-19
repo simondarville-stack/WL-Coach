@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
 import type {
   WeekPlan, PlannedExercise, Exercise,
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
+import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel, type SentinelType } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
@@ -35,6 +35,7 @@ interface DayEditorProps {
   onNavigateToExercise: (exerciseId: string) => void;
   onRefresh: () => Promise<void>;
   addExerciseToDay: (weekPlanId: string, dayIndex: number, exerciseId: string, position: number, unit: DefaultUnit) => Promise<unknown>;
+  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (weekPlanId: string, dayIndex: number, position: number, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   saveNotes: (id: string, notes: string) => Promise<unknown>;
@@ -51,18 +52,6 @@ const UNIT_BADGE: Record<string, string> = {
   free_text: 'text',
 };
 
-type SentinelType = 'text' | 'video' | 'image' | null;
-function getSentinelType(code: string | null): SentinelType {
-  if (code === 'TEXT') return 'text';
-  if (code === 'VIDEO') return 'video';
-  if (code === 'IMAGE') return 'image';
-  return null;
-}
-
-function getYouTubeThumbnail(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-}
 
 function maxLabel(maxVal: number | null, rhi: number | null, shi: number | null): string {
   if (maxVal == null) return '';
@@ -83,6 +72,7 @@ export function DayEditor({
   onNavigateToExercise,
   onRefresh,
   addExerciseToDay,
+  createExercise,
   createComboExercise,
   savePrescription,
   saveNotes,
@@ -186,24 +176,6 @@ export function DayEditor({
     await onRefresh();
   }
 
-  async function getOrCreateSentinel(code: string): Promise<{ id: string; default_unit: string } | null> {
-    const { data: existing } = await supabase
-      .from('exercises').select('id, default_unit').eq('exercise_code', code).eq('owner_id', getOwnerId()).maybeSingle();
-    if (existing) return existing;
-    const sentinelDefs: Record<string, { name: string; color: string }> = {
-      TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
-      VIDEO: { name: 'Video',             color: '#6366F1' },
-      IMAGE: { name: 'Image',             color: '#EC4899' },
-    };
-    const def = sentinelDefs[code];
-    if (!def) return null;
-    const { data: created } = await supabase.from('exercises').insert({
-      name: def.name, category: '— System', default_unit: 'other', color: def.color,
-      exercise_code: code, use_stacked_notation: false, counts_towards_totals: false, is_competition_lift: false,
-    }).select('id, default_unit').single();
-    return created ?? null;
-  }
-
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
     if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
@@ -222,8 +194,7 @@ export function DayEditor({
   }
 
   async function handleNewExerciseSave(exerciseData: Partial<Exercise>) {
-    const { data, error } = await supabase.from('exercises').insert([exerciseData]).select().single();
-    if (error) throw new Error(error.message);
+    const data = await createExercise(exerciseData);
     setShowNewExerciseModal(false);
     if (data) {
       await addExerciseToDay(weekPlan.id, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);

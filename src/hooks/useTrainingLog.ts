@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { toLocalISO } from '../lib/dateUtils';
+import { getOwnerId } from '../lib/ownerContext';
 import type {
   WeekPlan,
   PlannedExerciseWithExercise,
@@ -27,6 +28,7 @@ export function useTrainingLog() {
       .from('week_plans')
       .select('*')
       .eq('athlete_id', athleteId)
+      .eq('owner_id', getOwnerId())
       .eq('week_start', weekStartISO)
       .maybeSingle();
 

@@ -1,3 +1,6 @@
+/* Isolation model: AthletePR rows isolate by athlete_id. Athletes are
+ * owner-scoped so AthletePR is transitively owner-scoped.
+ * Direct owner_id on athlete_prs is deferred — see REVIEW_PLAN.md DAT-013. */
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Athlete, AthletePR } from '../lib/database.types';
@@ -5,26 +8,22 @@ import { useAthleteStore } from '../store/athleteStore';
 import { getOwnerId } from '../lib/ownerContext';
 
 export function useAthletes() {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setAthletes: storeSetAthletes } = useAthleteStore();
+  const {
+    athletes,
+    setAthletes: storeSetAthletes,
+    fetchAthletes: storeFetchAthletes,
+    athletesLoading,
+  } = useAthleteStore();
 
+  // Delegates to store — single source of truth. Force=true to re-fetch.
   const fetchAthletes = async () => {
     try {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('is_active', { ascending: false })
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      setAthletes(result);
-      storeSetAthletes(result);
+      await storeFetchAthletes(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
     } finally {
@@ -44,7 +43,6 @@ export function useAthletes() {
         .order('name');
       if (error) throw error;
       const result = data || [];
-      setAthletes(result);
       storeSetAthletes(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
@@ -62,17 +60,23 @@ export function useAthletes() {
         .order('name');
       if (error) throw error;
       const result = data || [];
-      setAthletes(result);
       storeSetAthletes(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
     }
   };
 
-  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>): Promise<Athlete> => {
+  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>, initialBodyweight?: number): Promise<Athlete> => {
     try {
       const { data, error } = await supabase.from('athletes').insert([{ ...athleteData, owner_id: getOwnerId() }]).select().single();
       if (error) throw error;
+      // Atomically create the initial bodyweight entry if provided
+      if (initialBodyweight && initialBodyweight > 0) {
+        await supabase.from('bodyweight_entries').upsert(
+          { athlete_id: data.id, date: new Date().toISOString().split('T')[0], weight_kg: initialBodyweight },
+          { onConflict: 'athlete_id,date' },
+        );
+      }
       return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save athlete');
@@ -137,8 +141,8 @@ export function useAthletes() {
 
   return {
     athletes,
-    setAthletes,
-    loading,
+    setAthletes: storeSetAthletes,
+    loading: loading || athletesLoading,
     error,
     setError,
     fetchAthletes,

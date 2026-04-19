@@ -461,10 +461,12 @@ export function useMacroCycles() {
     athleteId: string,
     weekStart: string,
   ): Promise<MacroValidationData> => {
+    // Owner scope: verify macrocycle belongs to this owner before querying macro_weeks
     const { data: macroWeeks, error: macroError } = await supabase
       .from('macro_weeks')
-      .select(`id, macrocycle_id, week_start, macrocycles!inner(athlete_id, start_date, end_date)`)
+      .select(`id, macrocycle_id, week_start, macrocycles!inner(athlete_id, owner_id, start_date, end_date)`)
       .eq('macrocycles.athlete_id', athleteId)
+      .eq('macrocycles.owner_id', getOwnerId())
       .lte('week_start', weekStart)
       .gte('week_start', new Date(new Date(weekStart).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
       .lte('macrocycles.start_date', weekStart)
@@ -506,6 +508,43 @@ export function useMacroCycles() {
     return { macroTargets: targetsMap, trackedExercises: exercises };
   };
 
+  // --- Cycle extend / trim ---
+
+  const extendCycle = async (cycleId: string, lastWeekNumber: number, lastWeekStart: string, newEndDate: string, defaultWeekType: string): Promise<void> => {
+    const newStart = new Date(lastWeekStart);
+    newStart.setDate(newStart.getDate() + 7);
+    const startISO = newStart.toISOString().slice(0, 10);
+    // Build weeks from startISO to newEndDate
+    const weeks: { week_start: string; week_number: number; week_type: string; week_type_text: string; notes: string; macrocycle_id: string }[] = [];
+    const d = new Date(startISO + 'T00:00:00');
+    const end = new Date(newEndDate + 'T00:00:00');
+    let weekNum = lastWeekNumber + 1;
+    while (d <= end) {
+      weeks.push({
+        macrocycle_id: cycleId,
+        week_start: d.toISOString().slice(0, 10),
+        week_number: weekNum++,
+        week_type: defaultWeekType,
+        week_type_text: '',
+        notes: '',
+      });
+      d.setDate(d.getDate() + 7);
+    }
+    if (weeks.length > 0) {
+      const { error } = await supabase.from('macro_weeks').insert(weeks);
+      if (error) throw error;
+    }
+  };
+
+  const trimCycle = async (cycleId: string, newEndDate: string): Promise<void> => {
+    const { error } = await supabase
+      .from('macro_weeks')
+      .delete()
+      .eq('macrocycle_id', cycleId)
+      .gt('week_start', newEndDate);
+    if (error) throw error;
+  };
+
   // --- Phase operations ---
 
   const fetchPhases = async (macrocycleId: string) => {
@@ -514,6 +553,7 @@ export function useMacroCycles() {
         .from('macro_phases')
         .select('*')
         .eq('macrocycle_id', macrocycleId)
+        .eq('owner_id', getOwnerId())
         .order('position');
       if (error) throw error;
       setPhases(data || []);
@@ -524,9 +564,10 @@ export function useMacroCycles() {
 
   const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>): Promise<MacroPhase> => {
     try {
+      const phaseWithOwner = { ...phase, owner_id: getOwnerId() };
       const { data, error } = await supabase
         .from('macro_phases')
-        .insert(phase)
+        .insert(phaseWithOwner)
         .select()
         .single();
       if (error) throw error;
@@ -568,6 +609,7 @@ export function useMacroCycles() {
         .from('macro_competitions')
         .select('*')
         .eq('macrocycle_id', macrocycleId)
+        .eq('owner_id', getOwnerId())
         .order('competition_date');
       if (error) throw error;
       setCompetitions(data || []);
@@ -578,9 +620,10 @@ export function useMacroCycles() {
 
   const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at'>): Promise<MacroCompetition> => {
     try {
+      const compWithOwner = { ...comp, owner_id: getOwnerId() };
       const { data, error } = await supabase
         .from('macro_competitions')
-        .insert(comp)
+        .insert(compWithOwner)
         .select()
         .single();
       if (error) throw error;
@@ -872,5 +915,7 @@ export function useMacroCycles() {
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
+    extendCycle,
+    trimCycle,
   };
 }

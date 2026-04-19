@@ -36,6 +36,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [useStackedNotation, setUseStackedNotation] = useState(false);
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
+  const [liftSlot, setLiftSlot] = useState<Exercise['lift_slot']>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -56,6 +57,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setUseStackedNotation(editingExercise.use_stacked_notation || false);
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
+      setLiftSlot(editingExercise.lift_slot ?? null);
     } else {
       resetForm();
     }
@@ -74,6 +76,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     setUseStackedNotation(false);
     setTrackPr(true);
     setPrReferenceId(null);
+    setLiftSlot(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,6 +98,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         pr_reference_exercise_id: prReferenceId,
         notes: notes.trim() || null,
         link: link.trim() || null,
+        lift_slot: liftSlot,
       });
       if (!editingExercise) {
         resetForm();
@@ -185,6 +189,23 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       </div>
 
       <div className="space-y-2">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Lift Slot (optional)</label>
+          <select
+            value={liftSlot ?? ''}
+            onChange={(e) => setLiftSlot((e.target.value || null) as Exercise['lift_slot'])}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">— None —</option>
+            <option value="snatch">Snatch</option>
+            <option value="clean_and_jerk">Clean &amp; Jerk</option>
+            <option value="front_squat">Front Squat</option>
+            <option value="back_squat">Back Squat</option>
+            <option value="snatch_pull">Snatch Pull</option>
+            <option value="clean_pull">Clean Pull</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">Used for OWL ratio analysis. Overrides category name matching.</p>
+        </div>
         <label className="flex items-center space-x-2">
           <input
             type="checkbox"

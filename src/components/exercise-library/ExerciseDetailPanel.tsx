@@ -69,7 +69,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
       fontSize: 'var(--text-label)',
-      fontWeight: 600,
+      fontWeight: 500,
       color: 'var(--color-text-tertiary)',
       textTransform: 'uppercase',
       letterSpacing: '0.06em',
@@ -143,7 +143,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
         style={{
           background: 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+          border: '0.5px solid var(--color-border-primary)',
           width: 288,
           overflow: 'hidden',
         }}
@@ -158,7 +158,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
           borderBottom: '0.5px solid var(--color-border-tertiary)',
         }}>
           <div>
-            <div style={{ fontSize: 'var(--text-body)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            <div style={{ fontSize: 'var(--text-body)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
               xRM Table
             </div>
             <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>
@@ -226,7 +226,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
                 {weight} kg
               </div>
               <div style={{
-                fontSize: 9,
+                fontSize: 'var(--text-caption)',
                 color: 'var(--color-text-tertiary)',
                 width: 32,
                 textAlign: 'right',
@@ -290,10 +290,10 @@ function UsageHistoryChart({ weeks }: { weeks: UsageWeek[] }) {
         })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[0])}</span>
-        <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[0])}</span>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>{formatWeekLabel(uniqueWeeks[uniqueWeeks.length - 1])}</span>
       </div>
-      <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
+      <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2 }}>
         {uniqueWeeks.length} weeks · {weeks.length} total sessions
       </div>
     </div>
@@ -459,7 +459,7 @@ export function ExerciseDetailPanel({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 'var(--text-body)',
-            fontWeight: 600,
+            fontWeight: 500,
             color: 'var(--color-text-primary)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -568,8 +568,8 @@ export function ExerciseDetailPanel({
                 <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{
-                      fontSize: 30,
-                      fontWeight: 700,
+                      fontSize: 'var(--text-page-title)',
+                      fontWeight: 500,
                       fontFamily: 'var(--font-mono)',
                       color: hasPR ? 'var(--color-info-text)' : 'var(--color-text-tertiary)',
                       lineHeight: 1,
@@ -645,8 +645,8 @@ export function ExerciseDetailPanel({
                   Athletes with a PR
                 </div>
                 <div style={{
-                  fontSize: 24,
-                  fontWeight: 700,
+                  fontSize: 'var(--text-page-title)',
+                  fontWeight: 500,
                   lineHeight: 1,
                   color: athletePRs.length > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
                   fontFamily: 'var(--font-mono)',
@@ -662,7 +662,7 @@ export function ExerciseDetailPanel({
                   <div style={{
                     fontSize: 'var(--text-label)',
                     fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
+                    fontWeight: 500,
                     color: 'var(--color-text-secondary)',
                     marginTop: 2,
                   }}>
@@ -700,8 +700,8 @@ export function ExerciseDetailPanel({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontSize: 9,
-                          fontWeight: 700,
+                          fontSize: 'var(--text-caption)',
+                          fontWeight: 500,
                           color: 'var(--color-text-secondary)',
                           flexShrink: 0,
                         }}>
@@ -720,13 +720,13 @@ export function ExerciseDetailPanel({
                         <span style={{
                           fontFamily: 'var(--font-mono)',
                           fontSize: 'var(--text-body)',
-                          fontWeight: 600,
+                          fontWeight: 500,
                           color: 'var(--color-text-primary)',
                         }}>
                           {row.pr_value_kg} kg
                         </span>
                         <span style={{
-                          fontSize: 9,
+                          fontSize: 'var(--text-caption)',
                           color: 'var(--color-text-tertiary)',
                           width: 56,
                           textAlign: 'right',
