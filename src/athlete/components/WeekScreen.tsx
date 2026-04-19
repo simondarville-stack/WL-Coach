@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../../lib/supabase';

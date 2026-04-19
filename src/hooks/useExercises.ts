@@ -1,16 +1,11 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Exercise } from '../lib/database.types';
+import type { Exercise, CategoryRow } from '../lib/database.types';
 import { useExerciseStore } from '../store/exerciseStore';
 import { getOwnerId } from '../lib/ownerContext';
 
-export interface Category {
-  id: string;
-  name: string;
-  display_order: number;
-  color: string;
-  created_at: string;
-}
+// Re-export CategoryRow as Category for backward compatibility
+export type Category = CategoryRow;
 
 export function useExercises() {
   const [exercises, setExercises] = useState<Exercise[]>([]);

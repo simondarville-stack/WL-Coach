@@ -10,6 +10,14 @@ export interface CoachProfile {
 }
 
 export type Category = string;
+
+export interface CategoryRow {
+  id: string;
+  name: string;
+  display_order: number;
+  color: string;
+  created_at: string;
+}
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
 /** @deprecated week_type is now a free string matching a WeekTypeConfig.abbreviation */
 export type WeekType = string;
@@ -184,6 +192,7 @@ export type ComboMemberEntry = { exerciseId: string; exercise: Exercise; positio
 
 export interface MacroCycle {
   id: string;
+  owner_id: string;
   athlete_id: string | null;   // null for group macros
   group_id: string | null;     // null for individual macros
   name: string;
@@ -482,6 +491,11 @@ export interface PlannedComboWithDetails extends PlannedCombo {
 export interface Database {
   public: {
     Tables: {
+      categories: {
+        Row: CategoryRow;
+        Insert: Omit<CategoryRow, 'id' | 'created_at'>;
+        Update: Partial<Omit<CategoryRow, 'id' | 'created_at'>>;
+      };
       athletes: {
         Row: Athlete;
         Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>;
