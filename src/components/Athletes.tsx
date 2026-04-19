@@ -8,7 +8,6 @@ import { AthletePRs } from './AthletePRs';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
-import { supabase } from '../lib/supabase';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
 
@@ -506,14 +505,7 @@ export function Athletes() {
       if (editingAthlete) {
         await updateAthlete(editingAthlete.id, data);
       } else {
-        const newAthlete = await createAthlete(data);
-        if (newAthlete && data.bodyweight) {
-          await supabase.from('bodyweight_entries').upsert({
-            athlete_id: newAthlete.id,
-            date: new Date().toISOString().split('T')[0],
-            weight_kg: data.bodyweight,
-          }, { onConflict: 'athlete_id,date' });
-        }
+        await createAthlete(data, data.bodyweight ?? undefined);
       }
       setShowModal(false);
       setEditingAthlete(null);

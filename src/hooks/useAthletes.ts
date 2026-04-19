@@ -69,10 +69,17 @@ export function useAthletes() {
     }
   };
 
-  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>): Promise<Athlete> => {
+  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>, initialBodyweight?: number): Promise<Athlete> => {
     try {
       const { data, error } = await supabase.from('athletes').insert([{ ...athleteData, owner_id: getOwnerId() }]).select().single();
       if (error) throw error;
+      // Atomically create the initial bodyweight entry if provided
+      if (initialBodyweight && initialBodyweight > 0) {
+        await supabase.from('bodyweight_entries').upsert(
+          { athlete_id: data.id, date: new Date().toISOString().split('T')[0], weight_kg: initialBodyweight },
+          { onConflict: 'athlete_id,date' },
+        );
+      }
       return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save athlete');
