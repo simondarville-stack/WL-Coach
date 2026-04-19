@@ -687,10 +687,9 @@ function CategoryManagerModal({
               left: colorPickerPos.x,
               top: colorPickerPos.y,
               background: 'var(--color-bg-primary)',
-              border: '0.5px solid var(--color-border-tertiary)',
+              border: '0.5px solid var(--color-border-primary)',
               borderRadius: 'var(--radius-md)',
               padding: 'var(--space-sm)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
               display: 'flex',
               flexWrap: 'wrap',
               gap: '4px',
@@ -1180,8 +1179,7 @@ export function ExerciseLibrary() {
             style={{
               width: 440,
               background: 'var(--color-bg-primary)',
-              borderLeft: '0.5px solid var(--color-border-tertiary)',
-              boxShadow: '-8px 0 32px rgba(0,0,0,0.10)',
+              borderLeft: '0.5px solid var(--color-border-primary)',
               overflow: 'hidden',
             }}
           >

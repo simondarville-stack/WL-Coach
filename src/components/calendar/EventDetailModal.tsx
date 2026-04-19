@@ -47,7 +47,7 @@ export function EventDetailModal({ event, onClose, onEdit, onDelete, onAthleteCl
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg animate-dialog-in">
+      <div className="rounded-xl w-full max-w-lg animate-dialog-in" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         {/* Header stripe */}
         <div className="rounded-t-xl p-6" style={{ borderTop: `4px solid ${color}` }}>
           <div className="flex items-start justify-between gap-3">

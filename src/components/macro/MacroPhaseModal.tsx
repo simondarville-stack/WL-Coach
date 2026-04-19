@@ -81,7 +81,7 @@ export function MacroPhaseModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+      <div className="rounded-lg max-w-md w-full" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h2 className="text-base font-medium text-gray-900">
             {editingPhase ? 'Edit Phase' : 'Add Phase'}

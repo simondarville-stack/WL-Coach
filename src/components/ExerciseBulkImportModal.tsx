@@ -195,7 +195,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
   if (importResult !== null) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8 text-center">
+        <div className="rounded-lg max-w-md w-full p-8 text-center" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
           <CheckCircle size={48} className="text-green-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-900 mb-2">Import complete</h2>
           <p className="text-gray-600 mb-6">{importResult} exercise{importResult !== 1 ? 's' : ''} imported successfully.</p>
@@ -212,7 +212,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+      <div className="rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-2">

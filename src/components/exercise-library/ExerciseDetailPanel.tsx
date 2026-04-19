@@ -143,7 +143,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
         style={{
           background: 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+          border: '0.5px solid var(--color-border-primary)',
           width: 288,
           overflow: 'hidden',
         }}

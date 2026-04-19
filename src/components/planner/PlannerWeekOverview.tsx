@@ -142,6 +142,14 @@ function getTodayMonday(): string {
   return `${y}-${m}-${dd}`;
 }
 
+function getTodayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 const EMPTY_METRICS: ComputedMetrics = { reps: 0, sets: 0, max: 0, avg: 0, tonnage: 0, k: null };
 
 // ── Component ──────────────────────────────────────────────────────
@@ -627,10 +635,45 @@ export function PlannerWeekOverview({
             cells={phaseBarCells}
             events={barEvents}
             selectedWeekStart={today}
+            playheadDate={getTodayISO()}
             onCellClick={(cell) => onSelectWeek(cell.weekStart)}
           />
         </div>
       )}
+
+      {/* Column header row — day labels + stat column labels (rendered once, not per-week) */}
+      <div style={{
+        display: 'flex', gap: 12,
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        paddingBottom: 'var(--space-xs)',
+      }}>
+        <div style={{ width: 76, flexShrink: 0 }} />
+        <div style={{ flex: 1, display: 'flex', gap: 4 }}>
+          {DAY_LABELS.map(label => (
+            <div key={label} style={{
+              flex: 1, textAlign: 'center',
+              fontSize: 'var(--text-caption)', fontWeight: 500,
+              color: 'var(--color-text-tertiary)',
+            }}>
+              {label}
+            </div>
+          ))}
+        </div>
+        <div style={{
+          width: 170, flexShrink: 0,
+          paddingLeft: 'var(--space-md)',
+          borderLeft: '0.5px solid var(--color-border-tertiary)',
+          display: 'flex', gap: 4, alignItems: 'center',
+        }}>
+          <div style={{ width: 40 }} />
+          <div style={{ flex: 1, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
+            Target
+          </div>
+          <div style={{ flex: 1, fontSize: 'var(--text-caption)', fontWeight: 500, color: 'var(--color-text-secondary)', textAlign: 'right' }}>
+            Planned
+          </div>
+        </div>
+      </div>
 
       {/* Week rows */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -768,15 +811,6 @@ export function PlannerWeekOverview({
                             ...dayBlockStyle,
                           }}
                         >
-                          {/* Day label */}
-                          <div style={{
-                            fontSize: 8, fontWeight: 500,
-                            color: 'var(--color-text-secondary)',
-                            textAlign: 'center', marginBottom: 4,
-                          }}>
-                            {DAY_LABELS[di]}
-                          </div>
-
                           {/* Exercise bands */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
                             {day.exercises.slice(0, 6).map((ex, ei) => (
@@ -790,7 +824,7 @@ export function PlannerWeekOverview({
                                 }}
                               >
                                 <span style={{
-                                  fontSize: 9, lineHeight: 1.3, fontWeight: 500,
+                                  fontSize: 'var(--text-caption)', lineHeight: 1.3, fontWeight: 500,
                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                   color: faded ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
                                 }}>
@@ -799,7 +833,7 @@ export function PlannerWeekOverview({
                               </div>
                             ))}
                             {day.exercises.length > 6 && (
-                              <span style={{ fontSize: 7, color: 'var(--color-text-tertiary)', paddingLeft: 4 }}>
+                              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', paddingLeft: 4 }}>
                                 +{day.exercises.length - 6}
                               </span>
                             )}
@@ -807,14 +841,14 @@ export function PlannerWeekOverview({
 
                           {/* Metric strip */}
                           {hasData && (
-                            <div style={{ opacity: faded ? 0.4 : 1, marginTop: 4 }}>
+                            <div style={{ opacity: faded ? 0.4 : 1, marginTop: 4, textAlign: 'center' }}>
                               <MetricStrip
                                 metrics={day.dayMetrics}
                                 visibleMetrics={visibleMetrics}
                                 size="sm"
                                 showLabels={false}
                                 separator="·"
-                                className="text-[8px] leading-tight justify-center"
+                                className="leading-tight"
                               />
                             </div>
                           )}
@@ -829,19 +863,6 @@ export function PlannerWeekOverview({
                     justifyContent: 'center', paddingLeft: 'var(--space-md)',
                     borderLeft: '0.5px solid var(--color-border-tertiary)',
                   }}>
-                    {/* Column headers */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                      <div style={{ width: 40 }} />
-                      <div style={{ flex: 1, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
-                        Target
-                      </div>
-                      <div style={{
-                        flex: 1, fontSize: 'var(--text-caption)', fontWeight: 500,
-                        color: 'var(--color-text-secondary)', textAlign: 'right',
-                      }}>
-                        Planned
-                      </div>
-                    </div>
                     {METRICS.filter(m => (visibleSummaryMetrics as string[]).includes(m.key)).map(m => {
                       const actualVal = week.weekMetrics[m.key] as number | null;
                       const targetVal = week.macroTargets

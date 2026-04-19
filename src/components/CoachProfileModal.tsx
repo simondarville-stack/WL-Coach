@@ -40,7 +40,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm">
+      <div className="rounded-lg w-full max-w-sm" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <h2 className="text-base font-medium text-gray-900">New coaching environment</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">

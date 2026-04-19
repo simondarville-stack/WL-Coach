@@ -103,8 +103,7 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
         style={{
           background: 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-xl)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.16)',
-          border: '1px solid var(--color-border-secondary)',
+          border: '0.5px solid var(--color-border-primary)',
           maxWidth: 512, width: '100%', maxHeight: '90vh', overflowY: 'auto',
         }}
       >
@@ -218,8 +217,8 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
               {searchQuery && searchResults.length > 0 && (
                 <div style={{
                   position: 'absolute', zIndex: 10, width: '100%', marginTop: 4,
-                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)',
-                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)',
+                  borderRadius: 'var(--radius-md)',
                   maxHeight: 192, overflowY: 'auto',
                 }}>
                   {searchResults.map((ex, index) => (
@@ -246,8 +245,8 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
               {searchQuery && searchResults.length === 0 && (
                 <div style={{
                   position: 'absolute', zIndex: 10, width: '100%', marginTop: 4,
-                  background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)',
-                  borderRadius: 'var(--radius-md)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)',
+                  borderRadius: 'var(--radius-md)',
                   padding: '8px 12px', fontSize: 13, color: 'var(--color-text-secondary)',
                 }}>
                   No matches

@@ -520,7 +520,7 @@ export function MacroCycles() {
                 <ChevronDown size={14} />
               </button>
               {cycleMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-[200px]">
+                <div className="absolute top-full left-0 mt-1 rounded-lg z-20 min-w-[200px]" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
                   {macrocycles.map(mc => (
                     <button
                       key={mc.id}

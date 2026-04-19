@@ -54,7 +54,7 @@ export function AthleteSelector() {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-64 max-h-[480px] overflow-y-auto">
+        <div className="absolute top-full mt-1 right-0 rounded-lg z-50 w-64 max-h-[480px] overflow-y-auto" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
           {hasSelection && (
             <div className="p-2 border-b border-gray-100">
               <button

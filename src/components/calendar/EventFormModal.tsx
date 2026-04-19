@@ -80,7 +80,7 @@ export function EventFormModal({ editing, athletes, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-dialog-in">
+      <div className="rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-dialog-in" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-lg font-medium text-gray-900">
             {editing ? 'Edit Event' : 'New Event'}

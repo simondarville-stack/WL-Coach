@@ -17,7 +17,7 @@ export function MetricStrip({
   separator = '·',
   className = '',
 }: MetricStripProps) {
-  const textSize = size === 'sm' ? 'text-[10px]' : size === 'lg' ? 'text-sm' : 'text-xs';
+  const textSize = size === 'sm' ? 'text-[11px]' : size === 'lg' ? 'text-sm' : 'text-xs';
   const valueWeight = 'font-medium';
 
   const items = METRICS

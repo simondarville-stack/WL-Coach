@@ -57,7 +57,8 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[90vh] flex flex-col"
+        className="rounded-xl w-[520px] max-h-[90vh] flex flex-col"
+        style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

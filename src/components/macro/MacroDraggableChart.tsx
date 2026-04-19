@@ -460,8 +460,7 @@ export function MacroDraggableChart({
               cursor={false}
               contentStyle={{
                 fontSize: 10, padding: '6px 10px',
-                border: '1px solid #e5e7eb', borderRadius: 6,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                border: '0.5px solid var(--color-border-primary)', borderRadius: 6,
               }}
               labelFormatter={(wn: number) => {
                 const week = macroWeeks.find(w => w.week_number === wn);
