@@ -27,7 +27,9 @@ export interface WeekTypeConfig {
   abbreviation: string;  // "h", "dl", "sh" (1-3 chars)
   color: string;         // hex color "#E24B4A"
 }
-export type PhaseType = 'preparatory' | 'strength' | 'competition' | 'transition' | 'custom';
+/** Open string — the four preset values ('preparatory', 'strength', 'competition', 'transition')
+ * are suggestions only; free-text entry is allowed. See REVIEW_PLAN.md ENG-037. */
+export type PhaseType = string;
 
 export interface Athlete {
   id: string;

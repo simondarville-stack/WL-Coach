@@ -105,15 +105,19 @@ export function MacroPhaseModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phase type</label>
-            <select
+            {/* Free-text entry with preset suggestions — PhaseType is an open string (see database.types.ts) */}
+            <input
+              list="phase-type-suggestions"
               value={phaseType}
-              onChange={e => handlePhaseTypeChange(e.target.value as PhaseType)}
+              onChange={e => handlePhaseTypeChange(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
+              placeholder="e.g. Preparatory, Strength, Competition…"
+            />
+            <datalist id="phase-type-suggestions">
               {PHASE_TYPE_OPTIONS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
-            </select>
+            </datalist>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
