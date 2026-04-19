@@ -239,7 +239,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
             <button
               onClick={handleAddEntry}
               disabled={!newWeight}
-              className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+              className="rounded disabled:opacity-40"
+              style={{ padding: '4px 12px', fontSize: 'var(--text-caption)', background: 'var(--color-accent)', color: 'var(--color-text-on-accent)', minHeight: 36 }}
             >
               Add
             </button>
