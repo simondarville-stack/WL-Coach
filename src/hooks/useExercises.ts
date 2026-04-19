@@ -8,52 +8,56 @@ import { getOwnerId } from '../lib/ownerContext';
 export type Category = CategoryRow;
 
 export function useExercises() {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const {
+    exercises,
+    categories,
+    exercisesLoading,
+    categoriesLoading,
+    setExercises: storeSetExercises,
+    setCategories: storeSetCategories,
+    fetchExercises: storeFetchExercises,
+    fetchExercisesByName: storeFetchExercisesByName,
+    fetchCategories: storeFetchCategories,
+  } = useExerciseStore();
+
+  // Local state only for CRUD mutation feedback (not list state)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setExercises: storeSetExercises, setCategories: storeSetCategories } = useExerciseStore();
+  // Delegate list fetches to the store (single source of truth)
+  const fetchExercises = () => storeFetchExercises();
+  const fetchExercisesByName = () => storeFetchExercisesByName();
+  const fetchCategories = () => storeFetchCategories();
 
-  // --- Exercise operations ---
-
-  const fetchExercises = async () => {
+  // fetchAllExercisesIncludingArchived still uses local pattern since it's admin-only
+  const fetchAllExercisesIncludingArchived = async () => {
     try {
-      setLoading(true);
-      setError(null);
       const { data, error } = await supabase
         .from('exercises')
         .select('*')
         .eq('owner_id', getOwnerId())
-        .eq('is_archived', false)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      const result = data || [];
-      setExercises(result);
-      storeSetExercises(result);
+      storeSetExercises(data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load exercises');
+    }
+  };
+
+  // fetchCategoriesWithError is used by Settings which needs loading/error feedback
+  const fetchCategoriesWithError = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await storeFetchCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load categories');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchExercisesByName = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .eq('is_archived', false)
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      setExercises(result);
-      storeSetExercises(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
-    }
-  };
+  // --- Exercise CRUD ---
 
   const createExercise = async (exerciseData: Partial<Exercise>): Promise<Exercise | null> => {
     try {
@@ -112,22 +116,6 @@ export function useExercises() {
     }
   };
 
-  const fetchAllExercisesIncludingArchived = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      const result = data || [];
-      setExercises(result);
-      storeSetExercises(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
-    }
-  };
-
   const restoreExercise = async (id: string) => {
     try {
       const { error } = await supabase.from('exercises').update({ is_archived: false }).eq('id', id);
@@ -138,40 +126,7 @@ export function useExercises() {
     }
   };
 
-  // --- Category operations ---
-
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-      if (error) throw error;
-      const result = data || [];
-      setCategories(result);
-      storeSetCategories(result);
-    } catch (err) {
-    }
-  };
-
-  const fetchCategoriesWithError = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('display_order', { ascending: true });
-      if (error) throw error;
-      const result = data || [];
-      setCategories(result);
-      storeSetCategories(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load categories');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // --- Category CRUD ---
 
   const createCategory = async (name: string, displayOrder: number, color?: string) => {
     try {
@@ -277,10 +232,10 @@ export function useExercises() {
 
   return {
     exercises,
-    setExercises,
+    setExercises: storeSetExercises,
     categories,
-    setCategories,
-    loading,
+    setCategories: storeSetCategories,
+    loading: loading || exercisesLoading || categoriesLoading,
     error,
     setError,
     fetchExercises,

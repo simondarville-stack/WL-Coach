@@ -3,8 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { fetchWeeklyAggregates, fetchIntensityZones, type WeeklyAggregate, type IntensityZone } from '../../hooks/useAnalysis';
-import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
+import { useExerciseStore } from '../../store/exerciseStore';
 
 interface Props {
   athleteId: string;
@@ -27,21 +26,16 @@ function formatWeek(ws: string) {
 }
 
 export function IntensityZones({ athleteId, startDate, endDate }: Props) {
+  const { exercises: allExercises, fetchExercises } = useExerciseStore();
+  const exercises = allExercises.filter(e => e.category !== '— System');
   const [aggregates, setAggregates] = useState<WeeklyAggregate[]>([]);
   const [zones, setZones] = useState<IntensityZone[]>([]);
-  const [exercises, setExercises] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>('all');
   const [oneRepMax, setOneRepMax] = useState(100);
   const [loading, setLoading] = useState(true);
   const [weeklyZones, setWeeklyZones] = useState<Array<Record<string, number | string>>>([]);
 
-  useEffect(() => {
-    supabase.from('exercises').select('id, name')
-      .eq('owner_id', getOwnerId()).neq('category', '— System').order('name')
-      .then(({ data }) => {
-        setExercises((data ?? []) as Array<{ id: string; name: string }>);
-      });
-  }, []);
+  useEffect(() => { fetchExercises(); }, [fetchExercises]);
 
   const load = useCallback(async () => {
     setLoading(true);

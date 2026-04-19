@@ -5,26 +5,22 @@ import { useAthleteStore } from '../store/athleteStore';
 import { getOwnerId } from '../lib/ownerContext';
 
 export function useAthletes() {
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { setAthletes: storeSetAthletes } = useAthleteStore();
+  const {
+    athletes,
+    setAthletes: storeSetAthletes,
+    fetchAthletes: storeFetchAthletes,
+    athletesLoading,
+  } = useAthleteStore();
 
+  // Delegates to store — single source of truth. Force=true to re-fetch.
   const fetchAthletes = async () => {
     try {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('is_active', { ascending: false })
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      setAthletes(result);
-      storeSetAthletes(result);
+      await storeFetchAthletes(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
     } finally {
@@ -44,7 +40,6 @@ export function useAthletes() {
         .order('name');
       if (error) throw error;
       const result = data || [];
-      setAthletes(result);
       storeSetAthletes(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
@@ -62,7 +57,6 @@ export function useAthletes() {
         .order('name');
       if (error) throw error;
       const result = data || [];
-      setAthletes(result);
       storeSetAthletes(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
@@ -144,8 +138,8 @@ export function useAthletes() {
 
   return {
     athletes,
-    setAthletes,
-    loading,
+    setAthletes: storeSetAthletes,
+    loading: loading || athletesLoading,
     error,
     setError,
     fetchAthletes,
