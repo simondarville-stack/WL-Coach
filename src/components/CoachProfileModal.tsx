@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
-import { supabase } from '../lib/supabase';
 import type { CoachProfile } from '../lib/database.types';
 
 interface CoachProfileModalProps {
@@ -29,15 +28,6 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
         name: name.trim(),
         club_name: clubName.trim() || undefined,
         email: email.trim() || undefined,
-      });
-
-      // Create default settings for this coach
-      await supabase.from('general_settings').insert({
-        owner_id: coach.id,
-        raw_enabled: true,
-        raw_average_days: 7,
-        grid_load_increment: 5,
-        grid_click_increment: 1,
       });
 
       onCreated(coach);
