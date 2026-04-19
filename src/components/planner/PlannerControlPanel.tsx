@@ -9,8 +9,9 @@ import {
 import { supabase } from '../../lib/supabase';
 import type {
   Athlete, TrainingGroup, AthletePR, Exercise, PlannedExercise,
-  GeneralSettings, MacroPhase, MacroWeek,
+  GeneralSettings, MacroPhase, MacroWeek, WeekTypeConfig,
 } from '../../lib/database.types';
+import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
@@ -21,6 +22,14 @@ import { MacroPhaseBar, type MacroPhaseBarEvent } from '../planning';
 import { buildCellsForSingleMacro, fetchMacroPhaseBarEvents } from '../../lib/macroPhaseBarData';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function getTodayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -34,18 +43,10 @@ function abbreviateExercise(name: string): string {
   return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3);
 }
 
-// Maps macro week type to token-based colors for the badge pill.
-function weekTypeBadgeColor(weekType: string): { bg: string; text: string } {
-  switch (weekType) {
-    case 'High':        return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
-    case 'Medium':      return { bg: 'var(--color-blue-50)',   text: 'var(--color-blue-800)' };
-    case 'Low':         return { bg: 'var(--color-green-50)',  text: 'var(--color-green-800)' };
-    case 'Deload':      return { bg: 'var(--color-teal-50)',   text: 'var(--color-teal-800)' };
-    case 'Competition': return { bg: 'var(--color-red-50)',    text: 'var(--color-red-800)' };
-    case 'Taper':       return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
-    case 'Testing':     return { bg: 'var(--color-purple-50)', text: 'var(--color-purple-800)' };
-    default:            return { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' };
-  }
+// Badge colors derived from coach-configured WeekTypeConfig; uses a 10% opacity tint.
+function weekTypeBadgeColor(weekType: string, weekTypes: WeekTypeConfig[]): { bg: string; text: string } {
+  const color = getWeekTypeColor(weekType, weekTypes);
+  return { bg: color + '1A', text: color };
 }
 
 // Compliance color (for the percentage after the reps count)
@@ -210,6 +211,7 @@ export interface PlannerControlPanelProps {
   onResolvePercentages?: () => Promise<void>;
   weekTypesByNum?: Record<number, string>;
   macroEvents?: MacroPhaseBarEvent[];
+  weekTypes?: WeekTypeConfig[];
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -239,6 +241,7 @@ export function PlannerControlPanel({
   onResolvePercentages,
   weekTypesByNum,
   macroEvents = [],
+  weekTypes = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
@@ -787,7 +790,7 @@ export function PlannerControlPanel({
                 {macroContext.macroName}
               </span>
               {(() => {
-                const { bg, text } = weekTypeBadgeColor(macroContext.weekType);
+                const { bg, text } = weekTypeBadgeColor(macroContext.weekType, weekTypes);
                 return (
                   <span
                     style={{
@@ -927,6 +930,7 @@ export function PlannerControlPanel({
             cells={phaseBarCells}
             events={fetchedEvents}
             selectedWeekStart={phaseBarSelectedWeekStart}
+            playheadDate={getTodayISO()}
             onCellClick={() => navigate('/macrocycles')}
           />
         </div>

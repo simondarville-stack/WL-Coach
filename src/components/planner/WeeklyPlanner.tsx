@@ -669,6 +669,7 @@ export function WeeklyPlanner() {
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
                 onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
+                weekTypes={settings?.week_types ?? []}
               />
 
             {/* ── Load Distribution (collapsible) ── */}
