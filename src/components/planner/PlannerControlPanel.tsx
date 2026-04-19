@@ -18,7 +18,7 @@ import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
 import { MacroPhaseBar, type MacroPhaseBarEvent } from '../planning';
-import { buildCellsForSingleMacro } from '../../lib/macroPhaseBarData';
+import { buildCellsForSingleMacro, fetchMacroPhaseBarEvents } from '../../lib/macroPhaseBarData';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -245,6 +245,7 @@ export function PlannerControlPanel({
   const [competitionPRs, setCompetitionPRs] = useState<CompetitionPR[]>([]);
   const [phases, setPhases]                 = useState<MacroPhase[]>([]);
   const [macroWeeks, setMacroWeeks]         = useState<MacroWeek[]>([]);
+  const [fetchedEvents, setFetchedEvents]   = useState<MacroPhaseBarEvent[]>([]);
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
@@ -262,6 +263,21 @@ export function PlannerControlPanel({
     void loadPhases(macroContext.macroId);
     void loadMacroWeeks(macroContext.macroId);
   }, [macroContext?.macroId]);
+
+  useEffect(() => {
+    if (!selectedAthlete || macroWeeks.length === 0) {
+      setFetchedEvents([]);
+      return;
+    }
+    const rangeStart = macroWeeks[0].week_start;
+    const lastWeek = macroWeeks[macroWeeks.length - 1];
+    const lastMonday = new Date(lastWeek.week_start + 'T00:00:00');
+    lastMonday.setDate(lastMonday.getDate() + 6);
+    const rangeEnd = lastMonday.toISOString().split('T')[0];
+
+    void fetchMacroPhaseBarEvents([selectedAthlete.id], rangeStart, rangeEnd)
+      .then(setFetchedEvents);
+  }, [selectedAthlete?.id, macroWeeks]);
 
   async function loadCompetitionPRs(athleteId: string) {
     const { data } = await supabase
@@ -909,7 +925,7 @@ export function PlannerControlPanel({
         >
           <MacroPhaseBar
             cells={phaseBarCells}
-            events={macroEvents}
+            events={fetchedEvents}
             selectedWeekStart={phaseBarSelectedWeekStart}
             onCellClick={() => navigate('/macrocycles')}
           />

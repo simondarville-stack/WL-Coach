@@ -1,9 +1,12 @@
-import type { MacroPhaseBarCell } from '../components/planning/MacroPhaseBar';
+import { supabase } from './supabase';
+import { getMondayOfWeekISO } from './weekUtils';
+import type { MacroPhaseBarCell, MacroPhaseBarEvent } from '../components/planning/MacroPhaseBar';
 import type {
   Macrocycle,
   MacroPhase,
   MacroWeek,
   WeekTypeConfig,
+  Event,
 } from './database.types';
 
 /** Neutral gap color for weeks without a macro. */
@@ -123,4 +126,110 @@ export function buildCellsForSingleMacro(
     ...source,
     macros: [macro],
   });
+}
+
+// ── Event helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Day-of-week index for our bar: Monday = 0, Sunday = 6.
+ * JS getDay() returns Sunday = 0, Monday = 1, etc.
+ */
+function dayIndexFromDate(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  return (d.getDay() + 6) % 7;
+}
+
+/**
+ * Convert a raw event row to the MacroPhaseBarEvent shape.
+ * Point vs range is inferred from whether end_date is set and differs
+ * from event_date.
+ */
+export function convertEventToPhaseBarEvent(
+  event: Pick<Event, 'id' | 'name' | 'event_date' | 'end_date'>
+): MacroPhaseBarEvent {
+  const startMonday = getMondayOfWeekISO(new Date(event.event_date + 'T00:00:00'));
+  const startDay = dayIndexFromDate(event.event_date);
+
+  if (!event.end_date || event.end_date === event.event_date) {
+    return {
+      id: event.id,
+      kind: 'point',
+      weekStart: startMonday,
+      day: startDay,
+      title: event.name,
+    };
+  }
+
+  const endMonday = getMondayOfWeekISO(new Date(event.end_date + 'T00:00:00'));
+  const endDay = dayIndexFromDate(event.end_date);
+
+  return {
+    id: event.id,
+    kind: 'range',
+    startWeekStart: startMonday,
+    startDay,
+    endWeekStart: endMonday,
+    endDay,
+    title: event.name,
+  };
+}
+
+/**
+ * Resolve athlete IDs given either an athlete or group. Returns []
+ * if neither is given. For groups, returns all currently-active member
+ * ids (left_at is null).
+ */
+export async function resolveScopeAthleteIds(
+  athleteId: string | null,
+  groupId: string | null
+): Promise<string[]> {
+  if (athleteId) return [athleteId];
+  if (groupId) {
+    const { data: members } = await supabase
+      .from('group_members')
+      .select('athlete_id')
+      .eq('group_id', groupId)
+      .is('left_at', null);
+    return (members || []).map((m: { athlete_id: string }) => m.athlete_id);
+  }
+  return [];
+}
+
+/**
+ * Fetch all events attached to the given athlete IDs that overlap
+ * the given date range (inclusive). Returns already-converted
+ * MacroPhaseBarEvent objects, deduplicated by id.
+ *
+ * An event is considered to overlap the range [rangeStart, rangeEnd] if
+ * its start ≤ rangeEnd AND its end ≥ rangeStart, where end defaults
+ * to event_date when end_date is null.
+ */
+export async function fetchMacroPhaseBarEvents(
+  athleteIds: string[],
+  rangeStart: string,
+  rangeEnd: string
+): Promise<MacroPhaseBarEvent[]> {
+  if (athleteIds.length === 0) return [];
+
+  const { data: ea } = await supabase
+    .from('event_athletes')
+    .select('event_id')
+    .in('athlete_id', athleteIds);
+
+  const eventIds = [...new Set((ea || []).map((e: { event_id: string }) => e.event_id))];
+  if (eventIds.length === 0) return [];
+
+  const { data: events } = await supabase
+    .from('events')
+    .select('id, name, event_date, end_date, event_type, color')
+    .in('id', eventIds)
+    .order('event_date', { ascending: true });
+
+  return (events || [])
+    .filter((ev: Pick<Event, 'event_date' | 'end_date'>) => {
+      const start = ev.event_date;
+      const end = ev.end_date || ev.event_date;
+      return start <= rangeEnd && end >= rangeStart;
+    })
+    .map((ev: Event) => convertEventToPhaseBarEvent(ev));
 }

@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { StandardPage, Button } from '../ui';
-import { MacroPhaseBar } from '../planning';
-import { buildCellsForWeekRange } from '../../lib/macroPhaseBarData';
+import { MacroPhaseBar, type MacroPhaseBarEvent } from '../planning';
+import {
+  buildCellsForWeekRange,
+  fetchMacroPhaseBarEvents,
+  resolveScopeAthleteIds,
+} from '../../lib/macroPhaseBarData';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -156,6 +160,7 @@ export function PlannerWeekOverview({
   const [rawPhases, setRawPhases] = useState<import('../../lib/database.types').MacroPhase[]>([]);
   const [rawMacroWeeks, setRawMacroWeeks] = useState<import('../../lib/database.types').MacroWeek[]>([]);
   const [weekTypeConfigs, setWeekTypeConfigs] = useState<import('../../lib/database.types').WeekTypeConfig[]>([]);
+  const [barEvents, setBarEvents] = useState<MacroPhaseBarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [centerDate, setCenterDate] = useState(() => getTodayMonday());
   const currentWeekRef = useRef<HTMLDivElement>(null);
@@ -175,6 +180,7 @@ export function PlannerWeekOverview({
       setRawMacros([]);
       setRawPhases([]);
       setRawMacroWeeks([]);
+      setBarEvents([]);
       setLoading(false);
       return;
     }
@@ -450,6 +456,13 @@ export function PlannerWeekOverview({
       setWeekTypeConfigs(
         (settings?.week_types as import('../../lib/database.types').WeekTypeConfig[] | undefined) ?? []
       );
+
+      // Load events for the visible range
+      const evRangeStart = weekDates[0];
+      const evRangeEnd = addDays(weekDates[weekDates.length - 1], 6);
+      const scopeAthleteIds = await resolveScopeAthleteIds(targetId, targetGroupId);
+      const fetched = await fetchMacroPhaseBarEvents(scopeAthleteIds, evRangeStart, evRangeEnd);
+      setBarEvents(fetched);
     } catch (err) {
       console.error('Failed to load week overview:', err);
     } finally {
@@ -612,7 +625,7 @@ export function PlannerWeekOverview({
         <div style={{ paddingLeft: '76px', paddingRight: '170px' }}>
           <MacroPhaseBar
             cells={phaseBarCells}
-            events={[]}
+            events={barEvents}
             selectedWeekStart={today}
             onCellClick={(cell) => onSelectWeek(cell.weekStart)}
           />
