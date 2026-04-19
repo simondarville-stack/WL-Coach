@@ -5,6 +5,7 @@ import {
   PointElement, ArcElement, Filler,
   Tooltip as ChartTooltip,
 } from 'chart.js';
+import type { TooltipItem } from 'chart.js';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 
 ChartJS.register(
@@ -173,7 +174,7 @@ export function MacroDistributionChart({
         data: { labels, datasets },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c: any) => c.dataset.label + ': ' + c.raw + '%' } } },
+          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c: TooltipItem<'bar'>) => (c.dataset.label ?? '') + ': ' + (c.raw as number) + '%' } } },
           scales: {
             x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
             y: { stacked: true, max: 100, title: { display: true, text: '%', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 }, callback: (v: number) => v + '%' } },
@@ -257,9 +258,9 @@ export function MacroDistributionChart({
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (c: any) => {
+              label: (c: TooltipItem<'doughnut'>) => {
                 const total = vals.reduce((a: number, b: number) => a + b, 0);
-                return c.label + ': ' + c.raw + ' (' + Math.round(c.raw / total * 100) + '%)';
+                return (c.label ?? '') + ': ' + (c.raw as number) + ' (' + Math.round((c.raw as number) / total * 100) + '%)';
               },
             },
           },
