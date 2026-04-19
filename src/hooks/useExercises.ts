@@ -202,6 +202,36 @@ export function useExercises() {
 
   const deleteCategory = async (id: string) => {
     try {
+      // Reassign any exercises in this category to "Unspecified" before deleting
+      const { data: catRow } = await supabase.from('categories').select('name').eq('id', id).single();
+      if (catRow) {
+        const ownerId = getOwnerId();
+        const { data: affected } = await supabase
+          .from('exercises')
+          .select('id')
+          .eq('category', catRow.name)
+          .eq('owner_id', ownerId);
+        if (affected && affected.length > 0) {
+          // Ensure "Unspecified" category exists
+          const { data: existingUnspec } = await supabase
+            .from('categories')
+            .select('id')
+            .eq('name', 'Unspecified')
+            .maybeSingle();
+          if (!existingUnspec) {
+            const { data: allCats } = await supabase.from('categories').select('display_order');
+            const maxOrder = (allCats ?? []).reduce((m: number, c: { display_order: number }) => Math.max(m, c.display_order), -1);
+            await supabase
+              .from('categories')
+              .insert([{ name: 'Unspecified', display_order: maxOrder + 1, color: '#888780' }]);
+          }
+          await supabase
+            .from('exercises')
+            .update({ category: 'Unspecified' })
+            .in('id', affected.map((e: { id: string }) => e.id))
+            .eq('owner_id', ownerId);
+        }
+      }
       const { error } = await supabase.from('categories').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
