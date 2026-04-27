@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { DateInput } from '../ui/DateInput';
 
 interface CompetitionRow {
   name: string;
@@ -28,6 +29,7 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
   const [competitions, setCompetitions] = useState<CompetitionRow[]>([]);
   const [phasePreset, setPhasePreset] = useState<PhasePreset>('none');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const addCompetition = () => {
     setCompetitions(prev => [...prev, { name: '', date: '', is_primary: false }]);
@@ -43,6 +45,7 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
 
   const handleSubmit = async () => {
     if (!name.trim() || !startDate || !endDate) return;
+    setError(null);
     setSubmitting(true);
     try {
       await onCreate({
@@ -52,6 +55,9 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
         competitions: competitions.filter(c => c.name.trim() && c.date),
         phasePreset,
       });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || 'Failed to create macrocycle.');
     } finally {
       setSubmitting(false);
     }
@@ -82,21 +88,14 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start date *</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DateInput value={startDate} onChange={setStartDate} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DateInput value={endDate} onChange={setEndDate} />
+              {startDate && endDate && startDate > endDate && (
+                <p className="text-[11px] text-red-600 mt-1">End date must be after start date.</p>
+              )}
             </div>
           </div>
 
@@ -148,12 +147,13 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
                   placeholder="Competition name"
                   className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <input
-                  type="date"
-                  value={comp.date}
-                  onChange={e => updateCompetition(i, 'date', e.target.value)}
-                  className="w-32 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <div className="w-32">
+                  <DateInput
+                    value={comp.date}
+                    onChange={v => updateCompetition(i, 'date', v)}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
                 <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
                   <input
                     type="checkbox"
@@ -169,6 +169,10 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
               </div>
             ))}
           </div>
+
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+          )}
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">

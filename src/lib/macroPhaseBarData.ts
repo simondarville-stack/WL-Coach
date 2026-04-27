@@ -41,18 +41,19 @@ function findPhaseForWeek(
 function resolveWeekType(
   abbr: string | null | undefined,
   configs: WeekTypeConfig[]
-): { abbr: string; name: string; warning: boolean } {
-  if (!abbr) return { abbr: '', name: '', warning: false };
+): { abbr: string; name: string; color: string | null; warning: boolean } {
+  if (!abbr) return { abbr: '', name: '', color: null, warning: false };
   const wt =
     configs.find(c => c.abbreviation === abbr) ??
     configs.find(c => c.name.toLowerCase() === abbr.toLowerCase());
   if (!wt) {
     // Unknown week type: signal with warning flag so the cell can render "?"
-    return { abbr: '?', name: abbr, warning: true };
+    return { abbr: '?', name: abbr, color: null, warning: true };
   }
   return {
     abbr: wt.abbreviation,
     name: wt.name,
+    color: wt.color,
     warning: false,
   };
 }

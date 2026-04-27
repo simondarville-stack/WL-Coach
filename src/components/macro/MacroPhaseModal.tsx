@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 import type { MacroPhase, MacroWeek, PhaseType } from '../../lib/database.types';
 
 interface MacroPhaseModalProps {
   macrocycleId: string;
   macroWeeks: MacroWeek[];
+  phases: MacroPhase[];
   editingPhase: MacroPhase | null;
   nextPosition: number;
   onSave: (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  onDelete?: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -19,12 +21,27 @@ const PHASE_TYPE_OPTIONS: { value: PhaseType; label: string; color: string }[] =
   { value: 'custom', label: 'Custom', color: '#E5E7EB' },
 ];
 
+function overlapsExisting(
+  start: number,
+  end: number,
+  phases: MacroPhase[],
+  excludeId?: string
+): MacroPhase | null {
+  for (const p of phases) {
+    if (p.id === excludeId) continue;
+    if (start <= p.end_week_number && end >= p.start_week_number) return p;
+  }
+  return null;
+}
+
 export function MacroPhaseModal({
   macrocycleId,
   macroWeeks,
+  phases,
   editingPhase,
   nextPosition,
   onSave,
+  onDelete,
   onClose,
 }: MacroPhaseModalProps) {
   const [name, setName] = useState('');
@@ -34,6 +51,8 @@ export function MacroPhaseModal({
   const [color, setColor] = useState('#E5E7EB');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [overlapError, setOverlapError] = useState<string | null>(null);
 
   useEffect(() => {
     if (editingPhase) {
@@ -46,6 +65,9 @@ export function MacroPhaseModal({
     }
   }, [editingPhase]);
 
+  // Clear overlap error whenever range changes
+  useEffect(() => { setOverlapError(null); }, [startWeekNum, endWeekNum]);
+
   const handlePhaseTypeChange = (pt: PhaseType) => {
     setPhaseType(pt);
     const preset = PHASE_TYPE_OPTIONS.find(o => o.value === pt);
@@ -57,6 +79,13 @@ export function MacroPhaseModal({
 
   const handleSave = async () => {
     if (!name.trim()) return;
+
+    const conflict = overlapsExisting(startWeekNum, endWeekNum, phases, editingPhase?.id);
+    if (conflict) {
+      setOverlapError(`Overlaps with "${conflict.name}" (Wk ${conflict.start_week_number}–${conflict.end_week_number})`);
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave({
@@ -72,6 +101,17 @@ export function MacroPhaseModal({
       onClose();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+      onClose();
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -125,7 +165,11 @@ export function MacroPhaseModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">Start week</label>
               <select
                 value={startWeekNum}
-                onChange={e => setStartWeekNum(Number(e.target.value))}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  setStartWeekNum(v);
+                  if (endWeekNum < v) setEndWeekNum(v);
+                }}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {Array.from({ length: maxWeek - minWeek + 1 }, (_, i) => minWeek + i).map(n => (
@@ -146,6 +190,42 @@ export function MacroPhaseModal({
               </select>
             </div>
           </div>
+
+          {overlapError && (
+            <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+              {overlapError}
+            </p>
+          )}
+
+          {/* Visual strip: show all phases + current selection */}
+          {maxWeek > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Week coverage</label>
+              <div className="flex w-full rounded overflow-hidden" style={{ height: 16 }}>
+                {Array.from({ length: maxWeek - minWeek + 1 }, (_, i) => minWeek + i).map(n => {
+                  const isSelected = n >= startWeekNum && n <= endWeekNum;
+                  const existingPhase = phases.find(
+                    p => p.id !== editingPhase?.id && n >= p.start_week_number && n <= p.end_week_number
+                  );
+                  let bg = 'var(--color-bg-secondary)';
+                  if (existingPhase) bg = existingPhase.color;
+                  if (isSelected && existingPhase) bg = '#ef4444'; // overlap = red
+                  else if (isSelected) bg = color;
+                  return (
+                    <div
+                      key={n}
+                      style={{ flex: 1, backgroundColor: bg, borderRight: '1px solid var(--color-bg-primary)' }}
+                      title={existingPhase ? existingPhase.name : isSelected ? name || 'New phase' : `Wk ${n}`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex justify-between mt-0.5">
+                <span className="text-[10px] text-gray-400">Wk {minWeek}</span>
+                <span className="text-[10px] text-gray-400">Wk {maxWeek}</span>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
@@ -173,6 +253,16 @@ export function MacroPhaseModal({
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-gray-200">
+          {editingPhase && onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting || saving}
+              className="px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 flex items-center gap-1"
+            >
+              <Trash2 size={14} />
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"

@@ -215,12 +215,12 @@ export function MacroCycleToolbar({
             </button>
           )}
 
-          {/* Add phase */}
+          {/* Phases */}
           <button
             onClick={onAddPhase}
             className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
-            <Plus size={13} /> Add phase
+            Phases
           </button>
 
           {/* Excel IO */}

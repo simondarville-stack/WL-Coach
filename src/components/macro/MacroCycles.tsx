@@ -18,7 +18,7 @@ ChartJS.register(BarController, LineController, DoughnutController);
 import { MacroSummaryBar } from './MacroSummaryBar';
 import { MacroCreateModal } from './MacroCreateModal';
 import { MacroEditModal } from './MacroEditModal';
-import { MacroPhaseModal } from './MacroPhaseModal';
+import { MacroPhasesPanel } from './MacroPhasesPanel';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroAnnualWheel } from './MacroAnnualWheel';
 import { MacroCycleToolbar } from './MacroCycleToolbar';
@@ -80,8 +80,8 @@ export function MacroCycles() {
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showPhaseModal, setShowPhaseModal] = useState(false);
-  const [editingPhase, setEditingPhase] = useState<import('../../lib/database.types').MacroPhase | null>(null);
+  const [showPhasesPanel, setShowPhasesPanel] = useState(false);
+  const [phasePanelInitialEdit, setPhasePanelInitialEdit] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
@@ -450,16 +450,21 @@ export function MacroCycles() {
     setSelectedCycle(null);
   };
 
-  // ─── Phase save ───────────────────────────────────────────────────────────────
+  // ─── Phase save / delete ──────────────────────────────────────────────────────
 
-  const handleSavePhase = async (phaseData: Omit<import('../../lib/database.types').MacroPhase, 'id' | 'created_at' | 'updated_at'>) => {
-    if (editingPhase) {
-      await updatePhase(editingPhase.id, phaseData);
+  const handleSavePhase = async (
+    phaseData: Omit<import('../../lib/database.types').MacroPhase, 'id' | 'created_at' | 'updated_at'>,
+    editingId?: string
+  ) => {
+    if (editingId) {
+      await updatePhase(editingId, phaseData);
     } else {
       await createPhase(phaseData);
     }
-    setEditingPhase(null);
-    setShowPhaseModal(false);
+  };
+
+  const handleDeletePhase = async (id: string) => {
+    await deletePhase(id);
   };
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
@@ -528,7 +533,7 @@ export function MacroCycles() {
         onCancelAddExercise={() => { setShowAddExercise(false); setSelectedExerciseId(''); }}
         onExerciseSelect={setSelectedExerciseId}
         onAddExercise={handleAddExercise}
-        onAddPhase={() => { setEditingPhase(null); setShowPhaseModal(true); }}
+        onAddPhase={() => { setPhasePanelInitialEdit(null); setShowPhasesPanel(true); }}
         onEditCycle={() => setShowEditModal(true)}
         onDeleteCycle={handleDeleteCycle}
         onImportTargets={handleImportTargets}
@@ -544,7 +549,7 @@ export function MacroCycles() {
           isGroupMode={isGroupMode}
           selectedGroup={selectedGroup ?? null}
           groupMembers={groupMembers}
-          onEditPhase={(phase) => { setEditingPhase(phase); setShowPhaseModal(true); }}
+          onEditPhase={(phase) => { setPhasePanelInitialEdit(phase); setShowPhasesPanel(true); }}
         />
       )}
 
@@ -694,14 +699,15 @@ export function MacroCycles() {
         />
       )}
 
-      {showPhaseModal && selectedCycle && (
-        <MacroPhaseModal
+      {showPhasesPanel && selectedCycle && (
+        <MacroPhasesPanel
           macrocycleId={selectedCycle.id}
           macroWeeks={macroWeeks}
-          editingPhase={editingPhase}
-          nextPosition={phases.length + 1}
+          phases={phases}
+          initialEditingPhase={phasePanelInitialEdit}
           onSave={handleSavePhase}
-          onClose={() => { setShowPhaseModal(false); setEditingPhase(null); }}
+          onDelete={handleDeletePhase}
+          onClose={() => { setShowPhasesPanel(false); setPhasePanelInitialEdit(null); }}
         />
       )}
     </div>
