@@ -202,6 +202,7 @@ export interface PlannerControlPanelProps {
   onPrint: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: () => Promise<void>;
+  onNavigateToWeek?: (weekStart: string) => void;
   weekTypesByNum?: Record<number, string>;
   macroEvents?: MacroPhaseBarEvent[];
   weekTypes?: WeekTypeConfig[];
@@ -232,6 +233,7 @@ export function PlannerControlPanel({
   onPrint,
   onToggleLoadDistribution,
   onResolvePercentages,
+  onNavigateToWeek,
   weekTypesByNum,
   macroEvents = [],
   weekTypes = [],
@@ -915,7 +917,7 @@ export function PlannerControlPanel({
             events={fetchedEvents}
             selectedWeekStart={phaseBarSelectedWeekStart}
             playheadDate={getTodayISO()}
-            onCellClick={() => navigate('/macrocycles')}
+            onCellClick={onNavigateToWeek ? (cell) => onNavigateToWeek(cell.weekStart) : undefined}
           />
         </div>
       )}
