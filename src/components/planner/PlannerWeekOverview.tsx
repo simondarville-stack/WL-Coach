@@ -122,7 +122,7 @@ export function PlannerWeekOverview({
   const targetId = athlete?.id || null;
   const targetGroupId = group?.id || null;
 
-  const { weeks, macroBlocks, barEvents, loading, loadData, phaseBarCells } = usePlannerWeekOverview();
+  const { weeks, macroBlocks, rawMacroWeeks, barEvents, loading, loadData, phaseBarCells } = usePlannerWeekOverview();
 
   useEffect(() => {
     loadData({ targetId, targetGroupId, rangeStart, rangeEnd, competitionTotal });
@@ -171,8 +171,15 @@ export function PlannerWeekOverview({
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
   void maxTonnage; // retained for future bar use
 
-  const weekStarts = weeks.map(w => w.weekStart);
-  const phaseBarCellsData = phaseBarCells(weekStarts);
+  // Ribbon shows the full active macro (all weeks, all phases), not just the visible window.
+  // Fall back to the visible window if no macro is active today.
+  const fullMacroWeekStarts = currentMacro
+    ? rawMacroWeeks
+        .filter(w => w.macrocycle_id === currentMacro.macroId)
+        .sort((a, b) => a.week_number - b.week_number)
+        .map(w => w.week_start)
+    : weeks.map(w => w.weekStart);
+  const phaseBarCellsData = phaseBarCells(fullMacroWeekStarts);
 
   return (
     <StandardPage>
