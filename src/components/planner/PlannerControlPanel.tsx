@@ -256,8 +256,7 @@ export function PlannerControlPanel({
 
   useEffect(() => {
     if (!macroContext) { setPhases([]); setMacroWeeks([]); return; }
-    void loadPhases(macroContext.macroId);
-    void loadMacroWeeks(macroContext.macroId);
+    void loadPhasesAndWeeks(macroContext.macroId);
   }, [macroContext?.macroId]);
 
   useEffect(() => {
@@ -289,22 +288,14 @@ export function PlannerControlPanel({
     setCompetitionPRs(prs);
   }
 
-  async function loadPhases(macroId: string) {
-    const { data } = await supabase
-      .from('macro_phases')
-      .select('*')
-      .eq('macrocycle_id', macroId)
-      .order('start_week_number');
-    setPhases((data as MacroPhase[]) ?? []);
-  }
-
-  async function loadMacroWeeks(macroId: string) {
-    const { data } = await supabase
-      .from('macro_weeks')
-      .select('*')
-      .eq('macrocycle_id', macroId)
-      .order('week_number');
-    setMacroWeeks((data as MacroWeek[]) ?? []);
+  async function loadPhasesAndWeeks(macroId: string) {
+    const [phaseResult, weekResult] = await Promise.all([
+      supabase.from('macro_phases').select('*').eq('macrocycle_id', macroId).order('start_week_number'),
+      supabase.from('macro_weeks').select('*').eq('macrocycle_id', macroId).order('week_number'),
+    ]);
+    // Set both atomically so phaseBarCells is never computed with weeks but no phases
+    setPhases((phaseResult.data as MacroPhase[]) ?? []);
+    setMacroWeeks((weekResult.data as MacroWeek[]) ?? []);
   }
 
   // ── metrics ──────────────────────────────────────────────────────────────

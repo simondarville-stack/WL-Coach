@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import type { MacroPhase, MacroWeek, PhaseType } from '../../lib/database.types';
+import type { MacroPhase, MacroWeek, PhaseType, PhaseTypePreset } from '../../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
 
 interface MacroPhaseModalProps {
   macrocycleId: string;
@@ -8,18 +9,11 @@ interface MacroPhaseModalProps {
   phases: MacroPhase[];
   editingPhase: MacroPhase | null;
   nextPosition: number;
+  phaseTypePresets?: PhaseTypePreset[];
   onSave: (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   onDelete?: () => Promise<void>;
   onClose: () => void;
 }
-
-const PHASE_TYPE_OPTIONS: { value: PhaseType; label: string; color: string }[] = [
-  { value: 'preparatory', label: 'Preparatory', color: '#DBEAFE' },
-  { value: 'strength', label: 'Strength', color: '#FEE2E2' },
-  { value: 'competition', label: 'Competition', color: '#FEF3C7' },
-  { value: 'transition', label: 'Transition', color: '#F3F4F6' },
-  { value: 'custom', label: 'Custom', color: '#E5E7EB' },
-];
 
 function overlapsExisting(
   start: number,
@@ -40,10 +34,12 @@ export function MacroPhaseModal({
   phases,
   editingPhase,
   nextPosition,
+  phaseTypePresets,
   onSave,
   onDelete,
   onClose,
 }: MacroPhaseModalProps) {
+  const presets = phaseTypePresets && phaseTypePresets.length > 0 ? phaseTypePresets : DEFAULT_PHASE_TYPE_PRESETS;
   const [name, setName] = useState('');
   const [phaseType, setPhaseType] = useState<PhaseType>('custom');
   const [startWeekNum, setStartWeekNum] = useState(1);
@@ -70,10 +66,10 @@ export function MacroPhaseModal({
 
   const handlePhaseTypeChange = (pt: PhaseType) => {
     setPhaseType(pt);
-    const preset = PHASE_TYPE_OPTIONS.find(o => o.value === pt);
+    const preset = presets.find(o => o.value === pt);
     if (preset) setColor(preset.color);
-    if (!name || PHASE_TYPE_OPTIONS.some(o => o.label === name)) {
-      setName(preset?.label || '');
+    if (!name || presets.some(o => o.label === name)) {
+      setName(preset?.label || pt);
     }
   };
 
@@ -154,7 +150,7 @@ export function MacroPhaseModal({
               placeholder="e.g. Preparatory, Strength, Competition…"
             />
             <datalist id="phase-type-suggestions">
-              {PHASE_TYPE_OPTIONS.map(o => (
+              {presets.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </datalist>
@@ -244,9 +240,13 @@ export function MacroPhaseModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
             <textarea
               value={notes}
-              onChange={e => setNotes(e.target.value)}
+              onChange={e => {
+                setNotes(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
               rows={2}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
               placeholder="Optional notes about this phase..."
             />
           </div>

@@ -3,10 +3,9 @@ import { parsePrescription, formatPrescription, parseFreeTextPrescription, forma
 interface PrescriptionDisplayProps {
   prescription: string | null;
   unit: string | null;
-  useStackedNotation: boolean;
 }
 
-export function PrescriptionDisplay({ prescription, unit, useStackedNotation }: PrescriptionDisplayProps) {
+export function PrescriptionDisplay({ prescription, unit }: PrescriptionDisplayProps) {
   if (!prescription || prescription.trim() === '') {
     return <span className="text-gray-500 italic">No prescription</span>;
   }
@@ -19,7 +18,7 @@ export function PrescriptionDisplay({ prescription, unit, useStackedNotation }: 
     return <span>{formatFreeTextPrescription(parsed)}</span>;
   }
 
-  const shouldUseStacked = useStackedNotation && (unit === 'absolute_kg' || unit === 'percentage');
+  const shouldUseStacked = unit === 'absolute_kg' || unit === 'percentage';
 
   if (!shouldUseStacked) {
     const parsed = parsePrescription(prescription);

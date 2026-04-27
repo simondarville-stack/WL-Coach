@@ -1,4 +1,11 @@
-import type { DefaultUnit } from './database.types';
+import type { DefaultUnit, PhaseTypePreset } from './database.types';
+
+export const DEFAULT_PHASE_TYPE_PRESETS: PhaseTypePreset[] = [
+  { value: 'preparatory', label: 'Preparatory', color: '#DBEAFE' },
+  { value: 'strength',    label: 'Strength',    color: '#FEE2E2' },
+  { value: 'competition', label: 'Competition', color: '#FEF3C7' },
+  { value: 'transition',  label: 'Transition',  color: '#F3F4F6' },
+];
 
 export const DEFAULT_UNITS: { value: DefaultUnit; label: string }[] = [
   { value: 'percentage', label: 'Percentage (%)' },

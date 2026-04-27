@@ -4,7 +4,7 @@
  * Modal for managing exercise categories: rename, recolor, reorder (drag),
  * add, and delete. Extracted from ExerciseLibrary.tsx for clarity.
  */
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Layers, GripVertical, Trash2, Check } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
@@ -47,11 +47,16 @@ export function ExerciseCategoryNav({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState<string>(PRESET_COLORS[0]);
   const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // Refs for drag indices — state can be stale inside onDragEnd closure
+  const dragIdxRef = useRef<number | null>(null);
+  const dragOverIdxRef = useRef<number | null>(null);
 
   const exerciseCounts = new Map<string, number>();
   for (const cat of sorted) {
@@ -117,6 +122,15 @@ export function ExerciseCategoryNav({
           </div>
         }
       >
+        {deleteError && (
+          <div style={{
+            marginBottom: 'var(--space-sm)', padding: '8px 12px',
+            background: '#fee2e2', border: '0.5px solid #fca5a5',
+            borderRadius: 'var(--radius-md)', fontSize: 'var(--text-caption)', color: '#dc2626',
+          }}>
+            {deleteError}
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {sorted.map((cat, idx) => {
             const count = exerciseCounts.get(cat.id) ?? 0;
@@ -128,15 +142,19 @@ export function ExerciseCategoryNav({
               <div
                 key={cat.id}
                 draggable
-                onDragStart={() => setDragIdx(idx)}
-                onDragEnter={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                onDragStart={() => { setDragIdx(idx); dragIdxRef.current = idx; }}
+                onDragEnter={(e) => { e.preventDefault(); setDragOverIdx(idx); dragOverIdxRef.current = idx; }}
                 onDragOver={(e) => e.preventDefault()}
                 onDragEnd={async () => {
-                  if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
-                    await onReorder(dragIdx, dragOverIdx);
-                  }
+                  const from = dragIdxRef.current;
+                  const to = dragOverIdxRef.current;
                   setDragIdx(null);
                   setDragOverIdx(null);
+                  dragIdxRef.current = null;
+                  dragOverIdxRef.current = null;
+                  if (from !== null && to !== null && from !== to) {
+                    await onReorder(from, to);
+                  }
                 }}
                 className="group"
                 style={{
@@ -154,6 +172,7 @@ export function ExerciseCategoryNav({
 
                 <button
                   onClick={(e) => openColorPicker(e, cat.id)}
+                  onMouseDown={e => e.stopPropagation()}
                   style={{
                     width: '20px', height: '20px', borderRadius: 'var(--radius-sm)',
                     border: '0.5px solid var(--color-border-secondary)',
@@ -170,6 +189,7 @@ export function ExerciseCategoryNav({
                   <Input
                     autoFocus value={editName}
                     onChange={e => setEditName(e.target.value)}
+                    onMouseDown={e => e.stopPropagation()}
                     onKeyDown={e => {
                       if (e.key === 'Enter') { onRename(cat.id, editName); setEditingId(null); }
                       if (e.key === 'Escape') setEditingId(null);
@@ -180,6 +200,7 @@ export function ExerciseCategoryNav({
                 ) : (
                   <span
                     onClick={() => { setEditName(cat.name); setEditingId(cat.id); }}
+                    onMouseDown={e => e.stopPropagation()}
                     style={{ flex: 1, fontSize: 'var(--text-body)', color: 'var(--color-text-primary)', cursor: 'text' }}
                   >
                     {cat.name}
@@ -196,28 +217,69 @@ export function ExerciseCategoryNav({
                 </span>
 
                 {isConfirming ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', flexShrink: 0 }}>
+                  <div
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', flexShrink: 0 }}
+                  >
                     <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-warning-text)', whiteSpace: 'nowrap' }}>
                       {count > 0 ? `Move ${count} to Unspecified?` : 'Delete?'}
                     </span>
-                    <Button variant="danger" size="sm" onClick={async () => { try { await onDelete(cat.id); } catch {} setConfirmDeleteId(null); }}>
-                      Yes
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>No</Button>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={async () => {
+                        setDeleting(true);
+                        setDeleteError(null);
+                        try {
+                          await onDelete(cat.id);
+                          setConfirmDeleteId(null);
+                        } catch (err) {
+                          console.error('Category delete error:', err);
+                          const msg = err instanceof Error
+                            ? err.message
+                            : (err as { message?: string; details?: string })?.message
+                              ?? (err as { details?: string })?.details
+                              ?? JSON.stringify(err);
+                          setDeleteError(msg);
+                        } finally {
+                          setDeleting(false);
+                        }
+                      }}
+                      style={{
+                        padding: '3px 8px', fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+                        background: 'var(--color-danger-bg, #fee2e2)', color: 'var(--color-danger-text, #dc2626)',
+                        border: '0.5px solid var(--color-danger-border, #fca5a5)', borderRadius: 'var(--radius-sm)',
+                        cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1,
+                      }}
+                    >
+                      {deleting ? '…' : 'Yes'}
+                    </button>
+                    <button
+                      type="button"
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => { setConfirmDeleteId(null); setDeleteError(null); }}
+                      style={{
+                        padding: '3px 8px', fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+                        background: 'transparent', color: 'var(--color-text-secondary)',
+                        border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      No
+                    </button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setConfirmDeleteId(cat.id)}
+                    onMouseDown={e => e.stopPropagation()}
                     title="Delete category"
+                    className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
                     style={{
                       padding: '2px', background: 'transparent', border: 'none',
                       color: 'var(--color-text-tertiary)', cursor: 'pointer',
-                      opacity: 0, transition: 'opacity 100ms ease-out, color 100ms ease-out',
                       flexShrink: 0, display: 'flex',
                     }}
-                    className="group-hover:opacity-100"
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-danger-text)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
                   >
                     <Trash2 size={13} />
                   </button>

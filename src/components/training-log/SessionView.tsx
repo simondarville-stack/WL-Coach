@@ -541,7 +541,6 @@ export function SessionView({ athlete, weekStart, dayIndex, onBack }: SessionVie
                               <PrescriptionDisplay
                                 prescription={pe.prescription_raw}
                                 unit={pe.unit}
-                                useStackedNotation={false}
                               />
                             </div>
                           </>

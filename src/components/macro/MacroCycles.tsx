@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { MacroCycle, MacroTarget, WeekType } from '../../lib/database.types';
+import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset } from '../../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -705,6 +706,7 @@ export function MacroCycles() {
           macroWeeks={macroWeeks}
           phases={phases}
           initialEditingPhase={phasePanelInitialEdit}
+          phaseTypePresets={(settings?.phase_type_presets as PhaseTypePreset[] | null | undefined) ?? DEFAULT_PHASE_TYPE_PRESETS}
           onSave={handleSavePhase}
           onDelete={handleDeletePhase}
           onClose={() => { setShowPhasesPanel(false); setPhasePanelInitialEdit(null); }}

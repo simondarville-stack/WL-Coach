@@ -132,7 +132,7 @@ export function useExercises() {
     try {
       const { error } = await supabase
         .from('categories')
-        .insert([{ name, display_order: displayOrder, color: color ?? '#888780' }]);
+        .insert([{ name, display_order: displayOrder, color: color ?? '#888780', owner_id: getOwnerId() }]);
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add category');
@@ -147,7 +147,8 @@ export function useExercises() {
       const { error } = await supabase
         .from('categories')
         .update(patch)
-        .eq('id', id);
+        .eq('id', id)
+        .eq('owner_id', getOwnerId());
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update category');
@@ -157,28 +158,30 @@ export function useExercises() {
 
   const deleteCategory = async (id: string) => {
     try {
-      // Reassign any exercises in this category to "Unspecified" before deleting
-      const { data: catRow } = await supabase.from('categories').select('name').eq('id', id).single();
+      const ownerId = getOwnerId();
+      const { data: catRow } = await supabase
+        .from('categories').select('name').eq('id', id).eq('owner_id', ownerId).single();
       if (catRow) {
-        const ownerId = getOwnerId();
+        // Reassign this coach's exercises in the deleted category to Unspecified
         const { data: affected } = await supabase
           .from('exercises')
           .select('id')
           .eq('category', catRow.name)
           .eq('owner_id', ownerId);
         if (affected && affected.length > 0) {
-          // Ensure "Unspecified" category exists
+          // Ensure "Unspecified" category exists for this coach
           const { data: existingUnspec } = await supabase
             .from('categories')
             .select('id')
             .eq('name', 'Unspecified')
+            .eq('owner_id', ownerId)
             .maybeSingle();
           if (!existingUnspec) {
-            const { data: allCats } = await supabase.from('categories').select('display_order');
+            const { data: allCats } = await supabase.from('categories').select('display_order').eq('owner_id', ownerId);
             const maxOrder = (allCats ?? []).reduce((m: number, c: { display_order: number }) => Math.max(m, c.display_order), -1);
             await supabase
               .from('categories')
-              .insert([{ name: 'Unspecified', display_order: maxOrder + 1, color: '#888780' }]);
+              .insert([{ name: 'Unspecified', display_order: maxOrder + 1, color: '#888780', owner_id: ownerId }]);
           }
           await supabase
             .from('exercises')
@@ -187,7 +190,7 @@ export function useExercises() {
             .eq('owner_id', ownerId);
         }
       }
-      const { error } = await supabase.from('categories').delete().eq('id', id);
+      const { error } = await supabase.from('categories').delete().eq('id', id).eq('owner_id', ownerId);
       if (error) throw error;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete category');

@@ -92,7 +92,6 @@ export async function getOrCreateSentinel(
       default_unit: 'other',
       color: def.color,
       exercise_code: code,
-      use_stacked_notation: false,
       counts_towards_totals: false,
       is_competition_lift: false,
       owner_id: ownerId,

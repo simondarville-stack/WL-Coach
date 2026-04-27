@@ -1,24 +1,18 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Pencil, Trash2, ArrowLeft, AlertTriangle } from 'lucide-react';
-import type { MacroPhase, MacroWeek, PhaseType } from '../../lib/database.types';
+import type { MacroPhase, MacroWeek, PhaseType, PhaseTypePreset } from '../../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
 
 interface MacroPhasesPanelProps {
   macrocycleId: string;
   macroWeeks: MacroWeek[];
   phases: MacroPhase[];
   initialEditingPhase?: MacroPhase | null;
+  phaseTypePresets?: PhaseTypePreset[];
   onSave: (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>, editingId?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
 }
-
-const PHASE_PRESETS: { value: PhaseType; label: string; color: string }[] = [
-  { value: 'preparatory', label: 'Preparatory', color: '#DBEAFE' },
-  { value: 'strength',    label: 'Strength',    color: '#FEE2E2' },
-  { value: 'competition', label: 'Competition', color: '#FEF3C7' },
-  { value: 'transition',  label: 'Transition',  color: '#F3F4F6' },
-  { value: 'custom',      label: 'Custom',      color: '#E5E7EB' },
-];
 
 function hasOverlap(a: MacroPhase, phases: MacroPhase[]): boolean {
   return phases.some(b => b.id !== a.id && a.start_week_number <= b.end_week_number && a.end_week_number >= b.start_week_number);
@@ -81,12 +75,13 @@ interface FormViewProps {
   phases: MacroPhase[];
   editingPhase: MacroPhase | null;
   nextPosition: number;
+  phaseTypePresets: PhaseTypePreset[];
   onSave: MacroPhasesPanelProps['onSave'];
   onDelete: MacroPhasesPanelProps['onDelete'];
   onBack: () => void;
 }
 
-function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition, onSave, onDelete, onBack }: FormViewProps) {
+function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition, phaseTypePresets, onSave, onDelete, onBack }: FormViewProps) {
   const weekNums = macroWeeks.map(w => w.week_number);
   const minWeek = weekNums.length > 0 ? Math.min(...weekNums) : 1;
   const maxWeek = weekNums.length > 0 ? Math.max(...weekNums) : 1;
@@ -105,9 +100,9 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
 
   const handleTypeChange = (val: PhaseType) => {
     setPhaseType(val);
-    const preset = PHASE_PRESETS.find(p => p.value === val);
+    const preset = phaseTypePresets.find(p => p.value === val);
     if (preset) setColor(preset.color);
-    if (!name || PHASE_PRESETS.some(p => p.label === name)) setName(preset?.label ?? '');
+    if (!name || phaseTypePresets.some(p => p.label === name)) setName(preset?.label ?? val);
   };
 
   const handleStartChange = (v: number) => {
@@ -183,7 +178,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             placeholder="e.g. Preparatory, Strength, Competition…"
           />
           <datalist id="phase-type-suggestions">
-            {PHASE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            {phaseTypePresets.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </datalist>
         </div>
 
@@ -244,9 +239,13 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
           <label style={{ fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-secondary)', display: 'block', marginBottom: 4 }}>Notes</label>
           <textarea
             value={notes}
-            onChange={e => setNotes(e.target.value)}
+            onChange={e => {
+              setNotes(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
             rows={2}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
             placeholder="Optional notes…"
           />
         </div>
@@ -389,10 +388,12 @@ export function MacroPhasesPanel({
   macroWeeks,
   phases,
   initialEditingPhase,
+  phaseTypePresets,
   onSave,
   onDelete,
   onClose,
 }: MacroPhasesPanelProps) {
+  const presets = phaseTypePresets && phaseTypePresets.length > 0 ? phaseTypePresets : DEFAULT_PHASE_TYPE_PRESETS;
   const [view, setView] = useState<'list' | 'form'>(initialEditingPhase ? 'form' : 'list');
   const [editingPhase, setEditingPhase] = useState<MacroPhase | null>(initialEditingPhase ?? null);
 
@@ -439,6 +440,7 @@ export function MacroPhasesPanel({
             phases={phases}
             editingPhase={editingPhase}
             nextPosition={phases.length + 1}
+            phaseTypePresets={presets}
             onSave={onSave}
             onDelete={onDelete}
             onBack={goBack}

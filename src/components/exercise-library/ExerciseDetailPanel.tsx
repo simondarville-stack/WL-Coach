@@ -370,11 +370,13 @@ export function ExerciseDetailPanel({
       }
       setPrHistory(bestByRep);
     } else {
+      const athleteIds = allAthletes.map(a => a.id);
+      if (athleteIds.length === 0) { setAthletePRs([]); return; }
       const { data } = await supabase
         .from('athlete_prs')
         .select('*')
         .eq('exercise_id', exercise.id)
-        .eq('owner_id', getOwnerId())
+        .in('athlete_id', athleteIds)
         .order('pr_value_kg', { ascending: false });
       const athleteMap = new Map(allAthletes.map(a => [a.id, a]));
       const rows: AthletePRRow[] = (data || [])
@@ -543,8 +545,8 @@ export function ExerciseDetailPanel({
         {/* ── Athlete view ──────────────────────────────────────── */}
         {athlete ? (
           <>
-            {/* Current PR — clickable to open xRM table */}
-            <div>
+            {/* Current PR — only shown when track_pr is enabled */}
+            {exercise.track_pr !== false && <div>
               <SectionLabel>Personal Record</SectionLabel>
               <button
                 onClick={() => hasPR && setShowXrmModal(true)}
@@ -612,7 +614,7 @@ export function ExerciseDetailPanel({
                   )}
                 </div>
               </button>
-            </div>
+            </div>}
 
             {/* Usage history chart */}
             <div>
@@ -627,54 +629,10 @@ export function ExerciseDetailPanel({
         ) : (
           /* ── Coach view ────────────────────────────────────────── */
           <>
-            {/* Roster stats */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              background: 'var(--color-bg-secondary)',
-              borderRadius: 'var(--radius-lg)',
-              padding: 14,
-            }}>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontSize: 'var(--text-caption)',
-                  color: 'var(--color-text-tertiary)',
-                  marginBottom: 4,
-                }}>
-                  Athletes with a PR
-                </div>
-                <div style={{
-                  fontSize: 'var(--text-page-title)',
-                  fontWeight: 500,
-                  lineHeight: 1,
-                  color: athletePRs.length > 0 ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
-                  {loadingData ? '—' : athletePRs.length}
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-                  of {allAthletes.filter(a => a.is_active).length} active
-                </div>
-                {!loadingData && athletePRs.length > 0 && (
-                  <div style={{
-                    fontSize: 'var(--text-label)',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 500,
-                    color: 'var(--color-text-secondary)',
-                    marginTop: 2,
-                  }}>
-                    Best: {athletePRs[0].pr_value_kg} kg
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Roster PR table */}
+            {/* Athlete PR table — only when track_pr is enabled */}
+            {exercise.track_pr !== false && (
             <div>
-              <SectionLabel>Roster PRs</SectionLabel>
+              <SectionLabel>Athlete PRs</SectionLabel>
               {loadingData ? (
                 <div style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)' }}>Loading…</div>
               ) : athletePRs.length === 0 ? (
@@ -759,8 +717,9 @@ export function ExerciseDetailPanel({
                 </>
               )}
             </div>
+            )}
 
-            {/* Roster usage chart */}
+            {/* Usage chart */}
             {usageWeeks.length > 0 && (
               <div>
                 <SectionLabel>Usage history (all athletes)</SectionLabel>
@@ -867,7 +826,7 @@ export function ExerciseDetailPanel({
         flexShrink: 0,
       }}>
         <Button
-          variant="primary"
+          variant="secondary"
           size="sm"
           icon={<Edit2 size={13} />}
           style={{ flex: 1 }}
@@ -879,6 +838,7 @@ export function ExerciseDetailPanel({
           variant="secondary"
           size="sm"
           icon={<Archive size={13} />}
+          style={{ flex: 1 }}
           onClick={() => onArchive(exercise.id)}
         >
           Archive

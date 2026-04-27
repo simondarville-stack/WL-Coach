@@ -13,6 +13,7 @@ export type Category = string;
 
 export interface CategoryRow {
   id: string;
+  owner_id: string;
   name: string;
   display_order: number;
   color: string;
@@ -26,6 +27,12 @@ export interface WeekTypeConfig {
   name: string;          // "High", "Deload", "Shock"
   abbreviation: string;  // "h", "dl", "sh" (1-3 chars)
   color: string;         // hex color "#E24B4A"
+}
+
+export interface PhaseTypePreset {
+  value: string;   // stored in phase_type column, e.g. 'preparatory'
+  label: string;   // display name, e.g. 'Preparatory'
+  color: string;   // default hex color for this phase type
 }
 /** Open string — the four preset values ('preparatory', 'strength', 'competition', 'transition')
  * are suggestions only; free-text entry is allowed. See REVIEW_PLAN.md ENG-037. */
@@ -293,6 +300,7 @@ export interface GeneralSettings {
   intensity_zones: Array<{ zone: string; min: number; max: number }> | null;
   compliance_warning_threshold: number | null;
   low_intensity_zone_max_pct: number | null;
+  phase_type_presets: PhaseTypePreset[] | null;
   created_at: string;
   updated_at: string;
 }

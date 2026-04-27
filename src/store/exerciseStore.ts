@@ -69,6 +69,7 @@ export const useExerciseStore = create<ExerciseState>((set, get) => ({
       const { data, error } = await supabase
         .from('categories')
         .select('*')
+        .eq('owner_id', getOwnerId())
         .order('display_order', { ascending: true });
       if (error) throw error;
       set({ categories: data || [] });
