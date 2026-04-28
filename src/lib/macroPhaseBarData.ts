@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import { getMondayOfWeekISO } from './weekUtils';
 import type { MacroPhaseBarCell, MacroPhaseBarEvent } from '../components/planning/MacroPhaseBar';
 import type {
-  Macrocycle,
+  MacroCycle,
   MacroPhase,
   MacroWeek,
   WeekTypeConfig,
@@ -14,7 +14,7 @@ const GAP_COLOR = 'var(--color-bg-secondary)';
 
 export interface MacroPhaseBarSource {
   /** All macros the athlete has (can be >1 for cross-macro views). */
-  macros: Pick<Macrocycle, 'id' | 'name'>[];
+  macros: Pick<MacroCycle, 'id' | 'name'>[];
   /** All phases across all macros in `macros`. */
   phases: MacroPhase[];
   /** All macro_weeks rows across all macros in `macros`. */
@@ -115,7 +115,7 @@ export function buildCellsForWeekRange(
  * Used by the weekly planner detail view, which locks to one macro.
  */
 export function buildCellsForSingleMacro(
-  macro: Pick<Macrocycle, 'id' | 'name'>,
+  macro: Pick<MacroCycle, 'id' | 'name'>,
   source: MacroPhaseBarSource
 ): MacroPhaseBarCell[] {
   const macroWeeks = source.weeks

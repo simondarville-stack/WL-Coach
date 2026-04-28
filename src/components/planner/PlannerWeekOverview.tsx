@@ -254,10 +254,7 @@ export function PlannerWeekOverview({
             onCellClick={(cell) => onSelectWeek(cell.weekStart)}
             onPhaseClick={(cell) => {
               if (cell.macroId === null) return;
-              const phase = rawPhases
-                .filter(p => p.macrocycle_id === cell.macroId)
-                .find(p => p.name === cell.phase);
-              if (phase) navigate(`/macrocycles?phase=${phase.id}`);
+              navigate(`/macrocycles/${cell.macroId}`);
             }}
           />
         </div>

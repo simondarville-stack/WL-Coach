@@ -7,7 +7,7 @@ import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
-import { generateMacroWeeks } from '../../lib/weekUtils';
+import { generateMacroWeeks, getMondayOfWeekISO } from '../../lib/weekUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
 import type { MacroTableColumnKey } from './MacroTableV2';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
@@ -26,8 +26,8 @@ import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroAnnualWheel } from './MacroAnnualWheel';
 import { MacroCycleToolbar } from './MacroCycleToolbar';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
-import { MacroPhaseBar } from '../planning';
-import { buildCellsForSingleMacro } from '../../lib/macroPhaseBarData';
+import { MacroPhaseBar, type MacroPhaseBarEvent } from '../planning';
+import { buildCellsForSingleMacro, fetchMacroPhaseBarEvents, resolveScopeAthleteIds } from '../../lib/macroPhaseBarData';
 
 
 export function MacroCycles() {
@@ -111,6 +111,7 @@ export function MacroCycles() {
   );
 
   const [highlightedPhaseId, setHighlightedPhaseId] = useState<string | null>(null);
+  const [barEvents, setBarEvents] = useState<MacroPhaseBarEvent[]>([]);
 
   // Helper: scroll to a phase row in the table and apply a brief highlight
   const scrollToPhase = useCallback((phaseId: string) => {
@@ -123,6 +124,28 @@ export function MacroCycles() {
       }
     });
   }, []);
+
+  // Fetch event dots for the macro's athlete/group scope
+  useEffect(() => {
+    if (!selectedCycle || macroWeeks.length === 0) {
+      setBarEvents([]);
+      return;
+    }
+    void (async () => {
+      const athleteIds = await resolveScopeAthleteIds(
+        selectedCycle.athlete_id ?? null,
+        selectedCycle.group_id ?? null,
+      );
+      if (athleteIds.length === 0) { setBarEvents([]); return; }
+      const rangeStart = macroWeeks[0].week_start;
+      const lastWeek = macroWeeks[macroWeeks.length - 1];
+      const lastDay = new Date(lastWeek.week_start + 'T00:00:00');
+      lastDay.setDate(lastDay.getDate() + 6);
+      const rangeEnd = lastDay.toISOString().slice(0, 10);
+      const fetched = await fetchMacroPhaseBarEvents(athleteIds, rangeStart, rangeEnd);
+      setBarEvents(fetched);
+    })();
+  }, [selectedCycle?.id, macroWeeks]);
 
   // Listen to ?phase= query param and scroll to that phase on load
   useEffect(() => {
@@ -550,6 +573,8 @@ export function MacroCycles() {
       )
     : [];
 
+  const todayMonday = getMondayOfWeekISO(new Date());
+
   const availableExercises = exercises.filter(
     ex => ex.category !== '— System' && !trackedExercises.some(te => te.exercise_id === ex.id)
   );
@@ -603,7 +628,30 @@ export function MacroCycles() {
       {/* Cycle info + phase bar */}
       {selectedCycle && (
         <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-          {/* Meta row */}
+          {/* Shared phase bar — sits above the meta row */}
+          {phaseBarCells.length > 0 && (
+            <div style={{ padding: '12px 16px 8px' }}>
+              <MacroPhaseBar
+                cells={phaseBarCells}
+                events={barEvents}
+                selectedWeekStart={todayMonday}
+                showMonthRow
+                showWeekDates
+                onCellClick={(cell) => {
+                  navigate(`/planner/${cell.weekStart}`);
+                }}
+                onPhaseClick={(cell) => {
+                  if (cell.macroId === null) return;
+                  const phase = phases.find(
+                    p => p.name === cell.phase && p.macrocycle_id === cell.macroId
+                  );
+                  if (phase) scrollToPhase(phase.id);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Meta row: cycle name, dates, week count, group, competitions */}
           <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
             <span className="font-medium text-gray-800">{selectedCycle.name}</span>
             <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
@@ -623,28 +671,6 @@ export function MacroCycles() {
               <MacroCompetitionBadge key={comp.id} competition={comp} />
             ))}
           </div>
-
-          {/* Shared phase bar */}
-          {phaseBarCells.length > 0 && (
-            <div style={{ padding: '8px 16px 12px' }}>
-              <MacroPhaseBar
-                cells={phaseBarCells}
-                selectedWeekStart={null}
-                showMonthRow
-                showWeekDates
-                onCellClick={(cell) => {
-                  navigate(`/planner/${cell.weekStart}`);
-                }}
-                onPhaseClick={(cell) => {
-                  if (cell.macroId === null) return;
-                  const phase = phases.find(
-                    p => p.name === cell.phase && p.macrocycle_id === cell.macroId
-                  );
-                  if (phase) scrollToPhase(phase.id);
-                }}
-              />
-            </div>
-          )}
         </div>
       )}
 
