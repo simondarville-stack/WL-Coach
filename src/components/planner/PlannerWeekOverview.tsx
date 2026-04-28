@@ -139,8 +139,12 @@ export function PlannerWeekOverview({
   };
 
   // ── Derive macro context for header ─────────────────────────────
-  const currentMacro = getMacroForWeek(macroBlocks, today);
-  const currentPhaseInfo = getPhaseForWeek(macroBlocks, today);
+  // Use centerDate (not today) so the bar follows the visible window.
+  // Playhead stays at today; the bar itself shows the macro for the
+  // centered date so overview and detail always agree on which macro
+  // is displayed.
+  const currentMacro = getMacroForWeek(macroBlocks, centerDate);
+  const currentPhaseInfo = getPhaseForWeek(macroBlocks, centerDate);
 
   // ── Render ───────────────────────────────────────────────────────
 
