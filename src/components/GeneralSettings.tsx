@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Copy, Check } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
+import { useExercises } from '../hooks/useExercises';
 import { METRICS, METRIC_ORDER, DEFAULT_VISIBLE_METRICS } from '../lib/metrics';
-import type { WeekTypeConfig } from '../lib/database.types';
+import type { WeekTypeConfig, Exercise, PhaseTypePreset } from '../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS } from '../lib/constants';
 import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS } from './macro/MacroTableV2';
 import type { MacroTableColumnKey } from './macro/MacroTableV2';
 
@@ -14,16 +16,28 @@ const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
   { name: 'Low',    abbreviation: 'g', color: '#1D9E75' },
 ];
 
+const LIFT_SLOTS: Array<{ value: Exercise['lift_slot']; label: string }> = [
+  { value: 'snatch',        label: 'Snatch' },
+  { value: 'clean_and_jerk', label: 'Clean & Jerk' },
+  { value: 'front_squat',  label: 'Front Squat' },
+  { value: 'back_squat',   label: 'Back Squat' },
+  { value: 'snatch_pull',  label: 'Snatch Pull' },
+  { value: 'clean_pull',   label: 'Clean Pull' },
+];
+
 export function GeneralSettings() {
   const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
   const { activeCoach, setActiveCoach, coaches, setCoaches } = useCoachStore();
   const { updateCoach, deleteCoach } = useCoachProfiles();
+  const { exercises, fetchExercises, updateExercise } = useExercises();
 
   const [coachName, setCoachName] = useState('');
   const [coachClub, setCoachClub] = useState('');
   const [coachEmail, setCoachEmail] = useState('');
   const [savingCoach, setSavingCoach] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copiedCoachId, setCopiedCoachId] = useState(false);
+  const [savingSlot, setSavingSlot] = useState<string | null>(null);
 
   const [rawAverageDays, setRawAverageDays] = useState(7);
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
@@ -34,10 +48,12 @@ export function GeneralSettings() {
   const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [weekTypes, setWeekTypes] = useState<WeekTypeConfig[]>(DEFAULT_WEEK_TYPES);
   const [duplicateAbbr, setDuplicateAbbr] = useState<string | null>(null);
+  const [phaseTypePresets, setPhaseTypePresets] = useState<PhaseTypePreset[]>(DEFAULT_PHASE_TYPE_PRESETS);
   const [macroTableColumns, setMacroTableColumns] = useState<MacroTableColumnKey[]>([...DEFAULT_MACRO_TABLE_COLUMNS]);
 
   useEffect(() => {
     fetchSettings();
+    fetchExercises();
   }, []);
 
   useEffect(() => {
@@ -85,6 +101,25 @@ export function GeneralSettings() {
     }
   }
 
+  async function handleSlotChange(slotValue: Exercise['lift_slot'], newExerciseId: string | null) {
+    if (!slotValue) return;
+    setSavingSlot(slotValue);
+    try {
+      // Clear previous holder of this slot
+      const prevHolder = exercises.find(e => (e.lift_slot as string | null) === (slotValue as string));
+      if (prevHolder && prevHolder.id !== newExerciseId) {
+        await updateExercise(prevHolder.id, { lift_slot: null });
+      }
+      // Assign to new exercise (or just clear)
+      if (newExerciseId) {
+        await updateExercise(newExerciseId, { lift_slot: slotValue });
+      }
+      await fetchExercises();
+    } finally {
+      setSavingSlot(null);
+    }
+  }
+
   useEffect(() => {
     if (settings) {
       setRawAverageDays(settings.raw_average_days);
@@ -95,6 +130,8 @@ export function GeneralSettings() {
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setWeekTypes((settings.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES);
+      const storedPresets = settings.phase_type_presets as PhaseTypePreset[] | null | undefined;
+      setPhaseTypePresets(storedPresets && storedPresets.length > 0 ? storedPresets : DEFAULT_PHASE_TYPE_PRESETS);
       if (settings.macro_table_columns && settings.macro_table_columns.length > 0) {
         setMacroTableColumns(settings.macro_table_columns as MacroTableColumnKey[]);
       }
@@ -203,6 +240,27 @@ export function GeneralSettings() {
     await saveWeekTypes(next);
   }
 
+  async function savePhaseTypePresets(next: PhaseTypePreset[]) {
+    if (!settings) return;
+    setPhaseTypePresets(next);
+    await updateSettings(settings.id, { phase_type_presets: next });
+  }
+
+  async function updatePhasePreset(idx: number, patch: Partial<PhaseTypePreset>) {
+    const next = phaseTypePresets.map((p, i) => i === idx ? { ...p, ...patch } : p);
+    setPhaseTypePresets(next);
+  }
+
+  async function addPhasePreset() {
+    const next = [...phaseTypePresets, { value: '', label: '', color: '#E5E7EB' }];
+    await savePhaseTypePresets(next);
+  }
+
+  async function deletePhasePreset(idx: number) {
+    const next = phaseTypePresets.filter((_, i) => i !== idx);
+    await savePhaseTypePresets(next);
+  }
+
   if (loading) {
     return <div className="p-6 flex items-center gap-2 text-gray-400 text-sm"><div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />Loading settings...</div>;
   }
@@ -242,6 +300,36 @@ export function GeneralSettings() {
               onChange={e => setCoachEmail(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Coach ID</label>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex-1 px-3 py-2 text-xs rounded-lg select-all"
+                style={{
+                  fontFamily: 'monospace',
+                  background: 'var(--color-bg-secondary)',
+                  border: '0.5px solid var(--color-border-tertiary)',
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                {activeCoach?.id ?? '—'}
+              </div>
+              <button
+                type="button"
+                title="Copy Coach ID"
+                onClick={() => {
+                  if (activeCoach?.id) {
+                    navigator.clipboard.writeText(activeCoach.id);
+                    setCopiedCoachId(true);
+                    setTimeout(() => setCopiedCoachId(false), 2000);
+                  }
+                }}
+                className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                {copiedCoachId ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-3 pt-1">
             <button
@@ -284,6 +372,42 @@ export function GeneralSettings() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Lift slots */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Lift slots</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Assign one exercise per slot. Used by the analysis module to identify canonical lifts for ratio and trend calculations.
+        </p>
+        <div className="space-y-2">
+          {LIFT_SLOTS.map(({ value: slot, label }) => {
+            const holder = exercises.find(e => (e.lift_slot as string | null) === (slot as string));
+            const isSaving = savingSlot === slot;
+            const sortedExercises = [...exercises].sort((a, b) => a.name.localeCompare(b.name));
+            return (
+              <div key={slot as string} className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 w-28 shrink-0">{label}</span>
+                <select
+                  value={holder?.id ?? ''}
+                  disabled={isSaving}
+                  onChange={e => handleSlotChange(slot, e.target.value || null)}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                >
+                  <option value="">— None —</option>
+                  {sortedExercises.map(ex => (
+                    <option key={ex.id} value={ex.id}>
+                      {ex.name}{ex.exercise_code ? ` (${ex.exercise_code})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {isSaving && (
+                  <span className="text-xs text-gray-400 shrink-0">Saving…</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -553,6 +677,71 @@ export function GeneralSettings() {
           className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
         >
           <Plus size={14} /> Add week type
+        </button>
+      </div>
+
+      {/* Phase type presets */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-1">Phase type presets</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Define the phase types available when creating a macro phase. Each preset has a name, a key (stored in the database), and a default color.
+        </p>
+
+        <div className="space-y-1 mb-3">
+          <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
+            <span>Label</span>
+            <span>Key</span>
+            <span>Color</span>
+            <span />
+          </div>
+
+          {phaseTypePresets.map((preset, idx) => (
+            <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
+              <input
+                type="text"
+                value={preset.label}
+                onChange={e => void updatePhasePreset(idx, { label: e.target.value })}
+                onBlur={() => { if (preset.label.trim()) void savePhaseTypePresets(phaseTypePresets); }}
+                placeholder="Preparatory…"
+                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <input
+                type="text"
+                value={preset.value}
+                onChange={e => void updatePhasePreset(idx, { value: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                onBlur={() => { if (preset.value.trim()) void savePhaseTypePresets(phaseTypePresets); }}
+                placeholder="preparatory"
+                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+              />
+              <label
+                className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
+                style={{ backgroundColor: preset.color }}
+                title={preset.color}
+              >
+                <input
+                  type="color"
+                  value={preset.color}
+                  onChange={e => void updatePhasePreset(idx, { color: e.target.value })}
+                  onBlur={() => void savePhaseTypePresets(phaseTypePresets)}
+                  className="opacity-0 w-0 h-0"
+                />
+              </label>
+              <button
+                onClick={() => void deletePhasePreset(idx)}
+                title="Delete preset"
+                className="text-gray-300 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={() => void addPhasePreset()}
+          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+        >
+          <Plus size={14} /> Add phase type
         </button>
       </div>
 

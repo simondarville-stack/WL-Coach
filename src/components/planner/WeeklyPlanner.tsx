@@ -1,7 +1,7 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useSettings } from '../../hooks/useSettings';
@@ -39,15 +39,13 @@ export interface MacroContext {
 type PanelView = 'overview' | 'day' | 'exercise';
 
 export function WeeklyPlanner() {
-  const location = useLocation();
-  const locationState = (location.state as { weekStart?: string; groupId?: string } | null);
-  const initialWeekStart = locationState?.weekStart ?? null;
-  const initialGroupId = locationState?.groupId ?? null;
+  const { weekStart: urlWeekStart } = useParams<{ weekStart?: string }>();
+  const navigate = useNavigate();
   const { selectedAthlete, setSelectedAthlete, selectedGroup: storeSelectedGroup, setSelectedGroup } = useAthleteStore();
   const { settings, fetchSettings } = useSettings();
 
   const [selectedDate, setSelectedDate] = useState(() => {
-    if (initialWeekStart) return initialWeekStart;
+    if (urlWeekStart) return urlWeekStart;
     return getMondayOfWeek(new Date());
   });
   const [planSelection, setPlanSelection] = useState<PlanSelection>({
@@ -61,7 +59,7 @@ export function WeeklyPlanner() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { exercises: allExercises, fetchExercisesByName, createExercise } = useExercises();
   const { athletes, fetchAllAthletes } = useAthletes();
   const { groups, fetchGroups } = useTrainingGroups();
 
@@ -123,10 +121,21 @@ export function WeeklyPlanner() {
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showWeekList, setShowWeekList] = useState(() => {
-    // If navigated here with a specific weekStart (e.g. from macro wheel),
-    // go straight to detail view. Otherwise show the overview.
-    return !initialWeekStart;
+    return !urlWeekStart;
   });
+
+  // Keep internal view in sync with URL on subsequent navigations.
+  // useState initializers only run once; this effect handles the
+  // case where the user navigates from /planner → /planner/2026-04-13
+  // while the planner is already mounted.
+  useEffect(() => {
+    if (urlWeekStart) {
+      setSelectedDate(urlWeekStart);
+      setShowWeekList(false);
+    } else {
+      setShowWeekList(true);
+    }
+  }, [urlWeekStart]);
 
   useEffect(() => {
     fetchExercisesByName();
@@ -136,26 +145,16 @@ export function WeeklyPlanner() {
   }, []);
 
   useEffect(() => {
-    if (initialGroupId && groups.length > 0) {
-      const group = groups.find(g => g.id === initialGroupId);
-      if (group) {
-        setPlanSelection({ type: 'group', athlete: null, group });
-        setSelectedGroup(group);
-      }
-    }
-  }, [initialGroupId, groups]);
-
-  useEffect(() => {
-    if (selectedAthlete && !initialGroupId) {
+    if (selectedAthlete) {
       setPlanSelection({ type: 'individual', athlete: selectedAthlete, group: null });
-      setShowWeekList(true);
+      if (!urlWeekStart) setShowWeekList(true);
     }
   }, [selectedAthlete]);
 
   useEffect(() => {
     if (storeSelectedGroup) {
       setPlanSelection({ type: 'group', athlete: null, group: storeSelectedGroup });
-      setShowWeekList(true);
+      if (!urlWeekStart) setShowWeekList(true);
     }
   }, [storeSelectedGroup]);
 
@@ -400,13 +399,13 @@ export function WeeklyPlanner() {
   const goToPreviousWeek = () => {
     const d = new Date(selectedDate + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() - 7);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    navigate(`/planner/${d.toISOString().slice(0, 10)}`);
   };
 
   const goToNextWeek = () => {
     const d = new Date(selectedDate + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() + 7);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    navigate(`/planner/${d.toISOString().slice(0, 10)}`);
   };
 
   const toggleDay = (dayIndex: number) => {
@@ -622,8 +621,7 @@ export function WeeklyPlanner() {
             athlete={planSelection.athlete}
             group={planSelection.group}
             onSelectWeek={(weekStart) => {
-              setSelectedDate(weekStart);
-              setShowWeekList(false);
+              navigate(`/planner/${weekStart}`);
             }}
             visibleMetrics={(settings?.visible_card_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
             visibleSummaryMetrics={(settings?.visible_summary_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
@@ -635,7 +633,7 @@ export function WeeklyPlanner() {
             {/* ── Back to overview ── */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <button
-                onClick={() => setShowWeekList(true)}
+                onClick={() => navigate('/planner')}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11, color: 'var(--color-text-secondary)', background: 'transparent', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'background 0.1s, color 0.1s' }}
                 onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-primary)'; el.style.background = 'var(--color-bg-tertiary)'; }}
                 onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-secondary)'; el.style.background = 'transparent'; }}
@@ -669,6 +667,8 @@ export function WeeklyPlanner() {
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
                 onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
+                onNavigateToWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
+                weekTypes={settings?.week_types ?? []}
               />
 
             {/* ── Load Distribution (collapsible) ── */}
@@ -687,18 +687,18 @@ export function WeeklyPlanner() {
 
             {/* ── Group plan banner ── */}
             {planSelection.type === 'group' && planSelection.group && (
-              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: '#3730a3' }}>Group plan:</span>
-                  <span style={{ fontSize: 11, color: '#4338ca' }}>{planSelection.group.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-accent-hover)' }}>Group plan:</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>{planSelection.group.name}</span>
                 </div>
                 <button
                   onClick={() => void handleSyncGroupPlan()}
                   disabled={isSyncing}
                   style={{
-                    fontSize: 11, padding: '4px 12px', background: '#4f46e5', color: '#fff',
+                    fontSize: 11, padding: '4px 12px', background: 'var(--color-accent)', color: 'var(--color-text-on-accent)',
                     border: 'none', borderRadius: 'var(--radius-md)', cursor: isSyncing ? 'not-allowed' : 'pointer',
-                    opacity: isSyncing ? 0.5 : 1, transition: 'opacity 0.1s',
+                    opacity: isSyncing ? 0.5 : 1, transition: 'opacity var(--transition-fast)',
                   }}
                 >
                   {isSyncing ? 'Syncing…' : 'Sync to athletes'}
@@ -708,12 +708,12 @@ export function WeeklyPlanner() {
 
             {/* ── Linked-to-group banner for individual plans ── */}
             {planSelection.type === 'individual' && currentWeekPlan?.source_group_plan_id && (
-              <div style={{ marginBottom: 12, padding: '8px 16px', background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)' }}>
-                <span style={{ fontSize: 11, color: '#4338ca' }}>Linked to group plan · Exercises with </span>
-                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>G</span>
-                <span style={{ fontSize: 11, color: '#4338ca' }}> come from the group. Edit to override </span>
-                <span style={{ fontSize: 8, padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>I</span>
-                <span style={{ fontSize: 11, color: '#4338ca' }}>.</span>
+              <div style={{ marginBottom: 12, padding: '8px 16px', background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>Linked to group plan · Exercises with </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>G</span>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}> come from the group. Edit to override </span>
+                <span style={{ fontSize: 8, padding: '1px 4px', background: 'var(--color-warning-bg)', color: 'var(--color-warning-text)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>I</span>
+                <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>.</span>
               </div>
             )}
 
@@ -735,6 +735,7 @@ export function WeeklyPlanner() {
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
                 addExerciseToDay={addExerciseToDayWrapped}
+                createExercise={createExercise}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
                 onDeleteExercise={handleDeleteExercise}
@@ -763,8 +764,8 @@ export function WeeklyPlanner() {
                 <div
                   className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
                   style={isSidebar
-                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.16)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
+                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
                   tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
@@ -782,6 +783,7 @@ export function WeeklyPlanner() {
                     }
                     onRefresh={handleRefresh}
                     addExerciseToDay={addExerciseToDayWrapped}
+                    createExercise={createExercise}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
@@ -815,8 +817,8 @@ export function WeeklyPlanner() {
                 <div
                   className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
                   style={isSidebar
-                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.16)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
+                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
                   tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}

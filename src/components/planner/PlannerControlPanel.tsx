@@ -9,11 +9,13 @@ import {
 import { supabase } from '../../lib/supabase';
 import type {
   Athlete, TrainingGroup, AthletePR, Exercise, PlannedExercise,
-  GeneralSettings, MacroPhase, MacroWeek,
+  GeneralSettings, MacroPhase, MacroWeek, WeekTypeConfig,
 } from '../../lib/database.types';
+import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
+import { abbreviateExercise } from './plannerUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
@@ -22,30 +24,20 @@ import { buildCellsForSingleMacro, fetchMacroPhaseBarEvents } from '../../lib/ma
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function abbreviateExercise(name: string): string {
-  const l = name.toLowerCase();
-  if (l.includes('snatch'))                     return 'Sn';
-  if (l.includes('clean') && l.includes('jerk')) return 'C&J';
-  if (l.includes('clean'))                      return 'Clean';
-  if (l.includes('jerk'))                       return 'Jerk';
-  if (l.includes('squat'))                      return 'Sq';
-  return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3);
+function getTodayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 
-// Maps macro week type to token-based colors for the badge pill.
-function weekTypeBadgeColor(weekType: string): { bg: string; text: string } {
-  switch (weekType) {
-    case 'High':        return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
-    case 'Medium':      return { bg: 'var(--color-blue-50)',   text: 'var(--color-blue-800)' };
-    case 'Low':         return { bg: 'var(--color-green-50)',  text: 'var(--color-green-800)' };
-    case 'Deload':      return { bg: 'var(--color-teal-50)',   text: 'var(--color-teal-800)' };
-    case 'Competition': return { bg: 'var(--color-red-50)',    text: 'var(--color-red-800)' };
-    case 'Taper':       return { bg: 'var(--color-amber-50)',  text: 'var(--color-amber-800)' };
-    case 'Testing':     return { bg: 'var(--color-purple-50)', text: 'var(--color-purple-800)' };
-    default:            return { bg: 'var(--color-bg-secondary)', text: 'var(--color-text-secondary)' };
-  }
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+// Badge colors derived from coach-configured WeekTypeConfig; uses a 10% opacity tint.
+function weekTypeBadgeColor(weekType: string, weekTypes: WeekTypeConfig[]): { bg: string; text: string } {
+  const color = getWeekTypeColor(weekType, weekTypes);
+  return { bg: color + '1A', text: color };
 }
 
 // Compliance color (for the percentage after the reps count)
@@ -182,6 +174,8 @@ function CategoryMetric({ label, value }: { label: string; value: React.ReactNod
 
 interface CompetitionPR {
   exerciseName: string;
+  exerciseCode: string | null;
+  category: string;
   value: number;
 }
 
@@ -208,8 +202,10 @@ export interface PlannerControlPanelProps {
   onPrint: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: () => Promise<void>;
+  onNavigateToWeek?: (weekStart: string) => void;
   weekTypesByNum?: Record<number, string>;
   macroEvents?: MacroPhaseBarEvent[];
+  weekTypes?: WeekTypeConfig[];
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -237,8 +233,10 @@ export function PlannerControlPanel({
   onPrint,
   onToggleLoadDistribution,
   onResolvePercentages,
+  onNavigateToWeek,
   weekTypesByNum,
   macroEvents = [],
+  weekTypes = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
@@ -260,8 +258,7 @@ export function PlannerControlPanel({
 
   useEffect(() => {
     if (!macroContext) { setPhases([]); setMacroWeeks([]); return; }
-    void loadPhases(macroContext.macroId);
-    void loadMacroWeeks(macroContext.macroId);
+    void loadPhasesAndWeeks(macroContext.macroId);
   }, [macroContext?.macroId]);
 
   useEffect(() => {
@@ -282,33 +279,25 @@ export function PlannerControlPanel({
   async function loadCompetitionPRs(athleteId: string) {
     const { data } = await supabase
       .from('athlete_prs')
-      .select('pr_value_kg, exercise:exercises(name, is_competition_lift)')
+      .select('pr_value_kg, exercise:exercises(name, exercise_code, category, is_competition_lift)')
       .eq('athlete_id', athleteId)
       .not('pr_value_kg', 'is', null);
     if (!data) return;
-    const prs = (data as Array<{ pr_value_kg: number; exercise: { name: string; is_competition_lift: boolean } | null }>)
+    const prs = (data as Array<{ pr_value_kg: number; exercise: { name: string; exercise_code: string | null; category: string; is_competition_lift: boolean } | null }>)
       .filter(d => d.exercise?.is_competition_lift)
-      .map(d => ({ exerciseName: d.exercise!.name, value: d.pr_value_kg }))
+      .map(d => ({ exerciseName: d.exercise!.name, exerciseCode: d.exercise!.exercise_code, category: d.exercise!.category, value: d.pr_value_kg }))
       .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
     setCompetitionPRs(prs);
   }
 
-  async function loadPhases(macroId: string) {
-    const { data } = await supabase
-      .from('macro_phases')
-      .select('*')
-      .eq('macrocycle_id', macroId)
-      .order('start_week_number');
-    setPhases((data as MacroPhase[]) ?? []);
-  }
-
-  async function loadMacroWeeks(macroId: string) {
-    const { data } = await supabase
-      .from('macro_weeks')
-      .select('*')
-      .eq('macrocycle_id', macroId)
-      .order('week_number');
-    setMacroWeeks((data as MacroWeek[]) ?? []);
+  async function loadPhasesAndWeeks(macroId: string) {
+    const [phaseResult, weekResult] = await Promise.all([
+      supabase.from('macro_phases').select('*').eq('macrocycle_id', macroId).order('start_week_number'),
+      supabase.from('macro_weeks').select('*').eq('macrocycle_id', macroId).order('week_number'),
+    ]);
+    // Set both atomically so phaseBarCells is never computed with weeks but no phases
+    setPhases((phaseResult.data as MacroPhase[]) ?? []);
+    setMacroWeeks((weekResult.data as MacroWeek[]) ?? []);
   }
 
   // ── metrics ──────────────────────────────────────────────────────────────
@@ -375,7 +364,7 @@ export function PlannerControlPanel({
     athleteAge !== null ? `${athleteAge} yr` : null,
     selectedAthlete?.bodyweight ? `${selectedAthlete.bodyweight} kg` : null,
     selectedAthlete?.weight_class ? `-${selectedAthlete.weight_class}` : null,
-    ...competitionPRs.slice(0, 2).map(pr => `${abbreviateExercise(pr.exerciseName)} ${pr.value}`),
+    ...competitionPRs.slice(0, 2).map(pr => `${abbreviateExercise({ name: pr.exerciseName, exercise_code: pr.exerciseCode, category: pr.category })} ${pr.value}`),
   ].filter(Boolean).join(' · ');
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -787,7 +776,7 @@ export function PlannerControlPanel({
                 {macroContext.macroName}
               </span>
               {(() => {
-                const { bg, text } = weekTypeBadgeColor(macroContext.weekType);
+                const { bg, text } = weekTypeBadgeColor(macroContext.weekType, weekTypes);
                 return (
                   <span
                     style={{
@@ -927,7 +916,12 @@ export function PlannerControlPanel({
             cells={phaseBarCells}
             events={fetchedEvents}
             selectedWeekStart={phaseBarSelectedWeekStart}
-            onCellClick={() => navigate('/macrocycles')}
+            playheadDate={getTodayISO()}
+            onCellClick={onNavigateToWeek ? (cell) => onNavigateToWeek(cell.weekStart) : undefined}
+            onPhaseClick={(cell) => {
+              if (cell.macroId === null) return;
+              navigate(`/macrocycles/${cell.macroId}`);
+            }}
           />
         </div>
       )}

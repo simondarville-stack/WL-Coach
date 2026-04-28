@@ -44,9 +44,9 @@ export function VolumeDistribution({ athleteId, startDate, endDate }: Props) {
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit=" kg" width={52} />
-          <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} />
+          <XAxis dataKey="week" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit=" kg" width={52} />
+          <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           {categories.map(cat => (
             <Bar key={cat} dataKey={cat} stackId="a" fill={CATEGORY_COLORS[cat] ?? '#94a3b8'} name={cat} radius={[2, 2, 0, 0]} />

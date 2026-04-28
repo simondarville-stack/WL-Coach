@@ -146,8 +146,7 @@ export function CopyWeekModal({
         style={{
           background: 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-xl)',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.16)',
-          border: '1px solid var(--color-border-secondary)',
+          border: '0.5px solid var(--color-border-primary)',
           maxWidth: 448, width: '100%',
         }}
       >

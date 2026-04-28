@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { MacroCycle, MacroCompetition } from '../../lib/database.types';
+import { DateInput } from '../ui/DateInput';
 
 interface CompetitionRow {
   id?: string; // existing competitions have an id
@@ -72,7 +73,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
+      <div className="rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-base font-medium text-gray-900">Edit Macrocycle</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
@@ -92,12 +93,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start date *</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DateInput value={startDate} onChange={setStartDate} />
               {startChanged && (
                 <p className="text-[11px] text-amber-600 mt-1">
                   Changing the start date updates the cycle header only — individual week dates are unchanged.
@@ -106,12 +102,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <DateInput value={endDate} onChange={setEndDate} />
               {endExtended && (
                 <p className="text-[11px] text-green-600 mt-1">New weeks will be added to the end.</p>
               )}
@@ -145,12 +136,13 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
                   placeholder="Competition name"
                   className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <input
-                  type="date"
-                  value={comp.date}
-                  onChange={e => updateComp(i, 'date', e.target.value)}
-                  className="w-32 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <div className="w-32">
+                  <DateInput
+                    value={comp.date}
+                    onChange={v => updateComp(i, 'date', v)}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
                 <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
                   <input
                     type="checkbox"

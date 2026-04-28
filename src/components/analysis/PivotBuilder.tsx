@@ -4,8 +4,7 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts';
 import { fetchWeeklyAggregates, type WeeklyAggregate } from '../../hooks/useAnalysis';
-import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
+import { useExerciseStore } from '../../store/exerciseStore';
 
 interface Props {
   athleteId: string;
@@ -89,6 +88,8 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 }
 
 export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
+  const { exercises: allExercises, fetchExercises } = useExerciseStore();
+  const exercises = allExercises.filter(e => e.category !== '— System');
   const [xAxis, setXAxis] = useState<XAxisType>('week');
   const [primaryMetric, setPrimaryMetric] = useState<PrimaryMetric>('performedReps');
   const [overlayMetric, setOverlayMetric] = useState<OverlayMetric>('none');
@@ -98,18 +99,9 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [aggregates, setAggregates] = useState<WeeklyAggregate[]>([]);
   const [loading, setLoading] = useState(false);
-  const [exercises, setExercises] = useState<Array<{ id: string; name: string; category: string }>>([]);
 
-  // Load exercise list once
-  useEffect(() => {
-    supabase.from('exercises').select('id, name, category')
-      .eq('owner_id', getOwnerId())
-      .neq('category', '— System')
-      .order('name')
-      .then(({ data }) => {
-        if (data) setExercises(data as typeof exercises);
-      });
-  }, []);
+  // Load exercise list from store once
+  useEffect(() => { fetchExercises(); }, [fetchExercises]);
 
   // Unique categories derived from the exercise library
   const categories = ['All', ...Array.from(new Set(exercises.map(e => e.category))).sort()];
@@ -282,10 +274,10 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={chartData} margin={{ top: 4, right: overlayMetric !== 'none' ? 48 : 8, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={48} />
+              <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} width={48} />
               {overlayMetric !== 'none' && (
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={40} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} width={40} />
               )}
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />

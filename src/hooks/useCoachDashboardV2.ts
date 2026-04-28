@@ -12,6 +12,40 @@ import type {
 import { getCurrentAndNextWeekStart, findCurrentMacroWeek } from '../lib/weekUtils';
 import { computeRawAverage } from '../lib/calculations';
 
+/** Supabase nested join shapes for the dashboard macro query */
+interface MacroWeekJoin {
+  id: string;
+  week_number: number;
+  total_reps_target: number | null;
+  week_type: string | null;
+  week_start?: string; // computed locally
+  [key: string]: unknown;
+}
+
+interface MacroPhaseJoin {
+  id: string;
+  name: string;
+  color: string | null;
+  start_week_number: number;
+  end_week_number: number;
+}
+
+interface MacroCycleWithRelations extends Omit<MacroCycle, 'owner_id'> {
+  owner_id: string;
+  macro_weeks: MacroWeekJoin[];
+  macro_phases: MacroPhaseJoin[];
+}
+
+/** Supabase nested join shape for events query */
+interface EventAthleteJoin {
+  athlete_id: string;
+}
+
+interface EventWithAthletes extends Omit<Event, 'id'> {
+  id: string;
+  event_athletes: EventAthleteJoin[];
+}
+
 export interface AthleteSnapshot {
   athlete: Athlete;
   macrocycle: MacroCycle | null;
@@ -82,12 +116,15 @@ export function useCoachDashboardV2() {
       const ownerId = getOwnerId();
       const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
 
-      const [settingsRes, athletesRes, groupsRes, membersRes] = await Promise.all([
+      const [settingsRes, athletesRes, groupsRes] = await Promise.all([
         supabase.from('general_settings').select('*').eq('owner_id', ownerId).maybeSingle(),
         supabase.from('athletes').select('*').eq('owner_id', ownerId).eq('is_active', true).order('name'),
         supabase.from('training_groups').select('*').eq('owner_id', ownerId).order('name'),
-        supabase.from('group_members').select('group_id, athlete_id').is('left_at', null),
       ]);
+      const groupIds = (groupsRes.data || []).map(g => g.id);
+      const membersRes = groupIds.length > 0
+        ? await supabase.from('group_members').select('group_id, athlete_id').is('left_at', null).in('group_id', groupIds)
+        : { data: [] };
 
       const s = settingsRes.data;
       setSettings(s);
@@ -113,28 +150,28 @@ export function useCoachDashboardV2() {
       const athleteIds = activeAthletes.map(a => a.id);
 
       const [macrosRes, sessionsRes, plansRes, bwRes] = await Promise.all([
-        supabase.from('macrocycles').select('*, macro_weeks(*), macro_phases(*)').eq('owner_id', ownerId).eq('is_active', true).in('athlete_id', athleteIds.length > 0 ? athleteIds : ['__none__']),
+        supabase.from('macrocycles').select('*, macro_weeks(*), macro_phases(*)').eq('owner_id', ownerId).eq('is_active', true).in('athlete_id', athleteIds.length > 0 ? athleteIds : ['__none__']) as unknown as Promise<{ data: MacroCycleWithRelations[] | null; error: unknown }>,
         supabase.from('training_log_sessions').select('athlete_id, date, status, raw_total, session_rpe, day_index, week_start').eq('owner_id', ownerId).in('athlete_id', athleteIds.length > 0 ? athleteIds : ['__none__']).gte('date', cutoffISO).order('date', { ascending: false }),
         supabase.from('week_plans').select('athlete_id, group_id, is_group_plan, week_start, id').eq('owner_id', ownerId).in('week_start', [weekStartISO, nextWeekStartISO]),
         supabase.from('bodyweight_entries').select('athlete_id, date, weight_kg').in('athlete_id', athleteIds.length > 0 ? athleteIds : ['__none__']).order('date', { ascending: false }).limit(200),
       ]);
 
-      const macros = macrosRes.data || [];
+      const macros: MacroCycleWithRelations[] = (macrosRes as unknown as { data: MacroCycleWithRelations[] | null }).data || [];
       const sessions = sessionsRes.data || [];
       const plans = plansRes.data || [];
       const bwEntries = bwRes.data || [];
 
       const planIds = plans.map(p => p.id);
       const { data: plannedExercises } = planIds.length > 0
-        ? await supabase.from('planned_exercises').select('weekplan_id, total_reps, total_sets, highest_load, avg_load').in('weekplan_id', planIds)
+        ? await supabase.from('planned_exercises').select('weekplan_id, summary_total_reps, summary_total_sets, summary_highest_load, summary_avg_load').in('weekplan_id', planIds)
         : { data: [] };
       const peList = plannedExercises || [];
 
       const planExerciseMap = new Map<string, { reps: number; tonnage: number; count: number }>();
       for (const pe of peList) {
         const existing = planExerciseMap.get(pe.weekplan_id) || { reps: 0, tonnage: 0, count: 0 };
-        existing.reps += pe.total_reps || 0;
-        existing.tonnage += (pe.total_reps || 0) * (pe.avg_load || 0);
+        existing.reps += pe.summary_total_reps || 0;
+        existing.tonnage += (pe.summary_total_reps || 0) * (pe.summary_avg_load || 0);
         existing.count += 1;
         planExerciseMap.set(pe.weekplan_id, existing);
       }
@@ -177,9 +214,9 @@ export function useCoachDashboardV2() {
         let targetReps: number | null = null;
 
         if (macro) {
-          const mw = (macro as any).macro_weeks || [];
+          const mw: MacroWeekJoin[] = macro.macro_weeks || [];
           totalMacroWeeks = mw.length;
-          macroWeek = findCurrentMacroWeek(mw.map((w: any) => ({
+          macroWeek = findCurrentMacroWeek(mw.map(w => ({
             ...w,
             week_start: (() => {
               const d = new Date(macro.start_date + 'T00:00:00');
@@ -188,11 +225,13 @@ export function useCoachDashboardV2() {
             })(),
           })));
           if (macroWeek) {
-            targetReps = (macroWeek as any).total_reps_target ?? null;
-            const phases = (macro as any).macro_phases || [];
-            const phase = phases.find((p: any) =>
-              (macroWeek as any).week_number >= p.start_week_number &&
-              (macroWeek as any).week_number <= p.end_week_number
+            const macroWeekJoin = mw.find(w => w.id === macroWeek!.id);
+            targetReps = macroWeekJoin?.total_reps_target ?? null;
+            const phases: MacroPhaseJoin[] = macro.macro_phases || [];
+            const currentWeekNumber = macroWeekJoin?.week_number ?? 0;
+            const phase = phases.find(p =>
+              currentWeekNumber >= p.start_week_number &&
+              currentWeekNumber <= p.end_week_number
             );
             if (phase) {
               phaseName = phase.name;
@@ -243,7 +282,7 @@ export function useCoachDashboardV2() {
 
         snapshots.push({
           athlete,
-          macrocycle: macro ? { ...macro, macro_weeks: undefined, macro_phases: undefined } as any : null,
+          macrocycle: macro ? { ...macro, macro_weeks: undefined, macro_phases: undefined } as unknown as MacroCycle : null,
           macroWeek,
           totalMacroWeeks,
           phaseName,
@@ -314,12 +353,12 @@ export function useCoachDashboardV2() {
         .gte('event_date', new Date().toISOString().split('T')[0])
         .order('event_date')
         .limit(10);
-      const events = eventsRes.data || [];
+      const events: EventWithAthletes[] = (eventsRes.data || []) as unknown as EventWithAthletes[];
       const athleteNameMap = new Map(activeAthletes.map(a => [a.id, a.name]));
 
       setUpcomingEvents(events.map(ev => ({
-        event: ev,
-        athleteNames: ((ev as any).event_athletes || []).map((ea: any) => athleteNameMap.get(ea.athlete_id) || 'Unknown'),
+        event: ev as unknown as Event,
+        athleteNames: (ev.event_athletes || []).map((ea: EventAthleteJoin) => athleteNameMap.get(ea.athlete_id) || 'Unknown'),
         daysUntil: Math.ceil((new Date(ev.event_date).getTime() - Date.now()) / 86400000),
       })));
 

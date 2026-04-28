@@ -192,8 +192,8 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
           { label: 'Needs attention', value: needsAttentionCount, warn: needsAttentionCount > 0 },
         ].map(({ label, value, warn }) => (
           <div key={label} className="bg-white rounded-lg border border-gray-200 py-2.5 px-4 hover:border-gray-300 transition-colors">
-            <div className="text-[10px] text-gray-400 uppercase tracking-wider font-medium">{label}</div>
-            <div className={`text-xl font-semibold tabular-nums ${warn ? 'text-red-600' : 'text-gray-900'}`}>{value}</div>
+            <div className="text-[11px] text-gray-400 uppercase tracking-wider font-medium">{label}</div>
+            <div className={`text-xl font-medium tabular-nums ${warn ? 'text-red-600' : 'text-gray-900'}`}>{value}</div>
           </div>
         ))}
       </div>
@@ -250,7 +250,7 @@ export function CoachDashboard({ onNavigateToPlanner, onNavigateToGroupPlanner }
       {/* Quick analysis — compliance sparklines */}
       {athleteStatuses.length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h2 className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-3">Quick analysis — 4-week compliance trend</h2>
+          <h2 className="text-[11px] uppercase text-gray-400 tracking-wider font-medium mb-3">Quick analysis — 4-week compliance trend</h2>
           <div className="flex flex-wrap gap-3">
             {athleteStatuses.map(s => {
               const values = complianceTrends[s.athlete.id] ?? [];
@@ -526,7 +526,7 @@ function AthleteRow({
                         <>
                           <span className="font-medium text-gray-900">{currentMA.toFixed(1)} kg</span>
                           <BwTrendIcon size={12} className={bwTrendColor} />
-                          <span className="text-[10px] text-gray-400">{maDays}-day avg</span>
+                          <span className="text-[11px] text-gray-400">{maDays}-day avg</span>
                         </>
                       ) : (
                         <span className="font-medium text-gray-400">No data</span>

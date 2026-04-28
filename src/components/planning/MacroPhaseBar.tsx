@@ -30,6 +30,10 @@ export interface MacroPhaseBarCell {
   macroName: string | null;
   /** Label shown inside the cell, e.g. "W3". Empty for gap cells. */
   label: string;
+  /** True when the week has a week_type value that doesn't match any WeekTypeConfig entry. */
+  warning?: boolean;
+  /** Raw week_type value, preserved for tooltip display even when unrecognised. */
+  rawWeekType?: string | null;
 }
 
 export interface MacroPhaseBarEvent {
@@ -54,8 +58,21 @@ export interface MacroPhaseBarProps {
   events?: MacroPhaseBarEvent[];
   /** weekStart of the currently selected week. Null if none. */
   selectedWeekStart?: string | null;
+  /**
+   * Exact YYYY-MM-DD date for the playhead. When provided, the playhead
+   * is positioned at the day within the cell rather than the cell center.
+   * Falls back to the center of selectedWeekStart when omitted.
+   */
+  playheadDate?: string | null;
   /** Called when a cell is clicked */
   onCellClick?: (cell: MacroPhaseBarCell) => void;
+  /** NEW: fired when a phase label is clicked. Receives the phase
+   * group's first cell (which carries macroId, phase name, color). */
+  onPhaseClick?: (cell: MacroPhaseBarCell) => void;
+  /** NEW: render a month row above the phase strip (e.g. "Apr", "May") */
+  showMonthRow?: boolean;
+  /** NEW: render a date-span row below the bar (e.g. "5 Apr — 11 Apr") */
+  showWeekDates?: boolean;
   /** Optional className for the outer wrapper */
   className?: string;
   /** Optional inline style overrides */
@@ -107,6 +124,51 @@ function computePhaseGroups(cells: MacroPhaseBarCell[]): PhaseGroup[] {
   return groups;
 }
 
+interface MonthGroup {
+  label: string;       // "Apr" or "Jan '27" if year crosses
+  startIdx: number;
+  weekCount: number;
+}
+
+function computeMonthGroups(cells: MacroPhaseBarCell[]): MonthGroup[] {
+  if (cells.length === 0) return [];
+  const groups: MonthGroup[] = [];
+  let currentMonthYear = '';
+  let currentYear = '';
+
+  // Determine if any year boundary appears — if so, include year suffix
+  // on the first month of each new year.
+  const years = new Set<string>();
+  cells.forEach(c => {
+    const d = new Date(c.weekStart + 'T00:00:00');
+    years.add(String(d.getFullYear()));
+  });
+  const yearChanges = years.size > 1;
+
+  cells.forEach((c, i) => {
+    const d = new Date(c.weekStart + 'T00:00:00');
+    const monthIdx = d.getMonth();
+    const yearStr = String(d.getFullYear()).slice(2);
+    const monthYear = `${monthIdx}-${d.getFullYear()}`;
+    if (monthYear !== currentMonthYear) {
+      const showYear = yearChanges && yearStr !== currentYear;
+      const label = MONTHS[monthIdx] + (showYear ? ` '${yearStr}` : '');
+      groups.push({ label, startIdx: i, weekCount: 1 });
+      currentMonthYear = monthYear;
+      currentYear = yearStr;
+    } else {
+      groups[groups.length - 1].weekCount++;
+    }
+  });
+  return groups;
+}
+
+function formatWeekDateSpan(weekStart: string): string {
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = addDays(start, 6);
+  return `${formatDateEU(start)} — ${formatDateEU(end)}`;
+}
+
 function eventsForCell(
   cell: MacroPhaseBarCell,
   events: MacroPhaseBarEvent[]
@@ -126,7 +188,11 @@ export function MacroPhaseBar({
   cells,
   events = [],
   selectedWeekStart = null,
+  playheadDate = null,
   onCellClick,
+  onPhaseClick,
+  showMonthRow = false,
+  showWeekDates = false,
   className,
   style,
 }: MacroPhaseBarProps) {
@@ -134,6 +200,7 @@ export function MacroPhaseBar({
   if (total === 0) return null;
 
   const groups = computePhaseGroups(cells);
+  const monthGroups = showMonthRow ? computeMonthGroups(cells) : [];
 
   const buildTooltip = (
     c: MacroPhaseBarCell,
@@ -145,7 +212,11 @@ export function MacroPhaseBar({
     const metaParts: string[] = [];
     if (c.macroName) metaParts.push(c.macroName);
     if (c.phase) metaParts.push(c.phase);
-    if (c.typeName) metaParts.push(c.typeName);
+    if (c.warning && c.rawWeekType) {
+      metaParts.push(`⚠ Unknown week type: "${c.rawWeekType}"`);
+    } else if (c.typeName) {
+      metaParts.push(c.typeName);
+    }
     if (metaParts.length) lines.push(metaParts.join(' · '));
 
     const weekStart = new Date(c.weekStart + 'T00:00:00');
@@ -167,14 +238,61 @@ export function MacroPhaseBar({
         ...style,
       }}
     >
+      {/* Optional month row */}
+      {showMonthRow && (
+        <div style={{ display: 'flex', position: 'relative', height: '14px', marginBottom: '2px' }}>
+          {monthGroups.map((g, i) => {
+            const leftPct = (g.startIdx / total) * 100;
+            const widthPct = (g.weekCount / total) * 100;
+            return (
+              <div
+                key={`m-${i}`}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: `${leftPct}%`,
+                  width: `${widthPct}%`,
+                  height: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontSize: 'var(--text-caption)',
+                  color: 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: '0.02em',
+                  whiteSpace: 'nowrap',
+                  paddingLeft: '6px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }}
+              >
+                {g.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Phase label strip */}
       <div style={{ display: 'flex', position: 'relative', height: '16px' }}>
         {groups.map((g, i) => {
           const leftPct = (g.startIdx / total) * 100;
           const widthPct = (g.weekCount / total) * 100;
+          const firstCellInGroup = cells[g.startIdx];
+          const isClickable =
+            !!onPhaseClick && firstCellInGroup.macroId !== null && firstCellInGroup.phase !== null;
+          const handleClick = isClickable
+            ? (e: React.MouseEvent) => {
+                e.stopPropagation();
+                onPhaseClick!(firstCellInGroup);
+              }
+            : undefined;
+
           return (
             <div
               key={`ph-${i}`}
+              onClick={handleClick}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -192,9 +310,13 @@ export function MacroPhaseBar({
                 paddingLeft: '6px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                pointerEvents: 'none',
+                pointerEvents: isClickable ? 'auto' : 'none',
                 userSelect: 'none',
+                cursor: isClickable ? 'pointer' : 'default',
+                transition: 'color 100ms ease-out',
               }}
+              onMouseEnter={isClickable ? e => { e.currentTarget.style.color = 'var(--color-text-primary)'; } : undefined}
+              onMouseLeave={isClickable ? e => { e.currentTarget.style.color = 'var(--color-text-secondary)'; } : undefined}
             >
               {g.phase}
             </div>
@@ -268,13 +390,14 @@ export function MacroPhaseBar({
                       fontSize: '9px',
                       fontFamily: 'var(--font-mono)',
                       lineHeight: 1,
-                      color: 'rgba(255, 255, 255, 0.75)',
+                      color: c.warning ? 'var(--color-warning-text)' : 'rgba(255, 255, 255, 0.75)',
                       pointerEvents: 'none',
                       userSelect: 'none',
                       letterSpacing: '0.04em',
+                      fontWeight: c.warning ? 700 : undefined,
                     }}
                   >
-                    {c.typeAbbr}
+                    {c.warning ? '?' : c.typeAbbr}
                   </span>
                 )}
                 {cellEvents.length > 0 && (
@@ -345,7 +468,15 @@ export function MacroPhaseBar({
           (() => {
             const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
             if (selIdx < 0) return null;
-            const leftPct = (selIdx + 0.5) * (100 / total);
+            let dayFraction = 0.5;
+            if (playheadDate) {
+              const cellDate = new Date(cells[selIdx].weekStart + 'T00:00:00');
+              const today = new Date(playheadDate + 'T00:00:00');
+              const diffDays = Math.round((today.getTime() - cellDate.getTime()) / 86400000);
+              const clampedDiff = Math.max(0, Math.min(6, diffDays));
+              dayFraction = (clampedDiff + 0.5) / 7;
+            }
+            const leftPct = (selIdx + dayFraction) * (100 / total);
             return (
               <div
                 style={{
@@ -363,6 +494,32 @@ export function MacroPhaseBar({
             );
           })()}
       </div>
+
+      {/* Optional week-dates row */}
+      {showWeekDates && (
+        <div style={{ display: 'flex', position: 'relative', height: '14px', marginTop: '2px' }}>
+          {cells.map(c => (
+            <div
+              key={`d-${c.weekStart}`}
+              style={{
+                flex: 1,
+                fontSize: '9px',
+                color: 'var(--color-text-tertiary)',
+                fontFamily: 'var(--font-mono)',
+                textAlign: 'center',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                padding: '0 2px',
+                letterSpacing: '0.02em',
+                pointerEvents: 'none',
+              }}
+            >
+              {c.label ? formatWeekDateSpan(c.weekStart) : ''}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

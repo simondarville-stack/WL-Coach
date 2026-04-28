@@ -1,4 +1,4 @@
-// @ts-nocheck
+
 import { useState, useEffect } from 'react';
 import { X, Plus, Check, Trash2, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
