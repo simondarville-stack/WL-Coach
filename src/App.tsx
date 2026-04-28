@@ -65,7 +65,7 @@ function AppRouter() {
 function CoachApp() {
   const { fetchAllAthletes } = useAthletes();
   const { fetchGroups } = useTrainingGroups();
-  const { setSelectedAthlete } = useAthleteStore();
+  const { setSelectedAthlete, setSelectedGroup } = useAthleteStore();
   const { activeCoach, setActiveCoach, setCoaches } = useCoachStore();
   const { fetchCoaches } = useCoachProfiles();
   const navigate = useNavigate();
@@ -92,11 +92,12 @@ function CoachApp() {
 
   const handleNavigateToPlanner = (athlete: Athlete, weekStart: string) => {
     setSelectedAthlete(athlete);
-    navigate('/planner', { state: { weekStart } });
+    navigate(`/planner/${weekStart}`);
   };
 
   const handleNavigateToGroupPlanner = (group: TrainingGroup, weekStart: string) => {
-    navigate('/planner', { state: { weekStart, groupId: group.id } });
+    setSelectedGroup(group);
+    navigate(`/planner/${weekStart}`);
   };
 
   // Show spinner while fetching coach profiles on first load
@@ -153,7 +154,9 @@ function CoachApp() {
               <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
               <Route path="/dashboard-v2" element={<DashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
+              <Route path="/planner/:weekStart" element={<WeeklyPlanner />} />
               <Route path="/macrocycles" element={<MacroCycles />} />
+              <Route path="/macrocycles/:cycleId" element={<MacroCycles />} />
               <Route path="/events" element={<CompetitionCalendar />} />
               <Route path="/athletes" element={<Athletes />} />
               <Route path="/training-groups" element={<TrainingGroups />} />

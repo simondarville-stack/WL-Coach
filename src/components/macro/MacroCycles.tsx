@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
@@ -33,6 +33,7 @@ import { buildCellsForSingleMacro } from '../../lib/macroPhaseBarData';
 export function MacroCycles() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { cycleId: urlCycleId } = useParams<{ cycleId?: string }>();
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
   const { settings, fetchSettingsSilent } = useSettings();
@@ -183,11 +184,26 @@ export function MacroCycles() {
   useEffect(() => {
     if (macroTarget) {
       fetchMacrocycles(macroTarget);
-      setSelectedCycle(null);
       setIndividualViewAthleteId(null);
     }
   }, [selectedAthlete?.id, selectedGroup?.id]);
 
+  // Sync the URL cycleId param to selectedCycle. When the URL changes
+  // (entering /macrocycles/:cycleId or going back to /macrocycles),
+  // update internal state.
+  useEffect(() => {
+    if (!urlCycleId) {
+      setSelectedCycle(null);
+      return;
+    }
+    const cycle = macrocycles.find(c => c.id === urlCycleId);
+    if (cycle) {
+      setSelectedCycle(cycle);
+    }
+    // If cycle isn't loaded yet (initial mount before macros fetch
+    // resolves), the dependency on `macrocycles` re-runs this when
+    // they arrive.
+  }, [urlCycleId, macrocycles]);
 
   // Load cycle data when cycle changes
   useEffect(() => {
@@ -282,7 +298,7 @@ export function MacroCycles() {
       await createPhase({ macrocycle_id: cycle.id, name: 'Competition', phase_type: 'competition', start_week_number: compStart, end_week_number: totalWeeks, color: '#FEF3C7', notes: '', position: 3 });
     }
 
-    setSelectedCycle(cycle);
+    navigate(`/macrocycles/${cycle.id}`);
     setShowCreateModal(false);
   };
 
@@ -480,6 +496,7 @@ export function MacroCycles() {
     if (!confirm(`Delete "${selectedCycle.name}"? This cannot be undone.`)) return;
     await deleteMacrocycle(selectedCycle.id);
     setSelectedCycle(null);
+    navigate('/macrocycles');
   };
 
   // ─── Phase save / delete ──────────────────────────────────────────────────────
@@ -566,9 +583,9 @@ export function MacroCycles() {
         athleteId={selectedAthlete?.id ?? null}
         cycleNameForFile={selectedCycle?.name ?? ''}
         cycleDateRange={selectedCycle ? { start: selectedCycle.start_date, end: selectedCycle.end_date } : null}
-        onBack={() => setSelectedCycle(null)}
+        onBack={() => navigate('/macrocycles')}
         onCycleMenuToggle={() => setCycleMenuOpen(o => !o)}
-        onSelectCycle={(mc) => { setSelectedCycle(mc); setCycleMenuOpen(false); }}
+        onSelectCycle={(mc) => { navigate(`/macrocycles/${mc.id}`); setCycleMenuOpen(false); }}
         onCreateCycle={() => setShowCreateModal(true)}
         onChartToggle={() => setShowChart(v => !v)}
         onDistributionToggle={() => setShowDistribution(v => { if (!v) setDistKey(k => k + 1); return !v; })}
@@ -616,7 +633,7 @@ export function MacroCycles() {
                 showMonthRow
                 showWeekDates
                 onCellClick={(cell) => {
-                  navigate('/planner', { state: { weekStart: cell.weekStart } });
+                  navigate(`/planner/${cell.weekStart}`);
                 }}
                 onPhaseClick={(cell) => {
                   if (cell.macroId === null) return;
@@ -749,7 +766,7 @@ export function MacroCycles() {
         <div className="flex-1 overflow-y-auto">
           <MacroAnnualWheel
             macrocycles={macrocycles}
-            onSelectCycle={(cycle) => setSelectedCycle(cycle)}
+            onSelectCycle={(cycle) => navigate(`/macrocycles/${cycle.id}`)}
             onCreateCycle={() => setShowCreateModal(true)}
             athleteName={selectedAthlete?.name}
             groupName={selectedGroup?.name}

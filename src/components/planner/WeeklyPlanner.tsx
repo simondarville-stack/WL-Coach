@@ -1,7 +1,7 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useSettings } from '../../hooks/useSettings';
@@ -39,15 +39,13 @@ export interface MacroContext {
 type PanelView = 'overview' | 'day' | 'exercise';
 
 export function WeeklyPlanner() {
-  const location = useLocation();
-  const locationState = (location.state as { weekStart?: string; groupId?: string } | null);
-  const initialWeekStart = locationState?.weekStart ?? null;
-  const initialGroupId = locationState?.groupId ?? null;
+  const { weekStart: urlWeekStart } = useParams<{ weekStart?: string }>();
+  const navigate = useNavigate();
   const { selectedAthlete, setSelectedAthlete, selectedGroup: storeSelectedGroup, setSelectedGroup } = useAthleteStore();
   const { settings, fetchSettings } = useSettings();
 
   const [selectedDate, setSelectedDate] = useState(() => {
-    if (initialWeekStart) return initialWeekStart;
+    if (urlWeekStart) return urlWeekStart;
     return getMondayOfWeek(new Date());
   });
   const [planSelection, setPlanSelection] = useState<PlanSelection>({
@@ -123,10 +121,21 @@ export function WeeklyPlanner() {
   const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showWeekList, setShowWeekList] = useState(() => {
-    // If navigated here with a specific weekStart (e.g. from macro wheel),
-    // go straight to detail view. Otherwise show the overview.
-    return !initialWeekStart;
+    return !urlWeekStart;
   });
+
+  // Keep internal view in sync with URL on subsequent navigations.
+  // useState initializers only run once; this effect handles the
+  // case where the user navigates from /planner → /planner/2026-04-13
+  // while the planner is already mounted.
+  useEffect(() => {
+    if (urlWeekStart) {
+      setSelectedDate(urlWeekStart);
+      setShowWeekList(false);
+    } else {
+      setShowWeekList(true);
+    }
+  }, [urlWeekStart]);
 
   useEffect(() => {
     fetchExercisesByName();
@@ -134,16 +143,6 @@ export function WeeklyPlanner() {
     fetchAllAthletes();
     fetchSettings();
   }, []);
-
-  useEffect(() => {
-    if (initialGroupId && groups.length > 0) {
-      const group = groups.find(g => g.id === initialGroupId);
-      if (group) {
-        setPlanSelection({ type: 'group', athlete: null, group });
-        setSelectedGroup(group);
-      }
-    }
-  }, [initialGroupId, groups]);
 
   useEffect(() => {
     if (selectedAthlete && !initialGroupId) {
@@ -400,13 +399,13 @@ export function WeeklyPlanner() {
   const goToPreviousWeek = () => {
     const d = new Date(selectedDate + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() - 7);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    navigate(`/planner/${d.toISOString().slice(0, 10)}`);
   };
 
   const goToNextWeek = () => {
     const d = new Date(selectedDate + 'T00:00:00Z');
     d.setUTCDate(d.getUTCDate() + 7);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    navigate(`/planner/${d.toISOString().slice(0, 10)}`);
   };
 
   const toggleDay = (dayIndex: number) => {
@@ -622,8 +621,7 @@ export function WeeklyPlanner() {
             athlete={planSelection.athlete}
             group={planSelection.group}
             onSelectWeek={(weekStart) => {
-              setSelectedDate(weekStart);
-              setShowWeekList(false);
+              navigate(`/planner/${weekStart}`);
             }}
             visibleMetrics={(settings?.visible_card_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
             visibleSummaryMetrics={(settings?.visible_summary_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
@@ -635,7 +633,7 @@ export function WeeklyPlanner() {
             {/* ── Back to overview ── */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <button
-                onClick={() => setShowWeekList(true)}
+                onClick={() => navigate('/planner')}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11, color: 'var(--color-text-secondary)', background: 'transparent', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', transition: 'background 0.1s, color 0.1s' }}
                 onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-primary)'; el.style.background = 'var(--color-bg-tertiary)'; }}
                 onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.color = 'var(--color-text-secondary)'; el.style.background = 'transparent'; }}
@@ -669,7 +667,7 @@ export function WeeklyPlanner() {
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
                 onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
-                onNavigateToWeek={(weekStart) => setSelectedDate(weekStart)}
+                onNavigateToWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
                 weekTypes={settings?.week_types ?? []}
               />
 
