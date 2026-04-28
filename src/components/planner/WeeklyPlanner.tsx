@@ -147,14 +147,14 @@ export function WeeklyPlanner() {
   useEffect(() => {
     if (selectedAthlete) {
       setPlanSelection({ type: 'individual', athlete: selectedAthlete, group: null });
-      setShowWeekList(true);
+      if (!urlWeekStart) setShowWeekList(true);
     }
   }, [selectedAthlete]);
 
   useEffect(() => {
     if (storeSelectedGroup) {
       setPlanSelection({ type: 'group', athlete: null, group: storeSelectedGroup });
-      setShowWeekList(true);
+      if (!urlWeekStart) setShowWeekList(true);
     }
   }, [storeSelectedGroup]);
 
