@@ -437,6 +437,7 @@ export function usePlannerWeekOverview() {
     weeks,
     macroBlocks,
     rawMacroWeeks,
+    rawPhases,
     barEvents,
     loading,
     loadData,

@@ -44,6 +44,7 @@ interface MacroTableV2Props {
   visibleExercises?: Set<string>;
   visibleColumns?: Set<string>;
   weekTypes?: WeekTypeConfig[];
+  highlightedPhaseId?: string | null;
 }
 
 function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
@@ -100,6 +101,7 @@ export function MacroTableV2({
   visibleExercises,
   visibleColumns,
   weekTypes = [],
+  highlightedPhaseId,
 }: MacroTableV2Props) {
   const deleteMode = useShiftHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
@@ -347,12 +349,13 @@ export function MacroTableV2({
               if (phase && phase.id !== lastPhaseId) {
                 lastPhaseId = phase.id ?? null;
                 rows.push(
-                  <tr key={`phase-${phase.id}`} className="border-t-2 border-gray-300">
+                  <tr key={`phase-${phase.id}`} data-phase-id={phase.id} className="border-t-2 border-gray-300">
                     <td
                       colSpan={leftColCount + displayed.length * 3 + (onSwapWeeks ? 1 : 0)}
                       className="sticky left-0 text-left px-2 py-1 text-[9px] font-medium tracking-wide"
                       style={{
-                        backgroundColor: phase.color + '25',
+                        backgroundColor: phase.color + (phase.id === highlightedPhaseId ? '55' : '25'),
+                        transition: 'background-color 400ms ease-out',
                         borderLeft: `3px solid ${phase.color}`,
                         color: phase.color,
                       }}

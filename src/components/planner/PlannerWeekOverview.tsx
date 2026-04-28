@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { StandardPage, Button } from '../ui';
 import { MacroPhaseBar } from '../planning';
@@ -122,7 +123,8 @@ export function PlannerWeekOverview({
   const targetId = athlete?.id || null;
   const targetGroupId = group?.id || null;
 
-  const { weeks, macroBlocks, rawMacroWeeks, barEvents, loading, loadData, phaseBarCells } = usePlannerWeekOverview();
+  const navigate = useNavigate();
+  const { weeks, macroBlocks, rawMacroWeeks, rawPhases, barEvents, loading, loadData, phaseBarCells } = usePlannerWeekOverview();
 
   useEffect(() => {
     loadData({ targetId, targetGroupId, rangeStart, rangeEnd, competitionTotal });
@@ -250,6 +252,13 @@ export function PlannerWeekOverview({
             selectedWeekStart={today}
             playheadDate={getTodayISO()}
             onCellClick={(cell) => onSelectWeek(cell.weekStart)}
+            onPhaseClick={(cell) => {
+              if (cell.macroId === null) return;
+              const phase = rawPhases
+                .filter(p => p.macrocycle_id === cell.macroId)
+                .find(p => p.name === cell.phase);
+              if (phase) navigate(`/macrocycles?phase=${phase.id}`);
+            }}
           />
         </div>
       )}

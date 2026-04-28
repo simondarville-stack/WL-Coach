@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
@@ -23,10 +25,14 @@ import { MacroPhasesPanel } from './MacroPhasesPanel';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroAnnualWheel } from './MacroAnnualWheel';
 import { MacroCycleToolbar } from './MacroCycleToolbar';
-import { MacroPhaseTimeline } from './MacroPhaseTimeline';
+import { MacroCompetitionBadge } from './MacroCompetitionBadge';
+import { MacroPhaseBar } from '../planning';
+import { buildCellsForSingleMacro } from '../../lib/macroPhaseBarData';
 
 
 export function MacroCycles() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
   const { settings, fetchSettingsSilent } = useSettings();
@@ -102,6 +108,31 @@ export function MacroCycles() {
   const [visibleGeneralMetrics, setVisibleGeneralMetrics] = useState<Set<GeneralMetricKey>>(
     new Set<GeneralMetricKey>(['k', 'tonnage', 'avg'])
   );
+
+  const [highlightedPhaseId, setHighlightedPhaseId] = useState<string | null>(null);
+
+  // Helper: scroll to a phase row in the table and apply a brief highlight
+  const scrollToPhase = useCallback((phaseId: string) => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-phase-id="${phaseId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedPhaseId(phaseId);
+        window.setTimeout(() => setHighlightedPhaseId(null), 1500);
+      }
+    });
+  }, []);
+
+  // Listen to ?phase= query param and scroll to that phase on load
+  useEffect(() => {
+    const phaseParam = searchParams.get('phase');
+    if (phaseParam && phases.some(p => p.id === phaseParam)) {
+      scrollToPhase(phaseParam);
+      const next = new URLSearchParams(searchParams);
+      next.delete('phase');
+      setSearchParams(next, { replace: true });
+    }
+  }, [phases, searchParams, setSearchParams, scrollToPhase]);
 
   const toggleExercise = (teId: string) => {
     setVisibleExercises(prev => {
@@ -490,6 +521,18 @@ export function MacroCycles() {
     );
   }
 
+  const phaseBarCells = selectedCycle && macroWeeks.length > 0
+    ? buildCellsForSingleMacro(
+        { id: selectedCycle.id, name: selectedCycle.name },
+        {
+          macros: [{ id: selectedCycle.id, name: selectedCycle.name }],
+          phases,
+          weeks: macroWeeks,
+          weekTypeConfigs: settings?.week_types ?? [],
+        }
+      )
+    : [];
+
   const availableExercises = exercises.filter(
     ex => ex.category !== '— System' && !trackedExercises.some(te => te.exercise_id === ex.id)
   );
@@ -540,18 +583,52 @@ export function MacroCycles() {
         onImportTargets={handleImportTargets}
       />
 
-      {/* Cycle info + proportional phase bar */}
+      {/* Cycle info + phase bar */}
       {selectedCycle && (
-        <MacroPhaseTimeline
-          selectedCycle={selectedCycle}
-          macroWeeks={macroWeeks}
-          phases={phases}
-          competitions={competitions}
-          isGroupMode={isGroupMode}
-          selectedGroup={selectedGroup ?? null}
-          groupMembers={groupMembers}
-          onEditPhase={(phase) => { setPhasePanelInitialEdit(phase); setShowPhasesPanel(true); }}
-        />
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          {/* Meta row */}
+          <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
+            <span className="font-medium text-gray-800">{selectedCycle.name}</span>
+            <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
+            <span className="text-gray-400">{macroWeeks.length} weeks</span>
+            {isGroupMode && selectedGroup && (
+              <span className="flex items-center gap-1 text-purple-600 font-medium">
+                <Users size={11} />
+                {selectedGroup.name}
+                {groupMembers.length > 0 && (
+                  <span className="text-gray-400 font-normal ml-1">
+                    ({groupMembers.length} members: {groupMembers.map(m => m.athlete.name).join(', ')})
+                  </span>
+                )}
+              </span>
+            )}
+            {competitions.map(comp => (
+              <MacroCompetitionBadge key={comp.id} competition={comp} />
+            ))}
+          </div>
+
+          {/* Shared phase bar */}
+          {phaseBarCells.length > 0 && (
+            <div style={{ padding: '8px 16px 12px' }}>
+              <MacroPhaseBar
+                cells={phaseBarCells}
+                selectedWeekStart={null}
+                showMonthRow
+                showWeekDates
+                onCellClick={(cell) => {
+                  navigate('/planner', { state: { weekStart: cell.weekStart } });
+                }}
+                onPhaseClick={(cell) => {
+                  if (cell.macroId === null) return;
+                  const phase = phases.find(
+                    p => p.name === cell.phase && p.macrocycle_id === cell.macroId
+                  );
+                  if (phase) scrollToPhase(phase.id);
+                }}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {/* Error */}
@@ -622,6 +699,7 @@ export function MacroCycles() {
               visibleExercises={visibleExercises}
               visibleColumns={visibleColumns}
               weekTypes={settings?.week_types ?? []}
+              highlightedPhaseId={highlightedPhaseId}
             />
           </div>
 

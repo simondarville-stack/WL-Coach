@@ -918,6 +918,11 @@ export function PlannerControlPanel({
             selectedWeekStart={phaseBarSelectedWeekStart}
             playheadDate={getTodayISO()}
             onCellClick={onNavigateToWeek ? (cell) => onNavigateToWeek(cell.weekStart) : undefined}
+            onPhaseClick={(cell) => {
+              if (cell.macroId === null) return;
+              const phase = phases.find(p => p.name === cell.phase);
+              if (phase) navigate(`/macrocycles?phase=${phase.id}`);
+            }}
           />
         </div>
       )}
