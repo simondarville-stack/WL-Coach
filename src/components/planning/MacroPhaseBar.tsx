@@ -463,20 +463,13 @@ export function MacroPhaseBar({
           );
         })}
 
-        {/* Playhead */}
-        {selectedWeekStart &&
+        {/* Playhead — always anchored to playheadDate (today), not the selected week */}
+        {playheadDate &&
           (() => {
-            const selIdx = cells.findIndex(c => c.weekStart === selectedWeekStart);
-            if (selIdx < 0) return null;
-            let dayFraction = 0.5;
-            if (playheadDate) {
-              const cellDate = new Date(cells[selIdx].weekStart + 'T00:00:00');
-              const today = new Date(playheadDate + 'T00:00:00');
-              const diffDays = Math.round((today.getTime() - cellDate.getTime()) / 86400000);
-              const clampedDiff = Math.max(0, Math.min(6, diffDays));
-              dayFraction = (clampedDiff + 0.5) / 7;
-            }
-            const leftPct = (selIdx + dayFraction) * (100 / total);
+            const phIdx = cells.findIndex(c => c.weekStart === playheadDate);
+            if (phIdx < 0) return null;
+            const dayFraction = 0.5 / 7;
+            const leftPct = (phIdx + dayFraction) * (100 / total);
             return (
               <div
                 style={{
