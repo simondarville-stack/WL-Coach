@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getMondayOfWeekISO } from './weekUtils';
+import { addDaysToISO } from './dateUtils';
 import type { MacroPhaseBarCell, MacroPhaseBarEvent } from '../components/planning/MacroPhaseBar';
 import type {
   MacroCycle,
@@ -235,4 +236,21 @@ export async function fetchMacroPhaseBarEvents(
       return start <= rangeEnd && end >= rangeStart;
     })
     .map((ev: Event) => convertEventToPhaseBarEvent(ev));
+}
+
+/**
+ * Build cells for a continuous date range centered on a given Monday.
+ * Used by the "continuous" mode of MacroTimeline (planner overview).
+ */
+export function buildCellsForContinuousRange(
+  centerWeekStart: string,
+  weeksBack: number,
+  weeksForward: number,
+  source: MacroPhaseBarSource
+): MacroPhaseBarCell[] {
+  const weekStarts: string[] = [];
+  for (let i = -weeksBack; i <= weeksForward; i++) {
+    weekStarts.push(addDaysToISO(centerWeekStart, i * 7));
+  }
+  return buildCellsForWeekRange(weekStarts, source);
 }

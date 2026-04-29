@@ -9,7 +9,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import type {
   Athlete, TrainingGroup, AthletePR, Exercise, PlannedExercise,
-  GeneralSettings, MacroPhase, MacroWeek, WeekTypeConfig,
+  GeneralSettings, WeekTypeConfig,
 } from '../../lib/database.types';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
@@ -19,18 +19,8 @@ import { abbreviateExercise } from './plannerUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
-import { MacroPhaseBar, type MacroPhaseBarEvent } from '../planning';
-import { buildCellsForSingleMacro, fetchMacroPhaseBarEvents } from '../../lib/macroPhaseBarData';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function getTodayISO(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -204,7 +194,6 @@ export interface PlannerControlPanelProps {
   onResolvePercentages?: () => Promise<void>;
   onNavigateToWeek?: (weekStart: string) => void;
   weekTypesByNum?: Record<number, string>;
-  macroEvents?: MacroPhaseBarEvent[];
   weekTypes?: WeekTypeConfig[];
 }
 
@@ -235,15 +224,11 @@ export function PlannerControlPanel({
   onResolvePercentages,
   onNavigateToWeek,
   weekTypesByNum,
-  macroEvents = [],
   weekTypes = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
 
   const [competitionPRs, setCompetitionPRs] = useState<CompetitionPR[]>([]);
-  const [phases, setPhases]                 = useState<MacroPhase[]>([]);
-  const [macroWeeks, setMacroWeeks]         = useState<MacroWeek[]>([]);
-  const [fetchedEvents, setFetchedEvents]   = useState<MacroPhaseBarEvent[]>([]);
   const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
@@ -255,26 +240,6 @@ export function PlannerControlPanel({
     if (!selectedAthlete) { setCompetitionPRs([]); return; }
     void loadCompetitionPRs(selectedAthlete.id);
   }, [selectedAthlete?.id]);
-
-  useEffect(() => {
-    if (!macroContext) { setPhases([]); setMacroWeeks([]); return; }
-    void loadPhasesAndWeeks(macroContext.macroId);
-  }, [macroContext?.macroId]);
-
-  useEffect(() => {
-    if (!selectedAthlete || macroWeeks.length === 0) {
-      setFetchedEvents([]);
-      return;
-    }
-    const rangeStart = macroWeeks[0].week_start;
-    const lastWeek = macroWeeks[macroWeeks.length - 1];
-    const lastMonday = new Date(lastWeek.week_start + 'T00:00:00');
-    lastMonday.setDate(lastMonday.getDate() + 6);
-    const rangeEnd = lastMonday.toISOString().split('T')[0];
-
-    void fetchMacroPhaseBarEvents([selectedAthlete.id], rangeStart, rangeEnd)
-      .then(setFetchedEvents);
-  }, [selectedAthlete?.id, macroWeeks]);
 
   async function loadCompetitionPRs(athleteId: string) {
     const { data } = await supabase
@@ -288,16 +253,6 @@ export function PlannerControlPanel({
       .map(d => ({ exerciseName: d.exercise!.name, exerciseCode: d.exercise!.exercise_code, category: d.exercise!.category, value: d.pr_value_kg }))
       .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
     setCompetitionPRs(prs);
-  }
-
-  async function loadPhasesAndWeeks(macroId: string) {
-    const [phaseResult, weekResult] = await Promise.all([
-      supabase.from('macro_phases').select('*').eq('macrocycle_id', macroId).order('start_week_number'),
-      supabase.from('macro_weeks').select('*').eq('macrocycle_id', macroId).order('week_number'),
-    ]);
-    // Set both atomically so phaseBarCells is never computed with weeks but no phases
-    setPhases((phaseResult.data as MacroPhase[]) ?? []);
-    setMacroWeeks((weekResult.data as MacroWeek[]) ?? []);
   }
 
   // ── metrics ──────────────────────────────────────────────────────────────
@@ -343,22 +298,6 @@ export function PlannerControlPanel({
   const athleteInitials = selectedAthlete?.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '';
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
   const totalWeeks      = macroContext?.totalWeeks ?? 1;
-
-  const phaseBarCells = macroContext && macroWeeks.length > 0
-    ? buildCellsForSingleMacro(
-        { id: macroContext.macroId, name: macroContext.macroName },
-        {
-          macros: [{ id: macroContext.macroId, name: macroContext.macroName }],
-          phases,
-          weeks: macroWeeks,
-          weekTypeConfigs: settings?.week_types ?? [],
-        }
-      )
-    : [];
-
-  const phaseBarSelectedWeekStart = macroContext
-    ? macroWeeks.find(w => w.week_number === macroContext.weekNumber)?.week_start ?? null
-    : null;
 
   const subLabel = [
     athleteAge !== null ? `${athleteAge} yr` : null,
@@ -903,28 +842,6 @@ export function PlannerControlPanel({
           </div>
         );
       })()}
-
-      {/* ── MACRO phase + week timeline ──────────────────────────────────────── */}
-      {phaseBarCells.length > 0 && (
-        <div
-          style={{
-            padding: 'var(--space-sm) var(--space-lg)',
-            borderTop: '0.5px solid var(--color-border-tertiary)',
-          }}
-        >
-          <MacroPhaseBar
-            cells={phaseBarCells}
-            events={fetchedEvents}
-            selectedWeekStart={phaseBarSelectedWeekStart}
-            playheadDate={getTodayISO()}
-            onCellClick={onNavigateToWeek ? (cell) => onNavigateToWeek(cell.weekStart) : undefined}
-            onPhaseClick={(cell) => {
-              if (cell.macroId === null) return;
-              navigate(`/macrocycles/${cell.macroId}`);
-            }}
-          />
-        </div>
-      )}
 
       {/* ── WEEK NOTES ───────────────────────────────────────────────────────── */}
       <div

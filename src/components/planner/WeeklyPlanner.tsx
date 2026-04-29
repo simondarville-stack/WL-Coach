@@ -22,6 +22,7 @@ import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { AthleteCardPicker } from '../AthleteCardPicker';
+import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
 
 export interface MacroContext {
@@ -642,6 +643,19 @@ export function WeeklyPlanner() {
                 <ArrowLeft size={14} />
               </button>
             </div>
+
+            {/* ── Macro timeline (bounded mode, above the control panel) ── */}
+            {macroContext && planSelection.athlete && (
+              <div style={{ padding: '12px 24px 0' }}>
+                <MacroTimeline
+                  mode="bounded"
+                  cycleId={macroContext.macroId}
+                  athleteId={planSelection.athlete.id}
+                  groupId={planSelection.group?.id ?? null}
+                  selectedWeekStart={selectedDate}
+                />
+              </div>
+            )}
 
             {/* ── Control Panel ── */}
             <PlannerControlPanel

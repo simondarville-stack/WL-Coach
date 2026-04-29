@@ -68,6 +68,12 @@ export function getISOWeek(date: Date): number {
   return 1 + Math.round((target.getTime() - jan4Monday.getTime()) / (7 * 86400000));
 }
 
+export function addDaysToISO(iso: string, days: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toLocalISO(d);
+}
+
 export function formatDateRange(startDateStr: string, numDays: number = 7): string {
   const start = new Date(startDateStr);
   const end = new Date(start);

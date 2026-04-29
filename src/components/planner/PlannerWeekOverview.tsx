@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { StandardPage, Button } from '../ui';
-import { MacroPhaseBar } from '../planning';
+import { MacroTimeline } from '../planning';
 import {
   formatMetricValue,
   METRICS,
@@ -44,14 +43,6 @@ function getTodayMonday(): string {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}
-
-function getTodayISO(): string {
-  const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -123,8 +114,7 @@ export function PlannerWeekOverview({
   const targetId = athlete?.id || null;
   const targetGroupId = group?.id || null;
 
-  const navigate = useNavigate();
-  const { weeks, macroBlocks, rawMacroWeeks, rawPhases, barEvents, loading, loadData, phaseBarCells } = usePlannerWeekOverview();
+  const { weeks, macroBlocks, loading, loadData } = usePlannerWeekOverview();
 
   useEffect(() => {
     loadData({ targetId, targetGroupId, rangeStart, rangeEnd, competitionTotal });
@@ -176,16 +166,6 @@ export function PlannerWeekOverview({
 
   const maxTonnage = Math.max(...weeks.map(w => w.totalTonnage), 1);
   void maxTonnage; // retained for future bar use
-
-  // Ribbon shows the full active macro (all weeks, all phases), not just the visible window.
-  // Fall back to the visible window if no macro is active today.
-  const fullMacroWeekStarts = currentMacro
-    ? rawMacroWeeks
-        .filter(w => w.macrocycle_id === currentMacro.macroId)
-        .sort((a, b) => a.week_number - b.week_number)
-        .map(w => w.week_start)
-    : weeks.map(w => w.weekStart);
-  const phaseBarCellsData = phaseBarCells(fullMacroWeekStarts);
 
   return (
     <StandardPage>
@@ -248,18 +228,12 @@ export function PlannerWeekOverview({
       </div>
 
       {/* Macro phase bar */}
-      {phaseBarCellsData.length > 0 && (
-        <div style={{ paddingLeft: '76px', paddingRight: '170px' }}>
-          <MacroPhaseBar
-            cells={phaseBarCellsData}
-            events={barEvents}
-            selectedWeekStart={today}
-            playheadDate={getTodayISO()}
-            onCellClick={(cell) => onSelectWeek(cell.weekStart)}
-            onPhaseClick={(cell) => {
-              if (cell.macroId === null) return;
-              navigate(`/macrocycles/${cell.macroId}`);
-            }}
+      {(athlete || group) && (
+        <div style={{ marginBottom: 'var(--space-md)' }}>
+          <MacroTimeline
+            mode="continuous"
+            athleteId={athlete?.id ?? null}
+            groupId={group?.id ?? null}
           />
         </div>
       )}
