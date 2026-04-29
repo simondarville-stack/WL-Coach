@@ -56,7 +56,12 @@ export type MacroTimelineProps = ContinuousProps | BoundedProps;
 
 export function MacroTimeline(props: MacroTimelineProps) {
   const navigate = useNavigate();
-  const { settings } = useSettings();
+  const { settings, fetchSettingsSilent } = useSettings();
+
+  useEffect(() => {
+    void fetchSettingsSilent();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [centerWeekStart, setCenterWeekStart] = useState(() =>
     getMondayOfWeekISO(new Date())
@@ -84,7 +89,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
         macrosQuery = macrosQuery.eq('id', props.cycleId);
       } else {
         if (props.athleteId) {
-          macrosQuery = macrosQuery.or(`athlete_id.eq.${props.athleteId},group_id.is.not.null`);
+          macrosQuery = macrosQuery.or(`athlete_id.eq.${props.athleteId},group_id.not.is.null`);
         } else if (props.groupId) {
           macrosQuery = macrosQuery.eq('group_id', props.groupId);
         }
@@ -144,10 +149,34 @@ export function MacroTimeline(props: MacroTimelineProps) {
   const cells = useMemo(() => {
     if (allMacros.length === 0 && props.mode === 'bounded') return [];
 
+    // In continuous mode, multiple macros may share the same week_start date
+    // (e.g. overlapping macros or duplicates). Deduplicate by week_start,
+    // preferring: (1) macros with phases, (2) individual over group macros.
+    const macroIdsWithPhases = new Set(allPhases.map(p => p.macrocycle_id));
+    const individualMacroIds = new Set(allMacros.filter(m => !m.group_id).map(m => m.id));
+    const score = (macroId: string) =>
+      (macroIdsWithPhases.has(macroId) ? 2 : 0) +
+      (individualMacroIds.has(macroId) ? 1 : 0);
+
+    const deduplicatedWeeks = props.mode === 'continuous'
+      ? Object.values(
+          allMacroWeeks.reduce<Record<string, typeof allMacroWeeks[number]>>(
+            (acc, w) => {
+              const existing = acc[w.week_start];
+              if (!existing || score(w.macrocycle_id) > score(existing.macrocycle_id)) {
+                acc[w.week_start] = w;
+              }
+              return acc;
+            },
+            {}
+          )
+        )
+      : allMacroWeeks;
+
     const source = {
       macros: allMacros,
       phases: allPhases,
-      weeks: allMacroWeeks,
+      weeks: deduplicatedWeeks,
       weekTypeConfigs: settings?.week_types ?? [],
     };
 
