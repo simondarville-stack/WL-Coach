@@ -204,12 +204,12 @@ export function ExerciseDetail({
     } finally { setSaving(false); }
   }
 
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !plannedExercise) return;
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg';
+      const ext = file.name.split('.').pop() ?? (sentinel === 'video' ? 'mp4' : 'jpg');
       const path = `${plannedExercise.id}.${ext}`;
       const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
       if (error) throw error;
@@ -359,13 +359,38 @@ export function ExerciseDetail({
               placeholder="Paste YouTube or video URL…"
               style={inputStyle}
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>or upload:</span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                  background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-secondary)',
+                  borderRadius: 'var(--radius-md)', cursor: uploading ? 'not-allowed' : 'pointer',
+                  fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)',
+                  opacity: uploading ? 0.5 : 1,
+                }}
+              >
+                <Upload size={12} />
+                {uploading ? 'Uploading…' : 'Upload file'}
+              </button>
+              <input ref={fileInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={e => void handleMediaUpload(e)} />
+            </div>
             {notes && (() => {
               const thumb = getYouTubeThumbnail(notes);
-              return thumb
-                ? <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} />
-                : <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', margin: 0 }}>
-                    <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />{notes}
-                  </p>;
+              if (thumb) {
+                return <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} />;
+              }
+              const isUploadedVideo = /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(notes);
+              if (isUploadedVideo) {
+                return <video src={notes} controls style={{ borderRadius: 4, width: '100%', maxWidth: 300 }} />;
+              }
+              return (
+                <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', margin: 0 }}>
+                  <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />{notes}
+                </p>
+              );
             })()}
           </div>
         )}
@@ -391,7 +416,7 @@ export function ExerciseDetail({
                 <Upload size={12} />
                 {uploading ? 'Uploading…' : 'Upload file'}
               </button>
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => void handleImageUpload(e)} />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => void handleMediaUpload(e)} />
             </div>
             {notes && (
               <img src={notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
