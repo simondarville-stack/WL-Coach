@@ -12,7 +12,7 @@ import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
-import { parsePrescription, formatPrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
@@ -21,6 +21,7 @@ import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
+import { ResolvePercentagesModal, type ResolveCandidate } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
@@ -113,6 +114,7 @@ export function WeeklyPlanner() {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
+  const [resolveCandidates, setResolveCandidates] = useState<ResolveCandidate[] | null>(null);
   const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
@@ -532,39 +534,105 @@ export function WeeklyPlanner() {
     setShowCopyWeekModal(true);
   };
 
-  const handleResolvePercentages = async () => {
+  const handleResolvePercentages = () => {
     if (!currentWeekPlan) return;
     const prMap = new Map<string, number>(
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
-    const allExercises = Object.values(plannedExercises).flat();
-    const toResolve = allExercises.filter(ex => ex.unit === 'percentage' && ex.prescription_raw);
+    const planned = Object.values(plannedExercises).flat();
+    const toResolve = planned.filter(ex => ex.unit === 'percentage' && ex.prescription_raw);
 
-    for (const ex of toResolve) {
-      // Resolve PR: direct first, then via reference exercise
+    const candidates: ResolveCandidate[] = toResolve.map<ResolveCandidate>(ex => {
+      if (ex.is_combo) {
+        const members = (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position);
+        return {
+          kind: 'combo',
+          plannedExerciseId: ex.id,
+          exerciseColor: ex.combo_color || '#94a3b8',
+          prescriptionRaw: ex.prescription_raw ?? '',
+          comboName: ex.combo_notation || members.map(m => m.exercise.name).join(' + ') || 'Combo',
+          members: members.map(m => {
+            // Honour pr_reference_exercise_id on the constituent exercise too.
+            const refId = m.exercise.pr_reference_exercise_id ?? m.exercise.id;
+            const pr = prMap.get(m.exercise.id) ?? prMap.get(refId) ?? null;
+            return {
+              exerciseId: m.exercise.id,
+              name: m.exercise.name,
+              color: m.exercise.color || '#94a3b8',
+              pr,
+            };
+          }),
+        };
+      }
+
       const refId = ex.exercise.pr_reference_exercise_id ?? ex.exercise_id;
-      const prKg = prMap.get(refId) ?? prMap.get(ex.exercise_id);
-      if (!prKg) continue;
+      const directPR = prMap.get(ex.exercise_id);
+      const refPR = prMap.get(refId);
+      const defaultPR = directPR ?? refPR ?? null;
+      const prSource = ex.exercise.pr_reference_exercise_id
+        ? allExercises.find(e => e.id === ex.exercise.pr_reference_exercise_id) ?? null
+        : null;
+      return {
+        kind: 'single',
+        plannedExerciseId: ex.id,
+        exerciseName: ex.exercise.name,
+        exerciseColor: ex.exercise.color || '#94a3b8',
+        prescriptionRaw: ex.prescription_raw ?? '',
+        prSourceName: prSource?.name ?? null,
+        defaultPR,
+      };
+    });
 
-      const parsed = parsePrescription(ex.prescription_raw!);
+    setResolveCandidates(candidates);
+  };
+
+  const applyResolvedPercentages = async (overrides: Record<string, number>) => {
+    if (!currentWeekPlan) return;
+    const planned = Object.values(plannedExercises).flat();
+    const idToEx = new Map(planned.map(ex => [ex.id, ex]));
+    const round = (pct: number, prKg: number) => Math.round((pct / 100) * prKg * 2) / 2;
+
+    const ids = Object.keys(overrides);
+    for (const id of ids) {
+      const ex = idToEx.get(id);
+      if (!ex || !ex.prescription_raw) continue;
+      const prKg = overrides[id];
+      if (!Number.isFinite(prKg) || prKg <= 0) continue;
+
+      if (ex.is_combo) {
+        const parsed = parseComboPrescription(ex.prescription_raw);
+        if (parsed.length === 0) continue;
+        const kgLines = parsed.map(line => ({
+          sets: line.sets,
+          repsText: line.repsText,
+          totalReps: line.totalReps,
+          load: line.loadText ? line.load : round(line.load, prKg),
+          loadMax: line.loadMax != null ? round(line.loadMax, prKg) : null,
+          loadText: line.loadText,
+        }));
+        await savePrescription(ex.id, {
+          prescription: formatComboPrescription(kgLines, 'absolute_kg'),
+          unit: 'absolute_kg',
+          isCombo: true,
+        });
+        continue;
+      }
+
+      const parsed = parsePrescription(ex.prescription_raw);
       if (parsed.length === 0) continue;
-
       const kgLines = parsed.map(line => ({
         sets: line.sets,
         reps: line.reps,
-        load: Math.round((line.load / 100) * prKg * 2) / 2,
-        loadMax: line.loadMax != null ? Math.round((line.loadMax / 100) * prKg * 2) / 2 : null,
+        load: round(line.load, prKg),
+        loadMax: line.loadMax != null ? round(line.loadMax, prKg) : null,
       }));
-
       await savePrescription(ex.id, {
         prescription: formatPrescription(kgLines, 'absolute_kg'),
         unit: 'absolute_kg',
       });
     }
 
-    if (toResolve.length > 0) {
-      await handleRefresh();
-    }
+    if (ids.length > 0) await handleRefresh();
   };
 
   const handleSyncGroupPlan = async () => {
@@ -894,6 +962,14 @@ export function WeeklyPlanner() {
           weekDescription={currentWeekPlan?.week_description}
           onPrintClose={() => setShowPrintModal(false)}
         />
+
+        {resolveCandidates !== null && (
+          <ResolvePercentagesModal
+            candidates={resolveCandidates}
+            onClose={() => setResolveCandidates(null)}
+            onConfirm={applyResolvedPercentages}
+          />
+        )}
       </div>
     </div>
   );
