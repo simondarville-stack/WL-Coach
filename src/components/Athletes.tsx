@@ -4,7 +4,7 @@ import {
   User, Edit2, Trash2, Award, Plus, Search, X as XIcon,
   MapPin, Trophy,
 } from 'lucide-react';
-import { AthletePRs } from './AthletePRs';
+import { PRTrackingPanel } from './planner/PRTrackingPanel';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
@@ -557,10 +557,12 @@ export function Athletes() {
   // PRs full view
   if (showPRsFor) {
     return (
-      <AthletePRs
-        athlete={showPRsFor}
-        onClose={() => setShowPRsFor(null)}
-      />
+      <div className="px-4 py-3">
+        <PRTrackingPanel
+          athlete={showPRsFor}
+          onClose={() => setShowPRsFor(null)}
+        />
+      </div>
     );
   }
 
