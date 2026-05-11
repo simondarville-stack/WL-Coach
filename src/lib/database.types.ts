@@ -288,6 +288,7 @@ export interface GeneralSettings {
   raw_average_days: number;
   grid_load_increment: number;
   grid_click_increment: number;
+  default_prescription_load: number;
   default_tracked_exercise_ids: string[];
   bodyweight_ma_days: number;
   visible_summary_metrics: string[];

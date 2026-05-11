@@ -28,6 +28,10 @@ interface PrescriptionGridProps {
   prescriptionRaw: string | null;
   unit: string | null;
   loadIncrement: number;
+  /** Seed value for the first column when the prescription is empty.
+   *  Falls back to loadIncrement so coaches who haven't configured it
+   *  still get a sensible starting number. */
+  defaultLoad?: number;
   isCombo?: boolean;
   comboPartCount?: number;
   onSave: (raw: string) => void;
@@ -74,6 +78,7 @@ export function PrescriptionGrid({
   prescriptionRaw,
   unit,
   loadIncrement,
+  defaultLoad,
   isCombo = false,
   comboPartCount = 2,
   onSave,
@@ -268,7 +273,8 @@ export function PrescriptionGrid({
       newLoadMax = null;
       newLoadText = last?.loadText ?? '';
     } else {
-      newLoad = last ? last.load + loadIncrement : loadIncrement;
+      const seed = defaultLoad ?? loadIncrement;
+      newLoad = last ? last.load + loadIncrement : seed;
       newLoadMax = null;
       newLoadText = String(newLoad);
     }

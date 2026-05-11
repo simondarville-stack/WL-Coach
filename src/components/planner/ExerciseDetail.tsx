@@ -134,6 +134,7 @@ export function ExerciseDetail({
   }
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
+  const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   useEffect(() => {
     let cancelled = false;
@@ -525,6 +526,7 @@ export function ExerciseDetail({
                 prescriptionRaw={plannedExercise.prescription_raw}
                 unit={plannedExercise.unit}
                 loadIncrement={loadIncrement}
+                defaultLoad={defaultPrescriptionLoad}
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}
                 onSave={raw => {

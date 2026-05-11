@@ -42,6 +42,7 @@ export function GeneralSettings() {
   const [rawAverageDays, setRawAverageDays] = useState(7);
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
+  const [defaultPrescriptionLoad, setDefaultPrescriptionLoad] = useState(50);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
   const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
@@ -125,6 +126,7 @@ export function GeneralSettings() {
       setRawAverageDays(settings.raw_average_days);
       setGridLoadIncrement(settings.grid_load_increment);
       setGridClickIncrement(settings.grid_click_increment);
+      setDefaultPrescriptionLoad(settings.default_prescription_load ?? 50);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
       setShowStressMetric(settings.show_stress_metric ?? false);
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
@@ -159,7 +161,11 @@ export function GeneralSettings() {
   async function updateGridSettings() {
     if (!settings) return;
     try {
-      await updateSettings(settings.id, { grid_load_increment: gridLoadIncrement, grid_click_increment: gridClickIncrement });
+      await updateSettings(settings.id, {
+        grid_load_increment: gridLoadIncrement,
+        grid_click_increment: gridClickIncrement,
+        default_prescription_load: defaultPrescriptionLoad,
+      });
     } catch {
       // error logged in hook
     }
@@ -518,7 +524,25 @@ export function GeneralSettings() {
             </div>
           </div>
 
-          {(gridLoadIncrement !== settings?.grid_load_increment || gridClickIncrement !== settings?.grid_click_increment) && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Default starting load</label>
+            <p className="text-sm text-gray-600 mb-3">
+              Seed value for the first column when starting a fresh prescription. Applies to % and kg alike — pick whatever makes sense for your typical first set.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min="0"
+                max="500"
+                step="1"
+                value={defaultPrescriptionLoad}
+                onChange={(e) => setDefaultPrescriptionLoad(Math.max(0, Math.min(500, parseFloat(e.target.value) || 0)))}
+                className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {(gridLoadIncrement !== settings?.grid_load_increment || gridClickIncrement !== settings?.grid_click_increment || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)) && (
             <button
               onClick={updateGridSettings}
               disabled={saving}
