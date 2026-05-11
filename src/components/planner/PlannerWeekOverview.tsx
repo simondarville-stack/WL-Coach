@@ -276,9 +276,6 @@ export function PlannerWeekOverview({
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {weeks.map((week, idx) => {
           const isCurrent = week.weekStart === today;
-          const isPast = week.weekStart < today;
-          const isFuture = week.weekStart > today;
-          const isEmpty = week.weekPlanId === null;
           const endDate = addDays(week.weekStart, 6);
 
           const prevWeek = idx > 0 ? weeks[idx - 1].weekStart : null;
@@ -369,34 +366,24 @@ export function PlannerWeekOverview({
                   <div style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'stretch', minHeight: 90 }}>
                     {week.days.map((day) => {
                       const di = day.dayIndex;
-                      const dayIsFuture = isFuture || (isCurrent && di >= new Date().getDay() - 1);
                       const hasData = day.exercises.length > 0;
-                      const faded = dayIsFuture && !isPast;
+                      // Simplified: two states only. Occupied = has exercises.
+                      // Empty = anything else (rest, no plan, future). The
+                      // macro phase bar above already encodes time
+                      // relationship; cells don't need to repeat it.
+                      const occupied = hasData;
 
-                      let dayBlockStyle: React.CSSProperties;
-                      if (day.isRest) {
-                        dayBlockStyle = {
-                          background: 'var(--color-bg-secondary)',
-                          opacity: 0.35,
-                          border: 'none',
-                        };
-                      } else if (isEmpty) {
-                        dayBlockStyle = {
-                          border: '0.5px dashed var(--color-border-tertiary)',
-                          background: 'transparent',
-                        };
-                      } else if (faded) {
-                        dayBlockStyle = {
-                          border: `0.5px dashed ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'}`,
-                          background: isCurrent ? 'rgba(255,255,255,0.7)' : 'var(--color-bg-secondary)',
-                          opacity: 0.6,
-                        };
-                      } else {
-                        dayBlockStyle = {
-                          border: `0.5px solid ${isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'}`,
-                          background: 'var(--color-bg-primary)',
-                        };
-                      }
+                      const dayBlockStyle: React.CSSProperties = occupied
+                        ? {
+                            background: 'var(--color-bg-primary)',
+                            border: `0.5px solid ${
+                              isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'
+                            }`,
+                          }
+                        : {
+                            background: 'var(--color-bg-secondary)',
+                            border: 'none',
+                          };
 
                       return (
                         <div
@@ -416,14 +403,14 @@ export function PlannerWeekOverview({
                                 style={{
                                   borderRadius: 2, padding: '1px 4px',
                                   display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
-                                  backgroundColor: ex.color + (faded ? '15' : '22'),
-                                  borderLeft: `2.5px solid ${ex.color}${faded ? '55' : 'cc'}`,
+                                  backgroundColor: ex.color + '22',
+                                  borderLeft: `2.5px solid ${ex.color}cc`,
                                 }}
                               >
                                 <span style={{
                                   fontSize: 'var(--text-caption)', lineHeight: 1.3, fontWeight: 500,
                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                  color: faded ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
+                                  color: 'var(--color-text-primary)',
                                 }}>
                                   {ex.name}
                                 </span>
@@ -438,7 +425,7 @@ export function PlannerWeekOverview({
 
                           {/* Metric strip */}
                           {hasData && (
-                            <div style={{ opacity: faded ? 0.4 : 1, marginTop: 4, textAlign: 'center' }}>
+                            <div style={{ marginTop: 4, textAlign: 'center' }}>
                               <MetricStrip
                                 metrics={day.dayMetrics}
                                 visibleMetrics={visibleMetrics}
