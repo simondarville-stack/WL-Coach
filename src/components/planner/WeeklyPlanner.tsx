@@ -95,6 +95,8 @@ export function WeeklyPlanner() {
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
+    swapPlannedExercise,
+    updateComboExercise,
     copyExerciseWithSetLines,
     copyDayExercises,
     deleteDayExercises,
@@ -911,11 +913,14 @@ export function WeeklyPlanner() {
                     athletePRs={athletePRs}
                     dayLabels={dayLabels}
                     settings={settings}
+                    allExercises={allExercises}
                     onClose={closeDialog}
                     onBack={() => setPanelView('day')}
                     onSaved={handleRefresh}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
+                    swapPlannedExercise={swapPlannedExercise}
+                    updateComboExercise={updateComboExercise}
                     fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
                   />
                 </div>

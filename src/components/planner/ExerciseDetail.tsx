@@ -1,7 +1,7 @@
 // TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ArrowLeft, Video, Upload, Save } from 'lucide-react';
+import { X, ArrowLeft, Video, Upload, Save, ChevronDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -12,6 +12,8 @@ import { getSentinelType, getYouTubeThumbnail } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
+import { ExerciseSearch } from './ExerciseSearch';
+import { ComboCreatorModal } from './ComboCreatorModal';
 
 interface OtherDay {
   dayIndex: number;
@@ -39,11 +41,17 @@ interface ExerciseDetailProps {
   athletePRs: AthletePR[];
   dayLabels: Record<number, string>;
   settings: GeneralSettings | null;
+  allExercises: Exercise[];
   onClose: () => void;
   onBack?: () => void;
   onSaved: () => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<void>;
   saveNotes: (id: string, notes: string) => Promise<void>;
+  swapPlannedExercise: (plannedExerciseId: string, newExerciseId: string) => Promise<void>;
+  updateComboExercise: (
+    plannedExerciseId: string,
+    data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
+  ) => Promise<void>;
   fetchOtherDayPrescriptions: (
     weekplanId: string, exerciseId: string, excludeId: string,
   ) => Promise<OtherDay[]>;
@@ -66,11 +74,14 @@ export function ExerciseDetail({
   athleteId,
   macroContext,
   dayLabels,
+  allExercises,
   onClose,
   onBack,
   onSaved,
   savePrescription,
   saveNotes,
+  swapPlannedExercise,
+  updateComboExercise,
   fetchOtherDayPrescriptions,
   settings,
 }: ExerciseDetailProps) {
@@ -99,6 +110,8 @@ export function ExerciseDetail({
   const notesTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const variationNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showSwapPicker, setShowSwapPicker] = useState(false);
+  const [showComboEditor, setShowComboEditor] = useState(false);
 
   const debouncedRefresh = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -302,7 +315,27 @@ export function ExerciseDetail({
             </button>
           )}
           <div>
-            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
+            {plannedExercise && !sentinel ? (
+              <button
+                onClick={() => {
+                  if (isCombo) setShowComboEditor(true);
+                  else setShowSwapPicker(s => !s);
+                }}
+                title={isCombo ? 'Edit combo' : 'Swap exercise (keeps prescription)'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                  fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25,
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)'; }}
+              >
+                <span>{exerciseName}</span>
+                <ChevronDown size={12} style={{ opacity: 0.6 }} />
+              </button>
+            ) : (
+              <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
+            )}
             {plannedExercise?.variation_note && (
               <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>{plannedExercise.variation_note}</p>
             )}
@@ -317,6 +350,23 @@ export function ExerciseDetail({
           <X size={18} />
         </button>
       </div>
+
+      {/* Inline swap picker for single (non-combo) exercises */}
+      {showSwapPicker && plannedExercise && !sentinel && !isCombo && (
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--color-border-secondary)', background: 'var(--color-bg-secondary)' }}>
+          <ExerciseSearch
+            exercises={allExercises.filter(e => e.category !== '— System' && e.id !== plannedExercise.exercise_id)}
+            disableSlashCommands
+            dropUp={false}
+            placeholder="Swap to another exercise…"
+            onAdd={async (newEx) => {
+              await swapPlannedExercise(plannedExercise.id, newEx.id);
+              setShowSwapPicker(false);
+              await onSaved();
+            }}
+          />
+        </div>
+      )}
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -624,6 +674,24 @@ export function ExerciseDetail({
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
+      )}
+
+      {/* Combo edit modal — reopens the same creator UI pre-filled */}
+      {showComboEditor && plannedExercise && isCombo && (
+        <ComboCreatorModal
+          mode="edit"
+          allExercises={allExercises.filter(e => e.category !== '— System')}
+          initialExercises={members.map(m => ({ exercise: m.exercise, position: m.position }))}
+          initialUnit={(plannedExercise.unit as DefaultUnit) || 'absolute_kg'}
+          initialComboName={plannedExercise.combo_notation ?? ''}
+          initialColor={plannedExercise.combo_color || members[0]?.exercise.color || '#3B82F6'}
+          onClose={() => setShowComboEditor(false)}
+          onSave={async (data) => {
+            await updateComboExercise(plannedExercise.id, data);
+            setShowComboEditor(false);
+            await onSaved();
+          }}
+        />
       )}
     </div>
   );

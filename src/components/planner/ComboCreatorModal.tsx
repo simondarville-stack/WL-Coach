@@ -11,6 +11,13 @@ interface ComboCreatorModalProps {
     comboName: string;
     color: string;
   }) => Promise<void>;
+  /** Optional initial state for editing an existing combo. */
+  initialExercises?: { exercise: Exercise; position: number }[];
+  initialUnit?: DefaultUnit;
+  initialComboName?: string;
+  initialColor?: string;
+  /** Used for the modal title only — defaults to "Create Combo". */
+  mode?: 'create' | 'edit';
 }
 
 const PRESET_COLORS = [
@@ -18,12 +25,21 @@ const PRESET_COLORS = [
   '#8B5CF6', '#EC4899', '#06B6D4', '#6366F1',
 ];
 
-export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreatorModalProps) {
-  const [selectedExercises, setSelectedExercises] = useState<{ exercise: Exercise; position: number }[]>([]);
+export function ComboCreatorModal({
+  allExercises,
+  onClose,
+  onSave,
+  initialExercises,
+  initialUnit,
+  initialComboName,
+  initialColor,
+  mode = 'create',
+}: ComboCreatorModalProps) {
+  const [selectedExercises, setSelectedExercises] = useState<{ exercise: Exercise; position: number }[]>(initialExercises ?? []);
   const [searchQuery, setSearchQuery] = useState('');
-  const [unit, setUnit] = useState<DefaultUnit>('absolute_kg');
-  const [comboName, setComboName] = useState('');
-  const [color, setColor] = useState('#3B82F6');
+  const [unit, setUnit] = useState<DefaultUnit>(initialUnit ?? 'absolute_kg');
+  const [comboName, setComboName] = useState(initialComboName ?? '');
+  const [color, setColor] = useState(initialColor ?? '#3B82F6');
   const [isSaving, setIsSaving] = useState(false);
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -113,7 +129,7 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
           borderBottom: '1px solid var(--color-border-secondary)',
           padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <h2 style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Create Combo</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>{mode === 'edit' ? 'Edit Combo' : 'Create Combo'}</h2>
           <button
             onClick={onClose}
             style={{ padding: 6, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
@@ -285,7 +301,7 @@ export function ComboCreatorModal({ allExercises, onClose, onSave }: ComboCreato
             }}
           >
             <Plus size={16} />
-            {isSaving ? 'Creating...' : 'Create Combo'}
+            {isSaving ? (mode === 'edit' ? 'Saving...' : 'Creating...') : (mode === 'edit' ? 'Save Combo' : 'Create Combo')}
           </button>
         </div>
       </div>

@@ -641,6 +641,60 @@ export function useWeekPlans() {
     }
   };
 
+  // Swap the exercise on a single (non-combo) planned exercise. Keeps
+  // prescription, notes, unit, sets, etc. — just updates the exercise_id.
+  const swapPlannedExercise = async (plannedExerciseId: string, newExerciseId: string): Promise<void> => {
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update({ exercise_id: newExerciseId })
+      .eq('id', plannedExerciseId);
+    if (error) throw error;
+  };
+
+  // Re-save a combo's member list and metadata in place. Preserves the row's
+  // prescription, notes, unit, day/position, but updates the exercises that
+  // make up the combo, plus name/color/unit chosen in the editor.
+  const updateComboExercise = async (
+    plannedExerciseId: string,
+    data: {
+      exercises: { exercise: Exercise; position: number }[];
+      unit: DefaultUnit;
+      comboName: string;
+      color: string;
+    },
+  ): Promise<void> => {
+    if (data.exercises.length === 0) return;
+    const autoNotation = data.exercises.map(e => e.exercise.name).join(' + ');
+
+    const { error: updateErr } = await supabase
+      .from('planned_exercises')
+      .update({
+        exercise_id: data.exercises[0].exercise.id,
+        unit: data.unit,
+        combo_notation: data.comboName || autoNotation,
+        combo_color: data.color,
+      })
+      .eq('id', plannedExerciseId);
+    if (updateErr) throw updateErr;
+
+    const { error: deleteErr } = await supabase
+      .from('planned_exercise_combo_members')
+      .delete()
+      .eq('planned_exercise_id', plannedExerciseId);
+    if (deleteErr) throw deleteErr;
+
+    const { error: insertErr } = await supabase
+      .from('planned_exercise_combo_members')
+      .insert(
+        data.exercises.map(part => ({
+          planned_exercise_id: plannedExerciseId,
+          exercise_id: part.exercise.id,
+          position: part.position,
+        }))
+      );
+    if (insertErr) throw insertErr;
+  };
+
   const copyDayExercises = async (
     sourceExercises: PlannedExercise[],
     targetWeekPlanId: string,
@@ -976,6 +1030,8 @@ export function useWeekPlans() {
     fetchWeekPlanForAthlete,
     fetchPlannedExercisesFlat,
     createComboExercise,
+    swapPlannedExercise,
+    updateComboExercise,
     syncGroupPlanToAthletes,
     promoteToIndividual,
   };
