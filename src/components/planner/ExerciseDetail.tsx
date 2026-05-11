@@ -1,7 +1,7 @@
 // TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ArrowLeft, Video, Upload, Save, ChevronDown } from 'lucide-react';
+import { X, ArrowLeft, Video, Upload, Save, Replace } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -315,40 +315,41 @@ export function ExerciseDetail({
             </button>
           )}
           <div>
-            {plannedExercise && !sentinel ? (
-              <button
-                onClick={() => {
-                  if (isCombo) setShowComboEditor(true);
-                  else setShowSwapPicker(s => !s);
-                }}
-                title={isCombo ? 'Edit combo' : 'Swap exercise (keeps prescription)'}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                  fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25,
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)'; }}
-              >
-                <span>{exerciseName}</span>
-                <ChevronDown size={12} style={{ opacity: 0.6 }} />
-              </button>
-            ) : (
-              <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
-            )}
+            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
             {plannedExercise?.variation_note && (
               <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>{plannedExercise.variation_note}</p>
             )}
           </div>
         </div>
-        <button
-          onClick={() => void handleClose()}
-          style={{ padding: 4, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-        >
-          <X size={18} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {plannedExercise && !sentinel && (
+            <button
+              onClick={() => {
+                if (isCombo) setShowComboEditor(true);
+                else setShowSwapPicker(s => !s);
+              }}
+              title={isCombo ? 'Edit combo' : 'Swap exercise (keeps prescription)'}
+              style={{
+                padding: 4, borderRadius: 'var(--radius-sm)', border: 'none',
+                background: showSwapPicker ? 'var(--color-bg-secondary)' : 'transparent',
+                cursor: 'pointer', color: 'var(--color-text-secondary)',
+                display: 'flex', alignItems: 'center',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = showSwapPicker ? 'var(--color-bg-secondary)' : 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+            >
+              <Replace size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => void handleClose()}
+            style={{ padding: 4, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Inline swap picker for single (non-combo) exercises */}
