@@ -978,6 +978,10 @@ export function WeeklyPlanner() {
             candidates={resolveCandidates}
             onClose={() => setResolveCandidates(null)}
             onConfirm={applyResolvedPercentages}
+            defaultRounding={{
+              enabled: settings?.percent_to_kg_round_enabled ?? true,
+              increment: settings?.percent_to_kg_round_increment ?? 0.5,
+            }}
           />
         )}
       </div>

@@ -41,6 +41,9 @@ interface ResolvePercentagesModalProps {
   candidates: ResolveCandidate[];
   onClose: () => void;
   onConfirm: (overrides: Record<string, number>, rounding: ResolveRoundingOptions) => Promise<void>;
+  /** Initial state for the rounding controls. Sourced from
+   *  general_settings; falls back to (true, 0.5) when omitted. */
+  defaultRounding?: ResolveRoundingOptions;
 }
 
 const CUSTOM = '__custom__';
@@ -55,6 +58,7 @@ export function ResolvePercentagesModal({
   candidates,
   onClose,
   onConfirm,
+  defaultRounding,
 }: ResolvePercentagesModalProps) {
   // Per-row selection: for singles this is unused; for combos, holds the
   // exerciseId of the member whose PR is being used, or CUSTOM for free entry.
@@ -82,8 +86,8 @@ export function ResolvePercentagesModal({
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [roundEnabled, setRoundEnabled] = useState(true);
-  const [roundIncrementRaw, setRoundIncrementRaw] = useState('0.5');
+  const [roundEnabled, setRoundEnabled] = useState(defaultRounding?.enabled ?? true);
+  const [roundIncrementRaw, setRoundIncrementRaw] = useState(String(defaultRounding?.increment ?? 0.5));
 
   const parsed = useMemo(() => {
     return candidates.map(c => {

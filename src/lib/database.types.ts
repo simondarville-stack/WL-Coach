@@ -289,6 +289,8 @@ export interface GeneralSettings {
   grid_load_increment: number;
   grid_click_increment: number;
   default_prescription_load: number;
+  percent_to_kg_round_enabled: boolean;
+  percent_to_kg_round_increment: number;
   default_tracked_exercise_ids: string[];
   bodyweight_ma_days: number;
   visible_summary_metrics: string[];

@@ -43,6 +43,8 @@ export function GeneralSettings() {
   const [gridLoadIncrement, setGridLoadIncrement] = useState(5);
   const [gridClickIncrement, setGridClickIncrement] = useState(1);
   const [defaultPrescriptionLoad, setDefaultPrescriptionLoad] = useState(50);
+  const [pctToKgRoundEnabled, setPctToKgRoundEnabled] = useState(true);
+  const [pctToKgRoundIncrement, setPctToKgRoundIncrement] = useState(0.5);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
   const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
@@ -127,6 +129,8 @@ export function GeneralSettings() {
       setGridLoadIncrement(settings.grid_load_increment);
       setGridClickIncrement(settings.grid_click_increment);
       setDefaultPrescriptionLoad(settings.default_prescription_load ?? 50);
+      setPctToKgRoundEnabled(settings.percent_to_kg_round_enabled ?? true);
+      setPctToKgRoundIncrement(settings.percent_to_kg_round_increment ?? 0.5);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
       setShowStressMetric(settings.show_stress_metric ?? false);
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
@@ -165,6 +169,8 @@ export function GeneralSettings() {
         grid_load_increment: gridLoadIncrement,
         grid_click_increment: gridClickIncrement,
         default_prescription_load: defaultPrescriptionLoad,
+        percent_to_kg_round_enabled: pctToKgRoundEnabled,
+        percent_to_kg_round_increment: pctToKgRoundIncrement,
       });
     } catch {
       // error logged in hook
@@ -542,7 +548,42 @@ export function GeneralSettings() {
             </div>
           </div>
 
-          {(gridLoadIncrement !== settings?.grid_load_increment || gridClickIncrement !== settings?.grid_click_increment || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)) && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Percentage → kg rounding</label>
+            <p className="text-sm text-gray-600 mb-3">
+              Defaults the conversion modal uses when converting percentage prescriptions to kg. Coaches can still toggle and override per conversion.
+            </p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pctToKgRoundEnabled}
+                  onChange={(e) => setPctToKgRoundEnabled(e.target.checked)}
+                />
+                <span>Round by default</span>
+              </label>
+              <div className={`flex items-center gap-2 ${pctToKgRoundEnabled ? '' : 'opacity-40'}`}>
+                <span className="text-sm text-gray-600">to nearest</span>
+                <input
+                  type="number"
+                  min="0.05"
+                  max="50"
+                  step="0.05"
+                  disabled={!pctToKgRoundEnabled}
+                  value={pctToKgRoundIncrement}
+                  onChange={(e) => setPctToKgRoundIncrement(Math.max(0.05, Math.min(50, parseFloat(e.target.value) || 0.5)))}
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-600">kg</span>
+              </div>
+            </div>
+          </div>
+
+          {(gridLoadIncrement !== settings?.grid_load_increment
+            || gridClickIncrement !== settings?.grid_click_increment
+            || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)
+            || pctToKgRoundEnabled !== (settings?.percent_to_kg_round_enabled ?? true)
+            || pctToKgRoundIncrement !== (settings?.percent_to_kg_round_increment ?? 0.5)) && (
             <button
               onClick={updateGridSettings}
               disabled={saving}
