@@ -21,7 +21,7 @@ import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
-import { ResolvePercentagesModal, type ResolveCandidate } from './ResolvePercentagesModal';
+import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
@@ -588,11 +588,18 @@ export function WeeklyPlanner() {
     setResolveCandidates(candidates);
   };
 
-  const applyResolvedPercentages = async (overrides: Record<string, number>) => {
+  const applyResolvedPercentages = async (overrides: Record<string, number>, rounding: ResolveRoundingOptions) => {
     if (!currentWeekPlan) return;
     const planned = Object.values(plannedExercises).flat();
     const idToEx = new Map(planned.map(ex => [ex.id, ex]));
-    const round = (pct: number, prKg: number) => Math.round((pct / 100) * prKg * 2) / 2;
+    const round = (pct: number, prKg: number) => {
+      const raw = (pct / 100) * prKg;
+      if (!rounding.enabled || rounding.increment <= 0) {
+        // 2 decimals when rounding is off — avoids floating-point dust.
+        return Math.round(raw * 100) / 100;
+      }
+      return Math.round(raw / rounding.increment) * rounding.increment;
+    };
 
     const ids = Object.keys(overrides);
     for (const id of ids) {

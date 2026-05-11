@@ -32,10 +32,15 @@ export interface ComboResolveCandidate extends BaseCandidate {
 
 export type ResolveCandidate = SingleResolveCandidate | ComboResolveCandidate;
 
+export interface ResolveRoundingOptions {
+  enabled: boolean;
+  increment: number;
+}
+
 interface ResolvePercentagesModalProps {
   candidates: ResolveCandidate[];
   onClose: () => void;
-  onConfirm: (overrides: Record<string, number>) => Promise<void>;
+  onConfirm: (overrides: Record<string, number>, rounding: ResolveRoundingOptions) => Promise<void>;
 }
 
 const CUSTOM = '__custom__';
@@ -77,6 +82,8 @@ export function ResolvePercentagesModal({
   });
 
   const [submitting, setSubmitting] = useState(false);
+  const [roundEnabled, setRoundEnabled] = useState(true);
+  const [roundIncrementRaw, setRoundIncrementRaw] = useState('0.5');
 
   const parsed = useMemo(() => {
     return candidates.map(c => {
@@ -90,6 +97,13 @@ export function ResolvePercentagesModal({
 
   const convertibleCount = parsed.filter(p => p.valid).length;
   const hasInvalid = parsed.some(p => !p.empty && !p.valid);
+
+  const roundIncrement = useMemo(() => {
+    const raw = roundIncrementRaw.trim().replace(',', '.');
+    const num = Number(raw);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  }, [roundIncrementRaw]);
+  const roundInvalid = roundEnabled && roundIncrement === null;
 
   function handleComboSourceChange(candidate: ComboResolveCandidate, sourceId: string) {
     setSources(prev => ({ ...prev, [candidate.plannedExerciseId]: sourceId }));
@@ -107,12 +121,16 @@ export function ResolvePercentagesModal({
   }
 
   async function handleConfirm() {
-    if (convertibleCount === 0 || submitting) return;
+    if (convertibleCount === 0 || submitting || roundInvalid) return;
     const overrides: Record<string, number> = {};
     for (const p of parsed) if (p.valid && p.value != null) overrides[p.id] = p.value;
+    const rounding: ResolveRoundingOptions = {
+      enabled: roundEnabled,
+      increment: roundIncrement ?? 0.5,
+    };
     setSubmitting(true);
     try {
-      await onConfirm(overrides);
+      await onConfirm(overrides, rounding);
       onClose();
     } finally {
       setSubmitting(false);
@@ -286,6 +304,46 @@ export function ResolvePercentagesModal({
           )}
         </div>
 
+        {/* Rounding controls */}
+        {candidates.length > 0 && (
+          <div style={{
+            borderTop: '1px solid var(--color-border-secondary)',
+            padding: '8px 20px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+            background: 'var(--color-bg-secondary)',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={roundEnabled}
+                onChange={e => setRoundEnabled(e.target.checked)}
+              />
+              <span style={{ fontWeight: 500 }}>Round results</span>
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: roundEnabled ? 1 : 0.4 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>to nearest</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={roundIncrementRaw}
+                onChange={e => setRoundIncrementRaw(e.target.value)}
+                disabled={!roundEnabled}
+                style={{
+                  width: 60, padding: '4px 6px', fontSize: 11,
+                  fontFamily: 'var(--font-mono)', textAlign: 'right',
+                  border: `1px solid ${roundInvalid ? 'var(--color-danger-text)' : 'var(--color-border-secondary)'}`,
+                  borderRadius: 'var(--radius-md)', outline: 'none',
+                  background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>kg</span>
+            </div>
+            {roundInvalid && (
+              <span style={{ fontSize: 10, color: 'var(--color-danger-text)' }}>Enter a positive number</span>
+            )}
+          </div>
+        )}
+
         {/* Footer */}
         <div style={{
           borderTop: '1px solid var(--color-border-secondary)',
@@ -316,13 +374,13 @@ export function ResolvePercentagesModal({
             </button>
             <button
               onClick={() => void handleConfirm()}
-              disabled={convertibleCount === 0 || hasInvalid || submitting}
+              disabled={convertibleCount === 0 || hasInvalid || roundInvalid || submitting}
               style={{
                 padding: '6px 14px', fontSize: 12, fontWeight: 500,
-                background: convertibleCount === 0 || hasInvalid ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
-                color: convertibleCount === 0 || hasInvalid ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
+                background: convertibleCount === 0 || hasInvalid || roundInvalid ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
+                color: convertibleCount === 0 || hasInvalid || roundInvalid ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
                 border: 'none', borderRadius: 'var(--radius-md)',
-                cursor: convertibleCount === 0 || hasInvalid || submitting ? 'not-allowed' : 'pointer',
+                cursor: convertibleCount === 0 || hasInvalid || roundInvalid || submitting ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 4,
                 opacity: submitting ? 0.7 : 1,
               }}
