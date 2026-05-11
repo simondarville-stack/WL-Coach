@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { Download, Upload, X, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import type { Exercise, DefaultUnit } from '../lib/database.types';
@@ -17,6 +17,8 @@ interface ParsedRow {
   data: Partial<Exercise> | null;
   errors: string[];
 }
+
+type ImportMode = 'merge' | 'swap';
 
 const VALID_UNITS = DEFAULT_UNITS.map(u => u.value);
 
@@ -52,7 +54,7 @@ function buildHintRow(categoryNames: string[]): string[] {
     : 'Required. e.g. Snatch / Clean & Jerk / Squat';
   return [
     'Required. Exercise name.',
-    'Optional. Short code (max 10 chars).',
+    'Optional. Short code (max 10 chars). Keep stable to round-trip on Swap.',
     catHint,
     'Required. TRUE or FALSE',
     'Required. One of: percentage / absolute_kg / rpe / free_text / other',
@@ -61,6 +63,25 @@ function buildHintRow(categoryNames: string[]): string[] {
     'Optional. TRUE or FALSE. Defaults to TRUE. Set FALSE to exclude from PR table.',
     'Optional.',
     'Optional. Video URL.',
+  ];
+}
+
+function boolStr(v: boolean | null | undefined): string {
+  return v === true ? 'TRUE' : v === false ? 'FALSE' : '';
+}
+
+function exerciseToRow(ex: Exercise): (string | number)[] {
+  return [
+    ex.name ?? '',
+    ex.exercise_code ?? '',
+    ex.category ?? '',
+    boolStr(ex.is_competition_lift),
+    ex.default_unit ?? '',
+    ex.color ?? '',
+    boolStr(ex.counts_towards_totals),
+    boolStr(ex.track_pr),
+    ex.notes ?? '',
+    ex.link ?? '',
   ];
 }
 
@@ -131,16 +152,52 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<number | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<ImportMode>('merge');
+  const [existingExercises, setExistingExercises] = useState<Exercise[]>([]);
+  const [existingLoading, setExistingLoading] = useState(true);
 
   const { bulkCreateExercises, createCategory, categories, fetchCategories } = useExercises();
 
-  useEffect(() => { fetchCategories(); }, []);
+  // Load this owner's active non-system exercises for both the template
+  // round-trip (download) and the swap-mode logic (which needs to know
+  // what's currently active before archiving).
+  const loadExisting = useCallback(async () => {
+    try {
+      setExistingLoading(true);
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('*')
+        .eq('owner_id', getOwnerId())
+        .eq('is_archived', false)
+        .neq('category', '— System')
+        .order('category')
+        .order('name');
+      if (error) throw error;
+      setExistingExercises((data as Exercise[] | null) ?? []);
+    } finally {
+      setExistingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCategories();
+    void loadExisting();
+  }, [loadExisting]);
 
   const defaultCategory = categories[0]?.name ?? 'Snatch';
 
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, buildHintRow(categories.map(c => c.name)), EXAMPLE_ROW]);
+    const aoa: (string | number)[][] = [
+      TEMPLATE_HEADERS,
+      buildHintRow(categories.map(c => c.name)),
+    ];
+    if (existingExercises.length > 0) {
+      for (const ex of existingExercises) aoa.push(exerciseToRow(ex));
+    } else {
+      aoa.push(EXAMPLE_ROW);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
 
     // Column widths
     ws['!cols'] = [
@@ -150,7 +207,10 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Exercises');
-    XLSX.writeFile(wb, 'exercise_template.xlsx');
+    const filename = existingExercises.length > 0
+      ? 'exercises_current.xlsx'
+      : 'exercise_template.xlsx';
+    XLSX.writeFile(wb, filename);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,7 +247,9 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
     setImporting(true);
     setImportError(null);
     try {
-      // Auto-create any categories that don't exist yet
+      const ownerId = getOwnerId();
+
+      // 1. Auto-create any categories that don't exist yet.
       const knownNames = new Set(categories.map(c => c.name));
       const maxOrder = categories.reduce((m, c) => Math.max(m, c.display_order), -1);
       const newCatNames = [...new Set(
@@ -197,66 +259,94 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
         await createCategory(newCatNames[i], maxOrder + 1 + i);
       }
 
-      // Resolve conflicts on UNIQUE(owner_id, exercise_code).
-      // If a code matches an archived row for this coach, restore + overwrite it
-      // (drops it from the bulk insert). Active duplicates are surfaced as errors.
-      const ownerId = getOwnerId();
-      const codedRows = validRows.filter(r => r.exercise_code);
-      const incomingCodes = [...new Set(codedRows.map(r => r.exercise_code as string))];
-
-      let restoredCount = 0;
-      let activeConflicts: string[] = [];
-      let rowsToInsert = validRows;
-
-      if (incomingCodes.length > 0) {
-        const { data: existing, error: existingErr } = await supabase
+      // 2. Swap mode: archive every active non-system exercise first.
+      //    The merge logic below will then restore + overwrite anything
+      //    that's still in the incoming template, leaving the rest archived.
+      if (importMode === 'swap') {
+        const { error: archiveErr } = await supabase
           .from('exercises')
-          .select('id, exercise_code, is_archived')
+          .update({ is_archived: true })
           .eq('owner_id', ownerId)
-          .in('exercise_code', incomingCodes);
-        if (existingErr) throw existingErr;
+          .eq('is_archived', false)
+          .neq('category', '— System');
+        if (archiveErr) throw archiveErr;
+      }
 
-        const archivedByCode = new Map<string, string>();
-        const activeCodes = new Set<string>();
-        for (const ex of existing ?? []) {
-          if (ex.is_archived) archivedByCode.set(ex.exercise_code, ex.id);
-          else activeCodes.add(ex.exercise_code);
+      // 3. Fetch every existing exercise for this owner (active + archived,
+      //    non-system) so we can match incoming rows by code OR name.
+      const { data: existing, error: existingErr } = await supabase
+        .from('exercises')
+        .select('id, exercise_code, name, is_archived')
+        .eq('owner_id', ownerId)
+        .neq('category', '— System');
+      if (existingErr) throw existingErr;
+
+      const byCode = new Map<string, { id: string; is_archived: boolean }>();
+      const byName = new Map<string, { id: string; is_archived: boolean }>();
+      for (const ex of (existing as { id: string; exercise_code: string | null; name: string; is_archived: boolean }[] | null) ?? []) {
+        if (ex.exercise_code) byCode.set(ex.exercise_code, { id: ex.id, is_archived: ex.is_archived });
+        byName.set(ex.name.toLowerCase(), { id: ex.id, is_archived: ex.is_archived });
+      }
+
+      // 4. For each row, find a match and either restore+overwrite or queue
+      //    for insert. Active conflicts (merge mode only) are skipped.
+      const rowsToInsert: Partial<Exercise>[] = [];
+      const activeConflicts: string[] = [];
+      let restoredCount = 0;
+
+      for (const row of validRows) {
+        const code = (row.exercise_code as string | null) ?? null;
+        const nameKey = (row.name as string).toLowerCase();
+        const match = (code ? byCode.get(code) : null) ?? byName.get(nameKey) ?? null;
+
+        if (!match) {
+          rowsToInsert.push(row);
+          continue;
         }
 
-        // Restore + overwrite archived matches.
-        for (const row of codedRows) {
-          const code = row.exercise_code as string;
-          const archivedId = archivedByCode.get(code);
-          if (!archivedId) continue;
+        if (match.is_archived) {
           const { error: restoreErr } = await supabase
             .from('exercises')
             .update({ ...row, is_archived: false })
-            .eq('id', archivedId)
+            .eq('id', match.id)
             .eq('owner_id', ownerId);
           if (restoreErr) throw restoreErr;
           restoredCount++;
+          continue;
         }
 
-        // Filter out anything we already handled or that conflicts with an active row.
-        rowsToInsert = validRows.filter(r => {
-          const code = r.exercise_code as string | null | undefined;
-          if (!code) return true;
-          if (archivedByCode.has(code)) return false;
-          if (activeCodes.has(code)) {
-            activeConflicts.push(code);
-            return false;
+        // Active match: only possible in merge mode (swap archived everything
+        // upfront). In merge mode, overwrite the existing active row in place.
+        const { error: updateErr } = await supabase
+          .from('exercises')
+          .update(row)
+          .eq('id', match.id)
+          .eq('owner_id', ownerId);
+        if (updateErr) {
+          // Surface unique-constraint conflicts (e.g. moving code to one
+          // that's already taken) as a skip rather than a hard fail.
+          if (updateErr.code === '23505') {
+            activeConflicts.push(code || row.name as string);
+            continue;
           }
-          return true;
-        });
+          throw updateErr;
+        }
+        restoredCount++;
       }
 
       const inserted = rowsToInsert.length > 0 ? await bulkCreateExercises(rowsToInsert) : 0;
 
-      if (activeConflicts.length > 0) {
-        setImportError(
-          `Skipped ${activeConflicts.length} row(s) — code already in use: ${activeConflicts.join(', ')}`
-        );
+      const summaryBits: string[] = [];
+      if (importMode === 'swap') {
+        const archivedNotInTemplate = existingExercises.length - restoredCount;
+        if (archivedNotInTemplate > 0) {
+          summaryBits.push(`${archivedNotInTemplate} exercise${archivedNotInTemplate === 1 ? '' : 's'} archived (not in template)`);
+        }
       }
+      if (activeConflicts.length > 0) {
+        summaryBits.push(`Skipped ${activeConflicts.length} row(s) — code already in use: ${activeConflicts.join(', ')}`);
+      }
+      if (summaryBits.length > 0) setImportError(summaryBits.join(' · '));
       setImportResult(inserted + restoredCount);
     } catch (err) {
       console.error('Bulk import failed:', err);
@@ -323,14 +413,22 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
               Download the template
             </h3>
             <p className="text-sm text-gray-600">
-              Fill in the template with your exercises. Required fields: <span className="font-medium">name, category, is_competition_lift, default_unit, counts_towards_totals</span>. Optional: track_pr, color, notes, link.
+              {existingLoading
+                ? 'Preparing template…'
+                : existingExercises.length > 0
+                  ? <>The template is pre-filled with your <span className="font-medium">{existingExercises.length}</span> existing exercise{existingExercises.length === 1 ? '' : 's'}. Edit, add, or remove rows in Excel and re-upload.</>
+                  : 'Fill in the template with your exercises.'}
+            </p>
+            <p className="text-xs text-gray-500">
+              Required fields: <span className="font-medium">name, category, is_competition_lift, default_unit, counts_towards_totals</span>.
             </p>
             <button
               onClick={handleDownloadTemplate}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+              disabled={existingLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download size={16} />
-              Download Template (.xlsx)
+              {existingExercises.length > 0 ? 'Download current catalogue (.xlsx)' : 'Download Template (.xlsx)'}
             </button>
           </div>
 
@@ -356,12 +454,12 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
             </button>
           </div>
 
-          {/* Step 3: Preview */}
+          {/* Step 3: Preview + mode + import */}
           {hasParsed && (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
               <h3 className="font-medium text-gray-900 flex items-center gap-2">
                 <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs font-bold flex items-center justify-center">3</span>
-                Preview
+                Preview &amp; choose mode
               </h3>
 
               <div className="flex gap-4 text-sm">
@@ -386,6 +484,53 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
                   {importError}
                 </p>
               )}
+
+              {/* Mode selector */}
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-gray-700">How should this import be applied?</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label
+                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
+                      importMode === 'merge'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importMode"
+                      value="merge"
+                      checked={importMode === 'merge'}
+                      onChange={() => setImportMode('merge')}
+                      className="mr-2"
+                    />
+                    <span className="font-medium text-gray-900">Merge</span>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Add or update exercises in the template. Existing exercises not in the template are kept as-is.
+                    </div>
+                  </label>
+                  <label
+                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
+                      importMode === 'swap'
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="importMode"
+                      value="swap"
+                      checked={importMode === 'swap'}
+                      onChange={() => setImportMode('swap')}
+                      className="mr-2"
+                    />
+                    <span className="font-medium text-gray-900">Swap</span>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Archive every existing exercise first, then import the template. Exercises not in the template will be hidden but recoverable.
+                    </div>
+                  </label>
+                </div>
+              </div>
 
               {parsedRows.length > 0 && (
                 <div className="max-h-52 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100 text-sm">
@@ -431,7 +576,11 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
             <button
               onClick={handleImport}
               disabled={importing}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className={`flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                importMode === 'swap'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
               {importing ? (
                 <>
@@ -441,7 +590,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
               ) : (
                 <>
                   <Upload size={16} />
-                  Import {validRows.length} exercise{validRows.length !== 1 ? 's' : ''}
+                  {importMode === 'swap' ? `Swap to ${validRows.length} exercise${validRows.length !== 1 ? 's' : ''}` : `Merge ${validRows.length} exercise${validRows.length !== 1 ? 's' : ''}`}
                 </>
               )}
             </button>
