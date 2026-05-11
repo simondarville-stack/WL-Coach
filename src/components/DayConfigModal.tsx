@@ -201,16 +201,16 @@ export function DayConfigModal({
                     {hasWeekday && (
                       <div className="flex items-center gap-1.5 px-3 pb-2">
                         {needsTime && (
-                          <span className="text-[10px] text-red-500 mr-1">Time required for same-day sessions</span>
+                          <span className="text-[11px] text-red-500 mr-1">Time required for same-day sessions</span>
                         )}
                         {!needsTime && (
-                          <span className="text-[10px] text-gray-400 mr-1">Quick:</span>
+                          <span className="text-[11px] text-gray-400 mr-1">Quick:</span>
                         )}
                         {TIME_PRESETS.map(t => (
                           <button
                             key={t}
                             onClick={() => onScheduleChange(dayIndex, { weekday: entry!.weekday, time: t })}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                            className={`text-[11px] px-1.5 py-0.5 rounded border transition-colors ${
                               entry?.time === t
                                 ? 'bg-blue-100 text-blue-700 border-blue-200'
                                 : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
@@ -224,7 +224,7 @@ export function DayConfigModal({
 
                     {/* Same-day split info */}
                     {isInConflict && !needsTime && (
-                      <div className="px-3 pb-2 text-[10px] text-purple-600">
+                      <div className="px-3 pb-2 text-[11px] text-purple-600">
                         AM/PM split — sessions will be stacked
                       </div>
                     )}

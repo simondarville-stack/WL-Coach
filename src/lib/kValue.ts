@@ -19,7 +19,7 @@ export async function getCompetitionTotal(athleteId: string): Promise<number | n
   // 2. Auto-derive from PRs on competition lifts
   const { data: prs } = await supabase
     .from('athlete_prs')
-    .select('pr_value_kg, exercise:exercises!inner(id, is_competition_lift, category)')
+    .select('pr_value_kg, exercise:exercises!inner(id, is_competition_lift, category, lift_slot)')
     .eq('athlete_id', athleteId);
 
   if (!prs?.length) return null;
@@ -29,11 +29,22 @@ export async function getCompetitionTotal(athleteId: string): Promise<number | n
   let bestCJ = 0;
 
   for (const pr of prs) {
-    const ex = pr.exercise as { id: string; is_competition_lift: boolean; category: string } | null;
+    const ex = pr.exercise as { id: string; is_competition_lift: boolean; category: string; lift_slot: string | null } | null;
     if (!ex?.is_competition_lift) continue;
     const val = pr.pr_value_kg ?? 0;
-    const cat = (ex.category || '').toLowerCase();
 
+    // Primary: use lift_slot when available
+    if (ex.lift_slot === 'snatch') {
+      bestSnatch = Math.max(bestSnatch, val);
+      continue;
+    }
+    if (ex.lift_slot === 'clean_and_jerk') {
+      bestCJ = Math.max(bestCJ, val);
+      continue;
+    }
+
+    // Fallback: category name heuristic when lift_slot is null
+    const cat = (ex.category || '').toLowerCase();
     if (cat.includes('snatch') && !cat.includes('pull') && !cat.includes('power')) {
       bestSnatch = Math.max(bestSnatch, val);
     } else if (

@@ -172,12 +172,14 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .order('week_start'),
     supabase
       .from('macro_weeks')
-      .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id')
+      .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id, macrocycles!inner(owner_id)')
+      .eq('macrocycles.owner_id', getOwnerId())
       .gte('week_start', startDate)
       .lte('week_start', endDate),
     supabase
       .from('macro_phases')
-      .select('id, name, color, macrocycle_id'),
+      .select('id, name, color, macrocycle_id')
+      .eq('owner_id', getOwnerId()),
     supabase
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')
@@ -458,21 +460,26 @@ export async function fetchExerciseTimeSeries(
     }));
 }
 
+// Default intensity zone boundaries — used when general_settings.intensity_zones is null.
+const DEFAULT_INTENSITY_ZONES = [
+  { zone: '<70%',   min: 0,   max: 0.7,      reps: 0 },
+  { zone: '70-80%', min: 0.7, max: 0.8,      reps: 0 },
+  { zone: '80-90%', min: 0.8, max: 0.9,      reps: 0 },
+  { zone: '90%+',   min: 0.9, max: Infinity,  reps: 0 },
+];
+
 export async function fetchIntensityZones(
   athleteId: string,
   exerciseId: string,
   startDate: string,
   endDate: string,
-  oneRepMax: number
+  oneRepMax: number,
+  intensityZoneConfig?: Array<{ zone: string; min: number; max: number }> | null,
 ): Promise<IntensityZone[]> {
   const timeSeries = await fetchExerciseTimeSeries(athleteId, exerciseId, startDate, endDate);
 
-  const zones = [
-    { zone: '<70%', min: 0, max: 0.7, reps: 0 },
-    { zone: '70-80%', min: 0.7, max: 0.8, reps: 0 },
-    { zone: '80-90%', min: 0.8, max: 0.9, reps: 0 },
-    { zone: '90%+', min: 0.9, max: Infinity, reps: 0 },
-  ];
+  const zoneDefs = (intensityZoneConfig ?? DEFAULT_INTENSITY_ZONES).map(z => ({ ...z, reps: 0, max: z.max ?? Infinity }));
+  const zones = zoneDefs.length > 0 ? zoneDefs : DEFAULT_INTENSITY_ZONES.map(z => ({ ...z }));
 
   for (const entry of timeSeries) {
     if (!entry.avgLoad || !oneRepMax) continue;
@@ -489,7 +496,20 @@ export async function fetchIntensityZones(
   }));
 }
 
-export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
+// Default lift ratio targets — used when general_settings.lift_ratio_targets is null.
+const DEFAULT_LIFT_RATIO_TARGETS: Record<string, { min: number; max: number }> = {
+  'Snatch / C&J':               { min: 80,  max: 85  },
+  'Snatch / Back squat':        { min: 65,  max: 70  },
+  'C&J / Back squat':           { min: 78,  max: 83  },
+  'Front squat / Back squat':   { min: 83,  max: 87  },
+  'Snatch pull / Snatch':       { min: 105, max: 110 },
+  'Clean pull / C&J':           { min: 110, max: 115 },
+};
+
+export async function fetchLiftRatios(
+  athleteId: string,
+  liftRatioTargets?: Record<string, { min: number; max: number }> | null,
+): Promise<LiftRatio[]> {
   const [prsRes, exercisesRes] = await Promise.all([
     supabase
       .from('athlete_prs')
@@ -497,13 +517,13 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
       .eq('athlete_id', athleteId),
     supabase
       .from('exercises')
-      .select('id, name'),
+      .select('id, name, lift_slot'),
   ]);
 
   const prs = prsRes.data ?? [];
-  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string }>;
+  const exercises = (exercisesRes.data ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
 
-  const exMap = new Map(exercises.map(e => [e.id, e.name.toLowerCase()]));
+  const exMap = new Map(exercises.map(e => [e.id, { name: e.name.toLowerCase(), liftSlot: e.lift_slot }]));
 
   // Group PRs by exercise, take highest pr_value_kg
   const bestPR = new Map<string, number>();
@@ -513,22 +533,31 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
     if (pr.pr_value_kg > current) bestPR.set(pr.exercise_id, pr.pr_value_kg);
   }
 
-  // Find best load for each lift type by name pattern
-  function findBest(pattern: (name: string) => boolean): number {
+  // Find best load for each lift slot — primary: lift_slot, fallback: name heuristic
+  function findBySlot(slot: string): number {
     let best = 0;
     for (const [exId, load] of bestPR.entries()) {
-      const name = exMap.get(exId) ?? '';
-      if (pattern(name) && load > best) best = load;
+      if ((exMap.get(exId)?.liftSlot ?? null) === slot && load > best) best = load;
+    }
+    return best;
+  }
+  function findByName(pattern: (name: string) => boolean): number {
+    let best = 0;
+    for (const [exId, load] of bestPR.entries()) {
+      const ex = exMap.get(exId);
+      // Skip exercises that already have a lift_slot — already handled above
+      if (ex?.liftSlot) continue;
+      if (pattern(ex?.name ?? '') && load > best) best = load;
     }
     return best;
   }
 
-  const snatch = findBest(n => n.includes('snatch') && !n.includes('pull') && !n.includes('press') && !n.includes('balance'));
-  const cj = findBest(n => n.includes('clean') && n.includes('jerk'));
-  const bsq = findBest(n => n.includes('back squat'));
-  const fsq = findBest(n => n.includes('front squat'));
-  const snPull = findBest(n => n.includes('snatch pull'));
-  const clPull = findBest(n => n.includes('clean pull'));
+  const snatch  = findBySlot('snatch')        || findByName(n => n.includes('snatch') && !n.includes('pull') && !n.includes('press') && !n.includes('balance'));
+  const cj      = findBySlot('clean_and_jerk') || findByName(n => n.includes('clean') && n.includes('jerk'));
+  const bsq     = findBySlot('back_squat')    || findByName(n => n.includes('back squat'));
+  const fsq     = findBySlot('front_squat')   || findByName(n => n.includes('front squat'));
+  const snPull  = findBySlot('snatch_pull')   || findByName(n => n.includes('snatch pull'));
+  const clPull  = findBySlot('clean_pull')    || findByName(n => n.includes('clean pull'));
 
   const ratios: LiftRatio[] = [];
 
@@ -547,12 +576,24 @@ export async function fetchLiftRatios(athleteId: string): Promise<LiftRatio[]> {
     });
   }
 
-  addRatio('Snatch / C&J', snatch, cj, 80, 85);
-  addRatio('Snatch / Back squat', snatch, bsq, 65, 70);
-  addRatio('C&J / Back squat', cj, bsq, 78, 83);
-  addRatio('Front squat / Back squat', fsq, bsq, 83, 87);
-  addRatio('Snatch pull / Snatch', snPull, snatch, 105, 110);
-  addRatio('Clean pull / C&J', clPull, cj, 110, 115);
+  const targets = liftRatioTargets ?? DEFAULT_LIFT_RATIO_TARGETS;
+
+  function getTarget(name: string): { min: number; max: number } {
+    return targets[name] ?? DEFAULT_LIFT_RATIO_TARGETS[name] ?? { min: 0, max: 100 };
+  }
+
+  const ratioEntries: Array<[string, number, number]> = [
+    ['Snatch / C&J',             snatch, cj],
+    ['Snatch / Back squat',      snatch, bsq],
+    ['C&J / Back squat',         cj,     bsq],
+    ['Front squat / Back squat', fsq,    bsq],
+    ['Snatch pull / Snatch',     snPull, snatch],
+    ['Clean pull / C&J',         clPull, cj],
+  ];
+  for (const [name, num, den] of ratioEntries) {
+    const { min, max } = getTarget(name);
+    addRatio(name, num, den, min, max);
+  }
 
   return ratios;
 }

@@ -5,6 +5,7 @@ import {
   PointElement, ArcElement, Filler,
   Tooltip as ChartTooltip,
 } from 'chart.js';
+import type { TooltipItem } from 'chart.js';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 
 ChartJS.register(
@@ -153,8 +154,8 @@ export function MacroDistributionChart({
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
           scales: {
-            x: { stacked: true, grid: { display: false }, ticks: { font: { size: 9 } } },
-            y: { stacked: true, title: { display: true, text: 'Reps', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 9 } } },
+            x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { stacked: true, title: { display: true, text: 'Reps', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
           },
         },
       });
@@ -173,10 +174,10 @@ export function MacroDistributionChart({
         data: { labels, datasets },
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c: any) => c.dataset.label + ': ' + c.raw + '%' } } },
+          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c: TooltipItem<'bar'>) => (c.dataset.label ?? '') + ': ' + (c.raw as number) + '%' } } },
           scales: {
-            x: { stacked: true, grid: { display: false }, ticks: { font: { size: 9 } } },
-            y: { stacked: true, max: 100, title: { display: true, text: '%', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 9 }, callback: (v: number) => v + '%' } },
+            x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { stacked: true, max: 100, title: { display: true, text: '%', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 }, callback: (v: number) => v + '%' } },
           },
         },
       });
@@ -196,8 +197,8 @@ export function MacroDistributionChart({
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
           scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-            y: { title: { display: true, text: 'Reps', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 9 } } },
+            x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { title: { display: true, text: 'Reps', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
           },
         },
       });
@@ -220,8 +221,8 @@ export function MacroDistributionChart({
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
           scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-            y: { stacked: true, title: { display: true, text: 'Reps', font: { size: 9 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 9 } } },
+            x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { stacked: true, title: { display: true, text: 'Reps', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 } } },
           },
         },
       });
@@ -257,9 +258,9 @@ export function MacroDistributionChart({
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (c: any) => {
+              label: (c: TooltipItem<'doughnut'>) => {
                 const total = vals.reduce((a: number, b: number) => a + b, 0);
-                return c.label + ': ' + c.raw + ' (' + Math.round(c.raw / total * 100) + '%)';
+                return (c.label ?? '') + ': ' + (c.raw as number) + ' (' + Math.round((c.raw as number) / total * 100) + '%)';
               },
             },
           },
@@ -287,21 +288,21 @@ export function MacroDistributionChart({
       {/* Summary metrics */}
       <div className="flex gap-3">
         <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-          <div className="text-[10px] text-gray-400">Total reps</div>
+          <div className="text-[11px] text-gray-400">Total reps</div>
           <div className="text-lg font-medium font-mono text-gray-900">{totalReps}</div>
         </div>
         <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-          <div className="text-[10px] text-gray-400">Avg / week</div>
+          <div className="text-[11px] text-gray-400">Avg / week</div>
           <div className="text-lg font-medium font-mono text-gray-900">{avgReps}</div>
         </div>
         <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-          <div className="text-[10px] text-gray-400">Peak week</div>
+          <div className="text-[11px] text-gray-400">Peak week</div>
           <div className="text-lg font-medium font-mono text-gray-900">
             W{peakWeekData.week?.week_number ?? '-'} ({peakWeekData.total})
           </div>
         </div>
         <div className="flex-1 bg-gray-50 rounded-lg px-3 py-2">
-          <div className="text-[10px] text-gray-400">Dominant category</div>
+          <div className="text-[11px] text-gray-400">Dominant category</div>
           <div className="text-sm font-medium text-gray-900 truncate">
             {dominantCat?.cat.name ?? '-'} {dominantPct}%
           </div>
@@ -321,7 +322,7 @@ export function MacroDistributionChart({
             <button
               key={v.key}
               onClick={() => setView(v.key)}
-              className={`px-3 py-1 text-[10px] rounded-md transition-colors ${
+              className={`px-3 py-1 text-[11px] rounded-md transition-colors ${
                 view === v.key
                   ? 'bg-white text-gray-900 font-medium shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -339,7 +340,7 @@ export function MacroDistributionChart({
               <button
                 key={c.id}
                 onClick={() => toggleCat(c.id)}
-                className={`flex items-center gap-1 text-[10px] transition-opacity ${
+                className={`flex items-center gap-1 text-[11px] transition-opacity ${
                   visible ? '' : 'opacity-30 line-through'
                 }`}
               >
@@ -425,7 +426,7 @@ export function MacroDistributionChart({
                         style={{ width: pct + '%', backgroundColor: c.color + 'CC' }}
                       />
                     </div>
-                    <span className="w-[60px] text-right font-mono text-[10px] text-gray-900">
+                    <span className="w-[60px] text-right font-mono text-[11px] text-gray-900">
                       {reps} <span className="text-gray-400">({pct}%)</span>
                     </span>
                   </div>

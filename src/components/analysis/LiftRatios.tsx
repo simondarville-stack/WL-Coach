@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchLiftRatios, type LiftRatio } from '../../hooks/useAnalysis';
 import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
+import { useExerciseStore } from '../../store/exerciseStore';
 
 interface Props {
   athleteId: string;
@@ -36,30 +36,36 @@ function generateInsights(ratios: LiftRatio[]): string[] {
 }
 
 export function LiftRatios({ athleteId }: Props) {
+  const { exercises: storeExercises, fetchExercises } = useExerciseStore();
   const [ratios, setRatios] = useState<LiftRatio[]>([]);
   const [loading, setLoading] = useState(true);
   const [prHistory, setPrHistory] = useState<Array<{ date: string; snCj: number | null }>>([]);
 
+  useEffect(() => { fetchExercises(); }, [fetchExercises]);
+
   useEffect(() => {
+    let cancelled = false;
     async function load() {
       setLoading(true);
       try {
-        const [ratioData, prsRes, exercisesRes] = await Promise.all([
+        const [ratioData, prsRes] = await Promise.all([
           fetchLiftRatios(athleteId),
           supabase
             .from('athlete_prs')
             .select('exercise_id, pr_value_kg, pr_date')
             .eq('athlete_id', athleteId)
             .order('pr_date'),
-          supabase.from('exercises').select('id, name').eq('owner_id', getOwnerId()),
         ]);
 
+        if (cancelled) return;
         setRatios(ratioData);
 
-        // Build Sn/CJ ratio history
-        const exList = (exercisesRes.data ?? []) as Array<{ id: string; name: string }>;
-        const snEx = exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
-        const cjEx = exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
+        // Build Sn/CJ ratio history — primary: lift_slot, fallback: name heuristic
+        const exList = storeExercises;
+        const snEx = exList.find(e => e.lift_slot === 'snatch')
+          ?? exList.find(e => e.name.toLowerCase().includes('snatch') && !e.name.toLowerCase().includes('pull') && !e.name.toLowerCase().includes('press'));
+        const cjEx = exList.find(e => e.lift_slot === 'clean_and_jerk')
+          ?? exList.find(e => e.name.toLowerCase().includes('clean') && e.name.toLowerCase().includes('jerk'));
 
         if (snEx && cjEx) {
           const prs = prsRes.data ?? [];
@@ -83,14 +89,15 @@ export function LiftRatios({ athleteId }: Props) {
               history.push({ date: date.slice(5), snCj: Math.round((bestSn / bestCj) * 1000) / 10 });
             }
           }
-          setPrHistory(history);
+          if (!cancelled) setPrHistory(history);
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    load();
-  }, [athleteId]);
+    void load();
+    return () => { cancelled = true; };
+  }, [athleteId, storeExercises]);
 
   if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
 
@@ -160,9 +167,9 @@ export function LiftRatios({ athleteId }: Props) {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={prHistory} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit="%" width={40} domain={[70, 95]} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} formatter={(v: number) => [`${v}%`, 'Sn/CJ']} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit="%" width={40} domain={[70, 95]} />
+              <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} formatter={(v: number) => [`${v}%`, 'Sn/CJ']} />
               <Line type="monotone" dataKey="snCj" name="Sn/CJ" stroke="#378ADD" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>

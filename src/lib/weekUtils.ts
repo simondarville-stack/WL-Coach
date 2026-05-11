@@ -13,7 +13,11 @@ export function getCurrentAndNextWeekStart(): { weekStartISO: string; nextWeekSt
 }
 
 export function getMondayOfWeekISO(date: Date): string {
-  return getMondayOfWeek(date).toISOString().split('T')[0];
+  const monday = getMondayOfWeek(date);
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const d = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function findCurrentMacroWeek<T extends { week_start: string }>(macroWeeks: T[]): T | null {

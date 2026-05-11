@@ -11,6 +11,37 @@ export function useEvents() {
   const [events, setEvents] = useState<EventWithAthletes[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Shared batch helper: given a list of events, fetch all event_athletes and athletes
+  // in two queries (instead of 2×N), then reassemble.
+  const attachAthletes = async (eventsData: Event[]): Promise<EventWithAthletes[]> => {
+    if (eventsData.length === 0) return [];
+    const eventIds = eventsData.map(e => e.id);
+
+    const { data: eventAthletes } = await supabase
+      .from('event_athletes')
+      .select('event_id, athlete_id')
+      .in('event_id', eventIds);
+
+    const allAthleteIds = [...new Set((eventAthletes ?? []).map(ea => ea.athlete_id))];
+    const { data: athletesData } = await supabase
+      .from('athletes')
+      .select('*')
+      .in('id', allAthleteIds.length > 0 ? allAthleteIds : ['']);
+
+    const athleteMap = new Map<string, Athlete>((athletesData ?? []).map(a => [a.id, a]));
+    const eventAthleteMap = new Map<string, string[]>();
+    for (const ea of (eventAthletes ?? [])) {
+      const list = eventAthleteMap.get(ea.event_id) ?? [];
+      list.push(ea.athlete_id);
+      eventAthleteMap.set(ea.event_id, list);
+    }
+
+    return eventsData.map(event => ({
+      ...event,
+      athletes: (eventAthleteMap.get(event.id) ?? []).map(id => athleteMap.get(id)).filter((a): a is Athlete => !!a),
+    }));
+  };
+
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -21,26 +52,7 @@ export function useEvents() {
         .order('event_date', { ascending: true });
 
       if (!eventsData) return;
-
-      const eventsWithAthletes: EventWithAthletes[] = [];
-
-      for (const event of eventsData) {
-        const { data: eventAthletes } = await supabase
-          .from('event_athletes')
-          .select('athlete_id')
-          .eq('event_id', event.id);
-
-        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
-
-        const { data: athletesData } = await supabase
-          .from('athletes')
-          .select('*')
-          .in('id', athleteIds.length > 0 ? athleteIds : ['']);
-
-        eventsWithAthletes.push({ ...event, athletes: athletesData || [] });
-      }
-
-      setEvents(eventsWithAthletes);
+      setEvents(await attachAthletes(eventsData));
     } catch (error) {
     } finally {
       setLoading(false);
@@ -59,16 +71,7 @@ export function useEvents() {
       .order('event_date', { ascending: true });
 
     if (!eventsData) return [];
-    return Promise.all(
-      eventsData.map(async (event) => {
-        const { data: eventAthletes } = await supabase
-          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
-        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
-        const { data: athletesData } = await supabase
-          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
-        return { ...event, athletes: athletesData || [] };
-      })
-    );
+    return attachAthletes(eventsData);
   };
 
   const fetchEventsByMonth = async (year: number, month: number): Promise<EventWithAthletes[]> => {
@@ -84,16 +87,7 @@ export function useEvents() {
       .order('event_date', { ascending: true });
 
     if (!eventsData) return [];
-    return Promise.all(
-      eventsData.map(async (event) => {
-        const { data: eventAthletes } = await supabase
-          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
-        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
-        const { data: athletesData } = await supabase
-          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
-        return { ...event, athletes: athletesData || [] };
-      })
-    );
+    return attachAthletes(eventsData);
   };
 
   const fetchEventsByDateRange = async (start: string, end: string): Promise<EventWithAthletes[]> => {
@@ -106,16 +100,7 @@ export function useEvents() {
       .order('event_date', { ascending: true });
 
     if (!eventsData) return [];
-    return Promise.all(
-      eventsData.map(async (event) => {
-        const { data: eventAthletes } = await supabase
-          .from('event_athletes').select('athlete_id').eq('event_id', event.id);
-        const athleteIds = eventAthletes?.map(ea => ea.athlete_id) || [];
-        const { data: athletesData } = await supabase
-          .from('athletes').select('*').in('id', athleteIds.length > 0 ? athleteIds : ['']);
-        return { ...event, athletes: athletesData || [] };
-      })
-    );
+    return attachAthletes(eventsData);
   };
 
   const createEvent = async (
@@ -201,32 +186,30 @@ export function useEvents() {
     if (!eventAthletes || eventAthletes.length === 0) return [];
 
     const athleteIds = eventAthletes.map(ea => ea.athlete_id);
-    const { data: athletesData } = await supabase
-      .from('athletes')
-      .select('*')
-      .in('id', athleteIds)
-      .order('name');
+
+    const [{ data: athletesData }, { data: allAttempts }, { data: allVideos }] = await Promise.all([
+      supabase.from('athletes').select('*').in('id', athleteIds).order('name'),
+      supabase.from('event_attempts').select('*').eq('event_id', eventId).in('athlete_id', athleteIds),
+      supabase.from('event_videos').select('*').eq('event_id', eventId).in('athlete_id', athleteIds),
+    ]);
 
     if (!athletesData) return [];
 
-    return Promise.all(
-      athletesData.map(async (athlete) => {
-        const { data: attempts } = await supabase
-          .from('event_attempts')
-          .select('*')
-          .eq('event_id', eventId)
-          .eq('athlete_id', athlete.id)
-          .maybeSingle();
-
-        const { data: videos } = await supabase
-          .from('event_videos')
-          .select('*')
-          .eq('event_id', eventId)
-          .eq('athlete_id', athlete.id);
-
-        return { ...athlete, attempts: attempts || null, videos: videos || [] };
-      })
+    const attemptsMap = new Map<string, EventAttempts>(
+      (allAttempts ?? []).map(a => [a.athlete_id, a])
     );
+    const videosMap = new Map<string, EventVideo[]>();
+    for (const v of (allVideos ?? [])) {
+      const list = videosMap.get(v.athlete_id) ?? [];
+      list.push(v);
+      videosMap.set(v.athlete_id, list);
+    }
+
+    return athletesData.map(athlete => ({
+      ...athlete,
+      attempts: attemptsMap.get(athlete.id) ?? null,
+      videos: videosMap.get(athlete.id) ?? [],
+    }));
   };
 
   const fetchEventAttempts = async (

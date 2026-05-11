@@ -26,6 +26,7 @@ interface WeekOverviewProps {
     position: number,
     unit: DefaultUnit,
   ) => Promise<unknown>;
+  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -50,6 +51,7 @@ export function WeekOverview({
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
+  createExercise,
   createComboExercise,
   onRefresh,
   onDeleteExercise,
@@ -101,7 +103,7 @@ export function WeekOverview({
                 </span>
               </div>
             ) : (
-              <div key={cell.weekday} style={{ flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div key={cell.weekday} style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {cell.trainingSessions.map(session => {
                   const dayEntry = visibleDays.find(d => d.index === session.slotIndex);
                   return (
@@ -127,6 +129,7 @@ export function WeekOverview({
                         onNavigateToDay={() => onNavigateToDay(session.slotIndex)}
                         onNavigateToExercise={id => onNavigateToExercise(session.slotIndex, id)}
                         addExerciseToDay={addExerciseToDay}
+                        createExercise={createExercise}
                         createComboExercise={createComboExercise}
                         onRefresh={onRefresh}
                         onDeleteExercise={onDeleteExercise}
@@ -149,7 +152,7 @@ export function WeekOverview({
             }}>
               Unscheduled
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
               {unscheduledDays.map(day => (
                 <DayCard
                   key={day.index}
@@ -181,7 +184,7 @@ export function WeekOverview({
   // ── Abstract mode ──────────────────────────────────────────────────────────
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
         {visibleDays.map(day => (
           <DayCard
             key={day.index}

@@ -35,9 +35,9 @@ export function ReadinessVsPerformance({ athleteId, startDate, endDate }: Props)
       <ResponsiveContainer width="100%" height={280}>
         <ScatterChart margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="raw" name="RAW readiness" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} label={{ value: 'RAW total', position: 'insideBottom', offset: -2, fontSize: 10, fill: '#9ca3af' }} />
-          <YAxis dataKey="compliance" name="Compliance %" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} unit="%" width={40} />
-          <Tooltip contentStyle={{ fontSize: 12, border: '1px solid #e5e7eb' }} cursor={{ strokeDasharray: '3 3' }} />
+          <XAxis dataKey="raw" name="RAW readiness" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} label={{ value: 'RAW total', position: 'insideBottom', offset: -2, fontSize: 10, fill: 'var(--color-text-tertiary)' }} />
+          <YAxis dataKey="compliance" name="Compliance %" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit="%" width={40} />
+          <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} cursor={{ strokeDasharray: '3 3' }} />
           <Scatter data={scatterData} fill="#378ADD" fillOpacity={0.7} />
         </ScatterChart>
       </ResponsiveContainer>

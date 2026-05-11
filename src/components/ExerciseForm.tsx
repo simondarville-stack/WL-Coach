@@ -21,6 +21,10 @@ const PRESET_COLORS = [
   { name: 'Indigo', value: '#6366F1' },
 ];
 
+function isProtectedCategory(name: string): boolean {
+  return name.toLowerCase().includes('system');
+}
+
 export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [] }: ExerciseFormProps) {
   const { categories, fetchCategories } = useExercises();
 
@@ -33,7 +37,6 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [notes, setNotes] = useState('');
   const [link, setLink] = useState('');
   const [countsTowardsTotals, setCountsTowardsTotals] = useState(true);
-  const [useStackedNotation, setUseStackedNotation] = useState(false);
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +56,6 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setNotes(editingExercise.notes || '');
       setLink(editingExercise.link || '');
       setCountsTowardsTotals(editingExercise.counts_towards_totals);
-      setUseStackedNotation(editingExercise.use_stacked_notation || false);
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
     } else {
@@ -64,14 +66,14 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const resetForm = () => {
     setName('');
     setExerciseCode('');
-    setCategory(categories.length > 0 ? categories[0].name : '');
+    const firstVisible = categories.find(c => !isProtectedCategory(c.name));
+    setCategory(firstVisible?.name ?? '');
     setIsCompetitionLift(false);
     setDefaultUnit('percentage');
     setColor('#3B82F6');
     setNotes('');
     setLink('');
     setCountsTowardsTotals(true);
-    setUseStackedNotation(false);
     setTrackPr(true);
     setPrReferenceId(null);
   };
@@ -90,7 +92,6 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         default_unit: defaultUnit,
         color,
         counts_towards_totals: countsTowardsTotals,
-        use_stacked_notation: useStackedNotation,
         track_pr: trackPr,
         pr_reference_exercise_id: prReferenceId,
         notes: notes.trim() || null,
@@ -176,7 +177,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           required
         >
-          {categories.map((cat) => (
+          {categories.filter(cat => !isProtectedCategory(cat.name)).map((cat) => (
             <option key={cat.id} value={cat.name}>
               {cat.name}
             </option>
@@ -205,18 +206,6 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         </label>
         <p className="text-xs text-gray-500 ml-6">
           When enabled, this exercise will be included in weekly set, rep, and tonnage summaries
-        </p>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={useStackedNotation}
-            onChange={(e) => setUseStackedNotation(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-          />
-          <span className="text-sm font-medium text-gray-700">Use Stacked Notation</span>
-        </label>
-        <p className="text-xs text-gray-500 ml-6">
-          Display prescriptions in stacked blocks (load over reps with sets on the right) instead of linear format
         </p>
       </div>
 

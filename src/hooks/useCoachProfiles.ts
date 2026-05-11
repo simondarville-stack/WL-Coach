@@ -14,6 +14,17 @@ export function useCoachProfiles() {
     return data || [];
   };
 
+  const createDefaultSettings = async (ownerId: string): Promise<void> => {
+    const { error } = await supabase.from('general_settings').insert({
+      owner_id: ownerId,
+      raw_enabled: true,
+      raw_average_days: 7,
+      grid_load_increment: 5,
+      grid_click_increment: 1,
+    });
+    if (error) throw error;
+  };
+
   const createCoach = async (profile: {
     name: string;
     email?: string;
@@ -25,6 +36,8 @@ export function useCoachProfiles() {
       .select()
       .single();
     if (error) throw error;
+    // Atomically create default settings for this coach
+    await createDefaultSettings(data.id);
     return data;
   };
 

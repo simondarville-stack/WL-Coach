@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import type { Athlete, BodyweightEntry } from '../lib/database.types';
-import { supabase } from '../lib/supabase';
+import { useBodyweight } from '../hooks/useBodyweight';
 import { formatDateToDDMMYYYY, formatDateShort } from '../lib/dateUtils';
 
 type TimeRange = '30d' | '90d' | '6m' | '1y' | 'All';
@@ -32,8 +32,7 @@ function filterByRange(entries: BodyweightEntry[], range: TimeRange): Bodyweight
 }
 
 export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupProps) {
-  const [allEntries, setAllEntries] = useState<BodyweightEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { entries: allEntries, loading, fetchEntries, upsert, update, remove } = useBodyweight(athlete.id);
   const [timeRange, setTimeRange] = useState<TimeRange>('90d');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -42,19 +41,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadEntries();
-  }, [athlete.id]);
-
-  async function loadEntries() {
-    setLoading(true);
-    const { data } = await supabase
-      .from('bodyweight_entries')
-      .select('*')
-      .eq('athlete_id', athlete.id)
-      .order('date', { ascending: true });
-    setAllEntries(data || []);
-    setLoading(false);
-  }
+    fetchEntries();
+  }, [fetchEntries]);
 
   const filtered = useMemo(() => filterByRange(allEntries, timeRange), [allEntries, timeRange]);
 
@@ -102,35 +90,27 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
   async function handleAddEntry() {
     const val = parseFloat(newWeight);
     if (!newDate || isNaN(val)) return;
-    await supabase.from('bodyweight_entries').upsert(
-      { athlete_id: athlete.id, date: newDate, weight_kg: val },
-      { onConflict: 'athlete_id,date' }
-    );
+    await upsert(newDate, val);
     setNewWeight('');
-    await loadEntries();
   }
 
   async function handleEditSave(entry: BodyweightEntry) {
     const val = parseFloat(editValue);
     if (isNaN(val)) { setEditingId(null); return; }
-    await supabase.from('bodyweight_entries')
-      .update({ weight_kg: val })
-      .eq('id', entry.id);
+    await update(entry.id, val);
     setEditingId(null);
-    await loadEntries();
   }
 
   async function handleDelete(id: string) {
-    await supabase.from('bodyweight_entries').delete().eq('id', id);
+    await remove(id);
     setDeleteConfirmId(null);
-    await loadEntries();
   }
 
   const sortedDesc = [...allEntries].reverse();
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div className="rounded-lg w-full max-w-3xl max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-medium text-gray-900">Bodyweight — {athlete.name}</h2>
@@ -199,12 +179,12 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
                 <XAxis
                   dataKey="date"
                   tickFormatter={formatDateShort}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   domain={[yMin, yMax]}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
                   tickFormatter={(v) => `${v}`}
                   width={35}
                 />
@@ -259,7 +239,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
             <button
               onClick={handleAddEntry}
               disabled={!newWeight}
-              className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+              className="rounded disabled:opacity-40"
+              style={{ padding: '4px 12px', fontSize: 'var(--text-caption)', background: 'var(--color-accent)', color: 'var(--color-text-on-accent)', minHeight: 36 }}
             >
               Add
             </button>
@@ -314,8 +295,8 @@ export function BodyweightPopup({ athlete, maDays, onClose }: BodyweightPopupPro
                     <td className="py-1.5 text-right">
                       {deleteConfirmId === entry.id ? (
                         <div className="flex items-center justify-end gap-1">
-                          <button onClick={() => handleDelete(entry.id)} className="text-red-600 hover:text-red-700 text-[10px] font-medium">Yes</button>
-                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 text-[10px]">No</button>
+                          <button onClick={() => handleDelete(entry.id)} className="text-red-600 hover:text-red-700 text-[11px] font-medium">Yes</button>
+                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-400 hover:text-gray-600 text-[11px]">No</button>
                         </div>
                       ) : (
                         <button onClick={() => setDeleteConfirmId(entry.id)} className="text-gray-300 hover:text-red-500 transition-colors">

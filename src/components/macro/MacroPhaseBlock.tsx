@@ -148,7 +148,7 @@ export function MacroPhaseBlock({
                   style={{
                     backgroundColor: weekColor + '33',
                     color: weekColor,
-                    border: `1px solid ${weekColor}55`,
+                    border: `0.5px solid ${weekColor}55`,
                   }}
                 >
                   {weekTypes.find(t => t.abbreviation === week.week_type)?.name ?? (week.week_type || '—')}
@@ -157,7 +157,8 @@ export function MacroPhaseBlock({
                 {/* Dropdown for Ctrl+click */}
                 {openDropdownWeekId === week.id && (
                   <div
-                    className="absolute top-full left-0 z-30 mt-0.5 bg-white border border-gray-200 rounded shadow-lg min-w-[90px]"
+                    className="absolute top-full left-0 z-30 mt-0.5 rounded min-w-[90px]"
+                    style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
                     onMouseLeave={() => setOpenDropdownWeekId(null)}
                   >
                     {weekTypes.map(t => (

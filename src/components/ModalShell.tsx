@@ -8,7 +8,7 @@ interface ModalShellProps {
 export function ModalShell({ children, maxWidth = 'max-w-lg' }: ModalShellProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-      <div className={`bg-white rounded-lg shadow-xl w-full ${maxWidth} animate-dialog-in`}>
+      <div className={`rounded-lg w-full ${maxWidth} animate-dialog-in`} style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
         {children}
       </div>
     </div>

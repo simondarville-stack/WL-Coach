@@ -68,6 +68,11 @@
   --color-accent-hover: #0C447C;
   --color-accent-muted: rgba(24, 95, 165, 0.08);
   --color-accent-border: rgba(24, 95, 165, 0.2);
+  --color-accent-subtle: rgba(24, 95, 165, 0.06); /* very light tint for active nav */
+
+  /* -- Colors: text selection -- */
+  --color-selection-bg: #dbeafe;
+  --color-selection-text: #1e3a5f;
 
   /* -- Colors: semantic (light mode) --
    *
@@ -373,7 +378,7 @@ samp {
   text-align: center;
   font-size: 11px;
   font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 500;
   user-select: none;
   border: none;
   background: transparent;
@@ -403,7 +408,7 @@ samp {
 }
 .pgrid-interval {
   background: rgba(59,130,246,0.04);
-  border: 1px solid rgba(59,130,246,0.15);
+  border: 0.5px solid rgba(59,130,246,0.15);
   border-radius: var(--radius-sm);
 }
 .pgrid-interval:hover:not(:disabled) {
@@ -416,7 +421,7 @@ samp {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  border: 1px dashed var(--color-border-secondary);
+  border: 0.5px dashed var(--color-border-secondary);
   color: var(--color-text-tertiary);
   background: transparent;
   cursor: pointer;
@@ -437,7 +442,7 @@ samp {
   font-size: 11px;
   font-family: var(--font-mono);
   background: var(--color-accent-muted);
-  border: 1px solid var(--color-accent);
+  border: 0.5px solid var(--color-accent);
   border-radius: var(--radius-sm);
   outline: none;
   min-width: 0;

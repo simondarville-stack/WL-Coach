@@ -29,11 +29,16 @@ export function MacroWeekNotes({ weekId, notes, onSave }: MacroWeekNotesProps) {
       <textarea
         ref={taRef}
         value={draft}
-        onChange={e => setDraft(e.target.value)}
+        onChange={e => {
+          setDraft(e.target.value);
+          e.target.style.height = 'auto';
+          e.target.style.height = `${e.target.scrollHeight}px`;
+        }}
         onBlur={handleBlur}
-        rows={3}
+        rows={1}
         placeholder="Add note…"
-        className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white leading-snug"
+        className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white leading-snug overflow-hidden"
+        style={{ minHeight: '18px' }}
       />
     );
   }

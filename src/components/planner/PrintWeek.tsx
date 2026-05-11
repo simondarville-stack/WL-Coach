@@ -1,3 +1,12 @@
+/**
+ * PrintWeek — print-only view of a single training week.
+ *
+ * Font-weight note: font-bold / font-semibold classes are used throughout
+ * this component intentionally for hard-copy readability. Screen designs
+ * use font-medium per EMOS design spec, but higher weights are necessary
+ * for printed output where ink density and contrast matter more.
+ * Do not normalize these to font-medium without testing a physical print.
+ */
 import { useEffect, useState } from 'react';
 import { X, Printer, FileText, LayoutGrid } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';

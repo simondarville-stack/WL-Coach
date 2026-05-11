@@ -1,8 +1,9 @@
 import { supabase } from './supabase';
 import { getMondayOfWeekISO } from './weekUtils';
+import { addDaysToISO } from './dateUtils';
 import type { MacroPhaseBarCell, MacroPhaseBarEvent } from '../components/planning/MacroPhaseBar';
 import type {
-  Macrocycle,
+  MacroCycle,
   MacroPhase,
   MacroWeek,
   WeekTypeConfig,
@@ -14,7 +15,7 @@ const GAP_COLOR = 'var(--color-bg-secondary)';
 
 export interface MacroPhaseBarSource {
   /** All macros the athlete has (can be >1 for cross-macro views). */
-  macros: Pick<Macrocycle, 'id' | 'name'>[];
+  macros: Pick<MacroCycle, 'id' | 'name'>[];
   /** All phases across all macros in `macros`. */
   phases: MacroPhase[];
   /** All macro_weeks rows across all macros in `macros`. */
@@ -41,19 +42,20 @@ function findPhaseForWeek(
 function resolveWeekType(
   abbr: string | null | undefined,
   configs: WeekTypeConfig[]
-): { abbr: string; name: string } {
-  if (!abbr) return { abbr: '', name: '' };
+): { abbr: string; name: string; color: string | null; warning: boolean } {
+  if (!abbr) return { abbr: '', name: '', color: null, warning: false };
   const wt =
     configs.find(c => c.abbreviation === abbr) ??
     configs.find(c => c.name.toLowerCase() === abbr.toLowerCase());
-  // Strict: only render types that exist in the coach's config.
-  // Unknown values (stale data, invalid input) render as empty so the
-  // cell stays clean. Raw value is still visible in the tooltip
-  // because we preserve it in typeName when the config doesn't match.
-  if (!wt) return { abbr: '', name: '' };
+  if (!wt) {
+    // Unknown week type: signal with warning flag so the cell can render "?"
+    return { abbr: '?', name: abbr, color: null, warning: true };
+  }
   return {
     abbr: wt.abbreviation,
     name: wt.name,
+    color: wt.color,
+    warning: false,
   };
 }
 
@@ -93,16 +95,19 @@ export function buildCellsForWeekRange(
 
     const phase = findPhaseForWeek(phases, macro.id, weekRow.week_number);
     const type = resolveWeekType(weekRow.week_type, weekTypeConfigs);
+    const phaseColor = phase?.color && phase.color.trim() !== '' ? phase.color : null;
 
     return {
       weekStart: ws,
       phase: phase?.name ?? null,
-      color: phase?.color ?? GAP_COLOR,
+      color: type.warning ? 'var(--color-warning-border)' : (phaseColor ?? GAP_COLOR),
       typeAbbr: type.abbr,
       typeName: type.name,
       macroId: macro.id,
       macroName: macro.name,
       label: `W${weekRow.week_number}`,
+      warning: type.warning || undefined,
+      rawWeekType: weekRow.week_type,
     };
   });
 }
@@ -112,7 +117,7 @@ export function buildCellsForWeekRange(
  * Used by the weekly planner detail view, which locks to one macro.
  */
 export function buildCellsForSingleMacro(
-  macro: Pick<Macrocycle, 'id' | 'name'>,
+  macro: Pick<MacroCycle, 'id' | 'name'>,
   source: MacroPhaseBarSource
 ): MacroPhaseBarCell[] {
   const macroWeeks = source.weeks
@@ -232,4 +237,21 @@ export async function fetchMacroPhaseBarEvents(
       return start <= rangeEnd && end >= rangeStart;
     })
     .map((ev: Event) => convertEventToPhaseBarEvent(ev));
+}
+
+/**
+ * Build cells for a continuous date range centered on a given Monday.
+ * Used by the "continuous" mode of MacroTimeline (planner overview).
+ */
+export function buildCellsForContinuousRange(
+  centerWeekStart: string,
+  weeksBack: number,
+  weeksForward: number,
+  source: MacroPhaseBarSource
+): MacroPhaseBarCell[] {
+  const weekStarts: string[] = [];
+  for (let i = -weeksBack; i <= weeksForward; i++) {
+    weekStarts.push(addDaysToISO(centerWeekStart, i * 7));
+  }
+  return buildCellsForWeekRange(weekStarts, source);
 }

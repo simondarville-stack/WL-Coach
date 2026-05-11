@@ -1,30 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Check, X, Trophy, TrendingUp } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Trophy, X, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { getOwnerId } from '../../lib/ownerContext';
 import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
 
-const REP_COUNTS = [1, 2, 3, 4, 5] as const;
+const REP_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 type RepCount = typeof REP_COUNTS[number];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PRCell {
   repCount: RepCount;
-  /** Real PR entry (best for this rep count) */
-  real: AthletePRHistory | null;
-  /** Phantom value derived from best implied 1RM */
+  /** Most-recent entry for this rep count (or null). */
+  current: AthletePRHistory | null;
+  /** Estimated value derived from best implied 1RM (no real entry yet). */
   phantom: number | null;
 }
 
 interface ExerciseRow {
   exercise: Exercise;
   cells: PRCell[];
-  /** The best implied 1RM for this exercise (used as tooltip/reference) */
   implied1RM: number | null;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+interface EditingCell {
+  exerciseId: string;
+  repCount: RepCount;
+  value: string;
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
@@ -35,29 +37,51 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// Shared box for the cell button and the inline input so the cell never grows
+// or shrinks when the user clicks to edit. Both use border-box + identical
+// height/padding/border so the row keeps its layout.
+const CELL_HEIGHT = 24;
+
+function cellChromeStyle(opts: { isReal: boolean; hasContent: boolean; color: string; italic: boolean }): React.CSSProperties {
+  return {
+    boxSizing: 'border-box',
+    width: '100%',
+    height: CELL_HEIGHT,
+    padding: '0 4px',
+    border: '1px solid transparent',
+    borderRadius: 'var(--radius-sm)',
+    background: 'transparent',
+    cursor: 'text',
+    transition: 'background 0.1s, border-color 0.1s',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
+    fontWeight: opts.isReal ? 600 : 400,
+    lineHeight: `${CELL_HEIGHT - 2}px`,
+    textAlign: 'center',
+    color: opts.color,
+    fontStyle: opts.italic ? 'italic' : 'normal',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  };
+}
 
 interface PRTrackingPanelProps {
   athlete: Athlete;
+  /** Optional back-button handler. When provided, a left-arrow button is
+   * rendered in the header — used when this panel is opened from the
+   * athlete profile. The sidebar /prs route omits this. */
+  onClose?: () => void;
 }
 
-export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
+export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
   const [rows, setRows] = useState<ExerciseRow[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Log PR form state
-  const [logForm, setLogForm] = useState<{
-    exerciseId: string;
-    repCount: RepCount;
-    value: string;
-    date: string;
-    notes: string;
-  } | null>(null);
+  const [editing, setEditing] = useState<EditingCell | null>(null);
   const [saving, setSaving] = useState(false);
-
-  // ── Fetch ───────────────────────────────────────────────────────────────────
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -68,17 +92,21 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
           .select('*')
           .eq('track_pr', true)
           .eq('is_archived', false)
+          .eq('owner_id', getOwnerId())
           .order('category')
           .order('name'),
         supabase
           .from('athlete_pr_history')
           .select('*')
           .eq('athlete_id', athlete.id)
-          .order('achieved_date', { ascending: false }),
+          // Most recent first, breaking ties by created_at so a same-day entry
+          // overrides an earlier one for the same rep count.
+          .order('achieved_date', { ascending: false })
+          .order('created_at', { ascending: false }),
       ]);
 
-      const exList = exData || [];
-      const hist = histData || [];
+      const exList = (exData as Exercise[] | null) || [];
+      const hist = (histData as AthletePRHistory[] | null) || [];
       setExercises(exList);
       setHistory(hist);
       setRows(buildRows(exList, hist));
@@ -87,39 +115,32 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
     }
   }, [athlete.id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  // ── Row builder ─────────────────────────────────────────────────────────────
+  useEffect(() => { void fetchData(); }, [fetchData]);
 
   function buildRows(exList: Exercise[], hist: AthletePRHistory[]): ExerciseRow[] {
     return exList.map(ex => {
-      const exHist = hist.filter(h => h.exercise_id === ex.id);
-
-      // Best real PR per rep count (highest value_kg)
-      const bestByRep = new Map<RepCount, AthletePRHistory>();
-      for (const entry of exHist) {
-        if (entry.rep_count < 1 || entry.rep_count > 5) continue;
+      // hist is sorted desc by achieved_date, created_at — first match per
+      // (exercise, rep_count) is the most recent.
+      const currentByRep = new Map<RepCount, AthletePRHistory>();
+      for (const entry of hist) {
+        if (entry.exercise_id !== ex.id) continue;
+        if (entry.rep_count < 1 || entry.rep_count > 10) continue;
         const rc = entry.rep_count as RepCount;
-        const current = bestByRep.get(rc);
-        if (!current || entry.value_kg > current.value_kg) bestByRep.set(rc, entry);
+        if (!currentByRep.has(rc)) currentByRep.set(rc, entry);
       }
 
-      // Best implied 1RM across all real PRs for this exercise
       let best1RM: number | null = null;
-      for (const [rep, entry] of bestByRep) {
-        const implied = estimate1RM(entry.value_kg, rep);
+      for (const [rep, entry] of currentByRep) {
+        const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
         if (best1RM === null || implied > best1RM) best1RM = implied;
       }
-      // Also consider direct 1RM entry as-is
-      const direct1RM = bestByRep.get(1);
-      if (direct1RM && direct1RM.value_kg > (best1RM ?? 0)) best1RM = direct1RM.value_kg;
 
       const cells: PRCell[] = REP_COUNTS.map(rc => {
-        const real = bestByRep.get(rc) ?? null;
-        const phantom = best1RM !== null && !real
+        const current = currentByRep.get(rc) ?? null;
+        const phantom = best1RM !== null && !current
           ? roundToHalf(estimateWeightAtReps(best1RM, rc))
           : null;
-        return { repCount: rc, real, phantom };
+        return { repCount: rc, current, phantom };
       });
 
       return {
@@ -130,50 +151,156 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
     });
   }
 
-  // ── Log PR ──────────────────────────────────────────────────────────────────
-
-  function openLogForm(exerciseId: string, repCount: RepCount, prefillKg?: number) {
-    setLogForm({
-      exerciseId,
-      repCount,
-      value: prefillKg ? String(prefillKg) : '',
-      date: today(),
-      notes: '',
-    });
+  function startEdit(exerciseId: string, repCount: RepCount, prefill: string) {
+    setError(null);
+    setEditing({ exerciseId, repCount, value: prefill });
   }
 
-  async function saveLogForm() {
-    if (!logForm) return;
-    const kg = parseFloat(logForm.value);
-    if (!kg || kg <= 0) return;
+  // Re-derive the current implied 1RM for an exercise from the history
+  // table and write it to athlete_prs. The planner percentage-resolver,
+  // analysis charts, etc. all still read from athlete_prs — keeping it in
+  // sync here means the new historical grid is the single editing surface
+  // without breaking those consumers.
+  async function syncAthletePRs(exerciseId: string) {
+    const { data: hist } = await supabase
+      .from('athlete_pr_history')
+      .select('rep_count, value_kg, achieved_date, created_at')
+      .eq('athlete_id', athlete.id)
+      .eq('exercise_id', exerciseId)
+      .order('achieved_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    const rows = (hist as Pick<AthletePRHistory, 'rep_count' | 'value_kg' | 'achieved_date'>[] | null) ?? [];
+
+    if (rows.length === 0) {
+      // No history left → drop the cached row too.
+      await supabase
+        .from('athlete_prs')
+        .delete()
+        .eq('athlete_id', athlete.id)
+        .eq('exercise_id', exerciseId);
+      return;
+    }
+
+    // Most-recent value per rep count (history is already sorted desc).
+    const recentByRep = new Map<number, { value_kg: number; achieved_date: string }>();
+    for (const r of rows) {
+      if (!recentByRep.has(r.rep_count)) {
+        recentByRep.set(r.rep_count, { value_kg: r.value_kg, achieved_date: r.achieved_date });
+      }
+    }
+
+    // Best implied 1RM among the most-recent values.
+    let best1RM = 0;
+    let bestDate = '';
+    for (const [rep, entry] of recentByRep) {
+      const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
+      if (implied > best1RM) {
+        best1RM = implied;
+        bestDate = entry.achieved_date;
+      }
+    }
+    if (best1RM <= 0) return;
+
+    const { error: upsertErr } = await supabase
+      .from('athlete_prs')
+      .upsert(
+        {
+          athlete_id: athlete.id,
+          exercise_id: exerciseId,
+          pr_value_kg: roundToHalf(best1RM),
+          pr_date: bestDate,
+        },
+        { onConflict: 'athlete_id,exercise_id' }
+      );
+    if (upsertErr) console.error('athlete_prs sync failed:', upsertErr);
+  }
+
+  async function commitEdit() {
+    if (!editing || saving) return;
+    const target = editing;
+    const raw = target.value.trim().replace(',', '.');
+
+    // Empty input → clear the current value for this cell. We delete only
+    // the most-recent entry for (exercise, rep_count) so older history
+    // rows stay around for analysis. If there are no older rows, the cell
+    // simply becomes empty.
+    if (raw === '') {
+      const currentEntry = rows
+        .find(r => r.exercise.id === target.exerciseId)
+        ?.cells.find(c => c.repCount === target.repCount)?.current;
+      if (!currentEntry) { setEditing(null); return; }
+
+      setSaving(true);
+      try {
+        const { error: delErr } = await supabase
+          .from('athlete_pr_history')
+          .delete()
+          .eq('id', currentEntry.id);
+        if (delErr) {
+          console.error('PR clear failed:', delErr);
+          setError(delErr.message || 'Failed to clear PR');
+          return;
+        }
+        await syncAthletePRs(target.exerciseId);
+        setEditing(null);
+        await fetchData();
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    const kg = Number(raw);
+    if (!Number.isFinite(kg) || kg <= 0) {
+      setError(`"${target.value}" is not a valid weight`);
+      setEditing(null);
+      return;
+    }
 
     setSaving(true);
     try {
-      await supabase.from('athlete_pr_history').insert({
-        athlete_id: athlete.id,
-        exercise_id: logForm.exerciseId,
-        rep_count: logForm.repCount,
-        value_kg: kg,
-        achieved_date: logForm.date,
-        notes: logForm.notes.trim() || null,
-      });
-      setLogForm(null);
+      const { error: insertErr } = await supabase
+        .from('athlete_pr_history')
+        .insert({
+          athlete_id: athlete.id,
+          exercise_id: target.exerciseId,
+          rep_count: target.repCount,
+          value_kg: kg,
+          achieved_date: today(),
+        });
+      if (insertErr) {
+        console.error('PR insert failed:', insertErr);
+        setError(insertErr.message || 'Failed to save PR');
+        return;
+      }
+      await syncAthletePRs(target.exerciseId);
+      setEditing(null);
       await fetchData();
     } finally {
       setSaving(false);
     }
   }
 
+  function cancelEdit() {
+    setEditing(null);
+  }
+
   async function deleteEntry(id: string) {
-    await supabase.from('athlete_pr_history').delete().eq('id', id);
+    const entry = history.find(h => h.id === id);
+    const { error: delErr } = await supabase.from('athlete_pr_history').delete().eq('id', id);
+    if (delErr) {
+      console.error('PR delete failed:', delErr);
+      setError(delErr.message || 'Failed to delete PR');
+      return;
+    }
+    if (entry) await syncAthletePRs(entry.exercise_id);
     await fetchData();
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 0', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
         Loading PRs…
       </div>
     );
@@ -181,283 +308,171 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
 
   if (exercises.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', textAlign: 'center', gap: 8 }}>
-        <Trophy size={28} style={{ color: 'var(--color-border-secondary)' }} />
-        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', margin: 0 }}>No PR-tracked exercises found.</p>
-        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0 }}>Enable PR tracking on exercises in the exercise settings.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 0', textAlign: 'center', gap: 6 }}>
+        <Trophy size={22} style={{ color: 'var(--color-border-secondary)' }} />
+        <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', margin: 0 }}>No PR-tracked exercises found.</p>
+        <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', margin: 0 }}>Enable PR tracking on exercises in the exercise settings.</p>
       </div>
     );
   }
 
-  const logExercise = exercises.find(e => e.id === logForm?.exerciseId);
-
-  const inputStyle: React.CSSProperties = {
-    padding: '4px 8px', fontSize: 12,
-    border: '1px solid var(--color-border-secondary)',
-    borderRadius: 'var(--radius-md)', outline: 'none',
-    background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
-  };
-
   return (
-    <div style={{ background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-secondary)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Trophy size={15} style={{ color: '#F59E0B' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>Personal Records</span>
-          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>— {athlete.name}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', borderBottom: '1px solid var(--color-border-tertiary)', background: 'var(--color-bg-secondary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Back"
+              style={{ padding: 2, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+            >
+              <ArrowLeft size={14} />
+            </button>
+          )}
+          <Trophy size={13} style={{ color: '#F59E0B' }} />
+          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>Personal Records</span>
+          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>— {athlete.name}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-            Solid = actual PR · <span style={{ color: 'var(--color-border-secondary)' }}>~italic = estimated</span>
-          </span>
-          <button
-            onClick={() => openLogForm(exercises[0].id, 1)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-              fontSize: 11, background: 'var(--color-accent)', color: 'var(--color-text-on-accent)',
-              border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer',
-              transition: 'background 0.1s',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-          >
-            <Plus size={12} />
-            Log PR
-          </button>
-        </div>
+        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          Click a cell · Enter saves with today's date
+        </span>
       </div>
+
+      {error && (
+        <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--color-danger-text)', background: 'rgba(239, 68, 68, 0.06)', borderBottom: '1px solid var(--color-border-tertiary)' }}>
+          {error}
+        </div>
+      )}
 
       {/* Table */}
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', fontSize: 13, borderCollapse: 'separate', borderSpacing: 0 }}>
+        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 200 }} />
+            {REP_COUNTS.map(rc => <col key={rc} style={{ width: 56 }} />)}
+            <col style={{ width: 60 }} />
+          </colgroup>
           <thead>
             <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border-secondary)' }}>
-              <th style={{ textAlign: 'left', padding: '8px 16px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', width: 220 }}>
+              <th style={{ textAlign: 'left', padding: '4px 10px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', position: 'sticky', left: 0, background: 'var(--color-bg-secondary)', zIndex: 1 }}>
                 Exercise
               </th>
               {REP_COUNTS.map(rc => (
-                <th key={rc} style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 90 }}>
+                <th key={rc} style={{ textAlign: 'center', padding: '4px 4px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>
                   {rc}RM
                 </th>
               ))}
-              <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', minWidth: 80 }}>
-                Impl. 1RM
+              <th style={{ textAlign: 'center', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                e1RM
               </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, ri) => {
-              const isLogging = logForm?.exerciseId === row.exercise.id;
-              return (
-                <>
-                  <tr
-                    key={row.exercise.id}
-                    style={{ borderBottom: '1px solid var(--color-border-tertiary)', background: ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'var(--color-accent-muted)'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)'; }}
-                  >
-                    {/* Exercise name */}
-                    <td style={{ padding: '8px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', backgroundColor: row.exercise.color ?? '#94a3b8' }} />
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                            {row.exercise.exercise_code
-                              ? <><span style={{ fontFamily: 'var(--font-mono)' }}>{row.exercise.exercise_code}</span><span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4, fontWeight: 400 }}>{row.exercise.name}</span></>
-                              : row.exercise.name}
-                          </div>
-                          <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>{row.exercise.category}</div>
-                        </div>
+            {rows.map((row, ri) => (
+              <tr
+                key={row.exercise.id}
+                style={{
+                  borderBottom: '1px solid var(--color-border-tertiary)',
+                  background: ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)',
+                }}
+              >
+                {/* Exercise name */}
+                <td style={{ padding: '3px 10px', position: 'sticky', left: 0, background: 'inherit', zIndex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, display: 'inline-block', backgroundColor: row.exercise.color ?? '#94a3b8' }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {row.exercise.exercise_code
+                          ? <><span style={{ fontFamily: 'var(--font-mono)' }}>{row.exercise.exercise_code}</span><span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4, fontWeight: 400 }}>{row.exercise.name}</span></>
+                          : row.exercise.name}
                       </div>
-                    </td>
+                    </div>
+                  </div>
+                </td>
 
-                    {/* xRM cells */}
-                    {row.cells.map(cell => {
-                      const isReal = cell.real !== null;
-                      const displayValue = isReal ? cell.real!.value_kg : cell.phantom;
+                {/* xRM cells */}
+                {row.cells.map(cell => {
+                  const isEditing = editing?.exerciseId === row.exercise.id && editing.repCount === cell.repCount;
+                  const isReal = cell.current !== null;
+                  const displayValue = isReal ? cell.current!.value_kg : cell.phantom;
 
-                      return (
-                        <td key={cell.repCount} style={{ padding: '4px 8px', textAlign: 'center' }}>
-                          <button
-                            style={{
-                              position: 'relative', width: '100%', display: 'flex', flexDirection: 'column',
-                              alignItems: 'center', gap: 2, padding: '6px 8px', borderRadius: 'var(--radius-md)',
-                              border: isReal
-                                ? '1px solid var(--color-border-secondary)'
-                                : displayValue
-                                  ? '1px solid var(--color-border-tertiary)'
-                                  : '1px solid transparent',
-                              background: isReal ? 'var(--color-bg-primary)' : displayValue ? 'var(--color-bg-secondary)' : 'transparent',
-                              cursor: 'pointer', transition: 'background 0.1s, border-color 0.1s',
-                            }}
-                            onMouseEnter={e => {
-                              const el = e.currentTarget as HTMLButtonElement;
-                              el.style.background = 'var(--color-accent-muted)';
-                              el.style.borderColor = 'var(--color-accent-border)';
-                            }}
-                            onMouseLeave={e => {
-                              const el = e.currentTarget as HTMLButtonElement;
-                              el.style.background = isReal ? 'var(--color-bg-primary)' : displayValue ? 'var(--color-bg-secondary)' : 'transparent';
-                              el.style.borderColor = isReal ? 'var(--color-border-secondary)' : displayValue ? 'var(--color-border-tertiary)' : 'transparent';
-                            }}
-                            onClick={() => openLogForm(row.exercise.id, cell.repCount, displayValue ? Math.round(displayValue) : undefined)}
-                            title={isReal ? `${cell.real!.value_kg} kg on ${formatDate(cell.real!.achieved_date)}${cell.real!.notes ? ' — ' + cell.real!.notes : ''}` : 'Click to log PR'}
-                          >
-                            {displayValue !== null ? (
-                              <>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 13, lineHeight: 1.25, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', fontStyle: isReal ? 'normal' : 'italic' }}>
-                                  {isReal ? displayValue : `~${displayValue}`}
-                                  <span style={{ fontSize: 9, fontWeight: 400, marginLeft: 2, fontStyle: 'normal', color: 'var(--color-text-tertiary)' }}>kg</span>
-                                </span>
-                                {isReal && (
-                                  <span style={{ fontSize: 8, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>
-                                    {formatDate(cell.real!.achieved_date)}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span style={{ color: 'var(--color-border-secondary)', fontSize: 11 }}>—</span>
-                            )}
-                            <Plus size={9} style={{ position: 'absolute', top: 2, right: 2, opacity: 0, color: 'var(--color-accent)', transition: 'opacity 0.1s' }} />
-                          </button>
-                        </td>
-                      );
-                    })}
-
-                    {/* Implied 1RM */}
-                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                      {row.implied1RM !== null ? (
-                        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                          {row.implied1RM}
-                          <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', marginLeft: 2 }}>kg</span>
-                        </span>
+                  return (
+                    <td key={cell.repCount} style={{ padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle' }}>
+                      {isEditing ? (
+                        <PRCellEditor
+                          value={editing!.value}
+                          saving={saving}
+                          onChange={v => setEditing(e => e ? { ...e, value: v } : e)}
+                          onCommit={() => void commitEdit()}
+                          onCancel={cancelEdit}
+                        />
                       ) : (
-                        <span style={{ color: 'var(--color-border-secondary)', fontSize: 11 }}>—</span>
+                        <button
+                          onClick={() => startEdit(row.exercise.id, cell.repCount, isReal ? String(cell.current!.value_kg) : '')}
+                          title={isReal
+                            ? `${cell.current!.value_kg} kg on ${formatDate(cell.current!.achieved_date)} · click to log new`
+                            : 'Click to log a PR'}
+                          style={cellChromeStyle({ isReal, hasContent: displayValue !== null, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', italic: !isReal })}
+                          onMouseEnter={e => {
+                            const el = e.currentTarget as HTMLButtonElement;
+                            el.style.background = 'var(--color-accent-muted)';
+                            el.style.borderColor = 'var(--color-accent-border)';
+                          }}
+                          onMouseLeave={e => {
+                            const el = e.currentTarget as HTMLButtonElement;
+                            el.style.background = 'transparent';
+                            el.style.borderColor = 'transparent';
+                          }}
+                        >
+                          {displayValue !== null
+                            ? (isReal ? displayValue : `~${displayValue}`)
+                            : <span style={{ color: 'var(--color-border-secondary)' }}>—</span>}
+                        </button>
                       )}
                     </td>
-                  </tr>
+                  );
+                })}
 
-                  {/* Inline log form — expands below the active row */}
-                  {isLogging && logForm && (
-                    <tr key={`${row.exercise.id}_form`} style={{ background: 'var(--color-accent-muted)', borderBottom: '1px solid var(--color-accent-border)' }}>
-                      <td colSpan={REP_COUNTS.length + 2} style={{ padding: '12px 16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--color-accent)', fontWeight: 500, minWidth: 140 }}>
-                            <TrendingUp size={12} />
-                            {logExercise?.exercise_code || logExercise?.name} — {logForm.repCount}RM
-                          </div>
-
-                          {/* Rep count selector */}
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            {REP_COUNTS.map(rc => (
-                              <button
-                                key={rc}
-                                onClick={() => setLogForm(f => f ? { ...f, repCount: rc } : f)}
-                                style={{
-                                  width: 28, height: 28, fontSize: 11, borderRadius: 'var(--radius-sm)',
-                                  fontWeight: 500, cursor: 'pointer', transition: 'background 0.1s',
-                                  background: logForm.repCount === rc ? 'var(--color-accent)' : 'var(--color-bg-primary)',
-                                  color: logForm.repCount === rc ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
-                                  border: logForm.repCount === rc ? 'none' : '1px solid var(--color-border-secondary)',
-                                }}
-                              >
-                                {rc}
-                              </button>
-                            ))}
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input
-                              type="number"
-                              step="0.5"
-                              min="0"
-                              placeholder="kg"
-                              value={logForm.value}
-                              onChange={e => setLogForm(f => f ? { ...f, value: e.target.value } : f)}
-                              style={{ ...inputStyle, width: 80, fontFamily: 'var(--font-mono)' }}
-                              autoFocus
-                              onKeyDown={e => { if (e.key === 'Enter') saveLogForm(); if (e.key === 'Escape') setLogForm(null); }}
-                            />
-                            <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>kg</span>
-                          </div>
-
-                          <input
-                            type="date"
-                            value={logForm.date}
-                            onChange={e => setLogForm(f => f ? { ...f, date: e.target.value } : f)}
-                            style={inputStyle}
-                          />
-
-                          <input
-                            type="text"
-                            placeholder="Notes (optional)"
-                            value={logForm.notes}
-                            onChange={e => setLogForm(f => f ? { ...f, notes: e.target.value } : f)}
-                            style={{ ...inputStyle, flex: 1, minWidth: 120, maxWidth: 200 }}
-                          />
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                            <button
-                              onClick={() => void saveLogForm()}
-                              disabled={saving || !logForm.value}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: 4, padding: '4px 12px',
-                                fontSize: 11, background: saving || !logForm.value ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
-                                color: saving || !logForm.value ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
-                                border: 'none', borderRadius: 'var(--radius-md)',
-                                cursor: saving || !logForm.value ? 'not-allowed' : 'pointer',
-                                opacity: saving || !logForm.value ? 0.5 : 1,
-                                transition: 'background 0.1s',
-                              }}
-                            >
-                              <Check size={11} />
-                              {saving ? 'Saving…' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => setLogForm(null)}
-                              style={{ padding: 4, color: 'var(--color-text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', borderRadius: 'var(--radius-sm)' }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
+                {/* Implied 1RM */}
+                <td style={{ padding: '3px 6px', textAlign: 'center' }}>
+                  {row.implied1RM !== null ? (
+                    <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-secondary)' }}>
+                      {row.implied1RM}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--color-border-secondary)', fontSize: 11 }}>—</span>
                   )}
-                </>
-              );
-            })}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* Recent entries footer */}
+      {/* Recent entries — inline delete in case of typo */}
       {history.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--color-border-tertiary)', padding: '8px 16px', background: 'var(--color-bg-secondary)' }}>
-          <div style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent entries</span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ borderTop: '1px solid var(--color-border-tertiary)', padding: '5px 10px', background: 'var(--color-bg-secondary)' }}>
+          <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
             {history.slice(0, 8).map(entry => {
               const ex = exercises.find(e => e.id === entry.exercise_id);
               return (
                 <div
                   key={entry.id}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', fontSize: 10 }}
-                  className="group"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '2px 6px', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)', fontSize: 10 }}
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-secondary)' }}>{entry.value_kg}kg</span>
-                  <span style={{ color: 'var(--color-text-tertiary)' }}>@ {entry.rep_count}RM</span>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}>@{entry.rep_count}</span>
                   <span style={{ color: 'var(--color-text-secondary)', fontWeight: 500 }}>{ex?.exercise_code || ex?.name}</span>
                   <span style={{ color: 'var(--color-border-secondary)' }}>{formatDate(entry.achieved_date)}</span>
                   <button
                     onClick={() => void deleteEntry(entry.id)}
-                    style={{ color: 'var(--color-danger-text)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', opacity: 0.6, marginLeft: 2 }}
+                    style={{ color: 'var(--color-danger-text)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', opacity: 0.5 }}
                     onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.6'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.5'; }}
                     title="Remove entry"
                   >
                     <X size={9} />
@@ -469,5 +484,61 @@ export function PRTrackingPanel({ athlete }: PRTrackingPanelProps) {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Cell editor ─────────────────────────────────────────────────────────────
+
+interface PRCellEditorProps {
+  value: string;
+  saving: boolean;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}
+
+function PRCellEditor({ value, saving, onChange, onCommit, onCancel }: PRCellEditorProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="decimal"
+      size={4}
+      value={value}
+      disabled={saving}
+      onChange={e => onChange(e.target.value)}
+      onBlur={onCommit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); onCommit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      }}
+      placeholder=""
+      style={{
+        boxSizing: 'border-box',
+        width: '100%',
+        minWidth: 0,
+        height: CELL_HEIGHT,
+        padding: '0 4px',
+        border: '1px solid var(--color-accent-border)',
+        borderRadius: 'var(--radius-sm)',
+        outline: 'none',
+        background: 'var(--color-bg-primary)',
+        color: 'var(--color-text-primary)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        fontWeight: 500,
+        lineHeight: `${CELL_HEIGHT - 2}px`,
+        textAlign: 'center',
+        margin: 0,
+        appearance: 'none',
+      }}
+    />
   );
 }

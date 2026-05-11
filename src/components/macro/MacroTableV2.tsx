@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType } from '../../lib/database.types';
+import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
+import { getWeekTypeColor } from '../../lib/weekUtils';
 
 export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
 
@@ -42,28 +43,15 @@ interface MacroTableV2Props {
   competitionTotal?: number | null;
   visibleExercises?: Set<string>;
   visibleColumns?: Set<string>;
+  weekTypes?: WeekTypeConfig[];
+  highlightedPhaseId?: string | null;
 }
 
-const WEEK_TYPE_COLORS: Record<string, string> = {
-  High: '#E24B4A', Medium: '#EF9F27', Low: '#1D9E75', Deload: '#5DCAA5',
-  Competition: '#378ADD', Taper: '#7F77DD', Vacation: '#888780',
-  Testing: '#D85A30', Transition: '#D4537E',
-};
-
-function getWeekTypeAbbr(wt: string): string {
+function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
   if (!wt) return '-';
-  const map: Record<string, string> = {
-    High: 'h', Medium: 'm', Low: 'g', Deload: 'dl',
-    Competition: 'c', Taper: 'tp', Vacation: 'v', Testing: 'te', Transition: 'tr',
-  };
-  return map[wt] ?? wt.slice(0, 2).toLowerCase();
+  const config = weekTypes.find(t => t.abbreviation === wt || t.name.toLowerCase() === wt.toLowerCase());
+  return config?.abbreviation ?? wt.slice(0, 2).toLowerCase();
 }
-
-function getWeekTypeColor(wt: string): string {
-  return WEEK_TYPE_COLORS[wt] ?? '#888780';
-}
-
-const WEEK_TYPES: WeekType[] = ['High', 'Medium', 'Low', 'Deload', 'Taper', 'Competition', 'Vacation', 'Testing', 'Transition'];
 
 // Sticky column widths in px — Notes is sticky; K/Σreps is in the General section
 const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'notes'];
@@ -112,6 +100,8 @@ export function MacroTableV2({
   competitionTotal,
   visibleExercises,
   visibleColumns,
+  weekTypes = [],
+  highlightedPhaseId,
 }: MacroTableV2Props) {
   const deleteMode = useShiftHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
@@ -197,11 +187,12 @@ export function MacroTableV2({
   }, [onUpdateTarget, deleteMode]);
 
   const cycleWeekType = useCallback((weekId: string, current: string) => {
-    const idx = WEEK_TYPES.findIndex(t => t === current);
-    const next = WEEK_TYPES[(idx + 1) % WEEK_TYPES.length];
-    onUpdateWeekType(weekId, next);
-    onUpdateWeekLabel(weekId, next);
-  }, [onUpdateWeekType, onUpdateWeekLabel]);
+    if (weekTypes.length === 0) return;
+    const idx = weekTypes.findIndex(t => t.abbreviation === current || t.name === current);
+    const next = weekTypes[(idx + 1) % weekTypes.length];
+    onUpdateWeekType(weekId, next.abbreviation as WeekType);
+    onUpdateWeekLabel(weekId, next.abbreviation);
+  }, [onUpdateWeekType, onUpdateWeekLabel, weekTypes]);
 
   // Phase grouping
   const sortedPhases = [...phases].sort((a, b) => a.position - b.position);
@@ -358,12 +349,13 @@ export function MacroTableV2({
               if (phase && phase.id !== lastPhaseId) {
                 lastPhaseId = phase.id ?? null;
                 rows.push(
-                  <tr key={`phase-${phase.id}`} className="border-t-2 border-gray-300">
+                  <tr key={`phase-${phase.id}`} data-phase-id={phase.id} className="border-t-2 border-gray-300">
                     <td
                       colSpan={leftColCount + displayed.length * 3 + (onSwapWeeks ? 1 : 0)}
                       className="sticky left-0 text-left px-2 py-1 text-[9px] font-medium tracking-wide"
                       style={{
-                        backgroundColor: phase.color + '25',
+                        backgroundColor: phase.color + (phase.id === highlightedPhaseId ? '55' : '25'),
+                        transition: 'background-color 400ms ease-out',
                         borderLeft: `3px solid ${phase.color}`,
                         color: phase.color,
                       }}
@@ -386,8 +378,8 @@ export function MacroTableV2({
               });
               const weekAvgInt = weekK > 0 && weekTonnage > 0 ? Math.round(weekTonnage / weekK) : null;
 
-              const wtColor = getWeekTypeColor(week.week_type);
-              const wtAbbr = getWeekTypeAbbr(week.week_type);
+              const wtColor = getWeekTypeColor(week.week_type, weekTypes);
+              const wtAbbr = getWeekTypeAbbr(week.week_type, weekTypes);
 
               const phaseColor = phase?.color;
 
@@ -414,7 +406,7 @@ export function MacroTableV2({
                       style={{ width: 68, left: stickyLeft['week'] }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[12px] font-bold text-gray-900 leading-none">{week.week_number}</span>
+                        <span className="text-[12px] font-medium text-gray-900 leading-none">{week.week_number}</span>
                         <span className="text-[9px] font-medium text-gray-500 leading-none mt-0.5">W{getISOWeek(week.week_start)}</span>
                         <span className="text-[7px] text-gray-400 leading-none mt-0.5">
                           {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}
@@ -435,10 +427,11 @@ export function MacroTableV2({
                           onClick={() => cycleWeekType(week.id, week.week_type)}
                           onContextMenu={(e) => {
                             e.preventDefault();
-                            const idx = WEEK_TYPES.findIndex(t => t === week.week_type);
-                            const prev = WEEK_TYPES[(idx - 1 + WEEK_TYPES.length) % WEEK_TYPES.length];
-                            onUpdateWeekType(week.id, prev);
-                            onUpdateWeekLabel(week.id, prev);
+                            if (weekTypes.length === 0) return;
+                            const idx = weekTypes.findIndex(t => t.abbreviation === week.week_type || t.name === week.week_type);
+                            const prev = weekTypes[(idx - 1 + weekTypes.length) % weekTypes.length];
+                            onUpdateWeekType(week.id, prev.abbreviation as WeekType);
+                            onUpdateWeekLabel(week.id, prev.abbreviation);
                           }}
                           title="Click to cycle week type"
                         >

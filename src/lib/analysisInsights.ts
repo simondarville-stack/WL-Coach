@@ -1,24 +1,32 @@
 import type { WeeklyAggregate, LiftRatio, IntensityZone } from '../hooks/useAnalysis';
 
+const DEFAULT_COMPLIANCE_WARNING_THRESHOLD = 85;
+const DEFAULT_LOW_INTENSITY_ZONE_MAX_PCT = 50;
+
 export function generateInsights(
   aggregates: WeeklyAggregate[],
   ratios: LiftRatio[],
-  zones: IntensityZone[]
+  zones: IntensityZone[],
+  complianceWarningThreshold: number | null = null,
+  lowIntensityZoneMaxPct: number | null = null,
 ): string[] {
   const insights: string[] = [];
 
+  const complianceThreshold = complianceWarningThreshold ?? DEFAULT_COMPLIANCE_WARNING_THRESHOLD;
+  const lowIntensityMax = lowIntensityZoneMaxPct ?? DEFAULT_LOW_INTENSITY_ZONE_MAX_PCT;
+
   if (!aggregates.length) return insights;
 
-  // 1. Compliance dropping below 85% for 2+ consecutive weeks
+  // 1. Compliance dropping below threshold for 2+ consecutive weeks
   let lowComplianceStreak = 0;
   for (const agg of aggregates) {
-    if (agg.plannedReps > 0 && agg.complianceReps < 85) {
+    if (agg.plannedReps > 0 && agg.complianceReps < complianceThreshold) {
       lowComplianceStreak++;
     } else {
       lowComplianceStreak = 0;
     }
     if (lowComplianceStreak >= 2) {
-      insights.push(`Compliance has been below 85% for ${lowComplianceStreak} consecutive weeks — check for fatigue, life stress, or planning issues.`);
+      insights.push(`Compliance has been below ${complianceThreshold}% for ${lowComplianceStreak} consecutive weeks — check for fatigue, life stress, or planning issues.`);
       break;
     }
   }
@@ -44,8 +52,8 @@ export function generateInsights(
   // 4. Intensity zone imbalance — too much low-intensity
   if (zones.length > 0) {
     const lowZone = zones.find(z => z.zone === '<70%');
-    if (lowZone && lowZone.percentage > 50) {
-      insights.push(`Over 50% of reps are below 70% 1RM — intensity may be too low for meaningful adaptation.`);
+    if (lowZone && lowZone.percentage > lowIntensityMax) {
+      insights.push(`Over ${lowIntensityMax}% of reps are below 70% 1RM — intensity may be too low for meaningful adaptation.`);
     }
   }
 

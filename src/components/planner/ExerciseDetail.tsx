@@ -8,6 +8,7 @@ import type {
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
+import { getSentinelType, getYouTubeThumbnail } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
@@ -49,16 +50,6 @@ interface ExerciseDetailProps {
 }
 
 type SentinelType = 'text' | 'video' | 'image' | null;
-function getSentinelType(code: string | null | undefined): SentinelType {
-  if (code === 'TEXT') return 'text';
-  if (code === 'VIDEO') return 'video';
-  if (code === 'IMAGE') return 'image';
-  return null;
-}
-function getYouTubeThumbnail(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-}
 
 const UNIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'absolute_kg', label: 'kg' },
@@ -132,9 +123,12 @@ export function ExerciseDetail({
   const loadIncrement = settings?.grid_load_increment ?? 5;
 
   useEffect(() => {
+    let cancelled = false;
     if (hasMacro && plannedExercise) void loadSollTarget();
     if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
     if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [macroContext?.macroId, plannedExercise?.id]);
 
   async function loadSollTarget() {
@@ -168,11 +162,21 @@ export function ExerciseDetail({
       .from('planned_exercises').select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
       .eq('weekplan_id', weekPlanId).eq('is_combo', true).neq('id', plannedExercise.id);
     if (!otherCombos?.length) { setOtherDays([]); return; }
+    // Batch-fetch all combo members in one query (fixes N+1)
+    const comboIds = otherCombos.map(c => c.id);
+    const { data: allMembers } = await supabase
+      .from('planned_exercise_combo_members')
+      .select('planned_exercise_id, exercise_id')
+      .in('planned_exercise_id', comboIds);
+    const memberMap = new Map<string, string[]>();
+    for (const m of allMembers || []) {
+      const list = memberMap.get(m.planned_exercise_id) || [];
+      list.push(m.exercise_id);
+      memberMap.set(m.planned_exercise_id, list);
+    }
     const matching: OtherDay[] = [];
     for (const combo of otherCombos) {
-      const { data: memberData } = await supabase
-        .from('planned_exercise_combo_members').select('exercise_id').eq('planned_exercise_id', combo.id);
-      const theirIds = (memberData || []).map((m: { exercise_id: string }) => m.exercise_id).sort().join(',');
+      const theirIds = (memberMap.get(combo.id) || []).sort().join(',');
       if (theirIds === currentMemberIds) {
         matching.push({ dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw, totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps });
       }
@@ -200,12 +204,12 @@ export function ExerciseDetail({
     } finally { setSaving(false); }
   }
 
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !plannedExercise) return;
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop() ?? 'jpg';
+      const ext = file.name.split('.').pop() ?? (sentinel === 'video' ? 'mp4' : 'jpg');
       const path = `${plannedExercise.id}.${ext}`;
       const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
       if (error) throw error;
@@ -355,13 +359,38 @@ export function ExerciseDetail({
               placeholder="Paste YouTube or video URL…"
               style={inputStyle}
             />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>or upload:</span>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                  background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border-secondary)',
+                  borderRadius: 'var(--radius-md)', cursor: uploading ? 'not-allowed' : 'pointer',
+                  fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)',
+                  opacity: uploading ? 0.5 : 1,
+                }}
+              >
+                <Upload size={12} />
+                {uploading ? 'Uploading…' : 'Upload file'}
+              </button>
+              <input ref={fileInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={e => void handleMediaUpload(e)} />
+            </div>
             {notes && (() => {
               const thumb = getYouTubeThumbnail(notes);
-              return thumb
-                ? <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} />
-                : <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', margin: 0 }}>
-                    <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />{notes}
-                  </p>;
+              if (thumb) {
+                return <img src={thumb} alt="Video thumbnail" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} />;
+              }
+              const isUploadedVideo = /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(notes);
+              if (isUploadedVideo) {
+                return <video src={notes} controls style={{ borderRadius: 4, width: '100%', maxWidth: 300 }} />;
+              }
+              return (
+                <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', margin: 0 }}>
+                  <Video size={12} style={{ color: '#6366F1', flexShrink: 0 }} />{notes}
+                </p>
+              );
             })()}
           </div>
         )}
@@ -387,7 +416,7 @@ export function ExerciseDetail({
                 <Upload size={12} />
                 {uploading ? 'Uploading…' : 'Upload file'}
               </button>
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => void handleImageUpload(e)} />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => void handleMediaUpload(e)} />
             </div>
             {notes && (
               <img src={notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />

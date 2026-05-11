@@ -759,7 +759,7 @@ export function MacroExcelIO({
             <Download size={12} /> Export <ChevronDown size={10} />
           </button>
           {exportOpen && (
-            <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[160px] overflow-hidden">
+            <div className="absolute top-full mt-1 left-0 rounded-lg z-30 min-w-[160px] overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
               <button
                 onClick={() => { handleExport(); setExportOpen(false); }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
@@ -785,7 +785,7 @@ export function MacroExcelIO({
             <Upload size={12} /> Import <ChevronDown size={10} />
           </button>
           {importOpen && (
-            <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-30 min-w-[160px] overflow-hidden">
+            <div className="absolute top-full mt-1 left-0 rounded-lg z-30 min-w-[160px] overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
               <button
                 onClick={() => { fileInputRef.current?.click(); setImportOpen(false); }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
@@ -809,7 +809,7 @@ export function MacroExcelIO({
       {/* ─── Regular Import Modal ─── */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+          <div className="rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-sm font-medium text-gray-900">Import Targets from Excel</h2>
               <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
@@ -909,7 +909,7 @@ export function MacroExcelIO({
       {/* ─── Template Import Modal ─── */}
       {showTemplateModal && templateData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+          <div className="rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
               <div>
                 <h2 className="text-sm font-medium text-gray-900">
