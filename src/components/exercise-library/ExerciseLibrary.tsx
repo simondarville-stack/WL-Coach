@@ -192,7 +192,10 @@ export function ExerciseLibrary() {
       {showBulkImport && (
         <ExerciseBulkImportModal
           onClose={() => setShowBulkImport(false)}
-          onComplete={async () => { await fetchExercises(); setShowBulkImport(false); }}
+          onComplete={async () => {
+            await Promise.all([fetchExercises(), fetchCategories()]);
+            setShowBulkImport(false);
+          }}
         />
       )}
     </>

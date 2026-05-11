@@ -555,7 +555,7 @@ export function ExerciseListPanel({
   onCreateExercise,
   hasSidePanel,
 }: ExerciseListPanelProps) {
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [showEmptyCategories, setShowEmptyCategories] = useState(false);
@@ -683,7 +683,7 @@ export function ExerciseListPanel({
             borderRadius: 'var(--radius-md)', padding: '2px',
           }}
         >
-          {(['grid', 'list'] as const).map(mode => (
+          {(['list', 'grid'] as const).map(mode => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}

@@ -4,6 +4,8 @@ import { Download, Upload, X, CheckCircle, AlertCircle, FileSpreadsheet } from '
 import type { Exercise, DefaultUnit } from '../lib/database.types';
 import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
+import { supabase } from '../lib/supabase';
+import { getOwnerId } from '../lib/ownerContext';
 
 interface ExerciseBulkImportModalProps {
   onClose: () => void;
@@ -128,6 +130,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
   const [hasParsed, setHasParsed] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<number | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const { bulkCreateExercises, createCategory, categories, fetchCategories } = useExercises();
 
@@ -182,6 +185,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
     if (validRows.length === 0) return;
 
     setImporting(true);
+    setImportError(null);
     try {
       // Auto-create any categories that don't exist yet
       const knownNames = new Set(categories.map(c => c.name));
@@ -193,10 +197,75 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
         await createCategory(newCatNames[i], maxOrder + 1 + i);
       }
 
-      const count = await bulkCreateExercises(validRows);
-      setImportResult(count);
-    } catch {
-      // error shown via hook
+      // Resolve conflicts on UNIQUE(owner_id, exercise_code).
+      // If a code matches an archived row for this coach, restore + overwrite it
+      // (drops it from the bulk insert). Active duplicates are surfaced as errors.
+      const ownerId = getOwnerId();
+      const codedRows = validRows.filter(r => r.exercise_code);
+      const incomingCodes = [...new Set(codedRows.map(r => r.exercise_code as string))];
+
+      let restoredCount = 0;
+      let activeConflicts: string[] = [];
+      let rowsToInsert = validRows;
+
+      if (incomingCodes.length > 0) {
+        const { data: existing, error: existingErr } = await supabase
+          .from('exercises')
+          .select('id, exercise_code, is_archived')
+          .eq('owner_id', ownerId)
+          .in('exercise_code', incomingCodes);
+        if (existingErr) throw existingErr;
+
+        const archivedByCode = new Map<string, string>();
+        const activeCodes = new Set<string>();
+        for (const ex of existing ?? []) {
+          if (ex.is_archived) archivedByCode.set(ex.exercise_code, ex.id);
+          else activeCodes.add(ex.exercise_code);
+        }
+
+        // Restore + overwrite archived matches.
+        for (const row of codedRows) {
+          const code = row.exercise_code as string;
+          const archivedId = archivedByCode.get(code);
+          if (!archivedId) continue;
+          const { error: restoreErr } = await supabase
+            .from('exercises')
+            .update({ ...row, is_archived: false })
+            .eq('id', archivedId)
+            .eq('owner_id', ownerId);
+          if (restoreErr) throw restoreErr;
+          restoredCount++;
+        }
+
+        // Filter out anything we already handled or that conflicts with an active row.
+        rowsToInsert = validRows.filter(r => {
+          const code = r.exercise_code as string | null | undefined;
+          if (!code) return true;
+          if (archivedByCode.has(code)) return false;
+          if (activeCodes.has(code)) {
+            activeConflicts.push(code);
+            return false;
+          }
+          return true;
+        });
+      }
+
+      const inserted = rowsToInsert.length > 0 ? await bulkCreateExercises(rowsToInsert) : 0;
+
+      if (activeConflicts.length > 0) {
+        setImportError(
+          `Skipped ${activeConflicts.length} row(s) — code already in use: ${activeConflicts.join(', ')}`
+        );
+      }
+      setImportResult(inserted + restoredCount);
+    } catch (err) {
+      console.error('Bulk import failed:', err);
+      const msg = err instanceof Error
+        ? err.message
+        : (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string')
+          ? (err as { message: string }).message
+          : 'Import failed';
+      setImportError(msg);
     } finally {
       setImporting(false);
     }
@@ -215,7 +284,12 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
         <div className="rounded-lg max-w-md w-full p-8 text-center" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
           <CheckCircle size={48} className="text-green-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-900 mb-2">Import complete</h2>
-          <p className="text-gray-600 mb-6">{importResult} exercise{importResult !== 1 ? 's' : ''} imported successfully.</p>
+          <p className="text-gray-600 mb-2">{importResult} exercise{importResult !== 1 ? 's' : ''} imported successfully.</p>
+          {importError && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-4 text-left">
+              {importError}
+            </p>
+          )}
           <button
             onClick={onComplete}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -304,6 +378,12 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
               {newCategoryNames.length > 0 && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                   New {newCategoryNames.length === 1 ? 'category' : 'categories'} will be created: <span className="font-medium">{newCategoryNames.join(', ')}</span>
+                </p>
+              )}
+
+              {importError && (
+                <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+                  {importError}
                 </p>
               )}
 
