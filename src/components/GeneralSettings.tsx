@@ -45,6 +45,7 @@ export function GeneralSettings() {
   const [defaultPrescriptionLoad, setDefaultPrescriptionLoad] = useState(50);
   const [pctToKgRoundEnabled, setPctToKgRoundEnabled] = useState(true);
   const [pctToKgRoundIncrement, setPctToKgRoundIncrement] = useState(0.5);
+  const [gridSaveError, setGridSaveError] = useState<string | null>(null);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
   const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
@@ -164,6 +165,7 @@ export function GeneralSettings() {
 
   async function updateGridSettings() {
     if (!settings) return;
+    setGridSaveError(null);
     try {
       await updateSettings(settings.id, {
         grid_load_increment: gridLoadIncrement,
@@ -172,8 +174,20 @@ export function GeneralSettings() {
         percent_to_kg_round_enabled: pctToKgRoundEnabled,
         percent_to_kg_round_increment: pctToKgRoundIncrement,
       });
-    } catch {
-      // error logged in hook
+    } catch (err) {
+      const msg = err instanceof Error
+        ? err.message
+        : (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string')
+          ? (err as { message: string }).message
+          : 'Failed to save grid settings';
+      // PGRST204 / "Could not find the 'X' column" → migration hasn't run yet.
+      if (msg.includes('percent_to_kg_round') || msg.includes('default_prescription_load')) {
+        setGridSaveError(
+          `${msg} — apply the latest Supabase migrations (20260511000002 and 20260511000003) so the columns exist.`
+        );
+      } else {
+        setGridSaveError(msg);
+      }
     }
   }
 
@@ -579,6 +593,12 @@ export function GeneralSettings() {
             </div>
           </div>
 
+          {gridSaveError && (
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {gridSaveError}
+            </div>
+          )}
+
           {(gridLoadIncrement !== settings?.grid_load_increment
             || gridClickIncrement !== settings?.grid_click_increment
             || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)
@@ -589,7 +609,7 @@ export function GeneralSettings() {
               disabled={saving}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              Save Grid Settings
+              {saving ? 'Saving…' : 'Save Grid Settings'}
             </button>
           )}
         </div>
