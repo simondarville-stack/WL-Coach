@@ -1,14 +1,8 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
-import {
-  buildCellsForWeekRange,
-  fetchMacroPhaseBarEvents,
-  resolveScopeAthleteIds,
-} from '../lib/macroPhaseBarData';
 import { computeMetrics, type ComputedMetrics } from '../lib/metrics';
-import type { MacroPhase, MacroWeek, WeekTypeConfig } from '../lib/database.types';
-import type { MacroPhaseBarEvent } from '../components/planning';
+import type { WeekTypeConfig } from '../lib/database.types';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -109,11 +103,7 @@ interface LoadParams {
 export function usePlannerWeekOverview() {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [macroBlocks, setMacroBlocks] = useState<MacroBlock[]>([]);
-  const [rawMacros, setRawMacros] = useState<Array<{ id: string; name: string }>>([]);
-  const [rawPhases, setRawPhases] = useState<MacroPhase[]>([]);
-  const [rawMacroWeeks, setRawMacroWeeks] = useState<MacroWeek[]>([]);
-  const [weekTypeConfigs, setWeekTypeConfigs] = useState<WeekTypeConfig[]>([]);
-  const [barEvents, setBarEvents] = useState<MacroPhaseBarEvent[]>([]);
+  const [, setWeekTypeConfigs] = useState<WeekTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async ({
@@ -126,10 +116,6 @@ export function usePlannerWeekOverview() {
     if (!targetId && !targetGroupId) {
       setWeeks([]);
       setMacroBlocks([]);
-      setRawMacros([]);
-      setRawPhases([]);
-      setRawMacroWeeks([]);
-      setBarEvents([]);
       setLoading(false);
       return;
     }
@@ -251,10 +237,6 @@ export function usePlannerWeekOverview() {
           .in('macrocycle_id', macroIds)
           .order('week_number');
 
-        setRawMacros(macros.map(m => ({ id: m.id, name: m.name })));
-        setRawPhases((phases as MacroPhase[]) ?? []);
-        setRawMacroWeeks((macroWeeks as MacroWeek[]) ?? []);
-
         // Build weekStart → macro targets map
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (macroWeeks || []).forEach((mw: any) => {
@@ -289,10 +271,6 @@ export function usePlannerWeekOverview() {
             phases: phaseBlocks,
           });
         });
-      } else {
-        setRawMacros([]);
-        setRawPhases([]);
-        setRawMacroWeeks([]);
       }
 
       setMacroBlocks(blocks);
@@ -399,7 +377,8 @@ export function usePlannerWeekOverview() {
 
       setWeeks(summaries);
 
-      // 7. Load coach-defined week type configs for the MacroPhaseBar
+      // 7. Load coach-defined week type configs (still surfaced for
+      //    future consumers — phaseBarCells used to read them).
       const { data: settings } = await supabase
         .from('general_settings')
         .select('week_types')
@@ -408,13 +387,6 @@ export function usePlannerWeekOverview() {
       setWeekTypeConfigs(
         (settings?.week_types as WeekTypeConfig[] | undefined) ?? []
       );
-
-      // 8. Load events for the visible range
-      const evRangeStart = weekDates[0];
-      const evRangeEnd = addDays(weekDates[weekDates.length - 1], 6);
-      const scopeAthleteIds = await resolveScopeAthleteIds(targetId, targetGroupId);
-      const fetched = await fetchMacroPhaseBarEvents(scopeAthleteIds, evRangeStart, evRangeEnd);
-      setBarEvents(fetched);
     } catch (err) {
       console.error('Failed to load week overview:', err);
     } finally {
@@ -422,25 +394,10 @@ export function usePlannerWeekOverview() {
     }
   }, []);
 
-  const phaseBarCells = useCallback(
-    (weekStarts: string[]) =>
-      buildCellsForWeekRange(weekStarts, {
-        macros: rawMacros,
-        phases: rawPhases,
-        weeks: rawMacroWeeks,
-        weekTypeConfigs,
-      }),
-    [rawMacros, rawPhases, rawMacroWeeks, weekTypeConfigs],
-  );
-
   return {
     weeks,
     macroBlocks,
-    rawMacroWeeks,
-    rawPhases,
-    barEvents,
     loading,
     loadData,
-    phaseBarCells,
   };
 }
