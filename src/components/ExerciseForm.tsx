@@ -40,6 +40,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCategories();
@@ -83,6 +84,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     if (!name.trim()) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       await onSave({
         name: name.trim(),
@@ -100,6 +102,14 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       if (!editingExercise) {
         resetForm();
       }
+    } catch (err) {
+      console.error('Save exercise failed:', err);
+      const msg = err instanceof Error
+        ? err.message
+        : (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string')
+          ? (err as { message: string }).message
+          : 'Failed to save exercise';
+      setSubmitError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -320,6 +330,12 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           placeholder="Additional notes about this exercise..."
         />
       </div>
+
+      {submitError && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+          {submitError}
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button
