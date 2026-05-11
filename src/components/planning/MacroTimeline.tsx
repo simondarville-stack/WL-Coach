@@ -75,69 +75,100 @@ export function MacroTimeline(props: MacroTimelineProps) {
   const todayMonday = getMondayOfWeekISO(new Date());
 
   // ── Load macros + phases + macro_weeks ──
+  // All three datasets are committed atomically in one render. Sequential
+  // setState calls with awaits between them break React batching and produce
+  // intermediate renders where (e.g.) macros are present but macro_weeks is
+  // still empty — the cell builder then paints every week as a gap, which is
+  // why the bar sometimes flashes uncolored.
   useEffect(() => {
+    let cancelled = false;
+
     void (async () => {
-      const ownerId = getOwnerId();
-      if (!ownerId) return;
+      try {
+        const ownerId = getOwnerId();
+        if (!ownerId) return;
 
-      let macrosQuery = supabase
-        .from('macrocycles')
-        .select('*')
-        .eq('owner_id', ownerId);
+        let macrosQuery = supabase
+          .from('macrocycles')
+          .select('*')
+          .eq('owner_id', ownerId);
 
-      if (props.mode === 'bounded') {
-        macrosQuery = macrosQuery.eq('id', props.cycleId);
-      } else {
-        if (props.athleteId) {
-          macrosQuery = macrosQuery.or(`athlete_id.eq.${props.athleteId},group_id.not.is.null`);
-        } else if (props.groupId) {
-          macrosQuery = macrosQuery.eq('group_id', props.groupId);
+        if (props.mode === 'bounded') {
+          macrosQuery = macrosQuery.eq('id', props.cycleId);
+        } else {
+          if (props.athleteId) {
+            macrosQuery = macrosQuery.or(`athlete_id.eq.${props.athleteId},group_id.not.is.null`);
+          } else if (props.groupId) {
+            macrosQuery = macrosQuery.eq('group_id', props.groupId);
+          }
         }
-      }
 
-      const { data: macros } = await macrosQuery;
-      let macrosFiltered = (macros as MacroCycle[]) ?? [];
+        const { data: macros, error: macrosErr } = await macrosQuery;
+        if (macrosErr) throw macrosErr;
+        let macrosFiltered = (macros as MacroCycle[]) ?? [];
 
-      if (props.mode === 'continuous' && props.athleteId) {
-        const groupMacros = macrosFiltered.filter(m => m.group_id);
-        if (groupMacros.length > 0) {
-          const groupIds = [...new Set(groupMacros.map(m => m.group_id!))];
-          const { data: memberships } = await supabase
-            .from('group_members')
-            .select('group_id, athlete_id')
-            .in('group_id', groupIds)
-            .eq('athlete_id', props.athleteId)
-            .is('left_at', null);
-          const memberOfGroups = new Set((memberships || []).map((m: { group_id: string }) => m.group_id));
-          macrosFiltered = macrosFiltered.filter(
-            m => !m.group_id || memberOfGroups.has(m.group_id)
-          );
+        if (props.mode === 'continuous' && props.athleteId) {
+          const groupMacros = macrosFiltered.filter(m => m.group_id);
+          if (groupMacros.length > 0) {
+            const groupIds = [...new Set(groupMacros.map(m => m.group_id!))];
+            const { data: memberships, error: memErr } = await supabase
+              .from('group_members')
+              .select('group_id, athlete_id')
+              .in('group_id', groupIds)
+              .eq('athlete_id', props.athleteId)
+              .is('left_at', null);
+            if (memErr) throw memErr;
+            const memberOfGroups = new Set((memberships || []).map((m: { group_id: string }) => m.group_id));
+            macrosFiltered = macrosFiltered.filter(
+              m => !m.group_id || memberOfGroups.has(m.group_id)
+            );
+          }
         }
-      }
 
-      setAllMacros(macrosFiltered);
+        const macroIds = macrosFiltered.map(m => m.id);
 
-      const macroIds = macrosFiltered.map(m => m.id);
-      if (macroIds.length === 0) {
+        if (macroIds.length === 0) {
+          if (cancelled) return;
+          setAllMacros(macrosFiltered);
+          setAllPhases([]);
+          setAllMacroWeeks([]);
+          return;
+        }
+
+        // Fetch phases and macro_weeks in parallel — they're independent.
+        const [phasesRes, weeksRes] = await Promise.all([
+          supabase
+            .from('macro_phases')
+            .select('*')
+            .in('macrocycle_id', macroIds)
+            .order('position'),
+          supabase
+            .from('macro_weeks')
+            .select('*')
+            .in('macrocycle_id', macroIds)
+            .order('week_number'),
+        ]);
+        if (phasesRes.error) throw phasesRes.error;
+        if (weeksRes.error) throw weeksRes.error;
+
+        if (cancelled) return;
+
+        // Commit all three atomically. React 18 batches synchronous setState
+        // calls, so the next render sees a consistent macros/phases/weeks
+        // snapshot rather than a half-loaded one.
+        setAllMacros(macrosFiltered);
+        setAllPhases((phasesRes.data as MacroPhase[]) ?? []);
+        setAllMacroWeeks((weeksRes.data as MacroWeek[]) ?? []);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('MacroTimeline: load failed', err);
+        setAllMacros([]);
         setAllPhases([]);
         setAllMacroWeeks([]);
-        return;
       }
-
-      const { data: phases } = await supabase
-        .from('macro_phases')
-        .select('*')
-        .in('macrocycle_id', macroIds)
-        .order('position');
-      setAllPhases((phases as MacroPhase[]) ?? []);
-
-      const { data: macroWeeks } = await supabase
-        .from('macro_weeks')
-        .select('*')
-        .in('macrocycle_id', macroIds)
-        .order('week_number');
-      setAllMacroWeeks((macroWeeks as MacroWeek[]) ?? []);
     })();
+
+    return () => { cancelled = true; };
   }, [
     props.mode,
     props.mode === 'bounded' ? props.cycleId : null,
@@ -208,25 +239,35 @@ export function MacroTimeline(props: MacroTimelineProps) {
       setEvents([]);
       return;
     }
+    let cancelled = false;
     void (async () => {
-      const athleteIds = await resolveScopeAthleteIds(
-        props.athleteId,
-        props.groupId
-      );
-      if (athleteIds.length === 0) {
+      try {
+        const athleteIds = await resolveScopeAthleteIds(
+          props.athleteId,
+          props.groupId
+        );
+        if (cancelled) return;
+        if (athleteIds.length === 0) {
+          setEvents([]);
+          return;
+        }
+        const rangeStart = cells[0].weekStart;
+        const lastCell = cells[cells.length - 1];
+        const rangeEnd = addDaysToISO(lastCell.weekStart, 6);
+        const fetched = await fetchMacroPhaseBarEvents(
+          athleteIds,
+          rangeStart,
+          rangeEnd
+        );
+        if (cancelled) return;
+        setEvents(fetched);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('MacroTimeline: events load failed', err);
         setEvents([]);
-        return;
       }
-      const rangeStart = cells[0].weekStart;
-      const lastCell = cells[cells.length - 1];
-      const rangeEnd = addDaysToISO(lastCell.weekStart, 6);
-      const fetched = await fetchMacroPhaseBarEvents(
-        athleteIds,
-        rangeStart,
-        rangeEnd
-      );
-      setEvents(fetched);
     })();
+    return () => { cancelled = true; };
   }, [cells, props.athleteId, props.groupId]);
 
   // ── Resolve playhead + selected week ──

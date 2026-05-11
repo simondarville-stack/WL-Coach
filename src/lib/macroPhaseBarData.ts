@@ -95,11 +95,12 @@ export function buildCellsForWeekRange(
 
     const phase = findPhaseForWeek(phases, macro.id, weekRow.week_number);
     const type = resolveWeekType(weekRow.week_type, weekTypeConfigs);
+    const phaseColor = phase?.color && phase.color.trim() !== '' ? phase.color : null;
 
     return {
       weekStart: ws,
       phase: phase?.name ?? null,
-      color: type.warning ? 'var(--color-warning-border)' : (phase?.color ?? GAP_COLOR),
+      color: type.warning ? 'var(--color-warning-border)' : (phaseColor ?? GAP_COLOR),
       typeAbbr: type.abbr,
       typeName: type.name,
       macroId: macro.id,
