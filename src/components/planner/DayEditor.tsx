@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type {
   WeekPlan, PlannedExercise, Exercise,
@@ -35,7 +36,6 @@ interface DayEditorProps {
   onNavigateToExercise: (exerciseId: string) => void;
   onRefresh: () => Promise<void>;
   addExerciseToDay: (weekPlanId: string, dayIndex: number, exerciseId: string, position: number, unit: DefaultUnit) => Promise<unknown>;
-  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (weekPlanId: string, dayIndex: number, position: number, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   saveNotes: (id: string, notes: string) => Promise<unknown>;
@@ -72,12 +72,12 @@ export function DayEditor({
   onNavigateToExercise,
   onRefresh,
   addExerciseToDay,
-  createExercise,
   createComboExercise,
   savePrescription,
   saveNotes,
   deletePlannedExercise,
 }: DayEditorProps) {
+  const { createExercise } = useExercises();
   const [macroTargets, setMacroTargets] = useState<Map<string, MacroTargetData>>(new Map());
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const shiftHeld = useShiftHeld();

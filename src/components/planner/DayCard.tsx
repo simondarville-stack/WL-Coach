@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
 import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
@@ -32,7 +33,6 @@ interface DayCardProps {
     position: number,
     unit: DefaultUnit,
   ) => Promise<unknown>;
-  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -134,13 +134,13 @@ export function DayCard({
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
-  createExercise,
   createComboExercise,
   onRefresh,
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
 }: DayCardProps) {
+  const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);

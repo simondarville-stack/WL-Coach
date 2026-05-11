@@ -26,7 +26,6 @@ interface WeekOverviewProps {
     position: number,
     unit: DefaultUnit,
   ) => Promise<unknown>;
-  createExercise: (exerciseData: Partial<Exercise>) => Promise<Exercise | null>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -51,7 +50,6 @@ export function WeekOverview({
   onNavigateToDay,
   onNavigateToExercise,
   addExerciseToDay,
-  createExercise,
   createComboExercise,
   onRefresh,
   onDeleteExercise,
@@ -129,7 +127,6 @@ export function WeekOverview({
                         onNavigateToDay={() => onNavigateToDay(session.slotIndex)}
                         onNavigateToExercise={id => onNavigateToExercise(session.slotIndex, id)}
                         addExerciseToDay={addExerciseToDay}
-                        createExercise={createExercise}
                         createComboExercise={createComboExercise}
                         onRefresh={onRefresh}
                         onDeleteExercise={onDeleteExercise}
