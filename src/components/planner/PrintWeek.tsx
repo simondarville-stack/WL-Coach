@@ -8,6 +8,7 @@
  * Do not normalize these to font-medium without testing a physical print.
  */
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer, FileText, LayoutGrid } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
@@ -227,7 +228,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
 
   const age = calculateAge(athlete.birthdate);
 
-  return (
+  return createPortal((
     <div id="print-programme-root" className="fixed inset-0 bg-white z-50 overflow-auto">
       <div className="print:hidden bg-gray-100 border-b border-gray-300 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
@@ -488,5 +489,5 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
       `}</style>
     </>)}
     </div>
-  );
+  ), document.body);
 }
