@@ -328,6 +328,11 @@ export function DayCard({
                     onDragEnd={() => {
                       setDraggingExId(null);
                       setDropIndicator(null);
+                      // Same-day reorder drops stopPropagation on the item
+                      // handler, so the card's onDrop never clears its own
+                      // drag-over visual. onDragEnd on the source always fires;
+                      // use it as the catch-all reset.
+                      setIsDragOver(false);
                     }}
                     onDragOver={e => {
                       if (!draggingExId || draggingExId === ex.id) return;
