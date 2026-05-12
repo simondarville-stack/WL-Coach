@@ -5,7 +5,7 @@ import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry } f
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
-import { parsePrescription, parseComboPrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,6 +134,21 @@ function buildComboGridCells(prescriptionRaw: string | null): GridCell[] {
   return parsed.map(p => ({
     load: p.loadMax != null ? `${p.load}-${p.loadMax}` : p.load,
     reps: p.repsText,
+    sets: p.sets,
+  }));
+}
+
+// free_text_reps prescriptions are "<text> × reps [× sets]" — the text
+// can be empty (a bare "× 5 × 3"), which still maps to a stacked
+// notation cell with an empty top row and the reps × sets below.
+function buildFreeTextGridCells(prescriptionRaw: string | null): GridCell[] {
+  if (!prescriptionRaw?.trim()) return [];
+  const parsed = parseFreeTextPrescription(prescriptionRaw);
+  if (parsed.length === 0) return [];
+
+  return parsed.map(p => ({
+    load: p.loadText,
+    reps: p.reps,
     sets: p.sets,
   }));
 }
@@ -315,6 +330,7 @@ function DayTable({
     ...dayExs.map(ex => {
       if (getSentinelType(ex.exercise.exercise_code)) return 0;
       if (ex.unit === 'free_text') return 0;
+      if (ex.unit === 'free_text_reps') return buildFreeTextGridCells(ex.prescription_raw).length;
       if (ex.is_combo) return buildComboGridCells(ex.prescription_raw).length;
       return buildGridCells(ex.prescription_raw).length;
     }),
@@ -396,6 +412,27 @@ function DayTable({
           }
 
           const code = codeMap.get(ex.exercise_id) || getExerciseCode(ex.exercise, new Map());
+
+          if (ex.unit === 'free_text_reps') {
+            const freeCells = buildFreeTextGridCells(ex.prescription_raw);
+            if (freeCells.length > 0) {
+              return (
+                <ExerciseRows
+                  key={ex.id}
+                  code={code}
+                  cells={freeCells}
+                  maxCols={maxCols}
+                  unit={ex.unit}
+                  totalReps={ex.summary_total_reps}
+                  avgLoad={ex.summary_avg_load}
+                  maxLoad={ex.summary_highest_load}
+                  notes={ex.notes}
+                  variationNote={ex.variation_note}
+                />
+              );
+            }
+          }
+
           const cells = buildGridCells(ex.prescription_raw);
 
           if (ex.unit === 'free_text' || (cells.length === 0 && ex.prescription_raw?.trim())) {

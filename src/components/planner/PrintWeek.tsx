@@ -14,7 +14,7 @@ import type { WeekPlan, PlannedExercise, Exercise, Athlete, DefaultUnit, ComboMe
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
-import { parsePrescription, parseComboPrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekCompact } from './PrintWeekCompact';
@@ -50,6 +50,29 @@ function formatUnit(unit: DefaultUnit | string | null): string {
 function InlinePrescription({ prescription, unit, isCombo }: { prescription: string | null; unit: string | null; isCombo?: boolean }) {
   if (!prescription?.trim()) return <span className="text-gray-500 italic">No prescription</span>;
   const unitSym = unit === 'percentage' ? '%' : unit === 'rpe' ? ' RPE' : '';
+
+  // free_text_reps — stacked notation with the (possibly empty) text as
+  // the load row. Falls back to raw output only when the row isn't
+  // parseable as "<text> × reps [× sets]".
+  if (unit === 'free_text_reps') {
+    const lines = parseFreeTextPrescription(prescription);
+    if (lines.length === 0) return <span>{prescription}</span>;
+    return (
+      <div className="flex flex-wrap gap-4">
+        {lines.map((line, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div className="inline-flex flex-col items-center">
+              <span className="text-sm font-semibold text-gray-900 min-h-[1em]">{line.loadText || ' '}</span>
+              <div className="border-t border-gray-400 w-full my-0.5" />
+              <span className="text-sm font-semibold text-gray-900">{line.reps}</span>
+            </div>
+            {line.sets > 1 && <span className="text-sm font-bold text-gray-900">{line.sets}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (isCombo) {
     const parsed = parseComboPrescription(prescription);
     if (parsed.length === 0) return <span>{prescription}</span>;
