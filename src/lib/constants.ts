@@ -11,8 +11,9 @@ export const DEFAULT_UNITS: { value: DefaultUnit; label: string }[] = [
   { value: 'percentage', label: 'Percentage (%)' },
   { value: 'absolute_kg', label: 'Absolute (kg)' },
   { value: 'rpe', label: 'RPE' },
-  { value: 'free_text', label: 'Free Text (with reps/sets)' },
-  { value: 'other', label: 'Other (Free Text)' },
+  { value: 'free_text_reps', label: 'Free Text (with reps × sets)' },
+  { value: 'free_text', label: 'Free Text' },
+  { value: 'other', label: 'Other' },
 ];
 
 export const DAYS_OF_WEEK = [
@@ -36,6 +37,7 @@ export function getUnitSymbol(unit: string | null): string {
     case 'rpe':
       return 'RPE';
     case 'free_text':
+    case 'free_text_reps':
       return 'text';
     case 'other':
       return '';
@@ -54,6 +56,8 @@ export function getUnitLabel(unit: string | null): string {
       return 'RPE';
     case 'free_text':
       return 'Free Text';
+    case 'free_text_reps':
+      return 'Free Text + reps';
     case 'other':
       return 'Other';
     default:
