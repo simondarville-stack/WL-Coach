@@ -502,6 +502,7 @@ export function useWeekPlans() {
     extras?: {
       prescription_raw?: string | null;
       notes?: string | null;
+      variation_note?: string | null;
       summary_total_sets?: number;
       summary_total_reps?: number;
       summary_highest_load?: number | null;
@@ -526,6 +527,7 @@ export function useWeekPlans() {
         summary_avg_load: extras?.summary_avg_load ?? null,
         prescription_raw: extras?.prescription_raw ?? null,
         notes: extras?.notes ?? null,
+        variation_note: extras?.variation_note ?? null,
         is_combo: extras?.is_combo ?? false,
         combo_notation: extras?.combo_notation ?? null,
         combo_color: extras?.combo_color ?? null,
@@ -545,6 +547,8 @@ export function useWeekPlans() {
   ): Promise<string> => {
     const newEx = await addExerciseToDay(weekPlanId, dayIndex, sourceEx.exercise_id, position, sourceEx.unit as DefaultUnit, {
       prescription_raw: sourceEx.prescription_raw,
+      notes: sourceEx.notes,
+      variation_note: sourceEx.variation_note,
       summary_total_sets: sourceEx.summary_total_sets ?? 0,
       summary_total_reps: sourceEx.summary_total_reps ?? 0,
       summary_highest_load: sourceEx.summary_highest_load,
