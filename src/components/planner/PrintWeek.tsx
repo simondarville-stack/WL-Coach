@@ -228,7 +228,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   const age = calculateAge(athlete.birthdate);
 
   return (
-    <div className="fixed inset-0 bg-white z-50 overflow-auto">
+    <div id="print-programme-root" className="fixed inset-0 bg-white z-50 overflow-auto">
       <div className="print:hidden bg-gray-100 border-b border-gray-300 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold text-gray-900">Print Preview</h2>
@@ -464,9 +464,25 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 12mm; }
-          body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background: white !important; }
+          /* Hide everything except the print root so position:fixed
+             doesn't clip the document to one viewport page. */
+          body > * { display: none !important; }
+          #print-programme-root { display: block !important; }
+          #print-programme-root {
+            position: static !important;
+            inset: auto !important;
+            overflow: visible !important;
+            height: auto !important;
+            background: white !important;
+          }
           .print\\:hidden { display: none !important; }
-          .print-content { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+          .print-content {
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
           .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
