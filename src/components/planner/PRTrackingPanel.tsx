@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trophy, X, ArrowLeft } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Trophy, X, ArrowLeft, Search, ArrowUp, ArrowDown } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
@@ -83,6 +84,22 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Filter + sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  // Sort key is 'name' (alpha), 'category' (alpha), a RepCount number
+  // (sort by current cell value), or 'e1RM' (sort by the implied 1RM
+  // column). Numeric sorts default to desc so the strongest lift surfaces
+  // first.
+  type SortKey = 'name' | 'category' | RepCount | 'e1RM';
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // History dialog state — clicking an exercise's identity cells (code /
+  // name / category) opens a per-exercise history view with all logged
+  // entries and a progression chart.
+  const [historyExerciseId, setHistoryExerciseId] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -116,6 +133,65 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   }, [athlete.id]);
 
   useEffect(() => { void fetchData(); }, [fetchData]);
+
+  // Unique non-system categories in this owner's PR-tracked exercises.
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) if (r.exercise.category && r.exercise.category !== '— System') set.add(r.exercise.category);
+    return Array.from(set).sort();
+  }, [rows]);
+
+  // Apply search + category filter then sort. Numeric columns sort by the
+  // cell's current value_kg (real entries only — phantom estimates rank
+  // last). Name column sorts alphabetically.
+  const displayedRows = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let out = rows.filter(r => {
+      if (categoryFilter !== 'all' && r.exercise.category !== categoryFilter) return false;
+      if (!q) return true;
+      const name = r.exercise.name.toLowerCase();
+      const code = (r.exercise.exercise_code ?? '').toLowerCase();
+      return name.includes(q) || code.includes(q);
+    });
+
+    const valueFor = (row: ExerciseRow): number | null => {
+      if (sortKey === 'name') return null;
+      if (sortKey === 'e1RM') return row.implied1RM;
+      const cell = row.cells.find(c => c.repCount === sortKey);
+      return cell?.current?.value_kg ?? null;
+    };
+
+    out = [...out].sort((a, b) => {
+      if (sortKey === 'name') {
+        const cmp = a.exercise.name.localeCompare(b.exercise.name);
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+      if (sortKey === 'category') {
+        const cmp = (a.exercise.category ?? '').localeCompare(b.exercise.category ?? '');
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+      const av = valueFor(a);
+      const bv = valueFor(b);
+      // Null/empty always sinks to the bottom regardless of direction.
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const cmp = av - bv;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return out;
+  }, [rows, searchQuery, categoryFilter, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      // Numeric columns default to desc (heaviest first); alpha defaults to asc.
+      setSortDir(key === 'name' || key === 'category' ? 'asc' : 'desc');
+    }
+  }
 
   function buildRows(exList: Exercise[], hist: AthletePRHistory[]): ExerciseRow[] {
     return exList.map(ex => {
@@ -347,31 +423,122 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
         </div>
       )}
 
+      {/* Filter toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+        padding: '5px 10px', borderBottom: '1px solid var(--color-border-tertiary)',
+        background: 'var(--color-bg-primary)',
+      }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={11} style={{ position: 'absolute', left: 6, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search exercise or code"
+            style={{
+              width: 180, padding: '3px 6px 3px 22px', fontSize: 11,
+              border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
+              outline: 'none', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              title="Clear"
+              style={{ position: 'absolute', right: 4, padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center' }}
+            >
+              <X size={11} />
+            </button>
+          )}
+        </div>
+        <select
+          value={categoryFilter}
+          onChange={e => setCategoryFilter(e.target.value)}
+          style={{
+            padding: '3px 6px', fontSize: 11,
+            border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
+            outline: 'none', background: 'var(--color-bg-primary)', color: 'var(--color-text-primary)',
+            cursor: 'pointer',
+          }}
+        >
+          <option value="all">All categories</option>
+          {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+        </select>
+        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>
+          {displayedRows.length} of {rows.length} exercises
+        </span>
+      </div>
+
       {/* Table */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', fontSize: 11, borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: 200 }} />
+            <col style={{ width: 60 }} />
+            <col style={{ width: 140 }} />
+            <col style={{ width: 90 }} />
             {REP_COUNTS.map(rc => <col key={rc} style={{ width: 56 }} />)}
             <col style={{ width: 60 }} />
           </colgroup>
           <thead>
             <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border-secondary)' }}>
-              <th style={{ textAlign: 'left', padding: '4px 10px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', position: 'sticky', left: 0, background: 'var(--color-bg-secondary)', zIndex: 1 }}>
-                Exercise
-              </th>
+              <SortableHeader
+                label="Code"
+                align="left"
+                active={sortKey === 'name'}
+                dir={sortDir}
+                onClick={() => toggleSort('name')}
+                style={{ position: 'sticky', left: 0, background: 'var(--color-bg-secondary)', zIndex: 1 }}
+              />
+              <SortableHeader
+                label="Exercise"
+                align="left"
+                active={sortKey === 'name'}
+                dir={sortDir}
+                onClick={() => toggleSort('name')}
+              />
+              <SortableHeader
+                label="Category"
+                align="left"
+                active={sortKey === 'category'}
+                dir={sortDir}
+                onClick={() => toggleSort('category')}
+              />
               {REP_COUNTS.map(rc => (
-                <th key={rc} style={{ textAlign: 'center', padding: '4px 4px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                  {rc}RM
-                </th>
+                <SortableHeader
+                  key={rc}
+                  label={`${rc}RM`}
+                  align="center"
+                  active={sortKey === rc}
+                  dir={sortDir}
+                  onClick={() => toggleSort(rc)}
+                />
               ))}
-              <th style={{ textAlign: 'center', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>
-                e1RM
-              </th>
+              <SortableHeader
+                label="e1RM"
+                align="center"
+                active={sortKey === 'e1RM'}
+                dir={sortDir}
+                onClick={() => toggleSort('e1RM')}
+              />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, ri) => (
+            {displayedRows.length === 0 && (
+              <tr>
+                <td colSpan={3 + REP_COUNTS.length + 1} style={{ padding: '16px 12px', textAlign: 'center', fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                  No exercises match the current filter.
+                </td>
+              </tr>
+            )}
+            {displayedRows.map((row, ri) => {
+              const idCellStyle: React.CSSProperties = {
+                padding: '3px 8px',
+                cursor: 'pointer',
+                background: 'inherit',
+              };
+              const onIdClick = () => setHistoryExerciseId(row.exercise.id);
+              return (
               <tr
                 key={row.exercise.id}
                 style={{
@@ -379,18 +546,26 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                   background: ri % 2 === 0 ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)',
                 }}
               >
-                {/* Exercise name */}
-                <td style={{ padding: '3px 10px', position: 'sticky', left: 0, background: 'inherit', zIndex: 1 }}>
+                {/* Code */}
+                <td onClick={onIdClick} style={{ ...idCellStyle, position: 'sticky', left: 0, zIndex: 1 }} title="Click to view history">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, display: 'inline-block', backgroundColor: row.exercise.color ?? '#94a3b8' }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {row.exercise.exercise_code
-                          ? <><span style={{ fontFamily: 'var(--font-mono)' }}>{row.exercise.exercise_code}</span><span style={{ color: 'var(--color-text-tertiary)', marginLeft: 4, fontWeight: 400 }}>{row.exercise.name}</span></>
-                          : row.exercise.name}
-                      </div>
-                    </div>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {row.exercise.exercise_code ?? ''}
+                    </span>
                   </div>
+                </td>
+                {/* Exercise name */}
+                <td onClick={onIdClick} style={idCellStyle} title="Click to view history">
+                  <span style={{ fontSize: 11, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {row.exercise.name}
+                  </span>
+                </td>
+                {/* Category */}
+                <td onClick={onIdClick} style={idCellStyle} title="Click to view history">
+                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                    {row.exercise.category}
+                  </span>
                 </td>
 
                 {/* xRM cells */}
@@ -447,10 +622,21 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {historyExerciseId && (
+        <PRHistoryDialog
+          athleteId={athlete.id}
+          exercise={exercises.find(e => e.id === historyExerciseId)!}
+          history={history.filter(h => h.exercise_id === historyExerciseId)}
+          onClose={() => setHistoryExerciseId(null)}
+          onDelete={async (id) => { await deleteEntry(id); }}
+        />
+      )}
 
       {/* Recent entries — inline delete in case of typo */}
       {history.length > 0 && (
@@ -540,5 +726,191 @@ function PRCellEditor({ value, saving, onChange, onCommit, onCancel }: PRCellEdi
         appearance: 'none',
       }}
     />
+  );
+}
+
+// ─── Sortable header ─────────────────────────────────────────────────────────
+
+interface SortableHeaderProps {
+  label: string;
+  align: 'left' | 'center';
+  active: boolean;
+  dir: 'asc' | 'desc';
+  onClick: () => void;
+  style?: React.CSSProperties;
+}
+
+function SortableHeader({ label, align, active, dir, onClick, style }: SortableHeaderProps) {
+  return (
+    <th
+      onClick={onClick}
+      style={{
+        textAlign: align, padding: '4px 6px', fontSize: 10, fontWeight: 500,
+        color: active ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+        background: 'var(--color-bg-secondary)',
+        cursor: 'pointer',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+        ...style,
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, justifyContent: align === 'center' ? 'center' : 'flex-start' }}>
+        {label}
+        {active && (dir === 'asc' ? <ArrowUp size={9} /> : <ArrowDown size={9} />)}
+      </span>
+    </th>
+  );
+}
+
+// ─── Per-exercise history dialog ─────────────────────────────────────────────
+
+interface PRHistoryDialogProps {
+  athleteId: string;
+  exercise: Exercise;
+  history: AthletePRHistory[];
+  onClose: () => void;
+  onDelete: (id: string) => Promise<void>;
+}
+
+function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDialogProps) {
+  // Sort the entries chronologically for the chart, but show most-recent
+  // first in the list.
+  const sortedAsc = useMemo(() => {
+    return [...history].sort((a, b) => a.achieved_date.localeCompare(b.achieved_date));
+  }, [history]);
+  const sortedDesc = useMemo(() => [...sortedAsc].reverse(), [sortedAsc]);
+
+  // Implied-1RM progression: one point per entry, mapped via Epley.
+  const chartData = useMemo(() => {
+    return sortedAsc.map(h => ({
+      date: h.achieved_date,
+      label: formatDate(h.achieved_date),
+      e1rm: roundToHalf(
+        h.rep_count === 1 ? h.value_kg : estimate1RM(h.value_kg, h.rep_count),
+      ),
+      raw: h.value_kg,
+      reps: h.rep_count,
+    }));
+  }, [sortedAsc]);
+
+  return (
+    <div
+      className="animate-backdrop-in"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        className="animate-dialog-in"
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--color-bg-primary)',
+          borderRadius: 'var(--radius-xl)',
+          border: '0.5px solid var(--color-border-primary)',
+          maxWidth: 720, width: '100%', maxHeight: '90vh',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          padding: '10px 16px', borderBottom: '1px solid var(--color-border-secondary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: exercise.color ?? '#94a3b8', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+              {exercise.exercise_code && (
+                <span style={{ fontFamily: 'var(--font-mono)', marginRight: 6 }}>{exercise.exercise_code}</span>
+              )}
+              {exercise.name}
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 4 }}>· {exercise.category}</span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ padding: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
+            title="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+          {sortedAsc.length === 0 ? (
+            <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              No history yet. Log a PR in the table to start tracking progression.
+            </div>
+          ) : (
+            <>
+              <PRHistoryChart data={chartData} color={exercise.color ?? '#3B82F6'} />
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 9, fontWeight: 500, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                  All entries
+                </div>
+                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'separate', borderSpacing: 0 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--color-bg-secondary)' }}>
+                      <th style={{ textAlign: 'left', padding: '4px 8px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>Date</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>Reps</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>kg</th>
+                      <th style={{ textAlign: 'right', padding: '4px 8px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)' }}>e1RM</th>
+                      <th style={{ width: 24, padding: '4px 4px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDesc.map(h => {
+                      const e1rm = h.rep_count === 1 ? h.value_kg : roundToHalf(estimate1RM(h.value_kg, h.rep_count));
+                      return (
+                        <tr key={h.id} style={{ borderBottom: '1px solid var(--color-border-tertiary)' }}>
+                          <td style={{ padding: '4px 8px', color: 'var(--color-text-secondary)' }}>{formatDate(h.achieved_date)}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{h.rep_count}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-primary)' }}>{h.value_kg}</td>
+                          <td style={{ padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>{e1rm}</td>
+                          <td style={{ padding: '4px 4px', textAlign: 'right' }}>
+                            <button
+                              onClick={() => void onDelete(h.id)}
+                              title="Remove entry"
+                              style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', opacity: 0.5, display: 'inline-flex' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.5'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
+                            >
+                              <X size={11} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PRHistoryChart({ data, color }: { data: { date: string; label: string; e1rm: number; raw: number; reps: number }[]; color: string }) {
+  if (data.length === 0) return null;
+  return (
+    <div style={{ width: '100%', height: 220 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-tertiary)" />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} stroke="var(--color-border-secondary)" />
+          <YAxis tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} stroke="var(--color-border-secondary)" width={36} />
+          <Tooltip
+            contentStyle={{ background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', borderRadius: 6, fontSize: 11 }}
+            labelStyle={{ color: 'var(--color-text-secondary)' }}
+            formatter={(value: number, _name: string, entry: { payload: { raw: number; reps: number } }) => {
+              const p = entry.payload;
+              return [`${value} kg (raw ${p.raw}×${p.reps})`, 'e1RM'];
+            }}
+          />
+          <Line type="monotone" dataKey="e1rm" stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} activeDot={{ r: 5 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
