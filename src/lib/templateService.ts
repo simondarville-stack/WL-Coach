@@ -241,6 +241,48 @@ export async function updateTemplateExercise(
   if (error) throw error;
 }
 
+/**
+ * Reorder template days within a template. Two-pass to dodge the
+ * UNIQUE(template_id, day_index) constraint without needing a
+ * transactional RPC: bump every row to a high offset first, then
+ * assign final consecutive day_index values starting at 1.
+ */
+export async function reorderTemplateDays(orderedDayIds: string[]): Promise<void> {
+  const OFFSET = 10000;
+  for (let i = 0; i < orderedDayIds.length; i++) {
+    await updateTemplateDay(orderedDayIds[i], { day_index: OFFSET + i });
+  }
+  for (let i = 0; i < orderedDayIds.length; i++) {
+    await updateTemplateDay(orderedDayIds[i], { day_index: i + 1 });
+  }
+}
+
+/**
+ * Reorder exercises within a single template day. position has no
+ * uniqueness constraint, so a straight sequence works.
+ */
+export async function reorderTemplateExercises(orderedExerciseIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedExerciseIds.length; i++) {
+    await updateTemplateExercise(orderedExerciseIds[i], { position: i });
+  }
+}
+
+/**
+ * Move a template exercise to a different template day, placing it
+ * at the given position. Used by cross-day drag-and-drop in the editor.
+ */
+export async function moveTemplateExercise(
+  exerciseId: string,
+  targetDayId: string,
+  position: number,
+): Promise<void> {
+  const { error } = await supabase
+    .from('program_template_exercises')
+    .update({ template_day_id: targetDayId, position, updated_at: new Date().toISOString() })
+    .eq('id', exerciseId);
+  if (error) throw error;
+}
+
 export async function insertTemplateComboMember(
   templateExerciseId: string,
   exerciseId: string,

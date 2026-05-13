@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
+import { ArrowLeft, GripVertical, Plus, Trash2, Save } from 'lucide-react';
 import {
   fetchTemplateFull,
   updateTemplate,
@@ -17,6 +17,9 @@ import {
   insertTemplateExercise,
   updateTemplateExercise,
   deleteTemplateExercise,
+  reorderTemplateDays,
+  reorderTemplateExercises,
+  moveTemplateExercise,
 } from '../../lib/templateService';
 import { useExercises } from '../../hooks/useExercises';
 import { useSettings } from '../../hooks/useSettings';
@@ -33,6 +36,18 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const DEBOUNCE_MS = 350;
 
+// Drag payload prefixes used by the editor's drag/drop. Distinct from
+// the planner's DOCK:/DAY: prefixes so neither surface accidentally
+// reacts to the other's drag events.
+const DRAG_TDAY = 'TDAY:';
+const DRAG_TEX = 'TEX:';
+
+type DropIndicator =
+  | { kind: 'day'; targetId: string; position: 'before' | 'after' }
+  | { kind: 'exercise'; targetId: string; position: 'before' | 'after' }
+  | { kind: 'day-body'; targetId: string }
+  | null;
+
 export function TemplateEditor() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
@@ -46,6 +61,10 @@ export function TemplateEditor() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SaveStatus>('idle');
+
+  const [draggingDayId, setDraggingDayId] = useState<string | null>(null);
+  const [draggingExId, setDraggingExId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator>(null);
 
   const headerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dayDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
@@ -222,6 +241,100 @@ export function TemplateEditor() {
     void wrapSave(() => updateTemplateExercise(exerciseRowId, { prescription_raw: normalised }));
   };
 
+  // ── Drag/drop ─────────────────────────────────────────────────────
+  // Mirror the planner's behaviour: dragging reorders things in place.
+  // Days reorder via the day header; exercises reorder within a day by
+  // dropping on another exercise row; exercises move across days by
+  // dropping on another day's header or body.
+
+  const clearDragState = () => {
+    setDraggingDayId(null);
+    setDraggingExId(null);
+    setDropIndicator(null);
+  };
+
+  const reorderDays = async (draggedId: string, targetId: string, position: 'before' | 'after') => {
+    if (!template || draggedId === targetId) return;
+    const ids = template.days.map(d => d.id);
+    const fromIdx = ids.indexOf(draggedId);
+    ids.splice(fromIdx, 1);
+    let toIdx = ids.indexOf(targetId);
+    if (position === 'after') toIdx += 1;
+    ids.splice(toIdx, 0, draggedId);
+    const newDays = ids.map((id, i) => {
+      const d = template.days.find(day => day.id === id)!;
+      return { ...d, day_index: i + 1 };
+    });
+    setTemplate(t => t ? { ...t, days: newDays } : t);
+    await wrapSave(() => reorderTemplateDays(ids));
+  };
+
+  const reorderExercisesInDay = async (dayId: string, draggedId: string, targetId: string, position: 'before' | 'after') => {
+    if (!template || draggedId === targetId) return;
+    const day = template.days.find(d => d.id === dayId);
+    if (!day) return;
+    const ids = day.exercises.map(ex => ex.id);
+    const fromIdx = ids.indexOf(draggedId);
+    if (fromIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    let toIdx = ids.indexOf(targetId);
+    if (position === 'after') toIdx += 1;
+    ids.splice(toIdx, 0, draggedId);
+    setTemplate(t => t ? {
+      ...t,
+      days: t.days.map(d => d.id === dayId ? {
+        ...d,
+        exercises: ids.map((id, i) => {
+          const ex = d.exercises.find(e => e.id === id)!;
+          return { ...ex, position: i };
+        }),
+      } : d),
+    } : t);
+    await wrapSave(() => reorderTemplateExercises(ids));
+  };
+
+  const moveExerciseToDay = async (
+    exerciseId: string,
+    fromDayId: string,
+    toDayId: string,
+    position: number,
+  ) => {
+    if (!template || fromDayId === toDayId) return;
+    const sourceDay = template.days.find(d => d.id === fromDayId);
+    const targetDay = template.days.find(d => d.id === toDayId);
+    const exercise = sourceDay?.exercises.find(ex => ex.id === exerciseId);
+    if (!exercise || !targetDay) return;
+
+    const destIds = targetDay.exercises.map(ex => ex.id);
+    const clampedPos = Math.max(0, Math.min(position, destIds.length));
+    destIds.splice(clampedPos, 0, exerciseId);
+
+    setTemplate(t => t ? {
+      ...t,
+      days: t.days.map(d => {
+        if (d.id === fromDayId) {
+          return { ...d, exercises: d.exercises.filter(ex => ex.id !== exerciseId) };
+        }
+        if (d.id === toDayId) {
+          const movedEx = { ...exercise, template_day_id: toDayId };
+          const exMap = new Map<string, ProgramTemplateExerciseWithExercise>();
+          d.exercises.forEach(ex => exMap.set(ex.id, ex));
+          exMap.set(exerciseId, movedEx);
+          return {
+            ...d,
+            exercises: destIds.map((id, i) => ({ ...(exMap.get(id) as ProgramTemplateExerciseWithExercise), position: i })),
+          };
+        }
+        return d;
+      }),
+    } : t);
+
+    await wrapSave(async () => {
+      await moveTemplateExercise(exerciseId, toDayId, clampedPos);
+      await reorderTemplateExercises(destIds);
+    });
+  };
+
   if (loading) {
     return <PageShell><Centered>Loading template…</Centered></PageShell>;
   }
@@ -290,12 +403,41 @@ export function TemplateEditor() {
             allExercises={allExercises}
             loadIncrement={loadIncrement}
             defaultLoad={defaultPrescriptionLoad}
+            draggingDayId={draggingDayId}
+            draggingExId={draggingExId}
+            dropIndicator={dropIndicator}
             onLabelChange={label => setDayLabel(day.id, label)}
             onDelete={() => void handleDeleteDay(day.id)}
             onAddExercise={ex => void handleAddExercise(day.id, ex)}
             onDeleteExercise={exId => void handleDeleteExercise(day.id, exId)}
             onExerciseField={(exId, patch) => setExerciseField(day.id, exId, patch)}
             onExercisePrescription={(exId, raw) => saveExercisePrescription(day.id, exId, raw)}
+            onDayDragStart={setDraggingDayId}
+            onExerciseDragStart={setDraggingExId}
+            onDragEnd={clearDragState}
+            onSetDropIndicator={setDropIndicator}
+            onCommitDayDrop={(draggedId, targetId, position) => {
+              setDropIndicator(null);
+              setDraggingDayId(null);
+              void reorderDays(draggedId, targetId, position);
+            }}
+            onCommitExerciseDrop={(draggedId, fromDayId, targetExId, position) => {
+              setDropIndicator(null);
+              setDraggingExId(null);
+              if (fromDayId === day.id) {
+                void reorderExercisesInDay(day.id, draggedId, targetExId, position);
+              } else {
+                const targetDay = template.days.find(d => d.id === day.id);
+                const idx = targetDay?.exercises.findIndex(ex => ex.id === targetExId) ?? 0;
+                void moveExerciseToDay(draggedId, fromDayId, day.id, position === 'before' ? idx : idx + 1);
+              }
+            }}
+            onCommitMoveToDay={(draggedId, fromDayId) => {
+              setDropIndicator(null);
+              setDraggingExId(null);
+              if (fromDayId === day.id) return;
+              void moveExerciseToDay(draggedId, fromDayId, day.id, day.exercises.length);
+            }}
           />
         ))}
       </div>
@@ -323,31 +465,119 @@ interface DayBlockProps {
   allExercises: Exercise[];
   loadIncrement: number;
   defaultLoad: number;
+  draggingDayId: string | null;
+  draggingExId: string | null;
+  dropIndicator: DropIndicator;
   onLabelChange: (label: string) => void;
   onDelete: () => void;
   onAddExercise: (ex: Exercise) => void;
   onDeleteExercise: (exId: string) => void;
   onExerciseField: (exId: string, patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
   onExercisePrescription: (exId: string, raw: string) => void;
+  onDayDragStart: (dayId: string) => void;
+  onExerciseDragStart: (exId: string) => void;
+  onDragEnd: () => void;
+  onSetDropIndicator: (indicator: DropIndicator) => void;
+  onCommitDayDrop: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  onCommitExerciseDrop: (draggedId: string, fromDayId: string, targetExId: string, position: 'before' | 'after') => void;
+  onCommitMoveToDay: (draggedId: string, fromDayId: string) => void;
 }
 
 function DayBlock({
   day, allExercises, loadIncrement, defaultLoad,
+  draggingDayId, draggingExId, dropIndicator,
   onLabelChange, onDelete, onAddExercise, onDeleteExercise,
   onExerciseField, onExercisePrescription,
+  onDayDragStart, onExerciseDragStart, onDragEnd, onSetDropIndicator,
+  onCommitDayDrop, onCommitExerciseDrop, onCommitMoveToDay,
 }: DayBlockProps) {
+  const isDragSource = draggingDayId === day.id;
+  const dayIndicatorBefore = dropIndicator?.kind === 'day' && dropIndicator.targetId === day.id && dropIndicator.position === 'before';
+  const dayIndicatorAfter = dropIndicator?.kind === 'day' && dropIndicator.targetId === day.id && dropIndicator.position === 'after';
+  const bodyHighlighted = dropIndicator?.kind === 'day-body' && dropIndicator.targetId === day.id;
+
   return (
-    <div style={{
-      background: 'var(--color-bg-primary)',
-      border: '0.5px solid var(--color-border-secondary)',
-      borderRadius: 'var(--radius-md)',
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-        background: 'var(--color-bg-secondary)',
-        borderBottom: '0.5px solid var(--color-border-tertiary)',
-      }}>
+    <div
+      style={{
+        position: 'relative',
+        background: bodyHighlighted ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+        border: bodyHighlighted ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-secondary)',
+        borderRadius: 'var(--radius-md)',
+        overflow: 'hidden',
+        opacity: isDragSource ? 0.5 : 1,
+        boxShadow: dayIndicatorBefore
+          ? 'inset 0 2px 0 0 var(--color-accent)'
+          : dayIndicatorAfter
+          ? 'inset 0 -2px 0 0 var(--color-accent)'
+          : 'none',
+        transition: 'background 0.1s, border-color 0.1s, opacity 0.1s',
+      }}
+      onDragOver={e => {
+        const types = e.dataTransfer.types;
+        // Only respond when we're carrying our own payloads.
+        if (!types.includes('text/plain')) return;
+        const payload = e.dataTransfer.getData('text/plain');
+        if (!payload && draggingExId == null && draggingDayId == null) return;
+        e.preventDefault();
+      }}
+    >
+      <div
+        draggable
+        onDragStart={e => {
+          e.dataTransfer.setData('text/plain', `${DRAG_TDAY}${day.id}`);
+          e.dataTransfer.effectAllowed = 'move';
+          onDayDragStart(day.id);
+        }}
+        onDragEnd={onDragEnd}
+        onDragOver={e => {
+          // Day header is the target for day reordering. If an exercise
+          // is being dragged across days, also highlight to indicate the
+          // exercise will be appended to this day.
+          e.preventDefault();
+          e.stopPropagation();
+          if (draggingDayId) {
+            if (draggingDayId === day.id) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+            onSetDropIndicator({ kind: 'day', targetId: day.id, position: pos });
+          } else if (draggingExId) {
+            onSetDropIndicator({ kind: 'day-body', targetId: day.id });
+          }
+        }}
+        onDragLeave={e => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            // Don't clear here — letting the next dragover refine the
+            // indicator avoids flicker.
+          }
+        }}
+        onDrop={e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const data = e.dataTransfer.getData('text/plain');
+          if (data.startsWith(DRAG_TDAY)) {
+            const draggedDayId = data.slice(DRAG_TDAY.length);
+            if (draggedDayId === day.id) {
+              onSetDropIndicator(null);
+              onDragEnd();
+              return;
+            }
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+            onCommitDayDrop(draggedDayId, day.id, pos);
+          } else if (data.startsWith(DRAG_TEX)) {
+            const rest = data.slice(DRAG_TEX.length);
+            const [fromDayId, exId] = rest.split(':');
+            if (fromDayId && exId) onCommitMoveToDay(exId, fromDayId);
+          }
+        }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+          background: 'var(--color-bg-secondary)',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+          cursor: 'grab',
+        }}
+      >
+        <GripVertical size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
         <span style={{
           fontSize: 10, fontFamily: 'var(--font-mono)',
           color: 'var(--color-text-tertiary)', minWidth: 16,
@@ -358,11 +588,13 @@ function DayBlock({
           type="text"
           value={day.label}
           onChange={e => onLabelChange(e.target.value)}
+          onMouseDown={e => e.stopPropagation()}
           placeholder={`Training unit ${day.day_index}`}
+          draggable={false}
           style={{
             flex: 1, fontSize: 13, fontWeight: 500,
             background: 'transparent', border: 'none', outline: 'none',
-            color: 'var(--color-text-primary)',
+            color: 'var(--color-text-primary)', cursor: 'text',
           }}
         />
         <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
@@ -370,6 +602,7 @@ function DayBlock({
         </span>
         <button
           onClick={onDelete}
+          onMouseDown={e => e.stopPropagation()}
           title="Delete day"
           style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -390,7 +623,27 @@ function DayBlock({
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{ display: 'flex', flexDirection: 'column' }}
+        onDragOver={e => {
+          // Body-level drag-over fallback: when an exercise from another
+          // day is dragged onto the body (not a specific row), highlight
+          // the whole day as the drop target.
+          if (draggingExId) {
+            e.preventDefault();
+            onSetDropIndicator({ kind: 'day-body', targetId: day.id });
+          }
+        }}
+        onDrop={e => {
+          const data = e.dataTransfer.getData('text/plain');
+          if (data.startsWith(DRAG_TEX)) {
+            e.preventDefault();
+            e.stopPropagation();
+            const [fromDayId, exId] = data.slice(DRAG_TEX.length).split(':');
+            if (fromDayId && exId) onCommitMoveToDay(exId, fromDayId);
+          }
+        }}
+      >
         {day.exercises.length === 0 ? (
           <div style={{ padding: '12px 12px 0', fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
             No exercises yet — add one below.
@@ -400,11 +653,18 @@ function DayBlock({
             <ExerciseRow
               key={ex.id}
               exercise={ex}
+              dayId={day.id}
               loadIncrement={loadIncrement}
               defaultLoad={defaultLoad}
+              isDragSource={draggingExId === ex.id}
+              dropIndicator={dropIndicator}
               onDelete={() => onDeleteExercise(ex.id)}
               onFieldChange={patch => onExerciseField(ex.id, patch)}
               onPrescriptionSave={raw => onExercisePrescription(ex.id, raw)}
+              onDragStart={() => onExerciseDragStart(ex.id)}
+              onDragEnd={onDragEnd}
+              onSetDropIndicator={onSetDropIndicator}
+              onCommitDrop={onCommitExerciseDrop}
             />
           ))
         )}
@@ -424,28 +684,84 @@ function DayBlock({
 
 interface ExerciseRowProps {
   exercise: ProgramTemplateExerciseWithExercise;
+  dayId: string;
   loadIncrement: number;
   defaultLoad: number;
+  isDragSource: boolean;
+  dropIndicator: DropIndicator;
   onDelete: () => void;
   onFieldChange: (patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
   onPrescriptionSave: (raw: string) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onSetDropIndicator: (indicator: DropIndicator) => void;
+  onCommitDrop: (draggedId: string, fromDayId: string, targetExId: string, position: 'before' | 'after') => void;
 }
 
 function ExerciseRow({
-  exercise, loadIncrement, defaultLoad, onDelete, onFieldChange, onPrescriptionSave,
+  exercise, dayId, loadIncrement, defaultLoad,
+  isDragSource, dropIndicator,
+  onDelete, onFieldChange, onPrescriptionSave,
+  onDragStart, onDragEnd, onSetDropIndicator, onCommitDrop,
 }: ExerciseRowProps) {
   const comboPartCount = exercise.is_combo ? (exercise.combo_members?.length ?? 2) : undefined;
+  const indicatorBefore = dropIndicator?.kind === 'exercise' && dropIndicator.targetId === exercise.id && dropIndicator.position === 'before';
+  const indicatorAfter = dropIndicator?.kind === 'exercise' && dropIndicator.targetId === exercise.id && dropIndicator.position === 'after';
 
   return (
     <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', `${DRAG_TEX}${dayId}:${exercise.id}`);
+        e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={e => {
+        // Browsers restrict dataTransfer.getData() during dragover, so
+        // we accept any drag and let the drop handler filter by prefix.
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        onSetDropIndicator({ kind: 'exercise', targetId: exercise.id, position: pos });
+      }}
+      onDrop={e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const data = e.dataTransfer.getData('text/plain');
+        if (!data.startsWith(DRAG_TEX)) {
+          onSetDropIndicator(null);
+          onDragEnd();
+          return;
+        }
+        const [fromDayId, exId] = data.slice(DRAG_TEX.length).split(':');
+        if (!fromDayId || !exId || exId === exercise.id) {
+          onSetDropIndicator(null);
+          onDragEnd();
+          return;
+        }
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        onCommitDrop(exId, fromDayId, exercise.id, pos);
+      }}
       style={{
         display: 'flex', flexDirection: 'column', gap: 6,
         padding: '8px 12px',
         borderBottom: '0.5px solid var(--color-border-tertiary)',
         borderLeft: `3px solid ${exercise.combo_color || exercise.exercise.color || '#94a3b8'}`,
+        opacity: isDragSource ? 0.5 : 1,
+        boxShadow: indicatorBefore
+          ? 'inset 0 2px 0 0 var(--color-accent)'
+          : indicatorAfter
+          ? 'inset 0 -2px 0 0 var(--color-accent)'
+          : 'none',
+        transition: 'opacity 0.1s, box-shadow 0.1s',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <GripVertical size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, cursor: 'grab' }} />
         <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', flexShrink: 0 }}>
           {exercise.exercise.name}
         </span>
