@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
-import { useDockState, type DockTab } from './useDockState';
+import { useDockState, type DockTab, DOCK_MIN_HEIGHT } from './useDockState';
 import { DockExerciseList } from './DockExerciseList';
 import type { Exercise } from '../../../lib/database.types';
 
@@ -15,7 +15,9 @@ const TABS: TabDef[] = [
 ];
 
 const HEADER_HEIGHT = 32;
-const EXPANDED_HEIGHT = 240;
+// Leave at least this much viewport visible above the dock so coaches
+// can still see the day cards while resizing.
+const VIEWPORT_BUFFER = 120;
 
 interface PlannerDockProps {
   exercises: Exercise[];
@@ -28,23 +30,45 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
     query, setQuery,
     exerciseSort, setExerciseSort,
     exerciseCategoryFilter, setExerciseCategoryFilter,
+    height, setHeight,
   } = useDockState();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [resizing, setResizing] = useState(false);
 
   // Expose the dock's current height as a CSS var so WeeklyPlanner can
   // pad its content area enough to scroll clear of the fixed dock.
   useEffect(() => {
-    const h = collapsed ? HEADER_HEIGHT : EXPANDED_HEIGHT;
+    const h = collapsed ? HEADER_HEIGHT : height;
     document.documentElement.style.setProperty('--emos-dock-height', `${h}px`);
     return () => {
       document.documentElement.style.removeProperty('--emos-dock-height');
     };
-  }, [collapsed]);
+  }, [collapsed, height]);
 
   const toggleCollapsed = () => setCollapsed(c => !c);
 
   const handleSearchFocus = () => {
     if (collapsed) setCollapsed(false);
+  };
+
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (collapsed) return;
+    e.preventDefault();
+    setResizing(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizing) return;
+    const maxHeight = Math.max(DOCK_MIN_HEIGHT, window.innerHeight - VIEWPORT_BUFFER);
+    const proposed = window.innerHeight - e.clientY;
+    setHeight(Math.max(DOCK_MIN_HEIGHT, Math.min(maxHeight, proposed)));
+  };
+
+  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizing) return;
+    setResizing(false);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   };
 
   const placeholder = tab === 'exercises' ? 'Search exercises…' : 'Search templates…';
@@ -62,10 +86,47 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
         boxShadow: '0 -2px 8px rgba(0,0,0,0.04)',
         display: 'flex',
         flexDirection: 'column',
-        height: collapsed ? HEADER_HEIGHT : EXPANDED_HEIGHT,
-        transition: 'height 0.15s ease-out, left 0.15s ease-in-out',
+        height: collapsed ? HEADER_HEIGHT : height,
+        // Disable the height transition while dragging the resize handle —
+        // otherwise the dock lags the cursor.
+        transition: resizing
+          ? 'left 0.15s ease-in-out'
+          : 'height 0.15s ease-out, left 0.15s ease-in-out',
       }}
     >
+      {!collapsed && (
+        <div
+          onPointerDown={startResize}
+          onPointerMove={onResizeMove}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          title="Drag to resize"
+          style={{
+            position: 'absolute',
+            top: -3,
+            left: 0,
+            right: 0,
+            height: 6,
+            cursor: 'row-resize',
+            zIndex: 2,
+            // Hairline visual hint that thickens while dragging.
+            background: resizing
+              ? 'var(--color-accent-border)'
+              : 'transparent',
+            transition: 'background var(--transition-fast)',
+          }}
+          onMouseEnter={e => {
+            if (!resizing) {
+              (e.currentTarget as HTMLDivElement).style.background = 'var(--color-border-secondary)';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!resizing) {
+              (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+            }
+          }}
+        />
+      )}
       <div
         style={{
           display: 'flex',
