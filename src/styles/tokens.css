@@ -413,7 +413,6 @@ samp {
 }
 .pgrid-interval:hover:not(:disabled) {
   background: var(--color-accent-muted);
-  cursor: col-resize;
   outline: none;
 }
 .pgrid-add-btn {

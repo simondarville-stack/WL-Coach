@@ -403,8 +403,10 @@ export function PrescriptionGrid({
         {isInterval ? (
           <span style={{ userSelect: 'none' }}>
             <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>{col.load}</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', margin: '0 2px' }}>-</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>{col.loadMax}</span>
+            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', margin: '0 6px' }}>-</span>
+            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>
+              {col.loadMax}{unit === 'percentage' ? '%' : ''}
+            </span>
           </span>
         ) : (
           <span>{loadDisplay}</span>
