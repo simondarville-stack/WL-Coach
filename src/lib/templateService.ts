@@ -201,6 +201,17 @@ export async function deleteTemplateDay(dayId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function updateTemplateDay(
+  dayId: string,
+  patch: { label?: string; day_index?: number },
+): Promise<void> {
+  const { error } = await supabase
+    .from('program_template_days')
+    .update(patch)
+    .eq('id', dayId);
+  if (error) throw error;
+}
+
 export async function insertTemplateExercise(
   templateDayId: string,
   input: Omit<ProgramTemplateExercise, 'id' | 'template_day_id' | 'created_at' | 'updated_at'>,
@@ -216,6 +227,17 @@ export async function insertTemplateExercise(
 
 export async function deleteTemplateExercise(id: string): Promise<void> {
   const { error } = await supabase.from('program_template_exercises').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function updateTemplateExercise(
+  id: string,
+  patch: Partial<Omit<ProgramTemplateExercise, 'id' | 'template_day_id' | 'created_at' | 'updated_at'>>,
+): Promise<void> {
+  const { error } = await supabase
+    .from('program_template_exercises')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
   if (error) throw error;
 }
 

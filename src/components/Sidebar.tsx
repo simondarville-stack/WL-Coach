@@ -10,6 +10,7 @@ import {
   UsersRound,
   ClipboardList,
   BookOpen,
+  BookCopy,
   Settings,
   ChevronsLeft,
   Calculator,
@@ -37,6 +38,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
       { path: '/planner', label: 'Weekly planner', icon: Calendar },
+      { path: '/templates', label: 'Programme templates', icon: BookCopy },
       { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
       // { path: '/analysis', label: 'Analysis', icon: LineChart }, // hidden: out of scope
       { path: '/events', label: 'Calendar', icon: CalendarDays },

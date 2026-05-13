@@ -7,6 +7,8 @@ import { useCoachStore } from './store/coachStore';
 import { useCoachProfiles } from './hooks/useCoachProfiles';
 import { ExerciseLibrary } from './components/exercise-library/ExerciseLibrary';
 import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
+import { TemplatesPage } from './components/templates/TemplatesPage';
+import { TemplateEditor } from './components/templates/TemplateEditor';
 import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
@@ -31,6 +33,7 @@ import type { Athlete, TrainingGroup } from './lib/database.types';
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/planner': 'Weekly planner',
+  '/templates': 'Programme templates',
   '/macrocycles': 'Macro cycles',
   '/events': 'Calendar',
   '/athletes': 'Athletes',
@@ -152,6 +155,8 @@ function CoachApp() {
               <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/planner/:weekStart" element={<WeeklyPlanner />} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/templates/:templateId" element={<TemplateEditor />} />
               <Route path="/macrocycles" element={<MacroCycles />} />
               <Route path="/macrocycles/:cycleId" element={<MacroCycles />} />
               <Route path="/events" element={<CompetitionCalendar />} />
