@@ -1,21 +1,20 @@
 import { useMemo } from 'react';
 import type { Exercise } from '../../../lib/database.types';
+import type { ExerciseSortKey } from './useDockState';
 
 interface DockExerciseListProps {
   exercises: Exercise[];
   query: string;
+  sort: ExerciseSortKey;
+  setSort: (s: ExerciseSortKey) => void;
+  categoryFilter: string | null;
+  setCategoryFilter: (c: string | null) => void;
 }
 
-// Same ranking as ExerciseSearch.tsx: exact code > code prefix > name
-// prefix > code contains > name contains. Keeps results predictable
-// across the two surfaces.
-function rankAndFilter(exercises: Exercise[], query: string): Exercise[] {
-  const visible = exercises.filter(ex => ex.category !== '— System' && !ex.is_archived);
-  const q = query.trim().toLowerCase();
-  if (!q) {
-    return visible.slice().sort((a, b) => a.name.localeCompare(b.name));
-  }
-  const scored = visible
+// Search ranking matches ExerciseSearch.tsx so coaches see the same
+// order whether they search from a day card or from the dock.
+function rankSearch(exercises: Exercise[], q: string): Exercise[] {
+  const scored = exercises
     .map(ex => {
       const code = ex.exercise_code?.toLowerCase() ?? '';
       const name = ex.name.toLowerCase();
@@ -32,37 +31,199 @@ function rankAndFilter(exercises: Exercise[], query: string): Exercise[] {
   return scored.map(s => s.ex);
 }
 
-export function DockExerciseList({ exercises, query }: DockExerciseListProps) {
-  const filtered = useMemo(() => rankAndFilter(exercises, query), [exercises, query]);
-
-  if (filtered.length === 0) {
-    return (
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--color-text-tertiary)',
-          fontStyle: 'italic',
-          textAlign: 'center',
-          padding: '32px 0',
-        }}
-      >
-        {query.trim() ? `No exercises match "${query.trim()}"` : 'No exercises available'}
-      </div>
-    );
+function applySort(list: Exercise[], sort: ExerciseSortKey): Exercise[] {
+  const sorted = list.slice();
+  switch (sort) {
+    case 'name':
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case 'category':
+      sorted.sort((a, b) =>
+        a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
+      );
+      break;
+    case 'code':
+      sorted.sort((a, b) => {
+        const ac = a.exercise_code ?? '';
+        const bc = b.exercise_code ?? '';
+        // Numeric-aware compare so code "9" sorts before "10".
+        const cmp = ac.localeCompare(bc, undefined, { numeric: true, sensitivity: 'base' });
+        return cmp !== 0 ? cmp : a.name.localeCompare(b.name);
+      });
+      break;
   }
+  return sorted;
+}
 
+export function DockExerciseList({
+  exercises,
+  query,
+  sort,
+  setSort,
+  categoryFilter,
+  setCategoryFilter,
+}: DockExerciseListProps) {
+  const visible = useMemo(
+    () => exercises.filter(ex => ex.category !== '— System' && !ex.is_archived),
+    [exercises],
+  );
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    visible.forEach(ex => { if (ex.category) set.add(ex.category); });
+    return Array.from(set).sort();
+  }, [visible]);
+
+  const filtered = useMemo(() => {
+    const byCategory = categoryFilter
+      ? visible.filter(ex => ex.category === categoryFilter)
+      : visible;
+    const q = query.trim().toLowerCase();
+    if (q) return rankSearch(byCategory, q);
+    return applySort(byCategory, sort);
+  }, [visible, query, sort, categoryFilter]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <FilterRow
+        sort={sort}
+        setSort={setSort}
+        categoryFilter={categoryFilter}
+        setCategoryFilter={setCategoryFilter}
+        categories={categories}
+        visibleCount={filtered.length}
+        totalCount={visible.length}
+        querying={query.trim().length > 0}
+      />
+      {filtered.length === 0 ? (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--color-text-tertiary)',
+            fontStyle: 'italic',
+            textAlign: 'center',
+            padding: '24px 0',
+          }}
+        >
+          {query.trim() || categoryFilter
+            ? 'No exercises match the current filters'
+            : 'No exercises available'}
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: 6,
+          }}
+        >
+          {filtered.map(ex => (
+            <ExerciseTile key={ex.id} exercise={ex} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface FilterRowProps {
+  sort: ExerciseSortKey;
+  setSort: (s: ExerciseSortKey) => void;
+  categoryFilter: string | null;
+  setCategoryFilter: (c: string | null) => void;
+  categories: string[];
+  visibleCount: number;
+  totalCount: number;
+  querying: boolean;
+}
+
+function FilterRow({
+  sort, setSort, categoryFilter, setCategoryFilter,
+  categories, visibleCount, totalCount, querying,
+}: FilterRowProps) {
   return (
     <div
       style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: 6,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap',
+        paddingBottom: 4,
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
       }}
     >
-      {filtered.map(ex => (
-        <ExerciseTile key={ex.id} exercise={ex} />
-      ))}
+      <LabeledSelect
+        label="Sort"
+        value={sort}
+        disabled={querying}
+        title={querying ? 'Sort is overridden by search ranking while a query is active' : undefined}
+        onChange={v => setSort(v as ExerciseSortKey)}
+        options={[
+          { value: 'name', label: 'Name' },
+          { value: 'category', label: 'Category' },
+          { value: 'code', label: 'Code' },
+        ]}
+      />
+      <LabeledSelect
+        label="Category"
+        value={categoryFilter ?? ''}
+        onChange={v => setCategoryFilter(v === '' ? null : v)}
+        options={[
+          { value: '', label: 'All' },
+          ...categories.map(c => ({ value: c, label: c })),
+        ]}
+      />
+      <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>
+        {visibleCount === totalCount ? `${totalCount} exercises` : `${visibleCount} of ${totalCount}`}
+      </span>
     </div>
+  );
+}
+
+interface LabeledSelectProps {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  title?: string;
+}
+
+function LabeledSelect({ label, value, onChange, options, disabled, title }: LabeledSelectProps) {
+  return (
+    <label
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 11,
+        color: 'var(--color-text-secondary)',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {label}
+      </span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          fontSize: 11,
+          color: 'var(--color-text-primary)',
+          background: 'var(--color-bg-primary)',
+          border: '0.5px solid var(--color-border-secondary)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '2px 4px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

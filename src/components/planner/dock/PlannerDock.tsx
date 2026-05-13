@@ -22,7 +22,13 @@ interface PlannerDockProps {
 }
 
 export function PlannerDock({ exercises }: PlannerDockProps) {
-  const { tab, setTab, collapsed, setCollapsed, query, setQuery } = useDockState();
+  const {
+    tab, setTab,
+    collapsed, setCollapsed,
+    query, setQuery,
+    exerciseSort, setExerciseSort,
+    exerciseCategoryFilter, setExerciseCategoryFilter,
+  } = useDockState();
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Expose the dock's current height as a CSS var so WeeklyPlanner can
@@ -202,7 +208,14 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
       {!collapsed && (
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
           {tab === 'exercises' ? (
-            <DockExerciseList exercises={exercises} query={query} />
+            <DockExerciseList
+              exercises={exercises}
+              query={query}
+              sort={exerciseSort}
+              setSort={setExerciseSort}
+              categoryFilter={exerciseCategoryFilter}
+              setCategoryFilter={setExerciseCategoryFilter}
+            />
           ) : (
             <PlaceholderBody tab={tab} query={query} />
           )}
