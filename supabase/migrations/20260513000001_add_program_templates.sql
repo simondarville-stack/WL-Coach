@@ -83,6 +83,15 @@ ALTER TABLE program_template_days          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE program_template_exercises     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE program_template_combo_members ENABLE ROW LEVEL SECURITY;
 
+-- DROP IF EXISTS before each CREATE so re-running the migration after a
+-- partial failure is safe. Postgres does not support CREATE POLICY ... IF
+-- NOT EXISTS yet (as of pg 16).
+
+DROP POLICY IF EXISTS "Allow anon to read program_templates"   ON program_templates;
+DROP POLICY IF EXISTS "Allow anon to insert program_templates" ON program_templates;
+DROP POLICY IF EXISTS "Allow anon to update program_templates" ON program_templates;
+DROP POLICY IF EXISTS "Allow anon to delete program_templates" ON program_templates;
+
 CREATE POLICY "Allow anon to read program_templates"
   ON program_templates FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anon to insert program_templates"
@@ -91,6 +100,11 @@ CREATE POLICY "Allow anon to update program_templates"
   ON program_templates FOR UPDATE TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon to delete program_templates"
   ON program_templates FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "Allow anon to read program_template_days"   ON program_template_days;
+DROP POLICY IF EXISTS "Allow anon to insert program_template_days" ON program_template_days;
+DROP POLICY IF EXISTS "Allow anon to update program_template_days" ON program_template_days;
+DROP POLICY IF EXISTS "Allow anon to delete program_template_days" ON program_template_days;
 
 CREATE POLICY "Allow anon to read program_template_days"
   ON program_template_days FOR SELECT TO anon USING (true);
@@ -101,6 +115,11 @@ CREATE POLICY "Allow anon to update program_template_days"
 CREATE POLICY "Allow anon to delete program_template_days"
   ON program_template_days FOR DELETE TO anon USING (true);
 
+DROP POLICY IF EXISTS "Allow anon to read program_template_exercises"   ON program_template_exercises;
+DROP POLICY IF EXISTS "Allow anon to insert program_template_exercises" ON program_template_exercises;
+DROP POLICY IF EXISTS "Allow anon to update program_template_exercises" ON program_template_exercises;
+DROP POLICY IF EXISTS "Allow anon to delete program_template_exercises" ON program_template_exercises;
+
 CREATE POLICY "Allow anon to read program_template_exercises"
   ON program_template_exercises FOR SELECT TO anon USING (true);
 CREATE POLICY "Allow anon to insert program_template_exercises"
@@ -109,6 +128,11 @@ CREATE POLICY "Allow anon to update program_template_exercises"
   ON program_template_exercises FOR UPDATE TO anon USING (true) WITH CHECK (true);
 CREATE POLICY "Allow anon to delete program_template_exercises"
   ON program_template_exercises FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "Allow anon to read program_template_combo_members"   ON program_template_combo_members;
+DROP POLICY IF EXISTS "Allow anon to insert program_template_combo_members" ON program_template_combo_members;
+DROP POLICY IF EXISTS "Allow anon to update program_template_combo_members" ON program_template_combo_members;
+DROP POLICY IF EXISTS "Allow anon to delete program_template_combo_members" ON program_template_combo_members;
 
 CREATE POLICY "Allow anon to read program_template_combo_members"
   ON program_template_combo_members FOR SELECT TO anon USING (true);
