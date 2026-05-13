@@ -110,7 +110,7 @@ export function TemplateEditor() {
       ? Math.max(...template.days.map(d => d.day_index)) + 1
       : 1;
     await wrapSave(async () => {
-      const day = await insertTemplateDay(template.id, nextIndex, `Day ${nextIndex}`);
+      const day = await insertTemplateDay(template.id, nextIndex, `Training unit ${nextIndex}`);
       const fullDay: ProgramTemplateDayWithExercises = { ...day, exercises: [] };
       setTemplate(t => t ? { ...t, days: [...t.days, fullDay] } : t);
     });
@@ -358,7 +358,7 @@ function DayBlock({
           type="text"
           value={day.label}
           onChange={e => onLabelChange(e.target.value)}
-          placeholder={`Day ${day.day_index}`}
+          placeholder={`Training unit ${day.day_index}`}
           style={{
             flex: 1, fontSize: 13, fontWeight: 500,
             background: 'transparent', border: 'none', outline: 'none',
@@ -446,20 +446,42 @@ function ExerciseRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', flexShrink: 0 }}>
           {exercise.exercise.name}
         </span>
         {exercise.is_combo && (
-          <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>
+          <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>
             Combo
           </span>
         )}
         {exercise.exercise.exercise_code && (
-          <span style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          <span style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
             {exercise.exercise.exercise_code}
           </span>
         )}
-        <span style={{ flex: 1 }} />
+        <input
+          type="text"
+          value={exercise.variation_note ?? ''}
+          onChange={e => onFieldChange({ variation_note: e.target.value || null })}
+          placeholder="Variation note"
+          style={{
+            flex: 1, fontSize: 11, fontStyle: 'italic',
+            padding: '2px 6px', minWidth: 60,
+            background: 'transparent',
+            border: '0.5px solid transparent',
+            borderRadius: 'var(--radius-sm)', outline: 'none',
+            color: 'var(--color-text-secondary)',
+            transition: 'border-color var(--transition-fast), background var(--transition-fast)',
+          }}
+          onFocus={e => {
+            (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border-tertiary)';
+            (e.currentTarget as HTMLInputElement).style.background = 'var(--color-bg-primary)';
+          }}
+          onBlur={e => {
+            (e.currentTarget as HTMLInputElement).style.borderColor = 'transparent';
+            (e.currentTarget as HTMLInputElement).style.background = 'transparent';
+          }}
+        />
         <button
           onClick={onDelete}
           title="Remove exercise"
@@ -467,7 +489,7 @@ function ExerciseRow({
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             width: 22, height: 22, padding: 0,
             background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'var(--color-text-tertiary)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-text-tertiary)', borderRadius: 'var(--radius-sm)', flexShrink: 0,
           }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-danger-bg)';
@@ -492,22 +514,13 @@ function ExerciseRow({
         onSave={onPrescriptionSave}
       />
 
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input
-          type="text"
-          value={exercise.variation_note ?? ''}
-          onChange={e => onFieldChange({ variation_note: e.target.value || null })}
-          placeholder="Variation note"
-          style={{ ...inputStyle, maxWidth: 220 }}
-        />
-        <input
-          type="text"
-          value={exercise.notes ?? ''}
-          onChange={e => onFieldChange({ notes: e.target.value || null })}
-          placeholder="Notes"
-          style={inputStyle}
-        />
-      </div>
+      <input
+        type="text"
+        value={exercise.notes ?? ''}
+        onChange={e => onFieldChange({ notes: e.target.value || null })}
+        placeholder="Notes"
+        style={inputStyle}
+      />
     </div>
   );
 }
