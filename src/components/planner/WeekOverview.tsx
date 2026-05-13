@@ -34,8 +34,8 @@ interface WeekOverviewProps {
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
-  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
-  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
 }

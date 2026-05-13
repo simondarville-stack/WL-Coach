@@ -354,11 +354,15 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleExerciseDrop = async (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => {
+  const handleExerciseDrop = async (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => {
     if (!currentWeekPlan) return;
     const sourceEx = (plannedExercises[fromDay] || []).find(ex => ex.id === plannedExId);
     if (!sourceEx) return;
-    const destPosition = (plannedExercises[toDay] || []).length;
+    if (isReplace) {
+      const targetIds = (plannedExercises[toDay] || []).map(ex => ex.id).filter(id => id !== plannedExId);
+      if (targetIds.length > 0) await deleteDayExercises(targetIds);
+    }
+    const destPosition = isReplace ? 0 : (plannedExercises[toDay] || []).length;
     if (isCopy) {
       await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
     } else {
@@ -367,14 +371,20 @@ export function WeeklyPlanner() {
     await handleRefresh();
   };
 
-  const handleDayDrop = async (sourceDay: number, destDay: number, isCopy: boolean) => {
+  const handleDayDrop = async (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => {
     if (!currentWeekPlan) return;
     const srcExercises = plannedExercises[sourceDay] || [];
-    if (srcExercises.length === 0) return;
-    const basePosition = (plannedExercises[destDay] || []).length;
-    await copyDayExercises(srcExercises, currentWeekPlan.id, destDay, basePosition);
-    if (!isCopy) {
-      await deleteDayExercises(srcExercises.map(ex => ex.id));
+    if (srcExercises.length === 0 && !isReplace) return;
+    if (isReplace) {
+      const targetIds = (plannedExercises[destDay] || []).map(ex => ex.id);
+      if (targetIds.length > 0) await deleteDayExercises(targetIds);
+    }
+    const basePosition = isReplace ? 0 : (plannedExercises[destDay] || []).length;
+    if (srcExercises.length > 0) {
+      await copyDayExercises(srcExercises, currentWeekPlan.id, destDay, basePosition);
+      if (!isCopy) {
+        await deleteDayExercises(srcExercises.map(ex => ex.id));
+      }
     }
     await handleRefresh();
   };

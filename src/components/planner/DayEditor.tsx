@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
-import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -80,7 +80,7 @@ export function DayEditor({
   const { createExercise } = useExercises();
   const [macroTargets, setMacroTargets] = useState<Map<string, MacroTargetData>>(new Map());
   const [draggedId, setDraggedId] = useState<string | null>(null);
-  const shiftHeld = useShiftHeld();
+  const deleteHeld = useDeleteHeld();
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
@@ -241,10 +241,10 @@ export function DayEditor({
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
     borderBottom: '1px solid var(--color-border-tertiary)',
     borderRadius: '4px 4px 0 0',
-    background: shiftHeld
+    background: deleteHeld
       ? 'rgba(240,149,149,0.06)'
       : isDragging ? 'var(--color-bg-tertiary)' : 'var(--color-bg-secondary)',
-    cursor: shiftHeld ? 'pointer' : 'grab',
+    cursor: deleteHeld ? 'pointer' : 'grab',
     opacity: isDragging ? 0.5 : 1,
   });
 
@@ -305,7 +305,7 @@ export function DayEditor({
                   border: isDraggingOver ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
                   borderLeft: `3px solid ${borderColor}`,
                   boxShadow: isDraggingOver ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
-                  background: shiftHeld ? 'rgba(240,149,149,0.04)' : 'var(--color-bg-primary)',
+                  background: deleteHeld ? 'rgba(240,149,149,0.04)' : 'var(--color-bg-primary)',
                   opacity: isDragging ? 0.5 : 1,
                   transition: 'border-color 0.1s, opacity 0.1s',
                 }}
@@ -317,7 +317,7 @@ export function DayEditor({
                   draggable
                   onDragStart={() => handleExerciseDragStart(ex.id)}
                   onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
-                  onClick={() => { if (shiftHeld) void handleDeleteExercise(ex.id); }}
+                  onClick={e => { if (deleteHeld || e.shiftKey) void handleDeleteExercise(ex.id); }}
                   style={itemHeaderStyle(isDragging, isDraggingOver)}
                 >
                   <GripVertical size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />

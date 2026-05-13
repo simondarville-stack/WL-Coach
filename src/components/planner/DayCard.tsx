@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
-import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
@@ -41,8 +41,8 @@ interface DayCardProps {
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
-  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
-  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
 }
 
 
@@ -149,7 +149,7 @@ export function DayCard({
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
-  const shiftHeld = useShiftHeld();
+  const deleteHeld = useDeleteHeld();
 
   const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
   const isEmpty = exercises.length === 0;
@@ -228,10 +228,12 @@ export function DayCard({
     setIsDragOver(false);
     const data = e.dataTransfer.getData('text/plain');
     if (!data) return;
+    const isCopy = e.ctrlKey || e.metaKey;
+    const isReplace = e.shiftKey;
     if (data.startsWith('DAY:')) {
       const sourceDay = parseInt(data.slice(4), 10);
       if (isNaN(sourceDay) || sourceDay === dayIndex) return;
-      await onDayDrop(sourceDay, dayIndex, e.ctrlKey || e.metaKey);
+      await onDayDrop(sourceDay, dayIndex, isCopy, isReplace);
     } else {
       const parts = data.split(':');
       if (parts.length < 3) return;
@@ -240,7 +242,7 @@ export function DayCard({
       const itemId = parts[2];
       if (isNaN(fromDay) || fromDay === dayIndex || !itemId) return;
       if (dragType === 'exercise') {
-        await onExerciseDrop(fromDay, itemId, dayIndex, e.ctrlKey || e.metaKey);
+        await onExerciseDrop(fromDay, itemId, dayIndex, isCopy, isReplace);
       }
     }
   }
@@ -373,7 +375,7 @@ export function DayCard({
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
                       borderBottom: '0.5px solid var(--color-border-tertiary)',
                       borderLeft: `3px solid ${borderColor}`,
-                      background: shiftHeld
+                      background: deleteHeld
                         ? (isHovered ? 'var(--color-danger-bg)' : 'transparent')
                         : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
                       cursor: 'pointer',
@@ -388,7 +390,9 @@ export function DayCard({
                     onMouseLeave={() => setHoveredExId(null)}
                     onClick={e => {
                       e.stopPropagation();
-                      if (shiftHeld) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
+                      // Shift+click is a transitional alias for Delete-held+click.
+                      // Plan to remove the Shift alias after coaches are used to Delete-held.
+                      if (deleteHeld || e.shiftKey) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
                       onNavigateToExercise(ex.id);
                     }}
                   >

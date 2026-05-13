@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import { MacroGridCell } from './MacroGridCell';
-import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 
@@ -103,7 +103,7 @@ export function MacroTableV2({
   weekTypes = [],
   highlightedPhaseId,
 }: MacroTableV2Props) {
-  const deleteMode = useShiftHeld();
+  const deleteMode = useDeleteHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
   const [editingKWeekId, setEditingKWeekId] = useState<string | null>(null);
