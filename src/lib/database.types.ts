@@ -574,9 +574,19 @@ export interface ProgramTemplateFull extends ProgramTemplate {
   days: ProgramTemplateDayWithExercises[];
 }
 
-/** Lightweight shape used by list views — header + computed day_count. */
+/** A template day stripped down to just what the dock needs to render
+ *  drag handles — no exercises, no combo members. */
+export interface ProgramTemplateDayLite {
+  id: string;
+  day_index: number;
+  label: string;
+}
+
+/** Lightweight shape used by list views — header + computed day_count
+ *  and the lite list of days (id/index/label only). */
 export interface ProgramTemplateSummary extends ProgramTemplate {
   day_count: number;
+  days: ProgramTemplateDayLite[];
 }
 
 export interface Database {

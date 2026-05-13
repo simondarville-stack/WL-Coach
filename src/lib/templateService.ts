@@ -32,21 +32,26 @@ import type {
 export async function fetchTemplates(): Promise<ProgramTemplateSummary[]> {
   const { data, error } = await supabase
     .from('program_templates')
-    .select('*, days:program_template_days(count)')
+    .select('*, days:program_template_days(id, day_index, label)')
     .eq('owner_id', getOwnerId())
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  type Row = ProgramTemplate & { days: { count: number }[] | null };
-  return ((data ?? []) as unknown as Row[]).map<ProgramTemplateSummary>(t => ({
-    id: t.id,
-    owner_id: t.owner_id,
-    name: t.name,
-    description: t.description,
-    tags: t.tags ?? [],
-    created_at: t.created_at,
-    updated_at: t.updated_at,
-    day_count: t.days?.[0]?.count ?? 0,
-  }));
+  type DayLite = { id: string; day_index: number; label: string };
+  type Row = ProgramTemplate & { days: DayLite[] | null };
+  return ((data ?? []) as unknown as Row[]).map<ProgramTemplateSummary>(t => {
+    const days = (t.days ?? []).slice().sort((a, b) => a.day_index - b.day_index);
+    return {
+      id: t.id,
+      owner_id: t.owner_id,
+      name: t.name,
+      description: t.description,
+      tags: t.tags ?? [],
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+      day_count: days.length,
+      days,
+    };
+  });
 }
 
 export async function fetchTemplateFull(id: string): Promise<ProgramTemplateFull | null> {

@@ -44,6 +44,8 @@ interface DayCardProps {
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
 }
 
 
@@ -141,6 +143,8 @@ export function DayCard({
   onExerciseDrop,
   onDayDrop,
   onDockExerciseDrop,
+  onDockTemplateDrop,
+  onDockTemplateDayDrop,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -236,6 +240,14 @@ export function DayCard({
       const exerciseId = data.slice('DOCK:exercise:'.length);
       if (!exerciseId || !onDockExerciseDrop) return;
       await onDockExerciseDrop(exerciseId, dayIndex, isReplace);
+    } else if (data.startsWith('DOCK:template-day:')) {
+      const templateDayId = data.slice('DOCK:template-day:'.length);
+      if (!templateDayId || !onDockTemplateDayDrop) return;
+      await onDockTemplateDayDrop(templateDayId, dayIndex, isReplace);
+    } else if (data.startsWith('DOCK:template:')) {
+      const templateId = data.slice('DOCK:template:'.length);
+      if (!templateId || !onDockTemplateDrop) return;
+      await onDockTemplateDrop(templateId, dayIndex, isReplace);
     } else if (data.startsWith('DAY:')) {
       const sourceDay = parseInt(data.slice(4), 10);
       if (isNaN(sourceDay) || sourceDay === dayIndex) return;

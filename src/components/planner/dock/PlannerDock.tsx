@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab, DOCK_MIN_HEIGHT } from './useDockState';
 import { DockExerciseList } from './DockExerciseList';
+import { DockTemplateList } from './DockTemplateList';
 import type { Exercise } from '../../../lib/database.types';
 
 interface TabDef {
@@ -278,7 +279,7 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
               setCategoryFilter={setExerciseCategoryFilter}
             />
           ) : (
-            <PlaceholderBody tab={tab} query={query} />
+            <DockTemplateList query={query} />
           )}
         </div>
       )}
@@ -286,24 +287,3 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
   );
 }
 
-function PlaceholderBody({ tab, query }: { tab: DockTab; query: string }) {
-  const base = tab === 'exercises'
-    ? 'Draggable exercises will appear here.'
-    : 'Saved programme templates will appear here.';
-  const msg = query.trim()
-    ? `Filtering by "${query.trim()}" — content arrives in a later commit.`
-    : base;
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        color: 'var(--color-text-tertiary)',
-        fontStyle: 'italic',
-        textAlign: 'center',
-        padding: '32px 0',
-      }}
-    >
-      {msg}
-    </div>
-  );
-}

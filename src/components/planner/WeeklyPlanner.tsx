@@ -26,6 +26,7 @@ import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOpt
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
+import { applyTemplateDayToPlanDay, fetchTemplateFull } from '../../lib/templateService';
 
 export interface MacroContext {
   macroId: string;
@@ -401,6 +402,35 @@ export function WeeklyPlanner() {
     const destPosition = isReplace ? 0 : (plannedExercises[dayIndex] || []).length;
     await addExerciseToDayWrapped(currentWeekPlan.id, dayIndex, exercise.id, destPosition, exercise.default_unit);
     await handleRefresh();
+  };
+
+  const handleDockTemplateDayDrop = async (templateDayId: string, dayIndex: number, isReplace: boolean) => {
+    if (!currentWeekPlan) return;
+    try {
+      await applyTemplateDayToPlanDay(templateDayId, currentWeekPlan.id, dayIndex, { replace: isReplace });
+      await handleRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply template day');
+    }
+  };
+
+  const handleDockTemplateDrop = async (templateId: string, dayIndex: number, isReplace: boolean) => {
+    if (!currentWeekPlan) return;
+    try {
+      const template = await fetchTemplateFull(templateId);
+      if (!template || template.days.length === 0) return;
+      if (template.days.length > 1) {
+        // Multi-day templates need explicit day-to-day mapping. The import
+        // dialog lands in the next commit; until then, single-day handles
+        // remain the supported path for multi-day templates.
+        setError('Multi-day templates need the import dialog (coming next). Drag individual day handles for now.');
+        return;
+      }
+      await applyTemplateDayToPlanDay(template.days[0].id, currentWeekPlan.id, dayIndex, { replace: isReplace });
+      await handleRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply template');
+    }
   };
 
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
@@ -856,6 +886,8 @@ export function WeeklyPlanner() {
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
                 onDockExerciseDrop={handleDockExerciseDrop}
+                onDockTemplateDrop={handleDockTemplateDrop}
+                onDockTemplateDayDrop={handleDockTemplateDayDrop}
               />
             )}
 

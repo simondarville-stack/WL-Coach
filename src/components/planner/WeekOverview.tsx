@@ -37,6 +37,8 @@ interface WeekOverviewProps {
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
 }
@@ -57,6 +59,8 @@ export function WeekOverview({
   onExerciseDrop,
   onDayDrop,
   onDockExerciseDrop,
+  onDockTemplateDrop,
+  onDockTemplateDayDrop,
   visibleCardMetrics,
   competitionTotal,
 }: WeekOverviewProps) {
@@ -135,6 +139,8 @@ export function WeekOverview({
                         onExerciseDrop={onExerciseDrop}
                         onDayDrop={onDayDrop}
                         onDockExerciseDrop={onDockExerciseDrop}
+                        onDockTemplateDrop={onDockTemplateDrop}
+                        onDockTemplateDayDrop={onDockTemplateDayDrop}
                       />
                     </div>
                   );
@@ -173,6 +179,8 @@ export function WeekOverview({
                   onExerciseDrop={onExerciseDrop}
                   onDayDrop={onDayDrop}
                   onDockExerciseDrop={onDockExerciseDrop}
+                  onDockTemplateDrop={onDockTemplateDrop}
+                  onDockTemplateDayDrop={onDockTemplateDayDrop}
                 />
               ))}
             </div>
@@ -207,6 +215,8 @@ export function WeekOverview({
             onExerciseDrop={onExerciseDrop}
             onDayDrop={onDayDrop}
             onDockExerciseDrop={onDockExerciseDrop}
+            onDockTemplateDrop={onDockTemplateDrop}
+            onDockTemplateDayDrop={onDockTemplateDayDrop}
           />
         ))}
       </div>
