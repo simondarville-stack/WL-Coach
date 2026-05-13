@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab } from './useDockState';
+import { DockExerciseList } from './DockExerciseList';
+import type { Exercise } from '../../../lib/database.types';
 
 interface TabDef {
   key: DockTab;
@@ -15,7 +17,11 @@ const TABS: TabDef[] = [
 const HEADER_HEIGHT = 32;
 const EXPANDED_HEIGHT = 240;
 
-export function PlannerDock() {
+interface PlannerDockProps {
+  exercises: Exercise[];
+}
+
+export function PlannerDock({ exercises }: PlannerDockProps) {
   const { tab, setTab, collapsed, setCollapsed, query, setQuery } = useDockState();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -195,7 +201,11 @@ export function PlannerDock() {
 
       {!collapsed && (
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-          <PlaceholderBody tab={tab} query={query} />
+          {tab === 'exercises' ? (
+            <DockExerciseList exercises={exercises} query={query} />
+          ) : (
+            <PlaceholderBody tab={tab} query={query} />
+          )}
         </div>
       )}
     </div>

@@ -390,6 +390,19 @@ export function WeeklyPlanner() {
     await handleRefresh();
   };
 
+  const handleDockExerciseDrop = async (exerciseId: string, dayIndex: number, isReplace: boolean) => {
+    if (!currentWeekPlan) return;
+    const exercise = allExercises.find(e => e.id === exerciseId);
+    if (!exercise) return;
+    if (isReplace) {
+      const targetIds = (plannedExercises[dayIndex] || []).map(ex => ex.id);
+      if (targetIds.length > 0) await deleteDayExercises(targetIds);
+    }
+    const destPosition = isReplace ? 0 : (plannedExercises[dayIndex] || []).length;
+    await addExerciseToDayWrapped(currentWeekPlan.id, dayIndex, exercise.id, destPosition, exercise.default_unit);
+    await handleRefresh();
+  };
+
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
     if (!currentWeekPlan) return;
     try {
@@ -842,6 +855,7 @@ export function WeeklyPlanner() {
                 onDeleteExercise={handleDeleteExercise}
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
+                onDockExerciseDrop={handleDockExerciseDrop}
               />
             )}
 
@@ -999,7 +1013,7 @@ export function WeeklyPlanner() {
         {currentWeekPlan && !showWeekList && !showPrintModal && (
           <>
             <div style={{ height: 'var(--emos-dock-height, 32px)' }} aria-hidden />
-            <PlannerDock />
+            <PlannerDock exercises={allExercises} />
           </>
         )}
       </div>

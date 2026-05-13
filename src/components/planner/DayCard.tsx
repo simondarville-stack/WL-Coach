@@ -43,6 +43,7 @@ interface DayCardProps {
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
 }
 
 
@@ -139,6 +140,7 @@ export function DayCard({
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
+  onDockExerciseDrop,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -230,7 +232,11 @@ export function DayCard({
     if (!data) return;
     const isCopy = e.ctrlKey || e.metaKey;
     const isReplace = e.shiftKey;
-    if (data.startsWith('DAY:')) {
+    if (data.startsWith('DOCK:exercise:')) {
+      const exerciseId = data.slice('DOCK:exercise:'.length);
+      if (!exerciseId || !onDockExerciseDrop) return;
+      await onDockExerciseDrop(exerciseId, dayIndex, isReplace);
+    } else if (data.startsWith('DAY:')) {
       const sourceDay = parseInt(data.slice(4), 10);
       if (isNaN(sourceDay) || sourceDay === dayIndex) return;
       await onDayDrop(sourceDay, dayIndex, isCopy, isReplace);

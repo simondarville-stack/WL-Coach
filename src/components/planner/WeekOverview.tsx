@@ -36,6 +36,7 @@ interface WeekOverviewProps {
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
 }
@@ -55,6 +56,7 @@ export function WeekOverview({
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
+  onDockExerciseDrop,
   visibleCardMetrics,
   competitionTotal,
 }: WeekOverviewProps) {
@@ -132,6 +134,7 @@ export function WeekOverview({
                         onDeleteExercise={onDeleteExercise}
                         onExerciseDrop={onExerciseDrop}
                         onDayDrop={onDayDrop}
+                        onDockExerciseDrop={onDockExerciseDrop}
                       />
                     </div>
                   );
@@ -169,6 +172,7 @@ export function WeekOverview({
                   onDeleteExercise={onDeleteExercise}
                   onExerciseDrop={onExerciseDrop}
                   onDayDrop={onDayDrop}
+                  onDockExerciseDrop={onDockExerciseDrop}
                 />
               ))}
             </div>
@@ -202,6 +206,7 @@ export function WeekOverview({
             onDeleteExercise={onDeleteExercise}
             onExerciseDrop={onExerciseDrop}
             onDayDrop={onDayDrop}
+            onDockExerciseDrop={onDockExerciseDrop}
           />
         ))}
       </div>
