@@ -575,11 +575,12 @@ export interface ProgramTemplateFull extends ProgramTemplate {
 }
 
 /** A template day stripped down to just what the dock needs to render
- *  drag handles — no exercises, no combo members. */
+ *  drag handles and a short exercise preview. */
 export interface ProgramTemplateDayLite {
   id: string;
   day_index: number;
   label: string;
+  exercise_names: string[];
 }
 
 /** Lightweight shape used by list views — header + computed day_count

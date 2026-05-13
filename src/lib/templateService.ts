@@ -22,6 +22,7 @@ import type {
   ProgramTemplate,
   ProgramTemplateComboMember,
   ProgramTemplateDay,
+  ProgramTemplateDayLite,
   ProgramTemplateExercise,
   ProgramTemplateFull,
   ProgramTemplateSummary,
@@ -32,14 +33,40 @@ import type {
 export async function fetchTemplates(): Promise<ProgramTemplateSummary[]> {
   const { data, error } = await supabase
     .from('program_templates')
-    .select('*, days:program_template_days(id, day_index, label)')
+    .select(`
+      *,
+      days:program_template_days(
+        id, day_index, label,
+        exercises:program_template_exercises(
+          position,
+          exercise:exercise_id(name)
+        )
+      )
+    `)
     .eq('owner_id', getOwnerId())
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  type DayLite = { id: string; day_index: number; label: string };
-  type Row = ProgramTemplate & { days: DayLite[] | null };
+  type DayRow = {
+    id: string;
+    day_index: number;
+    label: string;
+    exercises: { position: number; exercise: { name: string } | null }[] | null;
+  };
+  type Row = ProgramTemplate & { days: DayRow[] | null };
   return ((data ?? []) as unknown as Row[]).map<ProgramTemplateSummary>(t => {
-    const days = (t.days ?? []).slice().sort((a, b) => a.day_index - b.day_index);
+    const days = (t.days ?? [])
+      .slice()
+      .sort((a, b) => a.day_index - b.day_index)
+      .map<ProgramTemplateDayLite>(d => ({
+        id: d.id,
+        day_index: d.day_index,
+        label: d.label,
+        exercise_names: (d.exercises ?? [])
+          .slice()
+          .sort((a, b) => a.position - b.position)
+          .map(ex => ex.exercise?.name ?? '')
+          .filter(Boolean),
+      }));
     return {
       id: t.id,
       owner_id: t.owner_id,

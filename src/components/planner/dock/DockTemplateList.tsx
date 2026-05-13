@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from 'react';
-import { GripVertical, Layers, Import } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { GripVertical, Import } from 'lucide-react';
 import { useProgramTemplates } from '../../../hooks/useProgramTemplates';
 import type { ProgramTemplateSummary } from '../../../lib/database.types';
+import { TemplatePreviewDialog } from './TemplatePreviewDialog';
 
 interface DockTemplateListProps {
   query: string;
@@ -15,12 +16,17 @@ function filterTemplates(templates: ProgramTemplateSummary[], query: string): Pr
     if (t.name.toLowerCase().includes(q)) return true;
     if (t.description && t.description.toLowerCase().includes(q)) return true;
     if (t.tags?.some(tag => tag.toLowerCase().includes(q))) return true;
+    if (t.days.some(d =>
+      d.label.toLowerCase().includes(q)
+      || d.exercise_names.some(n => n.toLowerCase().includes(q))
+    )) return true;
     return false;
   });
 }
 
 export function DockTemplateList({ query, onOpenImport }: DockTemplateListProps) {
   const { templates, loading, error, fetchTemplates } = useProgramTemplates();
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchTemplates();
@@ -56,7 +62,7 @@ export function DockTemplateList({ query, onOpenImport }: DockTemplateListProps)
   if (templates.length === 0) {
     return (
       <CentredText>
-        No programme templates yet — "Save day/week as template" will arrive in a later commit.
+        No programme templates yet — open Programme templates from the sidebar to create one.
       </CentredText>
     );
   }
@@ -66,28 +72,48 @@ export function DockTemplateList({ query, onOpenImport }: DockTemplateListProps)
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-        gap: 8,
-      }}
-    >
-      {filtered.map(t => <TemplateCard key={t.id} template={t} onOpenImport={onOpenImport} />)}
-    </div>
+    <>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+          gap: 8,
+        }}
+      >
+        {filtered.map(t => (
+          <TemplateCard
+            key={t.id}
+            template={t}
+            onOpenImport={onOpenImport}
+            onPreview={() => setPreviewId(t.id)}
+          />
+        ))}
+      </div>
+      {previewId && (
+        <TemplatePreviewDialog
+          templateId={previewId}
+          onClose={() => setPreviewId(null)}
+        />
+      )}
+    </>
   );
 }
 
 function TemplateCard({
   template,
   onOpenImport,
+  onPreview,
 }: {
   template: ProgramTemplateSummary;
   onOpenImport: (templateId: string) => void;
+  onPreview: () => void;
 }) {
   const multiDay = template.day_count > 1;
+
   return (
     <div
+      onDoubleClick={onPreview}
+      title="Double-click to preview"
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -104,141 +130,168 @@ function TemplateCard({
           e.dataTransfer.setData('text/plain', `DOCK:template:${template.id}`);
           e.dataTransfer.effectAllowed = 'copy';
         }}
-        title={
-          multiDay
-            ? `Drag onto a day to open the import dialog (or drag a single day below)`
-            : `Drag onto a day to apply ${template.name}`
-        }
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
+          flexDirection: 'column',
+          gap: 2,
           padding: '6px 8px',
           background: 'var(--color-bg-secondary)',
           borderBottom: template.day_count > 0 ? '0.5px solid var(--color-border-tertiary)' : 'none',
           cursor: 'grab',
         }}
       >
-        <GripVertical size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
-        <Layers size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <GripVertical size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
           <span
             style={{
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 500,
               color: 'var(--color-text-primary)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               lineHeight: 1.25,
+              flex: 1,
+              minWidth: 0,
             }}
           >
             {template.name}
           </span>
-          {template.description && (
-            <span
-              style={{
-                fontSize: 'var(--text-caption)',
-                color: 'var(--color-text-tertiary)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontStyle: 'italic',
-              }}
-            >
-              {template.description}
-            </span>
-          )}
-        </div>
-        <span
-          style={{
-            fontSize: 'var(--text-caption)',
-            color: 'var(--color-text-tertiary)',
-            padding: '1px 6px',
-            background: 'var(--color-bg-tertiary)',
-            borderRadius: 'var(--radius-sm)',
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
-        >
-          {template.day_count} {template.day_count === 1 ? 'day' : 'days'}
-        </span>
-        {multiDay && (
-          <button
-            onClick={e => { e.stopPropagation(); onOpenImport(template.id); }}
-            title="Open import dialog to map days deliberately"
+          <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 3,
               fontSize: 'var(--text-caption)',
-              padding: '2px 6px',
-              border: '0.5px solid var(--color-border-secondary)',
+              color: 'var(--color-text-tertiary)',
+              padding: '1px 6px',
+              background: 'var(--color-bg-tertiary)',
               borderRadius: 'var(--radius-sm)',
-              background: 'var(--color-bg-primary)',
-              color: 'var(--color-text-secondary)',
-              cursor: 'pointer',
+              fontWeight: 500,
               flexShrink: 0,
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; }}
           >
-            <Import size={9} />
-            Import…
-          </button>
+            {template.day_count} {template.day_count === 1 ? 'day' : 'days'}
+          </span>
+          {multiDay && (
+            <button
+              onClick={e => { e.stopPropagation(); onOpenImport(template.id); }}
+              onDoubleClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              title="Open import dialog to map days deliberately"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 20,
+                height: 20,
+                padding: 0,
+                border: '0.5px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--color-bg-primary)',
+                color: 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; }}
+            >
+              <Import size={10} />
+            </button>
+          )}
+        </div>
+        {template.description && (
+          <span
+            style={{
+              fontSize: 'var(--text-caption)',
+              color: 'var(--color-text-tertiary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontStyle: 'italic',
+              paddingLeft: 17,
+            }}
+          >
+            {template.description}
+          </span>
         )}
       </div>
       {template.days.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {template.days.map(day => (
-            <div
-              key={day.id}
-              draggable
-              onDragStart={e => {
-                e.dataTransfer.setData('text/plain', `DOCK:template-day:${day.id}`);
-                e.dataTransfer.effectAllowed = 'copy';
-              }}
-              title={`Drag ${day.label} onto a day to append its exercises`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 8px',
-                borderBottom: '0.5px solid var(--color-border-tertiary)',
-                cursor: 'grab',
-                transition: 'background var(--transition-fast)',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--color-bg-secondary)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-            >
-              <GripVertical size={10} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
-              <span
-                style={{
-                  fontSize: 10,
-                  color: 'var(--color-text-secondary)',
-                  fontFamily: 'var(--font-mono)',
-                  flexShrink: 0,
-                  minWidth: 14,
-                }}
-              >
-                {day.day_index}
-              </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: 'var(--color-text-primary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flex: 1,
-                }}
-              >
-                {day.label}
-              </span>
-            </div>
+            <DayRow key={day.id} day={day} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function DayRow({ day }: { day: ProgramTemplateSummary['days'][number] }) {
+  const previewExercises = day.exercise_names.slice(0, 4).join(' · ');
+  const overflow = day.exercise_names.length > 4 ? ` …+${day.exercise_names.length - 4}` : '';
+  const previewText = day.exercise_names.length === 0
+    ? 'No exercises'
+    : previewExercises + overflow;
+
+  return (
+    <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', `DOCK:template-day:${day.id}`);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      onDoubleClick={e => e.stopPropagation()}
+      title={`Drag ${day.label} onto a day to append its exercises`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '4px 8px',
+        borderBottom: '0.5px solid var(--color-border-tertiary)',
+        cursor: 'grab',
+        transition: 'background var(--transition-fast)',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--color-bg-secondary)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <GripVertical size={10} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: 10,
+            color: 'var(--color-text-secondary)',
+            fontFamily: 'var(--font-mono)',
+            flexShrink: 0,
+            minWidth: 14,
+          }}
+        >
+          {day.day_index}
+        </span>
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--color-text-primary)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {day.label}
+        </span>
+      </div>
+      <span
+        style={{
+          fontSize: 'var(--text-caption)',
+          color: day.exercise_names.length === 0 ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+          fontStyle: day.exercise_names.length === 0 ? 'italic' : 'normal',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          paddingLeft: 16,
+        }}
+      >
+        {previewText}
+      </span>
     </div>
   );
 }
