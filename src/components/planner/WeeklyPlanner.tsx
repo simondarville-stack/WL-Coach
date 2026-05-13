@@ -21,6 +21,7 @@ import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
+import { PlannerDock } from './dock/PlannerDock';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
@@ -993,6 +994,10 @@ export function WeeklyPlanner() {
               increment: settings?.percent_to_kg_round_increment ?? 0.5,
             }}
           />
+        )}
+
+        {currentWeekPlan && !showWeekList && !showPrintModal && (
+          <PlannerDock />
         )}
       </div>
     </div>
