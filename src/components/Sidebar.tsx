@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -79,6 +79,16 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
     setCollapsed(next);
     localStorage.setItem('emos_sidebar_collapsed', String(next));
   }
+
+  // Surface the sidebar's rendered width as a CSS variable so fixed-position
+  // overlays (e.g. the planner dock) can align their left edge to the
+  // sidebar's right edge across collapse transitions.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--emos-sidebar-width',
+      collapsed ? '48px' : '200px',
+    );
+  }, [collapsed]);
 
   return (
     <aside

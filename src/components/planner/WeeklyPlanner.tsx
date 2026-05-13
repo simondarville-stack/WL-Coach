@@ -997,7 +997,10 @@ export function WeeklyPlanner() {
         )}
 
         {currentWeekPlan && !showWeekList && !showPrintModal && (
-          <PlannerDock />
+          <>
+            <div style={{ height: 'var(--emos-dock-height, 32px)' }} aria-hidden />
+            <PlannerDock />
+          </>
         )}
       </div>
     </div>

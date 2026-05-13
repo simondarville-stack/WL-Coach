@@ -1,4 +1,5 @@
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab } from './useDockState';
 
 interface TabDef {
@@ -12,27 +13,45 @@ const TABS: TabDef[] = [
 ];
 
 const HEADER_HEIGHT = 32;
-const EXPANDED_HEIGHT = 220;
+const EXPANDED_HEIGHT = 240;
 
 export function PlannerDock() {
-  const { tab, setTab, collapsed, setCollapsed } = useDockState();
+  const { tab, setTab, collapsed, setCollapsed, query, setQuery } = useDockState();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Expose the dock's current height as a CSS var so WeeklyPlanner can
+  // pad its content area enough to scroll clear of the fixed dock.
+  useEffect(() => {
+    const h = collapsed ? HEADER_HEIGHT : EXPANDED_HEIGHT;
+    document.documentElement.style.setProperty('--emos-dock-height', `${h}px`);
+    return () => {
+      document.documentElement.style.removeProperty('--emos-dock-height');
+    };
+  }, [collapsed]);
+
+  const toggleCollapsed = () => setCollapsed(c => !c);
+
+  const handleSearchFocus = () => {
+    if (collapsed) setCollapsed(false);
+  };
+
+  const placeholder = tab === 'exercises' ? 'Search exercises…' : 'Search templates…';
 
   return (
     <div
       style={{
-        position: 'sticky',
+        position: 'fixed',
         bottom: 0,
+        left: 'var(--emos-sidebar-width, 0)',
+        right: 0,
         zIndex: 30,
-        marginTop: 16,
         background: 'var(--color-bg-primary)',
-        border: '0.5px solid var(--color-border-primary)',
-        borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+        borderTop: '0.5px solid var(--color-border-primary)',
         boxShadow: '0 -2px 8px rgba(0,0,0,0.04)',
         display: 'flex',
         flexDirection: 'column',
         height: collapsed ? HEADER_HEIGHT : EXPANDED_HEIGHT,
-        overflow: 'hidden',
-        transition: 'height 0.15s ease-out',
+        transition: 'height 0.15s ease-out, left 0.15s ease-in-out',
       }}
     >
       <div
@@ -47,17 +66,28 @@ export function PlannerDock() {
           height: HEADER_HEIGHT,
         }}
       >
-        <span
+        <button
+          onClick={toggleCollapsed}
+          title={collapsed ? 'Expand dock' : 'Collapse dock'}
           style={{
             fontSize: 'var(--text-caption)',
             fontWeight: 500,
             color: 'var(--color-text-tertiary)',
             letterSpacing: '0.05em',
             textTransform: 'uppercase',
+            background: 'transparent',
+            border: 'none',
+            padding: '2px 4px',
+            margin: 0,
+            cursor: 'pointer',
+            borderRadius: 'var(--radius-sm)',
+            transition: 'color var(--transition-fast)',
           }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
         >
           Dock
-        </span>
+        </button>
         <div style={{ display: 'flex', gap: 2 }}>
           {TABS.map(t => {
             const active = t.key === tab;
@@ -86,9 +116,62 @@ export function PlannerDock() {
             );
           })}
         </div>
+        <div style={{ position: 'relative', flex: 1, maxWidth: 320, display: 'flex', alignItems: 'center' }}>
+          <Search
+            size={11}
+            style={{ position: 'absolute', left: 8, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }}
+          />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onFocus={handleSearchFocus}
+            placeholder={placeholder}
+            style={{
+              width: '100%',
+              paddingLeft: 24,
+              paddingRight: query ? 22 : 8,
+              paddingTop: 3,
+              paddingBottom: 3,
+              fontSize: 11,
+              color: 'var(--color-text-primary)',
+              background: 'var(--color-bg-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              outline: 'none',
+              transition: 'border-color var(--transition-fast)',
+            }}
+            onFocusCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-accent-border)'; }}
+            onBlurCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border-secondary)'; }}
+          />
+          {query && (
+            <button
+              onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+              title="Clear search"
+              style={{
+                position: 'absolute',
+                right: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                color: 'var(--color-text-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              <X size={11} />
+            </button>
+          )}
+        </div>
         <div style={{ flex: 1 }} />
         <button
-          onClick={() => setCollapsed(c => !c)}
+          onClick={toggleCollapsed}
           title={collapsed ? 'Expand dock' : 'Collapse dock'}
           style={{
             display: 'flex',
@@ -112,17 +195,20 @@ export function PlannerDock() {
 
       {!collapsed && (
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
-          <PlaceholderBody tab={tab} />
+          <PlaceholderBody tab={tab} query={query} />
         </div>
       )}
     </div>
   );
 }
 
-function PlaceholderBody({ tab }: { tab: DockTab }) {
-  const msg = tab === 'exercises'
+function PlaceholderBody({ tab, query }: { tab: DockTab; query: string }) {
+  const base = tab === 'exercises'
     ? 'Draggable exercises will appear here.'
     : 'Saved programme templates will appear here.';
+  const msg = query.trim()
+    ? `Filtering by "${query.trim()}" — content arrives in a later commit.`
+    : base;
   return (
     <div
       style={{

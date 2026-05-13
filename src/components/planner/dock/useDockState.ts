@@ -18,9 +18,11 @@ function readCollapsed(): boolean {
 export function useDockState() {
   const [tab, setTab] = useState<DockTab>(readTab);
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed);
+  const [query, setQuery] = useState('');
 
   useEffect(() => { localStorage.setItem(TAB_KEY, tab); }, [tab]);
   useEffect(() => { localStorage.setItem(COLLAPSED_KEY, String(collapsed)); }, [collapsed]);
 
-  return { tab, setTab, collapsed, setCollapsed };
+  return { tab, setTab, collapsed, setCollapsed, query, setQuery };
 }
+
