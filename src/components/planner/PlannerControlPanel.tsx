@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight,
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
   ChevronDown, ChevronRight as ChevronRightSmall,
-  Users, User as UserIcon,
+  Users, User as UserIcon, BookmarkPlus,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -190,6 +190,7 @@ export interface PlannerControlPanelProps {
   onCopy: () => void;
   onPaste: () => void;
   onPrint: () => void;
+  onSaveAsTemplate?: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: () => Promise<void>;
   onNavigateToWeek?: (weekStart: string) => void;
@@ -220,6 +221,7 @@ export function PlannerControlPanel({
   onCopy,
   onPaste,
   onPrint,
+  onSaveAsTemplate,
   onToggleLoadDistribution,
   onResolvePercentages,
   onNavigateToWeek,
@@ -540,6 +542,12 @@ export function PlannerControlPanel({
                 <ClipboardPaste size={16} />
               </IconButton>
             </>
+          )}
+
+          {onSaveAsTemplate && (
+            <IconButton title="Save week as template" onClick={onSaveAsTemplate}>
+              <BookmarkPlus size={16} />
+            </IconButton>
           )}
 
           <IconButton title="Print week" onClick={onPrint}>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
@@ -46,6 +46,7 @@ interface DayCardProps {
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onSaveAsTemplate?: (dayIndex: number) => void;
 }
 
 
@@ -145,6 +146,7 @@ export function DayCard({
   onDockExerciseDrop,
   onDockTemplateDrop,
   onDockTemplateDayDrop,
+  onSaveAsTemplate,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -311,6 +313,32 @@ export function DayCard({
               size="sm"
               showLabels={true}
             />
+          )}
+          {!isEmpty && onSaveAsTemplate && (
+            <button
+              onClick={e => { e.stopPropagation(); onSaveAsTemplate(dayIndex); }}
+              title="Save training unit as template"
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0,
+                background: 'transparent',
+                border: 'none', cursor: 'pointer',
+                color: headerHovered ? 'var(--color-text-tertiary)' : 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'color 0.1s, background 0.1s',
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                (e.currentTarget as HTMLButtonElement).style.color = headerHovered ? 'var(--color-text-tertiary)' : 'transparent';
+              }}
+            >
+              <BookmarkPlus size={11} />
+            </button>
           )}
           <ChevronRight size={12} style={{ color: headerHovered ? 'var(--color-text-tertiary)' : 'var(--color-border-secondary)', flexShrink: 0, transition: 'color 0.1s' }} />
         </div>

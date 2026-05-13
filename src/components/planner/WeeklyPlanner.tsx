@@ -27,7 +27,13 @@ import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOpt
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
-import { applyTemplateDayToPlanDay, fetchTemplateFull } from '../../lib/templateService';
+import {
+  applyTemplateDayToPlanDay,
+  createTemplateFromDay,
+  createTemplateFromWeek,
+  fetchTemplateFull,
+} from '../../lib/templateService';
+import { SaveAsTemplateModal, type SaveAsTemplateInput } from './SaveAsTemplateModal';
 
 export interface MacroContext {
   macroId: string;
@@ -121,6 +127,7 @@ export function WeeklyPlanner() {
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
   const [resolveCandidates, setResolveCandidates] = useState<ResolveCandidate[] | null>(null);
   const [importTarget, setImportTarget] = useState<{ templateId: string; startDayIndex: number } | null>(null);
+  const [saveTarget, setSaveTarget] = useState<{ kind: 'day'; dayIndex: number } | { kind: 'week' } | null>(null);
   const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
@@ -440,6 +447,33 @@ export function WeeklyPlanner() {
     const firstActiveDay = visibleDays[0]?.index ?? activeDays[0] ?? 1;
     setImportTarget({ templateId, startDayIndex: firstActiveDay });
   };
+
+  const handleSaveDayAsTemplate = (dayIndex: number) => {
+    setSaveTarget({ kind: 'day', dayIndex });
+  };
+
+  const handleSaveWeekAsTemplate = () => {
+    setSaveTarget({ kind: 'week' });
+  };
+
+  const handleSaveTemplateSubmit = async (input: SaveAsTemplateInput) => {
+    if (!currentWeekPlan || !saveTarget) return;
+    if (saveTarget.kind === 'day') {
+      const dayLabel = getDayLabel(saveTarget.dayIndex);
+      await createTemplateFromDay(currentWeekPlan.id, saveTarget.dayIndex, input.name, {
+        description: input.description,
+        dayLabel,
+      });
+    } else {
+      const includeDays = input.dayLabels ? Object.keys(input.dayLabels).map(Number) : undefined;
+      await createTemplateFromWeek(currentWeekPlan.id, input.name, {
+        description: input.description,
+        dayLabels: input.dayLabels ?? null,
+        includeDays,
+      });
+    }
+  };
+
 
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
     if (!currentWeekPlan) return;
@@ -822,6 +856,7 @@ export function WeeklyPlanner() {
                 onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
                 onNavigateToWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
                 weekTypes={settings?.week_types ?? []}
+                onSaveAsTemplate={handleSaveWeekAsTemplate}
               />
 
             {/* ── Load Distribution (collapsible) ── */}
@@ -896,6 +931,7 @@ export function WeeklyPlanner() {
                 onDockExerciseDrop={handleDockExerciseDrop}
                 onDockTemplateDrop={handleDockTemplateDrop}
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
+                onSaveAsTemplate={handleSaveDayAsTemplate}
               />
             )}
 
@@ -1068,6 +1104,29 @@ export function WeeklyPlanner() {
             startDayIndex={importTarget.startDayIndex}
             onClose={() => setImportTarget(null)}
             onApplied={() => { void handleRefresh(); }}
+          />
+        )}
+
+        {saveTarget && currentWeekPlan && saveTarget.kind === 'day' && (
+          <SaveAsTemplateModal
+            mode="day"
+            defaultName={getDayLabel(saveTarget.dayIndex)}
+            onClose={() => setSaveTarget(null)}
+            onSave={handleSaveTemplateSubmit}
+          />
+        )}
+        {saveTarget && currentWeekPlan && saveTarget.kind === 'week' && (
+          <SaveAsTemplateModal
+            mode="week"
+            defaultName={`Week of ${selectedDate}`}
+            defaultDescription={currentWeekPlan.week_description ?? undefined}
+            availableDays={visibleDays.map(d => ({
+              index: d.index,
+              label: d.name,
+              exerciseCount: (plannedExercises[d.index] ?? []).length,
+            }))}
+            onClose={() => setSaveTarget(null)}
+            onSave={handleSaveTemplateSubmit}
           />
         )}
       </div>
