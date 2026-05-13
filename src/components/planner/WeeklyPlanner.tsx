@@ -22,6 +22,7 @@ import { PlannerControlPanel } from './PlannerControlPanel';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
+import { TemplateImportDialog } from './dock/TemplateImportDialog';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
@@ -119,6 +120,7 @@ export function WeeklyPlanner() {
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
   const [resolveCandidates, setResolveCandidates] = useState<ResolveCandidate[] | null>(null);
+  const [importTarget, setImportTarget] = useState<{ templateId: string; startDayIndex: number } | null>(null);
   const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [editingDayLabels, setEditingDayLabels] = useState<Record<number, string>>({});
   const [weekDescription, setWeekDescription] = useState<string>('');
@@ -420,10 +422,11 @@ export function WeeklyPlanner() {
       const template = await fetchTemplateFull(templateId);
       if (!template || template.days.length === 0) return;
       if (template.days.length > 1) {
-        // Multi-day templates need explicit day-to-day mapping. The import
-        // dialog lands in the next commit; until then, single-day handles
-        // remain the supported path for multi-day templates.
-        setError('Multi-day templates need the import dialog (coming next). Drag individual day handles for now.');
+        // Multi-day templates open the import dialog seeded with the drop target.
+        // The dialog ignores the drop-time isReplace flag (the coach picks it
+        // explicitly in the dialog) — replace-on-drag for a multi-day template
+        // would otherwise be ambiguous across the N target days.
+        setImportTarget({ templateId, startDayIndex: dayIndex });
         return;
       }
       await applyTemplateDayToPlanDay(template.days[0].id, currentWeekPlan.id, dayIndex, { replace: isReplace });
@@ -431,6 +434,11 @@ export function WeeklyPlanner() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply template');
     }
+  };
+
+  const handleOpenImportDialog = (templateId: string) => {
+    const firstActiveDay = visibleDays[0]?.index ?? activeDays[0] ?? 1;
+    setImportTarget({ templateId, startDayIndex: firstActiveDay });
   };
 
   const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
@@ -1045,8 +1053,22 @@ export function WeeklyPlanner() {
         {currentWeekPlan && !showWeekList && !showPrintModal && (
           <>
             <div style={{ height: 'var(--emos-dock-height, 32px)' }} aria-hidden />
-            <PlannerDock exercises={allExercises} />
+            <PlannerDock
+              exercises={allExercises}
+              onOpenImport={handleOpenImportDialog}
+            />
           </>
+        )}
+
+        {importTarget && currentWeekPlan && (
+          <TemplateImportDialog
+            templateId={importTarget.templateId}
+            weekPlanId={currentWeekPlan.id}
+            visibleDays={visibleDays}
+            startDayIndex={importTarget.startDayIndex}
+            onClose={() => setImportTarget(null)}
+            onApplied={() => { void handleRefresh(); }}
+          />
         )}
       </div>
     </div>

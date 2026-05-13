@@ -22,9 +22,10 @@ const VIEWPORT_BUFFER = 120;
 
 interface PlannerDockProps {
   exercises: Exercise[];
+  onOpenImport: (templateId: string) => void;
 }
 
-export function PlannerDock({ exercises }: PlannerDockProps) {
+export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
   const {
     tab, setTab,
     collapsed, setCollapsed,
@@ -279,7 +280,7 @@ export function PlannerDock({ exercises }: PlannerDockProps) {
               setCategoryFilter={setExerciseCategoryFilter}
             />
           ) : (
-            <DockTemplateList query={query} />
+            <DockTemplateList query={query} onOpenImport={onOpenImport} />
           )}
         </div>
       )}

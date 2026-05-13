@@ -1,10 +1,11 @@
 import { useEffect, useMemo } from 'react';
-import { GripVertical, Layers } from 'lucide-react';
+import { GripVertical, Layers, Import } from 'lucide-react';
 import { useProgramTemplates } from '../../../hooks/useProgramTemplates';
 import type { ProgramTemplateSummary } from '../../../lib/database.types';
 
 interface DockTemplateListProps {
   query: string;
+  onOpenImport: (templateId: string) => void;
 }
 
 function filterTemplates(templates: ProgramTemplateSummary[], query: string): ProgramTemplateSummary[] {
@@ -18,7 +19,7 @@ function filterTemplates(templates: ProgramTemplateSummary[], query: string): Pr
   });
 }
 
-export function DockTemplateList({ query }: DockTemplateListProps) {
+export function DockTemplateList({ query, onOpenImport }: DockTemplateListProps) {
   const { templates, loading, error, fetchTemplates } = useProgramTemplates();
 
   useEffect(() => {
@@ -72,12 +73,18 @@ export function DockTemplateList({ query }: DockTemplateListProps) {
         gap: 8,
       }}
     >
-      {filtered.map(t => <TemplateCard key={t.id} template={t} />)}
+      {filtered.map(t => <TemplateCard key={t.id} template={t} onOpenImport={onOpenImport} />)}
     </div>
   );
 }
 
-function TemplateCard({ template }: { template: ProgramTemplateSummary }) {
+function TemplateCard({
+  template,
+  onOpenImport,
+}: {
+  template: ProgramTemplateSummary;
+  onOpenImport: (templateId: string) => void;
+}) {
   const multiDay = template.day_count > 1;
   return (
     <div
@@ -156,6 +163,30 @@ function TemplateCard({ template }: { template: ProgramTemplateSummary }) {
         >
           {template.day_count} {template.day_count === 1 ? 'day' : 'days'}
         </span>
+        {multiDay && (
+          <button
+            onClick={e => { e.stopPropagation(); onOpenImport(template.id); }}
+            title="Open import dialog to map days deliberately"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+              fontSize: 'var(--text-caption)',
+              padding: '2px 6px',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-bg-primary)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; }}
+          >
+            <Import size={9} />
+            Import…
+          </button>
+        )}
       </div>
       {template.days.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
