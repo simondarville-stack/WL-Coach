@@ -1,10 +1,11 @@
-// Minimal template editor. Edits the program template in place — every
-// change is auto-saved (debounced for text fields, immediate for
-// structural changes). Combo exercises are read-but-not-editable in v1;
-// the dock applies them correctly when present, but creating combos
-// from scratch in a template stays on the roadmap.
+// Template editor. Edits the program template in place — every change
+// is auto-saved (debounced for text fields, immediate for structural
+// changes). Prescriptions use the same PrescriptionGrid + stacked
+// notation as the planner so templates stay visually consistent with
+// the rest of EMOS. Combo composition (which exercises are in the
+// combo) stays read-only in v1, but combo prescriptions are editable.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
 import {
@@ -18,7 +19,9 @@ import {
   deleteTemplateExercise,
 } from '../../lib/templateService';
 import { useExercises } from '../../hooks/useExercises';
+import { useSettings } from '../../hooks/useSettings';
 import { ExerciseSearch } from '../planner/ExerciseSearch';
+import { PrescriptionGrid } from '../planner/PrescriptionGrid';
 import type {
   Exercise,
   ProgramTemplateDayWithExercises,
@@ -34,6 +37,10 @@ export function TemplateEditor() {
   const { templateId } = useParams<{ templateId: string }>();
   const navigate = useNavigate();
   const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { settings, fetchSettings } = useSettings();
+
+  const loadIncrement = settings?.grid_load_increment ?? 5;
+  const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   const [template, setTemplate] = useState<ProgramTemplateFull | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,7 +51,7 @@ export function TemplateEditor() {
   const dayDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
   const exDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
 
-  useEffect(() => { fetchExercisesByName(); }, []);
+  useEffect(() => { fetchExercisesByName(); fetchSettings(); }, []);
 
   useEffect(() => {
     if (!templateId) return;
@@ -195,6 +202,26 @@ export function TemplateEditor() {
     }, DEBOUNCE_MS);
   };
 
+  // PrescriptionGrid manages its own debouncing internally and calls
+  // onSave with the formatted raw string — save it without our debounce.
+  const saveExercisePrescription = (
+    dayId: string,
+    exerciseRowId: string,
+    raw: string,
+  ) => {
+    const normalised = raw.trim() === '' ? null : raw;
+    setTemplate(t => t ? {
+      ...t,
+      days: t.days.map(d => d.id === dayId
+        ? {
+            ...d,
+            exercises: d.exercises.map(ex => ex.id === exerciseRowId ? { ...ex, prescription_raw: normalised } : ex),
+          }
+        : d),
+    } : t);
+    void wrapSave(() => updateTemplateExercise(exerciseRowId, { prescription_raw: normalised }));
+  };
+
   if (loading) {
     return <PageShell><Centered>Loading template…</Centered></PageShell>;
   }
@@ -261,11 +288,14 @@ export function TemplateEditor() {
             key={day.id}
             day={day}
             allExercises={allExercises}
+            loadIncrement={loadIncrement}
+            defaultLoad={defaultPrescriptionLoad}
             onLabelChange={label => setDayLabel(day.id, label)}
             onDelete={() => void handleDeleteDay(day.id)}
             onAddExercise={ex => void handleAddExercise(day.id, ex)}
             onDeleteExercise={exId => void handleDeleteExercise(day.id, exId)}
             onExerciseField={(exId, patch) => setExerciseField(day.id, exId, patch)}
+            onExercisePrescription={(exId, raw) => saveExercisePrescription(day.id, exId, raw)}
           />
         ))}
       </div>
@@ -291,15 +321,20 @@ export function TemplateEditor() {
 interface DayBlockProps {
   day: ProgramTemplateDayWithExercises;
   allExercises: Exercise[];
+  loadIncrement: number;
+  defaultLoad: number;
   onLabelChange: (label: string) => void;
   onDelete: () => void;
   onAddExercise: (ex: Exercise) => void;
   onDeleteExercise: (exId: string) => void;
   onExerciseField: (exId: string, patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
+  onExercisePrescription: (exId: string, raw: string) => void;
 }
 
 function DayBlock({
-  day, allExercises, onLabelChange, onDelete, onAddExercise, onDeleteExercise, onExerciseField,
+  day, allExercises, loadIncrement, defaultLoad,
+  onLabelChange, onDelete, onAddExercise, onDeleteExercise,
+  onExerciseField, onExercisePrescription,
 }: DayBlockProps) {
   return (
     <div style={{
@@ -365,8 +400,11 @@ function DayBlock({
             <ExerciseRow
               key={ex.id}
               exercise={ex}
+              loadIncrement={loadIncrement}
+              defaultLoad={defaultLoad}
               onDelete={() => onDeleteExercise(ex.id)}
               onFieldChange={patch => onExerciseField(ex.id, patch)}
+              onPrescriptionSave={raw => onExercisePrescription(ex.id, raw)}
             />
           ))
         )}
@@ -386,90 +424,90 @@ function DayBlock({
 
 interface ExerciseRowProps {
   exercise: ProgramTemplateExerciseWithExercise;
+  loadIncrement: number;
+  defaultLoad: number;
   onDelete: () => void;
   onFieldChange: (patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
+  onPrescriptionSave: (raw: string) => void;
 }
 
-function ExerciseRow({ exercise, onDelete, onFieldChange }: ExerciseRowProps) {
-  const unitHint = useMemo(() => {
-    switch (exercise.unit) {
-      case 'percentage': return 'e.g. 75x5/3 (% of PR × reps / sets)';
-      case 'absolute_kg': return 'e.g. 100x5/3 (kg × reps / sets)';
-      case 'rpe': return 'e.g. 7x5/3 (RPE × reps / sets)';
-      case 'free_text_reps': return 'e.g. easyx10/3';
-      default: return 'Free-form prescription text';
-    }
-  }, [exercise.unit]);
+function ExerciseRow({
+  exercise, loadIncrement, defaultLoad, onDelete, onFieldChange, onPrescriptionSave,
+}: ExerciseRowProps) {
+  const comboPartCount = exercise.is_combo ? (exercise.combo_members?.length ?? 2) : undefined;
 
   return (
     <div
       style={{
-        display: 'flex', alignItems: 'flex-start', gap: 8,
-        padding: '6px 8px 6px 0',
+        display: 'flex', flexDirection: 'column', gap: 6,
+        padding: '8px 12px',
         borderBottom: '0.5px solid var(--color-border-tertiary)',
         borderLeft: `3px solid ${exercise.combo_color || exercise.exercise.color || '#94a3b8'}`,
       }}
     >
-      <div style={{ flex: 1, minWidth: 0, padding: '0 0 0 8px' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-            {exercise.exercise.name}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+          {exercise.exercise.name}
+        </span>
+        {exercise.is_combo && (
+          <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>
+            Combo
           </span>
-          {exercise.is_combo && (
-            <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500 }}>
-              Combo (read-only)
-            </span>
-          )}
-          {exercise.exercise.exercise_code && (
-            <span style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-              {exercise.exercise.exercise_code}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-          <input
-            type="text"
-            value={exercise.prescription_raw ?? ''}
-            onChange={e => onFieldChange({ prescription_raw: e.target.value || null })}
-            placeholder={unitHint}
-            style={inputStyle}
-          />
-          <input
-            type="text"
-            value={exercise.variation_note ?? ''}
-            onChange={e => onFieldChange({ variation_note: e.target.value || null })}
-            placeholder="Variation note"
-            style={{ ...inputStyle, maxWidth: 160 }}
-          />
-        </div>
+        )}
+        {exercise.exercise.exercise_code && (
+          <span style={{ fontSize: 'var(--text-caption)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+            {exercise.exercise.exercise_code}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={onDelete}
+          title="Remove exercise"
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, padding: 0,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: 'var(--color-text-tertiary)', borderRadius: 'var(--radius-sm)',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-danger-bg)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+            (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)';
+          }}
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+
+      <PrescriptionGrid
+        prescriptionRaw={exercise.prescription_raw}
+        unit={exercise.unit}
+        loadIncrement={loadIncrement}
+        defaultLoad={defaultLoad}
+        isCombo={exercise.is_combo}
+        comboPartCount={comboPartCount}
+        onSave={onPrescriptionSave}
+      />
+
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          value={exercise.variation_note ?? ''}
+          onChange={e => onFieldChange({ variation_note: e.target.value || null })}
+          placeholder="Variation note"
+          style={{ ...inputStyle, maxWidth: 220 }}
+        />
         <input
           type="text"
           value={exercise.notes ?? ''}
           onChange={e => onFieldChange({ notes: e.target.value || null })}
           placeholder="Notes"
-          style={{ ...inputStyle, marginTop: 4 }}
+          style={inputStyle}
         />
       </div>
-      <button
-        onClick={onDelete}
-        title="Remove exercise"
-        style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 22, height: 22, padding: 0, marginTop: 2,
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: 'var(--color-text-tertiary)', borderRadius: 'var(--radius-sm)',
-        }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-danger-bg)';
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)';
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)';
-        }}
-      >
-        <Trash2 size={11} />
-      </button>
     </div>
   );
 }
