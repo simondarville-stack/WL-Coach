@@ -563,6 +563,7 @@ export interface ProgramTemplateComboMemberWithExercise extends ProgramTemplateC
 
 export interface ProgramTemplateExerciseWithExercise extends ProgramTemplateExercise {
   exercise: Exercise;
+  combo_members?: ProgramTemplateComboMemberWithExercise[];
 }
 
 export interface ProgramTemplateDayWithExercises extends ProgramTemplateDay {
