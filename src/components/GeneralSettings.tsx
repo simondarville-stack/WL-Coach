@@ -9,6 +9,7 @@ import type { WeekTypeConfig, Exercise, PhaseTypePreset } from '../lib/database.
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../lib/constants';
 import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS } from './macro/MacroTableV2';
 import type { MacroTableColumnKey } from './macro/MacroTableV2';
+import { FlagSettingsSection } from './dashboard-v2/FlagSettingsSection';
 
 const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
   { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
@@ -907,6 +908,8 @@ export function GeneralSettings() {
           ))}
         </div>
       </div>
+
+      <FlagSettingsSection />
     </div>
   );
 }

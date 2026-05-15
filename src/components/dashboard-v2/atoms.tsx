@@ -5,6 +5,7 @@
 // gray-100/200 borders. The slightly denser bits (color-tinted backgrounds
 // for RAW / week pills) stay, because they carry signal.
 
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { RawPillars, BwSummary } from '../../hooks/useCoachDashboardV2';
 
@@ -23,24 +24,42 @@ export function lastTrainLabel(days: number | null): string {
 }
 
 export function Avatar({
-  name, size = 28,
-}: { name: string; size?: number }) {
+  name, size = 28, onClick, title,
+}: { name: string; size?: number; onClick?: () => void; title?: string }) {
+  const base = "inline-flex items-center justify-center rounded-full bg-blue-100 text-blue-700 font-medium flex-shrink-0";
+  const style = {
+    width: size, height: size,
+    fontSize: size <= 22 ? 10 : 11,
+  };
+  const content = initials(name);
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        title={title || `Open ${name}`}
+        className={`${base} cursor-pointer transition-shadow hover:ring-2 hover:ring-blue-200 border-none p-0`}
+        style={style}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
-    <div
-      className="inline-flex items-center justify-center rounded-full bg-blue-100 text-blue-700 font-medium flex-shrink-0"
-      style={{
-        width: size, height: size,
-        fontSize: size <= 22 ? 10 : 11,
-      }}
-    >
-      {initials(name)}
-    </div>
+    <div className={base} style={style}>{content}</div>
   );
 }
 
 export function PhasePill({
-  name, color, week, total, compact,
-}: { name: string | null; color?: string | null; week: number | null; total: number | null; compact?: boolean }) {
+  name, color, week, total, compact, onClick,
+}: {
+  name: string | null;
+  color?: string | null;
+  week: number | null;
+  total: number | null;
+  compact?: boolean;
+  onClick?: () => void;
+}) {
   const hasMacro = !!(name && week !== null && total !== null);
   if (!hasMacro) {
     return (
@@ -52,19 +71,35 @@ export function PhasePill({
   }
   const bg = color ? color + '22' : '#F3F4F6';
   const fg = color || '#374151';
-  return (
-    <span
-      className="inline-flex items-baseline gap-1.5 rounded-full"
-      style={{
-        background: bg, color: fg,
-        padding: compact ? '1px 8px' : '2px 10px',
-        fontSize: compact ? 11 : 12,
-      }}
-    >
+  const style = {
+    background: bg, color: fg,
+    padding: compact ? '1px 8px' : '2px 10px',
+    fontSize: compact ? 11 : 12,
+  };
+  const inner = (
+    <>
       <span className="font-medium">{name}</span>
       <span className="opacity-70 tabular-nums" style={{ fontFamily: 'var(--font-mono, ui-monospace), monospace' }}>
         W{week}/{total}
       </span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        title="Open macro plan"
+        className="inline-flex items-baseline gap-1.5 rounded-full cursor-pointer border-none hover:brightness-95 transition"
+        style={style}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-baseline gap-1.5 rounded-full" style={style}>
+      {inner}
     </span>
   );
 }
@@ -76,21 +111,42 @@ function weekTokens(state: WeekState) {
 }
 
 export function WeekPill({
-  state, label, compact,
-}: { state: WeekState; label?: string; compact?: boolean }) {
+  state, label, compact, onClick, title,
+}: {
+  state: WeekState;
+  label?: string;
+  compact?: boolean;
+  onClick?: () => void;
+  title?: string;
+}) {
   const c = weekTokens(state);
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.border} whitespace-nowrap`}
-      style={{
-        padding: compact ? '1px 8px' : '2px 10px',
-        fontSize: compact ? 11 : 12,
-        fontWeight: 500,
-      }}
-    >
+  const className = `inline-flex items-center gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.border} whitespace-nowrap`;
+  const style = {
+    padding: compact ? '1px 8px' : '2px 10px',
+    fontSize: compact ? 11 : 12,
+    fontWeight: 500,
+  };
+  const inner = (
+    <>
       <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       <span>{label ?? c.label}</span>
-    </span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        title={title}
+        className={`${className} cursor-pointer border-none hover:brightness-95 transition`}
+        style={style}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span className={className} style={style}>{inner}</span>
   );
 }
 
@@ -255,27 +311,49 @@ export function BwDelta({
 }
 
 export function EventTag({
-  name, kind, dateLabel, daysOut, compact,
-}: { name: string; kind: 'comp' | 'camp'; dateLabel?: string; daysOut: number; compact?: boolean }) {
+  name, kind, dateLabel, daysOut, compact, onClick,
+}: {
+  name: string;
+  kind: 'comp' | 'camp';
+  dateLabel?: string;
+  daysOut: number;
+  compact?: boolean;
+  onClick?: () => void;
+}) {
   const isComp = kind === 'comp';
   const c = isComp
     ? { bg: 'bg-orange-50',  text: 'text-orange-700', ring: 'ring-orange-200', tag: 'Comp' }
     : { bg: 'bg-sky-50',     text: 'text-sky-700',    ring: 'ring-sky-200',    tag: 'Camp' };
-  return (
-    <span
-      title={`${name}${dateLabel ? ' · ' + dateLabel : ''}`}
-      className={`inline-flex items-baseline gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} whitespace-nowrap overflow-hidden`}
-      style={{
-        padding: compact ? '1px 8px' : '2px 10px',
-        fontSize: compact ? 11 : 12,
-        maxWidth: compact ? 160 : 220,
-        textOverflow: 'ellipsis',
-      }}
-    >
+  const className = `inline-flex items-baseline gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} whitespace-nowrap overflow-hidden`;
+  const style = {
+    padding: compact ? '1px 8px' : '2px 10px',
+    fontSize: compact ? 11 : 12,
+    maxWidth: compact ? 160 : 220,
+    textOverflow: 'ellipsis',
+  };
+  const inner = (
+    <>
       <span className="text-[9.5px] font-medium uppercase tracking-wider">{c.tag}</span>
       <span className="overflow-hidden text-ellipsis">{name}</span>
       <span className="opacity-60 tabular-nums">· {daysOut}d</span>
-    </span>
+    </>
+  );
+  const titleStr = `${name}${dateLabel ? ' · ' + dateLabel : ''}`;
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        title={titleStr}
+        className={`${className} cursor-pointer border-none hover:brightness-95 transition`}
+        style={style}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span title={titleStr} className={className} style={style}>{inner}</span>
   );
 }
 
@@ -328,13 +406,47 @@ export function FlagChip({ id }: { id: string }) {
 }
 
 // Planned vs Actual chart — bars for planned, line for actual. Soft Tailwind
-// palette so it sits inside the rest of the EMOS panels.
+// palette so it sits inside the rest of the EMOS panels. If no explicit
+// width is passed the chart measures its container and re-renders on
+// resize, so the bar count adapts to whatever space is available.
 export function PlannedActualChart({
   planned, actual, labels, yMax,
-  width = 460, height = 130,
+  width, height = 130,
 }: {
   planned: number[]; actual: number[]; labels: string[];
   yMax?: number; width?: number; height?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [measuredWidth, setMeasuredWidth] = useState<number>(width ?? 460);
+
+  useEffect(() => {
+    if (width !== undefined) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setMeasuredWidth(Math.max(280, el.clientWidth));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width]);
+
+  const renderWidth = width ?? measuredWidth;
+  return (
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <PlannedActualChartInner
+        planned={planned} actual={actual} labels={labels}
+        yMax={yMax} width={renderWidth} height={height}
+      />
+    </div>
+  );
+}
+
+function PlannedActualChartInner({
+  planned, actual, labels, yMax,
+  width, height,
+}: {
+  planned: number[]; actual: number[]; labels: string[];
+  yMax?: number; width: number; height: number;
 }) {
   const n = Math.max(planned.length, actual.length, labels.length);
   if (n === 0) return null;

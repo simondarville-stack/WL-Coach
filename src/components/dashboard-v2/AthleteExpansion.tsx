@@ -20,14 +20,19 @@ interface Props {
   onOpenPlanner: (status: AthleteStatus) => void;
 }
 
-const LABELS_4W = ['W -3', 'W -2', 'W -1', 'This wk'];
-
-function padTo4(values: number[]): number[] {
-  if (values.length >= 4) return values.slice(-4);
-  if (!values.length) return [];
-  const padCount = 4 - values.length;
-  const head = Array.from({ length: padCount }, () => values[0]);
-  return [...head, ...values];
+function weekLabels(n: number): string[] {
+  if (n <= 0) return [];
+  if (n === 1) return ['This wk'];
+  // Last bucket is the current week; earlier ones are W -1, W -2, …
+  // To keep the chart readable across long windows, sparse-label longer series.
+  const labels = new Array<string>(n).fill('');
+  labels[n - 1] = 'This wk';
+  const stride = n > 8 ? 2 : 1;
+  for (let i = n - 1 - stride; i >= 0; i -= stride) {
+    const weeksAgo = (n - 1) - i;
+    labels[i] = `W -${weeksAgo}`;
+  }
+  return labels;
 }
 
 function MiniLabel({ children }: { children: React.ReactNode }) {
@@ -42,8 +47,8 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
   const [metric, setMetric] = useState<Metric>('compliance');
   const a = status.athlete;
 
-  const compSeries = padTo4(enrichment.compTrend);
-  const rawSeries = padTo4(enrichment.rawTrend);
+  const compSeries = enrichment.compTrend;
+  const rawSeries = enrichment.rawTrend;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,360px)_1fr] gap-5 px-5 py-4">
@@ -100,18 +105,18 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
             <PlannedActualChart
               planned={compSeries.map(() => 100)}
               actual={compSeries}
-              labels={LABELS_4W}
+              labels={weekLabels(compSeries.length)}
               yMax={120}
-              width={460} height={130}
+              height={130}
             />
           )}
           {metric === 'raw' && rawSeries.length >= 2 && (
             <PlannedActualChart
               planned={rawSeries.map(() => 12)}
               actual={rawSeries}
-              labels={LABELS_4W}
+              labels={weekLabels(rawSeries.length)}
               yMax={12}
-              width={460} height={130}
+              height={130}
             />
           )}
           {((metric === 'compliance' && compSeries.length < 2)

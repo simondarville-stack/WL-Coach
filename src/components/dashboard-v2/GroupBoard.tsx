@@ -18,12 +18,15 @@ interface Props {
   pinned: string[];
   onTogglePin: (groupId: string) => void;
   onJumpToAthlete: (status: AthleteStatus) => void;
-  onOpenGroupPlanner: (groupStatus: GroupStatus) => void;
+  onOpenGroupPlanner: (groupStatus: GroupStatus, weekStart?: string) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
 export function GroupBoard({
   groupStatuses, statuses, getEnrichment, expandedId, onSetExpanded,
   pinned, onTogglePin, onJumpToAthlete, onOpenGroupPlanner,
+  onOpenEvent, onOpenAthleteInfo,
 }: Props) {
   const statusByAthleteId = useMemo(() => {
     const m: Record<string, AthleteStatus> = {};
@@ -80,6 +83,8 @@ export function GroupBoard({
                   onSetExpanded={() => onSetExpanded(isExpanded ? null : gs.group.id)}
                   onJumpToAthlete={onJumpToAthlete}
                   onOpenGroupPlanner={onOpenGroupPlanner}
+                  onOpenEvent={onOpenEvent}
+                  onOpenAthleteInfo={onOpenAthleteInfo}
                 />
               );
             })}
@@ -99,12 +104,15 @@ interface RowProps {
   onTogglePin: () => void;
   onSetExpanded: () => void;
   onJumpToAthlete: (status: AthleteStatus) => void;
-  onOpenGroupPlanner: (gs: GroupStatus) => void;
+  onOpenGroupPlanner: (gs: GroupStatus, weekStart?: string) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
 function GroupRow({
   groupStatus, memberStatuses, getEnrichment, expanded, pinned,
   onTogglePin, onSetExpanded, onJumpToAthlete, onOpenGroupPlanner,
+  onOpenEvent, onOpenAthleteInfo,
 }: RowProps) {
   const earliestEvent = useMemo(() => {
     const all = memberStatuses.flatMap(s => getEnrichment(s.athlete.id).athleteEvents);
@@ -157,10 +165,20 @@ function GroupRow({
           {groupStatus.memberCount}
         </td>
         <td className="py-3 px-4">
-          <WeekPill state={groupStatus.currentWeekPlanned ? 'planned' : 'missing'} compact />
+          <WeekPill
+            state={groupStatus.currentWeekPlanned ? 'planned' : 'missing'}
+            compact
+            onClick={() => onOpenGroupPlanner(groupStatus, groupStatus.currentWeekStart)}
+            title="Open this week's group plan"
+          />
         </td>
         <td className="py-3 px-4">
-          <WeekPill state={groupStatus.nextWeekPlanned ? 'planned' : 'missing'} compact />
+          <WeekPill
+            state={groupStatus.nextWeekPlanned ? 'planned' : 'missing'}
+            compact
+            onClick={() => onOpenGroupPlanner(groupStatus, groupStatus.nextWeekStart)}
+            title="Open next week's group plan"
+          />
         </td>
         <td className="py-3 px-4">
           {earliestEvent ? (
@@ -169,6 +187,7 @@ function GroupRow({
               kind={earliestEvent.eventData.event_type === 'competition' ? 'comp' : 'camp'}
               daysOut={earliestEvent.daysUntil}
               compact
+              onClick={() => onOpenEvent(earliestEvent.eventData.id)}
             />
           ) : (
             <span className="text-xs text-gray-300">—</span>
@@ -190,6 +209,8 @@ function GroupRow({
               flaggedCount={flaggedCount}
               onJumpToAthlete={onJumpToAthlete}
               onOpenGroupPlanner={onOpenGroupPlanner}
+              onOpenEvent={onOpenEvent}
+              onOpenAthleteInfo={onOpenAthleteInfo}
             />
           </td>
         </tr>
@@ -200,14 +221,16 @@ function GroupRow({
 
 function GroupExpansion({
   groupStatus, memberStatuses, getEnrichment, flaggedCount,
-  onJumpToAthlete, onOpenGroupPlanner,
+  onJumpToAthlete, onOpenGroupPlanner, onOpenEvent, onOpenAthleteInfo,
 }: {
   groupStatus: GroupStatus;
   memberStatuses: AthleteStatus[];
   getEnrichment: (athleteId: string) => AthleteEnrichment;
   flaggedCount: number;
   onJumpToAthlete: (status: AthleteStatus) => void;
-  onOpenGroupPlanner: (gs: GroupStatus) => void;
+  onOpenGroupPlanner: (gs: GroupStatus, weekStart?: string) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }) {
   const athletesPlanned = memberStatuses.filter(s => s.currentWeekPlanned).length;
   const athletesNextPlanned = memberStatuses.filter(s => s.nextWeekPlanned).length;
@@ -275,7 +298,12 @@ function GroupExpansion({
                   className="border-b border-gray-50 last:border-b-0 hover:bg-blue-50/40 cursor-pointer"
                 >
                   <td className="w-8 py-2 px-2">
-                    <Avatar name={s.athlete.name} size={22} />
+                    <Avatar
+                      name={s.athlete.name}
+                      size={22}
+                      onClick={() => onOpenAthleteInfo(s)}
+                      title={`Quick info · ${s.athlete.name}`}
+                    />
                   </td>
                   <td className="py-2 px-3">
                     <div className="flex items-center gap-1.5">
@@ -302,6 +330,7 @@ function GroupExpansion({
                         kind={nextEvent.eventData.event_type === 'competition' ? 'comp' : 'camp'}
                         daysOut={nextEvent.daysUntil}
                         compact
+                        onClick={() => onOpenEvent(nextEvent.eventData.id)}
                       />
                     ) : (
                       <span className="text-xs text-gray-300">—</span>

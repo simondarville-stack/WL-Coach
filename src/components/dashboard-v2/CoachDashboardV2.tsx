@@ -14,21 +14,24 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, UsersRound } from 'lucide-react';
+import { Users, UsersRound, Sliders } from 'lucide-react';
 import type { AthleteStatus, GroupStatus } from '../../hooks/useCoachDashboard';
 import { useCoachDashboardV2 } from '../../hooks/useCoachDashboardV2';
 import type { Athlete, Event, TrainingGroup } from '../../lib/database.types';
+import { supabase } from '../../lib/supabase';
 import { EventOverviewModal } from '../EventOverviewModal';
 import { StatusBoard } from './StatusBoard';
 import { GroupBoard } from './GroupBoard';
 import { ActivityFeedPanel } from './ActivityFeedPanel';
 import { UpcomingEventsPanel } from './UpcomingEventsPanel';
+import { AthleteInfoDialog } from './AthleteInfoDialog';
 
 type BoardView = 'athletes' | 'groups';
 
 interface CoachDashboardV2Props {
   onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
   onNavigateToGroupPlanner: (group: TrainingGroup, weekStart: string) => void;
+  onNavigateToMacro: (athlete: Athlete, macrocycleId: string) => void;
 }
 
 const ATHLETE_PIN_KEY = 'emos_v2_dashboard_pinned';
@@ -56,7 +59,7 @@ function loadSectionByGroup(): boolean {
 }
 
 export function CoachDashboardV2({
-  onNavigateToPlanner, onNavigateToGroupPlanner,
+  onNavigateToPlanner, onNavigateToGroupPlanner, onNavigateToMacro,
 }: CoachDashboardV2Props) {
   const navigate = useNavigate();
   const {
@@ -74,6 +77,7 @@ export function CoachDashboardV2({
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [pulseId, setPulseId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [infoAthlete, setInfoAthlete] = useState<AthleteStatus | null>(null);
 
   useEffect(() => { localStorage.setItem(VIEW_KEY, view); }, [view]);
   useEffect(() => { localStorage.setItem(SECTION_KEY, sectionByGroup ? '1' : '0'); }, [sectionByGroup]);
@@ -112,13 +116,29 @@ export function CoachDashboardV2({
     }, 60);
   }, []);
 
-  const openPlannerForAthlete = useCallback((status: AthleteStatus) => {
-    onNavigateToPlanner(status.athlete, status.currentWeekStart);
+  const openPlannerForAthlete = useCallback((status: AthleteStatus, weekStart?: string) => {
+    onNavigateToPlanner(status.athlete, weekStart ?? status.currentWeekStart);
   }, [onNavigateToPlanner]);
 
-  const openPlannerForGroup = useCallback((gs: GroupStatus) => {
-    onNavigateToGroupPlanner(gs.group, gs.currentWeekStart);
+  const openPlannerForGroup = useCallback((gs: GroupStatus, weekStart?: string) => {
+    onNavigateToGroupPlanner(gs.group, weekStart ?? gs.currentWeekStart);
   }, [onNavigateToGroupPlanner]);
+
+  const openMacroForAthlete = useCallback((status: AthleteStatus) => {
+    if (!status.currentMacrocycle) return;
+    onNavigateToMacro(status.athlete, status.currentMacrocycle.id);
+  }, [onNavigateToMacro]);
+
+  // EventTag clicks pass an event id (the row-level summary may only have
+  // the id at hand, depending on caller). We resolve to a full Event row
+  // before opening the existing EventOverviewModal.
+  const openEventById = useCallback(async (eventId: string) => {
+    // Try to hit it from already-loaded upcomingEvents first.
+    const fromList = upcomingEvents.find(e => e.eventData.id === eventId)?.eventData;
+    if (fromList) { setSelectedEvent(fromList); return; }
+    const { data } = await supabase.from('events').select('*').eq('id', eventId).maybeSingle();
+    if (data) setSelectedEvent(data as Event);
+  }, [upcomingEvents]);
 
   const summary = useMemo(() => ({
     thisDone: orderedAthletes.filter(s => s.currentWeekPlanned).length,
@@ -143,12 +163,22 @@ export function CoachDashboardV2({
           <h1 className="text-base font-medium text-gray-900">{greeting}, Coach</h1>
           <p className="text-sm text-gray-500 mt-0.5">{todayLabel}</p>
         </div>
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="text-xs text-gray-500 hover:text-blue-600 underline-offset-2 hover:underline"
-        >
-          ← Back to original dashboard
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/settings#dashboard-flags')}
+            title="Configure which attention flags surface on the dashboard"
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600"
+          >
+            <Sliders size={13} />
+            Configure flags
+          </button>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="text-xs text-gray-500 hover:text-blue-600 underline-offset-2 hover:underline"
+          >
+            ← Back to original dashboard
+          </button>
+        </div>
       </div>
 
       {/* Quick stats */}
@@ -208,6 +238,9 @@ export function CoachDashboardV2({
             onSetExpanded={setExpandedAthleteId}
             pulseId={pulseId}
             onOpenPlanner={openPlannerForAthlete}
+            onOpenMacro={openMacroForAthlete}
+            onOpenEvent={openEventById}
+            onOpenAthleteInfo={setInfoAthlete}
           />
         ) : (
           <GroupBoard
@@ -220,6 +253,8 @@ export function CoachDashboardV2({
             onTogglePin={toggleGroupPin}
             onJumpToAthlete={jumpToAthlete}
             onOpenGroupPlanner={openPlannerForGroup}
+            onOpenEvent={openEventById}
+            onOpenAthleteInfo={setInfoAthlete}
           />
         )}
       </div>
@@ -243,6 +278,17 @@ export function CoachDashboardV2({
         <EventOverviewModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+        />
+      )}
+
+      {infoAthlete && (
+        <AthleteInfoDialog
+          status={infoAthlete}
+          enrichment={getEnrichment(infoAthlete.athlete.id)}
+          onClose={() => setInfoAthlete(null)}
+          onOpenPlanner={(s) => { setInfoAthlete(null); openPlannerForAthlete(s); }}
+          onOpenMacro={(s) => { setInfoAthlete(null); openMacroForAthlete(s); }}
+          onOpenAthletesPage={() => { setInfoAthlete(null); navigate('/athletes'); }}
         />
       )}
     </div>

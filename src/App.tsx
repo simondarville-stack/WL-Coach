@@ -103,6 +103,11 @@ function CoachApp() {
     navigate(`/planner/${weekStart}`);
   };
 
+  const handleNavigateToMacro = (athlete: Athlete, macrocycleId: string) => {
+    setSelectedAthlete(athlete);
+    navigate(`/macrocycles/${macrocycleId}`);
+  };
+
   // Show spinner while fetching coach profiles on first load
   if (!coachesLoaded) {
     return (
@@ -155,7 +160,7 @@ function CoachApp() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
-              <Route path="/dashboard-v2" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
+              <Route path="/dashboard-v2" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/planner/:weekStart" element={<WeeklyPlanner />} />
               <Route path="/templates" element={<TemplatesPage />} />

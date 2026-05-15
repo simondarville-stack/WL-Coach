@@ -29,7 +29,10 @@ interface Props {
   expandedId: string | null;
   onSetExpanded: (id: string | null) => void;
   pulseId: string | null;
-  onOpenPlanner: (status: AthleteStatus) => void;
+  onOpenPlanner: (status: AthleteStatus, weekStart?: string) => void;
+  onOpenMacro: (status: AthleteStatus) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
 interface Section {
@@ -80,7 +83,8 @@ function bucketByGroup(
 export function StatusBoard({
   statuses, getEnrichment, getAthleteGroups, groupStatuses,
   pinned, onTogglePin, groupBy,
-  expandedId, onSetExpanded, pulseId, onOpenPlanner,
+  expandedId, onSetExpanded, pulseId,
+  onOpenPlanner, onOpenMacro, onOpenEvent, onOpenAthleteInfo,
 }: Props) {
   const sections = useMemo(
     () => bucketByGroup(statuses, groupBy, getAthleteGroups, groupStatuses),
@@ -118,6 +122,9 @@ export function StatusBoard({
                 onTogglePin={onTogglePin}
                 onSetExpanded={onSetExpanded}
                 onOpenPlanner={onOpenPlanner}
+                onOpenMacro={onOpenMacro}
+                onOpenEvent={onOpenEvent}
+                onOpenAthleteInfo={onOpenAthleteInfo}
               />
             ))}
             {statuses.length === 0 && (
@@ -136,7 +143,8 @@ export function StatusBoard({
 
 function SectionContent({
   section, expandedId, pulseId, pinned, getEnrichment,
-  onTogglePin, onSetExpanded, onOpenPlanner,
+  onTogglePin, onSetExpanded,
+  onOpenPlanner, onOpenMacro, onOpenEvent, onOpenAthleteInfo,
 }: {
   section: Section;
   expandedId: string | null;
@@ -145,7 +153,10 @@ function SectionContent({
   getEnrichment: (id: string) => AthleteEnrichment;
   onTogglePin: (id: string) => void;
   onSetExpanded: (id: string | null) => void;
-  onOpenPlanner: (status: AthleteStatus) => void;
+  onOpenPlanner: (status: AthleteStatus, weekStart?: string) => void;
+  onOpenMacro: (status: AthleteStatus) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }) {
   return (
     <>
@@ -167,6 +178,9 @@ function SectionContent({
           onTogglePin={() => onTogglePin(s.athlete.id)}
           onSetExpanded={() => onSetExpanded(expandedId === s.athlete.id ? null : s.athlete.id)}
           onOpenPlanner={onOpenPlanner}
+          onOpenMacro={onOpenMacro}
+          onOpenEvent={onOpenEvent}
+          onOpenAthleteInfo={onOpenAthleteInfo}
         />
       ))}
     </>
@@ -222,12 +236,16 @@ interface RowProps {
   pinned: boolean;
   onTogglePin: () => void;
   onSetExpanded: () => void;
-  onOpenPlanner: (status: AthleteStatus) => void;
+  onOpenPlanner: (status: AthleteStatus, weekStart?: string) => void;
+  onOpenMacro: (status: AthleteStatus) => void;
+  onOpenEvent: (eventId: string) => void;
+  onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
 function AthleteRowV2({
   status, enrichment, expanded, pulse, pinned,
-  onTogglePin, onSetExpanded, onOpenPlanner,
+  onTogglePin, onSetExpanded,
+  onOpenPlanner, onOpenMacro, onOpenEvent, onOpenAthleteInfo,
 }: RowProps) {
   const a = status.athlete;
   const tone = rowAlertTone(enrichment.flags);
@@ -263,7 +281,11 @@ function AthleteRowV2({
         </td>
         <td className="py-3 px-4">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Avatar name={a.name} />
+            <Avatar
+              name={a.name}
+              onClick={() => onOpenAthleteInfo(status)}
+              title={`Quick info · ${a.name}`}
+            />
             <div className="flex flex-col min-w-0">
               <span className="text-sm font-medium text-gray-900 leading-tight truncate">
                 {a.name}
@@ -282,6 +304,7 @@ function AthleteRowV2({
             color={enrichment.phaseColor}
             week={status.currentMacroWeek?.week_number ?? null}
             total={status.totalMacroWeeks}
+            onClick={status.currentMacrocycle ? () => onOpenMacro(status) : undefined}
           />
         </td>
         <td className={`py-3 px-4 text-sm tabular-nums ${lastDays !== null && lastDays > 4 ? 'text-red-600' : 'text-gray-600'}`}>
@@ -297,10 +320,20 @@ function AthleteRowV2({
           <BwDelta bw={enrichment.bw} />
         </td>
         <td className="py-3 px-4">
-          <WeekPill state={status.currentWeekPlanned ? 'planned' : 'missing'} compact />
+          <WeekPill
+            state={status.currentWeekPlanned ? 'planned' : 'missing'}
+            compact
+            onClick={() => onOpenPlanner(status, status.currentWeekStart)}
+            title="Open this week's plan"
+          />
         </td>
         <td className="py-3 px-4">
-          <WeekPill state={status.nextWeekPlanned ? 'planned' : 'missing'} compact />
+          <WeekPill
+            state={status.nextWeekPlanned ? 'planned' : 'missing'}
+            compact
+            onClick={() => onOpenPlanner(status, status.nextWeekStart)}
+            title="Open next week's plan"
+          />
         </td>
         <td className="py-3 px-4">
           {nextEvent ? (
@@ -309,6 +342,7 @@ function AthleteRowV2({
               kind={nextEvent.eventData.event_type === 'competition' ? 'comp' : 'camp'}
               daysOut={nextEvent.daysUntil}
               compact
+              onClick={() => onOpenEvent(nextEvent.eventData.id)}
             />
           ) : (
             <span className="text-xs text-gray-300">—</span>
@@ -326,7 +360,7 @@ function AthleteRowV2({
             <AthleteExpansion
               status={status}
               enrichment={enrichment}
-              onOpenPlanner={onOpenPlanner}
+              onOpenPlanner={(s) => onOpenPlanner(s)}
             />
           </td>
         </tr>

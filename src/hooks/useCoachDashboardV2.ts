@@ -16,6 +16,17 @@ import {
   type UpcomingEvent,
 } from './useCoachDashboard';
 import type { BodyweightEntry, MacroPhase, TrainingGroup } from '../lib/database.types';
+import {
+  DEFAULT_DASHBOARD_FLAGS,
+  loadDashboardFlagSettings,
+  type DashboardFlagSettings,
+} from '../lib/dashboardFlagSettings';
+
+/** How many weeks of compliance + RAW history we pull for the in-row
+ *  sparkline and the planned-vs-actual chart. The chart renders as many
+ *  weeks as it has data for. */
+const HISTORY_WEEKS = 12;
+const SETTINGS_EVENT = 'emos:dashboard-flag-settings-changed';
 
 export type V2FlagId =
   | 'raw-drop'
@@ -91,28 +102,46 @@ function deriveFlags(args: {
   rawTrend: number[];
   compTrend: number[];
   lastDays: number | null;
+  settings: DashboardFlagSettings;
 }): V2FlagId[] {
   const flags: V2FlagId[] = [];
-  const { status, rawAvg, rawTrend, compTrend, lastDays } = args;
+  const { status, rawAvg, rawTrend, compTrend, lastDays, settings } = args;
+  const en = settings.enabled;
 
-  if (rawAvg !== null && rawAvg < 8) flags.push('raw-drop');
-  // also flag if RAW trend is monotonically decreasing across last 3 entries
-  if (
-    rawTrend.length >= 3 &&
-    rawTrend[rawTrend.length - 1] < rawTrend[rawTrend.length - 2] &&
-    rawTrend[rawTrend.length - 2] < rawTrend[rawTrend.length - 3] &&
-    !flags.includes('raw-drop')
-  ) {
-    flags.push('raw-drop');
+  if (en['raw-drop']) {
+    let trip = rawAvg !== null && rawAvg < settings.rawDropThreshold;
+    if (
+      !trip && settings.rawDropTrendEnabled &&
+      rawTrend.length >= 3 &&
+      rawTrend[rawTrend.length - 1] < rawTrend[rawTrend.length - 2] &&
+      rawTrend[rawTrend.length - 2] < rawTrend[rawTrend.length - 3]
+    ) trip = true;
+    if (trip) flags.push('raw-drop');
   }
 
-  if (!status.currentWeekPlanned) flags.push('this-week-gap');
-  if (!status.nextWeekPlanned) flags.push('next-week-gap');
+  if (en['this-week-gap'] && !status.currentWeekPlanned) {
+    flags.push('this-week-gap');
+  }
 
-  const lastComp = compTrend.length ? compTrend[compTrend.length - 1] : null;
-  if (lastComp !== null && lastComp < 85) flags.push('compliance');
+  if (en['next-week-gap'] && !status.nextWeekPlanned) {
+    // Only flag if next week starts within the configured window.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextWeekStart = new Date(status.nextWeekStart + 'T00:00:00');
+    const days = Math.ceil((nextWeekStart.getTime() - today.getTime()) / 86_400_000);
+    if (days < settings.nextWeekGapDaysBeforeWindow) flags.push('next-week-gap');
+  }
 
-  if (lastDays !== null && lastDays >= 5) flags.push('missed-recent');
+  if (en['compliance']) {
+    const lastComp = compTrend.length ? compTrend[compTrend.length - 1] : null;
+    if (lastComp !== null && lastComp < settings.complianceThreshold) {
+      flags.push('compliance');
+    }
+  }
+
+  if (en['missed-recent'] && lastDays !== null && lastDays >= settings.missedRecentDays) {
+    flags.push('missed-recent');
+  }
 
   return flags;
 }
@@ -122,8 +151,27 @@ export function useCoachDashboardV2() {
   const [enrichments, setEnrichments] = useState<Record<string, AthleteEnrichment>>({});
   const [athleteGroupMap, setAthleteGroupMap] = useState<Record<string, TrainingGroup[]>>({});
   const [enrichLoading, setEnrichLoading] = useState(false);
+  // Read once per loadEnrichments cycle. We also listen for changes so the
+  // dashboard recomputes flags when the coach edits thresholds in settings.
+  const [flagSettings, setFlagSettings] = useState<DashboardFlagSettings>(
+    () => loadDashboardFlagSettings(),
+  );
 
-  const loadEnrichments = useCallback(async (statuses: AthleteStatus[], events: UpcomingEvent[]) => {
+  useEffect(() => {
+    const onChange = () => setFlagSettings(loadDashboardFlagSettings());
+    window.addEventListener(SETTINGS_EVENT, onChange);
+    window.addEventListener('storage', onChange);
+    return () => {
+      window.removeEventListener(SETTINGS_EVENT, onChange);
+      window.removeEventListener('storage', onChange);
+    };
+  }, []);
+
+  const loadEnrichments = useCallback(async (
+    statuses: AthleteStatus[],
+    events: UpcomingEvent[],
+    settings: DashboardFlagSettings,
+  ) => {
     if (!statuses.length) {
       setEnrichments({});
       setAthleteGroupMap({});
@@ -162,9 +210,11 @@ export function useCoachDashboardV2() {
           (rawTrendByAthlete[s.athlete_id] ||= []).push(s.raw_total);
         }
       });
-      // collected newest-first; reverse to chronological for the sparkline
+      // collected newest-first; reverse to chronological for the sparkline.
+      // Keep the full window so the planned-vs-actual chart can render as
+      // many weeks as it has data for.
       Object.keys(rawTrendByAthlete).forEach(k => {
-        rawTrendByAthlete[k] = rawTrendByAthlete[k].slice(0, 4).reverse();
+        rawTrendByAthlete[k] = rawTrendByAthlete[k].slice(0, HISTORY_WEEKS).reverse();
       });
 
       // 2) Bodyweight entries (last 35 days covers 28d MA)
@@ -186,16 +236,16 @@ export function useCoachDashboardV2() {
       const bwByAthlete: Record<string, BodyweightEntry[]> = {};
       bwRows.forEach(e => { (bwByAthlete[e.athlete_id] ||= []).push(e); });
 
-      // 3) 4-week compliance trend per athlete (reuse useAnalysis helper)
+      // 3) Compliance trend per athlete over the full history window
       const endDate = new Date().toISOString().slice(0, 10);
-      const startDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000)
+      const startDate = new Date(Date.now() - HISTORY_WEEKS * 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
       const compEntries = await Promise.all(
         statuses.map(async (s) => {
           const aggs = await fetchWeeklyAggregates({
             athleteId: s.athlete.id, startDate, endDate,
           });
-          return [s.athlete.id, aggs.slice(-4).map(a => a.complianceReps)] as const;
+          return [s.athlete.id, aggs.slice(-HISTORY_WEEKS).map(a => a.complianceReps)] as const;
         }),
       );
       const compByAthlete: Record<string, number[]> = {};
@@ -297,7 +347,7 @@ export function useCoachDashboardV2() {
         const bw = computeBwSummary(bwByAthlete[s.athlete.id] || []);
         const phase = resolvePhase(s);
         const flags = deriveFlags({
-          status: s, rawAvg: s.rawAverage, rawTrend, compTrend, lastDays,
+          status: s, rawAvg: s.rawAverage, rawTrend, compTrend, lastDays, settings,
         });
         next[s.athlete.id] = {
           rawPillars, rawTrend, compTrend, bw,
@@ -322,10 +372,11 @@ export function useCoachDashboardV2() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When statuses/events change, reload the enrichment layer.
+  // When statuses/events/settings change, reload the enrichment layer so
+  // flags reflect the freshest config without a manual refresh.
   useEffect(() => {
-    loadEnrichments(base.athleteStatuses, base.upcomingEvents);
-  }, [base.athleteStatuses, base.upcomingEvents, loadEnrichments]);
+    loadEnrichments(base.athleteStatuses, base.upcomingEvents, flagSettings);
+  }, [base.athleteStatuses, base.upcomingEvents, flagSettings, loadEnrichments]);
 
   const getEnrichment = useCallback(
     (athleteId: string): AthleteEnrichment => enrichments[athleteId] || EMPTY_ENRICHMENT,
@@ -350,5 +401,9 @@ export function useCoachDashboardV2() {
     athleteGroupMap,
     getAthleteGroups,
     totalFlagged,
+    flagSettings,
   };
 }
+
+// Re-export so the consumer doesn't need to import from two places.
+export { DEFAULT_DASHBOARD_FLAGS };
