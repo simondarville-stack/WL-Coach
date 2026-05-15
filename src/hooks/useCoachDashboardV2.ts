@@ -199,23 +199,48 @@ export function useCoachDashboardV2() {
       const compByAthlete: Record<string, number[]> = {};
       compEntries.forEach(([id, vals]) => { compByAthlete[id] = vals; });
 
-      // 4) Phase metadata per athlete (resolve phase_id → MacroPhase)
-      const phaseIds = Array.from(
+      // 4) Phase metadata per athlete.
+      //
+      // Phases are defined as week-number ranges on a macrocycle
+      // (start_week_number..end_week_number), not as a direct FK on
+      // macro_weeks — so we fetch all phases for every athlete's active
+      // macrocycle and resolve the current phase per athlete by matching
+      // the current macro-week's week_number into the range.
+      const macrocycleIds = Array.from(
         new Set(
           statuses
-            .map(s => s.currentMacroWeek?.phase_id)
+            .map(s => s.currentMacrocycle?.id)
             .filter((id): id is string => !!id),
         ),
       );
-      let phasesById: Record<string, MacroPhase> = {};
-      if (phaseIds.length) {
+      let phasesByCycle: Record<string, MacroPhase[]> = {};
+      if (macrocycleIds.length) {
         const { data } = await supabase
           .from('macro_phases')
           .select('*')
-          .in('id', phaseIds)
-          .eq('owner_id', ownerId);
-        phasesById = Object.fromEntries(((data || []) as MacroPhase[]).map(p => [p.id, p]));
+          .in('macrocycle_id', macrocycleIds)
+          .eq('owner_id', ownerId)
+          .order('position');
+        const phases = (data || []) as MacroPhase[];
+        phases.forEach(p => { (phasesByCycle[p.macrocycle_id] ||= []).push(p); });
       }
+      const resolvePhase = (status: AthleteStatus): MacroPhase | null => {
+        const macroId = status.currentMacrocycle?.id;
+        const weekNumber = status.currentMacroWeek?.week_number;
+        if (!macroId || weekNumber === undefined || weekNumber === null) return null;
+        const phases = phasesByCycle[macroId];
+        if (!phases) return null;
+        // Prefer the direct FK if it happens to be populated; otherwise resolve
+        // by week-number range.
+        const directId = status.currentMacroWeek?.phase_id;
+        if (directId) {
+          const direct = phases.find(p => p.id === directId);
+          if (direct) return direct;
+        }
+        return phases.find(
+          p => p.start_week_number <= weekNumber && p.end_week_number >= weekNumber,
+        ) || null;
+      };
 
       // 5) Map upcoming events to athletes via event_athletes
       const eventIds = events.map(e => e.eventData.id);
@@ -252,8 +277,7 @@ export function useCoachDashboardV2() {
         const rawTrend = rawTrendByAthlete[s.athlete.id] || [];
         const compTrend = compByAthlete[s.athlete.id] || [];
         const bw = computeBwSummary(bwByAthlete[s.athlete.id] || []);
-        const phaseId = s.currentMacroWeek?.phase_id;
-        const phase = phaseId ? phasesById[phaseId] : null;
+        const phase = resolvePhase(s);
         const flags = deriveFlags({
           status: s, rawAvg: s.rawAverage, rawTrend, compTrend, lastDays,
         });
