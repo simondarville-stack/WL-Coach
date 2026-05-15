@@ -2,11 +2,7 @@
  * trainingLogService — typed reads/writes for the Training Log.
  *
  * All planner Log-mode and athlete-app data access goes through this module.
- * Components MUST NOT call supabase directly. Writes return the updated row
- * for optimistic UI patterns.
- *
- * Status: P1 — reads only. Writes (logSet, upsertSession, addComment) land
- * in P3/P4.
+ * Components MUST NOT call supabase directly.
  */
 import { supabase } from './supabase';
 import type {
@@ -15,16 +11,29 @@ import type {
   TrainingLogSet,
   TrainingLogMessage,
   Exercise,
+  PlannedExercise,
+  PlannedSetLine,
 } from './database.types';
 import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
 
+// ─── Aggregate types ──────────────────────────────────────────────────────
+
+export interface PlannedExerciseFull {
+  exercise: PlannedExercise;
+  exerciseDef: Exercise;
+  setLines: PlannedSetLine[];
+}
+
+export interface AthleteDayData {
+  date: string;
+  weekStart: string;
+  dayIndex: number;
+  planned: PlannedExerciseFull[];
+  log: DayLog | null;
+}
+
 // ─── Reads ────────────────────────────────────────────────────────────────
 
-/**
- * Fetch all log data for one athlete in one week, grouped by day_index.
- * Returns an empty object if the athlete has no sessions for that week
- * (i.e. nothing has been logged yet).
- */
 export async function fetchWeekLog(
   athleteId: string,
   weekStart: string,
@@ -68,7 +77,6 @@ export async function fetchWeekLog(
   if (msgErr) throw msgErr;
   const messages = (msgRows ?? []) as TrainingLogMessage[];
 
-  // Group by day_index
   const out: Record<number, DayLog> = {};
   for (const s of sessions) {
     out[s.day_index] = {
@@ -79,7 +87,6 @@ export async function fetchWeekLog(
       messages: messages.filter(m => m.session_id === s.id),
     };
   }
-
   for (const ex of exercises) {
     const session = sessions.find(s => s.id === ex.session_id);
     if (!session) continue;
@@ -88,21 +95,13 @@ export async function fetchWeekLog(
     const exSets = sets
       .filter(s => s.log_exercise_id === ex.id)
       .sort((a, b) => a.set_number - b.set_number);
-    const entry: LoggedExerciseFull = {
-      log: ex,
-      sets: exSets,
-      exercise: ex.exercise,
-    };
+    const entry: LoggedExerciseFull = { log: ex, sets: exSets, exercise: ex.exercise };
     day.exercises.push(entry);
   }
-
   Object.values(out).forEach(d => d.exercises.sort((a, b) => a.log.position - b.log.position));
   return out;
 }
 
-/**
- * Fetch one day's session with exercises and sets. Used by the athlete app.
- */
 export async function fetchSessionForDay(
   athleteId: string,
   date: string,
@@ -151,22 +150,280 @@ export async function fetchSessionForDay(
     exercises: exercises.map(ex => ({
       log: ex,
       exercise: ex.exercise,
-      sets: sets.filter(s => s.log_exercise_id === ex.id),
+      sets: sets.filter(s => s.log_exercise_id === ex.id).sort((a, b) => a.set_number - b.set_number),
     })),
     messages: (msgRows ?? []) as TrainingLogMessage[],
   };
 }
 
-// ─── Writes — stubs for P3/P4 ─────────────────────────────────────────────
+/**
+ * The athlete-app's primary data load: pull the week_plan that contains
+ * `date`, fetch the planned exercises + set lines for that day, and merge
+ * with any existing log data.
+ */
+export async function fetchAthleteDay(
+  athleteId: string,
+  date: string,
+  weekStart: string,
+  dayIndex: number,
+): Promise<AthleteDayData> {
+  const { data: weekPlanRow, error: wpErr } = await supabase
+    .from('week_plans')
+    .select('id')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (wpErr) throw wpErr;
 
-// Intentionally not implemented yet. Callers will get a clean error so we
-// notice if any P2 code tries to write through.
-export async function upsertSession(): Promise<never> {
-  throw new Error('trainingLogService.upsertSession: not implemented until P3');
+  let planned: PlannedExerciseFull[] = [];
+  if (weekPlanRow) {
+    const weekPlanId = (weekPlanRow as { id: string }).id;
+    const { data: peRows, error: peErr } = await supabase
+      .from('planned_exercises')
+      .select('*, exercise:exercise_id(*)')
+      .eq('weekplan_id', weekPlanId)
+      .eq('day_index', dayIndex)
+      .order('position');
+    if (peErr) throw peErr;
+    const pes = (peRows ?? []) as Array<PlannedExercise & { exercise: Exercise }>;
+    const peIds = pes.map(p => p.id);
+    let setLines: PlannedSetLine[] = [];
+    if (peIds.length > 0) {
+      const { data: slRows, error: slErr } = await supabase
+        .from('planned_set_lines')
+        .select('*')
+        .in('planned_exercise_id', peIds)
+        .order('position');
+      if (slErr) throw slErr;
+      setLines = (slRows ?? []) as PlannedSetLine[];
+    }
+    planned = pes.map(pe => ({
+      exercise: pe,
+      exerciseDef: pe.exercise,
+      setLines: setLines.filter(sl => sl.planned_exercise_id === pe.id),
+    }));
+  }
+
+  const log = await fetchSessionForDay(athleteId, date);
+
+  return { date, weekStart, dayIndex, planned, log };
 }
-export async function logSet(): Promise<never> {
-  throw new Error('trainingLogService.logSet: not implemented until P3');
+
+// ─── Writes ───────────────────────────────────────────────────────────────
+
+interface EnsureSessionArgs {
+  athleteId: string;
+  ownerId: string;
+  date: string;
+  weekStart: string;
+  dayIndex: number;
 }
-export async function addComment(): Promise<never> {
-  throw new Error('trainingLogService.addComment: not implemented until P4');
+
+export async function ensureSession(args: EnsureSessionArgs): Promise<TrainingLogSession> {
+  const { data: existing, error: fErr } = await supabase
+    .from('training_log_sessions')
+    .select('*')
+    .eq('athlete_id', args.athleteId)
+    .eq('date', args.date)
+    .maybeSingle();
+  if (fErr) throw fErr;
+  if (existing) return existing as TrainingLogSession;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase generated types are stale; matches the cast convention used elsewhere in this codebase.
+  const insertRow: any = {
+    owner_id: args.ownerId,
+    athlete_id: args.athleteId,
+    date: args.date,
+    week_start: args.weekStart,
+    day_index: args.dayIndex,
+    session_notes: '',
+    status: 'in_progress',
+    started_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogSession;
+}
+
+export type SessionPatch = Partial<
+  Pick<
+    TrainingLogSession,
+    | 'session_notes'
+    | 'status'
+    | 'raw_sleep'
+    | 'raw_physical'
+    | 'raw_mood'
+    | 'raw_nutrition'
+    | 'raw_total'
+    | 'raw_guidance'
+    | 'session_rpe'
+    | 'bodyweight_kg'
+    | 'duration_minutes'
+    | 'started_at'
+    | 'completed_at'
+  >
+>;
+
+export async function updateSession(
+  sessionId: string,
+  patch: SessionPatch,
+): Promise<TrainingLogSession> {
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .update(patch as never)
+    .eq('id', sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogSession;
+}
+
+interface EnsureLogExerciseArgs {
+  sessionId: string;
+  plannedExerciseId: string;
+  exerciseId: string;
+  position: number;
+}
+
+export async function ensureLogExercise(
+  args: EnsureLogExerciseArgs,
+): Promise<TrainingLogExercise> {
+  const { data: existing, error: fErr } = await supabase
+    .from('training_log_exercises')
+    .select('*')
+    .eq('session_id', args.sessionId)
+    .eq('planned_exercise_id', args.plannedExerciseId)
+    .maybeSingle();
+  if (fErr) throw fErr;
+  if (existing) return existing as TrainingLogExercise;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const insertRow: any = {
+    session_id: args.sessionId,
+    planned_exercise_id: args.plannedExerciseId,
+    exercise_id: args.exerciseId,
+    position: args.position,
+    performed_raw: '',
+    performed_notes: '',
+    status: 'pending',
+  };
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+export type LogExercisePatch = Partial<
+  Pick<
+    TrainingLogExercise,
+    'performed_raw' | 'performed_notes' | 'status' | 'technique_rating' | 'started_at' | 'completed_at'
+  >
+>;
+
+export async function updateLogExercise(
+  logExerciseId: string,
+  patch: LogExercisePatch,
+): Promise<TrainingLogExercise> {
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .update(patch as never)
+    .eq('id', logExerciseId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+export interface SetPatch {
+  logExerciseId: string;
+  setNumber: number;
+  plannedLoad?: number | null;
+  plannedReps?: number | null;
+  performedLoad?: number | null;
+  performedReps?: number | null;
+  rpe?: number | null;
+  status?: 'pending' | 'completed' | 'skipped' | 'failed';
+  notes?: string | null;
+}
+
+/**
+ * Upsert one logged set. Finds (log_exercise_id, set_number) and updates
+ * if it exists, otherwise inserts. No reliance on a DB unique constraint.
+ */
+export async function upsertLoggedSet(patch: SetPatch): Promise<TrainingLogSet> {
+  const { data: existing, error: fErr } = await supabase
+    .from('training_log_sets')
+    .select('*')
+    .eq('log_exercise_id', patch.logExerciseId)
+    .eq('set_number', patch.setNumber)
+    .maybeSingle();
+  if (fErr) throw fErr;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const row: any = {
+    log_exercise_id: patch.logExerciseId,
+    set_number: patch.setNumber,
+    planned_load: patch.plannedLoad ?? null,
+    planned_reps: patch.plannedReps ?? null,
+    performed_load: patch.performedLoad ?? null,
+    performed_reps: patch.performedReps ?? null,
+    rpe: patch.rpe ?? null,
+    status: patch.status ?? 'pending',
+    notes: patch.notes ?? null,
+  };
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('training_log_sets')
+      .update(row as never)
+      .eq('id', (existing as TrainingLogSet).id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as TrainingLogSet;
+  }
+
+  const { data, error } = await supabase
+    .from('training_log_sets')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogSet;
+}
+
+export async function deleteLoggedSet(setId: string): Promise<void> {
+  const { error } = await supabase.from('training_log_sets').delete().eq('id', setId);
+  if (error) throw error;
+}
+
+export interface AddCommentArgs {
+  sessionId: string;
+  exerciseId?: string | null;
+  message: string;
+  senderType: 'athlete' | 'coach';
+}
+
+export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessage> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const insertRow: any = {
+    session_id: args.sessionId,
+    exercise_id: args.exerciseId ?? null,
+    message: args.message,
+    sender_type: args.senderType,
+  };
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogMessage;
 }

@@ -1,16 +1,16 @@
-import { useAuth } from '../lib/AuthContext';
 import { Dumbbell, User } from 'lucide-react';
-import type { Athlete } from '../../lib/database.types';
+import type { Athlete } from '../../../lib/database.types';
+import { useAuth } from '../lib/AuthContext';
 
 export function ProfilePicker() {
   const { athletes, selectAthlete } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Dumbbell size={36} className="text-blue-500 mx-auto mb-3" />
-          <h1 className="text-xl font-bold text-white">WinWota</h1>
+          <h1 className="text-xl font-bold text-white">EMOS</h1>
           <p className="text-sm text-gray-500 mt-1">Select your profile</p>
         </div>
 

@@ -106,9 +106,9 @@ P7 addresses this.
 
 ## Phased delivery
 
-- [ ] **P1 — Foundations.** Lift scope rule. Write `trainingLogService.ts` + `trainingLogModel.ts`. No new UI yet
-- [ ] **P2 — Coach Log mode (read-only).** Log toggle on Weekly Planner. Planned + actual + deltas + comments visible, not editable
-- [ ] **P3 — Athlete app v2.** New Today screen, ExerciseLogCard, RawScoreDial, BW entry
+- [x] **P1 — Foundations.** Lift scope rule. Write `trainingLogService.ts` + `trainingLogModel.ts`. No new UI yet
+- [x] **P2 — Coach Log mode (read-only).** Log toggle on Weekly Planner. Planned + actual + deltas + comments visible, not editable
+- [x] **P3 — Athlete app v2.** New Today screen, ExerciseLogCard, RawScoreDial, BW entry
 - [ ] **P4 — Coach replies.** Coach posts comments inline in Log mode
 - [ ] **P5 — Athlete Week + Profile.** Polish, history, PRs
 - [ ] **P6 — Print parity.** PrintWeekDesigner gains "Include log" toggle
