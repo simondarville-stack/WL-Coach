@@ -37,6 +37,7 @@ const sections: NavSection[] = [
     label: 'Planning',
     items: [
       { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+      { path: '/dashboard-v2', label: 'Dashboard v2', icon: BarChart3 },
       { path: '/planner', label: 'Weekly planner', icon: Calendar },
       { path: '/templates', label: 'Programme templates', icon: BookCopy },
       { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
