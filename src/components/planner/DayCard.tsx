@@ -4,7 +4,6 @@ import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
-import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel } from './plannerUtils';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
@@ -13,6 +12,7 @@ import { RestBadge } from './RestBadge';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
+import { StackedNotation } from './StackedNotation';
 
 interface DayCardProps {
   dayIndex: number;
@@ -49,81 +49,6 @@ interface DayCardProps {
   onSaveAsTemplate?: (dayIndex: number) => void;
 }
 
-
-function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: string | null; isCombo?: boolean }) {
-  if (!raw) return null;
-
-  if (unit === 'free_text_reps') {
-    const lines = parseFreeTextPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.loadText}</span>
-              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
-            </div>
-            {line.sets > 1 && (
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (isCombo) {
-    const lines = parseComboPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
-                {line.loadMax != null
-                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-              </span>
-              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.repsText}</span>
-            </div>
-            {line.sets > 1 && (
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  const lines = parsePrescription(raw);
-  if (lines.length === 0) {
-    return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-  }
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      {lines.map((line, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
-              {line.loadMax != null
-                ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-            </span>
-            <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
-          </div>
-          {line.sets > 1 && (
-            <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function DayCard({
   dayIndex,

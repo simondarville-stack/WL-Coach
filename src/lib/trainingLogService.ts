@@ -158,29 +158,71 @@ export async function fetchSessionForSlot(
 }
 
 /**
+ * Resolve the relevant week_plan id for one athlete in one week.
+ *
+ * Order of preference:
+ *   1. An individual plan keyed by athlete_id (created when the coach
+ *      syncs a group plan, or when planning that athlete directly).
+ *   2. A group plan for any group the athlete belongs to. OWL coaches
+ *      routinely write at the group level and only sync occasionally;
+ *      athletes still need to see the plan.
+ */
+export async function resolveAthleteWeekPlanId(
+  athleteId: string,
+  weekStart: string,
+): Promise<{ weekPlanId: string | null; source: 'individual' | 'group' | null }> {
+  const { data: indivRow, error: iErr } = await supabase
+    .from('week_plans')
+    .select('id')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart)
+    .is('group_id', null)
+    .maybeSingle();
+  if (iErr) throw iErr;
+  if (indivRow) return { weekPlanId: (indivRow as { id: string }).id, source: 'individual' };
+
+  const { data: memberships, error: mErr } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('athlete_id', athleteId)
+    .is('left_at', null);
+  if (mErr) throw mErr;
+  const groupIds = ((memberships ?? []) as Array<{ group_id: string }>).map(r => r.group_id);
+  if (groupIds.length === 0) return { weekPlanId: null, source: null };
+
+  const { data: groupRow, error: gErr } = await supabase
+    .from('week_plans')
+    .select('id')
+    .in('group_id', groupIds)
+    .eq('week_start', weekStart)
+    .is('athlete_id', null)
+    .limit(1)
+    .maybeSingle();
+  if (gErr) throw gErr;
+  if (groupRow) return { weekPlanId: (groupRow as { id: string }).id, source: 'group' };
+  return { weekPlanId: null, source: null };
+}
+
+/**
  * The athlete-app's primary data load for a chosen training slot.
  *
  * Returns the planned exercises + set lines for (weekStart, dayIndex) and
  * the existing log session keyed on (athleteId, weekStart, dayIndex). The
  * calendar date is just metadata on the log session — it is decoupled
  * from the slot since v3 (migration 20260405).
+ *
+ * The plan source falls back to the athlete's group plan if no individual
+ * plan exists for that week.
  */
 export async function fetchAthleteDay(
   athleteId: string,
   weekStart: string,
   dayIndex: number,
 ): Promise<AthleteDayData> {
-  const { data: weekPlanRow, error: wpErr } = await supabase
-    .from('week_plans')
-    .select('id')
-    .eq('athlete_id', athleteId)
-    .eq('week_start', weekStart)
-    .maybeSingle();
-  if (wpErr) throw wpErr;
+  const { weekPlanId } = await resolveAthleteWeekPlanId(athleteId, weekStart);
 
   let planned: PlannedExerciseFull[] = [];
-  if (weekPlanRow) {
-    const weekPlanId = (weekPlanRow as { id: string }).id;
+  if (weekPlanId) {
     const { data: peRows, error: peErr } = await supabase
       .from('planned_exercises')
       .select('*, exercise:exercise_id(*)')
@@ -239,6 +281,8 @@ export interface WeekOverview {
   dayLabels: Record<number, string>;
   /** Pre-built overview rows in activeDays order. */
   days: WeekDayOverview[];
+  /** Where the plan came from. 'group' means coach hasn't synced individually yet. */
+  planSource: 'individual' | 'group' | null;
 }
 
 const DEFAULT_LABEL = (i: number) => `Day ${i}`;
@@ -251,11 +295,22 @@ export async function fetchWeekOverview(
   athleteId: string,
   weekStart: string,
 ): Promise<WeekOverview> {
+  const { weekPlanId, source } = await resolveAthleteWeekPlanId(athleteId, weekStart);
+  if (!weekPlanId) {
+    return {
+      weekStart,
+      weekPlanId: null,
+      activeDays: [],
+      dayLabels: {},
+      days: [],
+      planSource: null,
+    };
+  }
+
   const { data: wpRow, error: wpErr } = await supabase
     .from('week_plans')
     .select('id, active_days, day_labels, day_schedule')
-    .eq('athlete_id', athleteId)
-    .eq('week_start', weekStart)
+    .eq('id', weekPlanId)
     .maybeSingle();
   if (wpErr) throw wpErr;
 
@@ -266,6 +321,7 @@ export async function fetchWeekOverview(
       activeDays: [],
       dayLabels: {},
       days: [],
+      planSource: null,
     };
   }
 
@@ -323,6 +379,7 @@ export async function fetchWeekOverview(
       activeDays.map(d => [d, labels[d]?.trim() || DEFAULT_LABEL(d)]),
     ),
     days,
+    planSource: source,
   };
 }
 

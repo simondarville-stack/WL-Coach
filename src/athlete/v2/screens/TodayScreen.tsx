@@ -296,11 +296,18 @@ export function TodayScreen() {
             </p>
           </div>
         ) : overview ? (
-          <DayChipRow
-            days={overview.days}
-            selectedDayIndex={dayIndex}
-            onSelect={setDayIndex}
-          />
+          <>
+            <DayChipRow
+              days={overview.days}
+              selectedDayIndex={dayIndex}
+              onSelect={setDayIndex}
+            />
+            {overview.planSource === 'group' && (
+              <p className="text-[10px] text-gray-500 italic px-1">
+                Showing your group's plan.
+              </p>
+            )}
+          </>
         ) : null}
 
         {error && (
