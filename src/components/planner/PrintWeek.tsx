@@ -9,16 +9,16 @@
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, FileText, LayoutGrid } from 'lucide-react';
+import { X, Printer, FileText, Sliders } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
-import type { WeekPlan, PlannedExercise, Exercise, Athlete, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
+import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry } from '../../lib/database.types';
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
-import { PrintWeekCompact } from './PrintWeekCompact';
+import { PrintWeekDesigner } from './PrintWeekDesigner';
 
 interface PrintWeekProps {
   athlete: Athlete;
@@ -116,7 +116,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [loading, setLoading] = useState(true);
-  const [printMode, setPrintMode] = useState<'programme' | 'compact'>('programme');
+  const [printMode, setPrintMode] = useState<'programme' | 'designer'>('programme');
 
   useEffect(() => { void loadWeekData(); }, [athlete.id, weekStart]);
 
@@ -235,11 +235,11 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
               Programme
             </button>
             <button
-              onClick={() => setPrintMode('compact')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'compact' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              onClick={() => setPrintMode('designer')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <LayoutGrid size={14} />
-              Compact
+              <Sliders size={14} />
+              Designer
             </button>
           </div>
         </div>
@@ -254,8 +254,8 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
         </div>
       </div>
 
-      {printMode === 'compact' ? (
-        <PrintWeekCompact
+      {printMode === 'designer' ? (
+        <PrintWeekDesigner
           athlete={athlete}
           weekPlan={weekPlan}
           plannedExercises={plannedExercises}
