@@ -95,7 +95,7 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
               <div style={ruleStyle} />
               <span style={mono}>{line.reps}</span>
             </div>
-            {line.sets > 1 && <span style={setMultiplier}>×{line.sets}</span>}
+            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
           </div>
         ))}
       </div>
@@ -118,7 +118,7 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
               <div style={ruleStyle} />
               <span style={mono}>{line.repsText}</span>
             </div>
-            {line.sets > 1 && <span style={setMultiplier}>×{line.sets}</span>}
+            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
           </div>
         ))}
       </div>
@@ -140,7 +140,7 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
             <div style={ruleStyle} />
             <span style={mono}>{line.reps}</span>
           </div>
-          {line.sets > 1 && <span style={setMultiplier}>×{line.sets}</span>}
+          {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
         </div>
       ))}
     </div>

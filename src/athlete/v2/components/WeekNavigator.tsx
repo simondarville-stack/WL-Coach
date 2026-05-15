@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Home } from 'lucide-react';
+import { getMondayOfWeekISO } from '../../../lib/weekUtils';
 
 const WEEKDAY_SHORT: Record<number, string> = {
   1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun',
@@ -8,8 +9,13 @@ function parseISO(date: string): Date {
   return new Date(date + 'T00:00:00');
 }
 
+// Local-date ISO: avoids the UTC drift that toISOString() produces in
+// UTC+ timezones. Matches the canonical helper in src/lib/weekUtils.ts.
 function toISO(d: Date): string {
-  return d.toISOString().split('T')[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function addDays(date: string, n: number): string {
@@ -19,12 +25,7 @@ function addDays(date: string, n: number): string {
 }
 
 function getMondayOf(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return toISO(d);
+  return getMondayOfWeekISO(date);
 }
 
 function formatWeekRange(weekStart: string): string {
