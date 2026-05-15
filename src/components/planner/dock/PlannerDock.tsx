@@ -49,6 +49,26 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
 
   const toggleCollapsed = () => setCollapsed(c => !c);
 
+  // "d" hotkey toggles the dock open/closed. Single-key shortcut, so we
+  // skip when any modifier is held (Cmd/Ctrl-D should still bookmark the
+  // page) and when the user is typing in a form field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.key !== 'd' && e.key !== 'D') return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (t.isContentEditable) return;
+      }
+      e.preventDefault();
+      setCollapsed(c => !c);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [setCollapsed]);
+
   const handleSearchFocus = () => {
     if (collapsed) setCollapsed(false);
   };
@@ -143,7 +163,7 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
       >
         <button
           onClick={toggleCollapsed}
-          title={collapsed ? 'Expand dock' : 'Collapse dock'}
+          title={collapsed ? 'Expand dock (D)' : 'Collapse dock (D)'}
           style={{
             fontSize: 'var(--text-caption)',
             fontWeight: 500,
@@ -247,7 +267,7 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
         <div style={{ flex: 1 }} />
         <button
           onClick={toggleCollapsed}
-          title={collapsed ? 'Expand dock' : 'Collapse dock'}
+          title={collapsed ? 'Expand dock (D)' : 'Collapse dock (D)'}
           style={{
             display: 'flex',
             alignItems: 'center',

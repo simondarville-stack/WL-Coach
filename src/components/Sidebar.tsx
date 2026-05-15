@@ -99,10 +99,11 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
       }`}
       style={{ backgroundColor: 'var(--color-bg-secondary)', borderRight: '0.5px solid var(--color-border-primary)' }}
     >
-      {/* Logo / App name */}
+      {/* Logo / App name. min-h matches the main header so the bottom border
+          here aligns horizontally with the page-title's underline. */}
       <div
-        className={`flex items-center gap-2 cursor-pointer flex-shrink-0 ${
-          collapsed ? 'justify-center px-0 py-3' : 'px-3 py-3'
+        className={`flex items-center gap-2 cursor-pointer flex-shrink-0 min-h-[49px] ${
+          collapsed ? 'justify-center px-0' : 'px-3'
         }`}
         style={{ borderBottom: '0.5px solid var(--color-border-primary)' }}
         onClick={() => navigate('/dashboard')}

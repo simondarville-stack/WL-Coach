@@ -13,7 +13,7 @@ import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
-import { CoachDashboard } from './components/CoachDashboard';
+import { CoachDashboardV2 } from './components/dashboard-v2/CoachDashboardV2';
 import { AnalysisPage } from './components/analysis/AnalysisPage';
 import { AthleteSelector } from './components/AthleteSelector';
 import { CompetitionCalendar } from './components/calendar/CompetitionCalendar';
@@ -101,6 +101,11 @@ function CoachApp() {
     navigate(`/planner/${weekStart}`);
   };
 
+  const handleNavigateToMacro = (athlete: Athlete, macrocycleId: string) => {
+    setSelectedAthlete(athlete);
+    navigate(`/macrocycles/${macrocycleId}`);
+  };
+
   // Show spinner while fetching coach profiles on first load
   if (!coachesLoaded) {
     return (
@@ -143,7 +148,7 @@ function CoachApp() {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-4 py-2 flex-shrink-0" style={{ backgroundColor: 'var(--color-bg-primary)', borderBottom: '0.5px solid var(--color-border-primary)' }}>
+        <header className="flex items-center justify-between px-4 flex-shrink-0 min-h-[49px]" style={{ backgroundColor: 'var(--color-bg-primary)', borderBottom: '0.5px solid var(--color-border-primary)' }}>
           <PageTitle />
           <AthleteSelector />
         </header>
@@ -152,7 +157,9 @@ function CoachApp() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
+              <Route path="/dashboard" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} />} />
+              {/* /dashboard-v2 was the staging route while v2 lived alongside v1; redirect any old bookmark to the now-primary dashboard */}
+              <Route path="/dashboard-v2" element={<Navigate to="/dashboard" replace />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/planner/:weekStart" element={<WeeklyPlanner />} />
               <Route path="/templates" element={<TemplatesPage />} />
