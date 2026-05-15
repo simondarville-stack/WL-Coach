@@ -1,0 +1,121 @@
+/**
+ * LogModeView — coach-facing weekly Training Log.
+ *
+ * Renders the same week structure as the Plan mode (one block per visible
+ * day) but pairs each planned exercise with what the athlete actually did.
+ * Read-only in P2; P4 adds inline coach comments.
+ */
+import { useEffect, useState } from 'react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
+import type { PlannedExercise, Exercise } from '../../../lib/database.types';
+import { fetchWeekLog } from '../../../lib/trainingLogService';
+import type { DayLog } from '../../../lib/trainingLogModel';
+import { LogDayCard } from './LogDayCard';
+
+interface LogModeViewProps {
+  athleteId: string;
+  weekStart: string;
+  visibleDays: Array<{ index: number; name: string }>;
+  plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
+}
+
+export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercises }: LogModeViewProps) {
+  const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+
+  const reload = () => {
+    setLoading(true);
+    setError(null);
+    fetchWeekLog(athleteId, weekStart)
+      .then(data => {
+        setWeekLog(data);
+        setLoadedAt(new Date());
+      })
+      .catch(e => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetchWeekLog(athleteId, weekStart)
+      .then(data => {
+        if (cancelled) return;
+        setWeekLog(data);
+        setLoadedAt(new Date());
+      })
+      .catch(e => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [athleteId, weekStart]);
+
+  const totalLogged = Object.values(weekLog).reduce(
+    (sum, d) => sum + d.exercises.length, 0,
+  );
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="text-[11px] text-gray-500">
+          {loading
+            ? 'Loading log…'
+            : error
+            ? null
+            : (
+              <>
+                {Object.keys(weekLog).length} day{Object.keys(weekLog).length === 1 ? '' : 's'} logged ·{' '}
+                {totalLogged} exercise{totalLogged === 1 ? '' : 's'}
+                {loadedAt && (
+                  <span className="text-gray-400 ml-2">
+                    · loaded {loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+              </>
+            )}
+        </div>
+        <button
+          onClick={reload}
+          disabled={loading}
+          className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-gray-900 disabled:opacity-50 px-2 py-1 rounded hover:bg-gray-100"
+          title="Refresh log data"
+        >
+          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-3 flex items-start gap-2 px-3 py-2 border border-red-200 bg-red-50 rounded text-xs text-red-800">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <div className="font-semibold">Failed to load log data</div>
+            <div className="text-red-700 mt-0.5 break-all">{error}</div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && visibleDays.length === 0 && (
+        <div className="px-3 py-8 text-center text-xs text-gray-400 italic">
+          No active days in this week.
+        </div>
+      )}
+
+      {!loading && !error && visibleDays.map(day => (
+        <LogDayCard
+          key={day.index}
+          dayName={day.name}
+          plannedExercises={plannedExercises[day.index] ?? []}
+          dayLog={weekLog[day.index] ?? null}
+        />
+      ))}
+    </div>
+  );
+}

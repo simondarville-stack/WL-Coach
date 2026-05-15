@@ -19,6 +19,7 @@ import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
+import { LogModeView } from './log/LogModeView';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
@@ -149,6 +150,7 @@ export function WeeklyPlanner() {
   const [showWeekList, setShowWeekList] = useState(() => {
     return !urlWeekStart;
   });
+  const [viewMode, setViewMode] = useState<'plan' | 'log'>('plan');
 
   // Keep internal view in sync with URL on subsequent navigations.
   // useState initializers only run once; this effect handles the
@@ -1070,11 +1072,58 @@ export function WeeklyPlanner() {
               </div>
             )}
 
+            {/* ── Plan / Log mode toggle ── */}
+            {planSelection.type === 'individual' && planSelection.athlete && (
+              <div style={{ display: 'inline-flex', gap: 0, marginBottom: 12, padding: 2, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--color-border-secondary)' }}>
+                <button
+                  onClick={() => setViewMode('plan')}
+                  style={{
+                    padding: '4px 14px',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    background: viewMode === 'plan' ? 'var(--color-bg-primary)' : 'transparent',
+                    color: viewMode === 'plan' ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    boxShadow: viewMode === 'plan' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'background var(--transition-fast)',
+                  }}
+                >
+                  Plan
+                </button>
+                <button
+                  onClick={() => setViewMode('log')}
+                  style={{
+                    padding: '4px 14px',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    background: viewMode === 'log' ? 'var(--color-bg-primary)' : 'transparent',
+                    color: viewMode === 'log' ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    boxShadow: viewMode === 'log' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                    transition: 'background var(--transition-fast)',
+                  }}
+                >
+                  Log
+                </button>
+              </div>
+            )}
+
             {/* ── Week Overview (always visible) ── */}
             {loading ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
                 <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>Loading week plan...</div>
               </div>
+            ) : viewMode === 'log' && planSelection.athlete ? (
+              <LogModeView
+                athleteId={planSelection.athlete.id}
+                weekStart={selectedDate}
+                visibleDays={visibleDays}
+                plannedExercises={plannedExercises}
+              />
             ) : (
               <WeekOverview
                 weekPlan={currentWeekPlan}
