@@ -34,8 +34,12 @@ interface WeekOverviewProps {
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
-  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
-  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onSaveAsTemplate?: (dayIndex: number) => void;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
 }
@@ -55,6 +59,10 @@ export function WeekOverview({
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
+  onDockExerciseDrop,
+  onDockTemplateDrop,
+  onDockTemplateDayDrop,
+  onSaveAsTemplate,
   visibleCardMetrics,
   competitionTotal,
 }: WeekOverviewProps) {
@@ -132,6 +140,10 @@ export function WeekOverview({
                         onDeleteExercise={onDeleteExercise}
                         onExerciseDrop={onExerciseDrop}
                         onDayDrop={onDayDrop}
+                        onDockExerciseDrop={onDockExerciseDrop}
+                        onDockTemplateDrop={onDockTemplateDrop}
+                        onDockTemplateDayDrop={onDockTemplateDayDrop}
+                        onSaveAsTemplate={onSaveAsTemplate}
                       />
                     </div>
                   );
@@ -169,6 +181,10 @@ export function WeekOverview({
                   onDeleteExercise={onDeleteExercise}
                   onExerciseDrop={onExerciseDrop}
                   onDayDrop={onDayDrop}
+                  onDockExerciseDrop={onDockExerciseDrop}
+                  onDockTemplateDrop={onDockTemplateDrop}
+                  onDockTemplateDayDrop={onDockTemplateDayDrop}
+                  onSaveAsTemplate={onSaveAsTemplate}
                 />
               ))}
             </div>
@@ -202,6 +218,10 @@ export function WeekOverview({
             onDeleteExercise={onDeleteExercise}
             onExerciseDrop={onExerciseDrop}
             onDayDrop={onDayDrop}
+            onDockExerciseDrop={onDockExerciseDrop}
+            onDockTemplateDrop={onDockTemplateDrop}
+            onDockTemplateDayDrop={onDockTemplateDayDrop}
+            onSaveAsTemplate={onSaveAsTemplate}
           />
         ))}
       </div>

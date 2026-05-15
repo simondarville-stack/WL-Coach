@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { GripVertical, Video, Image as ImageIcon, ChevronRight } from 'lucide-react';
-import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus } from 'lucide-react';
+import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
@@ -41,8 +41,12 @@ interface DayCardProps {
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
-  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean) => Promise<void>;
-  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean) => Promise<void>;
+  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onSaveAsTemplate?: (dayIndex: number) => void;
 }
 
 
@@ -139,6 +143,10 @@ export function DayCard({
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
+  onDockExerciseDrop,
+  onDockTemplateDrop,
+  onDockTemplateDayDrop,
+  onSaveAsTemplate,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -149,7 +157,7 @@ export function DayCard({
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
-  const shiftHeld = useShiftHeld();
+  const deleteHeld = useDeleteHeld();
 
   const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
   const isEmpty = exercises.length === 0;
@@ -228,10 +236,24 @@ export function DayCard({
     setIsDragOver(false);
     const data = e.dataTransfer.getData('text/plain');
     if (!data) return;
-    if (data.startsWith('DAY:')) {
+    const isCopy = e.ctrlKey || e.metaKey;
+    const isReplace = e.shiftKey;
+    if (data.startsWith('DOCK:exercise:')) {
+      const exerciseId = data.slice('DOCK:exercise:'.length);
+      if (!exerciseId || !onDockExerciseDrop) return;
+      await onDockExerciseDrop(exerciseId, dayIndex, isReplace);
+    } else if (data.startsWith('DOCK:template-day:')) {
+      const templateDayId = data.slice('DOCK:template-day:'.length);
+      if (!templateDayId || !onDockTemplateDayDrop) return;
+      await onDockTemplateDayDrop(templateDayId, dayIndex, isReplace);
+    } else if (data.startsWith('DOCK:template:')) {
+      const templateId = data.slice('DOCK:template:'.length);
+      if (!templateId || !onDockTemplateDrop) return;
+      await onDockTemplateDrop(templateId, dayIndex, isReplace);
+    } else if (data.startsWith('DAY:')) {
       const sourceDay = parseInt(data.slice(4), 10);
       if (isNaN(sourceDay) || sourceDay === dayIndex) return;
-      await onDayDrop(sourceDay, dayIndex, e.ctrlKey || e.metaKey);
+      await onDayDrop(sourceDay, dayIndex, isCopy, isReplace);
     } else {
       const parts = data.split(':');
       if (parts.length < 3) return;
@@ -240,7 +262,7 @@ export function DayCard({
       const itemId = parts[2];
       if (isNaN(fromDay) || fromDay === dayIndex || !itemId) return;
       if (dragType === 'exercise') {
-        await onExerciseDrop(fromDay, itemId, dayIndex, e.ctrlKey || e.metaKey);
+        await onExerciseDrop(fromDay, itemId, dayIndex, isCopy, isReplace);
       }
     }
   }
@@ -291,6 +313,32 @@ export function DayCard({
               size="sm"
               showLabels={true}
             />
+          )}
+          {!isEmpty && onSaveAsTemplate && (
+            <button
+              onClick={e => { e.stopPropagation(); onSaveAsTemplate(dayIndex); }}
+              title="Save training unit as template"
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0,
+                background: 'transparent',
+                border: 'none', cursor: 'pointer',
+                color: headerHovered ? 'var(--color-text-tertiary)' : 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                transition: 'color 0.1s, background 0.1s',
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                (e.currentTarget as HTMLButtonElement).style.color = headerHovered ? 'var(--color-text-tertiary)' : 'transparent';
+              }}
+            >
+              <BookmarkPlus size={11} />
+            </button>
           )}
           <ChevronRight size={12} style={{ color: headerHovered ? 'var(--color-text-tertiary)' : 'var(--color-border-secondary)', flexShrink: 0, transition: 'color 0.1s' }} />
         </div>
@@ -373,7 +421,7 @@ export function DayCard({
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
                       borderBottom: '0.5px solid var(--color-border-tertiary)',
                       borderLeft: `3px solid ${borderColor}`,
-                      background: shiftHeld
+                      background: deleteHeld
                         ? (isHovered ? 'var(--color-danger-bg)' : 'transparent')
                         : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
                       cursor: 'pointer',
@@ -388,7 +436,9 @@ export function DayCard({
                     onMouseLeave={() => setHoveredExId(null)}
                     onClick={e => {
                       e.stopPropagation();
-                      if (shiftHeld) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
+                      // Shift+click is a transitional alias for Delete-held+click.
+                      // Plan to remove the Shift alias after coaches are used to Delete-held.
+                      if (deleteHeld || e.shiftKey) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
                       onNavigateToExercise(ex.id);
                     }}
                   >

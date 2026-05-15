@@ -509,6 +509,87 @@ export interface PlannedComboWithDetails extends PlannedCombo {
   set_lines: PlannedComboSetLine[];
 }
 
+// ── Programme templates (Weekly Designer Dock) ───────────────────────
+// Reusable bundles of one or more "template days", each containing
+// exercises with prescriptions. Per-coach (owner_id). The exercise
+// row shape mirrors PlannedExercise so applying a template into a
+// week_plan is a structured copy with no field translation.
+
+export interface ProgramTemplate {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProgramTemplateDay {
+  id: string;
+  template_id: string;
+  day_index: number;          // 1-based within the template
+  label: string;
+  created_at: string;
+}
+
+export interface ProgramTemplateExercise {
+  id: string;
+  template_day_id: string;
+  exercise_id: string;
+  position: number;
+  unit: string | null;
+  prescription_raw: string | null;
+  notes: string | null;
+  variation_note: string | null;
+  is_combo: boolean;
+  combo_notation: string | null;
+  combo_color: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProgramTemplateComboMember {
+  id: string;
+  template_exercise_id: string;
+  exercise_id: string;
+  position: number;
+  created_at: string;
+}
+
+export interface ProgramTemplateComboMemberWithExercise extends ProgramTemplateComboMember {
+  exercise: Exercise;
+}
+
+export interface ProgramTemplateExerciseWithExercise extends ProgramTemplateExercise {
+  exercise: Exercise;
+  combo_members?: ProgramTemplateComboMemberWithExercise[];
+}
+
+export interface ProgramTemplateDayWithExercises extends ProgramTemplateDay {
+  exercises: ProgramTemplateExerciseWithExercise[];
+}
+
+export interface ProgramTemplateFull extends ProgramTemplate {
+  days: ProgramTemplateDayWithExercises[];
+}
+
+/** A template day stripped down to just what the dock needs to render
+ *  drag handles and a short exercise preview. */
+export interface ProgramTemplateDayLite {
+  id: string;
+  day_index: number;
+  label: string;
+  exercise_names: string[];
+}
+
+/** Lightweight shape used by list views — header + computed day_count
+ *  and the lite list of days (id/index/label only). */
+export interface ProgramTemplateSummary extends ProgramTemplate {
+  day_count: number;
+  days: ProgramTemplateDayLite[];
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -671,6 +752,26 @@ export interface Database {
         Row: MacroCompetition;
         Insert: Omit<MacroCompetition, 'id' | 'created_at'>;
         Update: Partial<Omit<MacroCompetition, 'id' | 'created_at'>>;
+      };
+      program_templates: {
+        Row: ProgramTemplate;
+        Insert: Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      program_template_days: {
+        Row: ProgramTemplateDay;
+        Insert: Omit<ProgramTemplateDay, 'id' | 'created_at'>;
+        Update: Partial<Omit<ProgramTemplateDay, 'id' | 'created_at'>>;
+      };
+      program_template_exercises: {
+        Row: ProgramTemplateExercise;
+        Insert: Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      program_template_combo_members: {
+        Row: ProgramTemplateComboMember;
+        Insert: Omit<ProgramTemplateComboMember, 'id' | 'created_at'>;
+        Update: Partial<Omit<ProgramTemplateComboMember, 'id' | 'created_at'>>;
       };
     };
   };

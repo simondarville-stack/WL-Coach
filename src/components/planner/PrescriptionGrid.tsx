@@ -6,7 +6,7 @@ import {
   parseComboPrescription, formatComboPrescription,
 } from '../../lib/prescriptionParser';
 import type { ParsedSetLine } from '../../lib/prescriptionParser';
-import { useShiftHeld } from '../../hooks/useShiftHeld';
+import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 
 interface GridColumn {
   id: string;
@@ -86,7 +86,7 @@ export function PrescriptionGrid({
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
-  const shiftHeld = useShiftHeld();
+  const deleteHeld = useDeleteHeld();
 
   const [columns, setColumns] = useState<GridColumn[]>(() => parseToColumns(prescriptionRaw, isCombo, unit));
   const [editing, setEditing] = useState<EditingCell | null>(null);
@@ -152,7 +152,7 @@ export function PrescriptionGrid({
   function handleCellClick(e: React.MouseEvent, colId: string, field: 'load' | 'reps' | 'sets') {
     e.preventDefault();
     if (disabled) return;
-    if (shiftHeld) { removeColumn(colId); return; }
+    if (deleteHeld) { removeColumn(colId); return; }
     const col = columns.find(c => c.id === colId);
     if (!col) return;
 
@@ -311,7 +311,7 @@ export function PrescriptionGrid({
 
   function renderComboRepsCell(col: GridColumn) {
     const isEditingThis = editing?.colId === col.id && editing.field === 'reps';
-    const isDeleting = shiftHeld;
+    const isDeleting = deleteHeld;
 
     if (isEditingThis) {
       return (
@@ -367,7 +367,7 @@ export function PrescriptionGrid({
   function renderLoadCell(col: GridColumn) {
     const isEditingThis = editing?.colId === col.id && editing.field === 'load';
     const isInterval = col.loadMax !== null;
-    const isDeleting = shiftHeld;
+    const isDeleting = deleteHeld;
 
     if (isEditingThis) {
       return (
@@ -403,8 +403,10 @@ export function PrescriptionGrid({
         {isInterval ? (
           <span style={{ userSelect: 'none' }}>
             <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>{col.load}</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', margin: '0 2px' }}>-</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>{col.loadMax}</span>
+            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', margin: '0 6px' }}>-</span>
+            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>
+              {col.loadMax}{unit === 'percentage' ? '%' : ''}
+            </span>
           </span>
         ) : (
           <span>{loadDisplay}</span>
@@ -434,7 +436,7 @@ export function PrescriptionGrid({
 
     const isSetCell = field === 'sets';
     const isSetsOne = col.sets === 1;
-    const isDeleting = shiftHeld;
+    const isDeleting = deleteHeld;
 
     return (
       <button
@@ -461,7 +463,7 @@ export function PrescriptionGrid({
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
     >
       {columns.map(col => {
-        const isDeleting = shiftHeld;
+        const isDeleting = deleteHeld;
 
         return (
           <div
