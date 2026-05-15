@@ -4,7 +4,7 @@ import type { GroupMemberWithAthlete } from '../../lib/database.types';
 import type { MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 import { MacroExcelIO } from './MacroExcelIO';
 import type { MacroTarget } from '../../lib/database.types';
-import type { MacroWeek, MacroPhase, MacroCompetition } from '../../lib/database.types';
+import type { MacroWeek, MacroPhase } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 
 interface MacroCycleToolbarProps {

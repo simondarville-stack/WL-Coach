@@ -41,13 +41,6 @@ function getYouTubeVideoId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-function formatUnit(unit: DefaultUnit | string | null): string {
-  if (unit === 'absolute_kg') return 'kg';
-  if (unit === 'percentage') return '%';
-  if (unit === 'rpe') return 'RPE';
-  return '';
-}
-
 function InlinePrescription({ prescription, unit, isCombo }: { prescription: string | null; unit: string | null; isCombo?: boolean }) {
   if (!prescription?.trim()) return <span className="text-gray-500 italic">No prescription</span>;
   const unitSym = unit === 'percentage' ? '%' : unit === 'rpe' ? ' RPE' : '';

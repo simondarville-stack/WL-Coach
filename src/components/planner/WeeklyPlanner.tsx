@@ -26,7 +26,7 @@ import { TemplateImportDialog } from './dock/TemplateImportDialog';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
-import { ArrowLeft, User } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import {
   applyTemplateDayToPlanDay,
   createTemplateFromDay,

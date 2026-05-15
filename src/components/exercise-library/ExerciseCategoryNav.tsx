@@ -8,7 +8,7 @@ import { useState, useRef } from 'react';
 import { Layers, GripVertical, Trash2, Check } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
-import { Modal, Button, Input, ColorDot } from '../ui';
+import { Modal, Button, Input } from '../ui';
 
 const PRESET_COLORS = [
   '#E24B4A', '#7F77DD', '#D85A30', '#1D9E75',

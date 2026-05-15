@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, ExternalLink, Edit2, Archive, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
 import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
 import type { Exercise, Athlete } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';

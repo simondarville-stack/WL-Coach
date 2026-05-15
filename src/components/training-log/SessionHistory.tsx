@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { toLocalISO, addWeeks } from '../../lib/dateUtils';
+import { addWeeks } from '../../lib/dateUtils';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import type { Athlete, TrainingLogSession, WeekPlan } from '../../lib/database.types';
 

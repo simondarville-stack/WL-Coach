@@ -8,7 +8,7 @@ import type {
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
-import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel, type SentinelType } from './plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';

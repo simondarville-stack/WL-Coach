@@ -1,10 +1,7 @@
-import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { CoachProfile } from '../lib/database.types';
 
 export function useCoachProfiles() {
-  const [loading, setLoading] = useState(false);
-
   const fetchCoaches = async (): Promise<CoachProfile[]> => {
     const { data, error } = await supabase
       .from('coach_profiles')
@@ -61,5 +58,5 @@ export function useCoachProfiles() {
     if (error) throw error;
   };
 
-  return { loading, fetchCoaches, createCoach, updateCoach, deleteCoach };
+  return { fetchCoaches, createCoach, updateCoach, deleteCoach };
 }
