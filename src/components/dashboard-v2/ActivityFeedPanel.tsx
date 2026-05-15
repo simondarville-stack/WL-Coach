@@ -1,24 +1,22 @@
-// Activity feed panel — recent events from the EMOS data layer, presented
-// with mono eyebrows and click-to-jump. Clicking an athlete-bearing item
-// pulses + scrolls the matching row in the StatusBoard above.
+// Activity feed — recent events from the EMOS data layer with click-to-jump.
 
+import { CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ActivityEvent, AthleteStatus } from '../../hooks/useCoachDashboard';
 
-type Tone = 'success' | 'accent' | 'danger' | 'warning' | 'neutral';
+type Tone = 'success' | 'danger' | 'accent';
 
-const TYPE_META: Record<ActivityEvent['type'], { label: string; icon: string; tone: Tone }> = {
-  training_logged:    { label: 'Training logged',  icon: '●', tone: 'success' },
-  session_skipped:    { label: 'Session skipped',  icon: '✕', tone: 'danger'  },
-  macrocycle_created: { label: 'Macrocycle',       icon: '⌬', tone: 'accent'  },
+const TYPE_META: Record<ActivityEvent['type'], { label: string; tone: Tone; icon: ReactNode }> = {
+  training_logged:    { label: 'Training logged',  tone: 'success', icon: <CheckCircle2 size={14} /> },
+  session_skipped:    { label: 'Session skipped',  tone: 'danger',  icon: <XCircle      size={14} /> },
+  macrocycle_created: { label: 'Macrocycle',       tone: 'accent',  icon: <Sparkles     size={14} /> },
 };
 
-function toneColor(t: Tone): string {
-  if (t === 'success') return 'var(--color-success-border)';
-  if (t === 'danger')  return 'var(--color-danger-border)';
-  if (t === 'warning') return 'var(--color-warning-border)';
-  if (t === 'accent')  return 'var(--color-accent)';
-  return 'var(--color-text-tertiary)';
-}
+const TONE_CLS: Record<Tone, string> = {
+  success: 'text-green-600',
+  danger:  'text-red-600',
+  accent:  'text-blue-600',
+};
 
 function relTimeFromDate(d: Date): string {
   const mins = (Date.now() - d.getTime()) / 60_000;
@@ -42,102 +40,51 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete }: Props) 
   statuses.forEach(s => { byName[s.athlete.name] = s; });
 
   return (
-    <div style={{
-      background: 'var(--color-bg-primary)',
-      border: '1px solid var(--color-border-secondary)',
-      borderRadius: 4,
-      display: 'flex', flexDirection: 'column', minHeight: 360,
-    }}>
-      <div style={{
-        padding: '10px 14px',
-        borderBottom: '1px solid var(--color-border-tertiary)',
-        display: 'flex', alignItems: 'baseline', gap: 10,
-      }}>
-        <span style={{
-          fontSize: 11, color: 'var(--color-text-tertiary)',
-          fontFamily: 'var(--font-mono, ui-monospace), monospace',
-          textTransform: 'uppercase', letterSpacing: '0.1em',
-        }}>Activity</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+    <div className="bg-white rounded-lg border border-gray-200 flex flex-col min-h-[360px]">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-baseline gap-3">
+        <h3 className="text-sm font-medium text-gray-900">Activity</h3>
+        <span className="text-xs text-gray-400 tabular-nums">
           {events.length} {events.length === 1 ? 'event' : 'events'}
         </span>
-        <span style={{ flex: 1 }} />
       </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', maxHeight: 460 }}>
+      <div className="flex-1 overflow-y-auto max-h-[460px]">
         {events.length === 0 && (
-          <div style={{
-            padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)',
-            fontSize: 12,
-          }}>
+          <div className="p-6 text-center text-sm text-gray-400">
             No recent activity.
           </div>
         )}
         {events.map((ev, i) => {
           const meta = TYPE_META[ev.type];
           const status = byName[ev.athleteName] || null;
-          const tone = toneColor(meta.tone);
           const clickable = !!status;
           return (
             <button
               key={`${ev.type}-${ev.timestamp.toISOString()}-${i}`}
               onClick={() => { if (status) onJumpToAthlete(status); }}
               disabled={!clickable}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '18px 1fr 90px',
-                gap: 10, alignItems: 'flex-start',
-                padding: '9px 14px',
-                width: '100%', textAlign: 'left',
-                background: 'transparent', border: 'none',
-                borderBottom: i === events.length - 1
-                  ? 'none' : '1px solid var(--color-border-tertiary)',
-                cursor: clickable ? 'pointer' : 'default',
-                fontFamily: 'inherit',
-              }}
-              onMouseEnter={e => {
-                if (clickable) (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-              }}
+              className={`w-full grid grid-cols-[24px_1fr_auto] gap-3 items-start px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 ${
+                clickable ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'
+              }`}
             >
-              <span style={{
-                color: tone, fontSize: 11, lineHeight: '18px',
-                width: 18, textAlign: 'center',
-              }}>{meta.icon}</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                  <span style={{
-                    fontSize: 9.5, color: tone,
-                    fontFamily: 'var(--font-mono, ui-monospace), monospace',
-                    textTransform: 'uppercase', letterSpacing: '0.1em',
-                  }}>{meta.label}</span>
-                  <span style={{
-                    fontSize: 12.5, color: 'var(--color-text-primary)', fontWeight: 500,
-                  }}>{ev.athleteName}</span>
+              <span className={`${TONE_CLS[meta.tone]} mt-0.5`}>{meta.icon}</span>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className={`text-[11px] uppercase tracking-wider font-medium ${TONE_CLS[meta.tone]}`}>
+                    {meta.label}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900">{ev.athleteName}</span>
                 </div>
-                <span style={{
-                  fontSize: 12, color: 'var(--color-text-secondary)',
-                  overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>{ev.details}</span>
+                <span className="text-xs text-gray-500 truncate">{ev.details}</span>
                 {ev.rawScore !== undefined && ev.rawScore !== null && (
-                  <span style={{
-                    fontSize: 10.5, color: 'var(--color-text-tertiary)',
-                    fontFamily: 'var(--font-mono, ui-monospace), monospace',
-                  }}>RAW {ev.rawScore}/12</span>
+                  <span className="text-[11px] text-gray-400 tabular-nums">RAW {ev.rawScore}/12</span>
                 )}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                <span style={{
-                  fontSize: 10.5, color: 'var(--color-text-tertiary)',
-                  fontFamily: 'var(--font-mono, ui-monospace), monospace',
-                }}>{relTimeFromDate(ev.timestamp)}</span>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-[11px] text-gray-400 tabular-nums whitespace-nowrap">
+                  {relTimeFromDate(ev.timestamp)}
+                </span>
                 {clickable && (
-                  <span style={{
-                    fontSize: 10, color: 'var(--color-accent)',
-                    fontFamily: 'var(--font-mono, ui-monospace), monospace',
-                  }}>open athlete →</span>
+                  <span className="text-[11px] text-blue-600">open →</span>
                 )}
               </div>
             </button>

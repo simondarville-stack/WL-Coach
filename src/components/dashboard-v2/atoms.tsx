@@ -1,6 +1,9 @@
-// Small presentational atoms shared across the v2 dashboard. All visual tokens
-// resolve from the global EMOS CSS variables so the v2 dashboard inherits the
-// app's theming and stays in sync with the rest of the system.
+// Small presentational atoms shared across the v2 dashboard.
+//
+// Styled to match the rest of the EMOS app: rounded-full chips, sans-serif
+// throughout (mono only for tabular numerics), generous spacing, soft
+// gray-100/200 borders. The slightly denser bits (color-tinted backgrounds
+// for RAW / week pills) stay, because they carry signal.
 
 import type { ReactNode } from 'react';
 import type { RawPillars, BwSummary } from '../../hooks/useCoachDashboardV2';
@@ -15,39 +18,19 @@ export function lastTrainLabel(days: number | null): string {
   if (days === null) return 'Never';
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  return `${days}d ago`;
-}
-
-const GROUP_AVATAR_COLORS: Record<string, string> = {
-  'Senior A': '#E58CA8',
-  'Senior B': '#5891CB',
-  'Junior':   '#5DBA94',
-  'Masters':  '#B0AEA7',
-};
-
-function avatarColor(group: string | null | undefined): string {
-  if (group && GROUP_AVATAR_COLORS[group]) return GROUP_AVATAR_COLORS[group];
-  // Deterministic fallback so different group names get different tints.
-  if (!group) return '#B0AEA7';
-  let h = 0;
-  for (let i = 0; i < group.length; i++) h = (h * 31 + group.charCodeAt(i)) & 0xffff;
-  const palette = ['#E58CA8', '#5891CB', '#5DBA94', '#B0AEA7', '#C99B6A', '#9A8BD9'];
-  return palette[h % palette.length];
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
 }
 
 export function Avatar({
-  name, size = 28, group,
-}: { name: string; size?: number; group?: string | null }) {
-  const c = avatarColor(group);
+  name, size = 28,
+}: { name: string; size?: number }) {
   return (
     <div
+      className="inline-flex items-center justify-center rounded-full bg-blue-100 text-blue-700 font-medium flex-shrink-0"
       style={{
-        width: size, height: size, borderRadius: size / 2,
-        background: c + '22',
-        color: c, border: `1px solid ${c}55`,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: size <= 24 ? 9.5 : 10.5, fontWeight: 600, letterSpacing: '0.02em',
-        flexShrink: 0,
+        width: size, height: size,
+        fontSize: size <= 22 ? 10 : 11,
       }}
     >
       {initials(name)}
@@ -61,48 +44,35 @@ export function PhasePill({
   const hasMacro = !!(name && week !== null && total !== null);
   if (!hasMacro) {
     return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'baseline', gap: 6,
-        padding: compact ? '1px 6px' : '2px 8px',
-        background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)',
-        borderRadius: 2,
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-        fontSize: compact ? 10 : 11, letterSpacing: '0.02em',
-      }}>
-        <span style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>No macro</span>
+      <span className="inline-flex items-baseline gap-1.5 text-gray-400 italic"
+            style={{ fontSize: compact ? 11 : 12 }}>
+        No macrocycle
       </span>
     );
   }
-  // Use the macro phase's color where defined; otherwise neutral tint.
-  const bg = color ? color + '22' : 'var(--color-bg-secondary)';
-  const fg = color || 'var(--color-text-secondary)';
+  const bg = color ? color + '22' : '#F3F4F6';
+  const fg = color || '#374151';
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'baseline', gap: 6,
-      padding: compact ? '1px 6px' : '2px 8px',
-      background: bg, color: fg, borderRadius: 2,
-      fontFamily: 'var(--font-mono, ui-monospace), monospace',
-      fontSize: compact ? 10 : 11, letterSpacing: '0.02em',
-    }}>
-      <span style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}>{name}</span>
-      <span style={{ opacity: 0.7 }}>· W{week}/{total}</span>
+    <span
+      className="inline-flex items-baseline gap-1.5 rounded-full"
+      style={{
+        background: bg, color: fg,
+        padding: compact ? '1px 8px' : '2px 10px',
+        fontSize: compact ? 11 : 12,
+      }}
+    >
+      <span className="font-medium">{name}</span>
+      <span className="opacity-70 tabular-nums" style={{ fontFamily: 'var(--font-mono, ui-monospace), monospace' }}>
+        W{week}/{total}
+      </span>
     </span>
   );
 }
 
 function weekTokens(state: WeekState) {
-  if (state === 'planned') return {
-    bg: 'var(--color-success-bg)', text: 'var(--color-success-text)', border: 'var(--color-success-border)',
-    label: 'Planned',
-  };
-  if (state === 'partial') return {
-    bg: 'var(--color-warning-bg)', text: 'var(--color-warning-text)', border: 'var(--color-warning-border)',
-    label: 'Partial',
-  };
-  return {
-    bg: 'var(--color-danger-bg)', text: 'var(--color-danger-text)', border: 'var(--color-danger-border)',
-    label: 'Missing',
-  };
+  if (state === 'planned') return { bg: 'bg-green-50',  text: 'text-green-700',  border: 'ring-green-200',  dot: 'bg-green-500', label: 'Planned' };
+  if (state === 'partial') return { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'ring-amber-200',  dot: 'bg-amber-500', label: 'Partial' };
+  return                          { bg: 'bg-red-50',    text: 'text-red-700',    border: 'ring-red-200',    dot: 'bg-red-500',   label: 'Missing' };
 }
 
 export function WeekPill({
@@ -110,52 +80,47 @@ export function WeekPill({
 }: { state: WeekState; label?: string; compact?: boolean }) {
   const c = weekTokens(state);
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: compact ? '1px 6px' : '2px 8px',
-      background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-      borderRadius: 2, fontSize: compact ? 10.5 : 11, fontWeight: 500,
-      whiteSpace: 'nowrap',
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: 3, background: c.border }} />
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.border} whitespace-nowrap`}
+      style={{
+        padding: compact ? '1px 8px' : '2px 10px',
+        fontSize: compact ? 11 : 12,
+        fontWeight: 500,
+      }}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       <span>{label ?? c.label}</span>
     </span>
   );
 }
 
 function rawTokens(avg: number | null) {
-  if (avg === null) return {
-    bg: 'var(--color-bg-tertiary)', text: 'var(--color-text-tertiary)', border: 'var(--color-border-secondary)',
-  };
-  if (avg >= 10) return {
-    bg: 'var(--color-success-bg)', text: 'var(--color-success-text)', border: 'var(--color-success-border)',
-  };
-  if (avg >= 7) return {
-    bg: 'var(--color-warning-bg)', text: 'var(--color-warning-text)', border: 'var(--color-warning-border)',
-  };
-  return {
-    bg: 'var(--color-danger-bg)', text: 'var(--color-danger-text)', border: 'var(--color-danger-border)',
-  };
+  if (avg === null) return { bg: 'bg-gray-50',    text: 'text-gray-400', ring: 'ring-gray-200'   };
+  if (avg >= 10)    return { bg: 'bg-green-50',   text: 'text-green-700', ring: 'ring-green-200' };
+  if (avg >= 7)     return { bg: 'bg-amber-50',   text: 'text-amber-700', ring: 'ring-amber-200' };
+  return                   { bg: 'bg-red-50',     text: 'text-red-700',   ring: 'ring-red-200'   };
 }
 
 export function RawChip({
   pillars, avg, size = 'md',
 }: { pillars: RawPillars | null; avg: number | null; size?: 'sm' | 'md' }) {
   const c = rawTokens(avg);
-  const fs = size === 'sm' ? 11 : 12;
   const total = pillars?.total ?? null;
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'baseline', gap: 5,
-      padding: size === 'sm' ? '1px 6px' : '2px 8px',
-      background: c.bg, color: c.text, border: `1px solid ${c.border}`, borderRadius: 2,
-      fontFamily: 'var(--font-mono, ui-monospace), monospace',
-      fontSize: fs, fontWeight: 500, whiteSpace: 'nowrap',
-    }}>
+    <span
+      className={`inline-flex items-baseline gap-1 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} whitespace-nowrap tabular-nums`}
+      style={{
+        padding: size === 'sm' ? '1px 8px' : '2px 10px',
+        fontSize: size === 'sm' ? 11 : 12,
+        fontWeight: 500,
+      }}
+    >
       <span>{total !== null ? total : '–'}</span>
-      <span style={{ opacity: 0.55, fontSize: fs - 1.5 }}>/12</span>
+      <span className="opacity-60" style={{ fontSize: (size === 'sm' ? 11 : 12) - 1.5 }}>/12</span>
       {avg !== null && size !== 'sm' && (
-        <span style={{ opacity: 0.55, marginLeft: 2, fontSize: fs - 1.5 }}>avg {avg.toFixed(1)}</span>
+        <span className="opacity-60 ml-0.5" style={{ fontSize: 10 }}>
+          avg {avg.toFixed(1)}
+        </span>
       )}
     </span>
   );
@@ -166,8 +131,8 @@ export function RawPillarsBreakdown({
 }: { pillars: RawPillars | null; trend: number[] }) {
   if (!pillars) {
     return (
-      <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-        No RAW submitted in last 30 days
+      <span className="text-sm text-gray-400">
+        No RAW submitted in the last 30 days
       </span>
     );
   }
@@ -178,34 +143,31 @@ export function RawPillarsBreakdown({
     { k: 'nutrition', label: 'Nutrition', v: pillars.nutrition },
   ];
   return (
-    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="flex gap-5 items-center flex-wrap">
       {rows.map(p => {
         const v = p.v;
-        const tone = v === null ? 'var(--color-text-tertiary)'
-          : v >= 3 ? 'var(--color-success-border)'
-          : v >= 2 ? 'var(--color-warning-border)'
-          : 'var(--color-danger-border)';
-        const toneText = v === null ? 'var(--color-text-tertiary)'
-          : v >= 3 ? 'var(--color-success-text)'
-          : v >= 2 ? 'var(--color-warning-text)'
-          : 'var(--color-danger-text)';
+        const barColor = v === null ? 'bg-gray-200'
+          : v >= 3 ? 'bg-green-500'
+          : v >= 2 ? 'bg-amber-500'
+          : 'bg-red-500';
+        const valueColor = v === null ? 'text-gray-400'
+          : v >= 3 ? 'text-green-700'
+          : v >= 2 ? 'text-amber-700'
+          : 'text-red-700';
         return (
-          <div key={p.k} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 62 }}>
-            <span style={{
-              fontFamily: 'var(--font-mono, ui-monospace), monospace', fontSize: 9.5,
-              color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em',
-            }}>{p.label}</span>
-            <div style={{ display: 'flex', gap: 3, alignItems: 'baseline' }}>
+          <div key={p.k} className="flex flex-col gap-1 min-w-[64px]">
+            <span className="text-[10px] text-gray-400 font-medium tracking-wide">
+              {p.label}
+            </span>
+            <div className="flex gap-1 items-baseline">
               {[1, 2, 3].map(i => (
-                <span key={i} style={{
-                  width: 14, height: 8, borderRadius: 1,
-                  background: v !== null && i <= v ? tone : 'var(--color-bg-tertiary)',
-                }} />
+                <span
+                  key={i}
+                  className={`block rounded-sm ${v !== null && i <= v ? barColor : 'bg-gray-200'}`}
+                  style={{ width: 14, height: 8 }}
+                />
               ))}
-              <span style={{
-                marginLeft: 4, fontSize: 11, color: toneText, fontWeight: 500,
-                fontFamily: 'var(--font-mono, ui-monospace), monospace',
-              }}>
+              <span className={`ml-1 text-xs font-medium tabular-nums ${valueColor}`}>
                 {v ?? '–'}
               </span>
             </div>
@@ -213,17 +175,12 @@ export function RawPillarsBreakdown({
         );
       })}
       {trend.length >= 2 && (
-        <div style={{
-          marginLeft: 8, paddingLeft: 14,
-          borderLeft: '1px solid var(--color-border-secondary)',
-        }}>
-          <div style={{
-            fontFamily: 'var(--font-mono, ui-monospace), monospace', fontSize: 9.5,
-            color: 'var(--color-text-tertiary)', textTransform: 'uppercase',
-            letterSpacing: '0.08em', marginBottom: 3,
-          }}>RAW total trend</div>
+        <div className="ml-2 pl-4 border-l border-gray-200">
+          <div className="text-[10px] text-gray-400 font-medium tracking-wide mb-1">
+            RAW total trend
+          </div>
           <Sparkline points={trend} max={12} width={72} height={20}
-                     stroke="var(--color-accent)" dotsLast />
+                     stroke="#185FA5" dotsLast />
         </div>
       )}
     </div>
@@ -231,13 +188,13 @@ export function RawPillarsBreakdown({
 }
 
 export function Sparkline({
-  points, width = 60, height = 18, stroke = 'var(--color-accent)', max, dotsLast,
+  points, width = 60, height = 18, stroke = '#185FA5', max, dotsLast,
 }: {
   points: number[]; width?: number; height?: number;
   stroke?: string; max?: number; dotsLast?: boolean;
 }) {
   if (!points || points.length < 2) {
-    return <div style={{ width, height, fontSize: 10, color: 'var(--color-text-tertiary)' }}>—</div>;
+    return <div className="text-xs text-gray-300" style={{ width, height }}>—</div>;
   }
   const mx = max ?? Math.max(...points);
   const mn = Math.min(...points, 0);
@@ -248,8 +205,8 @@ export function Sparkline({
   const lastX = xs(points.length - 1);
   const lastY = ys(points[points.length - 1]);
   return (
-    <svg width={width} height={height} style={{ display: 'block' }}>
-      <polyline points={pts} fill="none" stroke={stroke} strokeWidth={1.4} />
+    <svg width={width} height={height} className="block">
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth={1.5} />
       {dotsLast && <circle cx={lastX} cy={lastY} r={2.2} fill={stroke} />}
     </svg>
   );
@@ -258,21 +215,18 @@ export function Sparkline({
 export function ComplianceSpark({
   values, width = 70, height = 20,
 }: { values: number[]; width?: number; height?: number }) {
-  if (!values.length) {
-    return <span style={{ color: 'var(--color-text-tertiary)', fontSize: 10 }}>—</span>;
-  }
+  if (!values.length) return <span className="text-xs text-gray-300">—</span>;
   const last = values[values.length - 1];
-  const stroke = last >= 95 ? 'var(--color-success-border)'
-    : last >= 85 ? 'var(--color-accent)'
-    : last >= 75 ? 'var(--color-warning-border)'
-    : 'var(--color-danger-border)';
+  const stroke = last >= 95 ? '#1D9E75'
+    : last >= 85 ? '#185FA5'
+    : last >= 75 ? '#EF9F27'
+    : '#E24B4A';
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+    <div className="inline-flex items-center gap-2">
       <Sparkline points={values} max={100} width={width} height={height} stroke={stroke} dotsLast />
-      <span style={{
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-        fontSize: 11, color: stroke, fontWeight: 500, fontVariantNumeric: 'tabular-nums',
-      }}>{Math.round(last)}%</span>
+      <span className="text-xs font-medium tabular-nums" style={{ color: stroke }}>
+        {Math.round(last)}%
+      </span>
     </div>
   );
 }
@@ -280,23 +234,20 @@ export function ComplianceSpark({
 export function BwDelta({
   bw, expanded,
 }: { bw: BwSummary | null; expanded?: boolean }) {
-  if (!bw) return <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>—</span>;
+  if (!bw) return <span className="text-xs text-gray-400">—</span>;
   const up = bw.delta > 0.2, down = bw.delta < -0.2;
-  const tone = up ? '#A45828' : down ? '#1F7A4D' : 'var(--color-text-tertiary)';
+  const tone = up ? 'text-red-600' : down ? 'text-green-600' : 'text-gray-400';
   const arrow = up ? '▲' : down ? '▼' : '·';
   return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'baseline', gap: 6,
-      fontFamily: 'var(--font-mono, ui-monospace), monospace',
-    }}>
-      <span style={{ fontSize: 12, color: 'var(--color-text-primary)' }}>{bw.now.toFixed(1)}</span>
-      <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>kg</span>
-      <span style={{ fontSize: 10, color: tone, marginLeft: 2 }}>
+    <div className="inline-flex items-baseline gap-1.5 tabular-nums">
+      <span className="text-sm text-gray-900">{bw.now.toFixed(1)}</span>
+      <span className="text-[10px] text-gray-400">kg</span>
+      <span className={`text-[11px] ${tone} ml-0.5`}>
         {arrow} {bw.delta > 0 ? '+' : ''}{bw.delta.toFixed(1)}
       </span>
       {expanded && (
-        <span style={{ fontSize: 9.5, color: 'var(--color-text-tertiary)', marginLeft: 4 }}>
-          7d avg {bw.ma7.toFixed(1)} · 28d avg {bw.ma28.toFixed(1)}
+        <span className="text-[10px] text-gray-400 ml-1">
+          7d {bw.ma7.toFixed(1)} · 28d {bw.ma28.toFixed(1)}
         </span>
       )}
     </div>
@@ -308,26 +259,22 @@ export function EventTag({
 }: { name: string; kind: 'comp' | 'camp'; dateLabel?: string; daysOut: number; compact?: boolean }) {
   const isComp = kind === 'comp';
   const c = isComp
-    ? { bg: '#FFF0EA', text: '#7C3A0E', border: '#E8A57F', tag: 'COMP' }
-    : { bg: '#E6F1FB', text: '#0C447C', border: '#85B7EB', tag: 'CAMP' };
+    ? { bg: 'bg-orange-50',  text: 'text-orange-700', ring: 'ring-orange-200', tag: 'Comp' }
+    : { bg: 'bg-sky-50',     text: 'text-sky-700',    ring: 'ring-sky-200',    tag: 'Camp' };
   return (
     <span
       title={`${name}${dateLabel ? ' · ' + dateLabel : ''}`}
+      className={`inline-flex items-baseline gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} whitespace-nowrap overflow-hidden`}
       style={{
-        display: 'inline-flex', alignItems: 'baseline', gap: 5,
-        padding: compact ? '1px 6px' : '2px 7px',
-        background: c.bg, color: c.text, border: `1px solid ${c.border}`,
-        borderRadius: 2, fontSize: compact ? 10 : 10.5,
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-        whiteSpace: 'nowrap', maxWidth: compact ? 140 : 200,
-        overflow: 'hidden', textOverflow: 'ellipsis',
+        padding: compact ? '1px 8px' : '2px 10px',
+        fontSize: compact ? 11 : 12,
+        maxWidth: compact ? 160 : 220,
+        textOverflow: 'ellipsis',
       }}
     >
-      <span style={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: compact ? 8.5 : 9 }}>
-        {c.tag}
-      </span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
-      <span style={{ opacity: 0.6 }}>· {daysOut}d</span>
+      <span className="text-[9.5px] font-medium uppercase tracking-wider">{c.tag}</span>
+      <span className="overflow-hidden text-ellipsis">{name}</span>
+      <span className="opacity-60 tabular-nums">· {daysOut}d</span>
     </span>
   );
 }
@@ -357,14 +304,11 @@ export const FLAG_LABELS: Record<string, { label: string; tint: 'danger' | 'warn
 export function FlagDot({ flags }: { flags: string[] }) {
   if (!flags.length) return null;
   const tone = rowAlertTone(flags);
-  const border = tone === 'danger' ? 'var(--color-danger-border)' : 'var(--color-warning-border)';
+  const dotClass = tone === 'danger' ? 'bg-red-500' : 'bg-amber-500';
   return (
     <span
       title={flags.map(f => FLAG_LABELS[f]?.label || f).join(' · ')}
-      style={{
-        width: 7, height: 7, borderRadius: 4,
-        background: border, display: 'inline-block', flexShrink: 0,
-      }}
+      className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`}
     />
   );
 }
@@ -372,40 +316,19 @@ export function FlagDot({ flags }: { flags: string[] }) {
 export function FlagChip({ id }: { id: string }) {
   const meta = FLAG_LABELS[id];
   if (!meta) return null;
-  const bg = meta.tint === 'danger' ? 'var(--color-danger-bg)' : 'var(--color-warning-bg)';
-  const fg = meta.tint === 'danger' ? 'var(--color-danger-text)' : 'var(--color-warning-text)';
-  const bd = meta.tint === 'danger' ? 'var(--color-danger-border)' : 'var(--color-warning-border)';
+  const c = meta.tint === 'danger'
+    ? { bg: 'bg-red-50',   text: 'text-red-700',   ring: 'ring-red-200',   dot: 'bg-red-500'   }
+    : { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200', dot: 'bg-amber-500' };
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '2px 8px', background: bg, color: fg,
-      border: `1px solid ${bd}`, borderRadius: 2, fontSize: 11,
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: 3, background: bd }} />
+    <span className={`inline-flex items-center gap-1.5 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} px-2.5 py-0.5 text-xs`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {meta.label}
     </span>
   );
 }
 
-export function SectionHeader({
-  children, right,
-}: { children: ReactNode; right?: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
-      <span style={{
-        fontSize: 11, color: 'var(--color-text-tertiary)',
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-        textTransform: 'uppercase', letterSpacing: '0.1em',
-      }}>{children}</span>
-      <span style={{ flex: 1, height: 1, background: 'var(--color-border-tertiary)' }} />
-      {right}
-    </div>
-  );
-}
-
-// Planned vs Actual chart — bars for planned, line for actual. The shape mirrors
-// the prototype but accepts arbitrary-length series so we can plug in any
-// 4-bucket comparison (reps, compliance, RAW).
+// Planned vs Actual chart — bars for planned, line for actual. Soft Tailwind
+// palette so it sits inside the rest of the EMOS panels.
 export function PlannedActualChart({
   planned, actual, labels, yMax,
   width = 460, height = 130,
@@ -423,41 +346,50 @@ export function PlannedActualChart({
   const xs = (i: number) => padL + (i + 0.5) * (w / n);
   const ys = (v: number) => padT + h - (v / mx) * h;
   return (
-    <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
+    <svg width={width} height={height} className="block overflow-visible">
       {[0, mx * 0.5, mx].map((v, i) => (
         <g key={i}>
           <line x1={padL} x2={width - padR} y1={ys(v)} y2={ys(v)}
-                stroke="var(--color-border-tertiary)"
+                stroke="#E5E7EB"
                 strokeDasharray={i === 0 ? 'none' : '2,2'} />
-          <text x={padL - 4} y={ys(v) + 3} textAnchor="end" fontSize="9"
-                fontFamily="var(--font-mono, ui-monospace), monospace"
-                fill="var(--color-text-tertiary)">
+          <text x={padL - 4} y={ys(v) + 3} textAnchor="end"
+                className="fill-gray-400" fontSize="10">
             {Math.round(v)}
           </text>
         </g>
       ))}
       {planned.map((v, i) => {
-        const bw = (w / n) * 0.55;
+        const bw = (w / n) * 0.5;
         return (
           <rect key={i} x={xs(i) - bw / 2} y={ys(v)} width={bw} height={ys(0) - ys(v)}
-                fill="var(--color-bg-tertiary)"
-                stroke="var(--color-border-secondary)" />
+                fill="#F3F4F6" stroke="#E5E7EB" rx={2} />
         );
       })}
       {actual.length >= 2 && (
         <polyline
           points={actual.map((v, i) => `${xs(i)},${ys(v)}`).join(' ')}
-          fill="none" stroke="var(--color-accent)" strokeWidth={1.8}
+          fill="none" stroke="#185FA5" strokeWidth={2}
         />
       )}
       {actual.map((v, i) => (
-        <circle key={i} cx={xs(i)} cy={ys(v)} r={3} fill="var(--color-accent)" />
+        <circle key={i} cx={xs(i)} cy={ys(v)} r={3} fill="#185FA5" />
       ))}
       {labels.map((l, i) => (
-        <text key={i} x={xs(i)} y={height - 6} textAnchor="middle" fontSize="10"
-              fontFamily="var(--font-mono, ui-monospace), monospace"
-              fill="var(--color-text-tertiary)">{l}</text>
+        <text key={i} x={xs(i)} y={height - 6} textAnchor="middle"
+              className="fill-gray-400" fontSize="11">{l}</text>
       ))}
     </svg>
+  );
+}
+
+export function SectionHeader({
+  children, right,
+}: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3 mb-3">
+      <h2 className="text-base font-medium text-gray-900">{children}</h2>
+      <span className="flex-1" />
+      {right}
+    </div>
   );
 }

@@ -1,43 +1,44 @@
 // EMOS Coach Dashboard — v2.
 //
-// A denser, more pinboard-feeling dashboard inspired by the "Status Board"
-// wireframe. Coach gets:
-//   - A top-of-page summary (this week / next week / flagged).
-//   - One row per athlete with phase, last training, RAW, compliance,
-//     bodyweight delta, this/next-week plan state, and next event.
-//   - Click any row to expand inline: RAW pillar breakdown, bodyweight
-//     detail, attention flags, and a planned-vs-actual chart with a
-//     metric switcher.
-//   - Activity feed and Upcoming events below the board; clicking either
-//     pulses + scrolls + expands the relevant athlete's row.
+// Lives alongside the v1 dashboard at /dashboard. Two main views:
+//   - Athletes: dense status board with RAW, compliance, bodyweight, plan
+//     state, next event. Click any row to expand inline (RAW pillars,
+//     bodyweight detail, flags, planned-vs-actual chart). Optionally
+//     section the board by training group.
+//   - Groups: one row per training group with the group's own weekly plan
+//     state; expand to see members.
 //
-// This is intentionally a parallel view to the existing CoachDashboard
-// (mounted at /dashboard). Both routes share the same Supabase data; the v2
-// hook augments the v1 fetch with RAW pillars, bodyweight deltas, compliance
-// trends, and per-athlete event mapping.
+// Below the board: Activity feed and Upcoming events panels. Clicking an
+// activity item or an athlete chip in an event jumps back into the
+// athlete board (pulse + scroll + expand).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { AthleteStatus } from '../../hooks/useCoachDashboard';
+import { Users, UsersRound } from 'lucide-react';
+import type { AthleteStatus, GroupStatus } from '../../hooks/useCoachDashboard';
 import { useCoachDashboardV2 } from '../../hooks/useCoachDashboardV2';
 import type { Athlete, Event, TrainingGroup } from '../../lib/database.types';
 import { EventOverviewModal } from '../EventOverviewModal';
-import { StatusBoard, type GroupBy } from './StatusBoard';
+import { StatusBoard } from './StatusBoard';
+import { GroupBoard } from './GroupBoard';
 import { ActivityFeedPanel } from './ActivityFeedPanel';
 import { UpcomingEventsPanel } from './UpcomingEventsPanel';
-import { SectionHeader } from './atoms';
+
+type BoardView = 'athletes' | 'groups';
 
 interface CoachDashboardV2Props {
   onNavigateToPlanner: (athlete: Athlete, weekStart: string) => void;
   onNavigateToGroupPlanner: (group: TrainingGroup, weekStart: string) => void;
 }
 
-const PIN_KEY = 'emos_v2_dashboard_pinned';
-const GROUP_KEY = 'emos_v2_dashboard_groupby';
+const ATHLETE_PIN_KEY = 'emos_v2_dashboard_pinned';
+const GROUP_PIN_KEY = 'emos_v2_dashboard_group_pinned';
+const VIEW_KEY = 'emos_v2_dashboard_view';
+const SECTION_KEY = 'emos_v2_dashboard_section_by_group';
 
-function loadPins(): string[] {
+function loadStringList(key: string): string[] {
   try {
-    const raw = localStorage.getItem(PIN_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
@@ -46,30 +47,38 @@ function loadPins(): string[] {
   }
 }
 
-function loadGroupBy(): GroupBy {
-  const v = localStorage.getItem(GROUP_KEY);
-  return v === 'group' ? 'group' : 'none';
+function loadView(): BoardView {
+  return localStorage.getItem(VIEW_KEY) === 'groups' ? 'groups' : 'athletes';
 }
 
-export function CoachDashboardV2({ onNavigateToPlanner }: CoachDashboardV2Props) {
+function loadSectionByGroup(): boolean {
+  return localStorage.getItem(SECTION_KEY) === '1';
+}
+
+export function CoachDashboardV2({
+  onNavigateToPlanner, onNavigateToGroupPlanner,
+}: CoachDashboardV2Props) {
   const navigate = useNavigate();
   const {
-    athleteStatuses, activityFeed, upcomingEvents,
-    loading, getEnrichment, totalFlagged,
+    athleteStatuses, activityFeed, upcomingEvents, groupStatuses,
+    loading, getEnrichment, getAthleteGroups, totalFlagged,
   } = useCoachDashboardV2();
 
-  const [pinned, setPinned] = useState<string[]>(() => loadPins());
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadGroupBy());
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [view, setView] = useState<BoardView>(() => loadView());
+  const [sectionByGroup, setSectionByGroup] = useState<boolean>(() => loadSectionByGroup());
+
+  const [athletePins, setAthletePins] = useState<string[]>(() => loadStringList(ATHLETE_PIN_KEY));
+  const [groupPins, setGroupPins] = useState<string[]>(() => loadStringList(GROUP_PIN_KEY));
+
+  const [expandedAthleteId, setExpandedAthleteId] = useState<string | null>(null);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [pulseId, setPulseId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(PIN_KEY, JSON.stringify(pinned));
-  }, [pinned]);
-  useEffect(() => {
-    localStorage.setItem(GROUP_KEY, groupBy);
-  }, [groupBy]);
+  useEffect(() => { localStorage.setItem(VIEW_KEY, view); }, [view]);
+  useEffect(() => { localStorage.setItem(SECTION_KEY, sectionByGroup ? '1' : '0'); }, [sectionByGroup]);
+  useEffect(() => { localStorage.setItem(ATHLETE_PIN_KEY, JSON.stringify(athletePins)); }, [athletePins]);
+  useEffect(() => { localStorage.setItem(GROUP_PIN_KEY, JSON.stringify(groupPins)); }, [groupPins]);
 
   useEffect(() => {
     if (!pulseId) return;
@@ -77,44 +86,47 @@ export function CoachDashboardV2({ onNavigateToPlanner }: CoachDashboardV2Props)
     return () => clearTimeout(id);
   }, [pulseId]);
 
-  const ordered = useMemo(() => {
-    if (!pinned.length) return athleteStatuses;
+  const orderedAthletes = useMemo(() => {
+    if (!athletePins.length) return athleteStatuses;
     const idx = (id: string) => {
-      const i = pinned.indexOf(id);
+      const i = athletePins.indexOf(id);
       return i === -1 ? 999 : i;
     };
     return [...athleteStatuses].sort((a, b) => idx(a.athlete.id) - idx(b.athlete.id));
-  }, [athleteStatuses, pinned]);
+  }, [athleteStatuses, athletePins]);
 
-  const togglePin = useCallback((id: string) => {
-    setPinned(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const toggleAthletePin = useCallback((id: string) => {
+    setAthletePins(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  }, []);
+  const toggleGroupPin = useCallback((id: string) => {
+    setGroupPins(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   }, []);
 
   const jumpToAthlete = useCallback((status: AthleteStatus) => {
-    setExpandedId(status.athlete.id);
+    setView('athletes');
+    setExpandedAthleteId(status.athlete.id);
     setPulseId(status.athlete.id);
     setTimeout(() => {
       const el = document.getElementById(`v2-row-${status.athlete.id}`);
       if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 30);
+    }, 60);
   }, []);
 
-  const openPlanner = useCallback((status: AthleteStatus) => {
+  const openPlannerForAthlete = useCallback((status: AthleteStatus) => {
     onNavigateToPlanner(status.athlete, status.currentWeekStart);
   }, [onNavigateToPlanner]);
 
-  const openEvent = useCallback((event: Event) => {
-    setSelectedEvent(event);
-  }, []);
+  const openPlannerForGroup = useCallback((gs: GroupStatus) => {
+    onNavigateToGroupPlanner(gs.group, gs.currentWeekStart);
+  }, [onNavigateToGroupPlanner]);
 
-  // Top-of-page summary counts. Use the ordered list (post-slice/pin) so that
-  // these match what the coach is actually seeing.
   const summary = useMemo(() => ({
-    thisDone: ordered.filter(s => s.currentWeekPlanned).length,
-    nextDone: ordered.filter(s => s.nextWeekPlanned).length,
+    thisDone: orderedAthletes.filter(s => s.currentWeekPlanned).length,
+    nextDone: orderedAthletes.filter(s => s.nextWeekPlanned).length,
     flagged: totalFlagged,
-    total: ordered.length,
-  }), [ordered, totalFlagged]);
+    total: orderedAthletes.length,
+    groups: groupStatuses.length,
+  }), [orderedAthletes, totalFlagged, groupStatuses.length]);
 
   const now = new Date();
   const hour = now.getHours();
@@ -124,120 +136,107 @@ export function CoachDashboardV2({ onNavigateToPlanner }: CoachDashboardV2Props)
   });
 
   return (
-    <div style={{
-      minHeight: '100%',
-      background: 'var(--color-bg-page)',
-      color: 'var(--color-text-primary)',
-      paddingBottom: 48,
-    }}>
-      {/* Top bar */}
-      <div style={{
-        padding: '18px 26px 14px',
-        background: 'var(--color-bg-primary)',
-        borderBottom: '1px solid var(--color-border-secondary)',
-        display: 'flex', alignItems: 'center', gap: 18,
-        flexWrap: 'wrap',
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{
-            fontSize: 18, fontWeight: 500, color: 'var(--color-text-primary)',
-            letterSpacing: '-0.005em',
-          }}>{greeting}, Coach</span>
-          <span style={{
-            fontSize: 11, color: 'var(--color-text-tertiary)',
-            fontFamily: 'var(--font-mono, ui-monospace), monospace',
-          }}>{todayLabel}</span>
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-base font-medium text-gray-900">{greeting}, Coach</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{todayLabel}</p>
         </div>
-        <span style={{ flex: 1 }} />
         <button
           onClick={() => navigate('/dashboard')}
-          title="Open the original dashboard"
-          style={{
-            padding: '4px 10px', fontSize: 11,
-            fontFamily: 'var(--font-mono, ui-monospace), monospace',
-            background: 'transparent', color: 'var(--color-text-secondary)',
-            border: '1px solid var(--color-border-secondary)', borderRadius: 2,
-            cursor: 'pointer',
-          }}
+          className="text-xs text-gray-500 hover:text-blue-600 underline-offset-2 hover:underline"
         >
-          v1 dashboard ↗
+          ← Back to original dashboard
         </button>
-        <SummaryStat
-          label="This week"
-          v={summary.thisDone} total={summary.total}
-          tone={summary.total === 0 ? 'neutral'
-            : summary.thisDone === summary.total ? 'ok'
-            : summary.thisDone >= summary.total * 0.7 ? 'warn' : 'bad'}
-        />
-        <SummaryStat
-          label="Next week"
-          v={summary.nextDone} total={summary.total}
-          tone={summary.total === 0 ? 'neutral'
-            : summary.nextDone === summary.total ? 'ok'
-            : summary.nextDone >= summary.total * 0.7 ? 'warn' : 'bad'}
-        />
-        <SummaryStat
-          label="Flagged"
-          v={summary.flagged} total={summary.total}
-          tone={summary.flagged === 0 ? 'ok'
-            : summary.flagged < Math.max(1, summary.total * 0.3) ? 'warn' : 'bad'}
-        />
       </div>
 
-      {/* Athletes board */}
-      <div style={{ padding: '18px 26px 8px' }}>
-        <SectionHeader right={
-          <div style={{
-            display: 'flex', gap: 8, alignItems: 'center',
-            fontFamily: 'var(--font-mono, ui-monospace), monospace', fontSize: 10,
-            color: 'var(--color-text-tertiary)',
-          }}>
-            <GroupByToggle value={groupBy} onChange={setGroupBy} />
-            <span>· {ordered.length} athletes · click row to expand · ★ to pin</span>
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <QuickStat label="This week" value={summary.thisDone} total={summary.total}
+          tone={summary.total === 0 ? 'neutral'
+            : summary.thisDone === summary.total ? 'ok'
+            : summary.thisDone >= summary.total * 0.7 ? 'warn' : 'bad'} />
+        <QuickStat label="Next week" value={summary.nextDone} total={summary.total}
+          tone={summary.total === 0 ? 'neutral'
+            : summary.nextDone === summary.total ? 'ok'
+            : summary.nextDone >= summary.total * 0.7 ? 'warn' : 'bad'} />
+        <QuickStat label="Flagged" value={summary.flagged} total={summary.total}
+          tone={summary.flagged === 0 ? 'ok'
+            : summary.flagged < Math.max(1, summary.total * 0.3) ? 'warn' : 'bad'} />
+        <QuickStat label="Training groups" value={summary.groups} />
+      </div>
+
+      {/* Board section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <ViewTabs value={view} onChange={setView} groupsCount={groupStatuses.length} />
+          <div className="flex items-center gap-3">
+            {view === 'athletes' && groupStatuses.length > 0 && (
+              <label className="inline-flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={sectionByGroup}
+                  onChange={(e) => setSectionByGroup(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Section by group
+              </label>
+            )}
+            <span className="text-xs text-gray-400 tabular-nums">
+              {view === 'athletes'
+                ? `${orderedAthletes.length} ${orderedAthletes.length === 1 ? 'athlete' : 'athletes'}`
+                : `${groupStatuses.length} ${groupStatuses.length === 1 ? 'group' : 'groups'}`}
+            </span>
           </div>
-        }>Athletes</SectionHeader>
-        {loading && ordered.length === 0 ? (
-          <div style={{
-            padding: 32, textAlign: 'center', color: 'var(--color-text-tertiary)',
-            fontSize: 12, background: 'var(--color-bg-primary)',
-            border: '1px solid var(--color-border-secondary)', borderRadius: 4,
-          }}>
-            Loading roster…
+        </div>
+
+        {loading && orderedAthletes.length === 0 ? (
+          <div className="py-12 text-center text-sm text-gray-400">
+            Loading…
           </div>
-        ) : (
+        ) : view === 'athletes' ? (
           <StatusBoard
-            statuses={ordered}
+            statuses={orderedAthletes}
             getEnrichment={getEnrichment}
-            pinned={pinned}
-            onTogglePin={togglePin}
-            groupBy={groupBy}
-            expandedId={expandedId}
-            onSetExpanded={setExpandedId}
+            getAthleteGroups={getAthleteGroups}
+            groupStatuses={groupStatuses}
+            pinned={athletePins}
+            onTogglePin={toggleAthletePin}
+            groupBy={sectionByGroup ? 'group' : 'none'}
+            expandedId={expandedAthleteId}
+            onSetExpanded={setExpandedAthleteId}
             pulseId={pulseId}
-            onOpenPlanner={openPlanner}
+            onOpenPlanner={openPlannerForAthlete}
+          />
+        ) : (
+          <GroupBoard
+            groupStatuses={groupStatuses}
+            statuses={orderedAthletes}
+            getEnrichment={getEnrichment}
+            expandedId={expandedGroupId}
+            onSetExpanded={setExpandedGroupId}
+            pinned={groupPins}
+            onTogglePin={toggleGroupPin}
+            onJumpToAthlete={jumpToAthlete}
+            onOpenGroupPlanner={openPlannerForGroup}
           />
         )}
       </div>
 
       {/* Activity + Upcoming */}
-      <div style={{ padding: '14px 26px 26px' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-          gap: 16,
-        }}>
-          <ActivityFeedPanel
-            events={activityFeed}
-            statuses={ordered}
-            onJumpToAthlete={jumpToAthlete}
-          />
-          <UpcomingEventsPanel
-            events={upcomingEvents}
-            statuses={ordered}
-            onOpenEvent={openEvent}
-            onJumpToAthlete={jumpToAthlete}
-          />
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ActivityFeedPanel
+          events={activityFeed}
+          statuses={orderedAthletes}
+          onJumpToAthlete={jumpToAthlete}
+        />
+        <UpcomingEventsPanel
+          events={upcomingEvents}
+          statuses={orderedAthletes}
+          onOpenEvent={setSelectedEvent}
+          onJumpToAthlete={jumpToAthlete}
+        />
       </div>
 
       {selectedEvent && (
@@ -250,67 +249,58 @@ export function CoachDashboardV2({ onNavigateToPlanner }: CoachDashboardV2Props)
   );
 }
 
-function SummaryStat({
-  label, v, total, tone,
-}: { label: string; v: number; total: number; tone: 'ok' | 'warn' | 'bad' | 'neutral' }) {
-  const text = tone === 'ok'   ? 'var(--color-success-text)'
-    : tone === 'warn' ? 'var(--color-warning-text)'
-    : tone === 'bad'  ? 'var(--color-danger-text)'
-    : 'var(--color-text-primary)';
-  const border = tone === 'ok'   ? 'var(--color-success-border)'
-    : tone === 'warn' ? 'var(--color-warning-border)'
-    : tone === 'bad'  ? 'var(--color-danger-border)'
-    : 'var(--color-border-secondary)';
+function ViewTabs({
+  value, onChange, groupsCount,
+}: { value: BoardView; onChange: (v: BoardView) => void; groupsCount: number }) {
+  const tabs: { id: BoardView; label: string; icon: typeof Users; count: number | null }[] = [
+    { id: 'athletes', label: 'Athletes', icon: Users,       count: null },
+    { id: 'groups',   label: 'Groups',   icon: UsersRound,  count: groupsCount },
+  ];
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1,
-      padding: '4px 10px', borderLeft: `3px solid ${border}`,
-    }}>
-      <span style={{
-        fontSize: 9.5, color: 'var(--color-text-tertiary)',
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-        textTransform: 'uppercase', letterSpacing: '0.1em',
-      }}>{label}</span>
-      <span style={{
-        display: 'inline-flex', alignItems: 'baseline', gap: 4,
-        fontFamily: 'var(--font-mono, ui-monospace), monospace',
-      }}>
-        <span style={{
-          fontSize: 17, fontWeight: 500, color: text, fontVariantNumeric: 'tabular-nums',
-        }}>{v}</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>/ {total}</span>
-      </span>
+    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+      {tabs.map(t => {
+        const selected = value === t.id;
+        const Icon = t.icon;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+              selected
+                ? 'bg-white text-gray-900 shadow-sm font-medium'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Icon size={14} />
+            <span>{t.label}</span>
+            {t.count !== null && (
+              <span className={`text-[11px] tabular-nums ${selected ? 'text-gray-500' : 'text-gray-400'}`}>
+                {t.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function GroupByToggle({ value, onChange }: { value: GroupBy; onChange: (v: GroupBy) => void }) {
-  const opts: { id: GroupBy; label: string }[] = [
-    { id: 'none',  label: 'Athlete-first' },
-    { id: 'group', label: 'Group-first' },
-  ];
+function QuickStat({
+  label, value, total, tone,
+}: { label: string; value: number; total?: number; tone?: 'ok' | 'warn' | 'bad' | 'neutral' }) {
+  const text = tone === 'ok'   ? 'text-green-600'
+    : tone === 'warn' ? 'text-amber-600'
+    : tone === 'bad'  ? 'text-red-600'
+    : 'text-gray-900';
   return (
-    <div style={{ display: 'inline-flex', gap: 2 }}>
-      {opts.map(o => {
-        const selected = value === o.id;
-        return (
-          <button
-            key={o.id}
-            onClick={() => onChange(o.id)}
-            style={{
-              padding: '2px 8px', fontSize: 10,
-              fontFamily: 'var(--font-mono, ui-monospace), monospace',
-              background: selected ? 'var(--color-text-primary)' : 'transparent',
-              color: selected ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
-              border: `1px solid ${selected ? 'var(--color-text-primary)' : 'var(--color-border-secondary)'}`,
-              borderRadius: 2, cursor: 'pointer',
-              textTransform: 'uppercase', letterSpacing: '0.06em',
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
+    <div className="bg-white rounded-lg border border-gray-200 py-2.5 px-4">
+      <div className="text-[11px] text-gray-400 uppercase tracking-wider font-medium">{label}</div>
+      <div className="flex items-baseline gap-1.5 mt-0.5">
+        <span className={`text-xl font-medium tabular-nums ${text}`}>{value}</span>
+        {total !== undefined && (
+          <span className="text-sm text-gray-400 tabular-nums">/ {total}</span>
+        )}
+      </div>
     </div>
   );
 }

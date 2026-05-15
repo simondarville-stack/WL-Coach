@@ -15,7 +15,7 @@ import {
   type AthleteStatus,
   type UpcomingEvent,
 } from './useCoachDashboard';
-import type { BodyweightEntry, MacroPhase } from '../lib/database.types';
+import type { BodyweightEntry, MacroPhase, TrainingGroup } from '../lib/database.types';
 
 export type V2FlagId =
   | 'raw-drop'
@@ -120,11 +120,13 @@ function deriveFlags(args: {
 export function useCoachDashboardV2() {
   const base = useCoachDashboard();
   const [enrichments, setEnrichments] = useState<Record<string, AthleteEnrichment>>({});
+  const [athleteGroupMap, setAthleteGroupMap] = useState<Record<string, TrainingGroup[]>>({});
   const [enrichLoading, setEnrichLoading] = useState(false);
 
   const loadEnrichments = useCallback(async (statuses: AthleteStatus[], events: UpcomingEvent[]) => {
     if (!statuses.length) {
       setEnrichments({});
+      setAthleteGroupMap({});
       return;
     }
     setEnrichLoading(true);
@@ -242,7 +244,23 @@ export function useCoachDashboardV2() {
         ) || null;
       };
 
-      // 5) Map upcoming events to athletes via event_athletes
+      // 5a) Group memberships per athlete — the v2 dashboard uses this for the
+      //     "Section by group" toggle and the Groups tab. We fetch active
+      //     memberships (left_at IS NULL) and join the group rows.
+      const { data: memberRows } = await supabase
+        .from('group_members')
+        .select('athlete_id, group:training_groups(id, owner_id, name, description, created_at, updated_at)')
+        .in('athlete_id', athleteIds)
+        .is('left_at', null);
+      type MemberRow = { athlete_id: string; group: TrainingGroup | null };
+      const groupsByAthlete: Record<string, TrainingGroup[]> = {};
+      (memberRows as unknown as MemberRow[] | null || []).forEach(row => {
+        if (!row.group) return;
+        (groupsByAthlete[row.athlete_id] ||= []).push(row.group);
+      });
+      setAthleteGroupMap(groupsByAthlete);
+
+      // 5b) Map upcoming events to athletes via event_athletes
       const eventIds = events.map(e => e.eventData.id);
       const athleteEventMap: Record<string, UpcomingEvent[]> = {};
       if (eventIds.length) {
@@ -319,11 +337,18 @@ export function useCoachDashboardV2() {
     [base.athleteStatuses, enrichments],
   );
 
+  const getAthleteGroups = useCallback(
+    (athleteId: string): TrainingGroup[] => athleteGroupMap[athleteId] || [],
+    [athleteGroupMap],
+  );
+
   return {
     ...base,
     enrichments,
     enrichLoading,
     getEnrichment,
+    athleteGroupMap,
+    getAthleteGroups,
     totalFlagged,
   };
 }
