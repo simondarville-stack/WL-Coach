@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Plus, Trash2, X, Trophy } from 'lucide-react';
+import { Plus, Trash2, X, Trophy } from 'lucide-react';
 import type { Athlete } from '../lib/database.types';
 import { formatDateToDDMMYYYY, formatISOToDateInput } from '../lib/dateUtils';
 import { EventAttemptsModal } from './EventAttemptsModal';

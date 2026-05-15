@@ -57,8 +57,6 @@ interface ExerciseDetailProps {
   ) => Promise<OtherDay[]>;
 }
 
-type SentinelType = 'text' | 'video' | 'image' | null;
-
 const UNIT_OPTIONS: { value: string; label: string }[] = [
   { value: 'absolute_kg', label: 'kg' },
   { value: 'percentage', label: '%' },

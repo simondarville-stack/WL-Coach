@@ -5,7 +5,7 @@ import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
-import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel, type SentinelType } from './plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel } from './plannerUtils';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
