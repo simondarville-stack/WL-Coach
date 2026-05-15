@@ -32,6 +32,8 @@ export interface ComboResolveCandidate extends BaseCandidate {
 
 export type ResolveCandidate = SingleResolveCandidate | ComboResolveCandidate;
 
+export type ResolveDirection = 'percent-to-kg' | 'kg-to-percent';
+
 export interface ResolveRoundingOptions {
   enabled: boolean;
   increment: number;
@@ -44,6 +46,11 @@ interface ResolvePercentagesModalProps {
   /** Initial state for the rounding controls. Sourced from
    *  general_settings; falls back to (true, 0.5) when omitted. */
   defaultRounding?: ResolveRoundingOptions;
+  /** percent-to-kg (default): convert percentage prescriptions to kg.
+   *  kg-to-percent: convert kg prescriptions to percentages — used by
+   *  the "save as template — convert before saving" flow and other
+   *  kg → % use cases (e.g. progressing an athlete by 5%). */
+  direction?: ResolveDirection;
 }
 
 const CUSTOM = '__custom__';
@@ -59,7 +66,9 @@ export function ResolvePercentagesModal({
   onClose,
   onConfirm,
   defaultRounding,
+  direction = 'percent-to-kg',
 }: ResolvePercentagesModalProps) {
+  const toPercent = direction === 'kg-to-percent';
   // Per-row selection: for singles this is unused; for combos, holds the
   // exerciseId of the member whose PR is being used, or CUSTOM for free entry.
   const [sources, setSources] = useState<Record<string, string>>(() => {
@@ -178,9 +187,13 @@ export function ResolvePercentagesModal({
           flexShrink: 0,
         }}>
           <div>
-            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>Convert percentages to kg</h2>
+            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>
+              {toPercent ? 'Convert kg to percentages' : 'Convert percentages to kg'}
+            </h2>
             <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: '2px 0 0' }}>
-              For combos, pick which exercise's PR to use — or override with a custom value.
+              {toPercent
+                ? 'Pick the PR each kg value is a percentage of. Combos let you choose which member exercise.'
+                : 'For combos, pick which exercise\'s PR to use — or override with a custom value.'}
             </p>
           </div>
           <button
@@ -198,14 +211,16 @@ export function ResolvePercentagesModal({
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {candidates.length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '32px 0', margin: 0 }}>
-              No percentage prescriptions on this week.
+              {toPercent ? 'No kg prescriptions to convert.' : 'No percentage prescriptions on this week.'}
             </p>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: 'var(--color-bg-secondary)', borderBottom: '1px solid var(--color-border-secondary)' }}>
                   <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Exercise</th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Prescription (%)</th>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {toPercent ? 'Prescription (kg)' : 'Prescription (%)'}
+                  </th>
                   <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>PR source</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px', fontSize: 10, fontWeight: 500, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>PR (kg)</th>
                 </tr>

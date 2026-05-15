@@ -29,6 +29,10 @@ export interface SaveAsTemplateInput {
   // Week mode only: per source day_index → label to use in the template.
   // Days missing from this map are excluded from the template.
   dayLabels?: Record<number, string>;
+  /** If true, the caller routes the save through the kg → % converter
+   *  modal before the template rows land in the database. The original
+   *  plan is untouched. */
+  convertToPercentages: boolean;
 }
 
 interface SaveAsTemplateModalProps {
@@ -37,6 +41,10 @@ interface SaveAsTemplateModalProps {
   defaultDescription?: string;
   // Week mode only.
   availableDays?: DayChoice[];
+  /** Whether the scope contains any kg prescriptions that would benefit
+   *  from a kg → % conversion before saving. When false the convert
+   *  checkbox is hidden to avoid clutter. */
+  hasKgPrescriptions: boolean;
   onClose: () => void;
   onSave: (input: SaveAsTemplateInput) => Promise<void>;
 }
@@ -46,11 +54,13 @@ export function SaveAsTemplateModal({
   defaultName,
   defaultDescription,
   availableDays,
+  hasKgPrescriptions,
   onClose,
   onSave,
 }: SaveAsTemplateModalProps) {
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState(defaultDescription ?? '');
+  const [convertToPercentages, setConvertToPercentages] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +106,7 @@ export function SaveAsTemplateModal({
         name: name.trim(),
         description: description.trim() === '' ? null : description.trim(),
         dayLabels: labels,
+        convertToPercentages: hasKgPrescriptions && convertToPercentages,
       });
       onClose();
     } catch (err) {
@@ -216,6 +227,36 @@ export function SaveAsTemplateModal({
                 })}
               </div>
             </Field>
+          )}
+
+          {hasKgPrescriptions && (
+            <label
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                padding: '8px 10px',
+                border: '0.5px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                background: convertToPercentages ? 'var(--color-accent-muted)' : 'transparent',
+                transition: 'background var(--transition-fast)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={convertToPercentages}
+                onChange={e => setConvertToPercentages(e.target.checked)}
+                style={{ marginTop: 2, cursor: 'pointer' }}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                  Convert kg to percentages before saving
+                </span>
+                <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                  Opens the conversion dialog so you can pick the PR for each kg prescription.
+                  The original plan stays untouched — only the template is converted.
+                </span>
+              </div>
+            </label>
           )}
 
           {error && (

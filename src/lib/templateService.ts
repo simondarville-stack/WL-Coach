@@ -323,15 +323,27 @@ export async function insertTemplateComboMember(
 
 // ── Save-from-existing ───────────────────────────────────────────────
 
+/** Per-planned-exercise override applied at template creation time.
+ *  Used to translate kg prescriptions into percentages (or vice versa)
+ *  during a "Save as template" flow without mutating the source plan. */
+export type PrescriptionOverride = { prescription_raw: string | null; unit: string };
+
 /**
  * Build a single-day template from one weekplan day. Verbatim copy:
- * prescriptions, units, notes, combos all preserved.
+ * prescriptions, units, notes, combos all preserved. Pass
+ * prescriptionOverrides to rewrite specific exercises (e.g. after a
+ * kg → % conversion) without altering the source plan.
  */
 export async function createTemplateFromDay(
   weekPlanId: string,
   dayIndex: number,
   name: string,
-  opts?: { description?: string | null; tags?: string[]; dayLabel?: string },
+  opts?: {
+    description?: string | null;
+    tags?: string[];
+    dayLabel?: string;
+    prescriptionOverrides?: Record<string, PrescriptionOverride>;
+  },
 ): Promise<ProgramTemplate> {
   const { data: srcExercises, error: srcErr } = await supabase
     .from('planned_exercises')
@@ -350,11 +362,12 @@ export async function createTemplateFromDay(
   const day = await insertTemplateDay(template.id, 1, opts?.dayLabel ?? 'Day 1');
 
   for (const ex of srcRows) {
+    const override = opts?.prescriptionOverrides?.[ex.id];
     const newEx = await insertTemplateExercise(day.id, {
       exercise_id: ex.exercise_id,
       position: ex.position,
-      unit: ex.unit,
-      prescription_raw: ex.prescription_raw,
+      unit: override?.unit ?? ex.unit,
+      prescription_raw: override ? override.prescription_raw : ex.prescription_raw,
       notes: ex.notes,
       variation_note: ex.variation_note,
       is_combo: ex.is_combo,
@@ -390,6 +403,7 @@ export async function createTemplateFromWeek(
     tags?: string[];
     dayLabels?: Record<number, string> | null;
     includeDays?: number[];
+    prescriptionOverrides?: Record<string, PrescriptionOverride>;
   },
 ): Promise<ProgramTemplate> {
   const { data: srcExercises, error: srcErr } = await supabase
@@ -422,11 +436,12 @@ export async function createTemplateFromWeek(
     templateDayIdx += 1;
 
     for (const ex of byDay.get(srcDayIndex)!) {
+      const override = opts?.prescriptionOverrides?.[ex.id];
       const newEx = await insertTemplateExercise(day.id, {
         exercise_id: ex.exercise_id,
         position: ex.position,
-        unit: ex.unit,
-        prescription_raw: ex.prescription_raw,
+        unit: override?.unit ?? ex.unit,
+        prescription_raw: override ? override.prescription_raw : ex.prescription_raw,
         notes: ex.notes,
         variation_note: ex.variation_note,
         is_combo: ex.is_combo,
