@@ -23,7 +23,7 @@ import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
 import { TemplateImportDialog } from './dock/TemplateImportDialog';
-import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions } from './ResolvePercentagesModal';
+import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
 import { ArrowLeft, User } from 'lucide-react';
@@ -126,6 +126,7 @@ export function WeeklyPlanner() {
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
   const [resolveCandidates, setResolveCandidates] = useState<ResolveCandidate[] | null>(null);
+  const [resolveDirection, setResolveDirection] = useState<ResolveDirection>('percent-to-kg');
   const [importTarget, setImportTarget] = useState<{ templateId: string; startDayIndex: number } | null>(null);
   const [saveTarget, setSaveTarget] = useState<{ kind: 'day'; dayIndex: number } | { kind: 'week' } | null>(null);
   // Convert-then-save flow: when the user ticks "Convert kg to percentages
@@ -791,13 +792,15 @@ export function WeeklyPlanner() {
     setShowCopyWeekModal(true);
   };
 
-  const handleResolvePercentages = () => {
+  const handleResolvePercentages = (direction: ResolveDirection = 'percent-to-kg') => {
     if (!currentWeekPlan) return;
+    setResolveDirection(direction);
+    const wantedUnit = direction === 'percent-to-kg' ? 'percentage' : 'absolute_kg';
     const prMap = new Map<string, number>(
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
     const planned = Object.values(plannedExercises).flat();
-    const toResolve = planned.filter(ex => ex.unit === 'percentage' && ex.prescription_raw);
+    const toResolve = planned.filter(ex => ex.unit === wantedUnit && ex.prescription_raw);
 
     const candidates: ResolveCandidate[] = toResolve.map<ResolveCandidate>(ex => {
       if (ex.is_combo) {
@@ -847,8 +850,11 @@ export function WeeklyPlanner() {
     if (!currentWeekPlan) return;
     const planned = Object.values(plannedExercises).flat();
     const idToEx = new Map(planned.map(ex => [ex.id, ex]));
-    const round = (pct: number, prKg: number) => {
-      const raw = (pct / 100) * prKg;
+    const toKg = resolveDirection === 'percent-to-kg';
+    const targetUnit = toKg ? 'absolute_kg' : 'percentage';
+
+    const convert = (input: number, prKg: number) => {
+      const raw = toKg ? (input / 100) * prKg : (input / prKg) * 100;
       if (!rounding.enabled || rounding.increment <= 0) {
         // 2 decimals when rounding is off — avoids floating-point dust.
         return Math.round(raw * 100) / 100;
@@ -866,17 +872,17 @@ export function WeeklyPlanner() {
       if (ex.is_combo) {
         const parsed = parseComboPrescription(ex.prescription_raw);
         if (parsed.length === 0) continue;
-        const kgLines = parsed.map(line => ({
+        const newLines = parsed.map(line => ({
           sets: line.sets,
           repsText: line.repsText,
           totalReps: line.totalReps,
-          load: line.loadText ? line.load : round(line.load, prKg),
-          loadMax: line.loadMax != null ? round(line.loadMax, prKg) : null,
+          load: line.loadText ? line.load : convert(line.load, prKg),
+          loadMax: line.loadMax != null ? convert(line.loadMax, prKg) : null,
           loadText: line.loadText,
         }));
         await savePrescription(ex.id, {
-          prescription: formatComboPrescription(kgLines, 'absolute_kg'),
-          unit: 'absolute_kg',
+          prescription: formatComboPrescription(newLines, targetUnit),
+          unit: targetUnit,
           isCombo: true,
         });
         continue;
@@ -884,15 +890,15 @@ export function WeeklyPlanner() {
 
       const parsed = parsePrescription(ex.prescription_raw);
       if (parsed.length === 0) continue;
-      const kgLines = parsed.map(line => ({
+      const newLines = parsed.map(line => ({
         sets: line.sets,
         reps: line.reps,
-        load: round(line.load, prKg),
-        loadMax: line.loadMax != null ? round(line.loadMax, prKg) : null,
+        load: convert(line.load, prKg),
+        loadMax: line.loadMax != null ? convert(line.loadMax, prKg) : null,
       }));
       await savePrescription(ex.id, {
-        prescription: formatPrescription(kgLines, 'absolute_kg'),
-        unit: 'absolute_kg',
+        prescription: formatPrescription(newLines, targetUnit),
+        unit: targetUnit,
       });
     }
 
@@ -1236,12 +1242,16 @@ export function WeeklyPlanner() {
         {resolveCandidates !== null && (
           <ResolvePercentagesModal
             candidates={resolveCandidates}
+            direction={resolveDirection}
             onClose={() => setResolveCandidates(null)}
             onConfirm={applyResolvedPercentages}
-            defaultRounding={{
-              enabled: settings?.percent_to_kg_round_enabled ?? true,
-              increment: settings?.percent_to_kg_round_increment ?? 0.5,
-            }}
+            defaultRounding={resolveDirection === 'percent-to-kg'
+              ? {
+                  enabled: settings?.percent_to_kg_round_enabled ?? true,
+                  increment: settings?.percent_to_kg_round_increment ?? 0.5,
+                }
+              : { enabled: true, increment: 1 }
+            }
           />
         )}
 

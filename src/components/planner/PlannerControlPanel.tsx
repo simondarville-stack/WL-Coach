@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, ChevronRight,
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
   ChevronDown, ChevronRight as ChevronRightSmall,
-  Users, User as UserIcon, BookmarkPlus,
+  Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -140,6 +140,36 @@ function MetricSeparator() {
   );
 }
 
+function ConvertMenuItem({ label, hint, onClick }: { label: string; hint: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 1,
+        padding: '6px 10px',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 'var(--radius-sm)',
+        cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'background var(--transition-fast)',
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)' }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+        {hint}
+      </span>
+    </button>
+  );
+}
+
 function CategoryMetric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
@@ -192,7 +222,7 @@ export interface PlannerControlPanelProps {
   onPrint: () => void;
   onSaveAsTemplate?: () => void;
   onToggleLoadDistribution: () => void;
-  onResolvePercentages?: () => Promise<void>;
+  onResolvePercentages?: (direction: 'percent-to-kg' | 'kg-to-percent') => void;
   onNavigateToWeek?: (weekStart: string) => void;
   weekTypesByNum?: Record<number, string>;
   weekTypes?: WeekTypeConfig[];
@@ -235,6 +265,19 @@ export function PlannerControlPanel({
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
   const [showAthleteProfile, setShowAthleteProfile] = useState(false);
+  const [convertMenuOpen, setConvertMenuOpen] = useState(false);
+  const convertMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!convertMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (convertMenuRef.current && !convertMenuRef.current.contains(e.target as Node)) {
+        setConvertMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [convertMenuOpen]);
 
   useEffect(() => { setLocalDesc(weekDescription); }, [weekDescription]);
 
@@ -563,14 +606,45 @@ export function PlannerControlPanel({
           </IconButton>
 
           {onResolvePercentages && selectedAthlete && athletePRs.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onResolvePercentages}
-              title="Convert percentage prescriptions to kg using athlete PRs"
-            >
-              → kg
-            </Button>
+            <div ref={convertMenuRef} style={{ position: 'relative' }}>
+              <IconButton
+                title="Convert prescriptions between kg and percentages"
+                onClick={() => setConvertMenuOpen(o => !o)}
+                highlight={convertMenuOpen ? 'info' : undefined}
+              >
+                <ArrowLeftRight size={16} />
+              </IconButton>
+              {convertMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: 4,
+                    minWidth: 140,
+                    background: 'var(--color-bg-primary)',
+                    border: '0.5px solid var(--color-border-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    zIndex: 20,
+                    padding: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <ConvertMenuItem
+                    label="% → kg"
+                    hint="Bake percentages into kg using athlete PRs"
+                    onClick={() => { onResolvePercentages('percent-to-kg'); setConvertMenuOpen(false); }}
+                  />
+                  <ConvertMenuItem
+                    label="kg → %"
+                    hint="Express kg loads as percentages of athlete PRs"
+                    onClick={() => { onResolvePercentages('kg-to-percent'); setConvertMenuOpen(false); }}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
