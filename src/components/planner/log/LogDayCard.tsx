@@ -50,6 +50,13 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
 
   const sessionCommentCount = dayLog?.messages.filter(m => !m.exercise_id).length ?? 0;
 
+  const performedDate = session?.date ?? null;
+  const performedLabel = performedDate
+    ? new Date(performedDate + 'T00:00:00').toLocaleDateString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+      })
+    : null;
+
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mb-3">
       <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-3 py-2 flex-wrap gap-2">
@@ -58,6 +65,11 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
           <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${STATUS_CLASS[status] ?? STATUS_CLASS.pending}`}>
             {STATUS_LABEL[status] ?? status}
           </span>
+          {performedLabel && (
+            <span className="text-[10px] text-gray-500">
+              logged <span className="text-gray-700">{performedLabel}</span>
+            </span>
+          )}
         </div>
         {session && (
           <div className="flex items-center gap-3 text-[11px] text-gray-600 flex-wrap">

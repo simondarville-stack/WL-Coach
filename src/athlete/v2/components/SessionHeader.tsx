@@ -12,7 +12,7 @@ import type { TrainingLogSession } from '../../../lib/database.types';
 
 interface SessionHeaderProps {
   date: string;
-  athleteName: string;
+  slotLabel: string;
   session: TrainingLogSession | null;
   onPatchBodyweight: (bw: number | null) => Promise<void>;
   onPatchRaw: (raw: RawScores, total: number | null) => Promise<void>;
@@ -37,7 +37,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export function SessionHeader({
   date,
-  athleteName,
+  slotLabel,
   session,
   onPatchBodyweight,
   onPatchRaw,
@@ -81,19 +81,21 @@ export function SessionHeader({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-gray-300">
-          <Calendar size={14} className="text-gray-500" />
-          <span className="text-sm font-semibold">{prettyDate}</span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-white truncate">{slotLabel}</div>
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mt-0.5">
+            <Calendar size={11} />
+            <span>{prettyDate}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${STATUS_CLASS[status] ?? STATUS_CLASS.pending}`}>
             {STATUS_LABEL[status] ?? status}
           </span>
           {saving && <span className="text-[10px] text-gray-500">Saving…</span>}
         </div>
       </div>
-      <p className="text-xs text-gray-500">Logging as <span className="text-gray-300 font-medium">{athleteName}</span></p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <BodyweightField value={session?.bodyweight_kg ?? null} onChange={onPatchBodyweight} />

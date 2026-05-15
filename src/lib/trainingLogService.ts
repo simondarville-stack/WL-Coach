@@ -25,7 +25,6 @@ export interface PlannedExerciseFull {
 }
 
 export interface AthleteDayData {
-  date: string;
   weekStart: string;
   dayIndex: number;
   planned: PlannedExerciseFull[];
@@ -102,15 +101,17 @@ export async function fetchWeekLog(
   return out;
 }
 
-export async function fetchSessionForDay(
+export async function fetchSessionForSlot(
   athleteId: string,
-  date: string,
+  weekStart: string,
+  dayIndex: number,
 ): Promise<DayLog | null> {
   const { data: sessionRow, error: sErr } = await supabase
     .from('training_log_sessions')
     .select('*')
     .eq('athlete_id', athleteId)
-    .eq('date', date)
+    .eq('week_start', weekStart)
+    .eq('day_index', dayIndex)
     .maybeSingle();
   if (sErr) throw sErr;
   if (!sessionRow) return null;
@@ -157,13 +158,15 @@ export async function fetchSessionForDay(
 }
 
 /**
- * The athlete-app's primary data load: pull the week_plan that contains
- * `date`, fetch the planned exercises + set lines for that day, and merge
- * with any existing log data.
+ * The athlete-app's primary data load for a chosen training slot.
+ *
+ * Returns the planned exercises + set lines for (weekStart, dayIndex) and
+ * the existing log session keyed on (athleteId, weekStart, dayIndex). The
+ * calendar date is just metadata on the log session — it is decoupled
+ * from the slot since v3 (migration 20260405).
  */
 export async function fetchAthleteDay(
   athleteId: string,
-  date: string,
   weekStart: string,
   dayIndex: number,
 ): Promise<AthleteDayData> {
@@ -204,9 +207,123 @@ export async function fetchAthleteDay(
     }));
   }
 
-  const log = await fetchSessionForDay(athleteId, date);
+  const log = await fetchSessionForSlot(athleteId, weekStart, dayIndex);
 
-  return { date, weekStart, dayIndex, planned, log };
+  return { weekStart, dayIndex, planned, log };
+}
+
+// ─── Week overview (athlete day-picker) ───────────────────────────────────
+
+export interface WeekDayOverview {
+  dayIndex: number;
+  /** Resolved label from day_labels; falls back to "Day N". */
+  label: string;
+  /** Planned weekday (1 = Mon, …, 7 = Sun) from day_schedule, or null. */
+  weekday: number | null;
+  /** Number of planned exercises in this slot. */
+  plannedCount: number;
+  /** Session status, or 'pending' if no log row exists yet. */
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped';
+  /** Calendar date on the log row, if any. */
+  sessionDate: string | null;
+  /** Whether a log session exists for this slot. */
+  hasLog: boolean;
+}
+
+export interface WeekOverview {
+  weekStart: string;
+  weekPlanId: string | null;
+  /** Slots the coach activated; sorted ascending. */
+  activeDays: number[];
+  /** Day index → resolved label (for callers that want raw labels). */
+  dayLabels: Record<number, string>;
+  /** Pre-built overview rows in activeDays order. */
+  days: WeekDayOverview[];
+}
+
+const DEFAULT_LABEL = (i: number) => `Day ${i}`;
+
+/**
+ * Single-shot load for the athlete day picker: which planned slots exist
+ * in this week, what they're called, and whether each has been logged.
+ */
+export async function fetchWeekOverview(
+  athleteId: string,
+  weekStart: string,
+): Promise<WeekOverview> {
+  const { data: wpRow, error: wpErr } = await supabase
+    .from('week_plans')
+    .select('id, active_days, day_labels, day_schedule')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (wpErr) throw wpErr;
+
+  if (!wpRow) {
+    return {
+      weekStart,
+      weekPlanId: null,
+      activeDays: [],
+      dayLabels: {},
+      days: [],
+    };
+  }
+
+  const wp = wpRow as {
+    id: string;
+    active_days: number[];
+    day_labels: Record<number, string> | null;
+    day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+  };
+  const activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
+  const labels = wp.day_labels ?? {};
+  const schedule = wp.day_schedule ?? {};
+
+  // Planned counts per day
+  const { data: peRows, error: peErr } = await supabase
+    .from('planned_exercises')
+    .select('day_index')
+    .eq('weekplan_id', wp.id);
+  if (peErr) throw peErr;
+  const plannedCounts = new Map<number, number>();
+  ((peRows ?? []) as Array<{ day_index: number }>).forEach(r => {
+    plannedCounts.set(r.day_index, (plannedCounts.get(r.day_index) ?? 0) + 1);
+  });
+
+  // Existing log sessions for the week
+  const { data: sessionRows, error: sErr } = await supabase
+    .from('training_log_sessions')
+    .select('day_index, status, date')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart);
+  if (sErr) throw sErr;
+  const sessionByDay = new Map<number, { status: string; date: string }>();
+  ((sessionRows ?? []) as Array<{ day_index: number; status: string; date: string }>).forEach(
+    r => sessionByDay.set(r.day_index, { status: r.status, date: r.date }),
+  );
+
+  const days: WeekDayOverview[] = activeDays.map(d => {
+    const sess = sessionByDay.get(d);
+    return {
+      dayIndex: d,
+      label: labels[d]?.trim() || DEFAULT_LABEL(d),
+      weekday: schedule[d]?.weekday ?? null,
+      plannedCount: plannedCounts.get(d) ?? 0,
+      status: (sess?.status as WeekDayOverview['status']) ?? 'pending',
+      sessionDate: sess?.date ?? null,
+      hasLog: !!sess,
+    };
+  });
+
+  return {
+    weekStart,
+    weekPlanId: wp.id,
+    activeDays,
+    dayLabels: Object.fromEntries(
+      activeDays.map(d => [d, labels[d]?.trim() || DEFAULT_LABEL(d)]),
+    ),
+    days,
+  };
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────
@@ -214,17 +331,26 @@ export async function fetchAthleteDay(
 interface EnsureSessionArgs {
   athleteId: string;
   ownerId: string;
+  /** Calendar date the athlete is performing this session on. */
   date: string;
   weekStart: string;
   dayIndex: number;
 }
 
+/**
+ * Find or create the session row for (athlete, weekStart, dayIndex).
+ *
+ * Note: lookup is by slot, NOT by date. The DB unique constraint is
+ * (athlete_id, week_start, day_index) — see migration 20260405. The
+ * `date` argument is only used when inserting a fresh row.
+ */
 export async function ensureSession(args: EnsureSessionArgs): Promise<TrainingLogSession> {
   const { data: existing, error: fErr } = await supabase
     .from('training_log_sessions')
     .select('*')
     .eq('athlete_id', args.athleteId)
-    .eq('date', args.date)
+    .eq('week_start', args.weekStart)
+    .eq('day_index', args.dayIndex)
     .maybeSingle();
   if (fErr) throw fErr;
   if (existing) return existing as TrainingLogSession;
@@ -252,6 +378,7 @@ export async function ensureSession(args: EnsureSessionArgs): Promise<TrainingLo
 export type SessionPatch = Partial<
   Pick<
     TrainingLogSession,
+    | 'date'
     | 'session_notes'
     | 'status'
     | 'raw_sleep'

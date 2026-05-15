@@ -1,15 +1,20 @@
 /**
- * TodayScreen — the athlete's daily log entry point.
+ * TodayScreen — the athlete picks WHICH training slot they're doing this
+ * week, then logs it. The calendar date is metadata, not the key: athletes
+ * routinely do Day 2 on Wednesday because Tuesday got skipped.
  *
- * Lets the athlete pick a date (defaults to today), see the planned
- * session, log sets, set BW + RAW + RPE + notes. Everything routes
- * through trainingLogService.
+ * State model:
+ *   - weekStart: Monday of the week being viewed
+ *   - dayIndex: which planned slot (1-N) the athlete is logging
+ *   - "Performed on" date: stored as session.date, editable, defaults to
+ *     today on first log
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, LogOut, Loader2 } from 'lucide-react';
+import { LogOut, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
+  fetchWeekOverview,
   ensureSession,
   updateSession,
   ensureLogExercise,
@@ -17,85 +22,117 @@ import {
   upsertLoggedSet,
   type AthleteDayData,
   type PlannedExerciseFull,
+  type WeekOverview,
 } from '../../../lib/trainingLogService';
 import type { TrainingLogSession, TrainingLogSet } from '../../../lib/database.types';
 import { SessionHeader } from '../components/SessionHeader';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import type { RawScores } from '../components/RawScoreDial';
 import { expandSetLines } from '../components/SetEntryRow';
+import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
+import { DayChipRow } from '../components/DayChipRow';
 
-function getMonday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+function todayISO(): string {
+  return toISO(new Date());
 }
 
-function toISODate(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
-
-function getDayIndex(dateStr: string): number {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay();
+function todayDayIndex(): number {
+  const day = new Date().getDay();
   return day === 0 ? 7 : day;
 }
 
-function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return toISODate(d);
+/**
+ * Pick a sensible default slot when the athlete first lands on the screen:
+ * 1. The slot that matches today's weekday if it's active
+ * 2. The earliest active slot that isn't completed
+ * 3. The first active slot
+ * 4. null (no plan)
+ */
+function pickDefaultDay(overview: WeekOverview): number | null {
+  if (overview.days.length === 0) return null;
+  const today = todayDayIndex();
+  const matchingToday = overview.days.find(d => d.weekday === today);
+  if (matchingToday) return matchingToday.dayIndex;
+  const firstUnfinished = overview.days.find(d => d.status !== 'completed');
+  if (firstUnfinished) return firstUnfinished.dayIndex;
+  return overview.days[0].dayIndex;
 }
 
 export function TodayScreen() {
   const { athlete, signOut } = useAuth();
-  const [date, setDate] = useState<string>(() => toISODate(new Date()));
+
+  const [weekStart, setWeekStart] = useState<string>(() => getMondayOf(new Date()));
+  const [overview, setOverview] = useState<WeekOverview | null>(null);
+  const [dayIndex, setDayIndex] = useState<number | null>(null);
   const [data, setData] = useState<AthleteDayData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingWeek, setLoadingWeek] = useState(true);
+  const [loadingDay, setLoadingDay] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const dayIndex = useMemo(() => getDayIndex(date), [date]);
-  const weekStart = useMemo(
-    () => toISODate(getMonday(new Date(date + 'T00:00:00'))),
-    [date],
-  );
-
-  const load = useCallback(async () => {
+  const loadWeek = useCallback(async () => {
     if (!athlete) return;
-    setLoading(true);
+    setLoadingWeek(true);
     setError(null);
     try {
-      const result = await fetchAthleteDay(athlete.id, date, weekStart, dayIndex);
-      setData(result);
+      const w = await fetchWeekOverview(athlete.id, weekStart);
+      setOverview(w);
+      setDayIndex(prev => {
+        if (prev != null && w.days.some(d => d.dayIndex === prev)) return prev;
+        return pickDefaultDay(w);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setLoadingWeek(false);
     }
-  }, [athlete, date, weekStart, dayIndex]);
+  }, [athlete, weekStart]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const loadDay = useCallback(async () => {
+    if (!athlete || dayIndex == null) {
+      setData(null);
+      return;
+    }
+    setLoadingDay(true);
+    setError(null);
+    try {
+      const d = await fetchAthleteDay(athlete.id, weekStart, dayIndex);
+      setData(d);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingDay(false);
+    }
+  }, [athlete, weekStart, dayIndex]);
+
+  useEffect(() => { void loadWeek(); }, [loadWeek]);
+  useEffect(() => { void loadDay(); }, [loadDay]);
+
+  const loggedSetsByPlannedId = useMemo(() => {
+    const m = new Map<string, TrainingLogSet[]>();
+    data?.log?.exercises.forEach(le => {
+      if (le.log.planned_exercise_id) m.set(le.log.planned_exercise_id, le.sets);
+    });
+    return m;
+  }, [data]);
 
   if (!athlete) return null;
 
   // ─── Mutation helpers ────────────────────────────────────────────────────
 
-  // Lazily ensure a session row exists before any write.
+  const performedOnDate =
+    data?.log?.session?.date ?? todayISO();
+
   const getOrCreateSession = async (): Promise<TrainingLogSession> => {
     if (data?.log?.session) return data.log.session;
-    const session = await ensureSession({
+    if (dayIndex == null) throw new Error('No day selected');
+    return ensureSession({
       athleteId: athlete.id,
       ownerId: athlete.owner_id,
-      date,
+      date: todayISO(),
       weekStart,
       dayIndex,
     });
-    return session;
   };
 
   const withSaving = async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -111,31 +148,37 @@ export function TodayScreen() {
     await withSaving(async () => {
       const session = await getOrCreateSession();
       await updateSession(session.id, patch);
-      await load();
+      await Promise.all([loadDay(), loadWeek()]);
     });
   };
 
-  const handlePatchBodyweight = async (bw: number | null) => {
-    await patchSession({ bodyweight_kg: bw });
+  const handlePatchPerformedOn = async (next: string) => {
+    if (next === performedOnDate) return;
+    await patchSession({ date: next });
   };
 
-  const handlePatchRaw = async (raw: RawScores, total: number | null) => {
-    await patchSession({
+  const handlePatchBodyweight = (bw: number | null) => patchSession({ bodyweight_kg: bw });
+
+  const handlePatchRaw = (raw: RawScores, total: number | null) =>
+    patchSession({
       raw_sleep: raw.sleep,
       raw_physical: raw.physical,
       raw_mood: raw.mood,
       raw_nutrition: raw.nutrition,
       raw_total: total,
     });
-  };
 
-  const handlePatchNotes = async (notes: string) => {
-    await patchSession({ session_notes: notes });
-  };
+  const handlePatchNotes = (notes: string) => patchSession({ session_notes: notes });
 
-  const handlePatchSessionRpe = async (rpe: number | null) => {
-    await patchSession({ session_rpe: rpe });
-  };
+  const handlePatchSessionRpe = (rpe: number | null) => patchSession({ session_rpe: rpe });
+
+  const ensureLogEx = async (planned: PlannedExerciseFull, sessionId: string) =>
+    ensureLogExercise({
+      sessionId,
+      plannedExerciseId: planned.exercise.id,
+      exerciseId: planned.exercise.exercise_id,
+      position: planned.exercise.position,
+    });
 
   const handleSaveSet = (planned: PlannedExerciseFull) => async (patch: {
     setNumber: number;
@@ -148,12 +191,7 @@ export function TodayScreen() {
   }) => {
     await withSaving(async () => {
       const session = await getOrCreateSession();
-      const logEx = await ensureLogExercise({
-        sessionId: session.id,
-        plannedExerciseId: planned.exercise.id,
-        exerciseId: planned.exercise.exercise_id,
-        position: planned.exercise.position,
-      });
+      const logEx = await ensureLogEx(planned, session.id);
       await upsertLoggedSet({
         logExerciseId: logEx.id,
         setNumber: patch.setNumber,
@@ -164,26 +202,20 @@ export function TodayScreen() {
         rpe: patch.rpe,
         status: patch.status,
       });
-      // If we just logged something but the exercise is still pending, bump it.
       if (logEx.status === 'pending' && patch.status !== 'pending') {
         await updateLogExercise(logEx.id, {
           status: 'in_progress',
           started_at: logEx.started_at ?? new Date().toISOString(),
         });
       }
-      await load();
+      await Promise.all([loadDay(), loadWeek()]);
     });
   };
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => async () => {
     await withSaving(async () => {
       const session = await getOrCreateSession();
-      const logEx = await ensureLogExercise({
-        sessionId: session.id,
-        plannedExerciseId: planned.exercise.id,
-        exerciseId: planned.exercise.exercise_id,
-        position: planned.exercise.position,
-      });
+      const logEx = await ensureLogEx(planned, session.id);
       const rows = expandSetLines(planned.setLines);
       for (const row of rows) {
         await upsertLoggedSet({
@@ -202,90 +234,43 @@ export function TodayScreen() {
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
-      await load();
+      await Promise.all([loadDay(), loadWeek()]);
     });
   };
 
   const handleUpdateExerciseNotes = (planned: PlannedExerciseFull) => async (notes: string) => {
     await withSaving(async () => {
       const session = await getOrCreateSession();
-      const logEx = await ensureLogExercise({
-        sessionId: session.id,
-        plannedExerciseId: planned.exercise.id,
-        exerciseId: planned.exercise.exercise_id,
-        position: planned.exercise.position,
-      });
+      const logEx = await ensureLogEx(planned, session.id);
       await updateLogExercise(logEx.id, { performed_notes: notes });
-      await load();
+      await loadDay();
     });
   };
 
   const handleMarkComplete = (planned: PlannedExerciseFull) => async () => {
     await withSaving(async () => {
       const session = await getOrCreateSession();
-      const logEx = await ensureLogExercise({
-        sessionId: session.id,
-        plannedExerciseId: planned.exercise.id,
-        exerciseId: planned.exercise.exercise_id,
-        position: planned.exercise.position,
-      });
+      const logEx = await ensureLogEx(planned, session.id);
       await updateLogExercise(logEx.id, {
         status: 'completed',
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
-      await load();
+      await Promise.all([loadDay(), loadWeek()]);
     });
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
-  const loggedExercisesByPlannedId = new Map<
-    string,
-    { exerciseId: string | null; status: string; notes: string; loggedSets: TrainingLogSet[] }
-  >();
-  data?.log?.exercises.forEach(le => {
-    if (le.log.planned_exercise_id) {
-      loggedExercisesByPlannedId.set(le.log.planned_exercise_id, {
-        exerciseId: le.log.id,
-        status: le.log.status,
-        notes: le.log.performed_notes,
-        loggedSets: le.sets,
-      });
-    }
-  });
+  const selectedOverviewDay =
+    dayIndex != null ? overview?.days.find(d => d.dayIndex === dayIndex) ?? null : null;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setDate(d => addDays(d, -1))}
-              className="p-2 hover:bg-gray-900 rounded-md text-gray-400 hover:text-white"
-              aria-label="Previous day"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <input
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="bg-gray-900 border border-gray-800 rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={() => setDate(d => addDays(d, 1))}
-              className="p-2 hover:bg-gray-900 rounded-md text-gray-400 hover:text-white"
-              aria-label="Next day"
-            >
-              <ChevronRight size={18} />
-            </button>
-            <button
-              onClick={() => setDate(toISODate(new Date()))}
-              className="text-xs text-gray-400 hover:text-white px-2 py-1.5 rounded-md hover:bg-gray-900 ml-1"
-            >
-              Today
-            </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs text-gray-400">
+            Logging as <span className="text-gray-200 font-medium">{athlete.name}</span>
           </div>
           <button
             onClick={signOut}
@@ -296,12 +281,27 @@ export function TodayScreen() {
           </button>
         </div>
 
-        {loading && (
-          <div className="flex items-center justify-center py-16 text-gray-500">
-            <Loader2 size={20} className="animate-spin mr-2" />
-            <span className="text-sm">Loading…</span>
+        <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+
+        {loadingWeek ? (
+          <div className="flex items-center justify-center py-8 text-gray-500">
+            <Loader2 size={18} className="animate-spin mr-2" />
+            <span className="text-sm">Loading week…</span>
           </div>
-        )}
+        ) : overview && overview.days.length === 0 ? (
+          <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
+            <p className="text-sm text-gray-300 font-semibold">No plan for this week</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Your coach hasn't written a plan yet. Try the previous or next week.
+            </p>
+          </div>
+        ) : overview ? (
+          <DayChipRow
+            days={overview.days}
+            selectedDayIndex={dayIndex}
+            onSelect={setDayIndex}
+          />
+        ) : null}
 
         {error && (
           <div className="px-3 py-2 border border-red-900 bg-red-950/50 rounded text-xs text-red-300">
@@ -310,11 +310,24 @@ export function TodayScreen() {
           </div>
         )}
 
-        {!loading && !error && data && (
+        {dayIndex != null && (
+          <PerformedOnField
+            date={performedOnDate}
+            sessionExists={!!data?.log?.session}
+            onChange={handlePatchPerformedOn}
+          />
+        )}
+
+        {loadingDay ? (
+          <div className="flex items-center justify-center py-12 text-gray-500">
+            <Loader2 size={18} className="animate-spin mr-2" />
+            <span className="text-sm">Loading session…</span>
+          </div>
+        ) : data && dayIndex != null ? (
           <>
             <SessionHeader
-              date={date}
-              athleteName={athlete.name}
+              date={performedOnDate}
+              slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
               session={data.log?.session ?? null}
               onPatchBodyweight={handlePatchBodyweight}
               onPatchRaw={handlePatchRaw}
@@ -324,26 +337,21 @@ export function TodayScreen() {
             />
 
             <div className="space-y-2">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mt-2 px-1">
-                Today's session
-              </div>
               {data.planned.length === 0 ? (
                 <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-                  <p className="text-sm text-gray-400">No session planned for this day.</p>
-                  <p className="text-xs text-gray-500 mt-1">Pick another date or check with your coach.</p>
+                  <p className="text-sm text-gray-400">No exercises in this slot.</p>
+                  <p className="text-xs text-gray-500 mt-1">Pick another day or check with your coach.</p>
                 </div>
               ) : (
                 data.planned.map(p => {
-                  const logged = loggedExercisesByPlannedId.get(p.exercise.id);
-                  const loggedExercise = data.log?.exercises.find(
-                    e => e.log.planned_exercise_id === p.exercise.id,
-                  )?.log ?? null;
+                  const loggedExercise =
+                    data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id)?.log ?? null;
                   return (
                     <ExerciseLogCard
                       key={p.exercise.id}
                       planned={p}
                       loggedExercise={loggedExercise}
-                      loggedSets={logged?.loggedSets ?? []}
+                      loggedSets={loggedSetsByPlannedId.get(p.exercise.id) ?? []}
                       onSaveSet={handleSaveSet(p)}
                       onLogAsPrescribed={handleLogAsPrescribed(p)}
                       onUpdateNotes={handleUpdateExerciseNotes(p)}
@@ -354,8 +362,37 @@ export function TodayScreen() {
               )}
             </div>
           </>
-        )}
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+function PerformedOnField({
+  date,
+  sessionExists,
+  onChange,
+}: {
+  date: string;
+  sessionExists: boolean;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center justify-between gap-3">
+      <div>
+        <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+          Performed on
+        </div>
+        <div className="text-xs text-gray-400 mt-0.5">
+          {sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
+        </div>
+      </div>
+      <input
+        type="date"
+        value={date}
+        onChange={e => onChange(e.target.value)}
+        className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+      />
     </div>
   );
 }
