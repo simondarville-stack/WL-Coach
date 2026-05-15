@@ -163,22 +163,14 @@ export function CoachDashboardV2({
           <h1 className="text-base font-medium text-gray-900">{greeting}, Coach</h1>
           <p className="text-sm text-gray-500 mt-0.5">{todayLabel}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/settings#dashboard-flags')}
-            title="Configure which attention flags surface on the dashboard"
-            className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600"
-          >
-            <Sliders size={13} />
-            Configure flags
-          </button>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="text-xs text-gray-500 hover:text-blue-600 underline-offset-2 hover:underline"
-          >
-            ← Back to original dashboard
-          </button>
-        </div>
+        <button
+          onClick={() => navigate('/settings#dashboard-flags')}
+          title="Configure which attention flags surface on the dashboard"
+          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600"
+        >
+          <Sliders size={13} />
+          Configure flags
+        </button>
       </div>
 
       {/* Quick stats */}

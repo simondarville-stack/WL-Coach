@@ -13,7 +13,6 @@ import { Athletes } from './components/Athletes';
 import { MacroCycles } from './components/macro/MacroCycles';
 import { TrainingLogPage } from './components/training-log/TrainingLogPage';
 import { GeneralSettings } from './components/GeneralSettings';
-import { CoachDashboard } from './components/CoachDashboard';
 import { CoachDashboardV2 } from './components/dashboard-v2/CoachDashboardV2';
 import { AnalysisPage } from './components/analysis/AnalysisPage';
 import { AthleteSelector } from './components/AthleteSelector';
@@ -33,7 +32,6 @@ import type { Athlete, TrainingGroup } from './lib/database.types';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
-  '/dashboard-v2': 'Dashboard (v2)',
   '/planner': 'Weekly planner',
   '/templates': 'Programme templates',
   '/macrocycles': 'Macro cycles',
@@ -159,8 +157,9 @@ function CoachApp() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<CoachDashboard onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} />} />
-              <Route path="/dashboard-v2" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} />} />
+              <Route path="/dashboard" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} />} />
+              {/* /dashboard-v2 was the staging route while v2 lived alongside v1; redirect any old bookmark to the now-primary dashboard */}
+              <Route path="/dashboard-v2" element={<Navigate to="/dashboard" replace />} />
               <Route path="/planner" element={<WeeklyPlanner />} />
               <Route path="/planner/:weekStart" element={<WeeklyPlanner />} />
               <Route path="/templates" element={<TemplatesPage />} />
