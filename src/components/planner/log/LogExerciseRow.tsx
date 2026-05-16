@@ -4,6 +4,10 @@
  * Both sides use the canonical StackedNotation visual: planned uses the
  * prescription string, actual reads back the set rows from the log.
  * Off-plan exercises (athlete added them) show only the actual side.
+ *
+ * Sentinel exercises (exercise_code === 'TEXT' / 'VIDEO' / 'IMAGE') are
+ * informational, not logged. Their content lives in planned.notes and
+ * we render it as the body of the row, no Plan/Did stack.
  */
 import type {
   PlannedExercise,
@@ -17,6 +21,7 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
+import { getSentinelType } from '../plannerUtils';
 
 const DELTA_BORDER: Record<DeltaState, string> = {
   matched: 'border-l-emerald-500',
@@ -58,6 +63,33 @@ export function LogExerciseRow({ planned, logged, sessionMessages }: LogExercise
   const variationNote = planned?.variation_note ?? null;
   const accentColor =
     planned?.exercise?.color ?? logged?.exercise?.color ?? null;
+
+  // Sentinel exercises (free-text blocks, video links, image references)
+  // are informational. Their content lives in `notes`, not in
+  // `prescription_raw`. Render the notes verbatim as the body.
+  const sentinelType = planned
+    ? getSentinelType(planned.exercise.exercise_code)
+    : null;
+  if (sentinelType === 'text') {
+    return (
+      <div className="flex border-l-4 border-l-gray-300">
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <p
+            style={{
+              fontSize: 'var(--text-caption)',
+              color: 'var(--color-text-primary)',
+              fontStyle: 'italic',
+              whiteSpace: 'pre-wrap',
+              lineHeight: 1.4,
+              margin: 0,
+            }}
+          >
+            {planned?.notes || '(empty note)'}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex border-l-4 ${DELTA_BORDER[delta.state]} ${DELTA_BG[delta.state]}`}>
@@ -136,8 +168,16 @@ export function LogExerciseRow({ planned, logged, sessionMessages }: LogExercise
           <div className="text-[11px] text-gray-400 italic mt-0.5">Not logged</div>
         ) : null}
 
+        {planned?.notes?.trim() && (
+          <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap">
+            <span className="text-gray-400 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">Note</span>
+            {planned.notes}
+          </p>
+        )}
+
         {logged?.log.performed_notes && (
           <p className="text-[10px] text-gray-500 italic mt-1 whitespace-pre-wrap">
+            <span className="text-gray-400 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">Athlete</span>
             {logged.log.performed_notes}
           </p>
         )}

@@ -11,6 +11,7 @@ import type { TrainingLogSet, TrainingLogExercise } from '../../../lib/database.
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
+import { getSentinelType } from '../../../components/planner/plannerUtils';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -58,6 +59,20 @@ export function ExerciseLogCard({
   const completedCount = loggedSets.filter(s => s.status === 'completed').length;
   const allCompleted = rows.length > 0 && completedCount >= rows.length;
   const accent = planned.exerciseDef?.color ?? '#3B82F6';
+
+  // Sentinel exercises (free-text blocks) carry their content in
+  // planned.exercise.notes, not in a structured prescription. Render
+  // them as an informational note card — no set entry, no checkmarks.
+  const sentinelType = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
+  if (sentinelType === 'text') {
+    return (
+      <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-3">
+        <p className="text-sm text-gray-200 italic whitespace-pre-wrap leading-relaxed">
+          {planned.exercise.notes || '(empty note)'}
+        </p>
+      </div>
+    );
+  }
 
   const handleLogAsPrescribed = async () => {
     setSavingPrescribed(true);
