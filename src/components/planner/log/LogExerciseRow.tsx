@@ -20,8 +20,11 @@ import {
   type DeltaState,
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
+import { useState } from 'react';
+import { MessageSquare, ChevronDown, ChevronRight } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../plannerUtils';
+import { LogCommentsThread } from './LogCommentsThread';
 
 const DELTA_BORDER: Record<DeltaState, string> = {
   matched: 'border-l-emerald-500',
@@ -48,9 +51,10 @@ interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
   logged: LoggedExerciseFull | null;
   sessionMessages: TrainingLogMessage[];
+  onPostComment?: (body: string) => Promise<void>;
 }
 
-export function LogExerciseRow({ planned, logged, sessionMessages }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment }: LogExerciseRowProps) {
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
   const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
 
@@ -182,12 +186,44 @@ export function LogExerciseRow({ planned, logged, sessionMessages }: LogExercise
           </p>
         )}
 
-        {exerciseMessages.length > 0 && (
-          <div className="mt-1 text-[10px] text-gray-500">
-            💬 {exerciseMessages.length} comment{exerciseMessages.length > 1 ? 's' : ''}
-          </div>
+        {logged && onPostComment && (
+          <ExerciseCommentsToggle
+            count={exerciseMessages.length}
+            messages={exerciseMessages}
+            onPost={onPostComment}
+          />
         )}
       </div>
+    </div>
+  );
+}
+
+function ExerciseCommentsToggle({
+  count,
+  messages,
+  onPost,
+}: {
+  count: number;
+  messages: TrainingLogMessage[];
+  onPost: (body: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-800"
+        aria-expanded={open}
+      >
+        <MessageSquare size={10} />
+        {count > 0 ? `${count} comment${count > 1 ? 's' : ''}` : 'Comment'}
+        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+      </button>
+      {open && (
+        <div className="mt-1 px-2 py-1.5 bg-gray-50 rounded border border-gray-100">
+          <LogCommentsThread compact messages={messages} onPost={onPost} />
+        </div>
+      )}
     </div>
   );
 }

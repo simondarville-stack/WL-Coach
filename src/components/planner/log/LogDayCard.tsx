@@ -4,11 +4,15 @@
  * Header shows session status, BW, RAW total, session RPE, and a comment
  * count. Body pairs each planned exercise with its logged counterpart;
  * off-plan exercises (athlete added them) appear at the bottom under a
- * label.
+ * label. Coach comments live in a collapsible session-level thread at
+ * the bottom.
  */
+import { useState } from 'react';
+import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
+import { LogCommentsThread } from './LogCommentsThread';
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Not started',
@@ -28,11 +32,21 @@ interface LogDayCardProps {
   dayName: string;
   plannedExercises: (PlannedExercise & { exercise: Exercise })[];
   dayLog: DayLog | null;
+  /** Returns true when the post succeeded so callers can refresh data. */
+  onPostSessionComment?: (sessionId: string, body: string) => Promise<void>;
+  onPostExerciseComment?: (sessionId: string, logExerciseId: string, body: string) => Promise<void>;
 }
 
-export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProps) {
+export function LogDayCard({
+  dayName,
+  plannedExercises,
+  dayLog,
+  onPostSessionComment,
+  onPostExerciseComment,
+}: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const status = session?.status ?? 'pending';
+  const [threadOpen, setThreadOpen] = useState(false);
 
   const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
   const offPlan: LoggedExerciseFull[] = [];
@@ -48,7 +62,8 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
     .slice()
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  const sessionCommentCount = dayLog?.messages.filter(m => !m.exercise_id).length ?? 0;
+  const sessionMessages = (dayLog?.messages ?? []).filter(m => !m.exercise_id);
+  const sessionCommentCount = sessionMessages.length;
 
   const performedDate = session?.date ?? null;
   const performedLabel = performedDate
@@ -56,6 +71,8 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
         weekday: 'short', month: 'short', day: 'numeric',
       })
     : null;
+
+  const canComment = !!session && !!onPostSessionComment;
 
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mb-3">
@@ -85,9 +102,6 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
             {session.duration_minutes != null && (
               <span><span className="text-gray-400">⏱</span> {session.duration_minutes}m</span>
             )}
-            {sessionCommentCount > 0 && (
-              <span>💬 {sessionCommentCount}</span>
-            )}
           </div>
         )}
       </div>
@@ -105,6 +119,11 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
             planned={ex}
             logged={loggedByPlannedId.get(ex.id) ?? null}
             sessionMessages={dayLog?.messages ?? []}
+            onPostComment={
+              session && onPostExerciseComment && loggedByPlannedId.get(ex.id)
+                ? body => onPostExerciseComment(session.id, loggedByPlannedId.get(ex.id)!.log.id, body)
+                : undefined
+            }
           />
         ))}
 
@@ -119,6 +138,11 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
                 planned={null}
                 logged={le}
                 sessionMessages={dayLog?.messages ?? []}
+                onPostComment={
+                  session && onPostExerciseComment
+                    ? body => onPostExerciseComment(session.id, le.log.id, body)
+                    : undefined
+                }
               />
             ))}
           </>
@@ -131,6 +155,30 @@ export function LogDayCard({ dayName, plannedExercises, dayLog }: LogDayCardProp
             <span className="text-gray-400 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">Notes</span>
             {session.session_notes}
           </p>
+        </div>
+      )}
+
+      {canComment && (
+        <div className="border-t border-gray-100">
+          <button
+            onClick={() => setThreadOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 text-[11px] text-gray-600 hover:bg-gray-50"
+            aria-expanded={threadOpen}
+          >
+            <span className="flex items-center gap-1.5">
+              <MessageSquare size={11} />
+              Session comments{sessionCommentCount > 0 ? ` (${sessionCommentCount})` : ''}
+            </span>
+            {threadOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </button>
+          {threadOpen && session && onPostSessionComment && (
+            <div className="px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+              <LogCommentsThread
+                messages={sessionMessages}
+                onPost={body => onPostSessionComment(session.id, body)}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

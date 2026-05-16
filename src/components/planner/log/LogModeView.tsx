@@ -2,13 +2,14 @@
  * LogModeView — coach-facing weekly Training Log.
  *
  * Renders the same week structure as the Plan mode (one block per visible
- * day) but pairs each planned exercise with what the athlete actually did.
- * Read-only in P2; P4 adds inline coach comments.
+ * day) but pairs each planned exercise with what the athlete actually
+ * did. P4 adds coach reply support: post comments to either the session
+ * (whole day) or one exercise (inline thread).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
-import { fetchWeekLog } from '../../../lib/trainingLogService';
+import { fetchWeekLog, addComment } from '../../../lib/trainingLogService';
 import type { DayLog } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
 
@@ -25,7 +26,7 @@ export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercise
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
-  const reload = () => {
+  const reload = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchWeekLog(athleteId, weekStart)
@@ -35,7 +36,33 @@ export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercise
       })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  };
+  }, [athleteId, weekStart]);
+
+  const postSessionComment = useCallback(
+    async (sessionId: string, body: string) => {
+      await addComment({
+        sessionId,
+        exerciseId: null,
+        message: body,
+        senderType: 'coach',
+      });
+      reload();
+    },
+    [reload],
+  );
+
+  const postExerciseComment = useCallback(
+    async (sessionId: string, logExerciseId: string, body: string) => {
+      await addComment({
+        sessionId,
+        exerciseId: logExerciseId,
+        message: body,
+        senderType: 'coach',
+      });
+      reload();
+    },
+    [reload],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +141,8 @@ export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercise
           dayName={day.name}
           plannedExercises={plannedExercises[day.index] ?? []}
           dayLog={weekLog[day.index] ?? null}
+          onPostSessionComment={postSessionComment}
+          onPostExerciseComment={postExerciseComment}
         />
       ))}
     </div>
