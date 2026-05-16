@@ -1,8 +1,9 @@
 /**
  * SessionHeader — date, status, BW, RAW, session notes.
  *
- * The header is always rendered above the exercise list. Bodyweight and
- * RAW scores fire patches as the athlete edits them.
+ * No RPE input. Per coach request, RPE is intentionally omitted from
+ * athlete logging. Bodyweight and readiness fire patches as the athlete
+ * edits them.
  */
 import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react';
@@ -17,7 +18,6 @@ interface SessionHeaderProps {
   onPatchBodyweight: (bw: number | null) => Promise<void>;
   onPatchRaw: (raw: RawScores, total: number | null) => Promise<void>;
   onPatchNotes: (notes: string) => Promise<void>;
-  onPatchSessionRpe: (rpe: number | null) => Promise<void>;
   saving?: boolean;
 }
 
@@ -42,14 +42,11 @@ export function SessionHeader({
   onPatchBodyweight,
   onPatchRaw,
   onPatchNotes,
-  onPatchSessionRpe,
   saving,
 }: SessionHeaderProps) {
   const [notes, setNotes] = useState(session?.session_notes ?? '');
-  const [rpeText, setRpeText] = useState(session?.session_rpe != null ? String(session.session_rpe) : '');
 
   useEffect(() => setNotes(session?.session_notes ?? ''), [session?.session_notes]);
-  useEffect(() => setRpeText(session?.session_rpe != null ? String(session.session_rpe) : ''), [session?.session_rpe]);
 
   const raw: RawScores = {
     sleep: session?.raw_sleep ?? null,
@@ -64,20 +61,6 @@ export function SessionHeader({
     month: 'short',
     day: 'numeric',
   });
-
-  const commitRpe = () => {
-    const trimmed = rpeText.trim();
-    if (trimmed === '') {
-      if (session?.session_rpe != null) void onPatchSessionRpe(null);
-      return;
-    }
-    const parsed = parseFloat(trimmed.replace(',', '.'));
-    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
-      if (session?.session_rpe !== parsed) void onPatchSessionRpe(parsed);
-    } else {
-      setRpeText(session?.session_rpe != null ? String(session.session_rpe) : '');
-    }
-  };
 
   return (
     <div className="space-y-3">
@@ -97,32 +80,7 @@ export function SessionHeader({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <BodyweightField value={session?.bodyweight_kg ?? null} onChange={onPatchBodyweight} />
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
-          <label className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
-            Session RPE
-          </label>
-          <div className="flex items-baseline gap-2">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={rpeText}
-              onChange={e => setRpeText(e.target.value)}
-              onBlur={commitRpe}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="—"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-lg font-semibold focus:outline-none focus:border-blue-500"
-            />
-            <span className="text-xs text-gray-500">/ 10</span>
-          </div>
-        </div>
-      </div>
+      <BodyweightField value={session?.bodyweight_kg ?? null} onChange={onPatchBodyweight} />
 
       <RawScoreDial value={raw} onChange={(next, total) => void onPatchRaw(next, total)} />
 

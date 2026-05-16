@@ -5,11 +5,12 @@
  * "Log as prescribed" copies planned values into performed and marks all
  * sets completed.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines } from './SetEntryRow';
+import { StackedNotation } from '../../../components/planner/StackedNotation';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -19,7 +20,6 @@ interface ExerciseLogCardProps {
     setNumber: number;
     performedLoad: number | null;
     performedReps: number | null;
-    rpe: number | null;
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
@@ -41,6 +41,12 @@ export function ExerciseLogCard({
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
   const [savingPrescribed, setSavingPrescribed] = useState(false);
+
+  // Sync notes on primitive dep so a parent re-render with a new
+  // loggedExercise reference doesn't reset what the user is typing.
+  useEffect(() => {
+    setNotes(loggedExercise?.performed_notes ?? '');
+  }, [loggedExercise?.performed_notes]);
 
   const rows = useMemo(() => expandSetLines(planned.setLines), [planned.setLines]);
   const setBySetNumber = useMemo(() => {
@@ -85,9 +91,13 @@ export function ExerciseLogCard({
               </span>
             )}
           </div>
-          <p className="text-[11px] text-gray-400 mt-0.5 truncate">
-            {planned.exercise.prescription_raw || '—'}
-          </p>
+          <div className="mt-0.5">
+            <StackedNotation
+              raw={planned.exercise.prescription_raw}
+              unit={planned.exercise.unit}
+              isCombo={planned.exercise.is_combo}
+            />
+          </div>
           {planned.exercise.variation_note && (
             <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">
               {planned.exercise.variation_note}

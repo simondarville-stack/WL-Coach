@@ -33,9 +33,14 @@ function AthleteRoutes() {
 }
 
 export function AthleteApp() {
+  // data-theme="dark" scopes the CSS-variable token set in tokens.css
+  // to the athlete subtree, so components that consume those tokens
+  // (StackedNotation, etc.) render legibly against the dark background.
   return (
-    <AuthProvider>
-      <AthleteRoutes />
-    </AuthProvider>
+    <div data-theme="dark">
+      <AuthProvider>
+        <AthleteRoutes />
+      </AuthProvider>
+    </div>
   );
 }

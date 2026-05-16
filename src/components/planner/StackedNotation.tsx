@@ -2,20 +2,22 @@
  * StackedNotation — the canonical EMOS prescription visual.
  *
  * Renders each set line as a column with load on top, a horizontal rule,
- * reps below, and "× N" to the right when more than one set repeats.
- * The default everywhere a prescription is shown, including the coach
- * Log mode and the athlete app.
+ * reps below, and a small set-count number to the right when more than
+ * one set repeats. The default everywhere a prescription is shown,
+ * including the coach Log mode and the athlete app.
  *
  *   80  85  90
  *    ─    ─    ─
- *    5    5    3   ×2
+ *    5    5    3   2
  *
- * The companion `LoggedStackedNotation` applies the same visual to
- * actually-performed sets from training_log_sets.
+ * Free-text prescriptions (`unit === 'free_text_reps'`) bypass the
+ * column layout entirely — the coach typed prose, so render it as prose.
+ *
+ * The companion `LoggedStackedNotation` applies the same column visual
+ * to actually-performed sets from training_log_sets.
  */
 import {
   parsePrescription,
-  parseFreeTextPrescription,
   parseComboPrescription,
 } from '../../lib/prescriptionParser';
 import type { TrainingLogSet } from '../../lib/database.types';
@@ -55,8 +57,10 @@ const ruleStyle: React.CSSProperties = {
 
 const empty: React.CSSProperties = {
   fontSize: 'var(--text-caption)',
-  color: 'var(--color-text-tertiary)',
-  fontStyle: 'italic',
+  color: 'var(--color-text-primary)',
+  fontWeight: 500,
+  whiteSpace: 'pre-wrap',
+  lineHeight: 1.4,
 };
 
 const stackColumn: React.CSSProperties = {
@@ -84,21 +88,18 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
   if (!raw) return null;
 
   if (unit === 'free_text_reps') {
-    const lines = parseFreeTextPrescription(raw);
-    if (lines.length === 0) return <span style={empty}>{raw}</span>;
     return (
-      <div style={stackRow}>
-        {lines.map((line, i) => (
-          <div key={i} style={stackPair}>
-            <div style={stackColumn}>
-              <span style={mono}>{line.loadText}</span>
-              <div style={ruleStyle} />
-              <span style={mono}>{line.reps}</span>
-            </div>
-            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
-          </div>
-        ))}
-      </div>
+      <span
+        style={{
+          fontSize: 'var(--text-caption)',
+          color: 'var(--color-text-primary)',
+          fontWeight: 500,
+          whiteSpace: 'pre-wrap',
+          lineHeight: 1.4,
+        }}
+      >
+        {raw}
+      </span>
     );
   }
 

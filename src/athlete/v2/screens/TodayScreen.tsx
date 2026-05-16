@@ -135,22 +135,38 @@ export function TodayScreen() {
     });
   };
 
-  const withSaving = async <T,>(fn: () => Promise<T>): Promise<T> => {
+  /**
+   * Run a save action without thrashing the page.
+   *
+   * - Don't reload after success. The components keep their local state
+   *   (input values, checkbox status), so the UI stays put.
+   * - The ONE exception: if a session row was just created (no log
+   *   session existed before this save), do a single reload so the
+   *   local `data.log.session` gets the real DB row with its id. This
+   *   prevents `getOrCreateSession` from racing on the next save.
+   * - On error, reload to recover and surface the error.
+   */
+  const runSave = async (fn: () => Promise<void>) => {
+    const wasNewSession = !data?.log?.session;
     setSaving(true);
     try {
-      return await fn();
+      await fn();
+      if (wasNewSession) {
+        await loadDay();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      await loadDay();
     } finally {
       setSaving(false);
     }
   };
 
-  const patchSession = async (patch: Parameters<typeof updateSession>[1]) => {
-    await withSaving(async () => {
+  const patchSession = (patch: Parameters<typeof updateSession>[1]) =>
+    runSave(async () => {
       const session = await getOrCreateSession();
       await updateSession(session.id, patch);
-      await Promise.all([loadDay(), loadWeek()]);
     });
-  };
 
   const handlePatchPerformedOn = async (next: string) => {
     if (next === performedOnDate) return;
@@ -170,8 +186,6 @@ export function TodayScreen() {
 
   const handlePatchNotes = (notes: string) => patchSession({ session_notes: notes });
 
-  const handlePatchSessionRpe = (rpe: number | null) => patchSession({ session_rpe: rpe });
-
   const ensureLogEx = async (planned: PlannedExerciseFull, sessionId: string) =>
     ensureLogExercise({
       sessionId,
@@ -180,16 +194,15 @@ export function TodayScreen() {
       position: planned.exercise.position,
     });
 
-  const handleSaveSet = (planned: PlannedExerciseFull) => async (patch: {
+  const handleSaveSet = (planned: PlannedExerciseFull) => (patch: {
     setNumber: number;
     performedLoad: number | null;
     performedReps: number | null;
-    rpe: number | null;
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
-  }) => {
-    await withSaving(async () => {
+  }) =>
+    runSave(async () => {
       const session = await getOrCreateSession();
       const logEx = await ensureLogEx(planned, session.id);
       await upsertLoggedSet({
@@ -199,7 +212,7 @@ export function TodayScreen() {
         plannedReps: patch.plannedReps,
         performedLoad: patch.performedLoad,
         performedReps: patch.performedReps,
-        rpe: patch.rpe,
+        rpe: null,
         status: patch.status,
       });
       if (logEx.status === 'pending' && patch.status !== 'pending') {
@@ -208,12 +221,10 @@ export function TodayScreen() {
           started_at: logEx.started_at ?? new Date().toISOString(),
         });
       }
-      await Promise.all([loadDay(), loadWeek()]);
     });
-  };
 
-  const handleLogAsPrescribed = (planned: PlannedExerciseFull) => async () => {
-    await withSaving(async () => {
+  const handleLogAsPrescribed = (planned: PlannedExerciseFull) => () =>
+    runSave(async () => {
       const session = await getOrCreateSession();
       const logEx = await ensureLogEx(planned, session.id);
       const rows = expandSetLines(planned.setLines);
@@ -234,21 +245,20 @@ export function TodayScreen() {
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
-      await Promise.all([loadDay(), loadWeek()]);
+      // "Log as prescribed" makes large local changes; a reload here is
+      // worth the small flicker because the user has stopped editing.
+      await loadDay();
     });
-  };
 
-  const handleUpdateExerciseNotes = (planned: PlannedExerciseFull) => async (notes: string) => {
-    await withSaving(async () => {
+  const handleUpdateExerciseNotes = (planned: PlannedExerciseFull) => (notes: string) =>
+    runSave(async () => {
       const session = await getOrCreateSession();
       const logEx = await ensureLogEx(planned, session.id);
       await updateLogExercise(logEx.id, { performed_notes: notes });
-      await loadDay();
     });
-  };
 
-  const handleMarkComplete = (planned: PlannedExerciseFull) => async () => {
-    await withSaving(async () => {
+  const handleMarkComplete = (planned: PlannedExerciseFull) => () =>
+    runSave(async () => {
       const session = await getOrCreateSession();
       const logEx = await ensureLogEx(planned, session.id);
       await updateLogExercise(logEx.id, {
@@ -256,9 +266,7 @@ export function TodayScreen() {
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
-      await Promise.all([loadDay(), loadWeek()]);
     });
-  };
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -339,7 +347,6 @@ export function TodayScreen() {
               onPatchBodyweight={handlePatchBodyweight}
               onPatchRaw={handlePatchRaw}
               onPatchNotes={handlePatchNotes}
-              onPatchSessionRpe={handlePatchSessionRpe}
               saving={saving}
             />
 

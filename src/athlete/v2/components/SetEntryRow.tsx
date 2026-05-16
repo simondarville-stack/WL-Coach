@@ -1,12 +1,13 @@
 /**
  * SetEntryRow — one logged set inside an ExerciseLogCard.
  *
- * Renders the planned values in placeholders and saves on blur. The status
- * button cycles pending → completed → skipped. Failed is reachable from a
- * long-press menu (added in P5 if asked for).
+ * - Leftmost cell is a tap-to-toggle checkbox: pending ↔ completed.
+ * - Then two numeric cells: kg and reps. No RPE.
+ * - useEffect deps are primitive so a parent re-render with a fresh
+ *   `logged` reference does NOT stomp the user's mid-edit local state.
  */
 import { useEffect, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
 
 export interface SetRowInput {
@@ -29,22 +30,10 @@ interface SetEntryRowProps {
     setNumber: number;
     performedLoad: number | null;
     performedReps: number | null;
-    rpe: number | null;
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
-}
-
-function nextStatus(s: TrainingLogSet['status'] | undefined): TrainingLogSet['status'] {
-  switch (s) {
-    case 'completed':
-      return 'skipped';
-    case 'skipped':
-      return 'pending';
-    default:
-      return 'completed';
-  }
 }
 
 function parseNumber(text: string): number | null {
@@ -57,36 +46,38 @@ function parseNumber(text: string): number | null {
 export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
   const [load, setLoad] = useState(logged?.performed_load != null ? String(logged.performed_load) : '');
   const [reps, setReps] = useState(logged?.performed_reps != null ? String(logged.performed_reps) : '');
-  const [rpe, setRpe] = useState(logged?.rpe != null ? String(logged.rpe) : '');
   const [status, setStatus] = useState<TrainingLogSet['status']>(logged?.status ?? 'pending');
   const [busy, setBusy] = useState(false);
 
-  // Keep local state in sync if parent re-fetches the row
+  // Sync local state from server data using primitive dependencies, so a
+  // parent re-render with a freshly-allocated `logged` object doesn't
+  // reset the inputs while the user is typing.
   useEffect(() => {
     setLoad(logged?.performed_load != null ? String(logged.performed_load) : '');
+  }, [logged?.performed_load]);
+  useEffect(() => {
     setReps(logged?.performed_reps != null ? String(logged.performed_reps) : '');
-    setRpe(logged?.rpe != null ? String(logged.rpe) : '');
+  }, [logged?.performed_reps]);
+  useEffect(() => {
     setStatus(logged?.status ?? 'pending');
-  }, [logged]);
+  }, [logged?.status]);
 
   const commit = async (overrides: Partial<{
     load: string;
     reps: string;
-    rpe: string;
     status: TrainingLogSet['status'];
   }> = {}) => {
     const nextLoad = overrides.load ?? load;
     const nextReps = overrides.reps ?? reps;
-    const nextRpe = overrides.rpe ?? rpe;
     const nextStat = overrides.status ?? status;
 
     setBusy(true);
     try {
+      const parsedReps = parseNumber(nextReps);
       await onSave({
         setNumber: input.setNumber,
         performedLoad: parseNumber(nextLoad),
-        performedReps: parseNumber(nextReps) != null ? Math.round(parseNumber(nextReps) as number) : null,
-        rpe: parseNumber(nextRpe),
+        performedReps: parsedReps != null ? Math.round(parsedReps) : null,
         status: nextStat,
         plannedLoad: input.plannedLoadValue,
         plannedReps: input.plannedRepsValue,
@@ -96,42 +87,46 @@ export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
     }
   };
 
-  const cycleStatus = () => {
-    const next = nextStatus(status);
+  const toggleComplete = () => {
+    const next: TrainingLogSet['status'] = status === 'completed' ? 'pending' : 'completed';
     setStatus(next);
     void commit({ status: next });
   };
 
   const isDone = status === 'completed';
-  const isSkipped = status === 'skipped';
 
   return (
     <div className={`flex items-center gap-2 px-2 py-2 rounded-lg ${
-      isDone ? 'bg-emerald-950/40 border border-emerald-900/50' :
-      isSkipped ? 'bg-red-950/40 border border-red-900/50' :
-      'bg-gray-900/50 border border-gray-800'
+      isDone
+        ? 'bg-emerald-950/40 border border-emerald-900/50'
+        : 'bg-gray-900/50 border border-gray-800'
     }`}>
       <button
-        onClick={cycleStatus}
+        onClick={toggleComplete}
         disabled={busy}
-        className={`flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center transition-colors ${
-          isDone ? 'bg-emerald-500 text-white' :
-          isSkipped ? 'bg-red-500 text-white' :
-          'bg-gray-800 text-gray-500 hover:bg-gray-700'
+        className={`flex-shrink-0 w-9 h-9 rounded-md flex items-center justify-center transition-colors border ${
+          isDone
+            ? 'bg-emerald-500 border-emerald-400 text-white'
+            : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
         }`}
-        title={`Status: ${status}`}
+        title={isDone ? 'Mark not done' : 'Mark done'}
+        aria-pressed={isDone}
       >
-        {isDone ? <Check size={16} /> : isSkipped ? <X size={16} /> : <span className="text-xs font-bold">{input.setNumber}</span>}
+        {isDone ? (
+          <Check size={18} strokeWidth={3} />
+        ) : (
+          <span className="text-xs font-bold">{input.setNumber}</span>
+        )}
       </button>
 
-      <div className="flex-1 grid grid-cols-3 gap-1.5">
+      <div className="flex-1 grid grid-cols-2 gap-1.5">
         <NumericCell
           value={load}
           placeholder={input.plannedLoadText}
           unit="kg"
           onChange={setLoad}
           onCommit={() => commit()}
-          disabled={busy || isSkipped}
+          disabled={busy}
         />
         <NumericCell
           value={reps}
@@ -139,15 +134,7 @@ export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
           unit="r"
           onChange={setReps}
           onCommit={() => commit()}
-          disabled={busy || isSkipped}
-        />
-        <NumericCell
-          value={rpe}
-          placeholder="RPE"
-          unit=""
-          onChange={setRpe}
-          onCommit={() => commit()}
-          disabled={busy || isSkipped}
+          disabled={busy}
         />
       </div>
     </div>
