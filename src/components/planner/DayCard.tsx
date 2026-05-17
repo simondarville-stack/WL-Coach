@@ -13,6 +13,7 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
+import { StackedNotation } from './StackedNotation';
 
 interface DayCardProps {
   dayIndex: number;

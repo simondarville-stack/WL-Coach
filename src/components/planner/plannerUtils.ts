@@ -7,7 +7,7 @@ import { getOwnerId } from '../../lib/ownerContext';
 import type { Exercise } from '../../lib/database.types';
 
 // ---------------------------------------------------------------------------
-// Exercise abbreviation — consolidates PlannerControlPanel and PrintWeekCompact
+// Exercise abbreviation used by PlannerControlPanel.
 // DOM-012/013: check exercise_code first, then category map, then initials.
 // ---------------------------------------------------------------------------
 

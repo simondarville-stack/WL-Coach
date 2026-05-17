@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { AthleteApp } from './athlete/AthleteApp';
+import { AthleteApp } from './athlete/v2/AthleteApp';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';

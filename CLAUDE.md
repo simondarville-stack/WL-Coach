@@ -24,11 +24,11 @@ to user-facing numeric formatting (comma decimals); UI labels remain English.
 - Macro cycle planning
 - Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`)
 - Printing weekly programmes
+- Training Log (rebuild in progress — see `TRAINING_LOG_PLAN.md`)
 
 **OUT OF SCOPE — disable in UI, keep code intact, do not delete:**
 
 - Analysis module
-- Training Log module
 
 Agents must hide every nav entry, route, and reachable entry point for the
 out-of-scope modules. The underlying code and database tables remain for
