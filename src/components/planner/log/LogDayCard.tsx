@@ -40,6 +40,10 @@ export function LogDayCard({
   const session = dayLog?.session ?? null;
   const status = session?.status ?? 'pending';
   const [threadOpen, setThreadOpen] = useState(false);
+  // Collapse the day body to allow rapid browsing across a roster.
+  // Defaults to expanded for completed sessions feel less critical
+  // to re-inspect; tweak the default later if it bothers the coach.
+  const [collapsed, setCollapsed] = useState(false);
 
   const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
   const offPlan: LoggedExerciseFull[] = [];
@@ -69,8 +73,18 @@ export function LogDayCard({
 
   return (
     <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mb-3">
-      <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-3 py-2 flex-wrap gap-2">
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        className={`w-full flex items-center justify-between bg-gray-50 ${collapsed ? '' : 'border-b border-gray-200'} px-3 py-2 flex-wrap gap-2 text-left hover:bg-gray-100 transition-colors`}
+        aria-expanded={!collapsed}
+        title={collapsed ? 'Expand' : 'Collapse'}
+      >
         <div className="flex items-center gap-3 flex-wrap">
+          {collapsed ? (
+            <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+          ) : (
+            <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
+          )}
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
           {status === 'completed' && (
             <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800">
@@ -80,6 +94,11 @@ export function LogDayCard({
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>
+            </span>
+          )}
+          {collapsed && sortedPlanned.length + offPlan.length > 0 && (
+            <span className="text-[10px] text-gray-500">
+              {sortedPlanned.length + offPlan.length} ex.
             </span>
           )}
         </div>
@@ -97,10 +116,15 @@ export function LogDayCard({
             {session.duration_minutes != null && (
               <span><span className="text-gray-400">⏱</span> {session.duration_minutes}m</span>
             )}
+            {collapsed && sessionCommentCount > 0 && (
+              <span><MessageSquare size={10} className="inline-block mr-0.5" />{sessionCommentCount}</span>
+            )}
           </div>
         )}
-      </div>
+      </button>
 
+      {!collapsed && (
+      <>
       <div className="divide-y divide-gray-100">
         {sortedPlanned.length === 0 && offPlan.length === 0 && (
           <div className="px-3 py-4 text-xs text-gray-400 italic text-center">
@@ -191,6 +215,8 @@ export function LogDayCard({
             Delete session
           </button>
         </div>
+      )}
+      </>
       )}
     </div>
   );

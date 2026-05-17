@@ -479,6 +479,10 @@ export function TodayScreen() {
       completed_at: new Date().toISOString(),
     });
     setMode('preview');
+    // The chip row reads status from `overview` (a separate query), so
+    // we need to refresh it here for the green check to appear without
+    // a page revisit.
+    await loadWeek();
   };
 
   const nextBonusDayIndex = useMemo(() => {
