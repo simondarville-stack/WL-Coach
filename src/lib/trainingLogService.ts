@@ -600,6 +600,28 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
 }
 
 /**
+ * Substitute the actually-performed exercise on a logged exercise row.
+ *
+ * Athlete UX: "I was supposed to do Snatch but did Power Snatch
+ * instead." Updates `exercise_id` on the existing training_log_exercises
+ * row while keeping `planned_exercise_id` intact, so coach Log shows
+ * Plan vs Did with the substitution visible.
+ */
+export async function setSubstitutedExercise(
+  logExerciseId: string,
+  newExerciseId: string,
+): Promise<TrainingLogExercise> {
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .update({ exercise_id: newExerciseId } as never)
+    .eq('id', logExerciseId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+/**
  * Delete a log_exercise and (cascade) its sets. Used for athlete
  * "I added this by mistake" and coach manual cleanup.
  */

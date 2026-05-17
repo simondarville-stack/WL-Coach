@@ -60,11 +60,21 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     ? sessionMessages.filter(m => m.exercise_id === logged.log.id)
     : [];
 
-  const exerciseName =
-    planned?.exercise?.name ?? logged?.exercise?.name ?? '(unknown exercise)';
+  // Detect substitution: planned slot exists, athlete logged a
+  // different exercise_id. We show the substituted name primarily and
+  // a small "↔ for <planned>" chip so the coach immediately sees what
+  // the slot was meant for.
+  const isSubstituted =
+    !!planned &&
+    !!logged?.exercise &&
+    logged.exercise.id !== planned.exercise.id;
+  const exerciseName = isSubstituted
+    ? logged!.exercise!.name
+    : planned?.exercise?.name ?? logged?.exercise?.name ?? '(unknown exercise)';
   const variationNote = planned?.variation_note ?? null;
-  const accentColor =
-    planned?.exercise?.color ?? logged?.exercise?.color ?? null;
+  const accentColor = isSubstituted
+    ? logged!.exercise!.color
+    : planned?.exercise?.color ?? logged?.exercise?.color ?? null;
 
   // Sentinel exercises (free-text blocks, video links, image references)
   // are informational. Their content lives in `notes`, not in
@@ -106,6 +116,14 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <div className="flex items-baseline gap-2 flex-wrap min-w-0">
             <h4 className="text-xs font-bold text-gray-900">{exerciseName}</h4>
+            {isSubstituted && (
+              <span
+                className="text-[9px] bg-purple-100 text-purple-800 font-medium px-1.5 py-0.5 rounded"
+                title={`Athlete substituted ${planned?.exercise?.name ?? 'the planned exercise'}`}
+              >
+                ⇄ for {planned?.exercise?.name}
+              </span>
+            )}
             {variationNote && (
               <span className="text-[10px] text-gray-500 italic">{variationNote}</span>
             )}

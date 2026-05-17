@@ -28,6 +28,7 @@ import {
   deleteLogExercise,
   deleteSession,
   deleteLoggedSet,
+  setSubstitutedExercise,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -93,6 +94,9 @@ export function TodayScreen() {
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [showBonusName, setShowBonusName] = useState(false);
+  /** When set, the exercise picker opens in substitution mode for a
+   *  specific planned exercise. */
+  const [substituting, setSubstituting] = useState<PlannedExerciseFull | null>(null);
   /**
    * 'preview' renders the session like the coach's print view, no
    * inputs. 'edit' is the full logging UI. Defaults to 'preview';
@@ -477,6 +481,35 @@ export function TodayScreen() {
     });
   };
 
+  const handleSubstitute = async (
+    planned: PlannedExerciseFull,
+    pick: { id: string; name: string; color: string | null },
+  ) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const logEx = await ensureLogEx(planned, session.id);
+      mergeLogExercise(logEx, planned.exerciseDef);
+      const updated = await setSubstitutedExercise(logEx.id, pick.id);
+      // Replace the exercise reference locally so the substitution
+      // surfaces without a full reload.
+      setData(prev => {
+        if (!prev?.log) return prev;
+        const partial = { id: pick.id, name: pick.name, color: pick.color } as unknown as
+          import('../../../lib/database.types').Exercise;
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(le =>
+              le.log.id === logEx.id ? { ...le, log: updated, exercise: partial } : le,
+            ),
+          },
+        };
+      });
+    });
+  };
+
   const handleAddOffPlanExercise = async (ex: { id: string; name: string; color: string | null }) => {
     await runSave(async () => {
       const session = await getOrCreateSession();
@@ -688,8 +721,9 @@ export function TodayScreen() {
                 </div>
               ) : (
                 data.planned.map(p => {
-                  const loggedExercise =
-                    data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id)?.log ?? null;
+                  const le = data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id);
+                  const loggedExercise = le?.log ?? null;
+                  const performed = le?.exercise ?? null;
                   return (
                     <ExerciseLogCard
                       key={p.exercise.id}
@@ -701,6 +735,8 @@ export function TodayScreen() {
                       onUpdateNotes={handleUpdateExerciseNotes(p)}
                       onMarkComplete={handleMarkComplete(p)}
                       onDeleteSet={handleDeleteSet}
+                      onRequestSubstitute={() => setSubstituting(p)}
+                      performedExercise={performed}
                     />
                   );
                 })
@@ -773,6 +809,13 @@ export function TodayScreen() {
           open={showPicker}
           onClose={() => setShowPicker(false)}
           onPick={handleAddOffPlanExercise}
+        />
+        <ExercisePicker
+          open={substituting != null}
+          onClose={() => setSubstituting(null)}
+          onPick={async pick => {
+            if (substituting) await handleSubstitute(substituting, pick);
+          }}
         />
         <BonusDayNameModal
           open={showBonusName}

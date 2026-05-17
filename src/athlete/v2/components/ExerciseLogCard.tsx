@@ -6,8 +6,8 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Plus } from 'lucide-react';
-import type { TrainingLogSet, TrainingLogExercise } from '../../../lib/database.types';
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
+import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
@@ -30,6 +30,11 @@ interface ExerciseLogCardProps {
   onMarkComplete: () => Promise<void>;
   /** Delete one logged set; passed through to SetEntryRow. */
   onDeleteSet?: (setId: string) => Promise<void>;
+  /** Open the substitution picker for this planned exercise. */
+  onRequestSubstitute?: () => void;
+  /** Optional: the actually-performed exercise after a substitution.
+   *  When provided and ≠ planned, the card surfaces the swap. */
+  performedExercise?: Exercise | null;
 }
 
 export function ExerciseLogCard({
@@ -41,6 +46,8 @@ export function ExerciseLogCard({
   onUpdateNotes,
   onMarkComplete,
   onDeleteSet,
+  onRequestSubstitute,
+  performedExercise,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
@@ -100,15 +107,38 @@ export function ExerciseLogCard({
           aria-hidden
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-bold text-white truncate">
-              {planned.exerciseDef?.name ?? '(unknown exercise)'}
+              {performedExercise && performedExercise.id !== planned.exerciseDef?.id
+                ? performedExercise.name
+                : planned.exerciseDef?.name ?? '(unknown exercise)'}
             </h3>
+            {performedExercise && performedExercise.id !== planned.exerciseDef?.id && (
+              <span
+                className="text-[9px] bg-purple-900/50 text-purple-200 font-medium px-1.5 py-0.5 rounded"
+                title={`Substituted for: ${planned.exerciseDef?.name ?? 'planned exercise'}`}
+              >
+                ⇄ for {planned.exerciseDef?.name}
+              </span>
+            )}
             {allCompleted && <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />}
             {planned.exercise.is_combo && (
               <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
                 Combo
               </span>
+            )}
+            {onRequestSubstitute && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onRequestSubstitute();
+                }}
+                className="p-1 text-gray-500 hover:text-purple-300"
+                title="Substitute this exercise"
+                aria-label="Substitute exercise"
+              >
+                <Replace size={12} />
+              </button>
             )}
           </div>
           <div className="mt-0.5">

@@ -28,7 +28,6 @@
  */
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
-import { getRawGuidance, type RawBand } from '../../../lib/trainingLogModel';
 
 interface LogWeekOverviewProps {
   visibleDays: Array<{ index: number; name: string }>;
@@ -95,12 +94,6 @@ function deltaClass(p: number | null): string {
   return 'text-red-700';
 }
 
-const BAND_FILL: Record<RawBand, string> = {
-  green: '#10b981',
-  amber: '#f59e0b',
-  red: '#ef4444',
-};
-
 export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogWeekOverviewProps) {
   // Planned aggregate across all visible days.
   const plannedAgg = visibleDays.reduce<Totals>(
@@ -157,14 +150,26 @@ export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogW
     })),
   ];
 
-  // RAW chart points (only days with a logged total).
+  // RAW chart points (only days with at least one pillar logged).
+  // We keep all four pillar values so the stacked histogram reveals
+  // whether a low total comes from sleep, soreness, etc.
   const rawPoints = stripDays
     .map(d => {
       const dayLog = Object.values(weekLog).find(l => l.session?.day_index === Number(d.key.slice(1)));
-      const total = dayLog?.session?.raw_total;
-      return total != null ? { label: d.label, total, guidance: getRawGuidance(total) } : null;
+      const s = dayLog?.session;
+      if (!s) return null;
+      const sleep = s.raw_sleep ?? 0;
+      const physical = s.raw_physical ?? 0;
+      const mood = s.raw_mood ?? 0;
+      const nutrition = s.raw_nutrition ?? 0;
+      if (sleep + physical + mood + nutrition === 0) return null;
+      return {
+        label: d.label,
+        sleep, physical, mood, nutrition,
+        total: s.raw_total ?? sleep + physical + mood + nutrition,
+      };
     })
-    .filter((x): x is { label: string; total: number; guidance: ReturnType<typeof getRawGuidance> } => x !== null);
+    .filter((x): x is { label: string; sleep: number; physical: number; mood: number; nutrition: number; total: number } => x !== null);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3 mb-3">
@@ -231,7 +236,7 @@ export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogW
           {rawPoints.length === 0 ? (
             <span className="text-[11px] text-gray-400 italic">No RAW scores logged</span>
           ) : (
-            <RawBarChart points={rawPoints} />
+            <RawStackedChart points={rawPoints} />
           )}
         </div>
       </div>
@@ -281,34 +286,86 @@ function DayDot({ label, status, isBonus }: { label: string; status: string; isB
   );
 }
 
-function RawBarChart({
+// Per-pillar fill colours, chosen for contrast against white and each
+// other. Stack order in the bar is bottom→top: sleep, physical, mood,
+// nutrition — matches the order pillars appear in the athlete dial.
+const PILLAR_FILL: Record<'sleep' | 'physical' | 'mood' | 'nutrition', string> = {
+  sleep:     '#3b82f6', // blue
+  physical:  '#10b981', // emerald
+  mood:      '#8b5cf6', // violet
+  nutrition: '#f59e0b', // amber
+};
+const PILLAR_LABEL: Record<'sleep' | 'physical' | 'mood' | 'nutrition', string> = {
+  sleep: 'Sleep',
+  physical: 'Physical',
+  mood: 'Mood',
+  nutrition: 'Nutrition',
+};
+const PILLARS = ['sleep', 'physical', 'mood', 'nutrition'] as const;
+
+function RawStackedChart({
   points,
 }: {
-  points: Array<{ label: string; total: number; guidance: ReturnType<typeof getRawGuidance> }>;
+  points: Array<{
+    label: string;
+    sleep: number;
+    physical: number;
+    mood: number;
+    nutrition: number;
+    total: number;
+  }>;
 }) {
-  // Max = 12 (Eleiko ceiling). Use a fixed scale so bars are comparable
-  // across weeks regardless of how many days are present.
-  const HEIGHT = 38;
-  const MAX = 12;
+  // Fixed 12-unit ceiling so each segment height reads as score/3 of
+  // a pillar slot — easy visual: if Sleep's blue is always small, the
+  // athlete chronically under-sleeps. Each pillar segment is at most
+  // 25% of the bar height.
+  const MAX_TOTAL = 12;
+
   return (
-    <div className="flex items-end gap-1.5 h-12 px-1">
-      {points.map((p, i) => {
-        const h = Math.max(2, (p.total / MAX) * HEIGHT);
-        const fill = p.guidance ? BAND_FILL[p.guidance.band] : '#9ca3af';
-        return (
-          <div key={i} className="flex flex-col items-center justify-end gap-0.5 flex-1 min-w-[16px]">
-            <span className="text-[9px] text-gray-700 font-semibold leading-none">{p.total}</span>
+    <div>
+      <div className="flex items-end gap-1 h-14">
+        {points.map((p, i) => (
+          <div key={i} className="flex flex-col items-stretch flex-1 min-w-[14px]">
+            <span className="text-[9px] text-gray-700 font-semibold text-center leading-none mb-0.5">
+              {p.total}
+            </span>
             <div
-              className="w-full rounded-sm"
-              style={{ height: h, backgroundColor: fill, minWidth: 6 }}
-              title={`${p.label}: ${p.total}/12 ${p.guidance?.label ?? ''}`}
-            />
-            <span className="text-[9px] text-gray-500 truncate w-full text-center">
-              {p.label.slice(0, 4)}
+              className="flex flex-col-reverse rounded-sm overflow-hidden bg-gray-100"
+              style={{ height: 40 }}
+              title={`${p.label} · Sleep ${p.sleep} · Phys ${p.physical} · Mood ${p.mood} · Nut ${p.nutrition}`}
+            >
+              {PILLARS.map(key => {
+                const v = p[key];
+                if (v <= 0) return null;
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      height: `${(v / MAX_TOTAL) * 100}%`,
+                      backgroundColor: PILLAR_FILL[key],
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <span className="text-[9px] text-gray-500 truncate w-full text-center mt-0.5">
+              {p.label.slice(0, 3)}
             </span>
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] text-gray-600">
+        {PILLARS.map(key => (
+          <span key={key} className="inline-flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-sm"
+              style={{ backgroundColor: PILLAR_FILL[key] }}
+              aria-hidden
+            />
+            {PILLAR_LABEL[key]}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
