@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
@@ -21,6 +21,7 @@ import {
   ensureLogExercise,
   updateLogExercise,
   upsertLoggedSet,
+  addOffPlanLogExercise,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -28,6 +29,8 @@ import {
 import type { TrainingLogSession, TrainingLogSet } from '../../../lib/database.types';
 import { SessionHeader } from '../components/SessionHeader';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
+import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
+import { ExercisePicker } from '../components/ExercisePicker';
 import type { RawScores } from '../components/RawScoreDial';
 import { expandSetLines } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
@@ -79,6 +82,7 @@ export function TodayScreen() {
   const [loadingDay, setLoadingDay] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const loadWeek = useCallback(async () => {
     if (!athlete) return;
@@ -133,6 +137,11 @@ export function TodayScreen() {
     });
     return m;
   }, [data]);
+
+  const offPlanLogged = useMemo(
+    () => (data?.log?.exercises ?? []).filter(le => !le.log.planned_exercise_id),
+    [data],
+  );
 
   if (!athlete) return null;
 
@@ -286,6 +295,43 @@ export function TodayScreen() {
       });
     });
 
+  const handleAddOffPlanExercise = async (ex: { id: string; name: string; color: string | null }) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      await addOffPlanLogExercise({
+        sessionId: session.id,
+        exerciseId: ex.id,
+      });
+      // Off-plan additions need a reload to pull the new log_exercise
+      // and its empty set list into local state.
+      await loadDay();
+    });
+  };
+
+  const handleSaveOffPlanSet = (logExerciseId: string) => (patch: {
+    setNumber: number;
+    performedLoad: number | null;
+    performedReps: number | null;
+    status: 'pending' | 'completed' | 'skipped' | 'failed';
+    plannedLoad: number | null;
+    plannedReps: number | null;
+  }) =>
+    runSave(async () => {
+      await upsertLoggedSet({
+        logExerciseId,
+        setNumber: patch.setNumber,
+        plannedLoad: null,
+        plannedReps: null,
+        performedLoad: patch.performedLoad,
+        performedReps: patch.performedReps,
+        rpe: null,
+        status: patch.status,
+      });
+      // Refresh so a newly-inserted set picks up its real id locally
+      // for subsequent edits.
+      await loadDay();
+    });
+
   // ─── Render ──────────────────────────────────────────────────────────────
 
   const selectedOverviewDay =
@@ -378,9 +424,33 @@ export function TodayScreen() {
                   );
                 })
               )}
+
+              {offPlanLogged.map(le => (
+                <OffPlanExerciseCard
+                  key={le.log.id}
+                  logExercise={le.log}
+                  exercise={le.exercise}
+                  loggedSets={le.sets}
+                  onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                />
+              ))}
+
+              <button
+                onClick={() => setShowPicker(true)}
+                className="w-full inline-flex items-center justify-center gap-2 text-xs text-gray-400 hover:text-white py-2.5 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl"
+              >
+                <Plus size={14} />
+                Add exercise
+              </button>
             </div>
           </>
         ) : null}
+
+        <ExercisePicker
+          open={showPicker}
+          onClose={() => setShowPicker(false)}
+          onPick={handleAddOffPlanExercise}
+        />
     </div>
   );
 }

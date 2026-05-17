@@ -588,6 +588,77 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
   if (error) throw error;
 }
 
+interface AddOffPlanExerciseArgs {
+  sessionId: string;
+  exerciseId: string;
+  /** Position to assign in the session. Defaults to last+1 if omitted. */
+  position?: number;
+}
+
+/**
+ * Create a log_exercise that is NOT linked to a planned_exercise.
+ * Used by the athlete app when they did something the coach didn't
+ * write into the plan. Status starts 'in_progress' so it shows up in
+ * coach Log as "Added by athlete".
+ */
+export async function addOffPlanLogExercise(
+  args: AddOffPlanExerciseArgs,
+): Promise<TrainingLogExercise> {
+  let position = args.position;
+  if (position == null) {
+    const { data: existing, error: pErr } = await supabase
+      .from('training_log_exercises')
+      .select('position')
+      .eq('session_id', args.sessionId)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw pErr;
+    position = ((existing as { position: number } | null)?.position ?? 0) + 1;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const insertRow: any = {
+    session_id: args.sessionId,
+    planned_exercise_id: null,
+    exercise_id: args.exerciseId,
+    position,
+    performed_raw: '',
+    performed_notes: '',
+    status: 'in_progress',
+    started_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+/**
+ * Lightweight exercise-search for the athlete picker.
+ * Filters by name (case-insensitive contains).
+ */
+export async function searchExercisesByName(
+  query: string,
+  limit = 20,
+): Promise<Array<{ id: string; name: string; color: string | null; category: string | null }>> {
+  const q = query.trim();
+  let qb = supabase.from('exercises').select('id, name, color, category').limit(limit);
+  if (q !== '') qb = qb.ilike('name', `%${q}%`);
+  qb = qb.order('name');
+  const { data, error } = await qb;
+  if (error) throw error;
+  return (data ?? []) as Array<{
+    id: string;
+    name: string;
+    color: string | null;
+    category: string | null;
+  }>;
+}
+
 export interface AddCommentArgs {
   sessionId: string;
   exerciseId?: string | null;

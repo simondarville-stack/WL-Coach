@@ -154,11 +154,32 @@ interface LoggedStackedNotationProps {
   includeIncomplete?: boolean;
 }
 
+const monoUp: React.CSSProperties = {
+  ...mono,
+  color: '#15803d', // emerald-700 — readable on white in coach Log
+};
+
+const monoDown: React.CSSProperties = {
+  ...mono,
+  color: '#b91c1c', // red-700
+};
+
+function compareToPlan(performed: number | null, planned: number | null): React.CSSProperties {
+  if (performed == null || planned == null) return mono;
+  if (performed > planned) return monoUp;
+  if (performed < planned) return monoDown;
+  return mono;
+}
+
 /**
  * Stacked-notation rendering for what an athlete actually performed.
  * One column per logged set; load on top, reps below, optional RPE
  * subscript. Sets in 'completed' status render in primary text; skipped
  * / failed sets render dimmed.
+ *
+ * Per-cell colour reflects performed vs the per-set planned value:
+ * green when performed > planned, red when <, default when equal or
+ * either side is missing.
  */
 export function LoggedStackedNotation({ sets, includeIncomplete = true }: LoggedStackedNotationProps) {
   const visible = sets.filter(s =>
@@ -171,8 +192,10 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
     <div style={stackRow}>
       {visible.map(s => {
         const dim = s.status !== 'completed';
-        const loadStyle = dim ? monoLight : mono;
-        const repsStyle = dim ? monoLight : mono;
+        // For non-completed (skipped/failed) sets keep the dimmed grey;
+        // delta colour only applies once a set is actually completed.
+        const loadStyle = dim ? monoLight : compareToPlan(s.performed_load, s.planned_load);
+        const repsStyle = dim ? monoLight : compareToPlan(s.performed_reps, s.planned_reps);
         return (
           <div key={s.id} style={stackPair} title={s.status}>
             <div style={stackColumn}>
