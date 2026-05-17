@@ -303,6 +303,12 @@ const PILLAR_LABEL: Record<'sleep' | 'physical' | 'mood' | 'nutrition', string> 
 };
 const PILLARS = ['sleep', 'physical', 'mood', 'nutrition'] as const;
 
+/**
+ * Heatmap-style grid: one row per pillar, one cell per logged day.
+ * Cell colour = pillar colour, opacity scales with the 1-3 score so
+ * a chronically low pillar reads as a row of pale cells. Cell heights
+ * stay compact and consistent regardless of how wide the parent grows.
+ */
 function RawStackedChart({
   points,
 }: {
@@ -315,56 +321,82 @@ function RawStackedChart({
     total: number;
   }>;
 }) {
-  // Fixed 12-unit ceiling so each segment height reads as score/3 of
-  // a pillar slot — easy visual: if Sleep's blue is always small, the
-  // athlete chronically under-sleeps. Each pillar segment is at most
-  // 25% of the bar height.
-  const MAX_TOTAL = 12;
+  const ROW_LABEL_W = 64;
+  // 1 -> 0.30, 2 -> 0.65, 3 -> 1.0
+  const alphaFor = (v: number) => (v <= 0 ? 0 : 0.3 + 0.35 * (v - 1));
 
   return (
-    <div>
-      <div className="flex items-end gap-1 h-14">
-        {points.map((p, i) => (
-          <div key={i} className="flex flex-col items-stretch flex-1 min-w-[14px]">
-            <span className="text-[9px] text-gray-700 font-semibold text-center leading-none mb-0.5">
-              {p.total}
-            </span>
+    <div className="space-y-1">
+      {/* Header row: day labels */}
+      <div className="flex items-center gap-1.5">
+        <div style={{ width: ROW_LABEL_W }} className="flex-shrink-0" />
+        <div className="flex gap-1 flex-1">
+          {points.map((p, i) => (
             <div
-              className="flex flex-col-reverse rounded-sm overflow-hidden bg-gray-100"
-              style={{ height: 40 }}
-              title={`${p.label} · Sleep ${p.sleep} · Phys ${p.physical} · Mood ${p.mood} · Nut ${p.nutrition}`}
+              key={i}
+              className="flex-1 min-w-0 text-[9px] uppercase tracking-wide text-gray-500 text-center truncate"
+              title={p.label}
             >
-              {PILLARS.map(key => {
-                const v = p[key];
-                if (v <= 0) return null;
-                return (
-                  <div
-                    key={key}
-                    style={{
-                      height: `${(v / MAX_TOTAL) * 100}%`,
-                      backgroundColor: PILLAR_FILL[key],
-                    }}
-                  />
-                );
-              })}
+              {p.label.slice(0, 4)}
             </div>
-            <span className="text-[9px] text-gray-500 truncate w-full text-center mt-0.5">
-              {p.label.slice(0, 3)}
-            </span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[9px] text-gray-600">
-        {PILLARS.map(key => (
-          <span key={key} className="inline-flex items-center gap-1">
+
+      {/* One row per pillar */}
+      {PILLARS.map(key => (
+        <div key={key} className="flex items-center gap-1.5">
+          <div
+            style={{ width: ROW_LABEL_W }}
+            className="flex-shrink-0 flex items-center gap-1 text-[10px] text-gray-700 font-medium"
+          >
             <span
-              className="w-2 h-2 rounded-sm"
+              className="w-2 h-2 rounded-sm flex-shrink-0"
               style={{ backgroundColor: PILLAR_FILL[key] }}
               aria-hidden
             />
             {PILLAR_LABEL[key]}
-          </span>
-        ))}
+          </div>
+          <div className="flex gap-1 flex-1">
+            {points.map((p, i) => {
+              const v = p[key];
+              return (
+                <div
+                  key={i}
+                  className="flex-1 h-4 rounded-sm border border-gray-100 flex items-center justify-center text-[9px] font-semibold text-white"
+                  style={{
+                    backgroundColor: v > 0 ? PILLAR_FILL[key] : '#f9fafb',
+                    opacity: v > 0 ? alphaFor(v) : 1,
+                  }}
+                  title={`${PILLAR_LABEL[key]} on ${p.label}: ${v || '—'}`}
+                >
+                  {v > 0 ? v : ''}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Footer row: per-day totals */}
+      <div className="flex items-center gap-1.5 pt-1">
+        <div
+          style={{ width: ROW_LABEL_W }}
+          className="flex-shrink-0 text-[10px] text-gray-500 font-semibold uppercase tracking-wide"
+        >
+          Total
+        </div>
+        <div className="flex gap-1 flex-1">
+          {points.map((p, i) => (
+            <div
+              key={i}
+              className="flex-1 text-[10px] text-center text-gray-800 font-semibold"
+              title={`${p.label}: ${p.total} / 12`}
+            >
+              {p.total}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

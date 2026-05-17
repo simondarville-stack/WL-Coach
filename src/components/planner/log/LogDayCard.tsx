@@ -43,10 +43,9 @@ export function LogDayCard({
   const session = dayLog?.session ?? null;
   const status = session?.status ?? 'pending';
   const [threadOpen, setThreadOpen] = useState(false);
-  // Collapse the day body to allow rapid browsing across a roster.
-  // Defaults to expanded for completed sessions feel less critical
-  // to re-inspect; tweak the default later if it bothers the coach.
-  const [collapsed, setCollapsed] = useState(false);
+  // Default collapsed so the week list scans easily for a roster. The
+  // coach clicks any header to drill into a day.
+  const [collapsed, setCollapsed] = useState(true);
 
   const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
   const offPlan: LoggedExerciseFull[] = [];
