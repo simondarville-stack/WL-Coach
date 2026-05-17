@@ -27,6 +27,7 @@ import {
   addComment,
   deleteLogExercise,
   deleteSession,
+  deleteLoggedSet,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -419,6 +420,26 @@ export function TodayScreen() {
     });
   };
 
+  const handleDeleteSet = async (setId: string) => {
+    if (!window.confirm('Delete this set?')) return;
+    await runSave(async () => {
+      await deleteLoggedSet(setId);
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(le => ({
+              ...le,
+              sets: le.sets.filter(s => s.id !== setId),
+            })),
+          },
+        };
+      });
+    });
+  };
+
   const handleDeleteOffPlanExercise = async (logExerciseId: string) => {
     if (!window.confirm('Remove this exercise from your log?')) return;
     await runSave(async () => {
@@ -679,6 +700,7 @@ export function TodayScreen() {
                       onLogAsPrescribed={handleLogAsPrescribed(p)}
                       onUpdateNotes={handleUpdateExerciseNotes(p)}
                       onMarkComplete={handleMarkComplete(p)}
+                      onDeleteSet={handleDeleteSet}
                     />
                   );
                 })
@@ -692,6 +714,7 @@ export function TodayScreen() {
                   loggedSets={le.sets}
                   onSaveSet={handleSaveOffPlanSet(le.log.id)}
                   onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                  onDeleteSet={handleDeleteSet}
                 />
               ))}
 

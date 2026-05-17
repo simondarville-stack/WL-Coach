@@ -17,6 +17,7 @@ import {
 } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
+import { LogWeekOverview } from './LogWeekOverview';
 import { CoachSetEditModal } from './CoachSetEditModal';
 
 interface LogModeViewProps {
@@ -171,6 +172,14 @@ export function LogModeView({
         <div className="px-3 py-8 text-center text-xs text-gray-400 italic">
           No active days in this week.
         </div>
+      )}
+
+      {!loading && !error && (visibleDays.length > 0 || Object.keys(weekLog).length > 0) && (
+        <LogWeekOverview
+          visibleDays={visibleDays}
+          plannedExercises={plannedExercises}
+          weekLog={weekLog}
+        />
       )}
 
       {!loading && !error && visibleDays.map(day => (

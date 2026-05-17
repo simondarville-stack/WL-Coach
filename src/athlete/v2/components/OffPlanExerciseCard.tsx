@@ -2,9 +2,13 @@
  * OffPlanExerciseCard — athlete-added (off-plan) exercise in Today.
  *
  * No prescription to compare against; the athlete adds sets ad hoc.
- * Each set still gets the two-button (✓ / ✗) status + kg / reps cells.
+ * - "+ Add set" appends ONE editable blank row. New rows pre-fill with
+ *   the last completed set's load/reps as the placeholder default, so
+ *   tapping ✓ on a row left untouched logs "same as last".
+ * - Each row gets a per-set delete (Trash) so accidental presses are
+ *   reversible.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
@@ -21,7 +25,10 @@ interface OffPlanExerciseCardProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
+  /** Remove the entire log_exercise (delete the card). */
   onDelete?: () => Promise<void>;
+  /** Remove a single set within this exercise. */
+  onDeleteSet?: (setId: string) => Promise<void>;
 }
 
 export function OffPlanExerciseCard({
@@ -30,20 +37,33 @@ export function OffPlanExerciseCard({
   loggedSets,
   onSaveSet,
   onDelete,
+  onDeleteSet,
 }: OffPlanExerciseCardProps) {
   const sortedSets = loggedSets.slice().sort((a, b) => a.set_number - b.set_number);
-  // Always show one extra blank row so the athlete can keep adding sets
-  // without an explicit "+ set" tap. The first time they fill it,
-  // the next reload (or local state below) reveals the next blank.
-  const [extraRows, setExtraRows] = useState(1);
+  /**
+   * Number of empty trailing rows the user has explicitly requested via
+   * "Add set". Persisted sets render before these; once a blank row's
+   * data is saved, loggedSets gains the row and we decrement the
+   * pendingBlanks count so it doesn't double up.
+   */
+  const [pendingBlanks, setPendingBlanks] = useState(0);
+
+  // When the parent merges in a freshly persisted set, drop one pending
+  // blank so we don't end up rendering persisted-set + blank stacked.
+  // Tracking via primitive dep (count) avoids reference-churn loops.
+  useEffect(() => {
+    setPendingBlanks(p => Math.max(0, p - 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortedSets.length]);
 
   const accent = exercise?.color ?? '#6b7280';
   const name = exercise?.name ?? '(unknown exercise)';
 
+  const lastCompleted = [...sortedSets].reverse().find(s => s.status === 'completed');
+  const defaultLoad = lastCompleted?.performed_load ?? null;
+  const defaultReps = lastCompleted?.performed_reps ?? null;
   const nextSetNumber =
-    sortedSets.length > 0
-      ? Math.max(...sortedSets.map(s => s.set_number)) + 1
-      : 1;
+    sortedSets.length > 0 ? Math.max(...sortedSets.map(s => s.set_number)) + 1 : 1;
 
   return (
     <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
@@ -87,34 +107,30 @@ export function OffPlanExerciseCard({
             }}
             logged={s}
             onSave={onSaveSet}
+            onDelete={onDeleteSet ? () => onDeleteSet(s.id) : undefined}
           />
         ))}
-        {Array.from({ length: extraRows }).map((_, i) => (
+        {Array.from({ length: pendingBlanks }).map((_, i) => (
           <SetEntryRow
             key={`blank-${nextSetNumber + i}`}
             input={{
               setNumber: nextSetNumber + i,
-              plannedRepsText: '—',
-              plannedLoadText: '—',
-              plannedRepsValue: null,
-              plannedLoadValue: null,
+              plannedRepsText: defaultReps != null ? String(defaultReps) : '—',
+              plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
+              plannedRepsValue: defaultReps,
+              plannedLoadValue: defaultLoad,
             }}
             logged={null}
-            onSave={async patch => {
-              await onSaveSet(patch);
-              // Once they've engaged with this blank row, reveal another
-              if (i === extraRows - 1) setExtraRows(n => n + 1);
-            }}
+            onSave={onSaveSet}
           />
         ))}
         <button
-          onClick={() => setExtraRows(n => n + 1)}
+          onClick={() => setPendingBlanks(n => n + 1)}
           className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 rounded"
         >
           <Plus size={12} />
           Add set
         </button>
-        {/* Suppress unused-var warning on logExercise: kept in API for parity */}
         <span className="hidden">{logExercise.id}</span>
       </div>
     </div>

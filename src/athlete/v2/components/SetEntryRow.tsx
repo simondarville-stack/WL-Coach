@@ -8,7 +8,7 @@
  *   `logged` reference does NOT stomp the user's mid-edit local state.
  */
 import { useEffect, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
 
 export interface SetRowInput {
@@ -35,6 +35,8 @@ interface SetEntryRowProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
+  /** Optional per-set delete: when present, renders a trash icon. */
+  onDelete?: () => Promise<void>;
 }
 
 function parseNumber(text: string): number | null {
@@ -44,7 +46,7 @@ function parseNumber(text: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
+export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProps) {
   const [load, setLoad] = useState(logged?.performed_load != null ? String(logged.performed_load) : '');
   const [reps, setReps] = useState(logged?.performed_reps != null ? String(logged.performed_reps) : '');
   const [status, setStatus] = useState<TrainingLogSet['status']>(logged?.status ?? 'pending');
@@ -176,6 +178,17 @@ export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
           disabled={busy || isSkipped}
         />
       </div>
+      {onDelete && (
+        <button
+          onClick={() => void onDelete()}
+          disabled={busy}
+          className="p-1.5 text-gray-500 hover:text-red-400 flex-shrink-0"
+          title="Delete this set"
+          aria-label="Delete set"
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
     </div>
   );
 }

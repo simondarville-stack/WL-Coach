@@ -28,6 +28,8 @@ interface ExerciseLogCardProps {
   onLogAsPrescribed: () => Promise<void>;
   onUpdateNotes: (notes: string) => Promise<void>;
   onMarkComplete: () => Promise<void>;
+  /** Delete one logged set; passed through to SetEntryRow. */
+  onDeleteSet?: (setId: string) => Promise<void>;
 }
 
 export function ExerciseLogCard({
@@ -38,6 +40,7 @@ export function ExerciseLogCard({
   onLogAsPrescribed,
   onUpdateNotes,
   onMarkComplete,
+  onDeleteSet,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
@@ -159,39 +162,74 @@ export function ExerciseLogCard({
               </div>
 
               <div className="space-y-1.5">
-                {rows.map(row => (
-                  <SetEntryRow
-                    key={row.setNumber}
-                    input={row}
-                    logged={setBySetNumber.get(row.setNumber) ?? null}
-                    onSave={onSaveSet}
-                  />
-                ))}
-                {/* Extra sets the athlete adds beyond the planned ones. */}
+                {rows.map(row => {
+                  const setLogged = setBySetNumber.get(row.setNumber) ?? null;
+                  return (
+                    <SetEntryRow
+                      key={row.setNumber}
+                      input={row}
+                      logged={setLogged}
+                      onSave={onSaveSet}
+                      onDelete={
+                        setLogged && onDeleteSet ? () => onDeleteSet(setLogged.id) : undefined
+                      }
+                    />
+                  );
+                })}
+                {/* Extra sets the athlete adds beyond the planned ones.
+                    Persisted extras render with their saved values; a
+                    single tail blank row appears for each click of
+                    "Add set". On save, the blank gets absorbed by the
+                    persisted view. */}
                 {(() => {
                   const plannedMax = rows.length;
                   const loggedExtraSets = loggedSets
                     .filter(s => s.set_number > plannedMax)
                     .sort((a, b) => a.set_number - b.set_number);
-                  const totalExtras = Math.max(loggedExtraSets.length, extraRows);
-                  return Array.from({ length: totalExtras }).map((_, i) => {
-                    const setNumber = plannedMax + 1 + i;
-                    const logged = loggedExtraSets.find(s => s.set_number === setNumber) ?? null;
-                    return (
-                      <SetEntryRow
-                        key={`extra-${setNumber}`}
-                        input={{
-                          setNumber,
-                          plannedRepsText: '—',
-                          plannedLoadText: '—',
-                          plannedRepsValue: null,
-                          plannedLoadValue: null,
-                        }}
-                        logged={logged}
-                        onSave={onSaveSet}
-                      />
-                    );
-                  });
+                  const blanks = Math.max(0, extraRows - loggedExtraSets.length);
+                  // Last completed values used as placeholder defaults
+                  // for new blank rows, so a one-tap "same as last" works.
+                  const lastCompleted = [...loggedSets]
+                    .filter(s => s.status === 'completed')
+                    .sort((a, b) => b.set_number - a.set_number)[0];
+                  const defaultLoad = lastCompleted?.performed_load ?? null;
+                  const defaultReps = lastCompleted?.performed_reps ?? null;
+                  return (
+                    <>
+                      {loggedExtraSets.map(s => (
+                        <SetEntryRow
+                          key={`extra-${s.set_number}`}
+                          input={{
+                            setNumber: s.set_number,
+                            plannedRepsText: '—',
+                            plannedLoadText: '—',
+                            plannedRepsValue: null,
+                            plannedLoadValue: null,
+                          }}
+                          logged={s}
+                          onSave={onSaveSet}
+                          onDelete={onDeleteSet ? () => onDeleteSet(s.id) : undefined}
+                        />
+                      ))}
+                      {Array.from({ length: blanks }).map((_, i) => {
+                        const setNumber = plannedMax + loggedExtraSets.length + 1 + i;
+                        return (
+                          <SetEntryRow
+                            key={`blank-${setNumber}`}
+                            input={{
+                              setNumber,
+                              plannedRepsText: defaultReps != null ? String(defaultReps) : '—',
+                              plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
+                              plannedRepsValue: defaultReps,
+                              plannedLoadValue: defaultLoad,
+                            }}
+                            logged={null}
+                            onSave={onSaveSet}
+                          />
+                        );
+                      })}
+                    </>
+                  );
                 })()}
               </div>
               <button
