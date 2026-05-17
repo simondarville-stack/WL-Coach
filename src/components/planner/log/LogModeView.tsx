@@ -15,8 +15,9 @@ import {
   deleteLogExercise,
   deleteSession,
 } from '../../../lib/trainingLogService';
-import type { DayLog } from '../../../lib/trainingLogModel';
+import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
+import { CoachSetEditModal } from './CoachSetEditModal';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -38,6 +39,7 @@ export function LogModeView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [editingLogged, setEditingLogged] = useState<LoggedExerciseFull | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -181,6 +183,7 @@ export function LogModeView({
           onPostExerciseComment={postExerciseComment}
           onDeleteLogExercise={onDeleteLogExercise}
           onDeleteSession={onDeleteSession}
+          onEditLoggedExercise={setEditingLogged}
         />
       ))}
 
@@ -215,6 +218,17 @@ export function LogModeView({
           </>
         );
       })()}
+
+      {editingLogged && (
+        <CoachSetEditModal
+          open
+          exerciseName={editingLogged.exercise?.name ?? '(unknown exercise)'}
+          logExerciseId={editingLogged.log.id}
+          loggedSets={editingLogged.sets}
+          onClose={() => setEditingLogged(null)}
+          onChanged={reload}
+        />
+      )}
     </div>
   );
 }

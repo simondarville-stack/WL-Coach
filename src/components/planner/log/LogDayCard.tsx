@@ -26,6 +26,8 @@ interface LogDayCardProps {
   /** Coach actions: delete a logged exercise or the whole session. */
   onDeleteLogExercise?: (logExerciseId: string) => Promise<void>;
   onDeleteSession?: (sessionId: string) => Promise<void>;
+  /** Coach action: open the inline set editor for one logged exercise. */
+  onEditLoggedExercise?: (logged: LoggedExerciseFull) => void;
 }
 
 export function LogDayCard({
@@ -36,6 +38,7 @@ export function LogDayCard({
   onPostExerciseComment,
   onDeleteLogExercise,
   onDeleteSession,
+  onEditLoggedExercise,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const status = session?.status ?? 'pending';
@@ -132,19 +135,23 @@ export function LogDayCard({
           </div>
         )}
 
-        {sortedPlanned.map(ex => (
-          <LogExerciseRow
-            key={ex.id}
-            planned={ex}
-            logged={loggedByPlannedId.get(ex.id) ?? null}
-            sessionMessages={dayLog?.messages ?? []}
-            onPostComment={
-              session && onPostExerciseComment && loggedByPlannedId.get(ex.id)
-                ? body => onPostExerciseComment(session.id, loggedByPlannedId.get(ex.id)!.log.id, body)
-                : undefined
-            }
-          />
-        ))}
+        {sortedPlanned.map(ex => {
+          const ledg = loggedByPlannedId.get(ex.id) ?? null;
+          return (
+            <LogExerciseRow
+              key={ex.id}
+              planned={ex}
+              logged={ledg}
+              sessionMessages={dayLog?.messages ?? []}
+              onPostComment={
+                session && onPostExerciseComment && ledg
+                  ? body => onPostExerciseComment(session.id, ledg.log.id, body)
+                  : undefined
+              }
+              onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
+            />
+          );
+        })}
 
         {offPlan.length > 0 && (
           <>
@@ -165,6 +172,7 @@ export function LogDayCard({
                 onDelete={
                   onDeleteLogExercise ? () => onDeleteLogExercise(le.log.id) : undefined
                 }
+                onEdit={onEditLoggedExercise ? () => onEditLoggedExercise(le) : undefined}
               />
             ))}
           </>

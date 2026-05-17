@@ -21,7 +21,7 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../plannerUtils';
 import { LogCommentsThread } from './LogCommentsThread';
@@ -48,9 +48,11 @@ interface LogExerciseRowProps {
   onPostComment?: (body: string) => Promise<void>;
   /** Coach-side delete: drops the entire log_exercise + sets. */
   onDelete?: () => Promise<void>;
+  /** Coach-side inline edit: opens the set-edit modal. */
+  onEdit?: () => void;
 }
 
-export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
   const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
 
@@ -116,6 +118,16 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
           <div className="flex items-center gap-2">
             {logged && logged.log.status === 'completed' && (
               <span className="text-[10px] text-emerald-700 font-semibold">Done</span>
+            )}
+            {logged && onEdit && (
+              <button
+                onClick={onEdit}
+                className="p-1 text-gray-400 hover:text-blue-600"
+                title="Edit the athlete's log for this exercise"
+                aria-label="Edit log"
+              >
+                <Pencil size={11} />
+              </button>
             )}
             {onDelete && (
               <button
