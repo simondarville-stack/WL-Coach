@@ -13,6 +13,7 @@
   /* -- Typography: font families -- */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-stacked: "Latin Modern Math", "Latin Modern Roman", "CMU Serif", "Computer Modern Serif", "Computer Modern", Cambria, "Times New Roman", serif;
 
   /* -- Typography: size scale (5 sizes only) -- */
   --text-page-title: 22px;
@@ -376,8 +377,9 @@ samp {
   display: block;
   width: 100%;
   text-align: center;
-  font-size: 11px;
-  font-family: var(--font-mono);
+  font-size: 12px;
+  font-family: var(--font-stacked);
+  font-variant-numeric: tabular-nums lining-nums;
   font-weight: 500;
   user-select: none;
   border: none;
@@ -424,7 +426,13 @@ samp {
   color: var(--color-text-tertiary);
   background: transparent;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.1s, color 0.1s, border-color 0.1s;
+}
+.pgrid-wrap:hover .pgrid-add-btn,
+.pgrid-add-btn:hover,
+.pgrid-add-btn:focus-visible {
+  opacity: 1;
 }
 .pgrid-add-btn:hover {
   color: var(--color-accent);
@@ -438,8 +446,9 @@ samp {
 .pgrid-editing {
   width: 100%;
   text-align: center;
-  font-size: 11px;
-  font-family: var(--font-mono);
+  font-size: 12px;
+  font-family: var(--font-stacked);
+  font-variant-numeric: tabular-nums lining-nums;
   background: var(--color-accent-muted);
   border: 0.5px solid var(--color-accent);
   border-radius: var(--radius-sm);

@@ -459,6 +459,7 @@ export function PrescriptionGrid({
 
   return (
     <div
+      className="pgrid-wrap"
       style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
     >
