@@ -74,11 +74,25 @@ export function SetEntryRow({ input, logged, onSave }: SetEntryRowProps) {
 
     setBusy(true);
     try {
+      const parsedLoad = parseNumber(nextLoad);
       const parsedReps = parseNumber(nextReps);
+      // When marking completed without explicit values, assume the
+      // athlete executed the set as prescribed. This means tapping the
+      // checkmark on a planned set is enough — no manual entry needed
+      // if everything went as written.
+      const completing = nextStat === 'completed';
+      const performedLoad =
+        parsedLoad ?? (completing ? input.plannedLoadValue : null);
+      const performedReps =
+        parsedReps != null
+          ? Math.round(parsedReps)
+          : completing
+          ? input.plannedRepsValue
+          : null;
       await onSave({
         setNumber: input.setNumber,
-        performedLoad: parseNumber(nextLoad),
-        performedReps: parsedReps != null ? Math.round(parsedReps) : null,
+        performedLoad,
+        performedReps,
         status: nextStat,
         plannedLoad: input.plannedLoadValue,
         plannedReps: input.plannedRepsValue,

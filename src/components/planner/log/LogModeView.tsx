@@ -18,9 +18,17 @@ interface LogModeViewProps {
   weekStart: string;
   visibleDays: Array<{ index: number; name: string }>;
   plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
+  /** day_labels from the week plan, used to label bonus athlete-added days. */
+  dayLabels?: Record<number, string> | null;
 }
 
-export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercises }: LogModeViewProps) {
+export function LogModeView({
+  athleteId,
+  weekStart,
+  visibleDays,
+  plannedExercises,
+  dayLabels,
+}: LogModeViewProps) {
   const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +153,38 @@ export function LogModeView({ athleteId, weekStart, visibleDays, plannedExercise
           onPostExerciseComment={postExerciseComment}
         />
       ))}
+
+      {/* Bonus athlete-added days: sessions whose day_index isn't in
+          visibleDays. Labelled from day_labels when present, else
+          falls back to "Extra N". Rendered under a separator. */}
+      {!loading && !error && (() => {
+        const visibleIndices = new Set(visibleDays.map(d => d.index));
+        const extras = Object.keys(weekLog)
+          .map(k => Number(k))
+          .filter(idx => !visibleIndices.has(idx))
+          .sort((a, b) => a - b);
+        if (extras.length === 0) return null;
+        return (
+          <>
+            <div className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 mt-3 mb-2 px-1">
+              Added by athlete
+            </div>
+            {extras.map((idx, i) => {
+              const label = dayLabels?.[idx]?.trim() || `Extra ${i + 1}`;
+              return (
+                <LogDayCard
+                  key={`extra-${idx}`}
+                  dayName={label}
+                  plannedExercises={[]}
+                  dayLog={weekLog[idx] ?? null}
+                  onPostSessionComment={postSessionComment}
+                  onPostExerciseComment={postExerciseComment}
+                />
+              );
+            })}
+          </>
+        );
+      })()}
     </div>
   );
 }

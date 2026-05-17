@@ -685,6 +685,41 @@ export async function createBonusSession(args: {
 }
 
 /**
+ * Patch one entry in week_plans.day_labels for an athlete's week.
+ * Used by athlete add-bonus-day flow so the coach's plan reflects the
+ * athlete-given name. Resolves the week_plan via resolveAthleteWeekPlanId
+ * (individual first, else group plan).
+ *
+ * If no week_plan exists yet, the label is silently dropped — the bonus
+ * session row still has its day_index, just without a label, falling
+ * back to the auto-label.
+ */
+export async function setAthleteDayLabel(args: {
+  athleteId: string;
+  weekStart: string;
+  dayIndex: number;
+  label: string;
+}): Promise<void> {
+  const { weekPlanId } = await resolveAthleteWeekPlanId(args.athleteId, args.weekStart);
+  if (!weekPlanId) return;
+
+  const { data: existing, error: fErr } = await supabase
+    .from('week_plans')
+    .select('day_labels')
+    .eq('id', weekPlanId)
+    .maybeSingle();
+  if (fErr) throw fErr;
+
+  const labels = ((existing as { day_labels: Record<number, string> | null } | null)?.day_labels) ?? {};
+  const nextLabels = { ...labels, [args.dayIndex]: args.label };
+  const { error } = await supabase
+    .from('week_plans')
+    .update({ day_labels: nextLabels } as never)
+    .eq('id', weekPlanId);
+  if (error) throw error;
+}
+
+/**
  * Lightweight exercise-search for the athlete picker.
  * Filters by name (case-insensitive contains).
  */

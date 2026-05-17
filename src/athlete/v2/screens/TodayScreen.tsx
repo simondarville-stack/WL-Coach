@@ -23,6 +23,7 @@ import {
   upsertLoggedSet,
   addOffPlanLogExercise,
   createBonusSession,
+  setAthleteDayLabel,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -33,6 +34,7 @@ import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
 import { ExercisePicker } from '../components/ExercisePicker';
+import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import type { RawScores } from '../components/RawScoreDial';
 import { expandSetLines } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
@@ -85,6 +87,7 @@ export function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [showBonusName, setShowBonusName] = useState(false);
   /**
    * 'preview' renders the session like the coach's print view, no
    * inputs. 'edit' is the full logging UI. Defaults to 'preview';
@@ -360,13 +363,21 @@ export function TodayScreen() {
     setMode('preview');
   };
 
-  const handleAddBonusDay = async () => {
-    if (!overview) return;
-    const existingMax = overview.days.reduce(
-      (max, d) => Math.max(max, d.dayIndex),
-      overview.activeDays.length > 0 ? Math.max(...overview.activeDays) : 0,
-    );
-    const nextDayIndex = existingMax + 1;
+  const nextBonusDayIndex = useMemo(() => {
+    if (!overview) return null;
+    const all = [...overview.days.map(d => d.dayIndex), ...overview.activeDays];
+    return all.length > 0 ? Math.max(...all) + 1 : 1;
+  }, [overview]);
+
+  const defaultBonusName = useMemo(() => {
+    if (!overview) return 'Extra 1';
+    const bonusCount = overview.days.filter(d => d.isBonus).length + 1;
+    return `Extra ${bonusCount}`;
+  }, [overview]);
+
+  const handleConfirmBonusDay = async (name: string) => {
+    if (!overview || nextBonusDayIndex == null) return;
+    const dayIdx = nextBonusDayIndex;
     setSaving(true);
     setError(null);
     try {
@@ -374,14 +385,29 @@ export function TodayScreen() {
         athleteId: athlete.id,
         ownerId: athlete.owner_id,
         weekStart,
-        dayIndex: nextDayIndex,
+        dayIndex: dayIdx,
         date: todayISO(),
       });
+      // Persist the athlete-given name into the week_plan's day_labels
+      // so it shows in the chip row and on the coach side (best-effort:
+      // silently no-op if no week_plan exists yet).
+      try {
+        await setAthleteDayLabel({
+          athleteId: athlete.id,
+          weekStart,
+          dayIndex: dayIdx,
+          label: name,
+        });
+      } catch (e) {
+        // Non-fatal — keep the session, just lose the label.
+        console.warn('Could not set bonus day label:', e);
+      }
       await loadWeek();
-      setDayIndex(nextDayIndex);
+      setDayIndex(dayIdx);
       setMode('edit');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      throw e;
     } finally {
       setSaving(false);
     }
@@ -444,7 +470,7 @@ export function TodayScreen() {
                 <p className="text-[10px] text-gray-500 italic">Showing your group's plan.</p>
               ) : <span />}
               <button
-                onClick={handleAddBonusDay}
+                onClick={() => setShowBonusName(true)}
                 disabled={saving}
                 className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-1 rounded border border-dashed border-gray-700 hover:border-gray-500 disabled:opacity-50"
                 title="Log an extra training day this week"
@@ -575,6 +601,12 @@ export function TodayScreen() {
           open={showPicker}
           onClose={() => setShowPicker(false)}
           onPick={handleAddOffPlanExercise}
+        />
+        <BonusDayNameModal
+          open={showBonusName}
+          defaultName={defaultBonusName}
+          onClose={() => setShowBonusName(false)}
+          onConfirm={handleConfirmBonusDay}
         />
     </div>
   );

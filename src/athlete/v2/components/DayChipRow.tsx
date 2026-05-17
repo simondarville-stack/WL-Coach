@@ -36,7 +36,18 @@ export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps
       {days.map(d => {
         const selected = d.dayIndex === selectedDayIndex;
         const Icon = STATUS_ICON[d.status];
-        const weekdayLabel = d.weekday != null ? Weekday[d.weekday] : null;
+        // Weekday source preference:
+        //   1. Coach-set day_schedule weekday (Plan-side scheduling).
+        //   2. Calendar weekday of an existing logged session date
+        //      (useful for bonus days the coach never scheduled).
+        //   3. Hide the line entirely — no placeholder dash.
+        let weekdayLabel: string | null = null;
+        if (d.weekday != null) {
+          weekdayLabel = Weekday[d.weekday];
+        } else if (d.sessionDate) {
+          const day = new Date(d.sessionDate + 'T00:00:00').getDay();
+          weekdayLabel = Weekday[day === 0 ? 7 : day];
+        }
 
         return (
           <button
@@ -49,9 +60,9 @@ export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps
                 : 'bg-gray-900 border-gray-800 hover:border-gray-700'}
             `}
           >
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 min-h-[14px]">
               <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">
-                {weekdayLabel ?? '—'}
+                {weekdayLabel ?? (d.isBonus ? 'Extra' : '')}
               </div>
               <Icon size={12} className={STATUS_COLOR[d.status]} />
             </div>

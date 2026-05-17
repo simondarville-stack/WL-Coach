@@ -1123,6 +1123,7 @@ export function WeeklyPlanner() {
                 weekStart={selectedDate}
                 visibleDays={visibleDays}
                 plannedExercises={plannedExercises}
+                dayLabels={currentWeekPlan?.day_labels ?? null}
               />
             ) : (
               <WeekOverview
