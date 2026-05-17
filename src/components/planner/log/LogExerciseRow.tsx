@@ -21,7 +21,7 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../plannerUtils';
 import { LogCommentsThread } from './LogCommentsThread';
@@ -40,21 +40,17 @@ const DELTA_BG: Record<DeltaState, string> = {
   pending: '',
 };
 
-const EX_STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  in_progress: 'In progress',
-  completed: 'Done',
-  skipped: 'Skipped',
-};
 
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
   logged: LoggedExerciseFull | null;
   sessionMessages: TrainingLogMessage[];
   onPostComment?: (body: string) => Promise<void>;
+  /** Coach-side delete: drops the entire log_exercise + sets. */
+  onDelete?: () => Promise<void>;
 }
 
-export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete }: LogExerciseRowProps) {
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
   const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
 
@@ -117,11 +113,21 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
               </span>
             )}
           </div>
-          {logged && (
-            <span className="text-[10px] text-gray-500">
-              {EX_STATUS_LABEL[logged.log.status] ?? logged.log.status}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {logged && logged.log.status === 'completed' && (
+              <span className="text-[10px] text-emerald-700 font-semibold">Done</span>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => void onDelete()}
+                className="p-1 text-gray-400 hover:text-red-600"
+                title="Remove this logged exercise"
+                aria-label="Delete logged exercise"
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Planned row */}

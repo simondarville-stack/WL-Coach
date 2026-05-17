@@ -9,7 +9,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
-import { fetchWeekLog, addComment } from '../../../lib/trainingLogService';
+import {
+  fetchWeekLog,
+  addComment,
+  deleteLogExercise,
+  deleteSession,
+} from '../../../lib/trainingLogService';
 import type { DayLog } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
 
@@ -67,6 +72,29 @@ export function LogModeView({
         message: body,
         senderType: 'coach',
       });
+      reload();
+    },
+    [reload],
+  );
+
+  const onDeleteLogExercise = useCallback(
+    async (logExerciseId: string) => {
+      if (!window.confirm('Delete this logged exercise and all its sets?')) return;
+      await deleteLogExercise(logExerciseId);
+      reload();
+    },
+    [reload],
+  );
+
+  const onDeleteSession = useCallback(
+    async (sessionId: string) => {
+      if (
+        !window.confirm(
+          'Delete this entire session, including all logged exercises and messages? This cannot be undone.',
+        )
+      )
+        return;
+      await deleteSession(sessionId);
       reload();
     },
     [reload],
@@ -151,6 +179,8 @@ export function LogModeView({
           dayLog={weekLog[day.index] ?? null}
           onPostSessionComment={postSessionComment}
           onPostExerciseComment={postExerciseComment}
+          onDeleteLogExercise={onDeleteLogExercise}
+          onDeleteSession={onDeleteSession}
         />
       ))}
 

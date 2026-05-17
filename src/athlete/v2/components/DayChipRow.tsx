@@ -1,20 +1,6 @@
-import { CheckCircle2, Circle, CircleDashed, MinusCircle } from 'lucide-react';
+import { CheckCircle2, CircleDashed } from 'lucide-react';
 import type { WeekDayOverview } from '../../../lib/trainingLogService';
 import { Weekday } from './WeekNavigator';
-
-const STATUS_ICON: Record<WeekDayOverview['status'], typeof CheckCircle2> = {
-  pending: CircleDashed,
-  in_progress: Circle,
-  completed: CheckCircle2,
-  skipped: MinusCircle,
-};
-
-const STATUS_COLOR: Record<WeekDayOverview['status'], string> = {
-  pending: 'text-gray-500',
-  in_progress: 'text-amber-400',
-  completed: 'text-emerald-400',
-  skipped: 'text-red-400',
-};
 
 interface DayChipRowProps {
   days: WeekDayOverview[];
@@ -35,7 +21,9 @@ export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps
     <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory">
       {days.map(d => {
         const selected = d.dayIndex === selectedDayIndex;
-        const Icon = STATUS_ICON[d.status];
+        const done = d.status === 'completed';
+        const Icon = done ? CheckCircle2 : CircleDashed;
+        const iconClass = done ? 'text-emerald-400' : 'text-gray-500';
         // Weekday source preference:
         //   1. Coach-set day_schedule weekday (Plan-side scheduling).
         //   2. Calendar weekday of an existing logged session date
@@ -64,7 +52,7 @@ export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps
               <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">
                 {weekdayLabel ?? (d.isBonus ? 'Extra' : '')}
               </div>
-              <Icon size={12} className={STATUS_COLOR[d.status]} />
+              <Icon size={12} className={iconClass} />
             </div>
             <div className={`text-sm font-bold truncate ${selected ? 'text-white' : 'text-gray-200'}`}>
               {d.label}

@@ -21,19 +21,7 @@ interface SessionHeaderProps {
   saving?: boolean;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Not started',
-  in_progress: 'In progress',
-  completed: 'Done',
-  skipped: 'Skipped',
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  pending: 'bg-gray-800 text-gray-400',
-  in_progress: 'bg-amber-900/50 text-amber-300',
-  completed: 'bg-emerald-900/50 text-emerald-300',
-  skipped: 'bg-red-900/50 text-red-300',
-};
+// Binary states: only "Done" surfaces.
 
 export function SessionHeader({
   date,
@@ -73,9 +61,11 @@ export function SessionHeader({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${STATUS_CLASS[status] ?? STATUS_CLASS.pending}`}>
-            {STATUS_LABEL[status] ?? status}
-          </span>
+          {status === 'completed' && (
+            <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
+              Done
+            </span>
+          )}
           {saving && <span className="text-[10px] text-gray-500">Saving…</span>}
         </div>
       </div>

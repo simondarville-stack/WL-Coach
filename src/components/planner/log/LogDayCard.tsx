@@ -8,25 +8,13 @@
  * the bottom.
  */
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Not started',
-  in_progress: 'In progress',
-  completed: 'Done',
-  skipped: 'Skipped',
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-600',
-  in_progress: 'bg-amber-100 text-amber-800',
-  completed: 'bg-emerald-100 text-emerald-800',
-  skipped: 'bg-red-100 text-red-800',
-};
+// Binary states: only "Done" pill surfaces.
 
 interface LogDayCardProps {
   dayName: string;
@@ -35,6 +23,9 @@ interface LogDayCardProps {
   /** Returns true when the post succeeded so callers can refresh data. */
   onPostSessionComment?: (sessionId: string, body: string) => Promise<void>;
   onPostExerciseComment?: (sessionId: string, logExerciseId: string, body: string) => Promise<void>;
+  /** Coach actions: delete a logged exercise or the whole session. */
+  onDeleteLogExercise?: (logExerciseId: string) => Promise<void>;
+  onDeleteSession?: (sessionId: string) => Promise<void>;
 }
 
 export function LogDayCard({
@@ -43,6 +34,8 @@ export function LogDayCard({
   dayLog,
   onPostSessionComment,
   onPostExerciseComment,
+  onDeleteLogExercise,
+  onDeleteSession,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const status = session?.status ?? 'pending';
@@ -79,9 +72,11 @@ export function LogDayCard({
       <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-3 py-2 flex-wrap gap-2">
         <div className="flex items-center gap-3 flex-wrap">
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
-          <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${STATUS_CLASS[status] ?? STATUS_CLASS.pending}`}>
-            {STATUS_LABEL[status] ?? status}
-          </span>
+          {status === 'completed' && (
+            <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800">
+              Done
+            </span>
+          )}
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>
@@ -143,6 +138,9 @@ export function LogDayCard({
                     ? body => onPostExerciseComment(session.id, le.log.id, body)
                     : undefined
                 }
+                onDelete={
+                  onDeleteLogExercise ? () => onDeleteLogExercise(le.log.id) : undefined
+                }
               />
             ))}
           </>
@@ -179,6 +177,19 @@ export function LogDayCard({
               />
             </div>
           )}
+        </div>
+      )}
+
+      {session && onDeleteSession && (
+        <div className="border-t border-gray-100 px-3 py-1.5 bg-gray-50/50 text-right">
+          <button
+            onClick={() => onDeleteSession(session.id)}
+            className="inline-flex items-center gap-1 text-[10px] text-red-600 hover:text-red-800"
+            title="Delete this athlete's entire session for the day"
+          >
+            <Trash2 size={10} />
+            Delete session
+          </button>
         </div>
       )}
     </div>

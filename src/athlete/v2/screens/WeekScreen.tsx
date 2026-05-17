@@ -18,19 +18,7 @@ import { WeekNavigator, Weekday } from '../components/WeekNavigator';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
 import { Loader2, ChevronRight } from 'lucide-react';
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Not started',
-  in_progress: 'In progress',
-  completed: 'Done',
-  skipped: 'Skipped',
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  pending: 'bg-gray-800 text-gray-400',
-  in_progress: 'bg-amber-900/50 text-amber-300',
-  completed: 'bg-emerald-900/50 text-emerald-300',
-  skipped: 'bg-red-900/50 text-red-300',
-};
+// Binary states: only "Done" pill surfaces.
 
 export function WeekScreen() {
   const { athlete } = useAuth();
@@ -132,13 +120,11 @@ export function WeekScreen() {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-white truncate">{day.label}</div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <span
-                        className={`text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${
-                          STATUS_CLASS[day.status] ?? STATUS_CLASS.pending
-                        }`}
-                      >
-                        {STATUS_LABEL[day.status] ?? day.status}
-                      </span>
+                      {day.status === 'completed' && (
+                        <span className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
+                          Done
+                        </span>
+                      )}
                       <span className="text-[10px] text-gray-500">
                         {day.plannedCount > 0
                           ? `${day.plannedCount} exercise${day.plannedCount > 1 ? 's' : ''}`

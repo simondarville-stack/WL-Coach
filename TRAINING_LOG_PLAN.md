@@ -111,7 +111,7 @@ P7 addresses this.
 - [x] **P3 — Athlete app v2.** New Today screen, ExerciseLogCard, RawScoreDial, BW entry
 - [x] **P4 — Coach replies.** Coach posts comments inline in Log mode
 - [x] **P5 — Athlete Week + Profile.** Polish, history, PRs
-- [ ] **P6 — Print parity.** PrintWeekDesigner gains "Include log" toggle
+- [x] **P6 — Print parity.** PrintWeekDesigner gains "Include log" toggle
 - [x] **P7 — Coach-flex settings.** Eleiko-style RAW axes + guidance bands in model; coach UI to override remains a follow-up
 - [ ] **P8 — Auth (deferred).** Magic link / RLS, separate effort
 
