@@ -36,6 +36,8 @@ interface PrescriptionGridProps {
   comboPartCount?: number;
   onSave: (raw: string) => void;
   disabled?: boolean;
+  /** Compact density variant used inside week-overview day cards. */
+  compact?: boolean;
 }
 
 let colIdCounter = 0;
@@ -83,6 +85,7 @@ export function PrescriptionGrid({
   comboPartCount = 2,
   onSave,
   disabled = false,
+  compact = false,
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
@@ -459,8 +462,8 @@ export function PrescriptionGrid({
 
   return (
     <div
-      className="pgrid-wrap"
-      style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexWrap: 'wrap' }}
+      className={`pgrid-wrap${compact ? ' pgrid-compact' : ''}`}
+      style={{ display: 'flex', alignItems: 'flex-start', gap: compact ? 4 : 6, flexWrap: 'wrap' }}
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
     >
       {columns.map(col => {
@@ -480,9 +483,9 @@ export function PrescriptionGrid({
             onBlur={() => setFocusedColId(prev => prev === col.id ? null : prev)}
           >
             {/* Stacked fraction: load / reps */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isCombo ? 'auto' : col.loadMax !== null ? '3.5rem' : '2.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isCombo ? 'auto' : col.loadMax !== null ? (compact ? '2.75rem' : '3.5rem') : (compact ? '1.75rem' : '2.5rem') }}>
               <div style={{ width: '100%' }}>{renderLoadCell(col)}</div>
-              <div style={{ width: '100%', margin: '1px 0', borderTop: `1px solid ${isDeleting ? 'var(--color-danger-text)' : 'var(--color-border-primary)'}` }} />
+              <div style={{ width: '100%', margin: compact ? 0 : '1px 0', borderTop: `1px solid ${isDeleting ? 'var(--color-danger-text)' : 'var(--color-border-primary)'}` }} />
               <div style={{ width: '100%' }}>
                 {isCombo ? renderComboRepsCell(col) : renderCell(col, 'reps', col.repsText)}
               </div>
@@ -499,10 +502,10 @@ export function PrescriptionGrid({
         <button
           onClick={handleAddColumn}
           className="pgrid-add-btn"
-          style={{ width: 24, height: 36 }}
+          style={compact ? { width: 18, height: 26 } : { width: 24, height: 36 }}
           title="Add column"
         >
-          <Plus size={12} />
+          <Plus size={compact ? 10 : 12} />
         </button>
       )}
     </div>

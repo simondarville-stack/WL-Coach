@@ -50,6 +50,9 @@ interface DayCardProps {
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
+  /** True when the current view is an individual plan linked to a group plan.
+   *  G/I source badges are only meaningful in that case. */
+  isLinkedToGroupPlan?: boolean;
 }
 
 export function DayCard({
@@ -77,6 +80,7 @@ export function DayCard({
   savePrescription,
   loadIncrement,
   defaultPrescriptionLoad,
+  isLinkedToGroupPlan = false,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -440,6 +444,7 @@ export function DayCard({
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo
                               comboPartCount={(members?.length) || 2}
+                              compact
                               onSave={raw => handleGridSave(ex, raw)}
                             />
                           </div>
@@ -456,10 +461,10 @@ export function DayCard({
                             {ex.variation_note && (
                               <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
                             )}
-                            {ex.source === 'group' && (
+                            {isLinkedToGroupPlan && ex.source === 'group' && (
                               <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>G</span>
                             )}
-                            {ex.source === 'individual' && (
+                            {isLinkedToGroupPlan && ex.source === 'individual' && (
                               <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
                             )}
                           </div>
@@ -476,6 +481,7 @@ export function DayCard({
                               loadIncrement={loadIncrement}
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo={false}
+                              compact
                               onSave={raw => handleGridSave(ex, raw)}
                             />
                           </div>

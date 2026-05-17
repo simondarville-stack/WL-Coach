@@ -45,6 +45,7 @@ interface WeekOverviewProps {
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
+  isLinkedToGroupPlan?: boolean;
 }
 
 export function WeekOverview({
@@ -71,6 +72,7 @@ export function WeekOverview({
   savePrescription,
   loadIncrement,
   defaultPrescriptionLoad,
+  isLinkedToGroupPlan = false,
 }: WeekOverviewProps) {
   if (!weekPlan) {
     return (
@@ -153,6 +155,7 @@ export function WeekOverview({
                         savePrescription={savePrescription}
                         loadIncrement={loadIncrement}
                         defaultPrescriptionLoad={defaultPrescriptionLoad}
+                        isLinkedToGroupPlan={isLinkedToGroupPlan}
                       />
                     </div>
                   );
@@ -197,6 +200,7 @@ export function WeekOverview({
                   savePrescription={savePrescription}
                   loadIncrement={loadIncrement}
                   defaultPrescriptionLoad={defaultPrescriptionLoad}
+                  isLinkedToGroupPlan={isLinkedToGroupPlan}
                 />
               ))}
             </div>
@@ -237,6 +241,7 @@ export function WeekOverview({
             savePrescription={savePrescription}
             loadIncrement={loadIncrement}
             defaultPrescriptionLoad={defaultPrescriptionLoad}
+            isLinkedToGroupPlan={isLinkedToGroupPlan}
           />
         ))}
       </div>

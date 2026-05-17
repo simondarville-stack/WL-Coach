@@ -13,7 +13,7 @@
   /* -- Typography: font families -- */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-stacked: "Latin Modern Math", "Latin Modern Roman", "CMU Serif", "Computer Modern Serif", "Computer Modern", Cambria, "Times New Roman", serif;
+  --font-stacked: "Courier New", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
 
   /* -- Typography: size scale (5 sizes only) -- */
   --text-page-title: 22px;
@@ -377,9 +377,8 @@ samp {
   display: block;
   width: 100%;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--font-stacked);
-  font-variant-numeric: tabular-nums lining-nums;
   font-weight: 500;
   user-select: none;
   border: none;
@@ -446,13 +445,21 @@ samp {
 .pgrid-editing {
   width: 100%;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--font-stacked);
-  font-variant-numeric: tabular-nums lining-nums;
   background: var(--color-accent-muted);
   border: 0.5px solid var(--color-accent);
   border-radius: var(--radius-sm);
   outline: none;
   min-width: 0;
   min-height: 1.25rem;
+}
+
+/* Compact variant — used inside week-overview day cards */
+.pgrid-wrap.pgrid-compact { gap: 4px; }
+.pgrid-compact .pgrid-btn,
+.pgrid-compact .pgrid-editing {
+  font-size: 10px;
+  min-height: 1rem;
+  line-height: 1rem;
 }
