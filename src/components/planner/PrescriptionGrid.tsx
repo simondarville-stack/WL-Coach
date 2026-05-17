@@ -321,6 +321,7 @@ export function PrescriptionGrid({
         <input
           ref={inputRef}
           value={editing!.value}
+          size={1}
           onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={commitEdit}
           onKeyDown={e => {
@@ -377,6 +378,7 @@ export function PrescriptionGrid({
         <input
           ref={inputRef}
           value={editing!.value}
+          size={1}
           onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={commitEdit}
           onKeyDown={e => {
@@ -426,6 +428,7 @@ export function PrescriptionGrid({
         <input
           ref={inputRef}
           value={editing!.value}
+          size={1}
           onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
           onBlur={commitEdit}
           onKeyDown={e => {
