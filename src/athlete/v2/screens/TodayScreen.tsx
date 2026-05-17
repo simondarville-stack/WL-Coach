@@ -9,7 +9,7 @@
  *   - "Performed on" date: stored as session.date, editable, defaults to
  *     today on first log
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, Plus, CheckCircle, Eye } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
@@ -95,6 +95,12 @@ export function TodayScreen() {
    * the eye toggle in SessionHeader.
    */
   const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+  /**
+   * One-shot bypass for the preview-on-slot-change effect, so that
+   * explicit setMode('edit') after bonus-day creation isn't immediately
+   * overwritten by the auto-reset.
+   */
+  const skipPreviewReset = useRef(false);
 
   const loadWeek = useCallback(async () => {
     if (!athlete) return;
@@ -143,8 +149,14 @@ export function TodayScreen() {
   }, [urlWeek, urlSlot, setSearchParams]);
 
   // Resetting mode to preview on slot change is the desired default;
-  // user explicitly hits "Start logging" to enter edit mode.
+  // user explicitly hits "Start logging" to enter edit mode. The
+  // skipPreviewReset ref bypasses this for the bonus-day create flow,
+  // which programmatically jumps the user straight into edit mode.
   useEffect(() => {
+    if (skipPreviewReset.current) {
+      skipPreviewReset.current = false;
+      return;
+    }
     setMode('preview');
   }, [dayIndex, weekStart]);
 
@@ -206,33 +218,82 @@ export function TodayScreen() {
     runSave(async () => {
       const session = await getOrCreateSession();
       const updated = await updateSession(session.id, patch);
-      // In-place local merge so RAW taps / BW edits don't trigger a full
-      // re-fetch (which would rebuild every set-row reference and reset
-      // the user's mid-tap state in RawScoreDial / SetEntryRow). The
-      // first-save reload (runSave's wasNewSession path) still hydrates
-      // the full structure.
-      setData(prev => {
-        if (!prev) return prev;
-        const prevLog = prev.log;
-        if (!prevLog) {
-          return {
-            ...prev,
-            log: {
-              date: updated.date,
-              dayIndex: updated.day_index,
-              session: updated,
-              exercises: [],
-              messages: [],
-            },
-          };
-        }
-        return { ...prev, log: { ...prevLog, session: updated } };
-      });
+      mergeSession(updated);
     });
 
   const handlePatchPerformedOn = async (next: string) => {
     if (next === performedOnDate) return;
     await patchSession({ date: next });
+  };
+
+  // ─── In-place data merges (avoid full reloads on every save) ────────────
+
+  const mergeSession = (session: TrainingLogSession) => {
+    setData(prev => {
+      if (!prev) return prev;
+      if (!prev.log) {
+        return {
+          ...prev,
+          log: {
+            date: session.date,
+            dayIndex: session.day_index,
+            session,
+            exercises: [],
+            messages: [],
+          },
+        };
+      }
+      return { ...prev, log: { ...prev.log, session } };
+    });
+  };
+
+  const mergeLogExercise = (
+    logEx: import('../../../lib/database.types').TrainingLogExercise,
+    exerciseDef: import('../../../lib/database.types').Exercise | null,
+  ) => {
+    setData(prev => {
+      if (!prev?.log) return prev;
+      const existing = prev.log.exercises.find(le => le.log.id === logEx.id);
+      if (existing) {
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(le =>
+              le.log.id === logEx.id ? { ...le, log: logEx } : le,
+            ),
+          },
+        };
+      }
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: [...prev.log.exercises, { log: logEx, sets: [], exercise: exerciseDef }],
+        },
+      };
+    });
+  };
+
+  const mergeLoggedSet = (savedSet: TrainingLogSet) => {
+    setData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le => {
+            if (le.log.id !== savedSet.log_exercise_id) return le;
+            const idx = le.sets.findIndex(s => s.id === savedSet.id);
+            const sets =
+              idx >= 0
+                ? le.sets.map(s => (s.id === savedSet.id ? savedSet : s))
+                : [...le.sets, savedSet].sort((a, b) => a.set_number - b.set_number);
+            return { ...le, sets };
+          }),
+        },
+      };
+    });
   };
 
   const handlePatchBodyweight = (bw: number | null) => patchSession({ bodyweight_kg: bw });
@@ -265,13 +326,11 @@ export function TodayScreen() {
     plannedReps: number | null;
   }) =>
     runSave(async () => {
-      const wasNewSession = !data?.log?.session;
-      const wasNewLogEx = !data?.log?.exercises.some(
-        e => e.log.planned_exercise_id === planned.exercise.id,
-      );
       const session = await getOrCreateSession();
+      mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);
-      await upsertLoggedSet({
+      mergeLogExercise(logEx, planned.exerciseDef);
+      const savedSet = await upsertLoggedSet({
         logExerciseId: logEx.id,
         setNumber: patch.setNumber,
         plannedLoad: patch.plannedLoad,
@@ -281,28 +340,25 @@ export function TodayScreen() {
         rpe: null,
         status: patch.status,
       });
+      mergeLoggedSet(savedSet);
       if (logEx.status === 'pending' && patch.status !== 'pending') {
-        await updateLogExercise(logEx.id, {
+        const updated = await updateLogExercise(logEx.id, {
           status: 'in_progress',
           started_at: logEx.started_at ?? new Date().toISOString(),
         });
-      }
-      // First time a session or log_exercise comes into existence we
-      // need a reload to hydrate their server-side ids locally so the
-      // next save doesn't race. Subsequent set edits don't reload —
-      // SetEntryRow holds its own check/input state.
-      if (wasNewSession || wasNewLogEx) {
-        await loadDay();
+        mergeLogExercise(updated, planned.exerciseDef);
       }
     });
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => () =>
     runSave(async () => {
       const session = await getOrCreateSession();
+      mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);
+      mergeLogExercise(logEx, planned.exerciseDef);
       const rows = expandSetLines(planned.setLines);
       for (const row of rows) {
-        await upsertLoggedSet({
+        const savedSet = await upsertLoggedSet({
           logExerciseId: logEx.id,
           setNumber: row.setNumber,
           plannedLoad: row.plannedLoadValue,
@@ -312,45 +368,51 @@ export function TodayScreen() {
           rpe: null,
           status: 'completed',
         });
+        mergeLoggedSet(savedSet);
       }
-      await updateLogExercise(logEx.id, {
+      const updatedLogEx = await updateLogExercise(logEx.id, {
         status: 'completed',
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
-      // "Log as prescribed" makes large local changes; a reload here is
-      // worth the small flicker because the user has stopped editing.
-      await loadDay();
+      mergeLogExercise(updatedLogEx, planned.exerciseDef);
     });
 
   const handleUpdateExerciseNotes = (planned: PlannedExerciseFull) => (notes: string) =>
     runSave(async () => {
       const session = await getOrCreateSession();
+      mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);
-      await updateLogExercise(logEx.id, { performed_notes: notes });
+      const updated = await updateLogExercise(logEx.id, { performed_notes: notes });
+      mergeLogExercise(updated, planned.exerciseDef);
     });
 
   const handleMarkComplete = (planned: PlannedExerciseFull) => () =>
     runSave(async () => {
       const session = await getOrCreateSession();
+      mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);
-      await updateLogExercise(logEx.id, {
+      const updated = await updateLogExercise(logEx.id, {
         status: 'completed',
         completed_at: new Date().toISOString(),
         started_at: logEx.started_at ?? new Date().toISOString(),
       });
+      mergeLogExercise(updated, planned.exerciseDef);
     });
 
   const handleAddOffPlanExercise = async (ex: { id: string; name: string; color: string | null }) => {
     await runSave(async () => {
       const session = await getOrCreateSession();
-      await addOffPlanLogExercise({
+      mergeSession(session);
+      const newLogEx = await addOffPlanLogExercise({
         sessionId: session.id,
         exerciseId: ex.id,
       });
-      // Off-plan additions need a reload to pull the new log_exercise
-      // and its empty set list into local state.
-      await loadDay();
+      // The picker only carries id/name/color; cast a partial Exercise
+      // since OffPlanExerciseCard only reads those two fields.
+      const partial = { id: ex.id, name: ex.name, color: ex.color } as unknown as
+        import('../../../lib/database.types').Exercise;
+      mergeLogExercise(newLogEx, partial);
     });
   };
 
@@ -403,6 +465,9 @@ export function TodayScreen() {
         console.warn('Could not set bonus day label:', e);
       }
       await loadWeek();
+      // Tell the slot-change effect to skip its preview-reset so the
+      // setMode('edit') below survives the dayIndex transition.
+      skipPreviewReset.current = true;
       setDayIndex(dayIdx);
       setMode('edit');
     } catch (e) {
@@ -422,7 +487,7 @@ export function TodayScreen() {
     plannedReps: number | null;
   }) =>
     runSave(async () => {
-      await upsertLoggedSet({
+      const savedSet = await upsertLoggedSet({
         logExerciseId,
         setNumber: patch.setNumber,
         plannedLoad: null,
@@ -432,9 +497,7 @@ export function TodayScreen() {
         rpe: null,
         status: patch.status,
       });
-      // Refresh so a newly-inserted set picks up its real id locally
-      // for subsequent edits.
-      await loadDay();
+      mergeLoggedSet(savedSet);
     });
 
   // ─── Render ──────────────────────────────────────────────────────────────
@@ -504,6 +567,7 @@ export function TodayScreen() {
             }
             date={performedOnDate}
             planned={data.planned}
+            log={data.log}
             isBonus={selectedOverviewDay?.isBonus}
             onStart={() => setMode('edit')}
           />
