@@ -1,14 +1,16 @@
 /**
  * AthleteApp — athlete-facing entry point.
  *
- * Shell: AuthProvider → ProfilePicker (if no athlete) → TodayScreen.
- * Week + Profile screens are scheduled for P5. The router still accepts
- * those paths and falls through to Today for now.
+ * Shell: AuthProvider → ProfilePicker (if no athlete) → AthleteLayout
+ * with bottom-tab nav between Today / Week / Profile.
  */
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ProfilePicker } from './components/ProfilePicker';
+import { AthleteLayout } from './components/AthleteLayout';
 import { TodayScreen } from './screens/TodayScreen';
+import { WeekScreen } from './screens/WeekScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 
 function AthleteRoutes() {
   const { loading, athlete } = useAuth();
@@ -25,9 +27,13 @@ function AthleteRoutes() {
 
   return (
     <Routes>
-      <Route path="today" element={<TodayScreen />} />
-      <Route index element={<Navigate to="today" replace />} />
-      <Route path="*" element={<Navigate to="today" replace />} />
+      <Route element={<AthleteLayout />}>
+        <Route path="today" element={<TodayScreen />} />
+        <Route path="week" element={<WeekScreen />} />
+        <Route path="profile" element={<ProfileScreen />} />
+        <Route index element={<Navigate to="today" replace />} />
+        <Route path="*" element={<Navigate to="today" replace />} />
+      </Route>
     </Routes>
   );
 }

@@ -10,7 +10,8 @@
  *     today on first log
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { LogOut, Loader2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
@@ -59,11 +60,20 @@ function pickDefaultDay(overview: WeekOverview): number | null {
 }
 
 export function TodayScreen() {
-  const { athlete, signOut } = useAuth();
+  const { athlete } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [weekStart, setWeekStart] = useState<string>(() => getMondayOf(new Date()));
+  // Seed from URL so a Week-screen tap lands on the right slot. We
+  // defer to URL params over the heuristic default when both are valid.
+  const urlWeek = searchParams.get('week');
+  const urlSlot = searchParams.get('slot');
+  const [weekStart, setWeekStart] = useState<string>(
+    () => urlWeek ?? getMondayOf(new Date()),
+  );
   const [overview, setOverview] = useState<WeekOverview | null>(null);
-  const [dayIndex, setDayIndex] = useState<number | null>(null);
+  const [dayIndex, setDayIndex] = useState<number | null>(
+    () => (urlSlot != null ? Number.parseInt(urlSlot, 10) : null),
+  );
   const [data, setData] = useState<AthleteDayData | null>(null);
   const [loadingWeek, setLoadingWeek] = useState(true);
   const [loadingDay, setLoadingDay] = useState(false);
@@ -107,6 +117,14 @@ export function TodayScreen() {
 
   useEffect(() => { void loadWeek(); }, [loadWeek]);
   useEffect(() => { void loadDay(); }, [loadDay]);
+
+  // Consume URL params once so subsequent in-screen navigation doesn't
+  // fight with stale ?week/slot from the Week screen tap-through.
+  useEffect(() => {
+    if (urlWeek || urlSlot != null) {
+      setSearchParams({}, { replace: true });
+    }
+  }, [urlWeek, urlSlot, setSearchParams]);
 
   const loggedSetsByPlannedId = useMemo(() => {
     const m = new Map<string, TrainingLogSet[]>();
@@ -274,22 +292,8 @@ export function TodayScreen() {
     dayIndex != null ? overview?.days.find(d => d.dayIndex === dayIndex) ?? null : null;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-xs text-gray-400">
-            Logging as <span className="text-gray-200 font-medium">{athlete.name}</span>
-          </div>
-          <button
-            onClick={signOut}
-            className="p-2 hover:bg-gray-900 rounded-md text-gray-400 hover:text-white"
-            title="Switch profile"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-
-        <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+    <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+      <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
 
         {loadingWeek ? (
           <div className="flex items-center justify-center py-8 text-gray-500">
@@ -377,7 +381,6 @@ export function TodayScreen() {
             </div>
           </>
         ) : null}
-      </div>
     </div>
   );
 }

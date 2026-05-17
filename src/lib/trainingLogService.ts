@@ -611,3 +611,66 @@ export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessa
   if (error) throw error;
   return data as TrainingLogMessage;
 }
+
+// ─── Profile-screen reads ─────────────────────────────────────────────────
+
+export interface BodyweightPoint {
+  date: string;
+  weightKg: number;
+}
+
+/**
+ * Bodyweight history for the profile chart. Reads from
+ * training_log_sessions.bodyweight_kg — the source of truth chosen
+ * during P3. Sorted oldest first for chart-friendly consumption.
+ */
+export async function fetchBodyweightHistory(
+  athleteId: string,
+): Promise<BodyweightPoint[]> {
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .select('date, bodyweight_kg')
+    .eq('athlete_id', athleteId)
+    .not('bodyweight_kg', 'is', null)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as Array<{ date: string; bodyweight_kg: number }>).map(s => ({
+    date: s.date,
+    weightKg: s.bodyweight_kg,
+  }));
+}
+
+export interface AthletePRRow {
+  exerciseId: string;
+  exerciseName: string;
+  prValueKg: number | null;
+  prDate: string | null;
+}
+
+/**
+ * PR table for the profile screen. Sorted by value descending so the
+ * heaviest lifts top the list.
+ */
+export async function fetchAthletePRs(athleteId: string): Promise<AthletePRRow[]> {
+  const { data, error } = await supabase
+    .from('athlete_prs')
+    .select('exercise_id, pr_value_kg, pr_date, exercise:exercise_id(name)')
+    .eq('athlete_id', athleteId)
+    .order('pr_value_kg', { ascending: false });
+  if (error) throw error;
+  return (
+    (data ?? []) as Array<{
+      exercise_id: string;
+      pr_value_kg: number | null;
+      pr_date: string | null;
+      exercise: { name: string } | null;
+    }>
+  )
+    .filter(r => r.pr_value_kg != null)
+    .map(r => ({
+      exerciseId: r.exercise_id,
+      exerciseName: r.exercise?.name ?? '(unknown)',
+      prValueKg: r.pr_value_kg,
+      prDate: r.pr_date,
+    }));
+}
