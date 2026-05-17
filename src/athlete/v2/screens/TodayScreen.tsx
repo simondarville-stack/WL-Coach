@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, CheckCircle, Eye } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
@@ -22,12 +22,14 @@ import {
   updateLogExercise,
   upsertLoggedSet,
   addOffPlanLogExercise,
+  createBonusSession,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
 } from '../../../lib/trainingLogService';
 import type { TrainingLogSession, TrainingLogSet } from '../../../lib/database.types';
 import { SessionHeader } from '../components/SessionHeader';
+import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
 import { ExercisePicker } from '../components/ExercisePicker';
@@ -83,6 +85,13 @@ export function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  /**
+   * 'preview' renders the session like the coach's print view, no
+   * inputs. 'edit' is the full logging UI. Defaults to 'preview';
+   * "Start logging" enters edit, and the user can switch back via
+   * the eye toggle in SessionHeader.
+   */
+  const [mode, setMode] = useState<'preview' | 'edit'>('preview');
 
   const loadWeek = useCallback(async () => {
     if (!athlete) return;
@@ -130,6 +139,12 @@ export function TodayScreen() {
     }
   }, [urlWeek, urlSlot, setSearchParams]);
 
+  // Resetting mode to preview on slot change is the desired default;
+  // user explicitly hits "Start logging" to enter edit mode.
+  useEffect(() => {
+    setMode('preview');
+  }, [dayIndex, weekStart]);
+
   const loggedSetsByPlannedId = useMemo(() => {
     const m = new Map<string, TrainingLogSet[]>();
     data?.log?.exercises.forEach(le => {
@@ -165,22 +180,17 @@ export function TodayScreen() {
   /**
    * Run a save action without thrashing the page.
    *
-   * - Don't reload after success. The components keep their local state
-   *   (input values, checkbox status), so the UI stays put.
-   * - The ONE exception: if a session row was just created (no log
-   *   session existed before this save), do a single reload so the
-   *   local `data.log.session` gets the real DB row with its id. This
-   *   prevents `getOrCreateSession` from racing on the next save.
-   * - On error, reload to recover and surface the error.
+   * Pure wrapper: sets `saving`, surfaces errors, and recovers via
+   * loadDay on failure. It does NOT reload on success — each caller
+   * is responsible for merging the server response into local state
+   * (patchSession) or deciding when a reload is needed (set saves
+   * after a brand-new session, off-plan additions).
    */
   const runSave = async (fn: () => Promise<void>) => {
-    const wasNewSession = !data?.log?.session;
     setSaving(true);
+    setError(null);
     try {
       await fn();
-      if (wasNewSession) {
-        await loadDay();
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       await loadDay();
@@ -192,7 +202,29 @@ export function TodayScreen() {
   const patchSession = (patch: Parameters<typeof updateSession>[1]) =>
     runSave(async () => {
       const session = await getOrCreateSession();
-      await updateSession(session.id, patch);
+      const updated = await updateSession(session.id, patch);
+      // In-place local merge so RAW taps / BW edits don't trigger a full
+      // re-fetch (which would rebuild every set-row reference and reset
+      // the user's mid-tap state in RawScoreDial / SetEntryRow). The
+      // first-save reload (runSave's wasNewSession path) still hydrates
+      // the full structure.
+      setData(prev => {
+        if (!prev) return prev;
+        const prevLog = prev.log;
+        if (!prevLog) {
+          return {
+            ...prev,
+            log: {
+              date: updated.date,
+              dayIndex: updated.day_index,
+              session: updated,
+              exercises: [],
+              messages: [],
+            },
+          };
+        }
+        return { ...prev, log: { ...prevLog, session: updated } };
+      });
     });
 
   const handlePatchPerformedOn = async (next: string) => {
@@ -230,6 +262,10 @@ export function TodayScreen() {
     plannedReps: number | null;
   }) =>
     runSave(async () => {
+      const wasNewSession = !data?.log?.session;
+      const wasNewLogEx = !data?.log?.exercises.some(
+        e => e.log.planned_exercise_id === planned.exercise.id,
+      );
       const session = await getOrCreateSession();
       const logEx = await ensureLogEx(planned, session.id);
       await upsertLoggedSet({
@@ -247,6 +283,13 @@ export function TodayScreen() {
           status: 'in_progress',
           started_at: logEx.started_at ?? new Date().toISOString(),
         });
+      }
+      // First time a session or log_exercise comes into existence we
+      // need a reload to hydrate their server-side ids locally so the
+      // next save doesn't race. Subsequent set edits don't reload —
+      // SetEntryRow holds its own check/input state.
+      if (wasNewSession || wasNewLogEx) {
+        await loadDay();
       }
     });
 
@@ -308,6 +351,42 @@ export function TodayScreen() {
     });
   };
 
+  const handleFinishSession = async () => {
+    if (!data?.log?.session) return;
+    await patchSession({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+    setMode('preview');
+  };
+
+  const handleAddBonusDay = async () => {
+    if (!overview) return;
+    const existingMax = overview.days.reduce(
+      (max, d) => Math.max(max, d.dayIndex),
+      overview.activeDays.length > 0 ? Math.max(...overview.activeDays) : 0,
+    );
+    const nextDayIndex = existingMax + 1;
+    setSaving(true);
+    setError(null);
+    try {
+      await createBonusSession({
+        athleteId: athlete.id,
+        ownerId: athlete.owner_id,
+        weekStart,
+        dayIndex: nextDayIndex,
+        date: todayISO(),
+      });
+      await loadWeek();
+      setDayIndex(nextDayIndex);
+      setMode('edit');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveOffPlanSet = (logExerciseId: string) => (patch: {
     setNumber: number;
     performedLoad: number | null;
@@ -360,11 +439,20 @@ export function TodayScreen() {
               selectedDayIndex={dayIndex}
               onSelect={setDayIndex}
             />
-            {overview.planSource === 'group' && (
-              <p className="text-[10px] text-gray-500 italic px-1">
-                Showing your group's plan.
-              </p>
-            )}
+            <div className="flex items-center justify-between gap-2 px-1">
+              {overview.planSource === 'group' ? (
+                <p className="text-[10px] text-gray-500 italic">Showing your group's plan.</p>
+              ) : <span />}
+              <button
+                onClick={handleAddBonusDay}
+                disabled={saving}
+                className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-1 rounded border border-dashed border-gray-700 hover:border-gray-500 disabled:opacity-50"
+                title="Log an extra training day this week"
+              >
+                <Plus size={11} />
+                Training day
+              </button>
+            </div>
           </>
         ) : null}
 
@@ -375,21 +463,42 @@ export function TodayScreen() {
           </div>
         )}
 
-        {dayIndex != null && (
-          <PerformedOnField
-            date={performedOnDate}
-            sessionExists={!!data?.log?.session}
-            onChange={handlePatchPerformedOn}
-          />
-        )}
-
         {loadingDay ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             <Loader2 size={18} className="animate-spin mr-2" />
             <span className="text-sm">Loading session…</span>
           </div>
+        ) : data && dayIndex != null && mode === 'preview' ? (
+          <SessionPreview
+            slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
+            weekdayLabel={
+              selectedOverviewDay?.weekday != null
+                ? new Date(performedOnDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' })
+                : null
+            }
+            date={performedOnDate}
+            planned={data.planned}
+            isBonus={selectedOverviewDay?.isBonus}
+            onStart={() => setMode('edit')}
+          />
         ) : data && dayIndex != null ? (
           <>
+            <div className="flex items-center justify-between gap-2">
+              <PerformedOnField
+                date={performedOnDate}
+                sessionExists={!!data.log?.session}
+                onChange={handlePatchPerformedOn}
+              />
+              <button
+                onClick={() => setMode('preview')}
+                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-2 rounded-md border border-gray-800 hover:border-gray-600"
+                title="Back to preview"
+              >
+                <Eye size={12} />
+                Preview
+              </button>
+            </div>
+
             <SessionHeader
               date={performedOnDate}
               slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
@@ -401,10 +510,10 @@ export function TodayScreen() {
             />
 
             <div className="space-y-2">
-              {data.planned.length === 0 ? (
+              {data.planned.length === 0 && offPlanLogged.length === 0 ? (
                 <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-                  <p className="text-sm text-gray-400">No exercises in this slot.</p>
-                  <p className="text-xs text-gray-500 mt-1">Pick another day or check with your coach.</p>
+                  <p className="text-sm text-gray-400">No exercises yet.</p>
+                  <p className="text-xs text-gray-500 mt-1">Tap "Add exercise" to log what you did.</p>
                 </div>
               ) : (
                 data.planned.map(p => {
@@ -442,6 +551,22 @@ export function TodayScreen() {
                 <Plus size={14} />
                 Add exercise
               </button>
+
+              {data.log?.session && data.log.session.status !== 'completed' && (
+                <button
+                  onClick={handleFinishSession}
+                  disabled={saving}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white font-semibold text-sm py-3 rounded-xl mt-2 transition-colors"
+                >
+                  <CheckCircle size={16} />
+                  Finish session
+                </button>
+              )}
+              {data.log?.session?.status === 'completed' && (
+                <div className="text-center text-[11px] text-emerald-400 italic mt-1">
+                  Session marked complete · you can keep editing if you missed something
+                </div>
+              )}
             </div>
           </>
         ) : null}

@@ -270,6 +270,8 @@ export interface WeekDayOverview {
   sessionDate: string | null;
   /** Whether a log session exists for this slot. */
   hasLog: boolean;
+  /** True if the slot is outside the coach's active_days (athlete-added). */
+  isBonus: boolean;
 }
 
 export interface WeekOverview {
@@ -358,16 +360,25 @@ export async function fetchWeekOverview(
     r => sessionByDay.set(r.day_index, { status: r.status, date: r.date }),
   );
 
-  const days: WeekDayOverview[] = activeDays.map(d => {
+  // Bonus days: log sessions whose day_index isn't in active_days
+  // (athlete added an extra training unit).
+  const bonusDays = Array.from(sessionByDay.keys())
+    .filter(d => !activeDays.includes(d))
+    .sort((a, b) => a - b);
+  const allDayIndices = [...activeDays, ...bonusDays];
+
+  const days: WeekDayOverview[] = allDayIndices.map(d => {
     const sess = sessionByDay.get(d);
+    const isBonus = !activeDays.includes(d);
     return {
       dayIndex: d,
-      label: labels[d]?.trim() || DEFAULT_LABEL(d),
+      label: labels[d]?.trim() || (isBonus ? `Extra ${d - activeDays.length}` : DEFAULT_LABEL(d)),
       weekday: schedule[d]?.weekday ?? null,
       plannedCount: plannedCounts.get(d) ?? 0,
       status: (sess?.status as WeekDayOverview['status']) ?? 'pending',
       sessionDate: sess?.date ?? null,
       hasLog: !!sess,
+      isBonus,
     };
   });
 
@@ -635,6 +646,42 @@ export async function addOffPlanLogExercise(
     .single();
   if (error) throw error;
   return data as TrainingLogExercise;
+}
+
+/**
+ * Create a bonus (athlete-added) training session for one week.
+ *
+ * Inserts a training_log_sessions row with day_index = max(existing
+ * active_days, existing session day_indices) + 1, so it's outside the
+ * coach's planned slots but still uniquely keyed in the same week.
+ * Returns the new session row. Use the WeekOverview from the caller
+ * to compute the next day_index.
+ */
+export async function createBonusSession(args: {
+  athleteId: string;
+  ownerId: string;
+  weekStart: string;
+  dayIndex: number;
+  date: string;
+}): Promise<TrainingLogSession> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const insertRow: any = {
+    owner_id: args.ownerId,
+    athlete_id: args.athleteId,
+    date: args.date,
+    week_start: args.weekStart,
+    day_index: args.dayIndex,
+    session_notes: '',
+    status: 'in_progress',
+    started_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogSession;
 }
 
 /**

@@ -75,48 +75,83 @@ export function avgPerformedLoad(sets: TrainingLogSet[]): number {
   return totalReps > 0 ? weightedSum / totalReps : 0;
 }
 
-// ─── RAW score: Eleiko-style readiness model ───────────────────────────────
+// ─── RAW score: Eleiko Readiness and Wellbeing model ───────────────────────
 
 /**
- * RAW = Readiness Assessment for Weightlifting (Eleiko style).
+ * RAW = Readiness and Wellbeing scoring system (Eleiko).
  *
- * Four 1–5 sub-scales summed to 4–20. Coach-flex axes map to the four
- * existing nullable columns on training_log_sessions; only the labels
- * (and the guidance band table) change. No migration needed yet.
+ * Four pillars (Sleep, Physical, Mood, Nutrition), each rated 1–3, sum
+ * 4–12. Three guidance bands map the total to a programme adjustment.
+ * Spec: https://www.eleiko.com — Readiness and Wellbeing (RAW) Scoring
+ * System. The four-pillar pillar labels and rating text below are
+ * verbatim from the Eleiko reference card.
  *
- * Mapping from DB column → Eleiko axis is fixed here. If a coach
- * eventually wants different labels, this constant is the swap point
- * (P7 follow-up to expose in GeneralSettings).
+ * Pillar keys match the existing nullable columns on
+ * training_log_sessions (raw_sleep / raw_physical / raw_mood /
+ * raw_nutrition) — no migration needed.
  */
+export interface RawRating {
+  score: 1 | 2 | 3;
+  /** Pillar-specific description shown next to the score chip. */
+  description: string;
+}
+
 export interface RawAxis {
   /** DB column on training_log_sessions (raw_<key>). */
   key: 'sleep' | 'physical' | 'mood' | 'nutrition';
   label: string;
-  /** Hint text rendered under the label. */
-  description: string;
-  /** Inclusive min score (always 1 for now). */
-  min: number;
-  /** Inclusive max score. */
-  max: number;
+  ratings: [RawRating, RawRating, RawRating];
 }
 
 export const ELEIKO_RAW_AXES: RawAxis[] = [
-  { key: 'sleep', label: 'Sleep', description: 'Quality and duration last night', min: 1, max: 5 },
-  { key: 'physical', label: 'Energy', description: 'Physical energy and freshness', min: 1, max: 5 },
-  { key: 'nutrition', label: 'Soreness', description: '5 = no soreness, 1 = very sore', min: 1, max: 5 },
-  { key: 'mood', label: 'Stress', description: '5 = relaxed, 1 = very stressed', min: 1, max: 5 },
+  {
+    key: 'sleep',
+    label: 'Sleep',
+    ratings: [
+      { score: 1, description: '< 6 hours; not feel well rested' },
+      { score: 2, description: 'Do not feel well rested regardless of amount of sleep' },
+      { score: 3, description: '8+ hours; feel well rested' },
+    ],
+  },
+  {
+    key: 'physical',
+    label: 'Physical',
+    ratings: [
+      { score: 1, description: 'Pain, tightness, fatigue (several symptoms)' },
+      { score: 2, description: 'Pain, tightness, OR fatigue (few symptoms)' },
+      { score: 3, description: 'No issues' },
+    ],
+  },
+  {
+    key: 'mood',
+    label: 'Mood',
+    ratings: [
+      { score: 1, description: 'Agitated / anxious' },
+      { score: 2, description: 'Neutral' },
+      { score: 3, description: 'Vibrant / ready' },
+    ],
+  },
+  {
+    key: 'nutrition',
+    label: 'Nutrition',
+    ratings: [
+      { score: 1, description: 'Poor quality of food and poor hydration' },
+      { score: 2, description: 'Fair quality of food and fair hydration' },
+      { score: 3, description: 'Good quality of food and good hydration' },
+    ],
+  },
 ];
 
-export type RawBand = 'green' | 'lime' | 'amber' | 'red';
+export type RawBand = 'green' | 'amber' | 'red';
 
 export interface RawGuidance {
   band: RawBand;
-  /** Short status word for the chip. */
+  /** Short status word for the chip header. */
   label: string;
-  /** Coach-facing recommendation rendered next to the score. */
-  advice: string;
-  /** Suggested multiplier on planned top-set load. 1.0 means no change. */
-  intensityAdjustment: number;
+  /** One-line headline summarising the adjustment. */
+  headline: string;
+  /** Bullet recommendations from the Eleiko framework. */
+  bullets: string[];
 }
 
 interface RawGuidanceBand extends RawGuidance {
@@ -125,34 +160,39 @@ interface RawGuidanceBand extends RawGuidance {
 }
 
 /**
- * Eleiko-style guidance bands. Total in [4, 20].
- * Tuned to the four 1–5 axes; if axes ever expand to five or shift
- * scale, recompute boundaries.
+ * Eleiko adjustment bands. Total in [4, 12]. Bullets verbatim from
+ * the "Interpreting Your RAW Score" reference card.
  */
 export const ELEIKO_RAW_BANDS: RawGuidanceBand[] = [
   {
-    min: 18, max: 20,
-    band: 'green', label: 'Ready',
-    advice: 'Push as planned. Good day to attempt the top of the prescribed range.',
-    intensityAdjustment: 1.0,
+    min: 10, max: 12,
+    band: 'green', label: 'Train as planned',
+    headline: 'You are good to train as hard as you desire within your ability level.',
+    bullets: [],
   },
   {
-    min: 14, max: 17,
-    band: 'lime', label: 'Solid',
-    advice: 'Train as planned. Stay attentive on the heavy sets.',
-    intensityAdjustment: 1.0,
+    min: 7, max: 9,
+    band: 'amber', label: 'Reduce volume 15–20%',
+    headline: 'Reduce total volume by 15–20% through any combination of the following:',
+    bullets: [
+      'Reduce the overall session RPE (effort) by 1',
+      'Reduce sets by 1 per lift',
+      'Reduce reps by 1–2 per lift',
+      'Reduce session length by 15–20%',
+      'Depending on session goal, increase rest by 30± sec',
+    ],
   },
   {
-    min: 10, max: 13,
-    band: 'amber', label: 'Below par',
-    advice: 'Cap top-set intensity around 90% of planned. Cut accessory volume if it feels heavy.',
-    intensityAdjustment: 0.9,
-  },
-  {
-    min: 4, max: 9,
-    band: 'red', label: 'Compromised',
-    advice: 'Light technique session, or skip and rest. Tell your coach.',
-    intensityAdjustment: 0.8,
+    min: 4, max: 6,
+    band: 'red', label: 'Reduce volume 25–30%',
+    headline: 'Reduce total volume by 25–30% through any combination of the following:',
+    bullets: [
+      'Reduce the overall session RPE (effort) by 2',
+      'Reduce sets by 1–2 per lift',
+      'Reduce reps by 2–4 per lift',
+      'Reduce session length by 25–30%',
+      'Depending on session goal, increase rest by 30± sec',
+    ],
   },
 ];
 
@@ -162,8 +202,7 @@ export function getRawGuidance(total: number | null): RawGuidance | null {
 }
 
 export function rawAxisRange(): { min: number; max: number } {
-  const sum = (op: 'min' | 'max') => ELEIKO_RAW_AXES.reduce((s, a) => s + a[op], 0);
-  return { min: sum('min'), max: sum('max') };
+  return { min: ELEIKO_RAW_AXES.length * 1, max: ELEIKO_RAW_AXES.length * 3 };
 }
 
 export interface DeltaResult {

@@ -6,7 +6,7 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines } from './SetEntryRow';
@@ -42,6 +42,8 @@ export function ExerciseLogCard({
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
   const [savingPrescribed, setSavingPrescribed] = useState(false);
+  /** Extra ad-hoc set rows beyond the planned set lines. */
+  const [extraRows, setExtraRows] = useState(0);
 
   // Sync notes on primitive dep so a parent re-render with a new
   // loggedExercise reference doesn't reset what the user is typing.
@@ -165,7 +167,40 @@ export function ExerciseLogCard({
                     onSave={onSaveSet}
                   />
                 ))}
+                {/* Extra sets the athlete adds beyond the planned ones. */}
+                {(() => {
+                  const plannedMax = rows.length;
+                  const loggedExtraSets = loggedSets
+                    .filter(s => s.set_number > plannedMax)
+                    .sort((a, b) => a.set_number - b.set_number);
+                  const totalExtras = Math.max(loggedExtraSets.length, extraRows);
+                  return Array.from({ length: totalExtras }).map((_, i) => {
+                    const setNumber = plannedMax + 1 + i;
+                    const logged = loggedExtraSets.find(s => s.set_number === setNumber) ?? null;
+                    return (
+                      <SetEntryRow
+                        key={`extra-${setNumber}`}
+                        input={{
+                          setNumber,
+                          plannedRepsText: '—',
+                          plannedLoadText: '—',
+                          plannedRepsValue: null,
+                          plannedLoadValue: null,
+                        }}
+                        logged={logged}
+                        onSave={onSaveSet}
+                      />
+                    );
+                  });
+                })()}
               </div>
+              <button
+                onClick={() => setExtraRows(n => n + 1)}
+                className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
+              >
+                <Plus size={12} />
+                Add set
+              </button>
             </>
           )}
 
