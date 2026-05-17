@@ -5,7 +5,7 @@
  * Each set still gets the two-button (✓ / ✗) status + kg / reps cells.
  */
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
 
@@ -21,6 +21,7 @@ interface OffPlanExerciseCardProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }
 
 export function OffPlanExerciseCard({
@@ -28,6 +29,7 @@ export function OffPlanExerciseCard({
   exercise,
   loggedSets,
   onSaveSet,
+  onDelete,
 }: OffPlanExerciseCardProps) {
   const sortedSets = loggedSets.slice().sort((a, b) => a.set_number - b.set_number);
   // Always show one extra blank row so the athlete can keep adding sets
@@ -60,6 +62,16 @@ export function OffPlanExerciseCard({
           </div>
           <p className="text-[10px] text-gray-500 mt-0.5">No plan · log what you did</p>
         </div>
+        {onDelete && (
+          <button
+            onClick={() => void onDelete()}
+            className="p-1 text-gray-500 hover:text-red-400 flex-shrink-0"
+            title="Remove this exercise"
+            aria-label="Remove exercise"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       <div className="px-3 pb-3 space-y-1.5">

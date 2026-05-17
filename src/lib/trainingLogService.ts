@@ -431,7 +431,7 @@ export async function ensureSession(args: EnsureSessionArgs): Promise<TrainingLo
     week_start: args.weekStart,
     day_index: args.dayIndex,
     session_notes: '',
-    status: 'in_progress',
+    status: 'pending',
     started_at: new Date().toISOString(),
   };
   const { data, error } = await supabase
@@ -599,6 +599,61 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Delete a log_exercise and (cascade) its sets. Used for athlete
+ * "I added this by mistake" and coach manual cleanup.
+ */
+export async function deleteLogExercise(logExerciseId: string): Promise<void> {
+  // Delete sets first in case there's no FK cascade.
+  const { error: sErr } = await supabase
+    .from('training_log_sets')
+    .delete()
+    .eq('log_exercise_id', logExerciseId);
+  if (sErr) throw sErr;
+  const { error } = await supabase
+    .from('training_log_exercises')
+    .delete()
+    .eq('id', logExerciseId);
+  if (error) throw error;
+}
+
+/**
+ * Delete an entire training session (and cascade-clean its exercises +
+ * sets + messages). Used for "I added this bonus day by mistake".
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  // Clean dependent rows first.
+  const { data: exRows } = await supabase
+    .from('training_log_exercises')
+    .select('id')
+    .eq('session_id', sessionId);
+  const exIds = ((exRows ?? []) as Array<{ id: string }>).map(e => e.id);
+  if (exIds.length > 0) {
+    await supabase.from('training_log_sets').delete().in('log_exercise_id', exIds);
+    await supabase.from('training_log_exercises').delete().in('id', exIds);
+  }
+  await supabase.from('training_log_messages').delete().eq('session_id', sessionId);
+  const { error } = await supabase
+    .from('training_log_sessions')
+    .delete()
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+/**
+ * Fetch all messages for one session, sorted oldest-first.
+ * Convenience read for athlete + coach comment threads.
+ */
+export async function fetchSessionMessages(sessionId: string): Promise<TrainingLogMessage[]> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as TrainingLogMessage[];
+}
+
 interface AddOffPlanExerciseArgs {
   sessionId: string;
   exerciseId: string;
@@ -636,7 +691,7 @@ export async function addOffPlanLogExercise(
     position,
     performed_raw: '',
     performed_notes: '',
-    status: 'in_progress',
+    status: 'pending',
     started_at: new Date().toISOString(),
   };
   const { data, error } = await supabase
@@ -672,7 +727,7 @@ export async function createBonusSession(args: {
     week_start: args.weekStart,
     day_index: args.dayIndex,
     session_notes: '',
-    status: 'in_progress',
+    status: 'pending',
     started_at: new Date().toISOString(),
   };
   const { data, error } = await supabase

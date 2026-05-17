@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, Plus, CheckCircle, Eye } from 'lucide-react';
+import { Loader2, Plus, CheckCircle, Eye, Trash2 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
@@ -24,6 +24,9 @@ import {
   addOffPlanLogExercise,
   createBonusSession,
   setAthleteDayLabel,
+  addComment,
+  deleteLogExercise,
+  deleteSession,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -35,6 +38,7 @@ import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { BonusDayNameModal } from '../components/BonusDayNameModal';
+import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
 import type { RawScores } from '../components/RawScoreDial';
 import { expandSetLines } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
@@ -341,13 +345,8 @@ export function TodayScreen() {
         status: patch.status,
       });
       mergeLoggedSet(savedSet);
-      if (logEx.status === 'pending' && patch.status !== 'pending') {
-        const updated = await updateLogExercise(logEx.id, {
-          status: 'in_progress',
-          started_at: logEx.started_at ?? new Date().toISOString(),
-        });
-        mergeLogExercise(updated, planned.exerciseDef);
-      }
+      // No exercise-level auto-bump; binary states only — exercise
+      // status moves to 'completed' explicitly via Mark complete.
     });
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => () =>
@@ -399,6 +398,63 @@ export function TodayScreen() {
       });
       mergeLogExercise(updated, planned.exerciseDef);
     });
+
+  const handlePostComment = async (body: string) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const msg = await addComment({
+        sessionId: session.id,
+        exerciseId: null,
+        message: body,
+        senderType: 'athlete',
+      });
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: { ...prev.log, messages: [...prev.log.messages, msg] },
+        };
+      });
+    });
+  };
+
+  const handleDeleteOffPlanExercise = async (logExerciseId: string) => {
+    if (!window.confirm('Remove this exercise from your log?')) return;
+    await runSave(async () => {
+      await deleteLogExercise(logExerciseId);
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.filter(le => le.log.id !== logExerciseId),
+          },
+        };
+      });
+    });
+  };
+
+  const handleDeleteBonusDay = async () => {
+    if (!data?.log?.session) return;
+    if (
+      !window.confirm(
+        'Delete this entire training day, including all logged exercises? This cannot be undone.',
+      )
+    )
+      return;
+    const sessionId = data.log.session.id;
+    await runSave(async () => {
+      await deleteSession(sessionId);
+      // Reload week + pick a new selection.
+      await loadWeek();
+      setDayIndex(prev =>
+        overview?.days.find(d => d.dayIndex !== prev)?.dayIndex ?? null,
+      );
+      setMode('preview');
+    });
+  };
 
   const handleAddOffPlanExercise = async (ex: { id: string; name: string; color: string | null }) => {
     await runSave(async () => {
@@ -631,6 +687,7 @@ export function TodayScreen() {
                   exercise={le.exercise}
                   loggedSets={le.sets}
                   onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                  onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
                 />
               ))}
 
@@ -656,6 +713,30 @@ export function TodayScreen() {
                 <div className="text-center text-[11px] text-emerald-400 italic mt-1">
                   Session marked complete · you can keep editing if you missed something
                 </div>
+              )}
+
+              {data.log?.session && (
+                <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 mt-2">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
+                    Messages
+                  </div>
+                  <AthleteCommentsThread
+                    messages={(data.log.messages ?? []).filter(m => !m.exercise_id)}
+                    onPost={handlePostComment}
+                  />
+                </div>
+              )}
+
+              {selectedOverviewDay?.isBonus && data.log?.session && (
+                <button
+                  onClick={handleDeleteBonusDay}
+                  disabled={saving}
+                  className="w-full inline-flex items-center justify-center gap-2 text-[11px] text-red-400 hover:text-red-300 hover:bg-red-950/40 py-2 rounded-xl mt-1 transition-colors"
+                  title="Delete this entire bonus day"
+                >
+                  <Trash2 size={12} />
+                  Delete training day
+                </button>
               )}
             </div>
           </>
