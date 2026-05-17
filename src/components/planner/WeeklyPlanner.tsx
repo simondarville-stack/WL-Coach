@@ -1097,6 +1097,9 @@ export function WeeklyPlanner() {
                 onDockTemplateDrop={handleDockTemplateDrop}
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
                 onSaveAsTemplate={handleSaveDayAsTemplate}
+                savePrescription={savePrescription}
+                loadIncrement={settings?.grid_load_increment ?? 5}
+                defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
               />
             )}
 

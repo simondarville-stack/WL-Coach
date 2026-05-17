@@ -42,6 +42,9 @@ interface WeekOverviewProps {
   onSaveAsTemplate?: (dayIndex: number) => void;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
+  savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
+  loadIncrement: number;
+  defaultPrescriptionLoad: number;
 }
 
 export function WeekOverview({
@@ -65,6 +68,9 @@ export function WeekOverview({
   onSaveAsTemplate,
   visibleCardMetrics,
   competitionTotal,
+  savePrescription,
+  loadIncrement,
+  defaultPrescriptionLoad,
 }: WeekOverviewProps) {
   if (!weekPlan) {
     return (
@@ -144,6 +150,9 @@ export function WeekOverview({
                         onDockTemplateDrop={onDockTemplateDrop}
                         onDockTemplateDayDrop={onDockTemplateDayDrop}
                         onSaveAsTemplate={onSaveAsTemplate}
+                        savePrescription={savePrescription}
+                        loadIncrement={loadIncrement}
+                        defaultPrescriptionLoad={defaultPrescriptionLoad}
                       />
                     </div>
                   );
@@ -185,6 +194,9 @@ export function WeekOverview({
                   onDockTemplateDrop={onDockTemplateDrop}
                   onDockTemplateDayDrop={onDockTemplateDayDrop}
                   onSaveAsTemplate={onSaveAsTemplate}
+                  savePrescription={savePrescription}
+                  loadIncrement={loadIncrement}
+                  defaultPrescriptionLoad={defaultPrescriptionLoad}
                 />
               ))}
             </div>
@@ -222,6 +234,9 @@ export function WeekOverview({
             onDockTemplateDrop={onDockTemplateDrop}
             onDockTemplateDayDrop={onDockTemplateDayDrop}
             onSaveAsTemplate={onSaveAsTemplate}
+            savePrescription={savePrescription}
+            loadIncrement={loadIncrement}
+            defaultPrescriptionLoad={defaultPrescriptionLoad}
           />
         ))}
       </div>

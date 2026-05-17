@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
-import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel } from './plannerUtils';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { RestBadge } from './RestBadge';
+import { PrescriptionGrid } from './PrescriptionGrid';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
@@ -47,82 +47,9 @@ interface DayCardProps {
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onSaveAsTemplate?: (dayIndex: number) => void;
-}
-
-
-function StackedNotation({ raw, unit, isCombo }: { raw: string | null; unit: string | null; isCombo?: boolean }) {
-  if (!raw) return null;
-
-  if (unit === 'free_text_reps') {
-    const lines = parseFreeTextPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.loadText}</span>
-              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
-            </div>
-            {line.sets > 1 && (
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (isCombo) {
-    const lines = parseComboPrescription(raw);
-    if (lines.length === 0) return <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {lines.map((line, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
-                {line.loadMax != null
-                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-              </span>
-              <div style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }} />
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.repsText}</span>
-            </div>
-            {line.sets > 1 && (
-              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  const lines = parsePrescription(raw);
-  if (lines.length === 0) {
-    return <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{raw}</span>;
-  }
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      {lines.map((line, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1, minWidth: '1.5rem' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>
-              {line.loadMax != null
-                ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-            </span>
-            <div style={{ width: '100%', borderTop: '1px solid var(--color-border-primary)', margin: '1px 0' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--color-text-primary)', fontWeight: 500, lineHeight: 1.25 }}>{line.reps}</span>
-          </div>
-          {line.sets > 1 && (
-            <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500, alignSelf: 'center', lineHeight: 1 }}>{line.sets}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
+  savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
+  loadIncrement: number;
+  defaultPrescriptionLoad: number;
 }
 
 export function DayCard({
@@ -147,6 +74,9 @@ export function DayCard({
   onDockTemplateDrop,
   onDockTemplateDayDrop,
   onSaveAsTemplate,
+  savePrescription,
+  loadIncrement,
+  defaultPrescriptionLoad,
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
@@ -158,6 +88,17 @@ export function DayCard({
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
   const deleteHeld = useDeleteHeld();
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleGridSave(ex: PlannedExercise, raw: string) {
+    void savePrescription(ex.id, {
+      prescription: raw,
+      unit: (ex.unit as DefaultUnit) || 'absolute_kg',
+      isCombo: ex.is_combo,
+    });
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
+  }
 
   const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
   const isEmpty = exercises.length === 0;
@@ -485,7 +426,23 @@ export function DayCard({
                           {ex.variation_note && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
                           )}
-                          <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={true} />
+                          <div
+                            onClick={e => e.stopPropagation()}
+                            onMouseDown={e => e.stopPropagation()}
+                            onDragStart={e => e.preventDefault()}
+                            draggable={false}
+                            style={{ cursor: 'default' }}
+                          >
+                            <PrescriptionGrid
+                              prescriptionRaw={ex.prescription_raw}
+                              unit={ex.unit}
+                              loadIncrement={loadIncrement}
+                              defaultLoad={defaultPrescriptionLoad}
+                              isCombo
+                              comboPartCount={(members?.length) || 2}
+                              onSave={raw => handleGridSave(ex, raw)}
+                            />
+                          </div>
                           {ex.notes && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
@@ -506,7 +463,22 @@ export function DayCard({
                               <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
                             )}
                           </div>
-                          <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={false} />
+                          <div
+                            onClick={e => e.stopPropagation()}
+                            onMouseDown={e => e.stopPropagation()}
+                            onDragStart={e => e.preventDefault()}
+                            draggable={false}
+                            style={{ cursor: 'default' }}
+                          >
+                            <PrescriptionGrid
+                              prescriptionRaw={ex.prescription_raw}
+                              unit={ex.unit}
+                              loadIncrement={loadIncrement}
+                              defaultLoad={defaultPrescriptionLoad}
+                              isCombo={false}
+                              onSave={raw => handleGridSave(ex, raw)}
+                            />
+                          </div>
                           {ex.notes && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
                           )}
