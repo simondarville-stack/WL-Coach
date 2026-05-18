@@ -9,9 +9,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
-import { SetEntryRow, expandSetLines } from './SetEntryRow';
+import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/plannerUtils';
+import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -61,7 +62,35 @@ export function ExerciseLogCard({
     setNotes(loggedExercise?.performed_notes ?? '');
   }, [loggedExercise?.performed_notes]);
 
-  const rows = useMemo(() => expandSetLines(planned.setLines), [planned.setLines]);
+  const rows = useMemo<SetRowInput[]>(() => {
+    // Structured set lines win. Free-text-reps prescriptions don't get
+    // stored as planned_set_lines (load_value is numeric), so when the
+    // unit is free_text_reps and setLines is empty we fall back to the
+    // free-text parser and synthesise rows. The loadText carries the
+    // coach's prose ("moderate work"), reps stay numeric, and load
+    // saves as null until the athlete types a kg figure.
+    if (planned.setLines.length > 0) return expandSetLines(planned.setLines);
+    if (planned.exercise.unit === 'free_text_reps' && planned.exercise.prescription_raw) {
+      const lines = parseFreeTextPrescription(planned.exercise.prescription_raw);
+      const out: SetRowInput[] = [];
+      let setNumber = 1;
+      for (const line of lines) {
+        const count = Math.max(1, line.sets ?? 1);
+        for (let i = 0; i < count; i += 1) {
+          out.push({
+            setNumber,
+            plannedRepsText: String(line.reps ?? '—'),
+            plannedLoadText: line.loadText || '—',
+            plannedRepsValue: line.reps ?? null,
+            plannedLoadValue: null,
+          });
+          setNumber += 1;
+        }
+      }
+      return out;
+    }
+    return [];
+  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw]);
   const setBySetNumber = useMemo(() => {
     const m = new Map<number, TrainingLogSet>();
     loggedSets.forEach(s => m.set(s.set_number, s));

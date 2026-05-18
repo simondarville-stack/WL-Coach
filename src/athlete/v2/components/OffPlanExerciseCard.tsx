@@ -8,7 +8,7 @@
  * - Each row gets a per-set delete (Trash) so accidental presses are
  *   reversible.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
@@ -47,13 +47,20 @@ export function OffPlanExerciseCard({
    * pendingBlanks count so it doesn't double up.
    */
   const [pendingBlanks, setPendingBlanks] = useState(0);
-
-  // When the parent merges in a freshly persisted set, drop one pending
-  // blank so we don't end up rendering persisted-set + blank stacked.
-  // Tracking via primitive dep (count) avoids reference-churn loops.
+  /**
+   * Track previous length so the pending-blank decrement only fires
+   * when a set is ADDED (length increases). Without this, deleting a
+   * set also decremented pendingBlanks, which made the trailing blank
+   * row disappear and confused the athlete.
+   */
+  const prevSetCountRef = useRef(sortedSets.length);
   useEffect(() => {
-    setPendingBlanks(p => Math.max(0, p - 1));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const prev = prevSetCountRef.current;
+    const curr = sortedSets.length;
+    if (curr > prev) {
+      setPendingBlanks(p => Math.max(0, p - (curr - prev)));
+    }
+    prevSetCountRef.current = curr;
   }, [sortedSets.length]);
 
   const accent = exercise?.color ?? '#6b7280';
