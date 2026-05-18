@@ -245,7 +245,11 @@ export function ExerciseLogCard({
                       logged={setLogged}
                       onSave={onSaveSet}
                       onDelete={
-                        setLogged && onDeleteSet ? () => onDeleteSet(setLogged.id) : undefined
+                        onDeleteSet
+                          ? () => {
+                              if (setLogged) return onDeleteSet(setLogged.id);
+                            }
+                          : undefined
                       }
                     />
                   );
