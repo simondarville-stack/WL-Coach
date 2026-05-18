@@ -35,8 +35,10 @@ interface SetEntryRowProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
-  /** Optional per-set delete: when present, renders a trash icon. */
-  onDelete?: () => Promise<void>;
+  /** Optional per-set delete: when present, renders a trash icon.
+   *  Can be sync (for removing a pending blank row that has no DB
+   *  presence yet) or async (for deleting a persisted row). */
+  onDelete?: () => void | Promise<void>;
 }
 
 function parseNumber(text: string): number | null {

@@ -129,6 +129,7 @@ export function OffPlanExerciseCard({
             }}
             logged={null}
             onSave={onSaveSet}
+            onDelete={() => setPendingBlanks(p => Math.max(0, p - 1))}
           />
         ))}
         <button

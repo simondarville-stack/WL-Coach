@@ -202,6 +202,22 @@ function PreviewExerciseRow({
           {allCompleted && <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />}
         </div>
 
+        {planned.exercise.is_combo && planned.comboMembers.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {planned.comboMembers.map((m, idx) => (
+              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
+                {idx > 0 && <span className="text-gray-600">+</span>}
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: m.exercise?.color ?? '#6b7280' }}
+                  aria-hidden
+                />
+                <span>{m.exercise?.name ?? '(unknown)'}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
             Plan
