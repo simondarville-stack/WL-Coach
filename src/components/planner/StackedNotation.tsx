@@ -19,6 +19,7 @@
 import {
   parsePrescription,
   parseComboPrescription,
+  parseFreeTextPrescription,
 } from '../../lib/prescriptionParser';
 import type { TrainingLogSet } from '../../lib/database.types';
 
@@ -88,18 +89,39 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
   if (!raw) return null;
 
   if (unit === 'free_text_reps') {
+    // Render the same stacked-column visual as numeric prescriptions:
+    // free-text load on top, parsed reps below, "× N" sets suffix.
+    // Falls back to raw prose when nothing parses (e.g. coach typed
+    // an unstructured note in this mode).
+    const lines = parseFreeTextPrescription(raw);
+    if (lines.length === 0) {
+      return (
+        <span
+          style={{
+            fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-primary)',
+            fontWeight: 500,
+            whiteSpace: 'pre-wrap',
+            lineHeight: 1.4,
+          }}
+        >
+          {raw}
+        </span>
+      );
+    }
     return (
-      <span
-        style={{
-          fontSize: 'var(--text-caption)',
-          color: 'var(--color-text-primary)',
-          fontWeight: 500,
-          whiteSpace: 'pre-wrap',
-          lineHeight: 1.4,
-        }}
-      >
-        {raw}
-      </span>
+      <div style={stackRow}>
+        {lines.map((line, i) => (
+          <div key={i} style={stackPair}>
+            <div style={stackColumn}>
+              <span style={mono}>{line.loadText}</span>
+              <div style={ruleStyle} />
+              <span style={mono}>{line.reps}</span>
+            </div>
+            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
+          </div>
+        ))}
+      </div>
     );
   }
 
