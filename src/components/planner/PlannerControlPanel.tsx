@@ -605,7 +605,11 @@ export function PlannerControlPanel({
             <BarChart2 size={16} />
           </IconButton>
 
-          {onResolvePercentages && selectedAthlete && athletePRs.length > 0 && (
+          {/* Conversion button stays visible regardless of PR coverage —
+              athletes without recorded PRs can still convert kg↔%
+              for any exercise that has a separate reference, and the
+              resolver modal flags rows it can't resolve. */}
+          {onResolvePercentages && selectedAthlete && (
             <div ref={convertMenuRef} style={{ position: 'relative' }}>
               <IconButton
                 title="Convert prescriptions between kg and percentages"
