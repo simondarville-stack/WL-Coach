@@ -98,26 +98,70 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
 
       const { data: logRows } = await supabase
         .from('training_log_exercises')
-        .select('performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
+        .select('id, performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
         .eq('exercise_id', exerciseId)
         .eq('session.athlete_id', athleteId)
         .eq('session.status', 'completed')
         .gte('session.date', lookBack);
 
+      // v2 training log writes per-set data into training_log_sets and
+      // leaves performed_raw empty, so we fetch both and prefer the set
+      // rows when they exist. v1 rows still parse the summary string.
+      const logExIds = (logRows ?? []).map(r => r.id);
+      type SetRow = {
+        log_exercise_id: string;
+        performed_load: number | null;
+        performed_reps: number | null;
+        status: 'pending' | 'completed' | 'skipped' | 'failed';
+      };
+      let setRows: SetRow[] = [];
+      if (logExIds.length > 0) {
+        const { data: lsRows } = await supabase
+          .from('training_log_sets')
+          .select('log_exercise_id, performed_load, performed_reps, status')
+          .in('log_exercise_id', logExIds);
+        setRows = (lsRows ?? []) as SetRow[];
+      }
+      const setsByLogEx = new Map<string, SetRow[]>();
+      for (const s of setRows) {
+        if (s.status !== 'completed') continue;
+        const list = setsByLogEx.get(s.log_exercise_id) ?? [];
+        list.push(s);
+        setsByLogEx.set(s.log_exercise_id, list);
+      }
+
       const perfByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       for (const row of logRows ?? []) {
         const session = row.session as { date: string } | null;
-        if (!session || !row.performed_raw) continue;
-        const ws    = getMondayUTC(session.date);
-        const lines = parsePrescription(row.performed_raw);
-        for (const line of lines) {
-          if (line.load <= 0) continue;
-          const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
-          perfByWeek.set(ws, {
-            max: Math.max(prev.max, line.load),
-            totalLoad: prev.totalLoad + line.load * line.reps * line.sets,
-            totalReps: prev.totalReps + line.reps * line.sets,
-          });
+        if (!session) continue;
+        const ws = getMondayUTC(session.date);
+        const setsForRow = setsByLogEx.get(row.id) ?? [];
+
+        if (setsForRow.length > 0) {
+          // v2 path: every completed set contributes to max + tonnage.
+          for (const s of setsForRow) {
+            const load = s.performed_load ?? 0;
+            const reps = s.performed_reps ?? 0;
+            if (load <= 0 || reps <= 0) continue;
+            const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
+            perfByWeek.set(ws, {
+              max: Math.max(prev.max, load),
+              totalLoad: prev.totalLoad + load * reps,
+              totalReps: prev.totalReps + reps,
+            });
+          }
+        } else if (row.performed_raw) {
+          // v1 fallback: parse the summary string the old client wrote.
+          const lines = parsePrescription(row.performed_raw);
+          for (const line of lines) {
+            if (line.load <= 0) continue;
+            const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
+            perfByWeek.set(ws, {
+              max: Math.max(prev.max, line.load),
+              totalLoad: prev.totalLoad + line.load * line.reps * line.sets,
+              totalReps: prev.totalReps + line.reps * line.sets,
+            });
+          }
         }
       }
 
