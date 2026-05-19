@@ -113,6 +113,21 @@ export function ExerciseLogCard({
   const allCompleted = rows.length > 0 && completedCount >= rows.length;
   const accent = planned.exerciseDef?.color ?? '#3B82F6';
 
+  /** Resolve the display name. For combos we prefer the coach's
+   *  combo_notation (e.g. "Snatch Complex"), then fall back to
+   *  "Member1 + Member2 + ..." — same logic the coach side uses, so
+   *  athletes don't see the first member's name as the exercise title. */
+  const plannedName = planned.exercise.is_combo
+    ? planned.exercise.combo_notation ??
+      (planned.comboMembers.length > 0
+        ? planned.comboMembers
+            .map(m => m.exercise?.name)
+            .filter((n): n is string => !!n)
+            .join(' + ')
+        : planned.exerciseDef?.name) ??
+      '(unknown exercise)'
+    : planned.exerciseDef?.name ?? '(unknown exercise)';
+
   // Sentinel exercises (free-text blocks) carry their content in
   // planned.exercise.notes, not in a structured prescription. Render
   // them as an informational note card — no set entry, no checkmarks.
@@ -152,14 +167,14 @@ export function ExerciseLogCard({
             <h3 className="text-sm font-bold text-white truncate">
               {performedExercise && performedExercise.id !== planned.exerciseDef?.id
                 ? performedExercise.name
-                : planned.exerciseDef?.name ?? '(unknown exercise)'}
+                : plannedName}
             </h3>
             {performedExercise && performedExercise.id !== planned.exerciseDef?.id && (
               <span
                 className="text-[9px] bg-purple-900/50 text-purple-200 font-medium px-1.5 py-0.5 rounded"
-                title={`Substituted for: ${planned.exerciseDef?.name ?? 'planned exercise'}`}
+                title={`Substituted for: ${plannedName}`}
               >
-                ⇄ for {planned.exerciseDef?.name}
+                ⇄ for {plannedName}
               </span>
             )}
             {allCompleted && <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />}

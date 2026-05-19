@@ -187,7 +187,16 @@ function PreviewExerciseRow({
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <h3 className="text-sm font-bold text-white">
-            {planned.exerciseDef?.name ?? '(unknown exercise)'}
+            {planned.exercise.is_combo
+              ? planned.exercise.combo_notation ??
+                (planned.comboMembers.length > 0
+                  ? planned.comboMembers
+                      .map(m => m.exercise?.name)
+                      .filter((n): n is string => !!n)
+                      .join(' + ')
+                  : planned.exerciseDef?.name) ??
+                '(unknown exercise)'
+              : planned.exerciseDef?.name ?? '(unknown exercise)'}
           </h3>
           {planned.exercise.variation_note && (
             <span className="text-[11px] text-gray-400 italic">
