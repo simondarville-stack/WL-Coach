@@ -43,6 +43,8 @@ interface WeekOverviewProps {
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
+  /** Persist a GPP block payload on a planned_exercise row. */
+  saveGppSection?: (plannedExId: string, section: import('../../lib/database.types').GppSection) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
@@ -70,6 +72,7 @@ export function WeekOverview({
   visibleCardMetrics,
   competitionTotal,
   savePrescription,
+  saveGppSection,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -153,6 +156,7 @@ export function WeekOverview({
                         onDockTemplateDayDrop={onDockTemplateDayDrop}
                         onSaveAsTemplate={onSaveAsTemplate}
                         savePrescription={savePrescription}
+                        saveGppSection={saveGppSection}
                         loadIncrement={loadIncrement}
                         defaultPrescriptionLoad={defaultPrescriptionLoad}
                         isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -198,6 +202,7 @@ export function WeekOverview({
                   onDockTemplateDayDrop={onDockTemplateDayDrop}
                   onSaveAsTemplate={onSaveAsTemplate}
                   savePrescription={savePrescription}
+                        saveGppSection={saveGppSection}
                   loadIncrement={loadIncrement}
                   defaultPrescriptionLoad={defaultPrescriptionLoad}
                   isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -239,6 +244,7 @@ export function WeekOverview({
             onDockTemplateDayDrop={onDockTemplateDayDrop}
             onSaveAsTemplate={onSaveAsTemplate}
             savePrescription={savePrescription}
+                        saveGppSection={saveGppSection}
             loadIncrement={loadIncrement}
             defaultPrescriptionLoad={defaultPrescriptionLoad}
             isLinkedToGroupPlan={isLinkedToGroupPlan}

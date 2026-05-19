@@ -79,19 +79,19 @@ export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEdito
   const save = async () => {
     // eslint-disable-next-line no-console
     console.log('[GppBlockEditor] save() called, section =', section);
-    // Strip rows where exercise name is blank — that's the noise from
-    // empty default slots. Keeps the print/log view tidy.
+    // Save exactly what the coach sees. We used to drop rows with a
+    // blank Exercise name, which silently nuked everything the coach
+    // typed if they hadn't filled the leftmost cell — confusing. The
+    // trash button is now the only way to remove a row.
     const cleaned: GppSection = {
       title: (section.title ?? '').trim() || 'GPP',
       description: (section.description ?? '').trim(),
-      rows: (section.rows ?? [])
-        .map(r => ({
-          exercise: (r.exercise ?? '').trim(),
-          reps: (r.reps ?? '').trim(),
-          sets: Math.max(1, Math.round(r.sets || 1)),
-          load: (r.load ?? '').trim(),
-        }))
-        .filter(r => r.exercise.length > 0),
+      rows: (section.rows ?? []).map(r => ({
+        exercise: (r.exercise ?? '').trim(),
+        reps: (r.reps ?? '').trim(),
+        sets: Math.max(1, Math.round(r.sets || 1)),
+        load: (r.load ?? '').trim(),
+      })),
     };
     // eslint-disable-next-line no-console
     console.log('[GppBlockEditor] cleaned payload =', cleaned);
