@@ -245,15 +245,56 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
   // Fetch training log exercises for sessions in range
   const sessionIds = sessions.map(s => s.id);
   let logExercises: Array<{
-    session_id: string; exercise_id: string; performed_raw: string; status: string; planned_exercise_id: string | null;
+    id: string; session_id: string; exercise_id: string; performed_raw: string; status: string; planned_exercise_id: string | null;
   }> = [];
 
   if (sessionIds.length > 0) {
     const leRes = await supabase
       .from('training_log_exercises')
-      .select('session_id, exercise_id, performed_raw, status, planned_exercise_id')
+      .select('id, session_id, exercise_id, performed_raw, status, planned_exercise_id')
       .in('session_id', sessionIds);
     logExercises = (leRes.data ?? []) as typeof logExercises;
+  }
+
+  // v2 training log persists actual reps/load per row in training_log_sets;
+  // performed_raw on the exercise row is left blank. Aggregate the sets
+  // per log_exercise so the per-week loop can read totals directly. The
+  // fallback to parsePerformedRaw stays for legacy v1 rows that only have
+  // the summary string.
+  const logExIds = logExercises.map(le => le.id);
+  let logSets: Array<{
+    log_exercise_id: string;
+    performed_load: number | null;
+    performed_reps: number | null;
+    status: 'pending' | 'completed' | 'skipped' | 'failed';
+  }> = [];
+  if (logExIds.length > 0) {
+    const lsRes = await supabase
+      .from('training_log_sets')
+      .select('log_exercise_id, performed_load, performed_reps, status')
+      .in('log_exercise_id', logExIds);
+    logSets = (lsRes.data ?? []) as typeof logSets;
+  }
+  const setAggByLogEx = new Map<string, { sets: number; reps: number; tonnage: number; maxLoad: number; avgLoad: number }>();
+  const loadSamplesByLogEx = new Map<string, number[]>();
+  for (const s of logSets) {
+    if (s.status !== 'completed') continue;
+    const reps = s.performed_reps ?? 0;
+    const load = s.performed_load ?? 0;
+    if (reps <= 0) continue;
+    const agg = setAggByLogEx.get(s.log_exercise_id) ?? { sets: 0, reps: 0, tonnage: 0, maxLoad: 0, avgLoad: 0 };
+    agg.sets += 1;
+    agg.reps += reps;
+    agg.tonnage += reps * load;
+    agg.maxLoad = Math.max(agg.maxLoad, load);
+    setAggByLogEx.set(s.log_exercise_id, agg);
+    const samples = loadSamplesByLogEx.get(s.log_exercise_id) ?? [];
+    samples.push(load);
+    loadSamplesByLogEx.set(s.log_exercise_id, samples);
+  }
+  for (const [id, agg] of setAggByLogEx) {
+    const samples = loadSamplesByLogEx.get(id) ?? [];
+    agg.avgLoad = samples.length ? samples.reduce((a, b) => a + b, 0) / samples.length : 0;
   }
 
   // Build lookup maps
@@ -356,22 +397,30 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
           continue;
         }
         performedExerciseCount++;
-        const parsed = parsePerformedRaw(le.performed_raw);
+        // v2 path: aggregated training_log_sets are the source of truth.
+        // v1 fallback: parse the performed_raw summary string.
+        const setAgg = setAggByLogEx.get(le.id);
+        const parsed = setAgg
+          ? { sets: setAgg.sets, reps: setAgg.reps, load: setAgg.maxLoad, avgLoad: setAgg.avgLoad, tonnage: setAgg.tonnage }
+          : (() => {
+              const p = parsePerformedRaw(le.performed_raw);
+              return { sets: p.sets, reps: p.reps, load: p.load, avgLoad: p.load, tonnage: p.reps * p.load };
+            })();
         performedSets += parsed.sets;
         performedReps += parsed.reps;
-        performedTonnage += parsed.reps * parsed.load;
+        performedTonnage += parsed.tonnage;
 
         if (ex) {
           const bd = exBreakdownMap.get(le.exercise_id) ?? {
             exerciseId: ex.id, exerciseName: ex.name, category: ex.category, color: ex.color,
             plannedSets: 0, plannedReps: 0, plannedMaxLoad: 0, plannedAvgLoad: 0,
-            performedSets: 0, performedReps: 0, performedMaxLoad: 0, performedAvgLoad: 0,
+            performedSets: 0, performedReps: 0, performedTonnage: 0, performedMaxLoad: 0, performedAvgLoad: 0,
           };
           bd.performedSets += parsed.sets;
           bd.performedReps += parsed.reps;
-          bd.performedTonnage += parsed.reps * parsed.load;
+          bd.performedTonnage += parsed.tonnage;
           bd.performedMaxLoad = Math.max(bd.performedMaxLoad, parsed.load);
-          bd.performedAvgLoad = parsed.load;
+          bd.performedAvgLoad = parsed.avgLoad;
           exBreakdownMap.set(le.exercise_id, bd);
         }
       }

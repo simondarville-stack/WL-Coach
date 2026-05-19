@@ -54,6 +54,11 @@ export interface AthleteEnrichment {
   rawPillars: RawPillars | null;
   rawTrend: number[];
   compTrend: number[];
+  /** Weekly planned rep totals from the same window as compTrend.
+   *  Plotted as the "Planned" baseline in the Reps view. */
+  repsPlannedTrend: number[];
+  /** Weekly performed rep totals — actually-logged sets summed. */
+  repsActualTrend: number[];
   bw: BwSummary | null;
   phaseName: string | null;
   phaseColor: string | null;
@@ -65,6 +70,8 @@ const EMPTY_ENRICHMENT: AthleteEnrichment = {
   rawPillars: null,
   rawTrend: [],
   compTrend: [],
+  repsPlannedTrend: [],
+  repsActualTrend: [],
   bw: null,
   phaseName: null,
   phaseColor: null,
@@ -182,8 +189,9 @@ export function useCoachDashboardV2() {
       const ownerId = getOwnerId();
       const athleteIds = statuses.map(s => s.athlete.id);
 
-      // 1) Latest non-planned session per athlete for RAW pillars.
-      // We pull a window of recent sessions and pick the latest one per athlete.
+      // 1) Latest non-planned session per athlete for RAW pillars only —
+      // the per-week RAW trend now comes from fetchWeeklyAggregates below
+      // so it aligns with the compliance/reps trends and weekly labels.
       const since = new Date();
       since.setDate(since.getDate() - 30);
       const { data: recentSessions } = await supabase
@@ -195,7 +203,6 @@ export function useCoachDashboardV2() {
         .order('date', { ascending: false });
 
       const pillarsByAthlete: Record<string, RawPillars> = {};
-      const rawTrendByAthlete: Record<string, number[]> = {};
       (recentSessions || []).forEach(s => {
         if (!pillarsByAthlete[s.athlete_id] && s.raw_total !== null) {
           pillarsByAthlete[s.athlete_id] = {
@@ -206,15 +213,6 @@ export function useCoachDashboardV2() {
             total: s.raw_total,
           };
         }
-        if (s.raw_total !== null) {
-          (rawTrendByAthlete[s.athlete_id] ||= []).push(s.raw_total);
-        }
-      });
-      // collected newest-first; reverse to chronological for the sparkline.
-      // Keep the full window so the planned-vs-actual chart can render as
-      // many weeks as it has data for.
-      Object.keys(rawTrendByAthlete).forEach(k => {
-        rawTrendByAthlete[k] = rawTrendByAthlete[k].slice(0, HISTORY_WEEKS).reverse();
       });
 
       // 2) Bodyweight entries (last 35 days covers 28d MA)
@@ -236,7 +234,9 @@ export function useCoachDashboardV2() {
       const bwByAthlete: Record<string, BodyweightEntry[]> = {};
       bwRows.forEach(e => { (bwByAthlete[e.athlete_id] ||= []).push(e); });
 
-      // 3) Compliance trend per athlete over the full history window
+      // 3) Compliance / RAW / reps trends per athlete over the full history
+      // window. We compute all three from the same weekly aggregates so the
+      // chart's x-axis is consistent regardless of which metric is selected.
       const endDate = new Date().toISOString().slice(0, 10);
       const startDate = new Date(Date.now() - HISTORY_WEEKS * 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
@@ -245,11 +245,28 @@ export function useCoachDashboardV2() {
           const aggs = await fetchWeeklyAggregates({
             athleteId: s.athlete.id, startDate, endDate,
           });
-          return [s.athlete.id, aggs.slice(-HISTORY_WEEKS).map(a => a.complianceReps)] as const;
+          const window = aggs.slice(-HISTORY_WEEKS);
+          return [
+            s.athlete.id,
+            {
+              comp: window.map(a => a.complianceReps),
+              raw: window.map(a => a.rawTotal ?? 0),
+              repsPlanned: window.map(a => a.plannedReps),
+              repsActual: window.map(a => a.performedReps),
+            },
+          ] as const;
         }),
       );
       const compByAthlete: Record<string, number[]> = {};
-      compEntries.forEach(([id, vals]) => { compByAthlete[id] = vals; });
+      const rawTrendByAthlete: Record<string, number[]> = {};
+      const repsPlannedByAthlete: Record<string, number[]> = {};
+      const repsActualByAthlete: Record<string, number[]> = {};
+      compEntries.forEach(([id, vals]) => {
+        compByAthlete[id] = vals.comp;
+        rawTrendByAthlete[id] = vals.raw;
+        repsPlannedByAthlete[id] = vals.repsPlanned;
+        repsActualByAthlete[id] = vals.repsActual;
+      });
 
       // 4) Phase metadata per athlete.
       //
@@ -344,13 +361,15 @@ export function useCoachDashboardV2() {
         const rawPillars = pillarsByAthlete[s.athlete.id] || null;
         const rawTrend = rawTrendByAthlete[s.athlete.id] || [];
         const compTrend = compByAthlete[s.athlete.id] || [];
+        const repsPlannedTrend = repsPlannedByAthlete[s.athlete.id] || [];
+        const repsActualTrend = repsActualByAthlete[s.athlete.id] || [];
         const bw = computeBwSummary(bwByAthlete[s.athlete.id] || []);
         const phase = resolvePhase(s);
         const flags = deriveFlags({
           status: s, rawAvg: s.rawAverage, rawTrend, compTrend, lastDays, settings,
         });
         next[s.athlete.id] = {
-          rawPillars, rawTrend, compTrend, bw,
+          rawPillars, rawTrend, compTrend, repsPlannedTrend, repsActualTrend, bw,
           phaseName: phase?.name || null,
           phaseColor: phase?.color || null,
           athleteEvents: athleteEventMap[s.athlete.id] || [],

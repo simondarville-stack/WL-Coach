@@ -49,6 +49,13 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
 
   const compSeries = enrichment.compTrend;
   const rawSeries = enrichment.rawTrend;
+  const repsPlannedSeries = enrichment.repsPlannedTrend;
+  const repsActualSeries = enrichment.repsActualTrend;
+  const repsMax = Math.max(
+    1,
+    ...repsPlannedSeries,
+    ...repsActualSeries,
+  );
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,360px)_1fr] gap-5 px-5 py-4">
@@ -119,13 +126,20 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
               height={130}
             />
           )}
+          {metric === 'reps' && repsActualSeries.length >= 2 && (
+            <PlannedActualChart
+              planned={repsPlannedSeries}
+              actual={repsActualSeries}
+              labels={weekLabels(repsActualSeries.length)}
+              yMax={Math.ceil(repsMax * 1.1)}
+              height={130}
+            />
+          )}
           {((metric === 'compliance' && compSeries.length < 2)
             || (metric === 'raw' && rawSeries.length < 2)
-            || metric === 'reps') && (
+            || (metric === 'reps' && repsActualSeries.length < 2)) && (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400 italic">
-              {metric === 'reps'
-                ? 'Per-week rep totals live in the athlete\'s analysis view.'
-                : 'Not enough history yet — keep logging weeks.'}
+              Not enough history yet — keep logging weeks.
             </div>
           )}
           <div className="flex gap-4 text-[11px] text-gray-400">
