@@ -28,6 +28,7 @@ import {
   deleteLogExercise,
   deleteSession,
   deleteLoggedSet,
+  removePlannedSet,
   setSubstitutedExercise,
   type AthleteDayData,
   type PlannedExerciseFull,
@@ -444,6 +445,24 @@ export function TodayScreen() {
     });
   };
 
+  /**
+   * Drop a planned set the athlete never touched. We ensure the log
+   * exercise exists so we have somewhere to persist the removal, then
+   * append the set number into metadata.removed_set_numbers.
+   * ExerciseLogCard filters its rendered rows by that list.
+   */
+  const handleRemovePlannedSet = (planned: PlannedExerciseFull) => async (setNumber: number) => {
+    if (!window.confirm('Remove this set from your plan?')) return;
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const logEx = await ensureLogEx(planned, session.id);
+      mergeLogExercise(logEx, planned.exerciseDef);
+      const updated = await removePlannedSet(logEx.id, setNumber);
+      mergeLogExercise(updated, planned.exerciseDef);
+    });
+  };
+
   const handleDeleteOffPlanExercise = async (logExerciseId: string) => {
     if (!window.confirm('Remove this exercise from your log?')) return;
     await runSave(async () => {
@@ -735,6 +754,7 @@ export function TodayScreen() {
                       onUpdateNotes={handleUpdateExerciseNotes(p)}
                       onMarkComplete={handleMarkComplete(p)}
                       onDeleteSet={handleDeleteSet}
+                      onRemovePlannedSet={handleRemovePlannedSet(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
                     />

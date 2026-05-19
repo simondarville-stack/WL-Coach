@@ -332,6 +332,13 @@ export interface TrainingLogSession {
   updated_at: string;
 }
 
+export interface TrainingLogExerciseMetadata {
+  /** Set numbers from the planned prescription the athlete chose to
+   *  drop. The set wasn't skipped (no ✗ press) — it was actively
+   *  removed from the day's plan. Rendered as a gap on coach Log. */
+  removed_set_numbers?: number[];
+}
+
 export interface TrainingLogExercise {
   id: string;
   session_id: string;
@@ -346,6 +353,7 @@ export interface TrainingLogExercise {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  metadata: TrainingLogExerciseMetadata;
 }
 
 export interface TrainingLogExerciseWithExercise extends TrainingLogExercise {

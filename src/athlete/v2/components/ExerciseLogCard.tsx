@@ -31,6 +31,9 @@ interface ExerciseLogCardProps {
   onMarkComplete: () => Promise<void>;
   /** Delete one logged set; passed through to SetEntryRow. */
   onDeleteSet?: (setId: string) => Promise<void>;
+  /** Drop a planned set that the athlete never touched. Persists the
+   *  removal so the row stays hidden across reloads. */
+  onRemovePlannedSet?: (setNumber: number) => Promise<void>;
   /** Open the substitution picker for this planned exercise. */
   onRequestSubstitute?: () => void;
   /** Optional: the actually-performed exercise after a substitution.
@@ -47,6 +50,7 @@ export function ExerciseLogCard({
   onUpdateNotes,
   onMarkComplete,
   onDeleteSet,
+  onRemovePlannedSet,
   onRequestSubstitute,
   performedExercise,
 }: ExerciseLogCardProps) {
@@ -62,6 +66,11 @@ export function ExerciseLogCard({
     setNotes(loggedExercise?.performed_notes ?? '');
   }, [loggedExercise?.performed_notes]);
 
+  const removedSetNumbers = useMemo(
+    () => loggedExercise?.metadata?.removed_set_numbers ?? [],
+    [loggedExercise?.metadata?.removed_set_numbers],
+  );
+
   const rows = useMemo<SetRowInput[]>(() => {
     // Structured set lines win. Free-text-reps prescriptions don't get
     // stored as planned_set_lines (load_value is numeric), so when the
@@ -69,15 +78,16 @@ export function ExerciseLogCard({
     // free-text parser and synthesise rows. The loadText carries the
     // coach's prose ("moderate work"), reps stay numeric, and load
     // saves as null until the athlete types a kg figure.
-    if (planned.setLines.length > 0) return expandSetLines(planned.setLines);
-    if (planned.exercise.unit === 'free_text_reps' && planned.exercise.prescription_raw) {
+    let base: SetRowInput[] = [];
+    if (planned.setLines.length > 0) {
+      base = expandSetLines(planned.setLines);
+    } else if (planned.exercise.unit === 'free_text_reps' && planned.exercise.prescription_raw) {
       const lines = parseFreeTextPrescription(planned.exercise.prescription_raw);
-      const out: SetRowInput[] = [];
       let setNumber = 1;
       for (const line of lines) {
         const count = Math.max(1, line.sets ?? 1);
         for (let i = 0; i < count; i += 1) {
-          out.push({
+          base.push({
             setNumber,
             plannedRepsText: String(line.reps ?? '—'),
             plannedLoadText: line.loadText || '—',
@@ -87,10 +97,12 @@ export function ExerciseLogCard({
           setNumber += 1;
         }
       }
-      return out;
     }
-    return [];
-  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw]);
+    // Drop planned rows the athlete actively removed. The trash on a
+    // planned-but-untouched row writes to metadata.removed_set_numbers;
+    // we honour that here without renumbering the surviving rows.
+    return base.filter(r => !removedSetNumbers.includes(r.setNumber));
+  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw, removedSetNumbers]);
   const setBySetNumber = useMemo(() => {
     const m = new Map<number, TrainingLogSet>();
     loggedSets.forEach(s => m.set(s.set_number, s));
@@ -170,13 +182,6 @@ export function ExerciseLogCard({
               </button>
             )}
           </div>
-          <div className="mt-0.5">
-            <StackedNotation
-              raw={planned.exercise.prescription_raw}
-              unit={planned.exercise.unit}
-              isCombo={planned.exercise.is_combo}
-            />
-          </div>
           {planned.exercise.is_combo && planned.comboMembers.length > 0 && (
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               {planned.comboMembers.map((m, idx) => (
@@ -192,6 +197,13 @@ export function ExerciseLogCard({
               ))}
             </div>
           )}
+          <div className="mt-1">
+            <StackedNotation
+              raw={planned.exercise.prescription_raw}
+              unit={planned.exercise.unit}
+              isCombo={planned.exercise.is_combo}
+            />
+          </div>
           {planned.exercise.variation_note && (
             <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">
               {planned.exercise.variation_note}
@@ -238,15 +250,23 @@ export function ExerciseLogCard({
               <div className="space-y-1.5">
                 {rows.map(row => {
                   const setLogged = setBySetNumber.get(row.setNumber) ?? null;
+                  // Trash is always available on a planned row: if the
+                  // set has been touched (any status) we delete the DB
+                  // row; if it's untouched we persist a "removed"
+                  // marker so the row stays gone after reload.
+                  const onDelete =
+                    setLogged && onDeleteSet
+                      ? () => onDeleteSet(setLogged.id)
+                      : onRemovePlannedSet
+                      ? () => onRemovePlannedSet(row.setNumber)
+                      : undefined;
                   return (
                     <SetEntryRow
                       key={row.setNumber}
                       input={row}
                       logged={setLogged}
                       onSave={onSaveSet}
-                      onDelete={
-                        setLogged && onDeleteSet ? () => onDeleteSet(setLogged.id) : undefined
-                      }
+                      onDelete={onDelete}
                     />
                   );
                 })}
