@@ -8,9 +8,9 @@
  * "Cancel" discards. Reads default-empty rows when no GPP payload
  * exists yet on the planned_exercise.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import type { GppRow, GppSection } from '../../lib/database.types';
+import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
 
 /** Supabase errors are plain objects (not Error). Pull the useful
  *  fields out so the modal shows the real reason — most often a missing
@@ -36,6 +36,10 @@ function describeError(e: unknown): string {
 interface GppBlockEditorProps {
   open: boolean;
   initial: GppSection | null;
+  /** Exercises the coach has in their library. Used to surface
+   *  typeahead suggestions while typing in the Exercise cell. Free
+   *  text is always accepted; suggestions are a shortcut, not a gate. */
+  exerciseCatalogue?: Exercise[];
   onClose: () => void;
   onSave: (section: GppSection) => Promise<void>;
 }
@@ -52,10 +56,28 @@ const DEFAULT_SECTION: GppSection = {
   ],
 };
 
-export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEditorProps) {
+export function GppBlockEditor({
+  open,
+  initial,
+  exerciseCatalogue = [],
+  onClose,
+  onSave,
+}: GppBlockEditorProps) {
   const [section, setSection] = useState<GppSection>(initial ?? DEFAULT_SECTION);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /** Filter the catalogue down to '— System' free exercises, sorted
+   *  by name so the suggestion list is predictable. Sentinels (TEXT /
+   *  IMAGE / VIDEO / GPP) shouldn't appear. */
+  const filteredCatalogue = useMemo(
+    () =>
+      (exerciseCatalogue ?? [])
+        .filter(e => e.category !== '— System')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [exerciseCatalogue],
+  );
 
   useEffect(() => {
     if (open) {
@@ -180,11 +202,11 @@ export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEdito
                   key={i}
                   className="grid grid-cols-[1fr_64px_48px_72px_24px] gap-1 items-center"
                 >
-                  <input
+                  <ExerciseAutocomplete
                     value={row.exercise}
-                    onChange={e => updateRow(i, { exercise: e.target.value })}
-                    placeholder="Box jumps"
-                    className="border border-gray-300 rounded px-2 py-1 text-[12px]"
+                    placeholder={`Exercise ${i + 1}`}
+                    catalogue={filteredCatalogue}
+                    onChange={next => updateRow(i, { exercise: next })}
                   />
                   <input
                     value={row.reps}
@@ -242,6 +264,102 @@ export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEdito
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * ExerciseAutocomplete — text input with a typeahead dropdown that
+ * filters the coach's exercise catalogue. Free text is always
+ * accepted: the dropdown is a shortcut, not a gate.
+ *
+ * Behaviour:
+ *  - Empty input + focused → suggestions hidden (avoids dumping the
+ *    whole catalogue into a tiny grid cell).
+ *  - Non-empty input → up to 6 best matches (case-insensitive prefix
+ *    first, then includes).
+ *  - Click suggestion → fills the cell, dropdown closes.
+ *  - Esc / blur → close the dropdown without committing anything new
+ *    beyond whatever the user typed.
+ */
+function ExerciseAutocomplete({
+  value,
+  placeholder,
+  catalogue,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  catalogue: Exercise[];
+  onChange: (next: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return [] as Exercise[];
+    const starts = catalogue.filter(e => e.name.toLowerCase().startsWith(q));
+    const contains = catalogue.filter(
+      e => !starts.includes(e) && e.name.toLowerCase().includes(q),
+    );
+    return [...starts, ...contains].slice(0, 6);
+  }, [value, catalogue]);
+
+  // Close the dropdown on outside click. We can't rely on blur alone
+  // because clicking the dropdown item itself fires blur first; the
+  // mousedown handler on suggestions prevents that.
+  useEffect(() => {
+    if (!focused) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [focused]);
+
+  const showList = focused && suggestions.length > 0;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onKeyDown={e => {
+          if (e.key === 'Escape') setFocused(false);
+        }}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded px-2 py-1 text-[12px]"
+      />
+      {showList && (
+        <div className="absolute left-0 right-0 top-full z-10 mt-0.5 bg-white border border-gray-200 rounded shadow-md max-h-44 overflow-y-auto">
+          {suggestions.map(s => (
+            <button
+              key={s.id}
+              type="button"
+              // mousedown fires before the input's blur — keeps the
+              // dropdown alive long enough for the click to register.
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                onChange(s.name);
+                setFocused(false);
+              }}
+              className="w-full text-left px-2 py-1 text-[12px] hover:bg-blue-50 flex items-center gap-1.5"
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: s.color || '#94a3b8' }}
+                aria-hidden
+              />
+              <span className="text-gray-800 truncate">{s.name}</span>
+              <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">{s.category}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -428,16 +428,50 @@ export function DayCard({
                           )}
                         </div>
                       ) : sentinel === 'gpp' ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Dumbbell size={11} style={{ color: '#10B981', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                            {ex.metadata?.gpp?.title || 'GPP'}
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
-                            {ex.metadata?.gpp?.rows?.length
-                              ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
-                              : 'click to edit'}
-                          </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Dumbbell size={11} style={{ color: '#10B981', flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                              {ex.metadata?.gpp?.title || 'GPP'}
+                            </span>
+                            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                              {ex.metadata?.gpp?.rows?.length
+                                ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
+                                : 'click to edit'}
+                            </span>
+                          </div>
+                          {ex.metadata?.gpp?.rows?.length ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 17 }}>
+                              {ex.metadata.gpp.rows.slice(0, 4).map((row, i) => {
+                                const label = row.exercise || `Exercise ${i + 1}`;
+                                const setsReps = [
+                                  row.sets > 1 ? `${row.sets}×` : '',
+                                  row.reps || '',
+                                ].filter(Boolean).join('');
+                                const suffix = [setsReps, row.load].filter(Boolean).join(' · ');
+                                return (
+                                  <div key={i} style={{
+                                    fontSize: 10,
+                                    color: 'var(--color-text-secondary)',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    lineHeight: 1.3,
+                                  }}>
+                                    <span style={{ color: 'var(--color-text-primary)' }}>{label}</span>
+                                    {suffix && (
+                                      <span style={{ color: 'var(--color-text-tertiary)' }}> {suffix}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {ex.metadata.gpp.rows.length > 4 && (
+                                <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                                  +{ex.metadata.gpp.rows.length - 4} more
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       ) : ex.is_combo && members ? (
                         <>
@@ -561,6 +595,7 @@ export function DayCard({
         <GppBlockEditor
           open
           initial={editingGpp.metadata?.gpp ?? null}
+          exerciseCatalogue={allExercises}
           onClose={() => setEditingGpp(null)}
           onSave={async section => {
             if (!saveGppSection) return;
