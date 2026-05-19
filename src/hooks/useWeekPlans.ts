@@ -471,6 +471,33 @@ export function useWeekPlans() {
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
+  /**
+   * Persist a GPP block payload on a planned_exercise row. The whole
+   * GppSection replaces metadata.gpp; other metadata keys are left
+   * untouched so future structured-content sentinels can share the bag.
+   */
+  const saveGppSection = async (
+    plannedExId: string,
+    gpp: import('../lib/database.types').GppSection,
+  ): Promise<void> => {
+    const { data: row, error: rErr } = await supabase
+      .from('planned_exercises')
+      .select('metadata')
+      .eq('id', plannedExId)
+      .single();
+    if (rErr) throw rErr;
+    const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+    const next = { ...current, gpp };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    const update: any = { metadata: next };
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update(update)
+      .eq('id', plannedExId);
+    if (error) throw error;
+    await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+  };
+
   const fetchOtherDayPrescriptions = async (
     weekplanId: string,
     exerciseId: string,
@@ -1022,6 +1049,7 @@ export function useWeekPlans() {
     saveSetLinesWithSummary,
     savePrescription,
     saveNotes,
+    saveGppSection,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

@@ -102,6 +102,7 @@ export function WeeklyPlanner() {
     normalizePositions,
     savePrescription,
     saveNotes,
+    saveGppSection,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1148,6 +1149,7 @@ export function WeeklyPlanner() {
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
                 onSaveAsTemplate={handleSaveDayAsTemplate}
                 savePrescription={savePrescription}
+                saveGppSection={saveGppSection}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
@@ -1195,6 +1197,7 @@ export function WeeklyPlanner() {
                     addExerciseToDay={addExerciseToDayWrapped}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
+                saveGppSection={saveGppSection}
                     saveNotes={saveNotes}
                     deletePlannedExercise={deletePlannedExercise}
                     reorderExercises={reorderExercises}
@@ -1245,6 +1248,7 @@ export function WeeklyPlanner() {
                     onBack={() => setPanelView('day')}
                     onSaved={handleRefresh}
                     savePrescription={savePrescription}
+                saveGppSection={saveGppSection}
                     saveNotes={saveNotes}
                     swapPlannedExercise={swapPlannedExercise}
                     updateComboExercise={updateComboExercise}

@@ -146,6 +146,31 @@ export interface WeekPlan {
   updated_at: string;
 }
 
+/** Single row inside a GPP (General Physical Preparation) section. */
+export interface GppRow {
+  exercise: string;
+  /** Reps text, kept as string to allow "12", "10-12", "AMRAP", "30 sec". */
+  reps: string;
+  sets: number;
+  /** Optional load, free-form string ("24 kg", "BW", "moderate"). */
+  load: string;
+  /** Athlete-only: true once they've ticked this row. Coach-side rows
+   *  use the planner metadata where this field is absent. */
+  done?: boolean;
+}
+
+export interface GppSection {
+  title: string;
+  description: string;
+  rows: GppRow[];
+}
+
+export interface PlannedExerciseMetadata {
+  /** GPP block content when the planned_exercise points at the GPP
+   *  sentinel exercise. Absent for non-GPP rows. */
+  gpp?: GppSection;
+}
+
 export interface PlannedExercise {
   id: string;
   weekplan_id: string;
@@ -163,7 +188,8 @@ export interface PlannedExercise {
   is_combo: boolean;
   combo_notation: string | null;
   combo_color: string | null;
-  source: 'group' | 'individual' | null;  // origin of exercise in individual plan
+  source: 'group' | 'individual' | null;
+  metadata: PlannedExerciseMetadata;
   created_at: string;
   updated_at: string;
 }
@@ -371,6 +397,10 @@ export interface TrainingLogExerciseMetadata {
    *  drop. The set wasn't skipped (no ✗ press) — it was actively
    *  removed from the day's plan. Rendered as a gap on coach Log. */
   removed_set_numbers?: number[];
+  /** Athlete-side state of a GPP block: the rows the athlete checked
+   *  off, plus any edits they made (e.g. they did 12 reps not 10).
+   *  When absent, the athlete view falls back to planned rows. */
+  gpp?: GppSection;
 }
 
 export interface TrainingLogExercise {

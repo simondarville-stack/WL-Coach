@@ -29,6 +29,7 @@ import {
   deleteSession,
   deleteLoggedSet,
   removePlannedSet,
+  setLogExerciseGppSection,
   setSessionCustomMetric,
   setSubstitutedExercise,
   type AthleteDayData,
@@ -37,6 +38,7 @@ import {
 } from '../../../lib/trainingLogService';
 import type {
   CustomMetricEntry,
+  GppSection,
   TrainingLogSession,
   TrainingLogSet,
 } from '../../../lib/database.types';
@@ -460,6 +462,18 @@ export function TodayScreen() {
     });
   };
 
+  /** Persist athlete-side GPP edits + done state. */
+  const handleSaveGppSection = (planned: PlannedExerciseFull) => async (section: GppSection) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const logEx = await ensureLogEx(planned, session.id);
+      mergeLogExercise(logEx, planned.exerciseDef);
+      const updated = await setLogExerciseGppSection(logEx.id, section);
+      mergeLogExercise(updated, planned.exerciseDef);
+    });
+  };
+
   /**
    * Drop a planned set the athlete never touched. We ensure the log
    * exercise exists so we have somewhere to persist the removal, then
@@ -780,6 +794,7 @@ export function TodayScreen() {
                       onMarkComplete={handleMarkComplete(p)}
                       onDeleteSet={handleDeleteSet}
                       onRemovePlannedSet={handleRemovePlannedSet(p)}
+                      onSaveGppSection={handleSaveGppSection(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
                     />

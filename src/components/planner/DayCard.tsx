@@ -1,15 +1,16 @@
 import { useRef, useState } from 'react';
-import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus } from 'lucide-react';
+import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
-import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry } from '../../lib/database.types';
+import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection } from '../../lib/database.types';
 import { getSentinelType, getYouTubeThumbnail, getOrCreateSentinel } from './plannerUtils';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
+import { GppBlockEditor } from './GppBlockEditor';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
@@ -49,6 +50,8 @@ interface DayCardProps {
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onSaveAsTemplate?: (dayIndex: number) => void;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
+  /** Persist a GPP block payload on a planned_exercise row. */
+  saveGppSection?: (plannedExId: string, section: GppSection) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -79,6 +82,7 @@ export function DayCard({
   onDockTemplateDayDrop,
   onSaveAsTemplate,
   savePrescription,
+  saveGppSection,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -92,6 +96,8 @@ export function DayCard({
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
+  /** When non-null, opens the GPP editor for that planned_exercise. */
+  const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const deleteHeld = useDeleteHeld();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,7 +127,12 @@ export function DayCard({
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
     if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
-    const codeMap: Record<string, string> = { '/text': 'TEXT', '/video': 'VIDEO', '/image': 'IMAGE' };
+    const codeMap: Record<string, string> = {
+      '/text': 'TEXT',
+      '/video': 'VIDEO',
+      '/image': 'IMAGE',
+      '/gpp': 'GPP',
+    };
     const code = codeMap[key];
     if (!code) return;
     setAdding(true);
@@ -385,6 +396,9 @@ export function DayCard({
                       // Shift+click is a transitional alias for Delete-held+click.
                       // Plan to remove the Shift alias after coaches are used to Delete-held.
                       if (deleteHeld || e.shiftKey) { void onDeleteExercise(ex.id).then(() => onRefresh()); return; }
+                      // GPP rows open the editor directly — there's no prescription
+                      // to bring up in the day editor for them.
+                      if (sentinel === 'gpp') { setEditingGpp(ex); return; }
                       onNavigateToExercise(ex.id);
                     }}
                   >
@@ -412,6 +426,18 @@ export function DayCard({
                           {ex.notes && (
                             <img src={ex.notes} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
+                        </div>
+                      ) : sentinel === 'gpp' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Dumbbell size={11} style={{ color: '#10B981', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                            {ex.metadata?.gpp?.title || 'GPP'}
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                            {ex.metadata?.gpp?.rows?.length
+                              ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
+                              : 'click to edit'}
+                          </span>
                         </div>
                       ) : ex.is_combo && members ? (
                         <>
@@ -530,6 +556,19 @@ export function DayCard({
         editingExercise={null}
         onSave={handleNewExerciseSave}
       />
+
+      {editingGpp && (
+        <GppBlockEditor
+          open
+          initial={editingGpp.metadata?.gpp ?? null}
+          onClose={() => setEditingGpp(null)}
+          onSave={async section => {
+            if (!saveGppSection) return;
+            await saveGppSection(editingGpp.id, section);
+            await onRefresh();
+          }}
+        />
+      )}
     </>
   );
 }

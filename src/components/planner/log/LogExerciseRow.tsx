@@ -102,6 +102,62 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
       </div>
     );
   }
+  if (sentinelType === 'gpp') {
+    const plannedGpp = planned?.metadata?.gpp ?? null;
+    const athleteGpp = logged?.log.metadata?.gpp ?? null;
+    // Athlete state wins if present; coach sees what the athlete logged
+    // (with their per-row done flags), otherwise falls back to planned.
+    const display = athleteGpp ?? plannedGpp;
+    const rows = display?.rows ?? [];
+    const doneCount = rows.filter(r => r.done).length;
+    return (
+      <div className="flex border-l-4 border-l-emerald-400">
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
+              {plannedGpp?.title || 'GPP'}
+            </span>
+            {rows.length > 0 && (
+              <span className="text-[10px] text-gray-500">
+                {doneCount}/{rows.length} done
+              </span>
+            )}
+          </div>
+          {plannedGpp?.description && (
+            <p className="text-[11px] text-gray-600 italic mb-1 whitespace-pre-wrap leading-snug">
+              {plannedGpp.description}
+            </p>
+          )}
+          {rows.length === 0 ? (
+            <p className="text-[10px] text-gray-400 italic">No rows yet</p>
+          ) : (
+            <table className="w-full text-[11px] border-collapse">
+              <thead>
+                <tr className="text-[9px] uppercase tracking-wide text-gray-500">
+                  <th className="text-left px-1 py-0.5">Exercise</th>
+                  <th className="text-center px-1 py-0.5 w-12">Reps</th>
+                  <th className="text-center px-1 py-0.5 w-10">Sets</th>
+                  <th className="text-left px-1 py-0.5 w-14">Load</th>
+                  <th className="text-center px-1 py-0.5 w-8">✓</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
+                    <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
+                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
+                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
+                    <td className="px-1 py-0.5 text-gray-700">{row.load || '—'}</td>
+                    <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex border-l-4 ${DELTA_BORDER[delta.state]} ${DELTA_BG[delta.state]}`}>

@@ -93,11 +93,12 @@ function saveOptions(opts: DesignerOptions) {
 
 // ─── Helpers (mirrors PrintWeek) ───────────────────────────────────────────
 
-type SentinelType = 'text' | 'video' | 'image' | null;
+type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
 function getSentinelType(code: string | null | undefined): SentinelType {
   if (code === 'TEXT') return 'text';
   if (code === 'VIDEO') return 'video';
   if (code === 'IMAGE') return 'image';
+  if (code === 'GPP') return 'gpp';
   return null;
 }
 function getYouTubeVideoId(url: string): string | null {
@@ -648,6 +649,51 @@ function ExerciseRow({
             <div className="dz-video-url">{url}</div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (sentinel === 'gpp') {
+    const gpp = ex.metadata?.gpp;
+    return (
+      <div className="dz-row dz-row-gpp" style={{
+        background: '#ecfdf5',
+        border: '1px solid #a7f3d0',
+        borderRadius: 4,
+        padding: '6px 8px',
+      }}>
+        <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: '#065f46', marginBottom: 2 }}>
+          {gpp?.title || 'GPP'}
+        </div>
+        {gpp?.description && (
+          <div style={{ fontSize: 10, fontStyle: 'italic', color: '#374151', marginBottom: 4, whiteSpace: 'pre-wrap' }}>
+            {gpp.description}
+          </div>
+        )}
+        {gpp && gpp.rows.length > 0 ? (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+            <thead>
+              <tr style={{ color: '#6b7280' }}>
+                <th style={{ textAlign: 'left', fontWeight: 500, paddingBottom: 2 }}>Exercise</th>
+                <th style={{ textAlign: 'center', fontWeight: 500, paddingBottom: 2, width: 44 }}>Reps</th>
+                <th style={{ textAlign: 'center', fontWeight: 500, paddingBottom: 2, width: 36 }}>Sets</th>
+                <th style={{ textAlign: 'left', fontWeight: 500, paddingBottom: 2, width: 56 }}>Load</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gpp.rows.map((row, i) => (
+                <tr key={i} style={{ borderTop: '1px solid #d1fae5' }}>
+                  <td style={{ color: '#1f2937', padding: '2px 0' }}>{row.exercise}</td>
+                  <td style={{ textAlign: 'center', color: '#374151', fontVariantNumeric: 'tabular-nums', padding: '2px 0' }}>{row.reps || '—'}</td>
+                  <td style={{ textAlign: 'center', color: '#374151', fontVariantNumeric: 'tabular-nums', padding: '2px 0' }}>{row.sets}</td>
+                  <td style={{ color: '#374151', padding: '2px 0' }}>{row.load || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>No rows yet</div>
+        )}
       </div>
     );
   }

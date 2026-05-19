@@ -46,12 +46,13 @@ export function abbreviateExercise(exercise: Pick<Exercise, 'name' | 'exercise_c
   return exercise.name.slice(0, 3).toUpperCase();
 }
 
-export type SentinelType = 'text' | 'video' | 'image' | null;
+export type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
 
 export function getSentinelType(code: string | null): SentinelType {
   if (code === 'TEXT') return 'text';
   if (code === 'VIDEO') return 'video';
   if (code === 'IMAGE') return 'image';
+  if (code === 'GPP') return 'gpp';
   return null;
 }
 
@@ -80,6 +81,7 @@ export async function getOrCreateSentinel(
     TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
     VIDEO: { name: 'Video',             color: '#6366F1' },
     IMAGE: { name: 'Image',             color: '#EC4899' },
+    GPP:   { name: 'General Physical Preparation', color: '#10B981' },
   };
   const def = sentinelDefs[code];
   if (!def) return null;

@@ -167,6 +167,52 @@ function PreviewExerciseRow({
       </li>
     );
   }
+  if (sentinel === 'gpp') {
+    const gpp = planned.exercise.metadata?.gpp;
+    const athleteGpp = logged?.log.metadata?.gpp;
+    const rows = athleteGpp?.rows ?? gpp?.rows ?? [];
+    return (
+      <li className="px-4 py-3">
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-sm font-bold text-white">{gpp?.title || 'GPP'}</h3>
+          <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide">
+            GPP
+          </span>
+        </div>
+        {gpp?.description && (
+          <p className="text-[11px] text-gray-300 italic mb-1.5 whitespace-pre-wrap leading-snug">
+            {gpp.description}
+          </p>
+        )}
+        {rows.length === 0 ? (
+          <p className="text-[11px] text-gray-500 italic">No rows yet</p>
+        ) : (
+          <table className="w-full text-[11px] border-collapse">
+            <thead>
+              <tr className="text-[9px] uppercase tracking-wide text-gray-500">
+                <th className="text-left px-1 py-1">Exercise</th>
+                <th className="text-center px-1 py-1 w-12">Reps</th>
+                <th className="text-center px-1 py-1 w-10">Sets</th>
+                <th className="text-center px-1 py-1 w-14">Load</th>
+                <th className="text-center px-1 py-1 w-8">✓</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr key={i} className={`border-t border-gray-800 ${row.done ? 'bg-emerald-950/30' : ''}`}>
+                  <td className="px-1 py-1 text-gray-100">{row.exercise}</td>
+                  <td className="px-1 py-1 text-center text-gray-200 tabular-nums">{row.reps || '—'}</td>
+                  <td className="px-1 py-1 text-center text-gray-200 tabular-nums">{row.sets}</td>
+                  <td className="px-1 py-1 text-center text-gray-200">{row.load || '—'}</td>
+                  <td className="px-1 py-1 text-center">{row.done ? '✓' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </li>
+    );
+  }
   const accent = planned.exerciseDef?.color ?? '#6b7280';
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
   const delta = computeDelta(

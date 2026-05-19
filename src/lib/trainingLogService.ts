@@ -625,6 +625,32 @@ export async function removePlannedSet(
 }
 
 /**
+ * Persist the athlete-side state of a GPP block (row edits + done
+ * flags) on the log_exercise's metadata. Idempotent.
+ */
+export async function setLogExerciseGppSection(
+  logExerciseId: string,
+  section: import('./database.types').GppSection,
+): Promise<TrainingLogExercise> {
+  const { data: row, error: rErr } = await supabase
+    .from('training_log_exercises')
+    .select('metadata')
+    .eq('id', logExerciseId)
+    .single();
+  if (rErr) throw rErr;
+  const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+  const next = { ...current, gpp: section };
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .update({ metadata: next } as never)
+    .eq('id', logExerciseId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+/**
  * Inverse of removePlannedSet — re-introduces a previously dropped
  * planned set (currently unused, but useful for future "undo remove").
  */

@@ -180,7 +180,12 @@ export function DayEditor({
   async function handleSlashCommand(key: string) {
     if (key === '/combo') { setShowComboModal(true); return; }
     if (key === '/newexercise') { setShowNewExerciseModal(true); return; }
-    const codeMap: Record<string, string> = { '/text': 'TEXT', '/video': 'VIDEO', '/image': 'IMAGE' };
+    const codeMap: Record<string, string> = {
+      '/text': 'TEXT',
+      '/video': 'VIDEO',
+      '/image': 'IMAGE',
+      '/gpp': 'GPP',
+    };
     const code = codeMap[key];
     if (!code) return;
     setAdding(true);

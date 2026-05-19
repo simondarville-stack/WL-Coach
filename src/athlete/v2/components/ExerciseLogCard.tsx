@@ -7,12 +7,13 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
-import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
+import type { TrainingLogSet, TrainingLogExercise, Exercise, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/plannerUtils';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
+import { GppLogCard } from './GppLogCard';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -34,6 +35,9 @@ interface ExerciseLogCardProps {
   /** Drop a planned set that the athlete never touched. Persists the
    *  removal so the row stays hidden across reloads. */
   onRemovePlannedSet?: (setNumber: number) => Promise<void>;
+  /** Persist a GPP block's row state when the athlete edits or ticks
+   *  a row. Required only when the planned exercise is a GPP sentinel. */
+  onSaveGppSection?: (section: GppSection) => Promise<void>;
   /** Open the substitution picker for this planned exercise. */
   onRequestSubstitute?: () => void;
   /** Optional: the actually-performed exercise after a substitution.
@@ -51,6 +55,7 @@ export function ExerciseLogCard({
   onMarkComplete,
   onDeleteSet,
   onRemovePlannedSet,
+  onSaveGppSection,
   onRequestSubstitute,
   performedExercise,
 }: ExerciseLogCardProps) {
@@ -139,6 +144,17 @@ export function ExerciseLogCard({
           {planned.exercise.notes || '(empty note)'}
         </p>
       </div>
+    );
+  }
+  if (sentinelType === 'gpp') {
+    return (
+      <GppLogCard
+        planned={planned.exercise.metadata?.gpp ?? null}
+        loggedExercise={loggedExercise}
+        onSave={async section => {
+          if (onSaveGppSection) await onSaveGppSection(section);
+        }}
+      />
     );
   }
 

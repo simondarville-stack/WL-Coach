@@ -29,11 +29,12 @@ interface PrintWeekProps {
   weekDescription?: string | null;
 }
 
-type SentinelType = 'text' | 'video' | 'image' | null;
+type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
 function getSentinelType(code: string | null | undefined): SentinelType {
   if (code === 'TEXT') return 'text';
   if (code === 'VIDEO') return 'video';
   if (code === 'IMAGE') return 'image';
+  if (code === 'GPP') return 'gpp';
   return null;
 }
 function getYouTubeVideoId(url: string): string | null {
@@ -397,6 +398,51 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
                             <p className="text-[9px] text-gray-500 break-all leading-tight">{url}</p>
                           </div>
                         </div>
+                      </div>
+                    );
+                  }
+                  if (sentinel === 'gpp') {
+                    const gpp = ex.metadata?.gpp;
+                    if (!gpp || gpp.rows.length === 0) {
+                      return (
+                        <div key={ex.id} className="break-inside-avoid bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                          <p className="text-[10px] uppercase tracking-wide font-semibold text-emerald-700">
+                            {gpp?.title || 'GPP'}
+                          </p>
+                          <p className="text-[10px] text-gray-500 italic">No rows yet</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={ex.id} className="break-inside-avoid bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                        <p className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700 mb-0.5">
+                          {gpp.title || 'GPP'}
+                        </p>
+                        {gpp.description && (
+                          <p className="text-[10px] text-gray-700 italic mb-1 whitespace-pre-wrap">
+                            {gpp.description}
+                          </p>
+                        )}
+                        <table className="w-full text-[10px] border-collapse">
+                          <thead>
+                            <tr className="text-gray-500">
+                              <th className="text-left font-medium pb-0.5">Exercise</th>
+                              <th className="text-center font-medium pb-0.5 w-12">Reps</th>
+                              <th className="text-center font-medium pb-0.5 w-10">Sets</th>
+                              <th className="text-left font-medium pb-0.5 w-14">Load</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {gpp.rows.map((row, i) => (
+                              <tr key={i} className="border-t border-emerald-100">
+                                <td className="text-gray-800 py-0.5">{row.exercise}</td>
+                                <td className="text-center text-gray-700 tabular-nums py-0.5">{row.reps || '—'}</td>
+                                <td className="text-center text-gray-700 tabular-nums py-0.5">{row.sets}</td>
+                                <td className="text-gray-700 py-0.5">{row.load || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     );
                   }
