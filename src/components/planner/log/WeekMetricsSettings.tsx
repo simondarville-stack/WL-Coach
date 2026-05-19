@@ -38,7 +38,6 @@ function describeError(e: unknown): string {
   // Always echo to the console too — even with the popover message,
   // the full structured object (stack, supabase code) is more useful
   // when filed in a bug report.
-  // eslint-disable-next-line no-console
   console.error('[WeekMetricsSettings]', e);
   if (e instanceof Error) return e.message;
   if (typeof e === 'string') return e;

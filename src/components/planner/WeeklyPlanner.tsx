@@ -1230,7 +1230,7 @@ export function WeeklyPlanner() {
                   className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
                   style={isSidebar
                     ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)' }}
                   tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}

@@ -190,6 +190,21 @@ export function TodayScreen() {
     [data],
   );
 
+  // These two need to live above the early-return for the rules-of-hooks
+  // lint to pass; they only consume `overview` so they're safe to
+  // compute even before we've resolved the athlete.
+  const nextBonusDayIndex = useMemo(() => {
+    if (!overview) return null;
+    const all = [...overview.days.map(d => d.dayIndex), ...overview.activeDays];
+    return all.length > 0 ? Math.max(...all) + 1 : 1;
+  }, [overview]);
+
+  const defaultBonusName = useMemo(() => {
+    if (!overview) return 'Extra 1';
+    const bonusCount = overview.days.filter(d => d.isBonus).length + 1;
+    return `Extra ${bonusCount}`;
+  }, [overview]);
+
   if (!athlete) return null;
 
   // ─── Mutation helpers ────────────────────────────────────────────────────
@@ -586,18 +601,6 @@ export function TodayScreen() {
     // a page revisit.
     await loadWeek();
   };
-
-  const nextBonusDayIndex = useMemo(() => {
-    if (!overview) return null;
-    const all = [...overview.days.map(d => d.dayIndex), ...overview.activeDays];
-    return all.length > 0 ? Math.max(...all) + 1 : 1;
-  }, [overview]);
-
-  const defaultBonusName = useMemo(() => {
-    if (!overview) return 'Extra 1';
-    const bonusCount = overview.days.filter(d => d.isBonus).length + 1;
-    return `Extra ${bonusCount}`;
-  }, [overview]);
 
   const handleConfirmBonusDay = async (name: string) => {
     if (!overview || nextBonusDayIndex == null) return;

@@ -16,7 +16,6 @@ import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
  *  fields out so the modal shows the real reason — most often a missing
  *  column or RLS denial. Also logs the raw object for bug reports. */
 function describeError(e: unknown): string {
-  // eslint-disable-next-line no-console
   console.error('[GppBlockEditor]', e);
   if (e instanceof Error) return e.message;
   if (typeof e === 'string') return e;
