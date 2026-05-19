@@ -29,6 +29,32 @@ import {
 } from '../../../lib/trainingLogService';
 import { getOwnerId } from '../../../lib/ownerContext';
 
+/** Supabase errors are plain objects, not Error instances, so the usual
+ *  `e instanceof Error` branch falls through to String(e) = "[object
+ *  Object]". Pull every useful field out so the popover can show
+ *  something actionable (most often "relation does not exist" when the
+ *  migration hasn't been applied yet, or an RLS violation). */
+function describeError(e: unknown): string {
+  // Always echo to the console too — even with the popover message,
+  // the full structured object (stack, supabase code) is more useful
+  // when filed in a bug report.
+  // eslint-disable-next-line no-console
+  console.error('[WeekMetricsSettings]', e);
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const obj = e as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof obj.message === 'string') parts.push(obj.message);
+    if (typeof obj.details === 'string') parts.push(obj.details);
+    if (typeof obj.hint === 'string') parts.push(`hint: ${obj.hint}`);
+    if (typeof obj.code === 'string') parts.push(`code ${obj.code}`);
+    if (parts.length) return parts.join(' · ');
+    try { return JSON.stringify(obj); } catch { /* noop */ }
+  }
+  return String(e);
+}
+
 interface WeekMetricsSettingsProps {
   athleteId: string;
   weekStart: string;
@@ -101,7 +127,7 @@ export function WeekMetricsSettings({
             : { ...DEFAULT_PANEL, enabledIds: new Set() },
         });
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setError(describeError(e));
       }
     })();
     return () => { cancelled = true; };
@@ -124,7 +150,7 @@ export function WeekMetricsSettings({
       setState(s => ({ ...s, config: cfg }));
       onChange?.(saved);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setSaving(false);
     }
@@ -168,7 +194,7 @@ export function WeekMetricsSettings({
       setNewUnit('');
       setShowAddForm(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setSaving(false);
     }
@@ -196,7 +222,7 @@ export function WeekMetricsSettings({
       }));
       setEditingId(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setSaving(false);
     }
@@ -218,7 +244,7 @@ export function WeekMetricsSettings({
         await persist({ enabledIds: nextIds });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setSaving(false);
     }
