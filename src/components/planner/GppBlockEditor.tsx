@@ -77,24 +77,30 @@ export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEdito
     setSection(s => ({ ...s, rows: s.rows.filter((_, idx) => idx !== i) }));
 
   const save = async () => {
+    // eslint-disable-next-line no-console
+    console.log('[GppBlockEditor] save() called, section =', section);
     // Strip rows where exercise name is blank — that's the noise from
     // empty default slots. Keeps the print/log view tidy.
     const cleaned: GppSection = {
-      title: section.title.trim() || 'GPP',
-      description: section.description.trim(),
-      rows: section.rows
+      title: (section.title ?? '').trim() || 'GPP',
+      description: (section.description ?? '').trim(),
+      rows: (section.rows ?? [])
         .map(r => ({
-          exercise: r.exercise.trim(),
-          reps: r.reps.trim(),
+          exercise: (r.exercise ?? '').trim(),
+          reps: (r.reps ?? '').trim(),
           sets: Math.max(1, Math.round(r.sets || 1)),
-          load: r.load.trim(),
+          load: (r.load ?? '').trim(),
         }))
         .filter(r => r.exercise.length > 0),
     };
+    // eslint-disable-next-line no-console
+    console.log('[GppBlockEditor] cleaned payload =', cleaned);
     setSaving(true);
     setError(null);
     try {
       await onSave(cleaned);
+      // eslint-disable-next-line no-console
+      console.log('[GppBlockEditor] onSave resolved, closing');
       onClose();
     } catch (e) {
       setError(describeError(e));
