@@ -12,6 +12,27 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import type { GppRow, GppSection } from '../../lib/database.types';
 
+/** Supabase errors are plain objects (not Error). Pull the useful
+ *  fields out so the modal shows the real reason — most often a missing
+ *  column or RLS denial. Also logs the raw object for bug reports. */
+function describeError(e: unknown): string {
+  // eslint-disable-next-line no-console
+  console.error('[GppBlockEditor]', e);
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const obj = e as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof obj.message === 'string') parts.push(obj.message);
+    if (typeof obj.details === 'string') parts.push(obj.details);
+    if (typeof obj.hint === 'string') parts.push(`hint: ${obj.hint}`);
+    if (typeof obj.code === 'string') parts.push(`code ${obj.code}`);
+    if (parts.length) return parts.join(' · ');
+    try { return JSON.stringify(obj); } catch { /* noop */ }
+  }
+  return String(e);
+}
+
 interface GppBlockEditorProps {
   open: boolean;
   initial: GppSection | null;
@@ -76,7 +97,7 @@ export function GppBlockEditor({ open, initial, onClose, onSave }: GppBlockEdito
       await onSave(cleaned);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeError(e));
     } finally {
       setSaving(false);
     }
