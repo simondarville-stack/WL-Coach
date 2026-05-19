@@ -1,22 +1,43 @@
 /**
- * SessionHeader — date, status, BW, RAW, session notes.
+ * SessionHeader — date, status, BW, RAW, VAS, custom metrics, session notes.
  *
  * No RPE input. Per coach request, RPE is intentionally omitted from
- * athlete logging. Bodyweight and readiness fire patches as the athlete
- * edits them.
+ * athlete logging.
+ *
+ * Which inputs render is driven by the coach's per-week metrics config:
+ *   trackRaw          → RawScoreDial
+ *   trackBodyweight   → BodyweightField
+ *   trackVas          → VasField
+ *   enabledMetricDefs → one CustomMetricField per definition
+ *
+ * Defaults when no config exists: RAW + BW on, VAS off, no custom —
+ * matches the pre-feature UX.
  */
 import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react';
 import { BodyweightField } from './BodyweightField';
 import { RawScoreDial, type RawScores } from './RawScoreDial';
-import type { TrainingLogSession } from '../../../lib/database.types';
+import { VasField } from './VasField';
+import { CustomMetricField } from './CustomMetricField';
+import type {
+  AthleteMetricDefinition,
+  AthleteWeekMetricsConfig,
+  CustomMetricEntry,
+  TrainingLogSession,
+} from '../../../lib/database.types';
 
 interface SessionHeaderProps {
   date: string;
   slotLabel: string;
   session: TrainingLogSession | null;
+  /** Coach-toggled tracking config for the week. Null = use defaults. */
+  metricsConfig: AthleteWeekMetricsConfig | null;
+  /** Definitions enabled this week (post-filter, in render order). */
+  enabledMetricDefs: AthleteMetricDefinition[];
   onPatchBodyweight: (bw: number | null) => Promise<void>;
   onPatchRaw: (raw: RawScores, total: number | null) => Promise<void>;
+  onPatchVas: (vas: number | null) => Promise<void>;
+  onPatchCustomMetric: (defId: string, value: CustomMetricEntry | null) => Promise<void>;
   onPatchNotes: (notes: string) => Promise<void>;
   saving?: boolean;
 }
@@ -27,8 +48,12 @@ export function SessionHeader({
   date,
   slotLabel,
   session,
+  metricsConfig,
+  enabledMetricDefs,
   onPatchBodyweight,
   onPatchRaw,
+  onPatchVas,
+  onPatchCustomMetric,
   onPatchNotes,
   saving,
 }: SessionHeaderProps) {
@@ -50,6 +75,14 @@ export function SessionHeader({
     day: 'numeric',
   });
 
+  // No config row yet → fall back to the pre-feature defaults so the
+  // UI doesn't suddenly hide RAW/BW for athletes whose coach hasn't
+  // opened the metrics popover.
+  const showRaw = metricsConfig ? metricsConfig.track_raw : true;
+  const showBw = metricsConfig ? metricsConfig.track_bodyweight : true;
+  const showVas = metricsConfig ? metricsConfig.track_vas : false;
+  const customValues = session?.custom_metrics ?? {};
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -70,9 +103,26 @@ export function SessionHeader({
         </div>
       </div>
 
-      <BodyweightField value={session?.bodyweight_kg ?? null} onChange={onPatchBodyweight} />
+      {showBw && (
+        <BodyweightField value={session?.bodyweight_kg ?? null} onChange={onPatchBodyweight} />
+      )}
 
-      <RawScoreDial value={raw} onChange={(next, total) => void onPatchRaw(next, total)} />
+      {showRaw && (
+        <RawScoreDial value={raw} onChange={(next, total) => void onPatchRaw(next, total)} />
+      )}
+
+      {showVas && (
+        <VasField value={session?.vas_score ?? null} onChange={onPatchVas} />
+      )}
+
+      {enabledMetricDefs.map(def => (
+        <CustomMetricField
+          key={def.id}
+          definition={def}
+          value={customValues[def.id]}
+          onChange={value => onPatchCustomMetric(def.id, value)}
+        />
+      ))}
 
       <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
         <label className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">

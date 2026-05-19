@@ -308,6 +308,13 @@ export interface GeneralSettings {
   updated_at: string;
 }
 
+/** Map of athlete_metric_definitions.id -> the value the athlete
+ *  entered. value_number wins for numeric metrics, value_text for
+ *  free-text metrics — they're mutually exclusive per metric. */
+export type CustomMetricEntry =
+  | { value_number: number; value_text?: never }
+  | { value_text: string; value_number?: never };
+
 export interface TrainingLogSession {
   id: string;
   owner_id: string;
@@ -328,6 +335,33 @@ export interface TrainingLogSession {
   duration_minutes: number | null;
   session_rpe: number | null;
   bodyweight_kg: number | null;
+  vas_score: number | null;
+  custom_metrics: Record<string, CustomMetricEntry>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AthleteMetricDefinition {
+  id: string;
+  athlete_id: string;
+  owner_id: string;
+  label: string;
+  value_type: 'number' | 'text';
+  unit: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AthleteWeekMetricsConfig {
+  id: string;
+  athlete_id: string;
+  owner_id: string;
+  week_start: string;
+  track_raw: boolean;
+  track_bodyweight: boolean;
+  track_vas: boolean;
+  enabled_custom_metric_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -685,6 +719,16 @@ export interface Database {
         Row: TrainingLogSession;
         Insert: Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      athlete_metric_definitions: {
+        Row: AthleteMetricDefinition;
+        Insert: Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      athlete_week_metrics_config: {
+        Row: AthleteWeekMetricsConfig;
+        Insert: Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'>>;
       };
       training_log_exercises: {
         Row: TrainingLogExercise;

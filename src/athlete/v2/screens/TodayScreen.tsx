@@ -29,12 +29,17 @@ import {
   deleteSession,
   deleteLoggedSet,
   removePlannedSet,
+  setSessionCustomMetric,
   setSubstitutedExercise,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
 } from '../../../lib/trainingLogService';
-import type { TrainingLogSession, TrainingLogSet } from '../../../lib/database.types';
+import type {
+  CustomMetricEntry,
+  TrainingLogSession,
+  TrainingLogSet,
+} from '../../../lib/database.types';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -318,6 +323,16 @@ export function TodayScreen() {
     });
 
   const handlePatchNotes = (notes: string) => patchSession({ session_notes: notes });
+
+  const handlePatchVas = (vas: number | null) => patchSession({ vas_score: vas });
+
+  const handlePatchCustomMetric = (defId: string, value: CustomMetricEntry | null) =>
+    runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const updated = await setSessionCustomMetric(session.id, defId, value);
+      mergeSession(updated);
+    });
 
   const ensureLogEx = async (planned: PlannedExerciseFull, sessionId: string) =>
     ensureLogExercise({
@@ -726,8 +741,18 @@ export function TodayScreen() {
               date={performedOnDate}
               slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
               session={data.log?.session ?? null}
+              metricsConfig={data.metricsConfig}
+              enabledMetricDefs={
+                data.metricsConfig
+                  ? data.metricDefinitions.filter(d =>
+                      data.metricsConfig!.enabled_custom_metric_ids.includes(d.id),
+                    )
+                  : []
+              }
               onPatchBodyweight={handlePatchBodyweight}
               onPatchRaw={handlePatchRaw}
+              onPatchVas={handlePatchVas}
+              onPatchCustomMetric={handlePatchCustomMetric}
               onPatchNotes={handlePatchNotes}
               saving={saving}
             />

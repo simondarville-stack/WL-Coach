@@ -19,6 +19,7 @@ import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
 import { LogWeekOverview } from './LogWeekOverview';
 import { CoachSetEditModal } from './CoachSetEditModal';
+import { WeekMetricsSettings } from './WeekMetricsSettings';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -147,15 +148,22 @@ export function LogModeView({
               </>
             )}
         </div>
-        <button
-          onClick={reload}
-          disabled={loading}
-          className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-gray-900 disabled:opacity-50 px-2 py-1 rounded hover:bg-gray-100"
-          title="Refresh log data"
-        >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-1">
+          <WeekMetricsSettings
+            athleteId={athleteId}
+            weekStart={weekStart}
+            onChange={reload}
+          />
+          <button
+            onClick={reload}
+            disabled={loading}
+            className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-gray-900 disabled:opacity-50 px-2 py-1 rounded hover:bg-gray-100"
+            title="Refresh log data"
+          >
+            <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (

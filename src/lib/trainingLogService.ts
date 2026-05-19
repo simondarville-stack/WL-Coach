@@ -14,6 +14,9 @@ import type {
   PlannedExercise,
   PlannedSetLine,
   ComboMemberEntry,
+  AthleteMetricDefinition,
+  AthleteWeekMetricsConfig,
+  CustomMetricEntry,
 } from './database.types';
 import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
 
@@ -32,6 +35,14 @@ export interface AthleteDayData {
   dayIndex: number;
   planned: PlannedExerciseFull[];
   log: DayLog | null;
+  /** Coach-toggled metric config for this athlete + week. Null if no
+   *  config row exists yet — callers should fall back to "RAW + BW on,
+   *  VAS off, no custom" so behaviour matches the pre-feature default. */
+  metricsConfig: AthleteWeekMetricsConfig | null;
+  /** Active custom metric definitions the coach has on this athlete.
+   *  May include definitions not enabled this week — UI filters by
+   *  metricsConfig.enabled_custom_metric_ids. */
+  metricDefinitions: AthleteMetricDefinition[];
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────
@@ -282,7 +293,15 @@ export async function fetchAthleteDay(
 
   const log = await fetchSessionForSlot(athleteId, weekStart, dayIndex);
 
-  return { weekStart, dayIndex, planned, log };
+  // Metric tracking config + definitions. Athlete app shows VAS, custom
+  // inputs, etc. based on this; we fetch in parallel and tolerate the
+  // tables being empty (no config yet, no definitions yet).
+  const [metricsConfig, metricDefinitions] = await Promise.all([
+    fetchWeekMetricsConfig(athleteId, weekStart),
+    fetchMetricDefinitions(athleteId),
+  ]);
+
+  return { weekStart, dayIndex, planned, log, metricsConfig, metricDefinitions };
 }
 
 // ─── Week overview (athlete day-picker) ───────────────────────────────────
@@ -971,6 +990,157 @@ export interface AthletePRRow {
   exerciseName: string;
   prValueKg: number | null;
   prDate: string | null;
+}
+
+// ─── Per-week metric tracking config ──────────────────────────────────────────
+//
+// The coach toggles per-week which inputs the athlete is asked for
+// (RAW, BW, VAS, custom). Definitions persist per athlete; the per-week
+// row picks which to actually collect this week. See migration
+// 20260519000002_add_metric_toggles.sql.
+
+export async function fetchMetricDefinitions(
+  athleteId: string,
+  opts: { includeArchived?: boolean } = {},
+): Promise<AthleteMetricDefinition[]> {
+  let q = supabase
+    .from('athlete_metric_definitions')
+    .select('*')
+    .eq('athlete_id', athleteId)
+    .order('created_at', { ascending: true });
+  if (!opts.includeArchived) q = q.is('archived_at', null);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as AthleteMetricDefinition[];
+}
+
+export async function createMetricDefinition(args: {
+  athleteId: string;
+  ownerId: string;
+  label: string;
+  valueType: 'number' | 'text';
+  unit: string | null;
+}): Promise<AthleteMetricDefinition> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const row: any = {
+    athlete_id: args.athleteId,
+    owner_id: args.ownerId,
+    label: args.label,
+    value_type: args.valueType,
+    unit: args.unit,
+  };
+  const { data, error } = await supabase
+    .from('athlete_metric_definitions')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AthleteMetricDefinition;
+}
+
+export async function updateMetricDefinition(
+  id: string,
+  patch: Partial<Pick<AthleteMetricDefinition, 'label' | 'value_type' | 'unit'>>,
+): Promise<AthleteMetricDefinition> {
+  const { data, error } = await supabase
+    .from('athlete_metric_definitions')
+    .update(patch as never)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AthleteMetricDefinition;
+}
+
+export async function archiveMetricDefinition(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('athlete_metric_definitions')
+    .update({ archived_at: new Date().toISOString() } as never)
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchWeekMetricsConfig(
+  athleteId: string,
+  weekStart: string,
+): Promise<AthleteWeekMetricsConfig | null> {
+  const { data, error } = await supabase
+    .from('athlete_week_metrics_config')
+    .select('*')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as AthleteWeekMetricsConfig | null;
+}
+
+export async function upsertWeekMetricsConfig(args: {
+  athleteId: string;
+  ownerId: string;
+  weekStart: string;
+  trackRaw: boolean;
+  trackBodyweight: boolean;
+  trackVas: boolean;
+  enabledCustomMetricIds: string[];
+}): Promise<AthleteWeekMetricsConfig> {
+  const existing = await fetchWeekMetricsConfig(args.athleteId, args.weekStart);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+  const row: any = {
+    athlete_id: args.athleteId,
+    owner_id: args.ownerId,
+    week_start: args.weekStart,
+    track_raw: args.trackRaw,
+    track_bodyweight: args.trackBodyweight,
+    track_vas: args.trackVas,
+    enabled_custom_metric_ids: args.enabledCustomMetricIds,
+  };
+  if (existing) {
+    const { data, error } = await supabase
+      .from('athlete_week_metrics_config')
+      .update(row as never)
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as AthleteWeekMetricsConfig;
+  }
+  const { data, error } = await supabase
+    .from('athlete_week_metrics_config')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AthleteWeekMetricsConfig;
+}
+
+/**
+ * Update a single custom metric value on a session. Pass `null` to
+ * clear it. Other custom metrics on the session are left untouched.
+ */
+export async function setSessionCustomMetric(
+  sessionId: string,
+  definitionId: string,
+  value: CustomMetricEntry | null,
+): Promise<TrainingLogSession> {
+  const { data: row, error: rErr } = await supabase
+    .from('training_log_sessions')
+    .select('custom_metrics')
+    .eq('id', sessionId)
+    .single();
+  if (rErr) throw rErr;
+  const current = ((row as { custom_metrics?: Record<string, CustomMetricEntry> } | null)
+    ?.custom_metrics ?? {}) as Record<string, CustomMetricEntry>;
+  const next: Record<string, CustomMetricEntry> = { ...current };
+  if (value === null) delete next[definitionId];
+  else next[definitionId] = value;
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .update({ custom_metrics: next } as never)
+    .eq('id', sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogSession;
 }
 
 /**
