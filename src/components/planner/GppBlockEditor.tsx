@@ -89,40 +89,49 @@ export function GppBlockEditor({
   if (!open) return null;
 
   const updateRow = (i: number, patch: Partial<GppRow>) => {
-    setSection(s => ({
-      ...s,
-      rows: s.rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
-    }));
+    setSection(s => {
+      const nextRows = s.rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+      // Auto-grow: if the last row just got an Exercise name, append a
+      // blank row so the coach can keep typing without reaching for
+      // "+ Add row". Empty trailing rows are dropped on save.
+      const isLast = i === s.rows.length - 1;
+      const gainedName =
+        !s.rows[i].exercise.trim() &&
+        typeof patch.exercise === 'string' &&
+        patch.exercise.trim().length > 0;
+      if (isLast && gainedName) {
+        nextRows.push({ ...EMPTY_ROW });
+      }
+      return { ...s, rows: nextRows };
+    });
   };
   const addRow = () => setSection(s => ({ ...s, rows: [...s.rows, { ...EMPTY_ROW }] }));
   const removeRow = (i: number) =>
     setSection(s => ({ ...s, rows: s.rows.filter((_, idx) => idx !== i) }));
 
   const save = async () => {
-    // eslint-disable-next-line no-console
-    console.log('[GppBlockEditor] save() called, section =', section);
-    // Save exactly what the coach sees. We used to drop rows with a
-    // blank Exercise name, which silently nuked everything the coach
-    // typed if they hadn't filled the leftmost cell — confusing. The
-    // trash button is now the only way to remove a row.
+    // Drop rows that have no Exercise name. With the auto-grow flow we
+    // always end up with a trailing blank row the coach hasn't filled,
+    // and possibly skipped rows in the middle they didn't want. The
+    // Exercise cell is the canonical "is this a real row?" signal —
+    // everything else is metadata. Trash button still works for
+    // intentionally removing filled rows.
     const cleaned: GppSection = {
       title: (section.title ?? '').trim() || 'GPP',
       description: (section.description ?? '').trim(),
-      rows: (section.rows ?? []).map(r => ({
-        exercise: (r.exercise ?? '').trim(),
-        reps: (r.reps ?? '').trim(),
-        sets: Math.max(1, Math.round(r.sets || 1)),
-        load: (r.load ?? '').trim(),
-      })),
+      rows: (section.rows ?? [])
+        .map(r => ({
+          exercise: (r.exercise ?? '').trim(),
+          reps: (r.reps ?? '').trim(),
+          sets: Math.max(1, Math.round(r.sets || 1)),
+          load: (r.load ?? '').trim(),
+        }))
+        .filter(r => r.exercise.length > 0),
     };
-    // eslint-disable-next-line no-console
-    console.log('[GppBlockEditor] cleaned payload =', cleaned);
     setSaving(true);
     setError(null);
     try {
       await onSave(cleaned);
-      // eslint-disable-next-line no-console
-      console.log('[GppBlockEditor] onSave resolved, closing');
       onClose();
     } catch (e) {
       setError(describeError(e));
