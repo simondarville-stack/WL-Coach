@@ -111,9 +111,9 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
       <div className="flex items-start gap-2 px-3 py-3">
         <div className="w-1 self-stretch rounded-full flex-shrink-0 bg-emerald-500" aria-hidden />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-white truncate">{title}</h3>
-            <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-bold text-white break-words min-w-0">{title}</h3>
+            <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
               GPP
             </span>
             {allDone && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
@@ -160,11 +160,10 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
                         <Check size={12} strokeWidth={3} />
                       </button>
                     </td>
-                    <td className="px-1 py-1">
-                      <input
+                    <td className="px-1 py-1 align-top">
+                      <AutoGrowExerciseInput
                         value={row.exercise}
-                        onChange={e => updateRow(i, { exercise: e.target.value })}
-                        className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px]"
+                        onChange={next => updateRow(i, { exercise: next })}
                       />
                     </td>
                     <td className="px-1 py-1">
@@ -199,5 +198,41 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Single-line-by-default textarea that grows in height as the athlete
+ * types a long exercise name. Native <input> is single-line and just
+ * scrolls horizontally — on a narrow phone viewport that hides the
+ * end of names like "Single-leg Romanian deadlift with kettlebell".
+ *
+ * We size to scrollHeight on every value change. resize: none prevents
+ * the user from dragging the textarea handle; overflow: hidden keeps
+ * the scrollbar out while we're in control of the height.
+ */
+function AutoGrowExerciseInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px] leading-snug"
+      style={{ resize: 'none', overflow: 'hidden' }}
+    />
   );
 }
