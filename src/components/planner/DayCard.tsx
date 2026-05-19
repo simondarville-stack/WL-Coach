@@ -444,11 +444,14 @@ export function DayCard({
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 17 }}>
                               {ex.metadata.gpp.rows.slice(0, 4).map((row, i) => {
                                 const label = row.exercise || `Exercise ${i + 1}`;
-                                const setsReps = [
-                                  row.sets > 1 ? `${row.sets}×` : '',
+                                // reps × sets order — matches how OWL
+                                // coaches read prescriptions ("10×3" =
+                                // 10 reps, 3 sets).
+                                const repsSets = [
                                   row.reps || '',
+                                  row.sets > 1 ? `×${row.sets}` : '',
                                 ].filter(Boolean).join('');
-                                const suffix = [setsReps, row.load].filter(Boolean).join(' · ');
+                                const suffix = [repsSets, row.load].filter(Boolean).join(' · ');
                                 return (
                                   <div key={i} style={{
                                     fontSize: 10,
