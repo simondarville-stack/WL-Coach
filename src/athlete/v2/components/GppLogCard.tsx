@@ -7,7 +7,7 @@
  * training_log_exercises.metadata.gpp; the coach's planned section
  * stays untouched as the fallback / "what was prescribed".
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type {
   TrainingLogExercise,
@@ -44,32 +44,64 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
 
+  // Re-seed only when the planned structure changes — e.g. coach
+  // added a row from the planner. We deliberately do NOT re-sync from
+  // athleteSection on every save round-trip: doing so used to stomp
+  // characters the athlete was still typing because the useEffect
+  // fired the moment the server response came back.
   useEffect(() => {
-    const next = planned
-      ? mergeRows(planned.rows, athleteSection?.rows)
-      : athleteSection?.rows ?? [];
-    setRows(next);
-    // Re-seed when planned changes or athlete state arrives from server.
-    // Length signature is enough — finer diffing isn't worth the churn.
+    if (!planned) return;
+    setRows(prev => mergeRows(planned.rows, prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planned?.rows.length, athleteSection?.rows.length]);
+  }, [planned?.rows.length]);
 
   const title = planned?.title || 'GPP';
   const description = planned?.description || '';
 
-  const commit = (nextRows: GppRow[]) => {
-    const section: GppSection = {
-      title,
-      description,
-      rows: nextRows,
-    };
-    void onSave(section);
+  /**
+   * Serial save queue. Every edit (typing, ticking done) calls
+   * enqueueSave with the current row state. While a save is in flight,
+   * further edits just overwrite the pending payload so multiple
+   * rapid keystrokes coalesce into one round-trip with the latest
+   * state. Eliminates the race where parallel ensureLogExercise calls
+   * would each try to insert a fresh training_log_exercise row,
+   * landing duplicates and then erroring on subsequent .single() reads.
+   */
+  const pendingRef = useRef<GppSection | null>(null);
+  const processingRef = useRef(false);
+
+  const drainQueue = async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    try {
+      while (pendingRef.current) {
+        const next = pendingRef.current;
+        pendingRef.current = null;
+        try {
+          await onSave(next);
+        } catch (err) {
+          // Bail out of the loop on error; the parent's runSave already
+          // surfaces the message and reloads the day. The next user
+          // change will retry.
+          // eslint-disable-next-line no-console
+          console.error('[GppLogCard] save failed', err);
+          break;
+        }
+      }
+    } finally {
+      processingRef.current = false;
+    }
+  };
+
+  const enqueueSave = (nextRows: GppRow[]) => {
+    pendingRef.current = { title, description, rows: nextRows };
+    void drainQueue();
   };
 
   const updateRow = (i: number, patch: Partial<GppRow>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     setRows(next);
-    commit(next);
+    enqueueSave(next);
   };
 
   const allDone = rows.length > 0 && rows.every(r => r.done);
