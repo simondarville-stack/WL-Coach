@@ -8,12 +8,19 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
-import type { PlannedExercise, Exercise } from '../../../lib/database.types';
+import type {
+  PlannedExercise,
+  Exercise,
+  AthleteMetricDefinition,
+  AthleteWeekMetricsConfig,
+} from '../../../lib/database.types';
 import {
   fetchWeekLog,
   addComment,
   deleteLogExercise,
   deleteSession,
+  fetchWeekMetricsConfig,
+  fetchMetricDefinitions,
 } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
@@ -38,6 +45,8 @@ export function LogModeView({
   dayLabels,
 }: LogModeViewProps) {
   const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
+  const [metricsConfig, setMetricsConfig] = useState<AthleteWeekMetricsConfig | null>(null);
+  const [metricDefs, setMetricDefs] = useState<AthleteMetricDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
@@ -46,9 +55,15 @@ export function LogModeView({
   const reload = useCallback(() => {
     setLoading(true);
     setError(null);
-    fetchWeekLog(athleteId, weekStart)
-      .then(data => {
-        setWeekLog(data);
+    Promise.all([
+      fetchWeekLog(athleteId, weekStart),
+      fetchWeekMetricsConfig(athleteId, weekStart),
+      fetchMetricDefinitions(athleteId),
+    ])
+      .then(([log, cfg, defs]) => {
+        setWeekLog(log);
+        setMetricsConfig(cfg);
+        setMetricDefs(defs);
         setLoadedAt(new Date());
       })
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
@@ -108,10 +123,16 @@ export function LogModeView({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchWeekLog(athleteId, weekStart)
-      .then(data => {
+    Promise.all([
+      fetchWeekLog(athleteId, weekStart),
+      fetchWeekMetricsConfig(athleteId, weekStart),
+      fetchMetricDefinitions(athleteId),
+    ])
+      .then(([log, cfg, defs]) => {
         if (cancelled) return;
-        setWeekLog(data);
+        setWeekLog(log);
+        setMetricsConfig(cfg);
+        setMetricDefs(defs);
         setLoadedAt(new Date());
       })
       .catch(e => {
@@ -187,6 +208,12 @@ export function LogModeView({
           visibleDays={visibleDays}
           plannedExercises={plannedExercises}
           weekLog={weekLog}
+          metricsConfig={metricsConfig}
+          enabledMetricDefs={
+            metricsConfig
+              ? metricDefs.filter(d => metricsConfig.enabled_custom_metric_ids.includes(d.id))
+              : []
+          }
         />
       )}
 

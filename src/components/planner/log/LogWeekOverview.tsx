@@ -1,38 +1,37 @@
 /**
  * LogWeekOverview — coach ribbon comparing planned vs performed totals
- * across one week, with a day-trained strip and a per-day RAW bar chart.
+ * across one week, with a day-trained strip and per-metric tables.
  *
- * Pure: derives all numbers from plannedExercises + weekLog. No fetches.
- * Sits at the top of LogModeView so the coach can read the week at a
- * glance before drilling into days.
+ * Tables (only rendered when the matching toggle is on for this week):
+ *   RAW readiness: one row per pillar (Sleep/Physical/Mood/Nutrition)
+ *                  plus a Total row, columns = days, last col = average.
+ *                  Coach can scan a row to spot "this athlete keeps
+ *                  bombing nutrition every week".
+ *   Other metrics: rows for Bodyweight / VAS / each enabled custom
+ *                  metric, columns = days, average column (numeric only).
  *
- * Metrics:
- * - Sets:  count of planned set lines (summary_total_sets) vs count of
- *          training_log_sets with status='completed'
- * - Reps:  summary_total_reps vs sum of performed_reps on completed sets
- * - Tonnage: sum (planned_load × planned_reps × sets) approximated via
- *           summary_avg_load × summary_total_reps, vs sum of
- *           performed_load × performed_reps over completed sets
- * - Avg / K: tonnage / total reps for each side (kg per rep — same
- *            number a coach calls "K-value" or "average intensity")
- * - Sessions: count of distinct planned-day indices vs count of
- *             session rows where status='completed'
+ * Both tables share the same columnar layout so days line up vertically
+ * regardless of which metrics are on.
  *
- * Day strip: one filled dot per planned slot, green when its session
- * is completed, red on skip, amber when started, grey when pending.
- * Bonus athlete-added days appear after the planned ones with an "+"
- * marker.
- *
- * RAW chart: tiny bar per day with a logged session whose raw_total is
- * set; bar height proportional to raw_total/12, colour by guidance band.
+ * Pure: derives all numbers from plannedExercises + weekLog + config.
  */
-import type { PlannedExercise, Exercise } from '../../../lib/database.types';
+import type {
+  Exercise,
+  PlannedExercise,
+  AthleteMetricDefinition,
+  AthleteWeekMetricsConfig,
+  CustomMetricEntry,
+} from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
 
 interface LogWeekOverviewProps {
   visibleDays: Array<{ index: number; name: string }>;
   plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
   weekLog: Record<number, DayLog>;
+  /** Coach-toggled tracking config. Null = pre-feature defaults. */
+  metricsConfig: AthleteWeekMetricsConfig | null;
+  /** Custom metric definitions enabled this week, in render order. */
+  enabledMetricDefs: AthleteMetricDefinition[];
 }
 
 interface Totals {
@@ -54,9 +53,6 @@ function plannedTotals(rows: (PlannedExercise & { exercise: Exercise })[]): Tota
     const avg = ex.summary_avg_load ?? 0;
     sets += s;
     reps += r;
-    // % prescriptions and "free_text_reps" don't have a meaningful kg
-    // average yet; skip them so the planned tonnage doesn't get inflated
-    // by zeros. Coach can still compare sets and reps.
     if (ex.unit === 'absolute_kg' && avg > 0 && r > 0) {
       tonnage += avg * r;
     }
@@ -94,7 +90,21 @@ function deltaClass(p: number | null): string {
   return 'text-red-700';
 }
 
-export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogWeekOverviewProps) {
+interface DayColumn {
+  key: string;
+  label: string;
+  /** Index into weekLog to read this column's session data. */
+  dayIndex: number;
+  isBonus: boolean;
+}
+
+export function LogWeekOverview({
+  visibleDays,
+  plannedExercises,
+  weekLog,
+  metricsConfig,
+  enabledMetricDefs,
+}: LogWeekOverviewProps) {
   // Planned aggregate across all visible days.
   const plannedAgg = visibleDays.reduce<Totals>(
     (acc, day) => {
@@ -150,26 +160,28 @@ export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogW
     })),
   ];
 
-  // RAW chart points (only days with at least one pillar logged).
-  // We keep all four pillar values so the stacked histogram reveals
-  // whether a low total comes from sleep, soreness, etc.
-  const rawPoints = stripDays
-    .map(d => {
-      const dayLog = Object.values(weekLog).find(l => l.session?.day_index === Number(d.key.slice(1)));
-      const s = dayLog?.session;
-      if (!s) return null;
-      const sleep = s.raw_sleep ?? 0;
-      const physical = s.raw_physical ?? 0;
-      const mood = s.raw_mood ?? 0;
-      const nutrition = s.raw_nutrition ?? 0;
-      if (sleep + physical + mood + nutrition === 0) return null;
-      return {
-        label: d.label,
-        sleep, physical, mood, nutrition,
-        total: s.raw_total ?? sleep + physical + mood + nutrition,
-      };
-    })
-    .filter((x): x is { label: string; sleep: number; physical: number; mood: number; nutrition: number; total: number } => x !== null);
+  // Columns for the per-metric tables, in same order as the day strip.
+  const columns: DayColumn[] = [
+    ...visibleDays.map(d => ({
+      key: `v${d.index}`,
+      label: d.name.slice(0, 3),
+      dayIndex: d.index,
+      isBonus: false,
+    })),
+    ...bonusIndices.map(idx => ({
+      key: `b${idx}`,
+      label: '+',
+      dayIndex: idx,
+      isBonus: true,
+    })),
+  ];
+
+  // Default to pre-feature behaviour (RAW + BW shown) when no config row
+  // exists yet. VAS / custom stay off until the coach opts in.
+  const trackRaw = metricsConfig ? metricsConfig.track_raw : true;
+  const trackBw = metricsConfig ? metricsConfig.track_bodyweight : true;
+  const trackVas = metricsConfig ? metricsConfig.track_vas : false;
+  const showOtherMetrics = trackBw || trackVas || enabledMetricDefs.length > 0;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3 mb-3">
@@ -213,33 +225,44 @@ export function LogWeekOverview({ visibleDays, plannedExercises, weekLog }: LogW
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-1">
-        <div>
-          <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
-            Days trained
-          </div>
-          <div className="flex items-center gap-1 flex-wrap">
-            {stripDays.length === 0 ? (
-              <span className="text-[11px] text-gray-400 italic">No days planned</span>
-            ) : (
-              stripDays.map(d => (
-                <DayDot key={d.key} label={d.label} status={d.status} isBonus={d.isBonus} />
-              ))
-            )}
-          </div>
+      <div className="mb-3">
+        <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
+          Days trained
         </div>
-
-        <div>
-          <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
-            RAW readiness
-          </div>
-          {rawPoints.length === 0 ? (
-            <span className="text-[11px] text-gray-400 italic">No RAW scores logged</span>
+        <div className="flex items-center gap-1 flex-wrap">
+          {stripDays.length === 0 ? (
+            <span className="text-[11px] text-gray-400 italic">No days planned</span>
           ) : (
-            <RawStackedChart points={rawPoints} />
+            stripDays.map(d => (
+              <DayDot key={d.key} label={d.label} status={d.status} isBonus={d.isBonus} />
+            ))
           )}
         </div>
       </div>
+
+      {trackRaw && (
+        <div className="mb-3">
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
+            RAW readiness
+          </div>
+          <RawTable columns={columns} weekLog={weekLog} />
+        </div>
+      )}
+
+      {showOtherMetrics && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
+            Other metrics
+          </div>
+          <OtherMetricsTable
+            columns={columns}
+            weekLog={weekLog}
+            trackBw={trackBw}
+            trackVas={trackVas}
+            customDefs={enabledMetricDefs}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -286,118 +309,270 @@ function DayDot({ label, status, isBonus }: { label: string; status: string; isB
   );
 }
 
-// Per-pillar fill colours, chosen for contrast against white and each
-// other. Stack order in the bar is bottom→top: sleep, physical, mood,
-// nutrition — matches the order pillars appear in the athlete dial.
-const PILLAR_FILL: Record<'sleep' | 'physical' | 'mood' | 'nutrition', string> = {
-  sleep:     '#3b82f6', // blue
-  physical:  '#10b981', // emerald
-  mood:      '#8b5cf6', // violet
-  nutrition: '#f59e0b', // amber
-};
-const PILLAR_LABEL: Record<'sleep' | 'physical' | 'mood' | 'nutrition', string> = {
+// ─── RAW table ───────────────────────────────────────────────────────────────
+
+const PILLARS = ['sleep', 'physical', 'mood', 'nutrition'] as const;
+const PILLAR_LABEL: Record<typeof PILLARS[number], string> = {
   sleep: 'Sleep',
   physical: 'Physical',
   mood: 'Mood',
   nutrition: 'Nutrition',
 };
-const PILLARS = ['sleep', 'physical', 'mood', 'nutrition'] as const;
 
-/**
- * Heatmap-style grid: one row per pillar, one cell per logged day.
- * Cell colour = pillar colour, opacity scales with the 1-3 score so
- * a chronically low pillar reads as a row of pale cells. Cell heights
- * stay compact and consistent regardless of how wide the parent grows.
- */
-function RawStackedChart({
-  points,
+/** Eleiko 1-3 colour bands per pillar value. Pale fills keep the table
+ *  legible while making "low score" instantly visible. */
+function pillarCellClass(v: number | null): string {
+  if (v == null || v <= 0) return 'bg-gray-50 text-gray-300';
+  if (v === 1) return 'bg-red-100 text-red-800';
+  if (v === 2) return 'bg-amber-100 text-amber-800';
+  return 'bg-emerald-100 text-emerald-800';
+}
+
+/** Eleiko 4-12 total band — colours the Total row. */
+function totalCellClass(v: number | null): string {
+  if (v == null || v <= 0) return 'bg-gray-50 text-gray-300';
+  if (v <= 6) return 'bg-red-100 text-red-800 font-semibold';
+  if (v <= 9) return 'bg-amber-100 text-amber-800 font-semibold';
+  return 'bg-emerald-100 text-emerald-800 font-semibold';
+}
+
+function avg(nums: number[]): number | null {
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function RawTable({
+  columns,
+  weekLog,
 }: {
-  points: Array<{
-    label: string;
-    sleep: number;
-    physical: number;
-    mood: number;
-    nutrition: number;
-    total: number;
-  }>;
+  columns: DayColumn[];
+  weekLog: Record<number, DayLog>;
 }) {
-  const ROW_LABEL_W = 64;
-  // 1 -> 0.30, 2 -> 0.65, 3 -> 1.0
-  const alphaFor = (v: number) => (v <= 0 ? 0 : 0.3 + 0.35 * (v - 1));
+  const pillarValues: Record<typeof PILLARS[number], Array<number | null>> = {
+    sleep: [],
+    physical: [],
+    mood: [],
+    nutrition: [],
+  };
+  const totals: Array<number | null> = [];
+
+  columns.forEach(col => {
+    const s = weekLog[col.dayIndex]?.session;
+    PILLARS.forEach(key => {
+      const field = ('raw_' + key) as 'raw_sleep' | 'raw_physical' | 'raw_mood' | 'raw_nutrition';
+      const v = s?.[field];
+      pillarValues[key].push(v == null || v === 0 ? null : v);
+    });
+    totals.push(s?.raw_total == null || s.raw_total === 0 ? null : s.raw_total);
+  });
 
   return (
-    <div className="space-y-1">
-      {/* Header row: day labels */}
-      <div className="flex items-center gap-1.5">
-        <div style={{ width: ROW_LABEL_W }} className="flex-shrink-0" />
-        <div className="flex gap-1 flex-1">
-          {points.map((p, i) => (
-            <div
-              key={i}
-              className="flex-1 min-w-0 text-[9px] uppercase tracking-wide text-gray-500 text-center truncate"
-              title={p.label}
-            >
-              {p.label.slice(0, 4)}
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[11px]">
+        <thead>
+          <tr>
+            <th className="text-left text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
+              Pillar
+            </th>
+            {columns.map(col => (
+              <th
+                key={col.key}
+                className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
+                title={col.label}
+              >
+                {col.isBonus ? '+' : col.label}
+              </th>
+            ))}
+            <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
+              Avg
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {PILLARS.map(key => {
+            const nonNull = pillarValues[key].filter((v): v is number => v != null);
+            const a = avg(nonNull);
+            return (
+              <tr key={key} className="border-t border-gray-100">
+                <td className="px-2 py-1 text-gray-700 font-medium">{PILLAR_LABEL[key]}</td>
+                {pillarValues[key].map((v, i) => (
+                  <td
+                    key={i}
+                    className={`px-1 py-1 text-center tabular-nums ${pillarCellClass(v)}`}
+                    title={`${PILLAR_LABEL[key]}: ${v ?? '—'}`}
+                  >
+                    {v ?? '—'}
+                  </td>
+                ))}
+                <td className={`px-2 py-1 text-center tabular-nums ${
+                  a == null
+                    ? 'text-gray-300'
+                    : a < 1.5
+                    ? 'text-red-700 font-semibold'
+                    : a < 2.5
+                    ? 'text-amber-700 font-semibold'
+                    : 'text-emerald-700 font-semibold'
+                }`}>
+                  {a != null ? a.toFixed(1) : '—'}
+                </td>
+              </tr>
+            );
+          })}
+          <tr className="border-t-2 border-gray-200">
+            <td className="px-2 py-1 text-gray-700 font-semibold uppercase tracking-wide text-[9px]">
+              Total
+            </td>
+            {totals.map((v, i) => (
+              <td
+                key={i}
+                className={`px-1 py-1 text-center tabular-nums ${totalCellClass(v)}`}
+                title={`Total: ${v ?? '—'} / 12`}
+              >
+                {v ?? '—'}
+              </td>
+            ))}
+            <td className="px-2 py-1 text-center tabular-nums text-gray-700 font-semibold">
+              {(() => {
+                const ts = totals.filter((v): v is number => v != null);
+                return ts.length ? avg(ts)!.toFixed(1) : '—';
+              })()}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-      {/* One row per pillar */}
-      {PILLARS.map(key => (
-        <div key={key} className="flex items-center gap-1.5">
-          <div
-            style={{ width: ROW_LABEL_W }}
-            className="flex-shrink-0 flex items-center gap-1 text-[10px] text-gray-700 font-medium"
-          >
-            <span
-              className="w-2 h-2 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: PILLAR_FILL[key] }}
-              aria-hidden
-            />
-            {PILLAR_LABEL[key]}
-          </div>
-          <div className="flex gap-1 flex-1">
-            {points.map((p, i) => {
-              const v = p[key];
-              return (
-                <div
-                  key={i}
-                  className="flex-1 h-4 rounded-sm border border-gray-100 flex items-center justify-center text-[9px] font-semibold text-white"
-                  style={{
-                    backgroundColor: v > 0 ? PILLAR_FILL[key] : '#f9fafb',
-                    opacity: v > 0 ? alphaFor(v) : 1,
-                  }}
-                  title={`${PILLAR_LABEL[key]} on ${p.label}: ${v || '—'}`}
-                >
-                  {v > 0 ? v : ''}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+// ─── Other metrics table ────────────────────────────────────────────────────
 
-      {/* Footer row: per-day totals */}
-      <div className="flex items-center gap-1.5 pt-1">
-        <div
-          style={{ width: ROW_LABEL_W }}
-          className="flex-shrink-0 text-[10px] text-gray-500 font-semibold uppercase tracking-wide"
-        >
-          Total
-        </div>
-        <div className="flex gap-1 flex-1">
-          {points.map((p, i) => (
-            <div
-              key={i}
-              className="flex-1 text-[10px] text-center text-gray-800 font-semibold"
-              title={`${p.label}: ${p.total} / 12`}
-            >
-              {p.total}
-            </div>
-          ))}
-        </div>
-      </div>
+interface OtherMetricsRow {
+  key: string;
+  label: string;
+  unit: string | null;
+  values: Array<number | string | null>;
+  numeric: boolean;
+}
+
+function OtherMetricsTable({
+  columns,
+  weekLog,
+  trackBw,
+  trackVas,
+  customDefs,
+}: {
+  columns: DayColumn[];
+  weekLog: Record<number, DayLog>;
+  trackBw: boolean;
+  trackVas: boolean;
+  customDefs: AthleteMetricDefinition[];
+}) {
+  const rows: OtherMetricsRow[] = [];
+
+  if (trackBw) {
+    rows.push({
+      key: 'bw',
+      label: 'Bodyweight',
+      unit: 'kg',
+      values: columns.map(c => weekLog[c.dayIndex]?.session?.bodyweight_kg ?? null),
+      numeric: true,
+    });
+  }
+  if (trackVas) {
+    rows.push({
+      key: 'vas',
+      label: 'VAS pain',
+      unit: '0–10',
+      values: columns.map(c => weekLog[c.dayIndex]?.session?.vas_score ?? null),
+      numeric: true,
+    });
+  }
+  customDefs.forEach(def => {
+    const numeric = def.value_type === 'number';
+    const values: Array<number | string | null> = columns.map(c => {
+      const entry = weekLog[c.dayIndex]?.session?.custom_metrics?.[def.id] as
+        | CustomMetricEntry
+        | undefined;
+      if (!entry) return null;
+      if ('value_number' in entry && entry.value_number != null) return entry.value_number;
+      if ('value_text' in entry && entry.value_text != null) return entry.value_text;
+      return null;
+    });
+    rows.push({
+      key: `def-${def.id}`,
+      label: def.label,
+      unit: def.unit,
+      values,
+      numeric,
+    });
+  });
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-[11px]">
+        <thead>
+          <tr>
+            <th className="text-left text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
+              Metric
+            </th>
+            {columns.map(col => (
+              <th
+                key={col.key}
+                className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
+              >
+                {col.isBonus ? '+' : col.label}
+              </th>
+            ))}
+            <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
+              Avg
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => {
+            const numericValues = row.numeric
+              ? row.values.filter((v): v is number => typeof v === 'number')
+              : [];
+            const a = row.numeric ? avg(numericValues) : null;
+            return (
+              <tr key={row.key} className="border-t border-gray-100">
+                <td className="px-2 py-1 text-gray-700 font-medium">
+                  {row.label}
+                  {row.unit && (
+                    <span className="text-[9px] text-gray-400 font-normal ml-1">{row.unit}</span>
+                  )}
+                </td>
+                {row.values.map((v, i) => (
+                  <td
+                    key={i}
+                    className={`px-1 py-1 text-center ${
+                      v == null
+                        ? 'bg-gray-50 text-gray-300'
+                        : row.numeric
+                        ? 'bg-blue-50 text-blue-900 tabular-nums'
+                        : 'bg-amber-50 text-amber-900 text-left text-[10px]'
+                    }`}
+                    title={v == null ? '—' : `${row.label}: ${v}`}
+                  >
+                    {v == null
+                      ? '—'
+                      : row.numeric
+                      ? typeof v === 'number'
+                        ? Number.isInteger(v)
+                          ? v
+                          : v.toFixed(1)
+                        : v
+                      : String(v).slice(0, 14)}
+                  </td>
+                ))}
+                <td className="px-2 py-1 text-center tabular-nums text-gray-700">
+                  {a != null ? (Number.isInteger(a) ? a : a.toFixed(1)) : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
