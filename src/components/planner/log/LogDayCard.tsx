@@ -145,6 +145,11 @@ export function LogDayCard({
                   : undefined
               }
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
+              onDelete={
+                ledg && onDeleteLogExercise
+                  ? () => onDeleteLogExercise(ledg.log.id)
+                  : undefined
+              }
             />
           );
         })}
