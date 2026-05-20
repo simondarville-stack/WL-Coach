@@ -60,48 +60,90 @@ export function LogModeView({
     onConfirm: () => Promise<void>;
   } | null>(null);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      fetchWeekLog(athleteId, weekStart),
-      fetchWeekMetricsConfig(athleteId, weekStart),
-      fetchMetricDefinitions(athleteId),
-    ])
-      .then(([log, cfg, defs]) => {
+  /**
+   * Canonical data-fetch function. AbortSignal propagated to all three
+   * parallel fetches; if the component unmounts before all three resolve,
+   * the cancelled guard prevents stale state writes. (UF-25 / I1)
+   */
+  const loadAll = useCallback(
+    async (signal: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [log, cfg, defs] = await Promise.all([
+          fetchWeekLog(athleteId, weekStart),
+          fetchWeekMetricsConfig(athleteId, weekStart),
+          fetchMetricDefinitions(athleteId),
+        ]);
+        if (signal.aborted) return;
         setWeekLog(log);
         setMetricsConfig(cfg);
         setMetricDefs(defs);
         setLoadedAt(new Date());
-      })
-      .catch(e => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [athleteId, weekStart]);
+      } catch (e) {
+        if (signal.aborted) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [athleteId, weekStart],
+  );
+
+  /** Manual reload: used for settings changes and destructive mutations.
+   *  Comment posts use optimistic-merge instead. */
+  const reload = useCallback(() => {
+    const ctrl = new AbortController();
+    void loadAll(ctrl.signal);
+  }, [loadAll]);
+
+  /** Optimistically append a new message to a session's message list
+   *  so the coach sees their comment immediately. (UF-25 / I1) */
+  const appendMessage = useCallback(
+    (msg: import('../../../lib/database.types').TrainingLogMessage) => {
+      setWeekLog(prev => {
+        const dayIndex = Object.keys(prev).find(k => {
+          const day = prev[Number(k)];
+          return day.session?.id === msg.session_id;
+        });
+        if (!dayIndex) return prev;
+        const d = prev[Number(dayIndex)];
+        return {
+          ...prev,
+          [Number(dayIndex)]: {
+            ...d,
+            messages: [...d.messages, msg],
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const postSessionComment = useCallback(
     async (sessionId: string, body: string) => {
-      await addComment({
+      const msg = await addComment({
         sessionId,
         exerciseId: null,
         message: body,
         senderType: 'coach',
       });
-      reload();
+      appendMessage(msg);
     },
-    [reload],
+    [appendMessage],
   );
 
   const postExerciseComment = useCallback(
     async (sessionId: string, logExerciseId: string, body: string) => {
-      await addComment({
+      const msg = await addComment({
         sessionId,
         exerciseId: logExerciseId,
         message: body,
         senderType: 'coach',
       });
-      reload();
+      appendMessage(msg);
     },
-    [reload],
+    [appendMessage],
   );
 
   const onDeleteLogExercise = useCallback(
@@ -139,30 +181,10 @@ export function LogModeView({
   );
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      fetchWeekLog(athleteId, weekStart),
-      fetchWeekMetricsConfig(athleteId, weekStart),
-      fetchMetricDefinitions(athleteId),
-    ])
-      .then(([log, cfg, defs]) => {
-        if (cancelled) return;
-        setWeekLog(log);
-        setMetricsConfig(cfg);
-        setMetricDefs(defs);
-        setLoadedAt(new Date());
-      })
-      .catch(e => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [athleteId, weekStart]);
+    const ctrl = new AbortController();
+    void loadAll(ctrl.signal);
+    return () => ctrl.abort();
+  }, [loadAll]);
 
   const totalLogged = Object.values(weekLog).reduce(
     (sum, d) => sum + d.exercises.length, 0,
