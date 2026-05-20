@@ -169,6 +169,9 @@ export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP
    *  sentinel exercise. Absent for non-GPP rows. */
   gpp?: GppSection;
+  /** Coach-authored caption for IMAGE / VIDEO sentinels. Rendered next
+   *  to the media in athlete log and print. */
+  description?: string;
 }
 
 export interface PlannedExercise {

@@ -620,6 +620,7 @@ function ExerciseRow({
 
   if (sentinel === 'image') {
     if (!ex.notes?.trim()) return null;
+    const description = ex.metadata?.description?.trim();
     return (
       <div className="dz-row dz-row-image">
         <img
@@ -628,6 +629,7 @@ function ExerciseRow({
           className="dz-image"
           onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
         />
+        {description && <div className="dz-media-description">{description}</div>}
       </div>
     );
   }
@@ -636,19 +638,23 @@ function ExerciseRow({
     const url = ex.notes?.trim();
     if (!url) return null;
     const videoId = getYouTubeVideoId(url);
+    const description = ex.metadata?.description?.trim();
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(url)}&size=80x80`;
     return (
       <div className="dz-row dz-row-video">
-        <img src={qrUrl} alt="QR" className="dz-qr" />
-        <div className="dz-video-meta">
-          {videoId && (
-            <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="dz-video-thumb" />
-          )}
-          <div className="dz-video-text">
-            <div className="dz-video-label">Video</div>
-            <div className="dz-video-url">{url}</div>
+        <div className="dz-video-row">
+          <img src={qrUrl} alt="QR" className="dz-qr" />
+          <div className="dz-video-meta">
+            {videoId && (
+              <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="dz-video-thumb" />
+            )}
+            <div className="dz-video-text">
+              <div className="dz-video-label">Video</div>
+              <div className="dz-video-url">{url}</div>
+            </div>
           </div>
         </div>
+        {description && <div className="dz-media-description">{description}</div>}
       </div>
     );
   }
@@ -1121,13 +1127,15 @@ function designerCss(orientation: Orientation): string {
       border-radius: 3px;
     }
     .dz-row-video {
-      display: flex;
-      gap: 6px;
-      align-items: center;
       background: #eef2ff;
       border: 1px solid #c7d2fe;
       border-radius: 3px;
       padding: 3px 6px;
+    }
+    .dz-video-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
     }
     .dz-qr { width: 48px; height: 48px; flex-shrink: 0; }
     .dz-video-meta { display: flex; gap: 6px; align-items: center; min-width: 0; flex: 1; }
@@ -1135,6 +1143,14 @@ function designerCss(orientation: Orientation): string {
     .dz-video-text { min-width: 0; }
     .dz-video-label { font-size: 0.72em; font-weight: 500; color: #374151; }
     .dz-video-url { font-size: 0.7em; color: #6b7280; overflow-wrap: anywhere; line-height: 1.3; }
+    .dz-media-description {
+      font-size: 0.72em;
+      color: #4b5563;
+      font-style: italic;
+      white-space: pre-wrap;
+      line-height: 1.35;
+      margin-top: 3px;
+    }
 
     /* Footer */
     .dz-footer {

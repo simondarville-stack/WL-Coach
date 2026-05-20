@@ -48,6 +48,7 @@ interface ExerciseDetailProps {
   onSaved: () => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<void>;
   saveNotes: (id: string, notes: string) => Promise<void>;
+  saveMediaDescription?: (id: string, description: string) => Promise<void>;
   swapPlannedExercise: (plannedExerciseId: string, newExerciseId: string) => Promise<void>;
   updateComboExercise: (
     plannedExerciseId: string,
@@ -79,6 +80,7 @@ export function ExerciseDetail({
   onSaved,
   savePrescription,
   saveNotes,
+  saveMediaDescription,
   swapPlannedExercise,
   updateComboExercise,
   fetchOtherDayPrescriptions,
@@ -101,6 +103,9 @@ export function ExerciseDetail({
   const [comboName, setComboName] = useState(plannedExercise?.combo_notation ?? '');
   const [notes, setNotes] = useState(plannedExercise?.notes ?? '');
   const notesRef = useRef(plannedExercise?.notes ?? '');
+  const [mediaDescription, setMediaDescription] = useState(plannedExercise?.metadata?.description ?? '');
+  const mediaDescriptionRef = useRef(plannedExercise?.metadata?.description ?? '');
+  const mediaDescriptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sollTarget, setSollTarget] = useState<SollTarget | null>(null);
   const [trackedExId, setTrackedExId] = useState<string | null>(null);
   const [otherDays, setOtherDays] = useState<OtherDay[]>([]);
@@ -130,6 +135,12 @@ export function ExerciseDetail({
   function saveComboNameDebounced(value: string) {
     if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
     comboNameTimerRef.current = setTimeout(() => { void saveSettingsField('combo_notation', value); }, 400);
+  }
+
+  function saveMediaDescriptionDebounced(id: string, value: string) {
+    if (!saveMediaDescription) return;
+    if (mediaDescriptionTimerRef.current) clearTimeout(mediaDescriptionTimerRef.current);
+    mediaDescriptionTimerRef.current = setTimeout(() => { void saveMediaDescription(id, value); }, 400);
   }
 
   const loadIncrement = settings?.grid_load_increment ?? 5;
@@ -247,18 +258,22 @@ export function ExerciseDetail({
   }
 
   function handleClose() {
-    [variationNoteTimerRef, comboNameTimerRef, notesTimerRef, refreshTimerRef].forEach(r => {
+    [variationNoteTimerRef, comboNameTimerRef, notesTimerRef, mediaDescriptionTimerRef, refreshTimerRef].forEach(r => {
       if (r.current) { clearTimeout(r.current); r.current = null; }
     });
     if (plannedExercise) {
       const id = plannedExercise.id;
-      void Promise.all([
+      const tasks: Promise<unknown>[] = [
         saveNotes(id, notesRef.current).catch(() => {}),
         supabase.from('planned_exercises').update({
           variation_note: variationNote || null,
           ...(isCombo && { combo_notation: comboName || null }),
         }).eq('id', id),
-      ]).then(() => void onSaved()).catch(() => void onSaved());
+      ];
+      if (saveMediaDescription && (sentinel === 'image' || sentinel === 'video')) {
+        tasks.push(saveMediaDescription(id, mediaDescriptionRef.current).catch(() => {}));
+      }
+      void Promise.all(tasks).then(() => void onSaved()).catch(() => void onSaved());
     } else {
       void onSaved();
     }
@@ -455,6 +470,22 @@ export function ExerciseDetail({
                 </p>
               );
             })()}
+            <label style={labelStyle}>Description</label>
+            <textarea
+              value={mediaDescription}
+              onChange={e => {
+                mediaDescriptionRef.current = e.target.value;
+                setMediaDescription(e.target.value);
+                saveMediaDescriptionDebounced(plannedExercise.id, e.target.value);
+              }}
+              onBlur={() => {
+                if (mediaDescriptionTimerRef.current) clearTimeout(mediaDescriptionTimerRef.current);
+                if (saveMediaDescription) void saveMediaDescription(plannedExercise.id, mediaDescriptionRef.current);
+              }}
+              rows={2}
+              placeholder="e.g. Watch from 0:45, focus on bar path"
+              style={{ ...inputStyle, resize: 'none', lineHeight: 1.55 }}
+            />
           </div>
         )}
 
@@ -498,6 +529,22 @@ export function ExerciseDetail({
             {notes && (
               <img src={notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 300, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
             )}
+            <label style={labelStyle}>Description</label>
+            <textarea
+              value={mediaDescription}
+              onChange={e => {
+                mediaDescriptionRef.current = e.target.value;
+                setMediaDescription(e.target.value);
+                saveMediaDescriptionDebounced(plannedExercise.id, e.target.value);
+              }}
+              onBlur={() => {
+                if (mediaDescriptionTimerRef.current) clearTimeout(mediaDescriptionTimerRef.current);
+                if (saveMediaDescription) void saveMediaDescription(plannedExercise.id, mediaDescriptionRef.current);
+              }}
+              rows={2}
+              placeholder="e.g. Setup cue, what to focus on"
+              style={{ ...inputStyle, resize: 'none', lineHeight: 1.55 }}
+            />
           </div>
         )}
 

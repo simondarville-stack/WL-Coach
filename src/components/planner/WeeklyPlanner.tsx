@@ -103,6 +103,7 @@ export function WeeklyPlanner() {
     savePrescription,
     saveNotes,
     saveGppSection,
+    saveMediaDescription,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1248,7 +1249,8 @@ export function WeeklyPlanner() {
                     onBack={() => setPanelView('day')}
                     onSaved={handleRefresh}
                     savePrescription={savePrescription}
-                saveGppSection={saveGppSection}
+                    saveGppSection={saveGppSection}
+                    saveMediaDescription={saveMediaDescription}
                     saveNotes={saveNotes}
                     swapPlannedExercise={swapPlannedExercise}
                     updateComboExercise={updateComboExercise}

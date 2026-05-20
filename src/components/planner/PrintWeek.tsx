@@ -375,9 +375,13 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
                   }
                   if (sentinel === 'image') {
                     if (!ex.notes?.trim()) return null;
+                    const description = ex.metadata?.description?.trim();
                     return (
                       <div key={ex.id} className="break-inside-avoid">
                         <img src={ex.notes} alt="" className="max-w-full rounded border border-gray-200" style={{ maxHeight: '140px', objectFit: 'contain' }} onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
+                        {description && (
+                          <p className="text-[10px] text-gray-600 italic mt-0.5 whitespace-pre-wrap leading-snug">{description}</p>
+                        )}
                       </div>
                     );
                   }
@@ -385,19 +389,25 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
                     const url = ex.notes?.trim();
                     if (!url) return null;
                     const videoId = getYouTubeVideoId(url);
+                    const description = ex.metadata?.description?.trim();
                     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(url)}&size=80x80`;
                     return (
-                      <div key={ex.id} className="break-inside-avoid flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
-                        <img src={qrUrl} alt="QR code" className="w-12 h-12 flex-shrink-0" />
-                        <div className="min-w-0 flex items-center gap-2">
-                          {videoId && (
-                            <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="rounded w-16 h-10 object-cover flex-shrink-0" />
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-medium text-gray-700 leading-tight">Video</p>
-                            <p className="text-[9px] text-gray-500 break-all leading-tight">{url}</p>
+                      <div key={ex.id} className="break-inside-avoid bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
+                        <div className="flex items-center gap-2">
+                          <img src={qrUrl} alt="QR code" className="w-12 h-12 flex-shrink-0" />
+                          <div className="min-w-0 flex items-center gap-2">
+                            {videoId && (
+                              <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="rounded w-16 h-10 object-cover flex-shrink-0" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-medium text-gray-700 leading-tight">Video</p>
+                              <p className="text-[9px] text-gray-500 break-all leading-tight">{url}</p>
+                            </div>
                           </div>
                         </div>
+                        {description && (
+                          <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap leading-snug">{description}</p>
+                        )}
                       </div>
                     );
                   }

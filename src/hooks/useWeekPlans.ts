@@ -498,6 +498,33 @@ export function useWeekPlans() {
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
   };
 
+  /**
+   * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
+   * Empty / whitespace-only strings clear the key so the JSON stays tidy.
+   */
+  const saveMediaDescription = async (
+    plannedExId: string,
+    description: string,
+  ): Promise<void> => {
+    const { data: row, error: rErr } = await supabase
+      .from('planned_exercises')
+      .select('metadata')
+      .eq('id', plannedExId)
+      .single();
+    if (rErr) throw rErr;
+    const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+    const next = { ...current };
+    const trimmed = description.trim();
+    if (trimmed) next.description = trimmed; else delete next.description;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    const update: any = { metadata: next };
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update(update)
+      .eq('id', plannedExId);
+    if (error) throw error;
+  };
+
   const fetchOtherDayPrescriptions = async (
     weekplanId: string,
     exerciseId: string,
@@ -1050,6 +1077,7 @@ export function useWeekPlans() {
     savePrescription,
     saveNotes,
     saveGppSection,
+    saveMediaDescription,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

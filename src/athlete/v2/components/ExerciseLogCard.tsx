@@ -161,27 +161,33 @@ export function ExerciseLogCard({
   }
   if (sentinelType === 'image') {
     const url = planned.exercise.notes?.trim();
+    const description = planned.exercise.metadata?.description?.trim();
     return (
       <>
-        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex items-center gap-2">
-          <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
-          {url ? (
-            <button
-              type="button"
-              onClick={() => setLightboxSrc(url)}
-              className="flex items-center gap-2 min-w-0 group"
-              title="Click to enlarge"
-            >
-              <img
-                src={url}
-                alt=""
-                className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
-                onError={e => { e.currentTarget.style.display = 'none'; }}
-              />
-              <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
-            </button>
-          ) : (
-            <span className="text-xs text-gray-500 italic">(no image)</span>
+        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
+            {url ? (
+              <button
+                type="button"
+                onClick={() => setLightboxSrc(url)}
+                className="flex items-center gap-2 min-w-0 group"
+                title="Click to enlarge"
+              >
+                <img
+                  src={url}
+                  alt=""
+                  className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+                <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
+              </button>
+            ) : (
+              <span className="text-xs text-gray-500 italic">(no image)</span>
+            )}
+          </div>
+          {description && (
+            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
           )}
         </div>
         {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
@@ -190,11 +196,17 @@ export function ExerciseLogCard({
   }
   if (sentinelType === 'video') {
     const url = planned.exercise.notes?.trim();
+    const description = planned.exercise.metadata?.description?.trim();
     if (!url) {
       return (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex items-center gap-2">
-          <Video size={14} className="text-indigo-400 flex-shrink-0" />
-          <span className="text-xs text-gray-500 italic">(no video link)</span>
+        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <Video size={14} className="text-indigo-400 flex-shrink-0" />
+            <span className="text-xs text-gray-500 italic">(no video link)</span>
+          </div>
+          {description && (
+            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
+          )}
         </div>
       );
     }
@@ -204,21 +216,26 @@ export function ExerciseLogCard({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="rounded-xl bg-gray-900 border border-gray-800 hover:border-indigo-700/50 transition-colors px-3 py-2 flex items-center gap-2 min-w-0"
+        className="rounded-xl bg-gray-900 border border-gray-800 hover:border-indigo-700/50 transition-colors px-3 py-2 flex flex-col gap-1.5"
         title="Tap to open video"
       >
-        <Video size={14} className="text-indigo-400 flex-shrink-0" />
-        {thumb ? (
-          <img src={thumb} alt="" className="h-9 w-14 object-cover rounded border border-gray-700 flex-shrink-0" />
-        ) : (
-          <span className="h-9 w-14 rounded border border-gray-700 bg-gray-800 flex items-center justify-center flex-shrink-0">
-            <Video size={16} className="text-indigo-400" />
+        <div className="flex items-center gap-2 min-w-0">
+          <Video size={14} className="text-indigo-400 flex-shrink-0" />
+          {thumb ? (
+            <img src={thumb} alt="" className="h-9 w-14 object-cover rounded border border-gray-700 flex-shrink-0" />
+          ) : (
+            <span className="h-9 w-14 rounded border border-gray-700 bg-gray-800 flex items-center justify-center flex-shrink-0">
+              <Video size={16} className="text-indigo-400" />
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-xs text-indigo-300 min-w-0">
+            <ExternalLink size={11} className="flex-shrink-0" />
+            <span className="truncate">Tap to open</span>
           </span>
+        </div>
+        {description && (
+          <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
         )}
-        <span className="flex items-center gap-1 text-xs text-indigo-300 min-w-0">
-          <ExternalLink size={11} className="flex-shrink-0" />
-          <span className="truncate">Tap to open</span>
-        </span>
       </a>
     );
   }
