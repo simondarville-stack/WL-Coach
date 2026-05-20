@@ -11,16 +11,15 @@
  * so the visual is identical to the coach side (different theme tokens).
  * "Start logging" enters edit mode.
  */
-import { useState } from 'react';
-import { PlayCircle, MessageSquare, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { PlayCircle, MessageSquare } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/sentinelUtils';
-import { ImageLightbox } from '../../../components/planner/ImageLightbox';
+import { getSentinelType } from '../../../components/planner/sentinelUtils';
+import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 
 interface SessionPreviewProps {
   slotLabel: string;
@@ -185,140 +184,17 @@ function PreviewExerciseRow({
   planned: PlannedExerciseFull;
   logged: LoggedExerciseFull | null;
 }) {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const sentinel = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
-  if (sentinel === 'text') {
+  if (sentinel === 'text' || sentinel === 'image' || sentinel === 'video' || sentinel === 'gpp') {
     return (
       <li className="px-4 py-3">
-        <p className="text-sm text-gray-200 italic whitespace-pre-wrap leading-relaxed">
-          {planned.exercise.notes || '(empty note)'}
-        </p>
-      </li>
-    );
-  }
-  if (sentinel === 'image') {
-    const url = planned.exercise.notes?.trim();
-    const description = planned.exercise.metadata?.description?.trim();
-    return (
-      <li className="px-4 py-3 flex flex-col gap-1.5">
-        <div className="flex items-center gap-2">
-          <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
-          {url ? (
-            <button
-              type="button"
-              onClick={() => setLightboxSrc(url)}
-              className="flex items-center gap-2 min-w-0 group"
-              title="Click to enlarge"
-            >
-              <img
-                src={url}
-                alt=""
-                className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
-                onError={e => { e.currentTarget.style.display = 'none'; }}
-              />
-              <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
-            </button>
-          ) : (
-            <span className="text-xs text-gray-500 italic">(no image)</span>
-          )}
-        </div>
-        {description && (
-          <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-        )}
-        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
-      </li>
-    );
-  }
-  if (sentinel === 'video') {
-    const url = planned.exercise.notes?.trim();
-    const description = planned.exercise.metadata?.description?.trim();
-    if (!url) {
-      return (
-        <li className="px-4 py-3 flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <Video size={14} className="text-indigo-400 flex-shrink-0" />
-            <span className="text-xs text-gray-500 italic">(no video link)</span>
-          </div>
-          {description && (
-            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-          )}
-        </li>
-      );
-    }
-    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
-    return (
-      <li className="px-4 py-3">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex flex-col gap-1.5 group"
-          title="Tap to open video"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <Video size={14} className="text-indigo-400 flex-shrink-0" />
-            {thumb ? (
-              <img src={thumb} alt="" className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-indigo-400 flex-shrink-0" />
-            ) : (
-              <span className="h-9 w-14 rounded border border-gray-700 bg-gray-800 group-hover:border-indigo-400 flex items-center justify-center flex-shrink-0">
-                <Video size={16} className="text-indigo-400" />
-              </span>
-            )}
-            <span className="flex items-center gap-1 text-xs text-indigo-300 group-hover:text-indigo-200 min-w-0">
-              <ExternalLink size={11} className="flex-shrink-0" />
-              <span className="truncate">Tap to open</span>
-            </span>
-          </div>
-          {description && (
-            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-          )}
-        </a>
-      </li>
-    );
-  }
-  if (sentinel === 'gpp') {
-    const gpp = planned.exercise.metadata?.gpp;
-    const athleteGpp = logged?.log.metadata?.gpp;
-    const rows = athleteGpp?.rows ?? gpp?.rows ?? [];
-    return (
-      <li className="px-4 py-3">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-sm font-bold text-white">{gpp?.title || 'GPP'}</h3>
-          <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide">
-            GPP
-          </span>
-        </div>
-        {gpp?.description && (
-          <p className="text-[11px] text-gray-300 italic mb-1.5 whitespace-pre-wrap leading-snug">
-            {gpp.description}
-          </p>
-        )}
-        {rows.length === 0 ? (
-          <p className="text-[11px] text-gray-500 italic">No rows yet</p>
-        ) : (
-          <table className="w-full text-[11px] border-collapse">
-            <thead>
-              <tr className="text-[9px] uppercase tracking-wide text-gray-500">
-                <th className="text-left px-1 py-1">Exercise</th>
-                <th className="text-center px-1 py-1 w-12">Reps</th>
-                <th className="text-center px-1 py-1 w-10">Sets</th>
-                <th className="text-center px-1 py-1 w-14">Load</th>
-                <th className="text-center px-1 py-1 w-8">✓</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <tr key={i} className={`border-t border-gray-800 ${row.done ? 'bg-emerald-950/30' : ''}`}>
-                  <td className="px-1 py-1 text-gray-100">{row.exercise}</td>
-                  <td className="px-1 py-1 text-center text-gray-200 tabular-nums">{row.reps || '—'}</td>
-                  <td className="px-1 py-1 text-center text-gray-200 tabular-nums">{row.sets}</td>
-                  <td className="px-1 py-1 text-center text-gray-200">{row.load || '—'}</td>
-                  <td className="px-1 py-1 text-center">{row.done ? '✓' : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <SentinelDisplay
+          exerciseCode={planned.exerciseDef?.exercise_code}
+          notes={planned.exercise.notes}
+          metadata={planned.exercise.metadata}
+          athleteGpp={sentinel === 'gpp' ? (logged?.log.metadata?.gpp ?? null) : undefined}
+          theme="dark"
+        />
       </li>
     );
   }

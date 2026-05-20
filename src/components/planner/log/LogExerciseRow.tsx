@@ -23,11 +23,11 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
 import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../sentinelUtils';
-import { ImageLightbox } from '../ImageLightbox';
+import { getSentinelType } from '../sentinelUtils';
+import { SentinelDisplay } from '../SentinelDisplay';
 import { LogCommentsThread } from './LogCommentsThread';
 
 const DELTA_BG: Record<DeltaState, string> = {
@@ -49,7 +49,6 @@ interface LogExerciseRowProps {
 }
 
 export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
 
   // For free-text, GPP, and other non-quantified units, computeDelta would
@@ -98,110 +97,40 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     return (
       <div className="flex border-l-4 border-l-gray-300">
         <div className="flex-1 px-3 py-2 min-w-0">
-          <p
-            style={{
-              fontSize: 'var(--text-caption)',
-              color: 'var(--color-text-primary)',
-              fontStyle: 'italic',
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.4,
-              margin: 0,
-            }}
-          >
-            {planned?.notes || '(empty note)'}
-          </p>
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
       </div>
     );
   }
   if (sentinelType === 'image') {
-    const url = planned?.notes?.trim();
-    const description = planned?.metadata?.description?.trim();
     return (
       <div className="flex border-l-4 border-l-pink-400">
-        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ImageIcon size={14} style={{ color: '#EC4899', flexShrink: 0 }} />
-            {url ? (
-              <button
-                type="button"
-                onClick={() => setLightboxSrc(url)}
-                title="Click to enlarge"
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'zoom-in', minWidth: 0 }}
-              >
-                <img
-                  src={url}
-                  alt=""
-                  style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }}
-                  onError={e => { e.currentTarget.style.display = 'none'; }}
-                />
-                <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>Click to enlarge</span>
-              </button>
-            ) : (
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no image)</p>
-            )}
-          </div>
-          {description && (
-            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-              {description}
-            </p>
-          )}
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
-        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       </div>
     );
   }
   if (sentinelType === 'video') {
-    const url = planned?.notes?.trim();
-    const description = planned?.metadata?.description?.trim();
-    if (!url) {
-      return (
-        <div className="flex border-l-4 border-l-indigo-400">
-          <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no video link)</p>
-            </div>
-            {description && (
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-                {description}
-              </p>
-            )}
-          </div>
-        </div>
-      );
-    }
-    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
     return (
       <div className="flex border-l-4 border-l-indigo-400">
-        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Click to open video"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366F1', textDecoration: 'none', minWidth: 0 }}
-            >
-              {thumb ? (
-                <img src={thumb} alt="" style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }} />
-              ) : (
-                <span style={{ height: 36, width: 56, borderRadius: 4, border: '1px solid var(--color-border-secondary)', background: 'var(--color-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Video size={16} />
-                </span>
-              )}
-              <span style={{ fontSize: 'var(--text-caption)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                <span>Click to open</span>
-              </span>
-            </a>
-          </div>
-          {description && (
-            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-              {description}
-            </p>
-          )}
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
       </div>
     );

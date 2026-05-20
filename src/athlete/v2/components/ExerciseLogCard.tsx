@@ -6,7 +6,7 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import { AthleteCommentsThread } from './AthleteCommentsThread';
 import type { TrainingLogMessage } from '../../../lib/database.types';
@@ -14,8 +14,8 @@ import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSe
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/sentinelUtils';
-import { ImageLightbox } from '../../../components/planner/ImageLightbox';
+import { getSentinelType } from '../../../components/planner/sentinelUtils';
+import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
 
@@ -81,7 +81,6 @@ export function ExerciseLogCard({
   const [savingPrescribed, setSavingPrescribed] = useState(false);
   /** Extra ad-hoc set rows beyond the planned set lines. */
   const [extraRows, setExtraRows] = useState(0);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // Sync notes on primitive dep so a parent re-render with a new
   // loggedExercise reference doesn't reset what the user is typing.
@@ -177,14 +176,16 @@ export function ExerciseLogCard({
   // Sentinel exercises (free-text blocks) carry their content in
   // planned.exercise.notes, not in a structured prescription. Render
   // them as an informational note card — no set entry, no checkmarks.
+  // GPP sentinel keeps its own interactive GppLogCard (not read-only).
   const sentinelType = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
-  if (sentinelType === 'text') {
+  if (sentinelType === 'text' || sentinelType === 'image' || sentinelType === 'video') {
     return (
-      <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-3">
-        <p className="text-sm text-gray-200 italic whitespace-pre-wrap leading-relaxed">
-          {planned.exercise.notes || '(empty note)'}
-        </p>
-      </div>
+      <SentinelDisplay
+        exerciseCode={planned.exerciseDef?.exercise_code}
+        notes={planned.exercise.notes}
+        metadata={planned.exercise.metadata}
+        theme="dark"
+      />
     );
   }
   if (sentinelType === 'gpp') {
@@ -196,86 +197,6 @@ export function ExerciseLogCard({
           if (onSaveGppSection) await onSaveGppSection(section);
         }}
       />
-    );
-  }
-  if (sentinelType === 'image') {
-    const url = planned.exercise.notes?.trim();
-    const description = planned.exercise.metadata?.description?.trim();
-    return (
-      <>
-        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
-            {url ? (
-              <button
-                type="button"
-                onClick={() => setLightboxSrc(url)}
-                className="flex items-center gap-2 min-w-0 group"
-                title="Click to enlarge"
-              >
-                <img
-                  src={url}
-                  alt=""
-                  className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
-                  onError={e => { e.currentTarget.style.display = 'none'; }}
-                />
-                <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
-              </button>
-            ) : (
-              <span className="text-xs text-gray-500 italic">(no image)</span>
-            )}
-          </div>
-          {description && (
-            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-          )}
-        </div>
-        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
-      </>
-    );
-  }
-  if (sentinelType === 'video') {
-    const url = planned.exercise.notes?.trim();
-    const description = planned.exercise.metadata?.description?.trim();
-    if (!url) {
-      return (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
-            <Video size={14} className="text-indigo-400 flex-shrink-0" />
-            <span className="text-xs text-gray-500 italic">(no video link)</span>
-          </div>
-          {description && (
-            <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-          )}
-        </div>
-      );
-    }
-    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="rounded-xl bg-gray-900 border border-gray-800 hover:border-indigo-700/50 transition-colors px-3 py-2 flex flex-col gap-1.5"
-        title="Tap to open video"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <Video size={14} className="text-indigo-400 flex-shrink-0" />
-          {thumb ? (
-            <img src={thumb} alt="" className="h-9 w-14 object-cover rounded border border-gray-700 flex-shrink-0" />
-          ) : (
-            <span className="h-9 w-14 rounded border border-gray-700 bg-gray-800 flex items-center justify-center flex-shrink-0">
-              <Video size={16} className="text-indigo-400" />
-            </span>
-          )}
-          <span className="flex items-center gap-1 text-xs text-indigo-300 min-w-0">
-            <ExternalLink size={11} className="flex-shrink-0" />
-            <span className="truncate">Tap to open</span>
-          </span>
-        </div>
-        {description && (
-          <p className="text-xs text-gray-300 italic whitespace-pre-wrap leading-snug">{description}</p>
-        )}
-      </a>
     );
   }
 
