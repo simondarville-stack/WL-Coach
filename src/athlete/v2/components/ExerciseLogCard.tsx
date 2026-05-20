@@ -54,6 +54,9 @@ interface ExerciseLogCardProps {
   /** Post a comment scoped to this exercise. When provided, the comment
    *  thread input is rendered. */
   onPostExerciseComment?: (body: string) => Promise<void>;
+  /** When true (a save is in flight at session level), disable the "Log as
+   *  prescribed" button and all set-entry inputs to prevent double-writes. */
+  globalSaving?: boolean;
 }
 
 export function ExerciseLogCard({
@@ -71,6 +74,7 @@ export function ExerciseLogCard({
   performedExercise,
   exerciseMessages = [],
   onPostExerciseComment,
+  globalSaving = false,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
@@ -311,6 +315,9 @@ export function ExerciseLogCard({
               </span>
             )}
             {allCompleted && <DoneChip variant="dark" iconOnly size={14} />}
+            {globalSaving && (
+              <span className="text-[9px] text-blue-400 italic">saving…</span>
+            )}
             {planned.exercise.is_combo && (
               <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
                 Combo
@@ -380,10 +387,10 @@ export function ExerciseLogCard({
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={handleLogAsPrescribed}
-                    disabled={savingPrescribed || allCompleted}
+                    disabled={savingPrescribed || allCompleted || globalSaving}
                     className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
                   >
-                    {savingPrescribed ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
+                    {savingPrescribed || globalSaving ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
                   </button>
                   {!allCompleted && loggedSets.length > 0 && (
                     <button

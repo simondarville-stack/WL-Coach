@@ -6,9 +6,11 @@ interface DayChipRowProps {
   days: WeekDayOverview[];
   selectedDayIndex: number | null;
   onSelect: (dayIndex: number) => void;
+  /** When true, day chips are non-interactive (a save is in flight). */
+  disabled?: boolean;
 }
 
-export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps) {
+export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false }: DayChipRowProps) {
   if (days.length === 0) {
     return (
       <div className="text-xs text-gray-500 italic text-center py-4">
@@ -40,9 +42,10 @@ export function DayChipRow({ days, selectedDayIndex, onSelect }: DayChipRowProps
         return (
           <button
             key={d.dayIndex}
-            onClick={() => onSelect(d.dayIndex)}
+            onClick={() => !disabled && onSelect(d.dayIndex)}
+            disabled={disabled}
             className={`
-              flex-1 min-w-[88px] snap-start rounded-lg border px-3 py-2 text-left transition-colors
+              flex-1 min-w-[88px] snap-start rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60
               ${selected
                 ? 'bg-blue-950/60 border-blue-600 ring-1 ring-blue-500/50'
                 : 'bg-gray-900 border-gray-800 hover:border-gray-700'}
