@@ -115,7 +115,7 @@ export function LogDayCard({
             {session.duration_minutes != null && (
               <span><span className="text-gray-400">⏱</span> {session.duration_minutes}m</span>
             )}
-            {collapsed && sessionCommentCount > 0 && (
+            {sessionCommentCount > 0 && (
               <span><MessageSquare size={10} className="inline-block mr-0.5" />{sessionCommentCount}</span>
             )}
           </div>

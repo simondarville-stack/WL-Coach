@@ -279,6 +279,12 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             )}
           </div>
           <div className="flex items-center gap-2">
+            {exerciseMessages.length > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-600 font-medium" title={`${exerciseMessages.length} comment${exerciseMessages.length > 1 ? 's' : ''}`}>
+                <MessageSquare size={9} />
+                {exerciseMessages.length}
+              </span>
+            )}
             {logged && logged.log.status === 'completed' && (
               <DoneChip variant="light" />
             )}
