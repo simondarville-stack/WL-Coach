@@ -139,7 +139,6 @@ export function OffPlanExerciseCard({
           <Plus size={12} />
           Add set
         </button>
-        <span className="hidden">{logExercise.id}</span>
       </div>
     </div>
   );

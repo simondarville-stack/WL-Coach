@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
-import type { TrainingLogSet, TrainingLogExercise, Exercise, GppSection } from '../../../lib/database.types';
+import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
@@ -42,8 +42,9 @@ interface ExerciseLogCardProps {
   /** Open the substitution picker for this planned exercise. */
   onRequestSubstitute?: () => void;
   /** Optional: the actually-performed exercise after a substitution.
-   *  When provided and ≠ planned, the card surfaces the swap. */
-  performedExercise?: Exercise | null;
+   *  When provided and ≠ planned, the card surfaces the swap.
+   *  Accepts ExerciseStub when only id/name/color are available. */
+  performedExercise?: Exercise | ExerciseStub | null;
 }
 
 export function ExerciseLogCard({

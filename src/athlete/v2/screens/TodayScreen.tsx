@@ -36,6 +36,7 @@ import {
 } from '../../../lib/trainingLogService';
 import type {
   CustomMetricEntry,
+  ExerciseStub,
   GppSection,
   TrainingLogSession,
   TrainingLogSet,
@@ -173,14 +174,6 @@ export function TodayScreen() {
     setMode('preview');
   }, [dayIndex, weekStart]);
 
-  const loggedSetsByPlannedId = useMemo(() => {
-    const m = new Map<string, TrainingLogSet[]>();
-    data?.log?.exercises.forEach(le => {
-      if (le.log.planned_exercise_id) m.set(le.log.planned_exercise_id, le.sets);
-    });
-    return m;
-  }, [data]);
-
   const offPlanLogged = useMemo(
     () => (data?.log?.exercises ?? []).filter(le => !le.log.planned_exercise_id),
     [data],
@@ -220,8 +213,20 @@ export function TodayScreen() {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      await loadDay();
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      // Only reload day state when the error might indicate a stale or
+      // inconsistent server state. Network-level failures (no connectivity,
+      // request aborted) do not invalidate local state, so skip the reload
+      // to avoid a second failure spinning the loading indicator. (E-21)
+      const isTransient =
+        msg.includes('Failed to fetch') ||
+        msg.includes('NetworkError') ||
+        msg.includes('network') ||
+        msg.includes('AbortError');
+      if (!isTransient) {
+        await loadDay();
+      }
     } finally {
       setSaving(false);
     }
@@ -540,8 +545,7 @@ export function TodayScreen() {
       // surfaces without a full reload.
       setData(prev => {
         if (!prev?.log) return prev;
-        const partial = { id: pick.id, name: pick.name, color: pick.color } as unknown as
-          import('../../../lib/database.types').Exercise;
+        const partial: ExerciseStub = { id: pick.id, name: pick.name, color: pick.color };
         return {
           ...prev,
           log: {
@@ -563,10 +567,9 @@ export function TodayScreen() {
         sessionId: session.id,
         exerciseId: ex.id,
       });
-      // The picker only carries id/name/color; cast a partial Exercise
-      // since OffPlanExerciseCard only reads those two fields.
-      const partial = { id: ex.id, name: ex.name, color: ex.color } as unknown as
-        import('../../../lib/database.types').Exercise;
+      // The picker only carries id/name/color; ExerciseStub is the
+      // proper type for this partial object until a full reload.
+      const partial: ExerciseStub = { id: ex.id, name: ex.name, color: ex.color };
       mergeLogExercise(newLogEx, partial);
     });
   };
@@ -720,7 +723,7 @@ export function TodayScreen() {
                       key={p.exercise.id}
                       planned={p}
                       loggedExercise={loggedExercise}
-                      loggedSets={loggedSetsByPlannedId.get(p.exercise.id) ?? []}
+                      loggedSets={le?.sets ?? []}
                       onSaveSet={handleSaveSet(p)}
                       onLogAsPrescribed={handleLogAsPrescribed(p)}
                       onUpdateNotes={handleUpdateExerciseNotes(p)}

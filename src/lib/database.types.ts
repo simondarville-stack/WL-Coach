@@ -107,6 +107,18 @@ export interface Exercise {
   updated_at: string;
 }
 
+/**
+ * ExerciseStub — minimal subset of Exercise used when only id/name/color
+ * are available at call time (e.g. immediately after addOffPlanLogExercise or
+ * setSubstitutedExercise, before a full reload). Type-safe replacement for
+ * `as unknown as Exercise` casts. (E-05 / UF-32)
+ */
+export interface ExerciseStub {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export interface TrainingGroup {
   id: string;
   owner_id: string;

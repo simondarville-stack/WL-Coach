@@ -11,6 +11,7 @@ import type {
   TrainingLogSet,
   TrainingLogMessage,
   Exercise,
+  ExerciseStub,
 } from './database.types';
 
 // ─── Status enums ──────────────────────────────────────────────────────────
@@ -45,7 +46,10 @@ export const DEFAULT_DELTA_THRESHOLDS: DeltaThresholds = {
 export interface LoggedExerciseFull {
   log: TrainingLogExercise;
   sets: TrainingLogSet[];
-  exercise: Exercise | null; // null if the underlying exercise was deleted
+  /** Full Exercise, or an ExerciseStub when only id/name/color are known
+   *  (e.g. immediately after addOffPlanLogExercise before a full reload),
+   *  or null if the underlying exercise was deleted. (E-05 / UF-32) */
+  exercise: Exercise | ExerciseStub | null;
 }
 
 export interface DayLog {

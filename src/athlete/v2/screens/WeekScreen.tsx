@@ -134,8 +134,8 @@ export function WeekScreen() {
       try {
         await setAthleteDayLabel({ athleteId: athlete.id, weekStart, dayIndex: dayIdx, label: name });
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('Could not set bonus day label:', e);
+        // Non-fatal: session was created; show the error but continue.
+        setError(`Session created, but label could not be saved: ${e instanceof Error ? e.message : String(e)}`);
       }
       setShowBonusName(false);
       // Reload the overview, then jump into the new day in Today so the
