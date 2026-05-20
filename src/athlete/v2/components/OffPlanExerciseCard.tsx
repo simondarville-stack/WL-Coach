@@ -10,8 +10,14 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { TrainingLogSet, TrainingLogExercise, Exercise } from '../../../lib/database.types';
+import type {
+  TrainingLogSet,
+  TrainingLogExercise,
+  Exercise,
+  TrainingLogMessage,
+} from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
+import { AthleteCommentsThread } from './AthleteCommentsThread';
 
 interface OffPlanExerciseCardProps {
   logExercise: TrainingLogExercise;
@@ -29,6 +35,11 @@ interface OffPlanExerciseCardProps {
   onDelete?: () => Promise<void>;
   /** Remove a single set within this exercise. */
   onDeleteSet?: (setId: string) => Promise<void>;
+  /** Coach + athlete messages scoped to this exercise. */
+  exerciseMessages?: TrainingLogMessage[];
+  /** Post a comment scoped to this exercise. When provided, the thread
+   *  input renders alongside the set rows. */
+  onPostExerciseComment?: (body: string) => Promise<void>;
 }
 
 export function OffPlanExerciseCard({
@@ -38,6 +49,8 @@ export function OffPlanExerciseCard({
   onSaveSet,
   onDelete,
   onDeleteSet,
+  exerciseMessages = [],
+  onPostExerciseComment,
 }: OffPlanExerciseCardProps) {
   const sortedSets = loggedSets.slice().sort((a, b) => a.set_number - b.set_number);
   /**
@@ -139,6 +152,16 @@ export function OffPlanExerciseCard({
           <Plus size={12} />
           Add set
         </button>
+
+        {(exerciseMessages.length > 0 || onPostExerciseComment) && (
+          <div className="pt-1">
+            <AthleteCommentsThread
+              messages={exerciseMessages}
+              onPost={onPostExerciseComment ?? (() => Promise.resolve())}
+              compact
+            />
+          </div>
+        )}
       </div>
     </div>
   );

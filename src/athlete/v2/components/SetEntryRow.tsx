@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
-import { parseNumericInput } from '../../../lib/trainingLogModel';
+import { parseNumericInput, parseRepsInput } from '../../../lib/trainingLogModel';
 
 export interface SetRowInput {
   setNumber: number;
@@ -105,7 +105,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
       }
 
       const parsedLoad = parseNumericInput(nextLoad);
-      const parsedReps = parseNumericInput(nextReps);
+      const parsedReps = parseRepsInput(nextReps);
       // When marking completed without explicit values, assume the
       // athlete executed the set as prescribed. This means tapping the
       // checkmark on a planned set is enough — no manual entry needed

@@ -13,7 +13,9 @@ import type {
   TrainingLogExercise,
   GppSection,
   GppRow,
+  TrainingLogMessage,
 } from '../../../lib/database.types';
+import { AthleteCommentsThread } from './AthleteCommentsThread';
 
 interface GppLogCardProps {
   /** Planned section the coach wrote, or null if the coach left it blank. */
@@ -22,6 +24,12 @@ interface GppLogCardProps {
   loggedExercise: TrainingLogExercise | null;
   /** Persists the athlete-side GPP state. */
   onSave: (section: GppSection) => Promise<void>;
+  /** Coach + athlete messages scoped to this exercise. Same shape as the
+   *  quantified card so the thread renders identically across types. */
+  exerciseMessages?: TrainingLogMessage[];
+  /** Post a comment scoped to this exercise. Undefined until a log_exercise
+   *  exists; first row tick bootstraps one. */
+  onPostExerciseComment?: (body: string) => Promise<void>;
 }
 
 /** Merge planned rows with athlete-edited rows by position. Athlete
@@ -36,7 +44,13 @@ function mergeRows(planned: GppRow[], athlete: GppRow[] | undefined): GppRow[] {
   return [...athlete, ...planned.slice(athlete.length).map(r => ({ ...r, done: false }))];
 }
 
-export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps) {
+export function GppLogCard({
+  planned,
+  loggedExercise,
+  onSave,
+  exerciseMessages = [],
+  onPostExerciseComment,
+}: GppLogCardProps) {
   const athleteSection = loggedExercise?.metadata?.gpp;
   const initialRows = planned
     ? mergeRows(planned.rows, athleteSection?.rows)
@@ -128,7 +142,7 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
         </div>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="px-3 pb-3 space-y-2">
         {rows.length === 0 ? (
           <p className="text-[11px] text-gray-500 italic text-center py-3">
             No rows yet — your coach hasn't filled this in.
@@ -196,6 +210,16 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {(exerciseMessages.length > 0 || onPostExerciseComment) && (
+          <div className="pt-1">
+            <AthleteCommentsThread
+              messages={exerciseMessages}
+              onPost={onPostExerciseComment ?? (() => Promise.resolve())}
+              compact
+            />
           </div>
         )}
       </div>

@@ -252,6 +252,27 @@ export function parseNumericInput(text: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Parse a reps input that may carry combo notation ("2+2+2" → 6). Each
+ * "+"-delimited part must be a number; the result is the sum. Falls back
+ * to parseNumericInput for plain numeric input. Returns null when the
+ * input is empty or any part fails to parse.
+ *
+ * Combo prescriptions like "80×2+1×3" save their per-cluster rep tuple as
+ * reps_text ("2+1"), and the athlete sees that as the placeholder. When
+ * the athlete echoes it back ("2+2+2"), naive parseFloat silently drops
+ * everything after the first digit. Summing the parts preserves their
+ * intent in performed_reps.
+ */
+export function parseRepsInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  if (!trimmed.includes('+')) return parseNumericInput(trimmed);
+  const parts = trimmed.split('+').map(p => parseNumericInput(p));
+  if (parts.some(p => p == null)) return null;
+  return (parts as number[]).reduce((a, b) => a + b, 0);
+}
+
 // ─── Delta colour helpers ────────────────────────────────────────────────────
 
 /**

@@ -196,6 +196,8 @@ export function ExerciseLogCard({
         onSave={async section => {
           if (onSaveGppSection) await onSaveGppSection(section);
         }}
+        exerciseMessages={exerciseMessages}
+        onPostExerciseComment={onPostExerciseComment}
       />
     );
   }

@@ -43,6 +43,7 @@ import type {
   TrainingLogSet,
 } from '../../../lib/database.types';
 import { isExerciseDone } from '../../../lib/trainingLogModel';
+import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -427,7 +428,7 @@ export function TodayScreen() {
       const currentLogEx = data?.log?.exercises.find(e => e.log.id === logEx.id);
       if (currentLogEx && currentLogEx.log.status !== 'completed') {
         const projectedLe = { ...currentLogEx, sets: mergedSets };
-        const plannedCount = planned.setLines?.reduce((n, l) => n + Math.max(1, l.sets ?? 1), 0) ?? null;
+        const plannedCount = expectedPlannedSetCount(planned);
         if (isExerciseDone(projectedLe, plannedCount)) {
           const promoted = await updateLogExercise(logEx.id, {
             status: 'completed',
@@ -851,17 +852,24 @@ export function TodayScreen() {
                 })
               )}
 
-              {offPlanLogged.map(le => (
-                <OffPlanExerciseCard
-                  key={le.log.id}
-                  logExercise={le.log}
-                  exercise={le.exercise}
-                  loggedSets={le.sets}
-                  onSaveSet={handleSaveOffPlanSet(le.log.id)}
-                  onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
-                  onDeleteSet={handleDeleteSet}
-                />
-              ))}
+              {offPlanLogged.map(le => {
+                const exMessages = (data.log?.messages ?? []).filter(
+                  m => m.exercise_id === le.log.id,
+                );
+                return (
+                  <OffPlanExerciseCard
+                    key={le.log.id}
+                    logExercise={le.log}
+                    exercise={le.exercise}
+                    loggedSets={le.sets}
+                    onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                    onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                    onDeleteSet={handleDeleteSet}
+                    exerciseMessages={exMessages}
+                    onPostExerciseComment={handlePostExerciseComment(le.log.id)}
+                  />
+                );
+              })}
 
               <button
                 onClick={() => setShowPicker(true)}

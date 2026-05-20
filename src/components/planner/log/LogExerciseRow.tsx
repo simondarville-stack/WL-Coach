@@ -30,8 +30,12 @@ import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
 import { LogCommentsThread } from './LogCommentsThread';
 
+// Matched intentionally has no tint: the DoneChip already communicates
+// "this is completed and matches the plan", so the row stays neutral.
+// Amber/red still tint so deviations remain visually obvious when scanning
+// a week of sessions.
 const DELTA_BG: Record<DeltaState, string> = {
-  matched: 'bg-emerald-50/40',
+  matched: '',
   amber: 'bg-amber-50/40',
   red: 'bg-red-50/40',
   pending: '',
