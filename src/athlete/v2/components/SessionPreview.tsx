@@ -11,13 +11,15 @@
  * so the visual is identical to the coach side (different theme tokens).
  * "Start logging" enters edit mode.
  */
-import { PlayCircle, CheckCircle2, Video, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { PlayCircle, CheckCircle2, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
+import { ImageLightbox } from '../../../components/planner/ImageLightbox';
 
 interface SessionPreviewProps {
   slotLabel: string;
@@ -157,6 +159,7 @@ function PreviewExerciseRow({
   planned: PlannedExerciseFull;
   logged: LoggedExerciseFull | null;
 }) {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const sentinel = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
   if (sentinel === 'text') {
     return (
@@ -170,17 +173,27 @@ function PreviewExerciseRow({
   if (sentinel === 'image') {
     const url = planned.exercise.notes?.trim();
     return (
-      <li className="px-4 py-3">
+      <li className="px-4 py-3 flex items-center gap-2">
+        <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
         {url ? (
-          <img
-            src={url}
-            alt=""
-            className="w-full max-h-80 object-contain rounded bg-black"
-            onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
-          />
+          <button
+            type="button"
+            onClick={() => setLightboxSrc(url)}
+            className="flex items-center gap-2 min-w-0 group"
+            title="Click to enlarge"
+          >
+            <img
+              src={url}
+              alt=""
+              className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
+            <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
+          </button>
         ) : (
-          <p className="text-sm text-gray-500 italic">(no image)</p>
+          <span className="text-xs text-gray-500 italic">(no image)</span>
         )}
+        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       </li>
     );
   }

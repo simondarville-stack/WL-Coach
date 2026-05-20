@@ -6,12 +6,13 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
+import { ImageLightbox } from '../../../components/planner/ImageLightbox';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
 
@@ -64,6 +65,7 @@ export function ExerciseLogCard({
   const [savingPrescribed, setSavingPrescribed] = useState(false);
   /** Extra ad-hoc set rows beyond the planned set lines. */
   const [extraRows, setExtraRows] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // Sync notes on primitive dep so a parent re-render with a new
   // loggedExercise reference doesn't reset what the user is typing.
@@ -160,18 +162,30 @@ export function ExerciseLogCard({
   if (sentinelType === 'image') {
     const url = planned.exercise.notes?.trim();
     return (
-      <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
-        {url ? (
-          <img
-            src={url}
-            alt=""
-            className="w-full max-h-80 object-contain bg-black"
-            onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
-          />
-        ) : (
-          <p className="text-sm text-gray-500 italic px-3 py-3">(no image)</p>
-        )}
-      </div>
+      <>
+        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2 flex items-center gap-2">
+          <ImageIcon size={14} className="text-pink-400 flex-shrink-0" />
+          {url ? (
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(url)}
+              className="flex items-center gap-2 min-w-0 group"
+              title="Click to enlarge"
+            >
+              <img
+                src={url}
+                alt=""
+                className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-pink-400 flex-shrink-0"
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
+              <span className="text-xs text-gray-400 group-hover:text-pink-300 truncate">Tap to enlarge</span>
+            </button>
+          ) : (
+            <span className="text-xs text-gray-500 italic">(no image)</span>
+          )}
+        </div>
+        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
+      </>
     );
   }
   if (sentinelType === 'video') {

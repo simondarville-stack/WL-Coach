@@ -21,9 +21,10 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../plannerUtils';
+import { ImageLightbox } from '../ImageLightbox';
 import { LogCommentsThread } from './LogCommentsThread';
 
 const DELTA_BORDER: Record<DeltaState, string> = {
@@ -53,6 +54,7 @@ interface LogExerciseRowProps {
 }
 
 export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
   const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
 
@@ -106,18 +108,28 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     const url = planned?.notes?.trim();
     return (
       <div className="flex border-l-4 border-l-pink-400">
-        <div className="flex-1 px-3 py-2 min-w-0">
+        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ImageIcon size={14} style={{ color: '#EC4899', flexShrink: 0 }} />
           {url ? (
-            <img
-              src={url}
-              alt=""
-              style={{ maxHeight: 120, maxWidth: '100%', objectFit: 'contain', borderRadius: 4 }}
-              onError={e => { e.currentTarget.style.display = 'none'; }}
-            />
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(url)}
+              title="Click to enlarge"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'zoom-in', minWidth: 0 }}
+            >
+              <img
+                src={url}
+                alt=""
+                style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }}
+                onError={e => { e.currentTarget.style.display = 'none'; }}
+              />
+              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>Click to enlarge</span>
+            </button>
           ) : (
             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no image)</p>
           )}
         </div>
+        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       </div>
     );
   }
