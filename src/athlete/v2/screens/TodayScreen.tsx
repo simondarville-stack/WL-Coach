@@ -50,7 +50,7 @@ import { ExercisePicker } from '../components/ExercisePicker';
 import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
 import type { RawScores } from '../components/RawScoreDial';
-import { expandSetLines } from '../components/SetEntryRow';
+import type { SetRowInput } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
 import { DayChipRow } from '../components/DayChipRow';
 
@@ -387,13 +387,12 @@ export function TodayScreen() {
       // status moves to 'completed' explicitly via Mark complete.
     });
 
-  const handleLogAsPrescribed = (planned: PlannedExerciseFull) => () =>
+  const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>
     runSave(async () => {
       const session = await getOrCreateSession();
       mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);
       mergeLogExercise(logEx, planned.exerciseDef);
-      const rows = expandSetLines(planned.setLines);
       for (const row of rows) {
         const savedSet = await upsertLoggedSet({
           logExerciseId: logEx.id,

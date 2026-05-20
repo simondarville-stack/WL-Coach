@@ -28,7 +28,7 @@ interface ExerciseLogCardProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
-  onLogAsPrescribed: () => Promise<void>;
+  onLogAsPrescribed: (rows: SetRowInput[]) => Promise<void>;
   onUpdateNotes: (notes: string) => Promise<void>;
   onMarkComplete: () => Promise<void>;
   /** Delete one logged set; passed through to SetEntryRow. */
@@ -85,6 +85,11 @@ export function ExerciseLogCard({
     // free-text parser and synthesise rows. The loadText carries the
     // coach's prose ("moderate work"), reps stay numeric, and load
     // saves as null until the athlete types a kg figure.
+    //
+    // Pure free_text (and "other") units carry no rep/load structure at
+    // all — the coach's prose lives in prescription_raw and is already
+    // rendered in the card header. We still synthesise a single ✓/✗ row
+    // so the athlete can mark the whole exercise done or skip it.
     let base: SetRowInput[] = [];
     if (planned.setLines.length > 0) {
       base = expandSetLines(planned.setLines);
@@ -104,6 +109,14 @@ export function ExerciseLogCard({
           setNumber += 1;
         }
       }
+    } else if (planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other') {
+      base.push({
+        setNumber: 1,
+        plannedRepsText: '—',
+        plannedLoadText: '—',
+        plannedRepsValue: null,
+        plannedLoadValue: null,
+      });
     }
     // Drop planned rows the athlete actively removed. The trash on a
     // planned-but-untouched row writes to metadata.removed_set_numbers;
@@ -243,7 +256,7 @@ export function ExerciseLogCard({
   const handleLogAsPrescribed = async () => {
     setSavingPrescribed(true);
     try {
-      await onLogAsPrescribed();
+      await onLogAsPrescribed(rows);
     } finally {
       setSavingPrescribed(false);
     }
