@@ -9,9 +9,10 @@
  */
 import { useEffect, useState } from 'react';
 import { Check, X, Trash2, Plus } from 'lucide-react';
-import type { TrainingLogSet } from '../../../lib/database.types';
+import type { TrainingLogSet, PlannedExercise, Exercise } from '../../../lib/database.types';
 import { upsertLoggedSet, deleteLoggedSet } from '../../../lib/trainingLogService';
 import { parseNumericInput } from '../../../lib/trainingLogModel';
+import { StackedNotation } from '../StackedNotation';
 
 interface CoachSetEditModalProps {
   open: boolean;
@@ -21,6 +22,9 @@ interface CoachSetEditModalProps {
   onClose: () => void;
   /** Called after every successful write so the parent can refresh. */
   onChanged: () => void;
+  /** Optional: the planned exercise for this slot. When provided, the modal
+   *  renders a read-only prescription header and per-set planned values. */
+  plannedExercise?: (PlannedExercise & { exercise: Exercise }) | null;
 }
 
 export function CoachSetEditModal({
@@ -30,6 +34,7 @@ export function CoachSetEditModal({
   loggedSets,
   onClose,
   onChanged,
+  plannedExercise,
 }: CoachSetEditModalProps) {
   // Local mirror so adding a brand-new (not yet persisted) row is
   // possible without immediately writing.
@@ -134,6 +139,18 @@ export function CoachSetEditModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+          {plannedExercise && (
+            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 mb-1">
+              <div className="text-[9px] uppercase tracking-wide font-semibold text-blue-500 mb-0.5">
+                Prescription
+              </div>
+              <StackedNotation
+                raw={plannedExercise.prescription_raw}
+                unit={plannedExercise.unit}
+                isCombo={plannedExercise.is_combo}
+              />
+            </div>
+          )}
           {rows.length === 0 && (
             <p className="text-xs text-gray-500 italic text-center py-4">
               No sets yet. Add one to record what the athlete lifted.

@@ -271,6 +271,13 @@ export function LogModeView({
           loggedSets={editingLogged.sets}
           onClose={() => setEditingLogged(null)}
           onChanged={reload}
+          plannedExercise={
+            editingLogged.log.planned_exercise_id
+              ? Object.values(plannedExercises)
+                  .flat()
+                  .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
+              : null
+          }
         />
       )}
     </div>
