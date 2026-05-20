@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
+import { AthleteCommentsThread } from './AthleteCommentsThread';
+import type { TrainingLogMessage } from '../../../lib/database.types';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
@@ -46,6 +48,12 @@ interface ExerciseLogCardProps {
    *  When provided and ≠ planned, the card surfaces the swap.
    *  Accepts ExerciseStub when only id/name/color are available. */
   performedExercise?: Exercise | ExerciseStub | null;
+  /** Coach messages scoped to this exercise. Rendered as a compact
+   *  inline thread below the notes textarea. (UF-08 / E1) */
+  exerciseMessages?: TrainingLogMessage[];
+  /** Post a comment scoped to this exercise. When provided, the comment
+   *  thread input is rendered. */
+  onPostExerciseComment?: (body: string) => Promise<void>;
 }
 
 export function ExerciseLogCard({
@@ -61,6 +69,8 @@ export function ExerciseLogCard({
   onSaveGppSection,
   onRequestSubstitute,
   performedExercise,
+  exerciseMessages = [],
+  onPostExerciseComment,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
@@ -502,6 +512,16 @@ export function ExerciseLogCard({
               className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
             />
           </div>
+
+          {(exerciseMessages.length > 0 || onPostExerciseComment) && (
+            <div className="pt-1">
+              <AthleteCommentsThread
+                messages={exerciseMessages}
+                onPost={onPostExerciseComment ?? (() => Promise.resolve())}
+                compact
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
