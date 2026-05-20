@@ -48,8 +48,9 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
 
   // free_text_reps — stacked notation with the (possibly empty) text as
   // the load row. Falls back to raw output only when the row isn't
-  // parseable as "<text> × reps [× sets]".
-  if (unit === 'free_text_reps') {
+  // parseable as "<text> × reps [× sets]". Combos handled in the
+  // dedicated isCombo block above, so their tuple reps stay intact.
+  if (unit === 'free_text_reps' && !isCombo) {
     const lines = parseFreeTextPrescription(prescription);
     if (lines.length === 0) return <span>{prescription}</span>;
     return (
@@ -71,13 +72,16 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
   if (isCombo) {
     const parsed = parseComboPrescription(prescription);
     if (parsed.length === 0) return <span>{prescription}</span>;
+    const isFreeTextReps = unit === 'free_text_reps';
     return (
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {parsed.map((line, i) => (
           <div key={i} className="flex items-center gap-1">
             <div className="inline-flex flex-col items-center leading-none">
               <span className="text-xs font-semibold text-gray-900">
-                {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
+                {isFreeTextReps && line.loadText
+                  ? line.loadText
+                  : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
               </span>
               <div className="border-t border-gray-400 w-full my-px" />
               <span className="text-xs font-semibold text-gray-900">{line.repsText}</span>

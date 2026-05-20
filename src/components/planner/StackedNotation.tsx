@@ -88,6 +88,36 @@ const stackPair: React.CSSProperties = {
 export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
   if (!raw) return null;
 
+  // Combo must win against the free-text-reps unit branch:
+  // parseComboPrescription handles free-text loads ("Heavy×2+1×3")
+  // AND preserves the tuple reps_text ("2+1"). Falling into the
+  // non-combo free-text parser strips the tuple and breaks the visual.
+  if (isCombo) {
+    const lines = parseComboPrescription(raw);
+    if (lines.length === 0) return <span style={empty}>{raw}</span>;
+    const isFreeTextReps = unit === 'free_text_reps';
+    return (
+      <div style={stackRow}>
+        {lines.map((line, i) => (
+          <div key={i} style={stackPair}>
+            <div style={stackColumn}>
+              <span style={mono}>
+                {isFreeTextReps && line.loadText
+                  ? line.loadText
+                  : line.loadMax != null
+                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
+                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
+              </span>
+              <div style={ruleStyle} />
+              <span style={mono}>{line.repsText}</span>
+            </div>
+            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (unit === 'free_text_reps') {
     // Render the same stacked-column visual as numeric prescriptions:
     // free-text load on top, parsed reps below, "× N" sets suffix.
@@ -117,29 +147,6 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
               <span style={mono}>{line.loadText}</span>
               <div style={ruleStyle} />
               <span style={mono}>{line.reps}</span>
-            </div>
-            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (isCombo) {
-    const lines = parseComboPrescription(raw);
-    if (lines.length === 0) return <span style={empty}>{raw}</span>;
-    return (
-      <div style={stackRow}>
-        {lines.map((line, i) => (
-          <div key={i} style={stackPair}>
-            <div style={stackColumn}>
-              <span style={mono}>
-                {line.loadMax != null
-                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-              </span>
-              <div style={ruleStyle} />
-              <span style={mono}>{line.repsText}</span>
             </div>
             {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
           </div>

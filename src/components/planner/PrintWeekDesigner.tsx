@@ -124,7 +124,7 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
   if (!prescription?.trim()) return <span className="dz-no-rx">No prescription</span>;
   const unitSym = unit === 'percentage' ? '%' : unit === 'rpe' ? ' RPE' : '';
 
-  if (unit === 'free_text_reps') {
+  if (unit === 'free_text_reps' && !isCombo) {
     const lines = parseFreeTextPrescription(prescription);
     if (lines.length === 0) return <span>{prescription}</span>;
     return (
@@ -146,13 +146,16 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
   if (isCombo) {
     const parsed = parseComboPrescription(prescription);
     if (parsed.length === 0) return <span>{prescription}</span>;
+    const isFreeTextReps = unit === 'free_text_reps';
     return (
       <div className="dz-rx-row">
         {parsed.map((line, i) => (
           <div key={i} className="dz-rx-cell">
             <div className="dz-rx-stack">
               <span className="dz-rx-load">
-                {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
+                {isFreeTextReps && line.loadText
+                  ? line.loadText
+                  : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
               </span>
               <div className="dz-rx-bar" />
               <span className="dz-rx-reps">{line.repsText}</span>
