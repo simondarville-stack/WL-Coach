@@ -12,7 +12,7 @@
  * "Start logging" enters edit mode.
  */
 import { useState } from 'react';
-import { PlayCircle, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { PlayCircle, MessageSquare, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
@@ -137,6 +137,31 @@ export function SessionPreview({
           </ul>
         </div>
       )}
+
+      {(() => {
+        const sessionMessages = (log?.messages ?? []).filter(m => !m.exercise_id);
+        const coachMessages = sessionMessages.filter(m => m.sender_type === 'coach');
+        if (coachMessages.length === 0) return null;
+        const latest = coachMessages[coachMessages.length - 1];
+        return (
+          <button
+            onClick={onStart}
+            className="w-full rounded-xl bg-blue-950/50 border border-blue-800/40 px-4 py-3 text-left hover:bg-blue-950/80 transition-colors"
+            title="Tap to reply"
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <MessageSquare size={11} className="text-blue-400 flex-shrink-0" />
+              <span className="text-[10px] text-blue-300 font-semibold uppercase tracking-wide">
+                Coach left {coachMessages.length} message{coachMessages.length > 1 ? 's' : ''}
+              </span>
+              <span className="text-[9px] text-blue-400 ml-auto">Tap to reply</span>
+            </div>
+            <p className="text-xs text-blue-200 italic whitespace-pre-wrap leading-snug line-clamp-2">
+              {latest.message}
+            </p>
+          </button>
+        );
+      })()}
 
       <button
         onClick={onStart}
