@@ -138,39 +138,35 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     if (!url) {
       return (
         <div className="flex border-l-4 border-l-indigo-400">
-          <div className="flex-1 px-3 py-2 min-w-0">
+          <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no video link)</p>
           </div>
         </div>
       );
     }
-    if (isDirectVideoFile(url)) {
-      return (
-        <div className="flex border-l-4 border-l-indigo-400">
-          <div className="flex-1 px-3 py-2 min-w-0">
-            <video src={url} controls style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 4 }} />
-          </div>
-        </div>
-      );
-    }
-    const thumb = getYouTubeThumbnail(url);
+    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
     return (
       <div className="flex border-l-4 border-l-indigo-400">
-        <div className="flex-1 px-3 py-2 min-w-0">
+        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
           <a
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366F1', textDecoration: 'none' }}
+            title="Click to open video"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366F1', textDecoration: 'none', minWidth: 0 }}
           >
             {thumb ? (
-              <img src={thumb} alt="" style={{ width: 80, height: 50, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+              <img src={thumb} alt="" style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }} />
             ) : (
-              <Video size={20} style={{ flexShrink: 0 }} />
+              <span style={{ height: 36, width: 56, borderRadius: 4, border: '1px solid var(--color-border-secondary)', background: 'var(--color-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Video size={16} />
+              </span>
             )}
-            <span style={{ fontSize: 'var(--text-caption)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', minWidth: 0 }}>
+            <span style={{ fontSize: 'var(--text-caption)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
               <ExternalLink size={11} style={{ flexShrink: 0 }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{url}</span>
+              <span>Click to open</span>
             </span>
           </a>
         </div>

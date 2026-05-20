@@ -200,36 +200,35 @@ function PreviewExerciseRow({
   if (sentinel === 'video') {
     const url = planned.exercise.notes?.trim();
     if (!url) {
-      return <li className="px-4 py-3"><p className="text-sm text-gray-500 italic">(no video link)</p></li>;
-    }
-    if (isDirectVideoFile(url)) {
       return (
-        <li className="px-4 py-3">
-          <video src={url} controls className="w-full max-h-80 rounded bg-black" />
+        <li className="px-4 py-3 flex items-center gap-2">
+          <Video size={14} className="text-indigo-400 flex-shrink-0" />
+          <span className="text-xs text-gray-500 italic">(no video link)</span>
         </li>
       );
     }
-    const thumb = getYouTubeThumbnail(url);
+    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
     return (
       <li className="px-4 py-3">
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block rounded border border-gray-800 hover:border-indigo-700/50 transition-colors overflow-hidden"
+          className="flex items-center gap-2 min-w-0 group"
+          title="Tap to open video"
         >
+          <Video size={14} className="text-indigo-400 flex-shrink-0" />
           {thumb ? (
-            <img src={thumb} alt="Video thumbnail" className="w-full max-h-64 object-cover" />
+            <img src={thumb} alt="" className="h-9 w-14 object-cover rounded border border-gray-700 group-hover:border-indigo-400 flex-shrink-0" />
           ) : (
-            <div className="px-3 py-6 flex items-center justify-center gap-2 text-indigo-300">
-              <Video size={20} />
-              <span className="text-sm font-medium">Open video</span>
-            </div>
+            <span className="h-9 w-14 rounded border border-gray-700 bg-gray-800 group-hover:border-indigo-400 flex items-center justify-center flex-shrink-0">
+              <Video size={16} className="text-indigo-400" />
+            </span>
           )}
-          <div className="flex items-center gap-2 px-3 py-2 text-xs text-indigo-300 border-t border-gray-800">
-            <ExternalLink size={12} className="flex-shrink-0" />
-            <span className="break-all">{url}</span>
-          </div>
+          <span className="flex items-center gap-1 text-xs text-indigo-300 group-hover:text-indigo-200 min-w-0">
+            <ExternalLink size={11} className="flex-shrink-0" />
+            <span className="truncate">Tap to open</span>
+          </span>
         </a>
       </li>
     );
