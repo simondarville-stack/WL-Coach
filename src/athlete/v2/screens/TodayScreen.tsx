@@ -509,25 +509,22 @@ export function TodayScreen() {
     });
   };
 
-  const handlePostExerciseComment = (logExerciseId: string) => async (body: string) => {
-    await runSave(async () => {
-      const session = await getOrCreateSession();
-      mergeSession(session);
-      const msg = await addComment({
-        sessionId: session.id,
-        exerciseId: logExerciseId,
-        message: body,
-        senderType: 'athlete',
-      });
+  const handleUpdateOffPlanNotes = (logExerciseId: string) => (notes: string) =>
+    runSave(async () => {
+      const updated = await updateLogExercise(logExerciseId, { performed_notes: notes });
       setData(prev => {
         if (!prev?.log) return prev;
         return {
           ...prev,
-          log: { ...prev.log, messages: [...prev.log.messages, msg] },
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(e =>
+              e.log.id === updated.id ? { ...e, log: updated } : e,
+            ),
+          },
         };
       });
     });
-  };
 
   const handleDeleteSet = (setId: string) => {
     // Find the set so we can restore it on undo.
@@ -825,12 +822,6 @@ export function TodayScreen() {
                   const le = data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id);
                   const loggedExercise = le?.log ?? null;
                   const performed = le?.exercise ?? null;
-                  // Exercise-scoped messages: filter by the log_exercise id.
-                  // Remove the !m.exercise_id guard so athlete sees all messages
-                  // including exercise-scoped coach replies. (UF-08)
-                  const exMessages = le
-                    ? (data.log?.messages ?? []).filter(m => m.exercise_id === le.log.id)
-                    : [];
                   return (
                     <ExerciseLogCard
                       key={p.exercise.id}
@@ -846,32 +837,24 @@ export function TodayScreen() {
                       onSaveGppSection={handleSaveGppSection(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
-                      exerciseMessages={exMessages}
-                      onPostExerciseComment={le ? handlePostExerciseComment(le.log.id) : undefined}
                       globalSaving={saving}
                     />
                   );
                 })
               )}
 
-              {offPlanLogged.map(le => {
-                const exMessages = (data.log?.messages ?? []).filter(
-                  m => m.exercise_id === le.log.id,
-                );
-                return (
-                  <OffPlanExerciseCard
-                    key={le.log.id}
-                    logExercise={le.log}
-                    exercise={le.exercise}
-                    loggedSets={le.sets}
-                    onSaveSet={handleSaveOffPlanSet(le.log.id)}
-                    onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
-                    onDeleteSet={handleDeleteSet}
-                    exerciseMessages={exMessages}
-                    onPostExerciseComment={handlePostExerciseComment(le.log.id)}
-                  />
-                );
-              })}
+              {offPlanLogged.map(le => (
+                <OffPlanExerciseCard
+                  key={le.log.id}
+                  logExercise={le.log}
+                  exercise={le.exercise}
+                  loggedSets={le.sets}
+                  onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                  onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                  onDeleteSet={handleDeleteSet}
+                  onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
+                />
+              ))}
 
               <button
                 onClick={() => setShowPicker(true)}

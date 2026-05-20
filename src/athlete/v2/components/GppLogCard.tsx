@@ -13,9 +13,7 @@ import type {
   TrainingLogExercise,
   GppSection,
   GppRow,
-  TrainingLogMessage,
 } from '../../../lib/database.types';
-import { AthleteCommentsThread } from './AthleteCommentsThread';
 
 interface GppLogCardProps {
   /** Planned section the coach wrote, or null if the coach left it blank. */
@@ -24,12 +22,8 @@ interface GppLogCardProps {
   loggedExercise: TrainingLogExercise | null;
   /** Persists the athlete-side GPP state. */
   onSave: (section: GppSection) => Promise<void>;
-  /** Coach + athlete messages scoped to this exercise. Same shape as the
-   *  quantified card so the thread renders identically across types. */
-  exerciseMessages?: TrainingLogMessage[];
-  /** Post a comment scoped to this exercise. Undefined until a log_exercise
-   *  exists; first row tick bootstraps one. */
-  onPostExerciseComment?: (body: string) => Promise<void>;
+  /** Persists athlete-written notes on this exercise. */
+  onUpdateNotes: (notes: string) => Promise<void>;
 }
 
 /** Merge planned rows with athlete-edited rows by position. Athlete
@@ -48,8 +42,7 @@ export function GppLogCard({
   planned,
   loggedExercise,
   onSave,
-  exerciseMessages = [],
-  onPostExerciseComment,
+  onUpdateNotes,
 }: GppLogCardProps) {
   const athleteSection = loggedExercise?.metadata?.gpp;
   const initialRows = planned
@@ -57,6 +50,11 @@ export function GppLogCard({
     : athleteSection?.rows ?? [];
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
+  const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
+
+  useEffect(() => {
+    setNotes(loggedExercise?.performed_notes ?? '');
+  }, [loggedExercise?.performed_notes]);
 
   // Re-seed when the planned rows content changes — e.g. coach added,
   // removed, or reordered a row from the planner. A stable JSON hash
@@ -213,15 +211,20 @@ export function GppLogCard({
           </div>
         )}
 
-        {(exerciseMessages.length > 0 || onPostExerciseComment) && (
-          <div className="pt-1">
-            <AthleteCommentsThread
-              messages={exerciseMessages}
-              onPost={onPostExerciseComment ?? (() => Promise.resolve())}
-              compact
-            />
-          </div>
-        )}
+        <div className="pt-1">
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={() => {
+              if ((loggedExercise?.performed_notes ?? '') !== notes) {
+                void onUpdateNotes(notes);
+              }
+            }}
+            placeholder="Notes on this exercise…"
+            rows={2}
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          />
+        </div>
       </div>
     </div>
   );

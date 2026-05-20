@@ -8,8 +8,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
-import { AthleteCommentsThread } from './AthleteCommentsThread';
-import type { TrainingLogMessage } from '../../../lib/database.types';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
@@ -48,12 +46,6 @@ interface ExerciseLogCardProps {
    *  When provided and ≠ planned, the card surfaces the swap.
    *  Accepts ExerciseStub when only id/name/color are available. */
   performedExercise?: Exercise | ExerciseStub | null;
-  /** Coach messages scoped to this exercise. Rendered as a compact
-   *  inline thread below the notes textarea. (UF-08 / E1) */
-  exerciseMessages?: TrainingLogMessage[];
-  /** Post a comment scoped to this exercise. When provided, the comment
-   *  thread input is rendered. */
-  onPostExerciseComment?: (body: string) => Promise<void>;
   /** When true (a save is in flight at session level), disable the "Log as
    *  prescribed" button and all set-entry inputs to prevent double-writes. */
   globalSaving?: boolean;
@@ -72,8 +64,6 @@ export function ExerciseLogCard({
   onSaveGppSection,
   onRequestSubstitute,
   performedExercise,
-  exerciseMessages = [],
-  onPostExerciseComment,
   globalSaving = false,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
@@ -180,12 +170,28 @@ export function ExerciseLogCard({
   const sentinelType = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
   if (sentinelType === 'text' || sentinelType === 'image' || sentinelType === 'video') {
     return (
-      <SentinelDisplay
-        exerciseCode={planned.exerciseDef?.exercise_code}
-        notes={planned.exercise.notes}
-        metadata={planned.exercise.metadata}
-        theme="dark"
-      />
+      <div className="space-y-2">
+        <SentinelDisplay
+          exerciseCode={planned.exerciseDef?.exercise_code}
+          notes={planned.exercise.notes}
+          metadata={planned.exercise.metadata}
+          theme="dark"
+        />
+        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2">
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={() => {
+              if ((loggedExercise?.performed_notes ?? '') !== notes) {
+                void onUpdateNotes(notes);
+              }
+            }}
+            placeholder="Notes on this exercise…"
+            rows={2}
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          />
+        </div>
+      </div>
     );
   }
   if (sentinelType === 'gpp') {
@@ -196,8 +202,7 @@ export function ExerciseLogCard({
         onSave={async section => {
           if (onSaveGppSection) await onSaveGppSection(section);
         }}
-        exerciseMessages={exerciseMessages}
-        onPostExerciseComment={onPostExerciseComment}
+        onUpdateNotes={onUpdateNotes}
       />
     );
   }
@@ -443,15 +448,6 @@ export function ExerciseLogCard({
             />
           </div>
 
-          {(exerciseMessages.length > 0 || onPostExerciseComment) && (
-            <div className="pt-1">
-              <AthleteCommentsThread
-                messages={exerciseMessages}
-                onPost={onPostExerciseComment ?? (() => Promise.resolve())}
-                compact
-              />
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -14,10 +14,8 @@ import type {
   TrainingLogSet,
   TrainingLogExercise,
   Exercise,
-  TrainingLogMessage,
 } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
-import { AthleteCommentsThread } from './AthleteCommentsThread';
 
 interface OffPlanExerciseCardProps {
   logExercise: TrainingLogExercise;
@@ -35,11 +33,8 @@ interface OffPlanExerciseCardProps {
   onDelete?: () => Promise<void>;
   /** Remove a single set within this exercise. */
   onDeleteSet?: (setId: string) => Promise<void>;
-  /** Coach + athlete messages scoped to this exercise. */
-  exerciseMessages?: TrainingLogMessage[];
-  /** Post a comment scoped to this exercise. When provided, the thread
-   *  input renders alongside the set rows. */
-  onPostExerciseComment?: (body: string) => Promise<void>;
+  /** Persists athlete-written notes on this exercise. */
+  onUpdateNotes: (notes: string) => Promise<void>;
 }
 
 export function OffPlanExerciseCard({
@@ -49,9 +44,12 @@ export function OffPlanExerciseCard({
   onSaveSet,
   onDelete,
   onDeleteSet,
-  exerciseMessages = [],
-  onPostExerciseComment,
+  onUpdateNotes,
 }: OffPlanExerciseCardProps) {
+  const [notes, setNotes] = useState(logExercise.performed_notes ?? '');
+  useEffect(() => {
+    setNotes(logExercise.performed_notes ?? '');
+  }, [logExercise.performed_notes]);
   const sortedSets = loggedSets.slice().sort((a, b) => a.set_number - b.set_number);
   /**
    * Number of empty trailing rows the user has explicitly requested via
@@ -153,15 +151,20 @@ export function OffPlanExerciseCard({
           Add set
         </button>
 
-        {(exerciseMessages.length > 0 || onPostExerciseComment) && (
-          <div className="pt-1">
-            <AthleteCommentsThread
-              messages={exerciseMessages}
-              onPost={onPostExerciseComment ?? (() => Promise.resolve())}
-              compact
-            />
-          </div>
-        )}
+        <div className="pt-1">
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={() => {
+              if ((logExercise.performed_notes ?? '') !== notes) {
+                void onUpdateNotes(notes);
+              }
+            }}
+            placeholder="Notes on this exercise…"
+            rows={2}
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          />
+        </div>
       </div>
     </div>
   );
