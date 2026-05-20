@@ -1,110 +1,18 @@
 /**
- * Shared pure utility functions for the planner components.
- * DB interactions (getOrCreateSentinel) use getOwnerId() for owner scoping.
+ * plannerUtils — backward-compat barrel.
+ *
+ * Pure utilities have moved to sentinelUtils.ts.
+ * DB interaction (getOrCreateSentinel) has moved to sentinelService.ts.
+ * This re-export barrel is kept so any remaining callers continue to compile.
+ * Prefer importing directly from sentinelUtils / sentinelService in new code.
+ *
+ * UF-29 / E-17: refactored 2026-05-20.
  */
-import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
-import type { Exercise } from '../../lib/database.types';
-
-// ---------------------------------------------------------------------------
-// Exercise abbreviation used by PlannerControlPanel.
-// DOM-012/013: check exercise_code first, then category map, then initials.
-// ---------------------------------------------------------------------------
-
-const CATEGORY_ABBREVIATIONS: Record<string, string> = {
-  'Snatch': 'Sn',
-  'Clean': 'Cl',
-  'Jerk': 'Jk',
-  'Clean & Jerk': 'C&J',
-  'Squat': 'Sq',
-  'Back Squat': 'BSq',
-  'Front Squat': 'FSq',
-  'Overhead Squat': 'OSq',
-  'Pull': 'Pull',
-  'Snatch Pull': 'SnP',
-  'Clean Pull': 'ClP',
-  'Press': 'Pr',
-  'Push Press': 'PP',
-  'Jerk from rack': 'JkR',
-  'Accessories': 'Acc',
-  'General': 'Gen',
-  'Strength': 'Str',
-  'Conditioning': 'Cond',
-  'Technique': 'Tech',
-};
-
-/**
- * Return a short abbreviation for an exercise suitable for compact UI.
- * Priority: exercise_code → category abbreviation map → name initials.
- */
-export function abbreviateExercise(exercise: Pick<Exercise, 'name' | 'exercise_code' | 'category'>): string {
-  if (exercise.exercise_code) return exercise.exercise_code;
-  const catAbbr = CATEGORY_ABBREVIATIONS[exercise.category];
-  if (catAbbr) return catAbbr;
-  const words = exercise.name.trim().split(/\s+/);
-  if (words.length >= 2) return words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
-  return exercise.name.slice(0, 3).toUpperCase();
-}
-
-export type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
-
-export function getSentinelType(code: string | null): SentinelType {
-  if (code === 'TEXT') return 'text';
-  if (code === 'VIDEO') return 'video';
-  if (code === 'IMAGE') return 'image';
-  if (code === 'GPP') return 'gpp';
-  return null;
-}
-
-export function getYouTubeThumbnail(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
-}
-
-/** Heuristic: file extension suggests a directly-playable video file
- *  (Supabase upload) rather than a hosted video page (YouTube, Vimeo). */
-export function isDirectVideoFile(url: string): boolean {
-  return /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(url);
-}
-
-/**
- * Look up or create a sentinel exercise (TEXT / VIDEO / IMAGE) for the current owner.
- * Always includes owner_id on insert so the exercise is owned by the current coach.
- */
-export async function getOrCreateSentinel(
-  code: string,
-): Promise<{ id: string; default_unit: string } | null> {
-  const ownerId = getOwnerId();
-  const { data: existing } = await supabase
-    .from('exercises')
-    .select('id, default_unit')
-    .eq('exercise_code', code)
-    .eq('owner_id', ownerId)
-    .maybeSingle();
-  if (existing) return existing;
-
-  const sentinelDefs: Record<string, { name: string; color: string }> = {
-    TEXT:  { name: 'Free Text / Notes', color: '#9CA3AF' },
-    VIDEO: { name: 'Video',             color: '#6366F1' },
-    IMAGE: { name: 'Image',             color: '#EC4899' },
-    GPP:   { name: 'General Physical Preparation', color: '#10B981' },
-  };
-  const def = sentinelDefs[code];
-  if (!def) return null;
-
-  const { data: created } = await supabase
-    .from('exercises')
-    .insert({
-      name: def.name,
-      category: '— System',
-      default_unit: 'other',
-      color: def.color,
-      exercise_code: code,
-      counts_towards_totals: false,
-      is_competition_lift: false,
-      owner_id: ownerId,
-    })
-    .select('id, default_unit')
-    .single();
-  return created ?? null;
-}
+export {
+  abbreviateExercise,
+  getSentinelType,
+  getYouTubeThumbnail,
+  isDirectVideoFile,
+} from './sentinelUtils';
+export type { SentinelType } from './sentinelUtils';
+export { getOrCreateSentinel } from './sentinelService';

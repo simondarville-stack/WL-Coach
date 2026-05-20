@@ -25,7 +25,7 @@ import {
 import { useState } from 'react';
 import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../sentinelUtils';
 import { ImageLightbox } from '../ImageLightbox';
 import { LogCommentsThread } from './LogCommentsThread';
 

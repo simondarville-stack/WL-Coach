@@ -18,7 +18,7 @@ import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/sentinelUtils';
 import { ImageLightbox } from '../../../components/planner/ImageLightbox';
 
 interface SessionPreviewProps {

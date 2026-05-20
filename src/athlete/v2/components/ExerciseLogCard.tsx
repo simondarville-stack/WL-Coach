@@ -11,7 +11,7 @@ import type { TrainingLogSet, TrainingLogExercise, Exercise, GppSection } from '
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/sentinelUtils';
 import { ImageLightbox } from '../../../components/planner/ImageLightbox';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
