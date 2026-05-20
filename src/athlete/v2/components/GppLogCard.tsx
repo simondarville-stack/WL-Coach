@@ -44,16 +44,18 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
 
-  // Re-seed only when the planned structure changes — e.g. coach
-  // added a row from the planner. We deliberately do NOT re-sync from
-  // athleteSection on every save round-trip: doing so used to stomp
-  // characters the athlete was still typing because the useEffect
-  // fired the moment the server response came back.
+  // Re-seed when the planned rows content changes — e.g. coach added,
+  // removed, or reordered a row from the planner. A stable JSON hash
+  // detects structural changes regardless of row count, so a reorder
+  // without a count change is correctly caught. We deliberately do NOT
+  // re-sync from athleteSection on every save round-trip: doing so
+  // would stomp characters the athlete was still typing.
+  const plannedRowsHash = JSON.stringify(planned?.rows ?? null);
   useEffect(() => {
     if (!planned) return;
     setRows(prev => mergeRows(planned.rows, prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planned?.rows.length]);
+  }, [plannedRowsHash]);
 
   const title = planned?.title || 'GPP';
   const description = planned?.description || '';
@@ -93,15 +95,15 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
     }
   };
 
-  const enqueueSave = (nextRows: GppRow[]) => {
-    pendingRef.current = { title, description, rows: nextRows };
+  const enqueueSave = (nextRows: GppRow[], currentTitle: string, currentDescription: string) => {
+    pendingRef.current = { title: currentTitle, description: currentDescription, rows: nextRows };
     void drainQueue();
   };
 
   const updateRow = (i: number, patch: Partial<GppRow>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     setRows(next);
-    enqueueSave(next);
+    enqueueSave(next, title, description);
   };
 
   const allDone = rows.length > 0 && rows.every(r => r.done);

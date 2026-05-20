@@ -159,6 +159,15 @@ export interface GppRow {
   done?: boolean;
 }
 
+/**
+ * GppSection is stored in two locations:
+ *   - planned_exercises.metadata.gpp — the coach's planned section (source of truth for title/description/prescribed rows)
+ *   - training_log_exercises.metadata.gpp — the athlete's live copy (rows have done flags; athlete field overrides planned)
+ *
+ * Merge behaviour (intended — Q-14 2026-05-20): when the coach edits planned rows after the athlete has
+ * already saved, GppLogCard appends new coach rows to the athlete copy and preserves athlete edits.
+ * The athlete's per-row values are always kept when the athlete array is longer than planned.
+ */
 export interface GppSection {
   title: string;
   description: string;
