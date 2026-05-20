@@ -13,6 +13,7 @@ import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
+import { DoneChip } from '../../log/DoneChip';
 
 // Binary states: only "Done" pill surfaces.
 
@@ -88,11 +89,7 @@ export function LogDayCard({
             <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
           )}
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
-          {status === 'completed' && (
-            <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800">
-              Done
-            </span>
-          )}
+          {status === 'completed' && <DoneChip variant="light" />}
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>

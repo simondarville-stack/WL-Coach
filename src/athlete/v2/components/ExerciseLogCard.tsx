@@ -6,7 +6,8 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { DoneChip } from '../../../components/log/DoneChip';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
@@ -299,7 +300,7 @@ export function ExerciseLogCard({
                 ⇄ for {plannedName}
               </span>
             )}
-            {allCompleted && <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />}
+            {allCompleted && <DoneChip variant="dark" iconOnly size={14} />}
             {planned.exercise.is_combo && (
               <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
                 Combo
@@ -380,7 +381,7 @@ export function ExerciseLogCard({
                       className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors"
                       title="Mark this exercise complete"
                     >
-                      Done
+                      Mark complete
                     </button>
                   )}
                 </div>

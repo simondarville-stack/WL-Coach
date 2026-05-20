@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react';
+import { DoneChip } from '../../../components/log/DoneChip';
 import { BodyweightField } from './BodyweightField';
 import { RawScoreDial, type RawScores } from './RawScoreDial';
 import { VasField } from './VasField';
@@ -94,11 +95,7 @@ export function SessionHeader({
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {status === 'completed' && (
-            <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
-              Done
-            </span>
-          )}
+          {status === 'completed' && <DoneChip variant="dark" />}
           {saving && <span className="text-[10px] text-gray-500">Saving…</span>}
         </div>
       </div>

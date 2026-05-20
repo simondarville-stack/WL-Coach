@@ -12,7 +12,8 @@
  * "Start logging" enters edit mode.
  */
 import { useState } from 'react';
-import { PlayCircle, CheckCircle2, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { PlayCircle, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { DoneChip } from '../../../components/log/DoneChip';
 import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
@@ -76,11 +77,7 @@ export function SessionPreview({
               <p className="text-[10px] text-amber-300 italic mt-1">Extra training day</p>
             )}
           </div>
-          {status === 'completed' && (
-            <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
-              Done
-            </span>
-          )}
+          {status === 'completed' && <DoneChip variant="dark" />}
         </div>
 
         {session && (
@@ -337,7 +334,7 @@ function PreviewExerciseRow({
               Combo
             </span>
           )}
-          {allCompleted && <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />}
+          {allCompleted && <DoneChip variant="dark" iconOnly size={13} />}
         </div>
 
         {planned.exercise.is_combo && planned.comboMembers.length > 0 && (

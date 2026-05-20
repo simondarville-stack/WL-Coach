@@ -24,6 +24,7 @@ import {
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
 import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../sentinelUtils';
 import { ImageLightbox } from '../ImageLightbox';
@@ -279,7 +280,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
           </div>
           <div className="flex items-center gap-2">
             {logged && logged.log.status === 'completed' && (
-              <span className="text-[10px] text-emerald-700 font-semibold">Done</span>
+              <DoneChip variant="light" />
             )}
             {logged && onEdit && (
               <button
