@@ -7,12 +7,13 @@
  * delete is immediate. The modal is light-themed to match the coach
  * planner's surface.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, X, Trash2, Plus } from 'lucide-react';
 import type { TrainingLogSet, PlannedExercise, Exercise } from '../../../lib/database.types';
 import { upsertLoggedSet, deleteLoggedSet } from '../../../lib/trainingLogService';
 import { parseNumericInput } from '../../../lib/trainingLogModel';
 import { StackedNotation } from '../StackedNotation';
+import { ConfirmModal } from '../../log/ConfirmModal';
 
 interface CoachSetEditModalProps {
   open: boolean;
@@ -42,6 +43,23 @@ export function CoachSetEditModal({
     [],
   );
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Serial save queue: only one upsertLoggedSet at a time. (UF-31 / G3)
+  const savingRef = useRef(false);
+  const queueRef = useRef<Array<() => Promise<void>>>([]);
+
+  const drainSaveQueue = async () => {
+    if (savingRef.current) return;
+    const next = queueRef.current.shift();
+    if (!next) return;
+    savingRef.current = true;
+    try {
+      await next();
+    } finally {
+      savingRef.current = false;
+      void drainSaveQueue();
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -71,7 +89,7 @@ export function CoachSetEditModal({
     ]);
   };
 
-  const saveRow = async (
+  const saveRow = (
     localId: string,
     patch: Partial<Pick<TrainingLogSet, 'performed_load' | 'performed_reps' | 'status'>>,
   ) => {
@@ -80,35 +98,45 @@ export function CoachSetEditModal({
     if (idx < 0) return;
     const row = rows[idx];
     const merged = { ...row, ...patch };
+    // Optimistically update local display immediately.
     setRows(prev => prev.map(r => (r.localId === localId ? merged : r)));
-    try {
-      const saved = await upsertLoggedSet({
-        logExerciseId,
-        setNumber: row.setNumber,
-        plannedLoad: row.planned_load ?? null,
-        plannedReps: row.planned_reps ?? null,
-        performedLoad: merged.performed_load ?? null,
-        performedReps: merged.performed_reps ?? null,
-        rpe: null,
-        status: merged.status ?? 'completed',
-      });
-      // Replace local id with the real id so subsequent edits work.
-      setRows(prev =>
-        prev.map(r =>
-          r.localId === localId ? { ...saved, setNumber: saved.set_number, localId: saved.id } : r,
-        ),
-      );
-      onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    // Enqueue the actual persist so concurrent blurs are serialised. (G3)
+    queueRef.current.push(async () => {
+      try {
+        const saved = await upsertLoggedSet({
+          logExerciseId,
+          setNumber: row.setNumber,
+          plannedLoad: row.planned_load ?? null,
+          plannedReps: row.planned_reps ?? null,
+          performedLoad: merged.performed_load ?? null,
+          performedReps: merged.performed_reps ?? null,
+          rpe: null,
+          status: merged.status ?? 'completed',
+        });
+        // Replace local id with the real id so subsequent edits work.
+        setRows(prev =>
+          prev.map(r =>
+            r.localId === localId ? { ...saved, setNumber: saved.set_number, localId: saved.id } : r,
+          ),
+        );
+        onChanged();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    });
+    void drainSaveQueue();
   };
 
-  const removeRow = async (localId: string) => {
+  const removeRow = (localId: string) => {
     const row = rows.find(r => r.localId === localId);
     if (!row) return;
-    if (!window.confirm(`Delete set ${row.setNumber}?`)) return;
-    // Persisted rows have a real id; client-only rows just disappear.
+    setPendingDelete(localId);
+  };
+
+  const commitRemoveRow = async (localId: string) => {
+    setPendingDelete(null);
+    const row = rows.find(r => r.localId === localId);
+    if (!row) return;
     if (row.id) {
       try {
         await deleteLoggedSet(row.id);
@@ -161,7 +189,7 @@ export function CoachSetEditModal({
               key={r.localId}
               row={r}
               onSave={patch => void saveRow(r.localId, patch)}
-              onDelete={() => void removeRow(r.localId)}
+              onDelete={() => removeRow(r.localId)}
             />
           ))}
           <button
@@ -185,6 +213,15 @@ export function CoachSetEditModal({
           </button>
         </div>
       </div>
+
+      <ConfirmModal
+        open={pendingDelete != null}
+        title={`Delete set ${rows.find(r => r.localId === pendingDelete)?.setNumber ?? ''}?`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => { if (pendingDelete) void commitRemoveRow(pendingDelete); }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

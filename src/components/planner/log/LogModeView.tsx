@@ -27,6 +27,7 @@ import { LogDayCard } from './LogDayCard';
 import { LogWeekOverview } from './LogWeekOverview';
 import { CoachSetEditModal } from './CoachSetEditModal';
 import { WeekMetricsSettings } from './WeekMetricsSettings';
+import { ConfirmModal } from '../../log/ConfirmModal';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -51,6 +52,13 @@ export function LogModeView({
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [editingLogged, setEditingLogged] = useState<LoggedExerciseFull | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    variant: 'default' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -97,24 +105,35 @@ export function LogModeView({
   );
 
   const onDeleteLogExercise = useCallback(
-    async (logExerciseId: string) => {
-      if (!window.confirm('Delete this logged exercise and all its sets?')) return;
-      await deleteLogExercise(logExerciseId);
-      reload();
+    (logExerciseId: string) => {
+      setPendingConfirm({
+        title: 'Delete this logged exercise?',
+        description: 'All sets for this exercise will also be removed.',
+        confirmLabel: 'Delete',
+        variant: 'danger',
+        onConfirm: async () => {
+          setPendingConfirm(null);
+          await deleteLogExercise(logExerciseId);
+          reload();
+        },
+      });
     },
     [reload],
   );
 
   const onDeleteSession = useCallback(
-    async (sessionId: string) => {
-      if (
-        !window.confirm(
-          'Delete this entire session, including all logged exercises and messages? This cannot be undone.',
-        )
-      )
-        return;
-      await deleteSession(sessionId);
-      reload();
+    (sessionId: string) => {
+      setPendingConfirm({
+        title: 'Delete this entire session?',
+        description: 'All logged exercises and messages for this day will be permanently removed. This cannot be undone.',
+        confirmLabel: 'Delete session',
+        variant: 'danger',
+        onConfirm: async () => {
+          setPendingConfirm(null);
+          await deleteSession(sessionId);
+          reload();
+        },
+      });
     },
     [reload],
   );
@@ -280,6 +299,16 @@ export function LogModeView({
           }
         />
       )}
+
+      <ConfirmModal
+        open={pendingConfirm != null}
+        title={pendingConfirm?.title ?? ''}
+        description={pendingConfirm?.description}
+        confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+        variant={pendingConfirm?.variant ?? 'default'}
+        onConfirm={() => { if (pendingConfirm) void pendingConfirm.onConfirm(); }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

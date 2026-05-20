@@ -53,6 +53,8 @@ import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
 import { DayChipRow } from '../components/DayChipRow';
+import { ConfirmModal } from '../../../components/log/ConfirmModal';
+import { UndoToast } from '../../../components/log/UndoToast';
 
 function todayISO(): string {
   return toISO(new Date());
@@ -104,6 +106,23 @@ export function TodayScreen() {
   /** When set, the exercise picker opens in substitution mode for a
    *  specific planned exercise. */
   const [substituting, setSubstituting] = useState<PlannedExerciseFull | null>(null);
+
+  // ─── Confirmation modal and undo-toast state (UF-12) ─────────────────────
+  /** Pending destructive action awaiting in-app confirmation. */
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    variant: 'default' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  /** Pending single-set deletion awaiting undo window. The setId is the
+   *  DB id; we hold it until the toast dismisses and then commit the delete. */
+  const [pendingSetDelete, setPendingSetDelete] = useState<{
+    setId: string;
+    /** Optimistically-removed set so we can restore it on undo. */
+    set: TrainingLogSet;
+  } | null>(null);
   /**
    * 'preview' renders the session like the coach's print view, no
    * inputs. 'edit' is the full logging UI. Defaults to 'preview';
@@ -496,24 +515,27 @@ export function TodayScreen() {
     });
   };
 
-  const handleDeleteSet = async (setId: string) => {
-    if (!window.confirm('Delete this set?')) return;
-    await runSave(async () => {
-      await deleteLoggedSet(setId);
-      setData(prev => {
-        if (!prev?.log) return prev;
-        return {
-          ...prev,
-          log: {
-            ...prev.log,
-            exercises: prev.log.exercises.map(le => ({
-              ...le,
-              sets: le.sets.filter(s => s.id !== setId),
-            })),
-          },
-        };
-      });
+  const handleDeleteSet = (setId: string) => {
+    // Find the set so we can restore it on undo.
+    const setRow = data?.log?.exercises
+      .flatMap(le => le.sets)
+      .find(s => s.id === setId);
+    if (!setRow) return;
+    // Optimistically remove from UI immediately.
+    setData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le => ({
+            ...le,
+            sets: le.sets.filter(s => s.id !== setId),
+          })),
+        },
+      };
     });
+    setPendingSetDelete({ setId, set: setRow });
   };
 
   /** Persist athlete-side GPP edits + done state. */
@@ -534,52 +556,70 @@ export function TodayScreen() {
    * append the set number into metadata.removed_set_numbers.
    * ExerciseLogCard filters its rendered rows by that list.
    */
-  const handleRemovePlannedSet = (planned: PlannedExerciseFull) => async (setNumber: number) => {
-    if (!window.confirm('Remove this set from your plan?')) return;
-    await runSave(async () => {
-      const session = await getOrCreateSession();
-      mergeSession(session);
-      const logEx = await ensureLogEx(planned, session.id);
-      mergeLogExercise(logEx, planned.exerciseDef);
-      const updated = await removePlannedSet(logEx.id, setNumber);
-      mergeLogExercise(updated, planned.exerciseDef);
+  const handleRemovePlannedSet = (planned: PlannedExerciseFull) => (setNumber: number) => {
+    setPendingConfirm({
+      title: 'Remove this set?',
+      description: 'The set will be hidden from your plan for this session.',
+      confirmLabel: 'Remove',
+      variant: 'default',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          const session = await getOrCreateSession();
+          mergeSession(session);
+          const logEx = await ensureLogEx(planned, session.id);
+          mergeLogExercise(logEx, planned.exerciseDef);
+          const updated = await removePlannedSet(logEx.id, setNumber);
+          mergeLogExercise(updated, planned.exerciseDef);
+        });
+      },
     });
   };
 
-  const handleDeleteOffPlanExercise = async (logExerciseId: string) => {
-    if (!window.confirm('Remove this exercise from your log?')) return;
-    await runSave(async () => {
-      await deleteLogExercise(logExerciseId);
-      setData(prev => {
-        if (!prev?.log) return prev;
-        return {
-          ...prev,
-          log: {
-            ...prev.log,
-            exercises: prev.log.exercises.filter(le => le.log.id !== logExerciseId),
-          },
-        };
-      });
+  const handleDeleteOffPlanExercise = (logExerciseId: string) => {
+    setPendingConfirm({
+      title: 'Remove this exercise?',
+      description: 'This will remove the exercise and all its logged sets.',
+      confirmLabel: 'Remove',
+      variant: 'danger',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          await deleteLogExercise(logExerciseId);
+          setData(prev => {
+            if (!prev?.log) return prev;
+            return {
+              ...prev,
+              log: {
+                ...prev.log,
+                exercises: prev.log.exercises.filter(le => le.log.id !== logExerciseId),
+              },
+            };
+          });
+        });
+      },
     });
   };
 
-  const handleDeleteBonusDay = async () => {
+  const handleDeleteBonusDay = () => {
     if (!data?.log?.session) return;
-    if (
-      !window.confirm(
-        'Delete this entire training day, including all logged exercises? This cannot be undone.',
-      )
-    )
-      return;
     const sessionId = data.log.session.id;
-    await runSave(async () => {
-      await deleteSession(sessionId);
-      // Reload week + pick a new selection.
-      await loadWeek();
-      setDayIndex(prev =>
-        overview?.days.find(d => d.dayIndex !== prev)?.dayIndex ?? null,
-      );
-      setMode('preview');
+    setPendingConfirm({
+      title: 'Delete this training day?',
+      description: 'All logged exercises and sets for this day will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete day',
+      variant: 'danger',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          await deleteSession(sessionId);
+          await loadWeek();
+          setDayIndex(prev =>
+            overview?.days.find(d => d.dayIndex !== prev)?.dayIndex ?? null,
+          );
+          setMode('preview');
+        });
+      },
     });
   };
 
@@ -688,6 +728,7 @@ export function TodayScreen() {
               days={overview.days}
               selectedDayIndex={dayIndex}
               onSelect={setDayIndex}
+              disabled={saving}
             />
             {overview.planSource === 'group' && (
               <p className="text-[10px] text-gray-500 italic px-1">Showing your group's plan.</p>
@@ -793,6 +834,7 @@ export function TodayScreen() {
                       performedExercise={performed}
                       exerciseMessages={exMessages}
                       onPostExerciseComment={le ? handlePostExerciseComment(le.log.id) : undefined}
+                      globalSaving={saving}
                     />
                   );
                 })
@@ -871,6 +913,56 @@ export function TodayScreen() {
           onClose={() => setSubstituting(null)}
           onPick={async pick => {
             if (substituting) await handleSubstitute(substituting, pick);
+          }}
+        />
+
+        {/* In-app confirmation modal — replaces window.confirm (UF-12) */}
+        <ConfirmModal
+          open={pendingConfirm != null}
+          title={pendingConfirm?.title ?? ''}
+          description={pendingConfirm?.description}
+          confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+          variant={pendingConfirm?.variant ?? 'default'}
+          onConfirm={() => { if (pendingConfirm) void pendingConfirm.onConfirm(); }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+
+        {/* Undo toast for low-risk single-set delete (UF-12) */}
+        <UndoToast
+          message="Set removed"
+          visible={pendingSetDelete != null}
+          onUndo={() => {
+            if (!pendingSetDelete) return;
+            // Restore the set optimistically.
+            const restored = pendingSetDelete.set;
+            setData(prev => {
+              if (!prev?.log) return prev;
+              return {
+                ...prev,
+                log: {
+                  ...prev.log,
+                  exercises: prev.log.exercises.map(le => {
+                    if (le.log.id !== restored.log_exercise_id) return le;
+                    const already = le.sets.find(s => s.id === restored.id);
+                    if (already) return le;
+                    return {
+                      ...le,
+                      sets: [...le.sets, restored].sort((a, b) => a.set_number - b.set_number),
+                    };
+                  }),
+                },
+              };
+            });
+            setPendingSetDelete(null);
+          }}
+          onDismiss={() => {
+            if (!pendingSetDelete) return;
+            const { setId } = pendingSetDelete;
+            setPendingSetDelete(null);
+            // Commit the deletion now that the undo window has closed.
+            void runSave(async () => {
+              await deleteLoggedSet(setId);
+            });
           }}
         />
     </div>
