@@ -101,10 +101,10 @@ export function DayCard({
   const deleteHeld = useDeleteHeld();
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function handleGridSave(ex: PlannedExercise, raw: string) {
+  function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
     void savePrescription(ex.id, {
       prescription: raw,
-      unit: (ex.unit as DefaultUnit) || 'absolute_kg',
+      unit: ((unitOverride ?? ex.unit) as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     });
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -509,7 +509,7 @@ export function DayCard({
                               isCombo
                               comboPartCount={(members?.length) || 2}
                               compact
-                              onSave={raw => handleGridSave(ex, raw)}
+                              onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
                           {ex.notes && (
@@ -546,7 +546,7 @@ export function DayCard({
                               defaultLoad={defaultPrescriptionLoad}
                               isCombo={false}
                               compact
-                              onSave={raw => handleGridSave(ex, raw)}
+                              onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
                           {ex.notes && (

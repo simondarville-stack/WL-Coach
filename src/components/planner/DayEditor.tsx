@@ -153,11 +153,11 @@ export function DayEditor({
     setShowComboModal(false);
   }
 
-  function handleGridSave(ex: PlannedExercise, raw: string) {
+  function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     pendingSaveRef.current = savePrescription(ex.id, {
       prescription: raw,
-      unit: (ex.unit as DefaultUnit) || 'absolute_kg',
+      unit: ((unitOverride ?? ex.unit) as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     });
     saveTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
@@ -472,7 +472,7 @@ export function DayEditor({
                         defaultLoad={defaultPrescriptionLoad}
                         isCombo={ex.is_combo}
                         comboPartCount={ex.is_combo ? ((comboMembers[ex.id] ?? []).length || 2) : undefined}
-                        onSave={raw => handleGridSave(ex, raw)}
+                        onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                       />
                     </div>
                     <div style={{ padding: '0 12px 8px' }}>

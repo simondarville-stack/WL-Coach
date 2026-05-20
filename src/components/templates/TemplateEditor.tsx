@@ -223,10 +223,13 @@ export function TemplateEditor() {
 
   // PrescriptionGrid manages its own debouncing internally and calls
   // onSave with the formatted raw string — save it without our debounce.
+  // unitOverride is set when the grid auto-detects a unit switch ("80%"
+  // or letters in a load cell); persist it alongside the prescription.
   const saveExercisePrescription = (
     dayId: string,
     exerciseRowId: string,
     raw: string,
+    unitOverride?: string,
   ) => {
     const normalised = raw.trim() === '' ? null : raw;
     setTemplate(t => t ? {
@@ -234,11 +237,16 @@ export function TemplateEditor() {
       days: t.days.map(d => d.id === dayId
         ? {
             ...d,
-            exercises: d.exercises.map(ex => ex.id === exerciseRowId ? { ...ex, prescription_raw: normalised } : ex),
+            exercises: d.exercises.map(ex => ex.id === exerciseRowId
+              ? { ...ex, prescription_raw: normalised, ...(unitOverride ? { unit: unitOverride } : {}) }
+              : ex),
           }
         : d),
     } : t);
-    void wrapSave(() => updateTemplateExercise(exerciseRowId, { prescription_raw: normalised }));
+    const patch = unitOverride
+      ? { prescription_raw: normalised, unit: unitOverride }
+      : { prescription_raw: normalised };
+    void wrapSave(() => updateTemplateExercise(exerciseRowId, patch));
   };
 
   // ── Drag/drop ─────────────────────────────────────────────────────
@@ -411,7 +419,7 @@ export function TemplateEditor() {
             onAddExercise={ex => void handleAddExercise(day.id, ex)}
             onDeleteExercise={exId => void handleDeleteExercise(day.id, exId)}
             onExerciseField={(exId, patch) => setExerciseField(day.id, exId, patch)}
-            onExercisePrescription={(exId, raw) => saveExercisePrescription(day.id, exId, raw)}
+            onExercisePrescription={(exId, raw, unitOverride) => saveExercisePrescription(day.id, exId, raw, unitOverride)}
             onDayDragStart={setDraggingDayId}
             onExerciseDragStart={setDraggingExId}
             onDragEnd={clearDragState}
@@ -473,7 +481,7 @@ interface DayBlockProps {
   onAddExercise: (ex: Exercise) => void;
   onDeleteExercise: (exId: string) => void;
   onExerciseField: (exId: string, patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
-  onExercisePrescription: (exId: string, raw: string) => void;
+  onExercisePrescription: (exId: string, raw: string, unitOverride?: string) => void;
   onDayDragStart: (dayId: string) => void;
   onExerciseDragStart: (exId: string) => void;
   onDragEnd: () => void;
@@ -660,7 +668,7 @@ function DayBlock({
               dropIndicator={dropIndicator}
               onDelete={() => onDeleteExercise(ex.id)}
               onFieldChange={patch => onExerciseField(ex.id, patch)}
-              onPrescriptionSave={raw => onExercisePrescription(ex.id, raw)}
+              onPrescriptionSave={(raw, unitOverride) => onExercisePrescription(ex.id, raw, unitOverride)}
               onDragStart={() => onExerciseDragStart(ex.id)}
               onDragEnd={onDragEnd}
               onSetDropIndicator={onSetDropIndicator}
@@ -691,7 +699,7 @@ interface ExerciseRowProps {
   dropIndicator: DropIndicator;
   onDelete: () => void;
   onFieldChange: (patch: Partial<Pick<ProgramTemplateExerciseWithExercise, 'prescription_raw' | 'notes' | 'variation_note'>>) => void;
-  onPrescriptionSave: (raw: string) => void;
+  onPrescriptionSave: (raw: string, unitOverride?: string) => void;
   onDragStart: () => void;
   onDragEnd: () => void;
   onSetDropIndicator: (indicator: DropIndicator) => void;

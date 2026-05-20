@@ -10,6 +10,7 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './plannerUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
+import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -200,7 +201,10 @@ export function ExerciseDetail({
     if (!plannedExercise) return;
     setSaving(true);
     try {
-      await savePrescription(plannedExercise.id, { prescription: textValue, unit: (unit as DefaultUnit) || 'absolute_kg', isCombo });
+      const detected = detectIntendedUnit(textValue);
+      const effective = (detected ?? unit) as DefaultUnit;
+      if (detected && detected !== unit) setUnit(detected);
+      await savePrescription(plannedExercise.id, { prescription: textValue, unit: effective || 'absolute_kg', isCombo });
       await onSaved();
       setTextMode(false);
     } finally { setSaving(false); }
@@ -527,8 +531,10 @@ export function ExerciseDetail({
                 defaultLoad={defaultPrescriptionLoad}
                 isCombo={isCombo}
                 comboPartCount={isCombo ? (members.length || 2) : undefined}
-                onSave={raw => {
-                  void savePrescription(plannedExercise.id, { prescription: raw, unit: (unit as DefaultUnit) || 'absolute_kg', isCombo });
+                onSave={(raw, unitOverride) => {
+                  const effective = (unitOverride ?? unit) as DefaultUnit;
+                  if (unitOverride && unitOverride !== unit) setUnit(unitOverride);
+                  void savePrescription(plannedExercise.id, { prescription: raw, unit: effective || 'absolute_kg', isCombo });
                   debouncedRefresh();
                 }}
               />

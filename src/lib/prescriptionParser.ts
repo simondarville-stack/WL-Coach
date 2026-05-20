@@ -12,6 +12,26 @@ export interface FreeTextSetLine {
 }
 
 /**
+ * Infer the prescription unit from a coach's raw input.
+ *
+ * Used by the grid load-cell and the free-form textarea so the coach
+ * doesn't have to toggle the unit manually — a "%" suffix flips to
+ * percentage, any non-separator letter flips to free_text_reps. A plain
+ * number returns null (no change), leaving whatever the exercise was
+ * already using.
+ *
+ * `x`, `X`, `×` and `*` are accepted set/rep separators and are stripped
+ * before the letter check so "80x5x3" doesn't trigger free_text_reps.
+ */
+export function detectIntendedUnit(input: string): 'percentage' | 'free_text_reps' | null {
+  if (!input) return null;
+  const stripped = input.replace(/[xX×*]/g, '');
+  if (/[a-zA-Z]/.test(stripped)) return 'free_text_reps';
+  if (input.includes('%')) return 'percentage';
+  return null;
+}
+
+/**
  * Parses a prescription string into set lines
  * Supports formats like:
  * - "80x5" or "80×5" = 80kg/% for 5 reps (1 set implied)

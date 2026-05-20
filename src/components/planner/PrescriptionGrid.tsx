@@ -4,6 +4,7 @@ import {
   parsePrescription, formatPrescription,
   parseFreeTextPrescription, formatFreeTextPrescription,
   parseComboPrescription, formatComboPrescription,
+  detectIntendedUnit,
 } from '../../lib/prescriptionParser';
 import type { ParsedSetLine } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
@@ -34,7 +35,11 @@ interface PrescriptionGridProps {
   defaultLoad?: number;
   isCombo?: boolean;
   comboPartCount?: number;
-  onSave: (raw: string) => void;
+  /** Persists the prescription. When the coach types a "%" or letters
+   *  into a load cell, the grid infers a new unit and passes it as
+   *  `unitOverride` so the caller can update the planned_exercise.unit
+   *  in the same write — no manual dropdown toggle needed. */
+  onSave: (raw: string, unitOverride?: string) => void;
   disabled?: boolean;
   /** Compact density variant used inside week-overview day cards. */
   compact?: boolean;
@@ -211,6 +216,52 @@ export function PrescriptionGrid({
     if (!editing) return;
     const col = columns.find(c => c.id === editing.colId);
     if (!col) { setEditing(null); return; }
+
+    // Auto-switch unit when the coach signals one via the load cell.
+    // "80%" → percentage, "Heavy" → free_text_reps. Combos keep their
+    // own format and aren't auto-switched.
+    if (editing.field === 'load' && !isCombo) {
+      const text = editing.value.trim();
+      const detected = detectIntendedUnit(text);
+      if (detected && detected !== unit) {
+        const switchedCols: GridColumn[] = columns.map(c => {
+          if (c.id === editing.colId) {
+            if (detected === 'free_text_reps') {
+              return { ...c, loadText: text, load: parseFloat(text) || 0, loadMax: null };
+            }
+            // percentage: keep numeric storage, strip the % for parsing
+            const numText = text.replace(/%/g, '');
+            const dashIdx = numText.indexOf('-', 1);
+            if (dashIdx !== -1) {
+              const minVal = parseFloat(numText.slice(0, dashIdx));
+              const maxVal = parseFloat(numText.slice(dashIdx + 1));
+              if (!isNaN(minVal) && !isNaN(maxVal) && maxVal >= minVal) {
+                return { ...c, load: minVal, loadMax: maxVal, loadText: `${minVal}-${maxVal}` };
+              }
+            }
+            const val = Math.max(0, parseFloat(numText) || 0);
+            return { ...c, load: val, loadMax: null, loadText: String(val) };
+          }
+          // Other columns: when switching to free_text_reps, seed loadText
+          // from the existing numeric load so format has something to print.
+          if (detected === 'free_text_reps') {
+            const seed = c.loadMax != null ? `${c.load}-${c.loadMax}` : String(c.load);
+            return { ...c, loadText: c.loadText || seed, loadMax: null };
+          }
+          return c;
+        });
+
+        const raw = detected === 'free_text_reps'
+          ? formatFreeTextPrescription(switchedCols.map(c => ({ loadText: c.loadText, reps: c.reps, sets: c.sets })))
+          : formatPrescription(columnsToSetLines(switchedCols), detected);
+
+        lastSentRef.current = raw;
+        setColumns(switchedCols);
+        onSave(raw, detected);
+        setEditing(null);
+        return;
+      }
+    }
 
     if (editing.field === 'reps') {
       if (isCombo) {
