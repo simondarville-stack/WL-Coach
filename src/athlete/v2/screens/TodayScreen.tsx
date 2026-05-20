@@ -777,12 +777,7 @@ export function TodayScreen() {
           />
         ) : data && dayIndex != null ? (
           <>
-            <div className="flex items-center justify-between gap-2">
-              <PerformedOnField
-                date={performedOnDate}
-                sessionExists={!!data.log?.session}
-                onChange={handlePatchPerformedOn}
-              />
+            <div className="flex justify-end">
               <button
                 onClick={() => setMode('preview')}
                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-2 rounded-md border border-gray-800 hover:border-gray-600"
@@ -811,6 +806,9 @@ export function TodayScreen() {
               onPatchCustomMetric={handlePatchCustomMetric}
               onPatchNotes={handlePatchNotes}
               saving={saving}
+              performedOnDate={performedOnDate}
+              sessionExists={!!data.log?.session}
+              onPatchPerformedOn={handlePatchPerformedOn}
             />
 
             <div className="space-y-2">
@@ -978,35 +976,6 @@ export function TodayScreen() {
             });
           }}
         />
-    </div>
-  );
-}
-
-function PerformedOnField({
-  date,
-  sessionExists,
-  onChange,
-}: {
-  date: string;
-  sessionExists: boolean;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center justify-between gap-3">
-      <div>
-        <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
-          Performed on
-        </div>
-        <div className="text-xs text-gray-400 mt-0.5">
-          {sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
-        </div>
-      </div>
-      <input
-        type="date"
-        value={date}
-        onChange={e => onChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-      />
     </div>
   );
 }

@@ -41,6 +41,12 @@ interface SessionHeaderProps {
   onPatchCustomMetric: (defId: string, value: CustomMetricEntry | null) => Promise<void>;
   onPatchNotes: (notes: string) => Promise<void>;
   saving?: boolean;
+  /** Actual performed-on date (may differ from plan date). Editable inline. */
+  performedOnDate?: string;
+  /** Whether a session row exists in the DB (affects helper text). */
+  sessionExists?: boolean;
+  /** Persist a change to the performed-on date. */
+  onPatchPerformedOn?: (next: string) => void;
 }
 
 // Binary states: only "Done" surfaces.
@@ -57,6 +63,9 @@ export function SessionHeader({
   onPatchCustomMetric,
   onPatchNotes,
   saving,
+  performedOnDate,
+  sessionExists,
+  onPatchPerformedOn,
 }: SessionHeaderProps) {
   const [notes, setNotes] = useState(session?.session_notes ?? '');
 
@@ -93,6 +102,20 @@ export function SessionHeader({
             <Calendar size={11} />
             <span>{prettyDate}</span>
           </div>
+          {performedOnDate != null && onPatchPerformedOn != null && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <span className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">
+                Performed on
+              </span>
+              <input
+                type="date"
+                value={performedOnDate}
+                onChange={e => onPatchPerformedOn(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
+                title={sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
+              />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {status === 'completed' && <DoneChip variant="dark" />}
