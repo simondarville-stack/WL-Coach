@@ -41,6 +41,7 @@ import type {
   TrainingLogSession,
   TrainingLogSet,
 } from '../../../lib/database.types';
+import { isExerciseDone } from '../../../lib/trainingLogModel';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -371,8 +372,29 @@ export function TodayScreen() {
         notes: patch.performedText ?? null,
       });
       mergeLoggedSet(savedSet);
-      // No exercise-level auto-bump; binary states only — exercise
-      // status moves to 'completed' explicitly via Mark complete.
+      // Auto-promote exercise to 'completed' when all planned sets reach
+      // a terminal state. Build the projected set list from current data
+      // and the newly-saved set to avoid stale-closure issues. (UF-02)
+      const currentSets = data?.log?.exercises.find(e => e.log.id === logEx.id)?.sets ?? [];
+      const mergedSets = (() => {
+        const idx = currentSets.findIndex(s => s.id === savedSet.id);
+        return idx >= 0
+          ? currentSets.map(s => (s.id === savedSet.id ? savedSet : s))
+          : [...currentSets, savedSet].sort((a, b) => a.set_number - b.set_number);
+      })();
+      const currentLogEx = data?.log?.exercises.find(e => e.log.id === logEx.id);
+      if (currentLogEx && currentLogEx.log.status !== 'completed') {
+        const projectedLe = { ...currentLogEx, sets: mergedSets };
+        const plannedCount = planned.setLines?.reduce((n, l) => n + Math.max(1, l.sets ?? 1), 0) ?? null;
+        if (isExerciseDone(projectedLe, plannedCount)) {
+          const promoted = await updateLogExercise(logEx.id, {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            started_at: currentLogEx.log.started_at ?? new Date().toISOString(),
+          });
+          mergeLogExercise(promoted, planned.exerciseDef);
+        }
+      }
     });
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>

@@ -60,6 +60,35 @@ export interface DayLog {
   messages: TrainingLogMessage[];
 }
 
+// ─── "Done" state ─────────────────────────────────────────────────────────
+
+/**
+ * Canonical "is this exercise done?" predicate. (UF-01 / UF-02)
+ *
+ * An exercise is considered done when:
+ *   1. Its `status` column is already `'completed'` (explicit mark or Log-as-prescribed), OR
+ *   2. All planned sets have a terminal status (completed or skipped),
+ *      covering the full planned count — auto-promotion trigger.
+ *
+ * Free-text and GPP exercises have no set rows, so the second condition
+ * never fires for them; they rely exclusively on path 1 (explicit "Mark complete").
+ *
+ * @param le - the logged exercise to evaluate, or null (= not logged → not done).
+ * @param plannedSetCount - how many sets were planned (used for auto-promotion
+ *   check). Pass null when unknown or for free-text/GPP exercises.
+ */
+export function isExerciseDone(
+  le: LoggedExerciseFull | null,
+  plannedSetCount: number | null = null,
+): boolean {
+  if (!le) return false;
+  if (le.log.status === 'completed') return true;
+  if (le.sets.length === 0) return false;
+  const terminal = le.sets.filter(s => s.status === 'completed' || s.status === 'skipped');
+  const count = plannedSetCount ?? le.sets.length;
+  return count > 0 && terminal.length >= count;
+}
+
 // ─── Aggregation helpers ──────────────────────────────────────────────────
 
 export function sumPerformedReps(sets: TrainingLogSet[]): number {
