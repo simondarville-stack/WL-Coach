@@ -40,7 +40,6 @@ const pageTitles: Record<string, string> = {
   '/athlete-log': 'Training log',
   '/library': 'Exercise library',
   '/settings': 'Settings',
-  '/analysis': 'Analysis',
   '/prs': 'Personal Records',
 };
 
@@ -171,7 +170,8 @@ function CoachApp() {
               <Route path="/training-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
               <Route path="/prs" element={<PRPage />} />
-              <Route path="/athlete-log" element={<Navigate to="/training-log" replace />} />
+              {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
+              <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={<ExerciseLibrary />} />
               <Route path="/system" element={<SystemGuide />} />
