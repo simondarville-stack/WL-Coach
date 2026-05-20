@@ -54,19 +54,24 @@ function defaultRepsTextForCombo(comboPartCount: number): string {
 
 function parseToColumns(raw: string | null, isCombo: boolean, unit: string | null): GridColumn[] {
   if (!raw || raw.trim() === '') return [];
-  if (unit === 'free_text_reps') {
-    const lines = parseFreeTextPrescription(raw);
-    return lines.map(line => ({
-      id: nextId(), load: parseFloat(line.loadText) || 0, loadMax: null,
-      loadText: line.loadText, reps: line.reps, repsText: String(line.reps), sets: line.sets,
-    }));
-  }
+  // Combo must beat the free-text-reps branch: parseComboPrescription
+  // already handles free-text loads ("Heavy×2+1×3") AND preserves the
+  // tuple reps_text ("2+1"). Falling into parseFreeTextPrescription
+  // here would split on the comma/× separators and silently destroy
+  // the combo rep notation.
   if (isCombo) {
     const lines = parseComboPrescription(raw);
     return lines.map(line => ({
       id: nextId(), load: line.load, loadMax: line.loadMax ?? null,
       loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : (line.loadText ?? String(line.load)),
       reps: line.totalReps, repsText: line.repsText, sets: line.sets,
+    }));
+  }
+  if (unit === 'free_text_reps') {
+    const lines = parseFreeTextPrescription(raw);
+    return lines.map(line => ({
+      id: nextId(), load: parseFloat(line.loadText) || 0, loadMax: null,
+      loadText: line.loadText, reps: line.reps, repsText: String(line.reps), sets: line.sets,
     }));
   }
   const lines = parsePrescription(raw);
