@@ -53,9 +53,17 @@ interface SetEntryRowProps {
 }
 
 export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProps) {
+  // Prefer performed_text for the reps display when set: combo entries like
+  // "2+2+2" round-trip as the raw string instead of being replaced by the
+  // numeric sum (6) on re-render. Falls back to performed_reps for legacy
+  // rows. Free-text input also prefers performed_text with a notes fallback
+  // so pre-A3 rows that lived in `notes` still surface.
+  const initialReps =
+    logged?.performed_text ??
+    (logged?.performed_reps != null ? String(logged.performed_reps) : '');
   const [load, setLoad] = useState(logged?.performed_load != null ? String(logged.performed_load) : '');
-  const [reps, setReps] = useState(logged?.performed_reps != null ? String(logged.performed_reps) : '');
-  const [text, setText] = useState(logged?.notes ?? '');
+  const [reps, setReps] = useState(initialReps);
+  const [text, setText] = useState(logged?.performed_text ?? logged?.notes ?? '');
   const [status, setStatus] = useState<TrainingLogSet['status']>(logged?.status ?? 'pending');
   const [busy, setBusy] = useState(false);
 
@@ -66,11 +74,14 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
     setLoad(logged?.performed_load != null ? String(logged.performed_load) : '');
   }, [logged?.performed_load]);
   useEffect(() => {
-    setReps(logged?.performed_reps != null ? String(logged.performed_reps) : '');
-  }, [logged?.performed_reps]);
+    setReps(
+      logged?.performed_text ??
+        (logged?.performed_reps != null ? String(logged.performed_reps) : ''),
+    );
+  }, [logged?.performed_reps, logged?.performed_text]);
   useEffect(() => {
-    setText(logged?.notes ?? '');
-  }, [logged?.notes]);
+    setText(logged?.performed_text ?? logged?.notes ?? '');
+  }, [logged?.performed_text, logged?.notes]);
   useEffect(() => {
     setStatus(logged?.status ?? 'pending');
   }, [logged?.status]);
@@ -119,6 +130,13 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
           : completing
           ? input.plannedRepsValue
           : null;
+      // Preserve combo / tuple notation ("2+2+2") in performed_text so the
+      // raw string round-trips on display. Numeric-only entries leave it
+      // null. Empty input clears it explicitly so cleared rows don't show
+      // a stale string after re-render.
+      const trimmedReps = nextReps.trim();
+      const performedText =
+        trimmedReps.includes('+') ? trimmedReps : trimmedReps === '' ? null : undefined;
       await onSave({
         setNumber: input.setNumber,
         performedLoad,
@@ -126,6 +144,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
         status: nextStat,
         plannedLoad: input.plannedLoadValue,
         plannedReps: input.plannedRepsValue,
+        ...(performedText !== undefined ? { performedText } : {}),
       });
     } finally {
       setBusy(false);

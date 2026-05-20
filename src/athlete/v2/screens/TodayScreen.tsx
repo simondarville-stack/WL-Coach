@@ -410,9 +410,9 @@ export function TodayScreen() {
         plannedReps: patch.plannedReps,
         performedLoad: patch.performedLoad,
         performedReps: patch.performedReps,
+        performedText: patch.performedText ?? null,
         rpe: null,
         status: patch.status,
-        notes: patch.performedText ?? null,
       });
       mergeLoggedSet(savedSet);
       // Auto-promote exercise to 'completed' when all planned sets reach
@@ -700,6 +700,7 @@ export function TodayScreen() {
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
+    performedText?: string | null;
   }) =>
     runSave(async () => {
       const savedSet = await upsertLoggedSet({
@@ -709,6 +710,7 @@ export function TodayScreen() {
         plannedReps: null,
         performedLoad: patch.performedLoad,
         performedReps: patch.performedReps,
+        performedText: patch.performedText ?? null,
         rpe: null,
         status: patch.status,
       });
@@ -898,7 +900,7 @@ export function TodayScreen() {
               {data.log?.session && (
                 <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 mt-2">
                   <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
-                    Messages
+                    Session messages
                   </div>
                   <AthleteCommentsThread
                     messages={(data.log.messages ?? []).filter(m => !m.exercise_id)}

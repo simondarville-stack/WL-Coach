@@ -225,12 +225,16 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
         // delta colour only applies once a set is actually completed.
         const loadStyle = dim ? monoLight : compareToPlan(s.performed_load, s.planned_load);
         const repsStyle = dim ? monoLight : compareToPlan(s.performed_reps, s.planned_reps);
+        // Athlete may have typed tuple notation like "2+2+2" for a combo;
+        // when present, performed_text holds the raw string and the coach
+        // sees what was actually logged instead of just the numeric sum.
+        const repsDisplay = s.performed_text ?? (s.performed_reps != null ? String(s.performed_reps) : '?');
         return (
           <div key={s.id} style={stackPair} title={s.status}>
             <div style={stackColumn}>
               <span style={loadStyle}>{s.performed_load ?? '?'}</span>
               <div style={ruleStyle} />
-              <span style={repsStyle}>{s.performed_reps ?? '?'}</span>
+              <span style={repsStyle}>{repsDisplay}</span>
             </div>
             {s.rpe != null && (
               <span style={{ ...setMultiplier, fontSize: 9, color: 'var(--color-text-tertiary)' }}>
