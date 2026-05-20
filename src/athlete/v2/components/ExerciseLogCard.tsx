@@ -381,7 +381,7 @@ export function ExerciseLogCard({
                 }`}
               >
                 <CheckCircle2 size={14} />
-                {binaryStatus === 'completed' ? 'Done' : 'Mark done'}
+                Done
               </button>
               <button
                 onClick={() => void setBinaryStatus(binaryStatus === 'skipped' ? 'pending' : 'skipped')}
