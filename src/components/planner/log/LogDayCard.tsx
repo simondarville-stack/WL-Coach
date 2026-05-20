@@ -109,9 +109,7 @@ export function LogDayCard({
             {session.raw_total != null && (
               <span><span className="text-gray-400">RAW</span> {session.raw_total}/12</span>
             )}
-            {session.session_rpe != null && (
-              <span><span className="text-gray-400">sRPE</span> {session.session_rpe}</span>
-            )}
+            {/* sRPE hidden until athlete input is added (Q-10 / UF-20) */}
             {session.duration_minutes != null && (
               <span><span className="text-gray-400">⏱</span> {session.duration_minutes}m</span>
             )}

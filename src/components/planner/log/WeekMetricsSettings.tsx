@@ -13,7 +13,7 @@
  *   VAS              = off
  *   Custom metrics   = none enabled
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Settings, Plus, Trash2, X, Pencil, Check } from 'lucide-react';
 import type {
   AthleteMetricDefinition,
@@ -102,6 +102,15 @@ export function WeekMetricsSettings({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editUnit, setEditUnit] = useState('');
+
+  // Close on Escape key, matching ImageLightbox pattern. (UF-21 / H1)
+  const close = useCallback(() => setOpen(false), []);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, close]);
 
   useEffect(() => {
     if (!open) return;
@@ -287,7 +296,7 @@ export function WeekMetricsSettings({
               <>
                 <div className="space-y-1.5 mb-3">
                   <ToggleRow
-                    label="RAW readiness (Eleiko 4-pillar)"
+                    label="RAW readiness (1–3 scale)"
                     checked={state.config.trackRaw}
                     onChange={() => toggleBuiltin('trackRaw')}
                     disabled={saving}

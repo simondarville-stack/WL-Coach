@@ -168,7 +168,11 @@ export function SessionPreview({
         className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
       >
         <PlayCircle size={18} />
-        {log?.session ? 'Continue logging' : 'Start logging'}
+        {status === 'completed'
+          ? 'View in log'
+          : log?.session
+          ? 'Continue logging'
+          : 'Start logging'}
       </button>
     </div>
   );
