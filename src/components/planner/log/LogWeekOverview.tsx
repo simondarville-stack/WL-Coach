@@ -212,7 +212,7 @@ export function LogWeekOverview({
           ratio={pct(performedAgg.tonnage, plannedAgg.tonnage)}
         />
         <StatCell
-          label="Avg / K"
+          label="Avg kg/rep"
           performed={performedAvg > 0 ? `${performedAvg.toFixed(1)} kg` : '—'}
           planned={plannedAvg > 0 ? `${plannedAvg.toFixed(1)} kg` : '—'}
           ratio={pct(performedAvg, plannedAvg)}
