@@ -133,6 +133,28 @@ export function ExerciseLogCard({
   const allCompleted = rows.length > 0 && completedCount >= rows.length;
   const accent = planned.exerciseDef?.color ?? '#3B82F6';
 
+  /** Free-text / "other" prescriptions don't quantify training — they're
+   *  things like "mobility work" or "stretching". The athlete just needs
+   *  a binary Done / Not done toggle plus the notes field; no set rows,
+   *  no Log-as-prescribed, no Add-set.
+   *  Status is persisted on the same synthesised set #1 so completedCount
+   *  and the card-header ✓ keep working. */
+  const isBinaryUnit = planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other';
+  const binarySet = loggedSets.find(s => s.set_number === 1) ?? null;
+  const binaryStatus: 'completed' | 'skipped' | 'pending' =
+    binarySet?.status === 'completed' ? 'completed'
+    : binarySet?.status === 'skipped' ? 'skipped'
+    : 'pending';
+  const setBinaryStatus = (next: 'completed' | 'skipped' | 'pending') =>
+    onSaveSet({
+      setNumber: 1,
+      performedLoad: null,
+      performedReps: null,
+      status: next,
+      plannedLoad: null,
+      plannedReps: null,
+    });
+
   /** Resolve the display name. For combos we prefer the coach's
    *  combo_notation (e.g. "Snatch Complex"), then fall back to
    *  "Member1 + Member2 + ..." — same logic the coach side uses, so
@@ -348,7 +370,31 @@ export function ExerciseLogCard({
 
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
-          {rows.length === 0 ? (
+          {isBinaryUnit ? (
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => void setBinaryStatus(binaryStatus === 'completed' ? 'pending' : 'completed')}
+                className={`flex-1 text-xs font-semibold py-2 rounded-md transition-colors inline-flex items-center justify-center gap-1 ${
+                  binaryStatus === 'completed'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                }`}
+              >
+                <CheckCircle2 size={14} />
+                {binaryStatus === 'completed' ? 'Done' : 'Mark done'}
+              </button>
+              <button
+                onClick={() => void setBinaryStatus(binaryStatus === 'skipped' ? 'pending' : 'skipped')}
+                className={`flex-1 text-xs font-semibold py-2 rounded-md transition-colors ${
+                  binaryStatus === 'skipped'
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                }`}
+              >
+                Not done
+              </button>
+            </div>
+          ) : rows.length === 0 ? (
             <div className="text-xs text-gray-500 italic py-3 text-center">
               No set lines defined for this exercise
             </div>
