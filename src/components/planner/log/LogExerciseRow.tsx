@@ -51,7 +51,22 @@ interface LogExerciseRowProps {
 export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
-  const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
+
+  // For free-text, GPP, and other non-quantified units, computeDelta would
+  // see performedReps=0 vs a non-null planned total and emit 'red'. Guard
+  // by passing null for both when the unit cannot produce a meaningful ratio.
+  // (UF-04)
+  const isUnquantified =
+    planned != null &&
+    (planned.exercise.unit === 'free_text' ||
+      planned.exercise.unit === 'other' ||
+      planned.exercise.unit === 'free_text_reps' ||
+      getSentinelType(planned.exercise.exercise_code) === 'gpp');
+  const delta = computeDelta(
+    isUnquantified ? null : (planned?.summary_total_reps ?? null),
+    isUnquantified ? 0 : performedReps,
+    !!logged,
+  );
 
   const exerciseMessages = logged
     ? sessionMessages.filter(m => m.exercise_id === logged.log.id)
@@ -194,11 +209,12 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
   if (sentinelType === 'gpp') {
     const plannedGpp = planned?.metadata?.gpp ?? null;
     const athleteGpp = logged?.log.metadata?.gpp ?? null;
-    // Athlete state wins if present; coach sees what the athlete logged
-    // (with their per-row done flags), otherwise falls back to planned.
-    const display = athleteGpp ?? plannedGpp;
-    const rows = display?.rows ?? [];
-    const doneCount = rows.filter(r => r.done).length;
+    // When the athlete has logged GPP data, show both planned and performed
+    // side-by-side so the coach can see what was changed. (UF-05)
+    const hasAthleteData = athleteGpp != null;
+    const displayRows = (athleteGpp ?? plannedGpp)?.rows ?? [];
+    const plannedRows = plannedGpp?.rows ?? [];
+    const doneCount = displayRows.filter(r => r.done).length;
     return (
       <div className="flex border-l-4 border-l-emerald-400">
         <div className="flex-1 px-3 py-2 min-w-0">
@@ -206,10 +222,13 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
               {plannedGpp?.title || 'GPP'}
             </span>
-            {rows.length > 0 && (
+            {displayRows.length > 0 && (
               <span className="text-[10px] text-gray-500">
-                {doneCount}/{rows.length} done
+                {doneCount}/{displayRows.length} done
               </span>
+            )}
+            {hasAthleteData && (
+              <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
             )}
           </div>
           {plannedGpp?.description && (
@@ -217,7 +236,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
               {plannedGpp.description}
             </p>
           )}
-          {rows.length === 0 ? (
+          {displayRows.length === 0 ? (
             <p className="text-[10px] text-gray-400 italic">No rows yet</p>
           ) : (
             <table className="w-full text-[11px] border-collapse">
@@ -226,20 +245,36 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
                   <th className="text-left px-1 py-0.5">Exercise</th>
                   <th className="text-center px-1 py-0.5 w-12">Reps</th>
                   <th className="text-center px-1 py-0.5 w-10">Sets</th>
-                  <th className="text-left px-1 py-0.5 w-14">Load</th>
+                  <th className={`text-left px-1 py-0.5 ${hasAthleteData ? 'w-28' : 'w-14'}`}>Load</th>
                   <th className="text-center px-1 py-0.5 w-8">✓</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
-                    <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
-                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
-                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
-                    <td className="px-1 py-0.5 text-gray-700">{row.load || '—'}</td>
-                    <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
-                  </tr>
-                ))}
+                {displayRows.map((row, i) => {
+                  const plannedRow = plannedRows[i];
+                  const loadChanged =
+                    hasAthleteData &&
+                    plannedRow != null &&
+                    plannedRow.load !== row.load;
+                  return (
+                    <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
+                      <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
+                      <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
+                      <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
+                      <td className="px-1 py-0.5 text-gray-700">
+                        {loadChanged ? (
+                          <span className="flex flex-col gap-0 leading-tight">
+                            <span className="text-gray-400 line-through text-[9px]">{plannedRow.load || '—'}</span>
+                            <span className="text-blue-700 font-medium">{row.load || '—'}</span>
+                          </span>
+                        ) : (
+                          row.load || '—'
+                        )}
+                      </td>
+                      <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
