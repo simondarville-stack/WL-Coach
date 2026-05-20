@@ -22,8 +22,6 @@ import {
   updateLogExercise,
   upsertLoggedSet,
   addOffPlanLogExercise,
-  createBonusSession,
-  setAthleteDayLabel,
   addComment,
   deleteLogExercise,
   deleteSession,
@@ -47,7 +45,6 @@ import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
 import { ExercisePicker } from '../components/ExercisePicker';
-import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
 import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
@@ -101,7 +98,6 @@ export function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const [showBonusName, setShowBonusName] = useState(false);
   /** When set, the exercise picker opens in substitution mode for a
    *  specific planned exercise. */
   const [substituting, setSubstituting] = useState<PlannedExerciseFull | null>(null);
@@ -189,21 +185,6 @@ export function TodayScreen() {
     () => (data?.log?.exercises ?? []).filter(le => !le.log.planned_exercise_id),
     [data],
   );
-
-  // These two need to live above the early-return for the rules-of-hooks
-  // lint to pass; they only consume `overview` so they're safe to
-  // compute even before we've resolved the athlete.
-  const nextBonusDayIndex = useMemo(() => {
-    if (!overview) return null;
-    const all = [...overview.days.map(d => d.dayIndex), ...overview.activeDays];
-    return all.length > 0 ? Math.max(...all) + 1 : 1;
-  }, [overview]);
-
-  const defaultBonusName = useMemo(() => {
-    if (!overview) return 'Extra 1';
-    const bonusCount = overview.days.filter(d => d.isBonus).length + 1;
-    return `Extra ${bonusCount}`;
-  }, [overview]);
 
   if (!athlete) return null;
 
@@ -603,47 +584,6 @@ export function TodayScreen() {
     await loadWeek();
   };
 
-  const handleConfirmBonusDay = async (name: string) => {
-    if (!overview || nextBonusDayIndex == null) return;
-    const dayIdx = nextBonusDayIndex;
-    setSaving(true);
-    setError(null);
-    try {
-      await createBonusSession({
-        athleteId: athlete.id,
-        ownerId: athlete.owner_id,
-        weekStart,
-        dayIndex: dayIdx,
-        date: todayISO(),
-      });
-      // Persist the athlete-given name into the week_plan's day_labels
-      // so it shows in the chip row and on the coach side (best-effort:
-      // silently no-op if no week_plan exists yet).
-      try {
-        await setAthleteDayLabel({
-          athleteId: athlete.id,
-          weekStart,
-          dayIndex: dayIdx,
-          label: name,
-        });
-      } catch (e) {
-        // Non-fatal — keep the session, just lose the label.
-        console.warn('Could not set bonus day label:', e);
-      }
-      await loadWeek();
-      // Tell the slot-change effect to skip its preview-reset so the
-      // setMode('edit') below survives the dayIndex transition.
-      skipPreviewReset.current = true;
-      setDayIndex(dayIdx);
-      setMode('edit');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      throw e;
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSaveOffPlanSet = (logExerciseId: string) => (patch: {
     setNumber: number;
     performedLoad: number | null;
@@ -694,20 +634,9 @@ export function TodayScreen() {
               selectedDayIndex={dayIndex}
               onSelect={setDayIndex}
             />
-            <div className="flex items-center justify-between gap-2 px-1">
-              {overview.planSource === 'group' ? (
-                <p className="text-[10px] text-gray-500 italic">Showing your group's plan.</p>
-              ) : <span />}
-              <button
-                onClick={() => setShowBonusName(true)}
-                disabled={saving}
-                className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-1 rounded border border-dashed border-gray-700 hover:border-gray-500 disabled:opacity-50"
-                title="Log an extra training day this week"
-              >
-                <Plus size={11} />
-                Training day
-              </button>
-            </div>
+            {overview.planSource === 'group' && (
+              <p className="text-[10px] text-gray-500 italic px-1">Showing your group's plan.</p>
+            )}
           </>
         ) : null}
 
@@ -880,12 +809,6 @@ export function TodayScreen() {
           onPick={async pick => {
             if (substituting) await handleSubstitute(substituting, pick);
           }}
-        />
-        <BonusDayNameModal
-          open={showBonusName}
-          defaultName={defaultBonusName}
-          onClose={() => setShowBonusName(false)}
-          onConfirm={handleConfirmBonusDay}
         />
     </div>
   );
