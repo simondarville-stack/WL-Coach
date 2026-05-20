@@ -230,6 +230,7 @@ export function ExerciseDetail({
       const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
       if (error) throw error;
       const { data: urlData } = supabase.storage.from('planner-media').getPublicUrl(path);
+      notesRef.current = urlData.publicUrl;
       setNotes(urlData.publicUrl);
       await saveNotes(plannedExercise.id, urlData.publicUrl);
       await onSaved();
@@ -409,7 +410,15 @@ export function ExerciseDetail({
             <input
               type="url"
               value={notes}
-              onChange={e => setNotes(e.target.value)}
+              onChange={e => {
+                notesRef.current = e.target.value;
+                setNotes(e.target.value);
+                saveNotesDebounced(plannedExercise.id, e.target.value);
+              }}
+              onBlur={() => {
+                if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+                void saveNotes(plannedExercise.id, notesRef.current);
+              }}
               placeholder="Paste YouTube or video URL…"
               style={inputStyle}
             />
@@ -453,7 +462,21 @@ export function ExerciseDetail({
         {plannedExercise && sentinel === 'image' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={sectionHeaderStyle}>Image</span>
-            <input type="url" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Paste image URL…" style={inputStyle} />
+            <input
+              type="url"
+              value={notes}
+              onChange={e => {
+                notesRef.current = e.target.value;
+                setNotes(e.target.value);
+                saveNotesDebounced(plannedExercise.id, e.target.value);
+              }}
+              onBlur={() => {
+                if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+                void saveNotes(plannedExercise.id, notesRef.current);
+              }}
+              placeholder="Paste image URL…"
+              style={inputStyle}
+            />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>or upload:</span>
               <button

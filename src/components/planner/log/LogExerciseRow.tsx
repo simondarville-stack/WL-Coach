@@ -21,9 +21,9 @@ import {
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
-import { getSentinelType } from '../plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../plannerUtils';
 import { LogCommentsThread } from './LogCommentsThread';
 
 const DELTA_BORDER: Record<DeltaState, string> = {
@@ -98,6 +98,69 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
           >
             {planned?.notes || '(empty note)'}
           </p>
+        </div>
+      </div>
+    );
+  }
+  if (sentinelType === 'image') {
+    const url = planned?.notes?.trim();
+    return (
+      <div className="flex border-l-4 border-l-pink-400">
+        <div className="flex-1 px-3 py-2 min-w-0">
+          {url ? (
+            <img
+              src={url}
+              alt=""
+              style={{ maxHeight: 120, maxWidth: '100%', objectFit: 'contain', borderRadius: 4 }}
+              onError={e => { e.currentTarget.style.display = 'none'; }}
+            />
+          ) : (
+            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no image)</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (sentinelType === 'video') {
+    const url = planned?.notes?.trim();
+    if (!url) {
+      return (
+        <div className="flex border-l-4 border-l-indigo-400">
+          <div className="flex-1 px-3 py-2 min-w-0">
+            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no video link)</p>
+          </div>
+        </div>
+      );
+    }
+    if (isDirectVideoFile(url)) {
+      return (
+        <div className="flex border-l-4 border-l-indigo-400">
+          <div className="flex-1 px-3 py-2 min-w-0">
+            <video src={url} controls style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 4 }} />
+          </div>
+        </div>
+      );
+    }
+    const thumb = getYouTubeThumbnail(url);
+    return (
+      <div className="flex border-l-4 border-l-indigo-400">
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366F1', textDecoration: 'none' }}
+          >
+            {thumb ? (
+              <img src={thumb} alt="" style={{ width: 80, height: 50, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+            ) : (
+              <Video size={20} style={{ flexShrink: 0 }} />
+            )}
+            <span style={{ fontSize: 'var(--text-caption)', display: 'flex', alignItems: 'center', gap: 4, wordBreak: 'break-all', minWidth: 0 }}>
+              <ExternalLink size={11} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{url}</span>
+            </span>
+          </a>
         </div>
       </div>
     );

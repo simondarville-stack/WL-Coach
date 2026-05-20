@@ -6,12 +6,12 @@
  * sets completed.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, Replace, Video, ExternalLink } from 'lucide-react';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, GppSection } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType } from '../../../components/planner/plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
 
@@ -155,6 +155,62 @@ export function ExerciseLogCard({
           if (onSaveGppSection) await onSaveGppSection(section);
         }}
       />
+    );
+  }
+  if (sentinelType === 'image') {
+    const url = planned.exercise.notes?.trim();
+    return (
+      <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+        {url ? (
+          <img
+            src={url}
+            alt=""
+            className="w-full max-h-80 object-contain bg-black"
+            onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
+          />
+        ) : (
+          <p className="text-sm text-gray-500 italic px-3 py-3">(no image)</p>
+        )}
+      </div>
+    );
+  }
+  if (sentinelType === 'video') {
+    const url = planned.exercise.notes?.trim();
+    if (!url) {
+      return (
+        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-3">
+          <p className="text-sm text-gray-500 italic">(no video link)</p>
+        </div>
+      );
+    }
+    if (isDirectVideoFile(url)) {
+      return (
+        <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+          <video src={url} controls className="w-full max-h-80 bg-black" />
+        </div>
+      );
+    }
+    const thumb = getYouTubeThumbnail(url);
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block rounded-xl bg-gray-900 border border-gray-800 hover:border-indigo-700/50 transition-colors overflow-hidden"
+      >
+        {thumb ? (
+          <img src={thumb} alt="Video thumbnail" className="w-full max-h-64 object-cover" />
+        ) : (
+          <div className="px-3 py-6 flex items-center justify-center gap-2 text-indigo-300">
+            <Video size={20} />
+            <span className="text-sm font-medium">Open video</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 py-2 text-xs text-indigo-300 border-t border-gray-800">
+          <ExternalLink size={12} className="flex-shrink-0" />
+          <span className="break-all">{url}</span>
+        </div>
+      </a>
     );
   }
 

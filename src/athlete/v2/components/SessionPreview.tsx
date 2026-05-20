@@ -11,13 +11,13 @@
  * so the visual is identical to the coach side (different theme tokens).
  * "Start logging" enters edit mode.
  */
-import { PlayCircle, CheckCircle2 } from 'lucide-react';
+import { PlayCircle, CheckCircle2, Video, ExternalLink } from 'lucide-react';
 import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
-import { getSentinelType } from '../../../components/planner/plannerUtils';
+import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../../../components/planner/plannerUtils';
 
 interface SessionPreviewProps {
   slotLabel: string;
@@ -164,6 +164,60 @@ function PreviewExerciseRow({
         <p className="text-sm text-gray-200 italic whitespace-pre-wrap leading-relaxed">
           {planned.exercise.notes || '(empty note)'}
         </p>
+      </li>
+    );
+  }
+  if (sentinel === 'image') {
+    const url = planned.exercise.notes?.trim();
+    return (
+      <li className="px-4 py-3">
+        {url ? (
+          <img
+            src={url}
+            alt=""
+            className="w-full max-h-80 object-contain rounded bg-black"
+            onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
+          />
+        ) : (
+          <p className="text-sm text-gray-500 italic">(no image)</p>
+        )}
+      </li>
+    );
+  }
+  if (sentinel === 'video') {
+    const url = planned.exercise.notes?.trim();
+    if (!url) {
+      return <li className="px-4 py-3"><p className="text-sm text-gray-500 italic">(no video link)</p></li>;
+    }
+    if (isDirectVideoFile(url)) {
+      return (
+        <li className="px-4 py-3">
+          <video src={url} controls className="w-full max-h-80 rounded bg-black" />
+        </li>
+      );
+    }
+    const thumb = getYouTubeThumbnail(url);
+    return (
+      <li className="px-4 py-3">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block rounded border border-gray-800 hover:border-indigo-700/50 transition-colors overflow-hidden"
+        >
+          {thumb ? (
+            <img src={thumb} alt="Video thumbnail" className="w-full max-h-64 object-cover" />
+          ) : (
+            <div className="px-3 py-6 flex items-center justify-center gap-2 text-indigo-300">
+              <Video size={20} />
+              <span className="text-sm font-medium">Open video</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-indigo-300 border-t border-gray-800">
+            <ExternalLink size={12} className="flex-shrink-0" />
+            <span className="break-all">{url}</span>
+          </div>
+        </a>
       </li>
     );
   }

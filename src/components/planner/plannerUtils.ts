@@ -61,6 +61,12 @@ export function getYouTubeThumbnail(url: string): string | null {
   return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
 }
 
+/** Heuristic: file extension suggests a directly-playable video file
+ *  (Supabase upload) rather than a hosted video page (YouTube, Vimeo). */
+export function isDirectVideoFile(url: string): boolean {
+  return /\.(mp4|webm|ogg|mov|m4v)(\?|$)/i.test(url);
+}
+
 /**
  * Look up or create a sentinel exercise (TEXT / VIDEO / IMAGE) for the current owner.
  * Always includes owner_id on insert so the exercise is owned by the current coach.
