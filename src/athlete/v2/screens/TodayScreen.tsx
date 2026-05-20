@@ -366,6 +366,7 @@ export function TodayScreen() {
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
+    performedText?: string | null;
   }) =>
     runSave(async () => {
       const session = await getOrCreateSession();
@@ -381,6 +382,7 @@ export function TodayScreen() {
         performedReps: patch.performedReps,
         rpe: null,
         status: patch.status,
+        notes: patch.performedText ?? null,
       });
       mergeLoggedSet(savedSet);
       // No exercise-level auto-bump; binary states only — exercise

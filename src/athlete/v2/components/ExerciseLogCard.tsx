@@ -116,6 +116,8 @@ export function ExerciseLogCard({
         plannedLoadText: '—',
         plannedRepsValue: null,
         plannedLoadValue: null,
+        freeTextMode: true,
+        freeTextPlanned: planned.exercise.prescription_raw ?? '',
       });
     }
     // Drop planned rows the athlete actively removed. The trash on a
@@ -133,27 +135,13 @@ export function ExerciseLogCard({
   const allCompleted = rows.length > 0 && completedCount >= rows.length;
   const accent = planned.exerciseDef?.color ?? '#3B82F6';
 
-  /** Free-text / "other" prescriptions don't quantify training — they're
-   *  things like "mobility work" or "stretching". The athlete just needs
-   *  a binary Done / Not done toggle plus the notes field; no set rows,
-   *  no Log-as-prescribed, no Add-set.
-   *  Status is persisted on the same synthesised set #1 so completedCount
-   *  and the card-header ✓ keep working. */
-  const isBinaryUnit = planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other';
-  const binarySet = loggedSets.find(s => s.set_number === 1) ?? null;
-  const binaryStatus: 'completed' | 'skipped' | 'pending' =
-    binarySet?.status === 'completed' ? 'completed'
-    : binarySet?.status === 'skipped' ? 'skipped'
-    : 'pending';
-  const setBinaryStatus = (next: 'completed' | 'skipped' | 'pending') =>
-    onSaveSet({
-      setNumber: 1,
-      performedLoad: null,
-      performedReps: null,
-      status: next,
-      plannedLoad: null,
-      plannedReps: null,
-    });
+  /** Free-text / "other" prescriptions don't quantify training. The
+   *  planned row reuses the standard SetEntryRow chrome but with the
+   *  kg + reps cells merged into one read-only cell carrying the coach's
+   *  prose; ✓ / ✗ still drive status. Add-set spawns extra rows in the
+   *  same merged-cell shape, but with an editable text input so the
+   *  athlete can record what they actually did. */
+  const isFreeTextUnit = planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other';
 
   /** Resolve the display name. For combos we prefer the coach's
    *  combo_notation (e.g. "Snatch Complex"), then fall back to
@@ -370,54 +358,32 @@ export function ExerciseLogCard({
 
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
-          {isBinaryUnit ? (
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => void setBinaryStatus(binaryStatus === 'completed' ? 'pending' : 'completed')}
-                className={`flex-1 text-xs font-semibold py-2 rounded-md transition-colors inline-flex items-center justify-center gap-1 ${
-                  binaryStatus === 'completed'
-                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                }`}
-              >
-                <CheckCircle2 size={14} />
-                Done
-              </button>
-              <button
-                onClick={() => void setBinaryStatus(binaryStatus === 'skipped' ? 'pending' : 'skipped')}
-                className={`flex-1 text-xs font-semibold py-2 rounded-md transition-colors ${
-                  binaryStatus === 'skipped'
-                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                }`}
-              >
-                Not done
-              </button>
-            </div>
-          ) : rows.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="text-xs text-gray-500 italic py-3 text-center">
               No set lines defined for this exercise
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={handleLogAsPrescribed}
-                  disabled={savingPrescribed || allCompleted}
-                  className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
-                >
-                  {savingPrescribed ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
-                </button>
-                {!allCompleted && loggedSets.length > 0 && (
+              {!isFreeTextUnit && (
+                <div className="flex items-center gap-2 pt-1">
                   <button
-                    onClick={onMarkComplete}
-                    className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors"
-                    title="Mark this exercise complete"
+                    onClick={handleLogAsPrescribed}
+                    disabled={savingPrescribed || allCompleted}
+                    className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
                   >
-                    Done
+                    {savingPrescribed ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
                   </button>
-                )}
-              </div>
+                  {!allCompleted && loggedSets.length > 0 && (
+                    <button
+                      onClick={onMarkComplete}
+                      className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors"
+                      title="Mark this exercise complete"
+                    >
+                      Done
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 {rows.map(row => {
@@ -471,6 +437,7 @@ export function ExerciseLogCard({
                             plannedLoadText: '—',
                             plannedRepsValue: null,
                             plannedLoadValue: null,
+                            freeTextMode: isFreeTextUnit,
                           }}
                           logged={s}
                           onSave={onSaveSet}
@@ -488,6 +455,7 @@ export function ExerciseLogCard({
                               plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
                               plannedRepsValue: defaultReps,
                               plannedLoadValue: defaultLoad,
+                              freeTextMode: isFreeTextUnit,
                             }}
                             logged={null}
                             onSave={onSaveSet}

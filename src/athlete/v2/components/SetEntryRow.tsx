@@ -21,6 +21,13 @@ export interface SetRowInput {
   plannedRepsValue: number | null;
   /** Raw numeric used to compute planned_load when saving. */
   plannedLoadValue: number | null;
+  /** When true, the kg + reps cells collapse into ONE merged cell. Used
+   *  for free_text / "other" units where there's nothing to quantify. */
+  freeTextMode?: boolean;
+  /** Coach's prose to show in the merged cell on planned rows. Undefined
+   *  ⇒ the merged cell becomes an editable text input bound to the
+   *  set's notes column (athlete-added extra rows). */
+  freeTextPlanned?: string;
 }
 
 interface SetEntryRowProps {
@@ -34,6 +41,9 @@ interface SetEntryRowProps {
     status: 'pending' | 'completed' | 'skipped' | 'failed';
     plannedLoad: number | null;
     plannedReps: number | null;
+    /** Free-text equivalent of performed values for non-quantified
+     *  exercises. Persisted on training_log_sets.notes. */
+    performedText?: string | null;
   }) => Promise<void>;
   /** Optional per-set delete: when present, renders a trash icon.
    *  Can be sync (for removing a pending blank row that has no DB
@@ -51,6 +61,7 @@ function parseNumber(text: string): number | null {
 export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProps) {
   const [load, setLoad] = useState(logged?.performed_load != null ? String(logged.performed_load) : '');
   const [reps, setReps] = useState(logged?.performed_reps != null ? String(logged.performed_reps) : '');
+  const [text, setText] = useState(logged?.notes ?? '');
   const [status, setStatus] = useState<TrainingLogSet['status']>(logged?.status ?? 'pending');
   const [busy, setBusy] = useState(false);
 
@@ -64,20 +75,41 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
     setReps(logged?.performed_reps != null ? String(logged.performed_reps) : '');
   }, [logged?.performed_reps]);
   useEffect(() => {
+    setText(logged?.notes ?? '');
+  }, [logged?.notes]);
+  useEffect(() => {
     setStatus(logged?.status ?? 'pending');
   }, [logged?.status]);
 
   const commit = async (overrides: Partial<{
     load: string;
     reps: string;
+    text: string;
     status: TrainingLogSet['status'];
   }> = {}) => {
     const nextLoad = overrides.load ?? load;
     const nextReps = overrides.reps ?? reps;
+    const nextText = overrides.text ?? text;
     const nextStat = overrides.status ?? status;
 
     setBusy(true);
     try {
+      if (input.freeTextMode) {
+        // Free-text rows: no numeric load/reps. The merged cell either
+        // shows the coach's prose (planned row, freeTextPlanned set) or
+        // captures the athlete's prose (extra row → stored on notes).
+        await onSave({
+          setNumber: input.setNumber,
+          performedLoad: null,
+          performedReps: null,
+          status: nextStat,
+          plannedLoad: null,
+          plannedReps: null,
+          performedText: input.freeTextPlanned !== undefined ? null : nextText.trim() || null,
+        });
+        return;
+      }
+
       const parsedLoad = parseNumber(nextLoad);
       const parsedReps = parseNumber(nextReps);
       // When marking completed without explicit values, assume the
@@ -162,24 +194,50 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
         </button>
       </div>
 
-      <div className="flex-1 grid grid-cols-2 gap-1.5">
-        <NumericCell
-          value={load}
-          placeholder={input.plannedLoadText}
-          unit="kg"
-          onChange={setLoad}
-          onCommit={() => commit()}
-          disabled={busy || isSkipped}
-        />
-        <NumericCell
-          value={reps}
-          placeholder={input.plannedRepsText}
-          unit="r"
-          onChange={setReps}
-          onCommit={() => commit()}
-          disabled={busy || isSkipped}
-        />
-      </div>
+      {input.freeTextMode ? (
+        <div className="flex-1 min-w-0">
+          {input.freeTextPlanned !== undefined ? (
+            <div className={`text-sm italic px-2 py-1.5 break-words ${isSkipped ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+              {input.freeTextPlanned || '—'}
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onBlur={() => commit({ text })}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              placeholder="What did you do?"
+              disabled={busy || isSkipped}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500 placeholder:text-gray-600 disabled:opacity-50"
+            />
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 grid grid-cols-2 gap-1.5">
+          <NumericCell
+            value={load}
+            placeholder={input.plannedLoadText}
+            unit="kg"
+            onChange={setLoad}
+            onCommit={() => commit()}
+            disabled={busy || isSkipped}
+          />
+          <NumericCell
+            value={reps}
+            placeholder={input.plannedRepsText}
+            unit="r"
+            onChange={setReps}
+            onCommit={() => commit()}
+            disabled={busy || isSkipped}
+          />
+        </div>
+      )}
       {onDelete && (
         <button
           onClick={() => void onDelete()}
