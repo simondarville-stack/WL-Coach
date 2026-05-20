@@ -30,6 +30,7 @@ import {
   setLogExerciseGppSection,
   setSessionCustomMetric,
   setSubstitutedExercise,
+  markMessagesRead,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -154,6 +155,15 @@ export function TodayScreen() {
 
   useEffect(() => { void loadWeek(); }, [loadWeek]);
   useEffect(() => { void loadDay(); }, [loadDay]);
+
+  // Mark all session messages read when athlete enters edit mode. (UF-10 / E3)
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    const sessionId = data?.log?.session?.id;
+    if (!sessionId) return;
+    // Fire-and-forget: read tracking is best-effort; errors are non-fatal.
+    markMessagesRead(sessionId, null, 'athlete').catch(() => undefined);
+  }, [mode, data?.log?.session?.id]);
 
   // Consume URL params once so subsequent in-screen navigation doesn't
   // fight with stale ?week/slot from the Week screen tap-through.
@@ -466,6 +476,26 @@ export function TodayScreen() {
     });
   };
 
+  const handlePostExerciseComment = (logExerciseId: string) => async (body: string) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const msg = await addComment({
+        sessionId: session.id,
+        exerciseId: logExerciseId,
+        message: body,
+        senderType: 'athlete',
+      });
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: { ...prev.log, messages: [...prev.log.messages, msg] },
+        };
+      });
+    });
+  };
+
   const handleDeleteSet = async (setId: string) => {
     if (!window.confirm('Delete this set?')) return;
     await runSave(async () => {
@@ -740,6 +770,12 @@ export function TodayScreen() {
                   const le = data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id);
                   const loggedExercise = le?.log ?? null;
                   const performed = le?.exercise ?? null;
+                  // Exercise-scoped messages: filter by the log_exercise id.
+                  // Remove the !m.exercise_id guard so athlete sees all messages
+                  // including exercise-scoped coach replies. (UF-08)
+                  const exMessages = le
+                    ? (data.log?.messages ?? []).filter(m => m.exercise_id === le.log.id)
+                    : [];
                   return (
                     <ExerciseLogCard
                       key={p.exercise.id}
@@ -755,6 +791,8 @@ export function TodayScreen() {
                       onSaveGppSection={handleSaveGppSection(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
+                      exerciseMessages={exMessages}
+                      onPostExerciseComment={le ? handlePostExerciseComment(le.log.id) : undefined}
                     />
                   );
                 })
