@@ -11,6 +11,7 @@ import type {
   TrainingLogSet,
   TrainingLogMessage,
   Exercise,
+  ExerciseStub,
 } from './database.types';
 
 // ─── Status enums ──────────────────────────────────────────────────────────
@@ -45,7 +46,10 @@ export const DEFAULT_DELTA_THRESHOLDS: DeltaThresholds = {
 export interface LoggedExerciseFull {
   log: TrainingLogExercise;
   sets: TrainingLogSet[];
-  exercise: Exercise | null; // null if the underlying exercise was deleted
+  /** Full Exercise, or an ExerciseStub when only id/name/color are known
+   *  (e.g. immediately after addOffPlanLogExercise before a full reload),
+   *  or null if the underlying exercise was deleted. (E-05 / UF-32) */
+  exercise: Exercise | ExerciseStub | null;
 }
 
 export interface DayLog {
@@ -54,6 +58,35 @@ export interface DayLog {
   session: TrainingLogSession | null;
   exercises: LoggedExerciseFull[];
   messages: TrainingLogMessage[];
+}
+
+// ─── "Done" state ─────────────────────────────────────────────────────────
+
+/**
+ * Canonical "is this exercise done?" predicate. (UF-01 / UF-02)
+ *
+ * An exercise is considered done when:
+ *   1. Its `status` column is already `'completed'` (explicit mark or Log-as-prescribed), OR
+ *   2. All planned sets have a terminal status (completed or skipped),
+ *      covering the full planned count — auto-promotion trigger.
+ *
+ * Free-text and GPP exercises have no set rows, so the second condition
+ * never fires for them; they rely exclusively on path 1 (explicit "Mark complete").
+ *
+ * @param le - the logged exercise to evaluate, or null (= not logged → not done).
+ * @param plannedSetCount - how many sets were planned (used for auto-promotion
+ *   check). Pass null when unknown or for free-text/GPP exercises.
+ */
+export function isExerciseDone(
+  le: LoggedExerciseFull | null,
+  plannedSetCount: number | null = null,
+): boolean {
+  if (!le) return false;
+  if (le.log.status === 'completed') return true;
+  if (le.sets.length === 0) return false;
+  const terminal = le.sets.filter(s => s.status === 'completed' || s.status === 'skipped');
+  const count = plannedSetCount ?? le.sets.length;
+  return count > 0 && terminal.length >= count;
 }
 
 // ─── Aggregation helpers ──────────────────────────────────────────────────
@@ -203,6 +236,71 @@ export function getRawGuidance(total: number | null): RawGuidance | null {
 
 export function rawAxisRange(): { min: number; max: number } {
   return { min: ELEIKO_RAW_AXES.length * 1, max: ELEIKO_RAW_AXES.length * 3 };
+}
+
+// ─── Shared input parsing ────────────────────────────────────────────────────
+
+/**
+ * Parse a numeric input string, accepting both period and comma as decimal
+ * separators. Returns null for empty or non-numeric input.
+ * Extracted from SetEntryRow and CoachSetEditModal (E-08 / UF-27).
+ */
+export function parseNumericInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const parsed = parseFloat(trimmed.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Parse a reps input that may carry combo notation ("2+2+2" → 6). Each
+ * "+"-delimited part must be a number; the result is the sum. Falls back
+ * to parseNumericInput for plain numeric input. Returns null when the
+ * input is empty or any part fails to parse.
+ *
+ * Combo prescriptions like "80×2+1×3" save their per-cluster rep tuple as
+ * reps_text ("2+1"), and the athlete sees that as the placeholder. When
+ * the athlete echoes it back ("2+2+2"), naive parseFloat silently drops
+ * everything after the first digit. Summing the parts preserves their
+ * intent in performed_reps.
+ */
+export function parseRepsInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  if (!trimmed.includes('+')) return parseNumericInput(trimmed);
+  const parts = trimmed.split('+').map(p => parseNumericInput(p));
+  if (parts.some(p => p == null)) return null;
+  return (parts as number[]).reduce((a, b) => a + b, 0);
+}
+
+// ─── Delta colour helpers ────────────────────────────────────────────────────
+
+/**
+ * Map a DeltaState to the Tailwind border-left colour class used in
+ * LogExerciseRow and SessionPreview exercise rows.
+ * Extracted from three inline ternary chains (E-10 / UF-28).
+ */
+export function getDeltaBorderClass(state: DeltaState): string {
+  switch (state) {
+    case 'matched': return 'border-l-emerald-500';
+    case 'amber':   return 'border-l-amber-500';
+    case 'red':     return 'border-l-red-500';
+    case 'pending': return 'border-l-gray-300';
+  }
+}
+
+/**
+ * Map a DeltaState to the Tailwind chip background+text colour classes used
+ * in the performed ratio badge (e.g. "87%").
+ * Extracted from three inline ternary chains (E-10 / UF-28).
+ */
+export function getDeltaChipClass(state: DeltaState): string {
+  switch (state) {
+    case 'matched': return 'bg-emerald-100 text-emerald-800';
+    case 'amber':   return 'bg-amber-100 text-amber-800';
+    case 'red':     return 'bg-red-100 text-red-800';
+    case 'pending': return 'bg-gray-100 text-gray-500';
+  }
 }
 
 export interface DeltaResult {

@@ -13,7 +13,9 @@ import type {
   TrainingLogExercise,
   GppSection,
   GppRow,
+  TrainingLogMessage,
 } from '../../../lib/database.types';
+import { AthleteCommentsThread } from './AthleteCommentsThread';
 
 interface GppLogCardProps {
   /** Planned section the coach wrote, or null if the coach left it blank. */
@@ -22,6 +24,12 @@ interface GppLogCardProps {
   loggedExercise: TrainingLogExercise | null;
   /** Persists the athlete-side GPP state. */
   onSave: (section: GppSection) => Promise<void>;
+  /** Coach + athlete messages scoped to this exercise. Same shape as the
+   *  quantified card so the thread renders identically across types. */
+  exerciseMessages?: TrainingLogMessage[];
+  /** Post a comment scoped to this exercise. Undefined until a log_exercise
+   *  exists; first row tick bootstraps one. */
+  onPostExerciseComment?: (body: string) => Promise<void>;
 }
 
 /** Merge planned rows with athlete-edited rows by position. Athlete
@@ -36,7 +44,13 @@ function mergeRows(planned: GppRow[], athlete: GppRow[] | undefined): GppRow[] {
   return [...athlete, ...planned.slice(athlete.length).map(r => ({ ...r, done: false }))];
 }
 
-export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps) {
+export function GppLogCard({
+  planned,
+  loggedExercise,
+  onSave,
+  exerciseMessages = [],
+  onPostExerciseComment,
+}: GppLogCardProps) {
   const athleteSection = loggedExercise?.metadata?.gpp;
   const initialRows = planned
     ? mergeRows(planned.rows, athleteSection?.rows)
@@ -44,16 +58,18 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
 
-  // Re-seed only when the planned structure changes — e.g. coach
-  // added a row from the planner. We deliberately do NOT re-sync from
-  // athleteSection on every save round-trip: doing so used to stomp
-  // characters the athlete was still typing because the useEffect
-  // fired the moment the server response came back.
+  // Re-seed when the planned rows content changes — e.g. coach added,
+  // removed, or reordered a row from the planner. A stable JSON hash
+  // detects structural changes regardless of row count, so a reorder
+  // without a count change is correctly caught. We deliberately do NOT
+  // re-sync from athleteSection on every save round-trip: doing so
+  // would stomp characters the athlete was still typing.
+  const plannedRowsHash = JSON.stringify(planned?.rows ?? null);
   useEffect(() => {
     if (!planned) return;
     setRows(prev => mergeRows(planned.rows, prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planned?.rows.length]);
+  }, [plannedRowsHash]);
 
   const title = planned?.title || 'GPP';
   const description = planned?.description || '';
@@ -93,15 +109,15 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
     }
   };
 
-  const enqueueSave = (nextRows: GppRow[]) => {
-    pendingRef.current = { title, description, rows: nextRows };
+  const enqueueSave = (nextRows: GppRow[], currentTitle: string, currentDescription: string) => {
+    pendingRef.current = { title: currentTitle, description: currentDescription, rows: nextRows };
     void drainQueue();
   };
 
   const updateRow = (i: number, patch: Partial<GppRow>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     setRows(next);
-    enqueueSave(next);
+    enqueueSave(next, title, description);
   };
 
   const allDone = rows.length > 0 && rows.every(r => r.done);
@@ -126,7 +142,7 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
         </div>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="px-3 pb-3 space-y-2">
         {rows.length === 0 ? (
           <p className="text-[11px] text-gray-500 italic text-center py-3">
             No rows yet — your coach hasn't filled this in.
@@ -194,6 +210,16 @@ export function GppLogCard({ planned, loggedExercise, onSave }: GppLogCardProps)
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {(exerciseMessages.length > 0 || onPostExerciseComment) && (
+          <div className="pt-1">
+            <AthleteCommentsThread
+              messages={exerciseMessages}
+              onPost={onPostExerciseComment ?? (() => Promise.resolve())}
+              compact
+            />
           </div>
         )}
       </div>

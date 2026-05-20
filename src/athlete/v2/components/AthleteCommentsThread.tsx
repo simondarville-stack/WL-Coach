@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { Send, MessageSquare } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
+import { formatTimestamp } from '../../../lib/logFormatUtils';
 
 interface AthleteCommentsThreadProps {
   messages: TrainingLogMessage[];
@@ -24,16 +25,6 @@ const SENDER_LABEL: Record<string, string> = {
   athlete: 'You',
   coach: 'Coach',
 };
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 export function AthleteCommentsThread({ messages, onPost, compact }: AthleteCommentsThreadProps) {
   const [draft, setDraft] = useState('');

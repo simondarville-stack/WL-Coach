@@ -6,7 +6,7 @@
  * who treats it as 0.5-step can do so, but the slider snaps to integers
  * since that's what athletes report in practice.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface VasFieldProps {
   value: number | null;
@@ -16,10 +16,26 @@ interface VasFieldProps {
 export function VasField({ value, onChange }: VasFieldProps) {
   const [local, setLocal] = useState<number | null>(value);
   useEffect(() => { setLocal(value); }, [value]);
+  /** Debounce timer for commit-on-change (covers navigate-away before pointer-up). */
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const commit = (next: number | null) => {
+    if (debounceRef.current != null) clearTimeout(debounceRef.current);
+    debounceRef.current = null;
     setLocal(next);
     void onChange(next);
+  };
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = parseInt(e.target.value, 10);
+    setLocal(next);
+    // Debounced commit: fires 300 ms after last drag tick if pointer-up
+    // hasn't already committed. Prevents silent data loss on navigation.
+    if (debounceRef.current != null) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      void onChange(next);
+    }, 300);
   };
 
   return (
@@ -37,7 +53,7 @@ export function VasField({ value, onChange }: VasFieldProps) {
           max={10}
           step={1}
           value={local ?? 0}
-          onChange={e => setLocal(parseInt(e.target.value, 10))}
+          onChange={handleSliderChange}
           onMouseUp={() => commit(local)}
           onTouchEnd={() => commit(local)}
           onKeyUp={() => commit(local)}

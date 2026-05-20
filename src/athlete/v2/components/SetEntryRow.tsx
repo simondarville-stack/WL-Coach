@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Check, X, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
+import { parseNumericInput, parseRepsInput } from '../../../lib/trainingLogModel';
 
 export interface SetRowInput {
   setNumber: number;
@@ -49,13 +50,6 @@ interface SetEntryRowProps {
    *  Can be sync (for removing a pending blank row that has no DB
    *  presence yet) or async (for deleting a persisted row). */
   onDelete?: () => void | Promise<void>;
-}
-
-function parseNumber(text: string): number | null {
-  const trimmed = text.trim();
-  if (trimmed === '') return null;
-  const parsed = parseFloat(trimmed.replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProps) {
@@ -110,8 +104,8 @@ export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProp
         return;
       }
 
-      const parsedLoad = parseNumber(nextLoad);
-      const parsedReps = parseNumber(nextReps);
+      const parsedLoad = parseNumericInput(nextLoad);
+      const parsedReps = parseRepsInput(nextReps);
       // When marking completed without explicit values, assume the
       // athlete executed the set as prescribed. This means tapping the
       // checkmark on a planned set is enough — no manual entry needed

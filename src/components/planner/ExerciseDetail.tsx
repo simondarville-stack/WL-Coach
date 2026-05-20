@@ -8,7 +8,7 @@ import type {
   AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
-import { getSentinelType, getYouTubeThumbnail } from './plannerUtils';
+import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { SollIstChart } from './SollIstChart';

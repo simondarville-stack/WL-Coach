@@ -13,6 +13,7 @@ import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
+import { DoneChip } from '../../log/DoneChip';
 
 // Binary states: only "Done" pill surfaces.
 
@@ -88,11 +89,7 @@ export function LogDayCard({
             <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
           )}
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
-          {status === 'completed' && (
-            <span className="text-[10px] px-2 py-0.5 rounded font-medium bg-emerald-100 text-emerald-800">
-              Done
-            </span>
-          )}
+          {status === 'completed' && <DoneChip variant="light" />}
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>
@@ -112,13 +109,11 @@ export function LogDayCard({
             {session.raw_total != null && (
               <span><span className="text-gray-400">RAW</span> {session.raw_total}/12</span>
             )}
-            {session.session_rpe != null && (
-              <span><span className="text-gray-400">sRPE</span> {session.session_rpe}</span>
-            )}
+            {/* sRPE hidden until athlete input is added (Q-10 / UF-20) */}
             {session.duration_minutes != null && (
               <span><span className="text-gray-400">⏱</span> {session.duration_minutes}m</span>
             )}
-            {collapsed && sessionCommentCount > 0 && (
+            {sessionCommentCount > 0 && (
               <span><MessageSquare size={10} className="inline-block mr-0.5" />{sessionCommentCount}</span>
             )}
           </div>
@@ -148,6 +143,11 @@ export function LogDayCard({
                   : undefined
               }
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
+              onDelete={
+                ledg && onDeleteLogExercise
+                  ? () => onDeleteLogExercise(ledg.log.id)
+                  : undefined
+              }
             />
           );
         })}

@@ -15,7 +15,7 @@ import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
 import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
-import { abbreviateExercise } from './plannerUtils';
+import { abbreviateExercise } from './sentinelUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';

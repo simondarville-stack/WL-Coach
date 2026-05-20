@@ -107,6 +107,18 @@ export interface Exercise {
   updated_at: string;
 }
 
+/**
+ * ExerciseStub — minimal subset of Exercise used when only id/name/color
+ * are available at call time (e.g. immediately after addOffPlanLogExercise or
+ * setSubstitutedExercise, before a full reload). Type-safe replacement for
+ * `as unknown as Exercise` casts. (E-05 / UF-32)
+ */
+export interface ExerciseStub {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export interface TrainingGroup {
   id: string;
   owner_id: string;
@@ -159,6 +171,15 @@ export interface GppRow {
   done?: boolean;
 }
 
+/**
+ * GppSection is stored in two locations:
+ *   - planned_exercises.metadata.gpp — the coach's planned section (source of truth for title/description/prescribed rows)
+ *   - training_log_exercises.metadata.gpp — the athlete's live copy (rows have done flags; athlete field overrides planned)
+ *
+ * Merge behaviour (intended — Q-14 2026-05-20): when the coach edits planned rows after the athlete has
+ * already saved, GppLogCard appends new coach rows to the athlete copy and preserves athlete edits.
+ * The athlete's per-row values are always kept when the athlete array is longer than planned.
+ */
 export interface GppSection {
   title: string;
   description: string;
@@ -351,6 +372,9 @@ export interface TrainingLogSession {
   date: string;
   week_start: string;
   day_index: number;
+  /** Athlete-provided label for this session (mainly used for bonus days).
+   *  Falls back to the week_plans.day_labels lookup when null. */
+  session_label: string | null;
   session_notes: string;
   status: string;
   raw_sleep: number | null;
@@ -358,7 +382,6 @@ export interface TrainingLogSession {
   raw_mood: number | null;
   raw_nutrition: number | null;
   raw_total: number | null;
-  raw_guidance: string | null;
   started_at: string | null;
   completed_at: string | null;
   duration_minutes: number | null;
@@ -408,6 +431,7 @@ export interface TrainingLogExerciseMetadata {
 
 export interface TrainingLogExercise {
   id: string;
+  owner_id: string | null;
   session_id: string;
   exercise_id: string | null;  // null = exercise was deleted
   planned_exercise_id: string | null;
@@ -429,12 +453,16 @@ export interface TrainingLogExerciseWithExercise extends TrainingLogExercise {
 
 export interface TrainingLogSet {
   id: string;
+  owner_id: string | null;
   log_exercise_id: string;
   set_number: number;
   planned_load: number | null;
   planned_reps: number | null;
   performed_load: number | null;
   performed_reps: number | null;
+  /** Athlete-entered free-text performed value for non-quantified exercises.
+   *  Distinct from notes (athlete annotation) — see UF-43 / DC-01. */
+  performed_text: string | null;
   rpe: number | null;
   status: 'pending' | 'completed' | 'skipped' | 'failed';
   notes: string | null;
@@ -444,10 +472,17 @@ export interface TrainingLogSet {
 
 export interface TrainingLogMessage {
   id: string;
+  owner_id: string | null;
   session_id: string;
   exercise_id: string | null;
   sender_type: 'athlete' | 'coach';
   message: string;
+  /** Timestamp when the coach last read this message. Null = unread by coach.
+   *  Set by the service when the coach views the session. See UF-10 / A5. */
+  coach_read_at: string | null;
+  /** Timestamp when the athlete last read this message. Null = unread by athlete.
+   *  Set by the service when the athlete views the session. See UF-10 / A5. */
+  athlete_read_at: string | null;
   created_at: string;
 }
 
@@ -775,7 +810,7 @@ export interface Database {
       };
       training_log_messages: {
         Row: TrainingLogMessage;
-        Insert: Omit<TrainingLogMessage, 'id' | 'created_at'>;
+        Insert: Omit<TrainingLogMessage, 'id' | 'created_at' | 'coach_read_at' | 'athlete_read_at'>;
         Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>>;
       };
       events: {

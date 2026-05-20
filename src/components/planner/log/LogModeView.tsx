@@ -27,6 +27,7 @@ import { LogDayCard } from './LogDayCard';
 import { LogWeekOverview } from './LogWeekOverview';
 import { CoachSetEditModal } from './CoachSetEditModal';
 import { WeekMetricsSettings } from './WeekMetricsSettings';
+import { ConfirmModal } from '../../log/ConfirmModal';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -51,99 +52,139 @@ export function LogModeView({
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [editingLogged, setEditingLogged] = useState<LoggedExerciseFull | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    variant: 'default' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      fetchWeekLog(athleteId, weekStart),
-      fetchWeekMetricsConfig(athleteId, weekStart),
-      fetchMetricDefinitions(athleteId),
-    ])
-      .then(([log, cfg, defs]) => {
+  /**
+   * Canonical data-fetch function. AbortSignal propagated to all three
+   * parallel fetches; if the component unmounts before all three resolve,
+   * the cancelled guard prevents stale state writes. (UF-25 / I1)
+   */
+  const loadAll = useCallback(
+    async (signal: AbortSignal) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [log, cfg, defs] = await Promise.all([
+          fetchWeekLog(athleteId, weekStart),
+          fetchWeekMetricsConfig(athleteId, weekStart),
+          fetchMetricDefinitions(athleteId),
+        ]);
+        if (signal.aborted) return;
         setWeekLog(log);
         setMetricsConfig(cfg);
         setMetricDefs(defs);
         setLoadedAt(new Date());
-      })
-      .catch(e => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [athleteId, weekStart]);
+      } catch (e) {
+        if (signal.aborted) return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [athleteId, weekStart],
+  );
+
+  /** Manual reload: used for settings changes and destructive mutations.
+   *  Comment posts use optimistic-merge instead. */
+  const reload = useCallback(() => {
+    const ctrl = new AbortController();
+    void loadAll(ctrl.signal);
+  }, [loadAll]);
+
+  /** Optimistically append a new message to a session's message list
+   *  so the coach sees their comment immediately. (UF-25 / I1) */
+  const appendMessage = useCallback(
+    (msg: import('../../../lib/database.types').TrainingLogMessage) => {
+      setWeekLog(prev => {
+        const dayIndex = Object.keys(prev).find(k => {
+          const day = prev[Number(k)];
+          return day.session?.id === msg.session_id;
+        });
+        if (!dayIndex) return prev;
+        const d = prev[Number(dayIndex)];
+        return {
+          ...prev,
+          [Number(dayIndex)]: {
+            ...d,
+            messages: [...d.messages, msg],
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const postSessionComment = useCallback(
     async (sessionId: string, body: string) => {
-      await addComment({
+      const msg = await addComment({
         sessionId,
         exerciseId: null,
         message: body,
         senderType: 'coach',
       });
-      reload();
+      appendMessage(msg);
     },
-    [reload],
+    [appendMessage],
   );
 
   const postExerciseComment = useCallback(
     async (sessionId: string, logExerciseId: string, body: string) => {
-      await addComment({
+      const msg = await addComment({
         sessionId,
         exerciseId: logExerciseId,
         message: body,
         senderType: 'coach',
       });
-      reload();
+      appendMessage(msg);
     },
-    [reload],
+    [appendMessage],
   );
 
   const onDeleteLogExercise = useCallback(
-    async (logExerciseId: string) => {
-      if (!window.confirm('Delete this logged exercise and all its sets?')) return;
-      await deleteLogExercise(logExerciseId);
-      reload();
+    (logExerciseId: string) => {
+      setPendingConfirm({
+        title: 'Delete this logged exercise?',
+        description: 'All sets for this exercise will also be removed.',
+        confirmLabel: 'Delete',
+        variant: 'danger',
+        onConfirm: async () => {
+          setPendingConfirm(null);
+          await deleteLogExercise(logExerciseId);
+          reload();
+        },
+      });
     },
     [reload],
   );
 
   const onDeleteSession = useCallback(
-    async (sessionId: string) => {
-      if (
-        !window.confirm(
-          'Delete this entire session, including all logged exercises and messages? This cannot be undone.',
-        )
-      )
-        return;
-      await deleteSession(sessionId);
-      reload();
+    (sessionId: string) => {
+      setPendingConfirm({
+        title: 'Delete this entire session?',
+        description: 'All logged exercises and messages for this day will be permanently removed. This cannot be undone.',
+        confirmLabel: 'Delete session',
+        variant: 'danger',
+        onConfirm: async () => {
+          setPendingConfirm(null);
+          await deleteSession(sessionId);
+          reload();
+        },
+      });
     },
     [reload],
   );
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      fetchWeekLog(athleteId, weekStart),
-      fetchWeekMetricsConfig(athleteId, weekStart),
-      fetchMetricDefinitions(athleteId),
-    ])
-      .then(([log, cfg, defs]) => {
-        if (cancelled) return;
-        setWeekLog(log);
-        setMetricsConfig(cfg);
-        setMetricDefs(defs);
-        setLoadedAt(new Date());
-      })
-      .catch(e => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [athleteId, weekStart]);
+    const ctrl = new AbortController();
+    void loadAll(ctrl.signal);
+    return () => ctrl.abort();
+  }, [loadAll]);
 
   const totalLogged = Object.values(weekLog).reduce(
     (sum, d) => sum + d.exercises.length, 0,
@@ -271,8 +312,25 @@ export function LogModeView({
           loggedSets={editingLogged.sets}
           onClose={() => setEditingLogged(null)}
           onChanged={reload}
+          plannedExercise={
+            editingLogged.log.planned_exercise_id
+              ? Object.values(plannedExercises)
+                  .flat()
+                  .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
+              : null
+          }
         />
       )}
+
+      <ConfirmModal
+        open={pendingConfirm != null}
+        title={pendingConfirm?.title ?? ''}
+        description={pendingConfirm?.description}
+        confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+        variant={pendingConfirm?.variant ?? 'default'}
+        onConfirm={() => { if (pendingConfirm) void pendingConfirm.onConfirm(); }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

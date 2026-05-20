@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Send } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
+import { formatTimestamp } from '../../../lib/logFormatUtils';
 
 interface LogCommentsThreadProps {
   messages: TrainingLogMessage[];
@@ -27,16 +28,6 @@ const SENDER_CLASS: Record<string, string> = {
   athlete: 'bg-gray-100 text-gray-700',
   coach: 'bg-blue-50 text-blue-800',
 };
-
-function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 export function LogCommentsThread({ messages, compact, onPost }: LogCommentsThreadProps) {
   const [draft, setDraft] = useState('');

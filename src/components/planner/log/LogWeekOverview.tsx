@@ -212,7 +212,7 @@ export function LogWeekOverview({
           ratio={pct(performedAgg.tonnage, plannedAgg.tonnage)}
         />
         <StatCell
-          label="Avg / K"
+          label="Avg kg/rep"
           performed={performedAvg > 0 ? `${performedAvg.toFixed(1)} kg` : '—'}
           planned={plannedAvg > 0 ? `${plannedAvg.toFixed(1)} kg` : '—'}
           ratio={pct(performedAvg, plannedAvg)}
@@ -320,16 +320,21 @@ const PILLAR_LABEL: Record<typeof PILLARS[number], string> = {
 };
 
 /** Eleiko 1-3 colour bands per pillar value. Pale fills keep the table
- *  legible while making "low score" instantly visible. */
-function pillarCellClass(v: number | null): string {
+ *  legible while making "low score" instantly visible.
+ *  'nr' = session exists but pillar was not entered (amber tint to
+ *  distinguish from no session at all, which renders as '—' in gray). */
+function pillarCellClass(v: number | null | 'nr'): string {
+  if (v === 'nr') return 'bg-amber-50 text-amber-500';
   if (v == null || v <= 0) return 'bg-gray-50 text-gray-300';
   if (v === 1) return 'bg-red-100 text-red-800';
   if (v === 2) return 'bg-amber-100 text-amber-800';
   return 'bg-emerald-100 text-emerald-800';
 }
 
-/** Eleiko 4-12 total band — colours the Total row. */
-function totalCellClass(v: number | null): string {
+/** Eleiko 4-12 total band — colours the Total row.
+ *  'nr' = session exists but total not filled (amber tint). */
+function totalCellClass(v: number | null | 'nr'): string {
+  if (v === 'nr') return 'bg-amber-50 text-amber-500';
   if (v == null || v <= 0) return 'bg-gray-50 text-gray-300';
   if (v <= 6) return 'bg-red-100 text-red-800 font-semibold';
   if (v <= 9) return 'bg-amber-100 text-amber-800 font-semibold';
@@ -348,22 +353,35 @@ function RawTable({
   columns: DayColumn[];
   weekLog: Record<number, DayLog>;
 }) {
-  const pillarValues: Record<typeof PILLARS[number], Array<number | null>> = {
+  // 'nr' = session exists but pillar not entered; null = no session at all.
+  const pillarValues: Record<typeof PILLARS[number], Array<number | null | 'nr'>> = {
     sleep: [],
     physical: [],
     mood: [],
     nutrition: [],
   };
-  const totals: Array<number | null> = [];
+  const totals: Array<number | null | 'nr'> = [];
 
   columns.forEach(col => {
     const s = weekLog[col.dayIndex]?.session;
     PILLARS.forEach(key => {
       const field = ('raw_' + key) as 'raw_sleep' | 'raw_physical' | 'raw_mood' | 'raw_nutrition';
       const v = s?.[field];
-      pillarValues[key].push(v == null || v === 0 ? null : v);
+      if (s == null) {
+        pillarValues[key].push(null);
+      } else if (v == null || v === 0) {
+        pillarValues[key].push('nr');
+      } else {
+        pillarValues[key].push(v);
+      }
     });
-    totals.push(s?.raw_total == null || s.raw_total === 0 ? null : s.raw_total);
+    if (s == null) {
+      totals.push(null);
+    } else if (s.raw_total == null || s.raw_total === 0) {
+      totals.push('nr');
+    } else {
+      totals.push(s.raw_total);
+    }
   });
 
   return (
@@ -390,7 +408,7 @@ function RawTable({
         </thead>
         <tbody>
           {PILLARS.map(key => {
-            const nonNull = pillarValues[key].filter((v): v is number => v != null);
+            const nonNull = pillarValues[key].filter((v): v is number => typeof v === 'number');
             const a = avg(nonNull);
             return (
               <tr key={key} className="border-t border-gray-100">
@@ -399,9 +417,9 @@ function RawTable({
                   <td
                     key={i}
                     className={`px-1 py-1 text-center tabular-nums ${pillarCellClass(v)}`}
-                    title={`${PILLAR_LABEL[key]}: ${v ?? '—'}`}
+                    title={`${PILLAR_LABEL[key]}: ${v === 'nr' ? 'not rated' : (v ?? 'no session')}`}
                   >
-                    {v ?? '—'}
+                    {v === 'nr' ? 'nr' : (v ?? '—')}
                   </td>
                 ))}
                 <td className={`px-2 py-1 text-center tabular-nums ${
@@ -426,14 +444,14 @@ function RawTable({
               <td
                 key={i}
                 className={`px-1 py-1 text-center tabular-nums ${totalCellClass(v)}`}
-                title={`Total: ${v ?? '—'} / 12`}
+                title={`Total: ${v === 'nr' ? 'not rated' : (v ?? 'no session')} / 12`}
               >
-                {v ?? '—'}
+                {v === 'nr' ? 'nr' : (v ?? '—')}
               </td>
             ))}
             <td className="px-2 py-1 text-center tabular-nums text-gray-700 font-semibold">
               {(() => {
-                const ts = totals.filter((v): v is number => v != null);
+                const ts = totals.filter((v): v is number => typeof v === 'number');
                 return ts.length ? avg(ts)!.toFixed(1) : '—';
               })()}
             </td>

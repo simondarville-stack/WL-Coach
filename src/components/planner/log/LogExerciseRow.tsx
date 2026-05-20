@@ -17,30 +17,29 @@ import type {
 import {
   computeDelta,
   sumPerformedReps,
+  getDeltaBorderClass,
+  getDeltaChipClass,
   type DeltaState,
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
 import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil, Video, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
-import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../plannerUtils';
-import { ImageLightbox } from '../ImageLightbox';
+import { getSentinelType } from '../sentinelUtils';
+import { SentinelDisplay } from '../SentinelDisplay';
 import { LogCommentsThread } from './LogCommentsThread';
 
-const DELTA_BORDER: Record<DeltaState, string> = {
-  matched: 'border-l-emerald-500',
-  amber: 'border-l-amber-500',
-  red: 'border-l-red-500',
-  pending: 'border-l-gray-300',
-};
-
+// Matched intentionally has no tint: the DoneChip already communicates
+// "this is completed and matches the plan", so the row stays neutral.
+// Amber/red still tint so deviations remain visually obvious when scanning
+// a week of sessions.
 const DELTA_BG: Record<DeltaState, string> = {
-  matched: 'bg-emerald-50/40',
+  matched: '',
   amber: 'bg-amber-50/40',
   red: 'bg-red-50/40',
   pending: '',
 };
-
 
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
@@ -54,9 +53,23 @@ interface LogExerciseRowProps {
 }
 
 export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
-  const delta = computeDelta(planned?.summary_total_reps ?? null, performedReps, !!logged);
+
+  // For free-text, GPP, and other non-quantified units, computeDelta would
+  // see performedReps=0 vs a non-null planned total and emit 'red'. Guard
+  // by passing null for both when the unit cannot produce a meaningful ratio.
+  // (UF-04)
+  const isUnquantified =
+    planned != null &&
+    (planned.exercise.unit === 'free_text' ||
+      planned.exercise.unit === 'other' ||
+      planned.exercise.unit === 'free_text_reps' ||
+      getSentinelType(planned.exercise.exercise_code) === 'gpp');
+  const delta = computeDelta(
+    isUnquantified ? null : (planned?.summary_total_reps ?? null),
+    isUnquantified ? 0 : performedReps,
+    !!logged,
+  );
 
   const exerciseMessages = logged
     ? sessionMessages.filter(m => m.exercise_id === logged.log.id)
@@ -88,110 +101,40 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     return (
       <div className="flex border-l-4 border-l-gray-300">
         <div className="flex-1 px-3 py-2 min-w-0">
-          <p
-            style={{
-              fontSize: 'var(--text-caption)',
-              color: 'var(--color-text-primary)',
-              fontStyle: 'italic',
-              whiteSpace: 'pre-wrap',
-              lineHeight: 1.4,
-              margin: 0,
-            }}
-          >
-            {planned?.notes || '(empty note)'}
-          </p>
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
       </div>
     );
   }
   if (sentinelType === 'image') {
-    const url = planned?.notes?.trim();
-    const description = planned?.metadata?.description?.trim();
     return (
       <div className="flex border-l-4 border-l-pink-400">
-        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ImageIcon size={14} style={{ color: '#EC4899', flexShrink: 0 }} />
-            {url ? (
-              <button
-                type="button"
-                onClick={() => setLightboxSrc(url)}
-                title="Click to enlarge"
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'zoom-in', minWidth: 0 }}
-              >
-                <img
-                  src={url}
-                  alt=""
-                  style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }}
-                  onError={e => { e.currentTarget.style.display = 'none'; }}
-                />
-                <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>Click to enlarge</span>
-              </button>
-            ) : (
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no image)</p>
-            )}
-          </div>
-          {description && (
-            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-              {description}
-            </p>
-          )}
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
-        {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       </div>
     );
   }
   if (sentinelType === 'video') {
-    const url = planned?.notes?.trim();
-    const description = planned?.metadata?.description?.trim();
-    if (!url) {
-      return (
-        <div className="flex border-l-4 border-l-indigo-400">
-          <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>(no video link)</p>
-            </div>
-            {description && (
-              <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-                {description}
-              </p>
-            )}
-          </div>
-        </div>
-      );
-    }
-    const thumb = isDirectVideoFile(url) ? null : getYouTubeThumbnail(url);
     return (
       <div className="flex border-l-4 border-l-indigo-400">
-        <div className="flex-1 px-3 py-2 min-w-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Video size={14} style={{ color: '#6366F1', flexShrink: 0 }} />
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Click to open video"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6366F1', textDecoration: 'none', minWidth: 0 }}
-            >
-              {thumb ? (
-                <img src={thumb} alt="" style={{ height: 36, width: 56, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--color-border-secondary)', flexShrink: 0 }} />
-              ) : (
-                <span style={{ height: 36, width: 56, borderRadius: 4, border: '1px solid var(--color-border-secondary)', background: 'var(--color-bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Video size={16} />
-                </span>
-              )}
-              <span style={{ fontSize: 'var(--text-caption)', display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                <span>Click to open</span>
-              </span>
-            </a>
-          </div>
-          {description && (
-            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.4, margin: 0 }}>
-              {description}
-            </p>
-          )}
+        <div className="flex-1 px-3 py-2 min-w-0">
+          <SentinelDisplay
+            exerciseCode={planned?.exercise_code}
+            notes={planned?.notes}
+            metadata={planned?.metadata}
+            theme="light"
+          />
         </div>
       </div>
     );
@@ -199,11 +142,12 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
   if (sentinelType === 'gpp') {
     const plannedGpp = planned?.metadata?.gpp ?? null;
     const athleteGpp = logged?.log.metadata?.gpp ?? null;
-    // Athlete state wins if present; coach sees what the athlete logged
-    // (with their per-row done flags), otherwise falls back to planned.
-    const display = athleteGpp ?? plannedGpp;
-    const rows = display?.rows ?? [];
-    const doneCount = rows.filter(r => r.done).length;
+    // When the athlete has logged GPP data, show both planned and performed
+    // side-by-side so the coach can see what was changed. (UF-05)
+    const hasAthleteData = athleteGpp != null;
+    const displayRows = (athleteGpp ?? plannedGpp)?.rows ?? [];
+    const plannedRows = plannedGpp?.rows ?? [];
+    const doneCount = displayRows.filter(r => r.done).length;
     return (
       <div className="flex border-l-4 border-l-emerald-400">
         <div className="flex-1 px-3 py-2 min-w-0">
@@ -211,10 +155,13 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
               {plannedGpp?.title || 'GPP'}
             </span>
-            {rows.length > 0 && (
+            {displayRows.length > 0 && (
               <span className="text-[10px] text-gray-500">
-                {doneCount}/{rows.length} done
+                {doneCount}/{displayRows.length} done
               </span>
+            )}
+            {hasAthleteData && (
+              <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
             )}
           </div>
           {plannedGpp?.description && (
@@ -222,7 +169,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
               {plannedGpp.description}
             </p>
           )}
-          {rows.length === 0 ? (
+          {displayRows.length === 0 ? (
             <p className="text-[10px] text-gray-400 italic">No rows yet</p>
           ) : (
             <table className="w-full text-[11px] border-collapse">
@@ -231,20 +178,36 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
                   <th className="text-left px-1 py-0.5">Exercise</th>
                   <th className="text-center px-1 py-0.5 w-12">Reps</th>
                   <th className="text-center px-1 py-0.5 w-10">Sets</th>
-                  <th className="text-left px-1 py-0.5 w-14">Load</th>
+                  <th className={`text-left px-1 py-0.5 ${hasAthleteData ? 'w-28' : 'w-14'}`}>Load</th>
                   <th className="text-center px-1 py-0.5 w-8">✓</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
-                  <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
-                    <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
-                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
-                    <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
-                    <td className="px-1 py-0.5 text-gray-700">{row.load || '—'}</td>
-                    <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
-                  </tr>
-                ))}
+                {displayRows.map((row, i) => {
+                  const plannedRow = plannedRows[i];
+                  const loadChanged =
+                    hasAthleteData &&
+                    plannedRow != null &&
+                    plannedRow.load !== row.load;
+                  return (
+                    <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
+                      <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
+                      <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
+                      <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
+                      <td className="px-1 py-0.5 text-gray-700">
+                        {loadChanged ? (
+                          <span className="flex flex-col gap-0 leading-tight">
+                            <span className="text-gray-400 line-through text-[9px]">{plannedRow.load || '—'}</span>
+                            <span className="text-blue-700 font-medium">{row.load || '—'}</span>
+                          </span>
+                        ) : (
+                          row.load || '—'
+                        )}
+                      </td>
+                      <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -254,7 +217,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
   }
 
   return (
-    <div className={`flex border-l-4 ${DELTA_BORDER[delta.state]} ${DELTA_BG[delta.state]}`}>
+    <div className={`flex border-l-4 ${getDeltaBorderClass(delta.state)} ${DELTA_BG[delta.state]}`}>
       {accentColor && (
         <div
           className="w-0.5 flex-shrink-0"
@@ -284,8 +247,14 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             )}
           </div>
           <div className="flex items-center gap-2">
+            {exerciseMessages.length > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-600 font-medium" title={`${exerciseMessages.length} comment${exerciseMessages.length > 1 ? 's' : ''}`}>
+                <MessageSquare size={9} />
+                {exerciseMessages.length}
+              </span>
+            )}
             {logged && logged.log.status === 'completed' && (
-              <span className="text-[10px] text-emerald-700 font-semibold">Done</span>
+              <DoneChip variant="light" />
             )}
             {logged && onEdit && (
               <button
@@ -337,13 +306,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             <LoggedStackedNotation sets={logged.sets} />
             {planned && delta.state !== 'pending' && (
               <span
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                  delta.state === 'matched'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : delta.state === 'amber'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${getDeltaChipClass(delta.state)}`}
               >
                 {Math.round(delta.ratio * 100)}%
               </span>

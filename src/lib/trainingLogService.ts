@@ -232,8 +232,14 @@ export async function fetchAthleteDay(
   athleteId: string,
   weekStart: string,
   dayIndex: number,
+  /** Optional pre-resolved weekPlanId from a previous fetchWeekOverview call.
+   *  When provided, the 3-step resolution chain is skipped, saving 2–3 round
+   *  trips on mobile. (UF-44 / H4) */
+  knownWeekPlanId?: string | null,
 ): Promise<AthleteDayData> {
-  const { weekPlanId } = await resolveAthleteWeekPlanId(athleteId, weekStart);
+  const weekPlanId = knownWeekPlanId !== undefined
+    ? knownWeekPlanId
+    : (await resolveAthleteWeekPlanId(athleteId, weekStart)).weekPlanId;
 
   let planned: PlannedExerciseFull[] = [];
   if (weekPlanId) {
@@ -310,7 +316,9 @@ export interface WeekDayOverview {
   dayIndex: number;
   /** Resolved label from day_labels; falls back to "Day N". */
   label: string;
-  /** Planned weekday (1 = Mon, …, 7 = Sun) from day_schedule, or null. */
+  /** Planned weekday (0 = Mon, …, 6 = Sun) from day_schedule, or null.
+   *  Convention matches migration 20260405_day_schedule.sql and the coach
+   *  planner's WEEKDAY_SHORT array. (Q-13) */
   weekday: number | null;
   /** Number of planned exercises in this slot. */
   plannedCount: number;
@@ -504,12 +512,13 @@ export type SessionPatch = Partial<
     | 'raw_mood'
     | 'raw_nutrition'
     | 'raw_total'
-    | 'raw_guidance'
     | 'session_rpe'
     | 'bodyweight_kg'
     | 'duration_minutes'
     | 'started_at'
     | 'completed_at'
+    | 'vas_score'
+    | 'custom_metrics'
   >
 >;
 
@@ -519,6 +528,7 @@ export async function updateSession(
 ): Promise<TrainingLogSession> {
   const { data, error } = await supabase
     .from('training_log_sessions')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase client types lag; safe cast. Remove after running supabase gen types.
     .update(patch as never)
     .eq('id', sessionId)
     .select()
@@ -578,6 +588,7 @@ export async function updateLogExercise(
 ): Promise<TrainingLogExercise> {
   const { data, error } = await supabase
     .from('training_log_exercises')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase client types lag; safe cast.
     .update(patch as never)
     .eq('id', logExerciseId)
     .select()
@@ -684,51 +695,38 @@ export interface SetPatch {
   plannedReps?: number | null;
   performedLoad?: number | null;
   performedReps?: number | null;
+  /** Free-text performed value for non-quantified units. Stored in
+   *  training_log_sets.performed_text (separate from notes). See UF-43. */
+  performedText?: string | null;
   rpe?: number | null;
   status?: 'pending' | 'completed' | 'skipped' | 'failed';
   notes?: string | null;
 }
 
 /**
- * Upsert one logged set. Finds (log_exercise_id, set_number) and updates
- * if it exists, otherwise inserts. No reliance on a DB unique constraint.
+ * Upsert one logged set via INSERT ... ON CONFLICT (log_exercise_id, set_number).
+ * Requires migration 20260520000002_add_set_unique_constraint to be applied.
+ * Falls back gracefully if the constraint isn't yet present (Supabase upsert
+ * semantics: the ON CONFLICT clause must match the constraint column list).
  */
 export async function upsertLoggedSet(patch: SetPatch): Promise<TrainingLogSet> {
-  const { data: existing, error: fErr } = await supabase
-    .from('training_log_sets')
-    .select('*')
-    .eq('log_exercise_id', patch.logExerciseId)
-    .eq('set_number', patch.setNumber)
-    .maybeSingle();
-  if (fErr) throw fErr;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
-  const row: any = {
+  const row = {
     log_exercise_id: patch.logExerciseId,
     set_number: patch.setNumber,
     planned_load: patch.plannedLoad ?? null,
     planned_reps: patch.plannedReps ?? null,
     performed_load: patch.performedLoad ?? null,
     performed_reps: patch.performedReps ?? null,
+    performed_text: patch.performedText ?? null,
     rpe: patch.rpe ?? null,
     status: patch.status ?? 'pending',
     notes: patch.notes ?? null,
   };
 
-  if (existing) {
-    const { data, error } = await supabase
-      .from('training_log_sets')
-      .update(row as never)
-      .eq('id', (existing as TrainingLogSet).id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data as TrainingLogSet;
-  }
-
   const { data, error } = await supabase
     .from('training_log_sets')
-    .insert(row)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase client types lag; safe cast.
+    .upsert(row as any, { onConflict: 'log_exercise_id,set_number' })
     .select()
     .single();
   if (error) throw error;
@@ -981,6 +979,37 @@ export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessa
     .single();
   if (error) throw error;
   return data as TrainingLogMessage;
+}
+
+/**
+ * Mark all messages in a session (or, when exerciseId is given, for one
+ * exercise) as read by the viewer's role. Sets coach_read_at or
+ * athlete_read_at to now() on rows where it is currently null and the
+ * sender is the other party.
+ *
+ * Requires migration 20260520000005_add_message_read_tracking to be applied.
+ */
+export async function markMessagesRead(
+  sessionId: string,
+  exerciseId: string | null,
+  role: 'coach' | 'athlete',
+): Promise<void> {
+  const column = role === 'coach' ? 'coach_read_at' : 'athlete_read_at';
+  const otherSender: 'athlete' | 'coach' = role === 'coach' ? 'athlete' : 'coach';
+  const now = new Date().toISOString();
+  // Only mark messages from the other party that this viewer hasn't read yet.
+  let q = supabase
+    .from('training_log_messages')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase client types lag; safe cast.
+    .update({ [column]: now } as never)
+    .eq('session_id', sessionId)
+    .eq('sender_type', otherSender)
+    .is(column, null);
+  if (exerciseId != null) {
+    q = q.eq('exercise_id', exerciseId);
+  }
+  const { error } = await q;
+  if (error) throw error;
 }
 
 // ─── Profile-screen reads ─────────────────────────────────────────────────

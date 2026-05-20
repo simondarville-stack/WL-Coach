@@ -30,16 +30,20 @@ import {
   setLogExerciseGppSection,
   setSessionCustomMetric,
   setSubstitutedExercise,
+  markMessagesRead,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
 } from '../../../lib/trainingLogService';
 import type {
   CustomMetricEntry,
+  ExerciseStub,
   GppSection,
   TrainingLogSession,
   TrainingLogSet,
 } from '../../../lib/database.types';
+import { isExerciseDone } from '../../../lib/trainingLogModel';
+import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -50,14 +54,17 @@ import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
 import { DayChipRow } from '../components/DayChipRow';
+import { ConfirmModal } from '../../../components/log/ConfirmModal';
+import { UndoToast } from '../../../components/log/UndoToast';
 
 function todayISO(): string {
   return toISO(new Date());
 }
 
+/** Return today's weekday in DB convention: 0=Mon, 1=Tue, ..., 6=Sun.
+ *  JS getDay() uses 0=Sun,1=Mon..6=Sat; (jsDay+6)%7 converts. (Q-13) */
 function todayDayIndex(): number {
-  const day = new Date().getDay();
-  return day === 0 ? 7 : day;
+  return (new Date().getDay() + 6) % 7;
 }
 
 /**
@@ -101,6 +108,23 @@ export function TodayScreen() {
   /** When set, the exercise picker opens in substitution mode for a
    *  specific planned exercise. */
   const [substituting, setSubstituting] = useState<PlannedExerciseFull | null>(null);
+
+  // ─── Confirmation modal and undo-toast state (UF-12) ─────────────────────
+  /** Pending destructive action awaiting in-app confirmation. */
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    title: string;
+    description?: string;
+    confirmLabel: string;
+    variant: 'default' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  /** Pending single-set deletion awaiting undo window. The setId is the
+   *  DB id; we hold it until the toast dismisses and then commit the delete. */
+  const [pendingSetDelete, setPendingSetDelete] = useState<{
+    setId: string;
+    /** Optimistically-removed set so we can restore it on undo. */
+    set: TrainingLogSet;
+  } | null>(null);
   /**
    * 'preview' renders the session like the coach's print view, no
    * inputs. 'edit' is the full logging UI. Defaults to 'preview';
@@ -133,6 +157,11 @@ export function TodayScreen() {
     }
   }, [athlete, weekStart]);
 
+  // Keep a ref so loadDay can read the latest weekPlanId without being
+  // in the dependency array (which would cause double-loads on overview change).
+  const overviewRef = useRef<WeekOverview | null>(null);
+  overviewRef.current = overview;
+
   const loadDay = useCallback(async () => {
     if (!athlete || dayIndex == null) {
       setData(null);
@@ -141,7 +170,14 @@ export function TodayScreen() {
     setLoadingDay(true);
     setError(null);
     try {
-      const d = await fetchAthleteDay(athlete.id, weekStart, dayIndex);
+      // Pass the pre-resolved weekPlanId when available to skip the 3-step
+      // resolution chain in fetchAthleteDay. (UF-44 / H4)
+      const d = await fetchAthleteDay(
+        athlete.id,
+        weekStart,
+        dayIndex,
+        overviewRef.current?.weekPlanId,
+      );
       setData(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -152,6 +188,15 @@ export function TodayScreen() {
 
   useEffect(() => { void loadWeek(); }, [loadWeek]);
   useEffect(() => { void loadDay(); }, [loadDay]);
+
+  // Mark all session messages read when athlete enters edit mode. (UF-10 / E3)
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    const sessionId = data?.log?.session?.id;
+    if (!sessionId) return;
+    // Fire-and-forget: read tracking is best-effort; errors are non-fatal.
+    markMessagesRead(sessionId, null, 'athlete').catch(() => undefined);
+  }, [mode, data?.log?.session?.id]);
 
   // Consume URL params once so subsequent in-screen navigation doesn't
   // fight with stale ?week/slot from the Week screen tap-through.
@@ -172,14 +217,6 @@ export function TodayScreen() {
     }
     setMode('preview');
   }, [dayIndex, weekStart]);
-
-  const loggedSetsByPlannedId = useMemo(() => {
-    const m = new Map<string, TrainingLogSet[]>();
-    data?.log?.exercises.forEach(le => {
-      if (le.log.planned_exercise_id) m.set(le.log.planned_exercise_id, le.sets);
-    });
-    return m;
-  }, [data]);
 
   const offPlanLogged = useMemo(
     () => (data?.log?.exercises ?? []).filter(le => !le.log.planned_exercise_id),
@@ -220,8 +257,20 @@ export function TodayScreen() {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      await loadDay();
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      // Only reload day state when the error might indicate a stale or
+      // inconsistent server state. Network-level failures (no connectivity,
+      // request aborted) do not invalidate local state, so skip the reload
+      // to avoid a second failure spinning the loading indicator. (E-21)
+      const isTransient =
+        msg.includes('Failed to fetch') ||
+        msg.includes('NetworkError') ||
+        msg.includes('network') ||
+        msg.includes('AbortError');
+      if (!isTransient) {
+        await loadDay();
+      }
     } finally {
       setSaving(false);
     }
@@ -366,8 +415,29 @@ export function TodayScreen() {
         notes: patch.performedText ?? null,
       });
       mergeLoggedSet(savedSet);
-      // No exercise-level auto-bump; binary states only — exercise
-      // status moves to 'completed' explicitly via Mark complete.
+      // Auto-promote exercise to 'completed' when all planned sets reach
+      // a terminal state. Build the projected set list from current data
+      // and the newly-saved set to avoid stale-closure issues. (UF-02)
+      const currentSets = data?.log?.exercises.find(e => e.log.id === logEx.id)?.sets ?? [];
+      const mergedSets = (() => {
+        const idx = currentSets.findIndex(s => s.id === savedSet.id);
+        return idx >= 0
+          ? currentSets.map(s => (s.id === savedSet.id ? savedSet : s))
+          : [...currentSets, savedSet].sort((a, b) => a.set_number - b.set_number);
+      })();
+      const currentLogEx = data?.log?.exercises.find(e => e.log.id === logEx.id);
+      if (currentLogEx && currentLogEx.log.status !== 'completed') {
+        const projectedLe = { ...currentLogEx, sets: mergedSets };
+        const plannedCount = expectedPlannedSetCount(planned);
+        if (isExerciseDone(projectedLe, plannedCount)) {
+          const promoted = await updateLogExercise(logEx.id, {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            started_at: currentLogEx.log.started_at ?? new Date().toISOString(),
+          });
+          mergeLogExercise(promoted, planned.exerciseDef);
+        }
+      }
     });
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>
@@ -439,24 +509,47 @@ export function TodayScreen() {
     });
   };
 
-  const handleDeleteSet = async (setId: string) => {
-    if (!window.confirm('Delete this set?')) return;
+  const handlePostExerciseComment = (logExerciseId: string) => async (body: string) => {
     await runSave(async () => {
-      await deleteLoggedSet(setId);
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const msg = await addComment({
+        sessionId: session.id,
+        exerciseId: logExerciseId,
+        message: body,
+        senderType: 'athlete',
+      });
       setData(prev => {
         if (!prev?.log) return prev;
         return {
           ...prev,
-          log: {
-            ...prev.log,
-            exercises: prev.log.exercises.map(le => ({
-              ...le,
-              sets: le.sets.filter(s => s.id !== setId),
-            })),
-          },
+          log: { ...prev.log, messages: [...prev.log.messages, msg] },
         };
       });
     });
+  };
+
+  const handleDeleteSet = (setId: string) => {
+    // Find the set so we can restore it on undo.
+    const setRow = data?.log?.exercises
+      .flatMap(le => le.sets)
+      .find(s => s.id === setId);
+    if (!setRow) return;
+    // Optimistically remove from UI immediately.
+    setData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le => ({
+            ...le,
+            sets: le.sets.filter(s => s.id !== setId),
+          })),
+        },
+      };
+    });
+    setPendingSetDelete({ setId, set: setRow });
   };
 
   /** Persist athlete-side GPP edits + done state. */
@@ -477,52 +570,70 @@ export function TodayScreen() {
    * append the set number into metadata.removed_set_numbers.
    * ExerciseLogCard filters its rendered rows by that list.
    */
-  const handleRemovePlannedSet = (planned: PlannedExerciseFull) => async (setNumber: number) => {
-    if (!window.confirm('Remove this set from your plan?')) return;
-    await runSave(async () => {
-      const session = await getOrCreateSession();
-      mergeSession(session);
-      const logEx = await ensureLogEx(planned, session.id);
-      mergeLogExercise(logEx, planned.exerciseDef);
-      const updated = await removePlannedSet(logEx.id, setNumber);
-      mergeLogExercise(updated, planned.exerciseDef);
+  const handleRemovePlannedSet = (planned: PlannedExerciseFull) => (setNumber: number) => {
+    setPendingConfirm({
+      title: 'Remove this set?',
+      description: 'The set will be hidden from your plan for this session.',
+      confirmLabel: 'Remove',
+      variant: 'default',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          const session = await getOrCreateSession();
+          mergeSession(session);
+          const logEx = await ensureLogEx(planned, session.id);
+          mergeLogExercise(logEx, planned.exerciseDef);
+          const updated = await removePlannedSet(logEx.id, setNumber);
+          mergeLogExercise(updated, planned.exerciseDef);
+        });
+      },
     });
   };
 
-  const handleDeleteOffPlanExercise = async (logExerciseId: string) => {
-    if (!window.confirm('Remove this exercise from your log?')) return;
-    await runSave(async () => {
-      await deleteLogExercise(logExerciseId);
-      setData(prev => {
-        if (!prev?.log) return prev;
-        return {
-          ...prev,
-          log: {
-            ...prev.log,
-            exercises: prev.log.exercises.filter(le => le.log.id !== logExerciseId),
-          },
-        };
-      });
+  const handleDeleteOffPlanExercise = (logExerciseId: string) => {
+    setPendingConfirm({
+      title: 'Remove this exercise?',
+      description: 'This will remove the exercise and all its logged sets.',
+      confirmLabel: 'Remove',
+      variant: 'danger',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          await deleteLogExercise(logExerciseId);
+          setData(prev => {
+            if (!prev?.log) return prev;
+            return {
+              ...prev,
+              log: {
+                ...prev.log,
+                exercises: prev.log.exercises.filter(le => le.log.id !== logExerciseId),
+              },
+            };
+          });
+        });
+      },
     });
   };
 
-  const handleDeleteBonusDay = async () => {
+  const handleDeleteBonusDay = () => {
     if (!data?.log?.session) return;
-    if (
-      !window.confirm(
-        'Delete this entire training day, including all logged exercises? This cannot be undone.',
-      )
-    )
-      return;
     const sessionId = data.log.session.id;
-    await runSave(async () => {
-      await deleteSession(sessionId);
-      // Reload week + pick a new selection.
-      await loadWeek();
-      setDayIndex(prev =>
-        overview?.days.find(d => d.dayIndex !== prev)?.dayIndex ?? null,
-      );
-      setMode('preview');
+    setPendingConfirm({
+      title: 'Delete this training day?',
+      description: 'All logged exercises and sets for this day will be permanently removed. This cannot be undone.',
+      confirmLabel: 'Delete day',
+      variant: 'danger',
+      onConfirm: async () => {
+        setPendingConfirm(null);
+        await runSave(async () => {
+          await deleteSession(sessionId);
+          await loadWeek();
+          setDayIndex(prev =>
+            overview?.days.find(d => d.dayIndex !== prev)?.dayIndex ?? null,
+          );
+          setMode('preview');
+        });
+      },
     });
   };
 
@@ -540,8 +651,7 @@ export function TodayScreen() {
       // surfaces without a full reload.
       setData(prev => {
         if (!prev?.log) return prev;
-        const partial = { id: pick.id, name: pick.name, color: pick.color } as unknown as
-          import('../../../lib/database.types').Exercise;
+        const partial: ExerciseStub = { id: pick.id, name: pick.name, color: pick.color };
         return {
           ...prev,
           log: {
@@ -563,10 +673,9 @@ export function TodayScreen() {
         sessionId: session.id,
         exerciseId: ex.id,
       });
-      // The picker only carries id/name/color; cast a partial Exercise
-      // since OffPlanExerciseCard only reads those two fields.
-      const partial = { id: ex.id, name: ex.name, color: ex.color } as unknown as
-        import('../../../lib/database.types').Exercise;
+      // The picker only carries id/name/color; ExerciseStub is the
+      // proper type for this partial object until a full reload.
+      const partial: ExerciseStub = { id: ex.id, name: ex.name, color: ex.color };
       mergeLogExercise(newLogEx, partial);
     });
   };
@@ -633,6 +742,7 @@ export function TodayScreen() {
               days={overview.days}
               selectedDayIndex={dayIndex}
               onSelect={setDayIndex}
+              disabled={saving}
             />
             {overview.planSource === 'group' && (
               <p className="text-[10px] text-gray-500 italic px-1">Showing your group's plan.</p>
@@ -668,12 +778,7 @@ export function TodayScreen() {
           />
         ) : data && dayIndex != null ? (
           <>
-            <div className="flex items-center justify-between gap-2">
-              <PerformedOnField
-                date={performedOnDate}
-                sessionExists={!!data.log?.session}
-                onChange={handlePatchPerformedOn}
-              />
+            <div className="flex justify-end">
               <button
                 onClick={() => setMode('preview')}
                 className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-2 rounded-md border border-gray-800 hover:border-gray-600"
@@ -702,6 +807,9 @@ export function TodayScreen() {
               onPatchCustomMetric={handlePatchCustomMetric}
               onPatchNotes={handlePatchNotes}
               saving={saving}
+              performedOnDate={performedOnDate}
+              sessionExists={!!data.log?.session}
+              onPatchPerformedOn={handlePatchPerformedOn}
             />
 
             <div className="space-y-2">
@@ -715,12 +823,18 @@ export function TodayScreen() {
                   const le = data.log?.exercises.find(e => e.log.planned_exercise_id === p.exercise.id);
                   const loggedExercise = le?.log ?? null;
                   const performed = le?.exercise ?? null;
+                  // Exercise-scoped messages: filter by the log_exercise id.
+                  // Remove the !m.exercise_id guard so athlete sees all messages
+                  // including exercise-scoped coach replies. (UF-08)
+                  const exMessages = le
+                    ? (data.log?.messages ?? []).filter(m => m.exercise_id === le.log.id)
+                    : [];
                   return (
                     <ExerciseLogCard
                       key={p.exercise.id}
                       planned={p}
                       loggedExercise={loggedExercise}
-                      loggedSets={loggedSetsByPlannedId.get(p.exercise.id) ?? []}
+                      loggedSets={le?.sets ?? []}
                       onSaveSet={handleSaveSet(p)}
                       onLogAsPrescribed={handleLogAsPrescribed(p)}
                       onUpdateNotes={handleUpdateExerciseNotes(p)}
@@ -730,22 +844,32 @@ export function TodayScreen() {
                       onSaveGppSection={handleSaveGppSection(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
+                      exerciseMessages={exMessages}
+                      onPostExerciseComment={le ? handlePostExerciseComment(le.log.id) : undefined}
+                      globalSaving={saving}
                     />
                   );
                 })
               )}
 
-              {offPlanLogged.map(le => (
-                <OffPlanExerciseCard
-                  key={le.log.id}
-                  logExercise={le.log}
-                  exercise={le.exercise}
-                  loggedSets={le.sets}
-                  onSaveSet={handleSaveOffPlanSet(le.log.id)}
-                  onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
-                  onDeleteSet={handleDeleteSet}
-                />
-              ))}
+              {offPlanLogged.map(le => {
+                const exMessages = (data.log?.messages ?? []).filter(
+                  m => m.exercise_id === le.log.id,
+                );
+                return (
+                  <OffPlanExerciseCard
+                    key={le.log.id}
+                    logExercise={le.log}
+                    exercise={le.exercise}
+                    loggedSets={le.sets}
+                    onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                    onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                    onDeleteSet={handleDeleteSet}
+                    exerciseMessages={exMessages}
+                    onPostExerciseComment={handlePostExerciseComment(le.log.id)}
+                  />
+                );
+              })}
 
               <button
                 onClick={() => setShowPicker(true)}
@@ -810,35 +934,56 @@ export function TodayScreen() {
             if (substituting) await handleSubstitute(substituting, pick);
           }}
         />
-    </div>
-  );
-}
 
-function PerformedOnField({
-  date,
-  sessionExists,
-  onChange,
-}: {
-  date: string;
-  sessionExists: boolean;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center justify-between gap-3">
-      <div>
-        <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
-          Performed on
-        </div>
-        <div className="text-xs text-gray-400 mt-0.5">
-          {sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
-        </div>
-      </div>
-      <input
-        type="date"
-        value={date}
-        onChange={e => onChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-      />
+        {/* In-app confirmation modal — replaces window.confirm (UF-12) */}
+        <ConfirmModal
+          open={pendingConfirm != null}
+          title={pendingConfirm?.title ?? ''}
+          description={pendingConfirm?.description}
+          confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+          variant={pendingConfirm?.variant ?? 'default'}
+          onConfirm={() => { if (pendingConfirm) void pendingConfirm.onConfirm(); }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+
+        {/* Undo toast for low-risk single-set delete (UF-12) */}
+        <UndoToast
+          message="Set removed"
+          visible={pendingSetDelete != null}
+          onUndo={() => {
+            if (!pendingSetDelete) return;
+            // Restore the set optimistically.
+            const restored = pendingSetDelete.set;
+            setData(prev => {
+              if (!prev?.log) return prev;
+              return {
+                ...prev,
+                log: {
+                  ...prev.log,
+                  exercises: prev.log.exercises.map(le => {
+                    if (le.log.id !== restored.log_exercise_id) return le;
+                    const already = le.sets.find(s => s.id === restored.id);
+                    if (already) return le;
+                    return {
+                      ...le,
+                      sets: [...le.sets, restored].sort((a, b) => a.set_number - b.set_number),
+                    };
+                  }),
+                },
+              };
+            });
+            setPendingSetDelete(null);
+          }}
+          onDismiss={() => {
+            if (!pendingSetDelete) return;
+            const { setId } = pendingSetDelete;
+            setPendingSetDelete(null);
+            // Commit the deletion now that the undo window has closed.
+            void runSave(async () => {
+              await deleteLoggedSet(setId);
+            });
+          }}
+        />
     </div>
   );
 }

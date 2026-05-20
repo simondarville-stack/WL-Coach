@@ -103,7 +103,7 @@ export function WeekScreen() {
     if (!expandedDays.has(dayIndex) && !(dayIndex in dayCache)) {
       setDayLoading(prev => new Set(prev).add(dayIndex));
       try {
-        const data = await fetchAthleteDay(athlete.id, weekStart, dayIndex);
+        const data = await fetchAthleteDay(athlete.id, weekStart, dayIndex, overview?.weekPlanId);
         setDayCache(prev => ({ ...prev, [dayIndex]: data }));
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -134,8 +134,8 @@ export function WeekScreen() {
       try {
         await setAthleteDayLabel({ athleteId: athlete.id, weekStart, dayIndex: dayIdx, label: name });
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('Could not set bonus day label:', e);
+        // Non-fatal: session was created; show the error but continue.
+        setError(`Session created, but label could not be saved: ${e instanceof Error ? e.message : String(e)}`);
       }
       setShowBonusName(false);
       // Reload the overview, then jump into the new day in Today so the
@@ -202,6 +202,12 @@ export function WeekScreen() {
             const isExpanded = expandedDays.has(day.dayIndex);
             const dayData = dayCache[day.dayIndex];
             const isLoadingDay = dayLoading.has(day.dayIndex);
+            // Count unread coach messages: sender_type=coach AND athlete_read_at=null. (UF-10)
+            const unreadCount = dayData
+              ? (dayData.log?.messages ?? []).filter(
+                  m => m.sender_type === 'coach' && m.athlete_read_at == null,
+                ).length
+              : 0;
             return (
               <li key={day.dayIndex} className="space-y-2">
                 <button
@@ -220,7 +226,14 @@ export function WeekScreen() {
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-white truncate">{day.label}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{day.label}</div>
+                      {unreadCount > 0 && (
+                        <span className="flex-shrink-0 text-[9px] bg-blue-600 text-white font-semibold px-1.5 py-0.5 rounded-full" title={`${unreadCount} unread coach message${unreadCount > 1 ? 's' : ''}`}>
+                          {unreadCount}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {day.status === 'completed' && (
                         <span className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
