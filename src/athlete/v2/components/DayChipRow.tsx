@@ -35,8 +35,9 @@ export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false 
         if (d.weekday != null) {
           weekdayLabel = Weekday[d.weekday];
         } else if (d.sessionDate) {
-          const day = new Date(d.sessionDate + 'T00:00:00').getDay();
-          weekdayLabel = Weekday[day === 0 ? 7 : day];
+          // Convert JS getDay() (0=Sun,1=Mon..6=Sat) to DB convention (0=Mon..6=Sun).
+          const jsDay = new Date(d.sessionDate + 'T00:00:00').getDay();
+          weekdayLabel = Weekday[(jsDay + 6) % 7];
         }
 
         return (

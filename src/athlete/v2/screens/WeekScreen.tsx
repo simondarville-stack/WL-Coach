@@ -103,7 +103,7 @@ export function WeekScreen() {
     if (!expandedDays.has(dayIndex) && !(dayIndex in dayCache)) {
       setDayLoading(prev => new Set(prev).add(dayIndex));
       try {
-        const data = await fetchAthleteDay(athlete.id, weekStart, dayIndex);
+        const data = await fetchAthleteDay(athlete.id, weekStart, dayIndex, overview?.weekPlanId);
         setDayCache(prev => ({ ...prev, [dayIndex]: data }));
       } catch (e) {
         // eslint-disable-next-line no-console

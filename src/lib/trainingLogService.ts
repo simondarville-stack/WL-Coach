@@ -232,8 +232,14 @@ export async function fetchAthleteDay(
   athleteId: string,
   weekStart: string,
   dayIndex: number,
+  /** Optional pre-resolved weekPlanId from a previous fetchWeekOverview call.
+   *  When provided, the 3-step resolution chain is skipped, saving 2–3 round
+   *  trips on mobile. (UF-44 / H4) */
+  knownWeekPlanId?: string | null,
 ): Promise<AthleteDayData> {
-  const { weekPlanId } = await resolveAthleteWeekPlanId(athleteId, weekStart);
+  const weekPlanId = knownWeekPlanId !== undefined
+    ? knownWeekPlanId
+    : (await resolveAthleteWeekPlanId(athleteId, weekStart)).weekPlanId;
 
   let planned: PlannedExerciseFull[] = [];
   if (weekPlanId) {
@@ -310,7 +316,9 @@ export interface WeekDayOverview {
   dayIndex: number;
   /** Resolved label from day_labels; falls back to "Day N". */
   label: string;
-  /** Planned weekday (1 = Mon, …, 7 = Sun) from day_schedule, or null. */
+  /** Planned weekday (0 = Mon, …, 6 = Sun) from day_schedule, or null.
+   *  Convention matches migration 20260405_day_schedule.sql and the coach
+   *  planner's WEEKDAY_SHORT array. (Q-13) */
   weekday: number | null;
   /** Number of planned exercises in this slot. */
   plannedCount: number;

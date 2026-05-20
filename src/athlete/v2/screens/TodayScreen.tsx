@@ -60,9 +60,10 @@ function todayISO(): string {
   return toISO(new Date());
 }
 
+/** Return today's weekday in DB convention: 0=Mon, 1=Tue, ..., 6=Sun.
+ *  JS getDay() uses 0=Sun,1=Mon..6=Sat; (jsDay+6)%7 converts. (Q-13) */
 function todayDayIndex(): number {
-  const day = new Date().getDay();
-  return day === 0 ? 7 : day;
+  return (new Date().getDay() + 6) % 7;
 }
 
 /**
@@ -155,6 +156,11 @@ export function TodayScreen() {
     }
   }, [athlete, weekStart]);
 
+  // Keep a ref so loadDay can read the latest weekPlanId without being
+  // in the dependency array (which would cause double-loads on overview change).
+  const overviewRef = useRef<WeekOverview | null>(null);
+  overviewRef.current = overview;
+
   const loadDay = useCallback(async () => {
     if (!athlete || dayIndex == null) {
       setData(null);
@@ -163,7 +169,14 @@ export function TodayScreen() {
     setLoadingDay(true);
     setError(null);
     try {
-      const d = await fetchAthleteDay(athlete.id, weekStart, dayIndex);
+      // Pass the pre-resolved weekPlanId when available to skip the 3-step
+      // resolution chain in fetchAthleteDay. (UF-44 / H4)
+      const d = await fetchAthleteDay(
+        athlete.id,
+        weekStart,
+        dayIndex,
+        overviewRef.current?.weekPlanId,
+      );
       setData(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
