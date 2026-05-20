@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { Check, X, Trash2, Plus } from 'lucide-react';
 import type { TrainingLogSet } from '../../../lib/database.types';
 import { upsertLoggedSet, deleteLoggedSet } from '../../../lib/trainingLogService';
+import { parseNumericInput } from '../../../lib/trainingLogModel';
 
 interface CoachSetEditModalProps {
   open: boolean;
@@ -20,13 +21,6 @@ interface CoachSetEditModalProps {
   onClose: () => void;
   /** Called after every successful write so the parent can refresh. */
   onChanged: () => void;
-}
-
-function parseNumber(text: string): number | null {
-  const t = text.trim();
-  if (t === '') return null;
-  const v = parseFloat(t.replace(',', '.'));
-  return Number.isFinite(v) ? v : null;
 }
 
 export function CoachSetEditModal({
@@ -201,9 +195,9 @@ function EditableRow({
   }, [row.performed_reps]);
 
   const commit = () => {
-    const parsedReps = parseNumber(reps);
+    const parsedReps = parseNumericInput(reps);
     onSave({
-      performed_load: parseNumber(load),
+      performed_load: parseNumericInput(load),
       performed_reps: parsedReps != null ? Math.round(parsedReps) : null,
     });
   };

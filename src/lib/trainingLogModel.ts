@@ -205,6 +205,50 @@ export function rawAxisRange(): { min: number; max: number } {
   return { min: ELEIKO_RAW_AXES.length * 1, max: ELEIKO_RAW_AXES.length * 3 };
 }
 
+// ─── Shared input parsing ────────────────────────────────────────────────────
+
+/**
+ * Parse a numeric input string, accepting both period and comma as decimal
+ * separators. Returns null for empty or non-numeric input.
+ * Extracted from SetEntryRow and CoachSetEditModal (E-08 / UF-27).
+ */
+export function parseNumericInput(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const parsed = parseFloat(trimmed.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// ─── Delta colour helpers ────────────────────────────────────────────────────
+
+/**
+ * Map a DeltaState to the Tailwind border-left colour class used in
+ * LogExerciseRow and SessionPreview exercise rows.
+ * Extracted from three inline ternary chains (E-10 / UF-28).
+ */
+export function getDeltaBorderClass(state: DeltaState): string {
+  switch (state) {
+    case 'matched': return 'border-l-emerald-500';
+    case 'amber':   return 'border-l-amber-500';
+    case 'red':     return 'border-l-red-500';
+    case 'pending': return 'border-l-gray-300';
+  }
+}
+
+/**
+ * Map a DeltaState to the Tailwind chip background+text colour classes used
+ * in the performed ratio badge (e.g. "87%").
+ * Extracted from three inline ternary chains (E-10 / UF-28).
+ */
+export function getDeltaChipClass(state: DeltaState): string {
+  switch (state) {
+    case 'matched': return 'bg-emerald-100 text-emerald-800';
+    case 'amber':   return 'bg-amber-100 text-amber-800';
+    case 'red':     return 'bg-red-100 text-red-800';
+    case 'pending': return 'bg-gray-100 text-gray-500';
+  }
+}
+
 export interface DeltaResult {
   state: DeltaState;
   performedReps: number;

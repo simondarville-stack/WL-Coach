@@ -17,6 +17,8 @@ import type {
 import {
   computeDelta,
   sumPerformedReps,
+  getDeltaBorderClass,
+  getDeltaChipClass,
   type DeltaState,
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
@@ -27,20 +29,12 @@ import { getSentinelType, getYouTubeThumbnail, isDirectVideoFile } from '../plan
 import { ImageLightbox } from '../ImageLightbox';
 import { LogCommentsThread } from './LogCommentsThread';
 
-const DELTA_BORDER: Record<DeltaState, string> = {
-  matched: 'border-l-emerald-500',
-  amber: 'border-l-amber-500',
-  red: 'border-l-red-500',
-  pending: 'border-l-gray-300',
-};
-
 const DELTA_BG: Record<DeltaState, string> = {
   matched: 'bg-emerald-50/40',
   amber: 'bg-amber-50/40',
   red: 'bg-red-50/40',
   pending: '',
 };
-
 
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
@@ -254,7 +248,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
   }
 
   return (
-    <div className={`flex border-l-4 ${DELTA_BORDER[delta.state]} ${DELTA_BG[delta.state]}`}>
+    <div className={`flex border-l-4 ${getDeltaBorderClass(delta.state)} ${DELTA_BG[delta.state]}`}>
       {accentColor && (
         <div
           className="w-0.5 flex-shrink-0"
@@ -337,13 +331,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             <LoggedStackedNotation sets={logged.sets} />
             {planned && delta.state !== 'pending' && (
               <span
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                  delta.state === 'matched'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : delta.state === 'amber'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
+                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${getDeltaChipClass(delta.state)}`}
               >
                 {Math.round(delta.ratio * 100)}%
               </span>
