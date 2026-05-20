@@ -388,16 +388,25 @@ export function ExerciseLogCard({
               <div className="space-y-1.5">
                 {rows.map(row => {
                   const setLogged = setBySetNumber.get(row.setNumber) ?? null;
-                  // Trash is always available on a planned row: if the
-                  // set has been touched (any status) we delete the DB
-                  // row; if it's untouched we persist a "removed"
-                  // marker so the row stays gone after reload.
-                  const onDelete =
-                    setLogged && onDeleteSet
-                      ? () => onDeleteSet(setLogged.id)
-                      : onRemovePlannedSet
-                      ? () => onRemovePlannedSet(row.setNumber)
-                      : undefined;
+                  // Trash is normally available on a planned row: if the
+                  // set has been touched we delete the DB row; if it's
+                  // untouched we persist a "removed" marker so the row
+                  // stays gone after reload.
+                  //
+                  // Exception: the synthesised free-text planned row IS
+                  // the whole exercise — removing it leaves the athlete
+                  // with no row at all, no Add-set button, no way back.
+                  // Suppress the trash here; the ✗ Not-done button is
+                  // the right control for "I didn't do this".
+                  const isPlannedFreeTextRow =
+                    row.freeTextMode === true && row.freeTextPlanned !== undefined;
+                  const onDelete = isPlannedFreeTextRow
+                    ? undefined
+                    : setLogged && onDeleteSet
+                    ? () => onDeleteSet(setLogged.id)
+                    : onRemovePlannedSet
+                    ? () => onRemovePlannedSet(row.setNumber)
+                    : undefined;
                   return (
                     <SetEntryRow
                       key={row.setNumber}
