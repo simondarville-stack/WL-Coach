@@ -1050,11 +1050,11 @@ export function WeeklyPlanner() {
               />
 
             {/* ── Load Distribution (collapsible) ── */}
-            {currentWeekPlan && showLoadDistribution && planSelection.type === 'individual' && planSelection.athlete && (
+            {currentWeekPlan && showLoadDistribution && (planSelection.athlete || planSelection.group) && (
               <div style={{ marginBottom: 16, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
                 <LoadDistribution
                   plannedExercises={plannedExercises}
-                  athletePRs={athletePRs}
+                  athletePRs={planSelection.athlete ? athletePRs : []}
                   dayLabels={currentWeekPlan.day_labels || {}}
                   activeDays={activeDays}
                   dayDisplayOrder={dayDisplayOrder}
