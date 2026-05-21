@@ -28,6 +28,7 @@ interface PlannerModalsProps {
   copiedWeekStart: string | null;
   selectedDate: string;
   selectedAthlete: Athlete | null;
+  selectedGroup: TrainingGroup | null;
   allAthletes: Athlete[];
   allGroups: TrainingGroup[];
   onPasteClose: () => void;
@@ -43,7 +44,7 @@ export function PlannerModals({
   showDayConfig, dayDisplayOrder, editingDayLabels, activeDays, daySchedule, dayDragIndex,
   onDayDragStart, onDayDragOver, onDayDragEnd, onToggleDay, onLabelChange, onScheduleChange,
   onRemoveDay, onAddDay, onDayConfigCancel, onDayConfigSave,
-  showPasteModal, copiedWeekStart, selectedDate, selectedAthlete,
+  showPasteModal, copiedWeekStart, selectedDate, selectedAthlete, selectedGroup,
   allAthletes, allGroups, onPasteClose, onPasteComplete,
   showPrintModal, dayLabels, weekDescription, onPrintClose,
 }: PlannerModalsProps) {
@@ -84,9 +85,10 @@ export function PlannerModals({
         />
       )}
 
-      {showPrintModal && selectedAthlete && (
+      {showPrintModal && (selectedAthlete || selectedGroup) && (
         <PrintWeek
           athlete={selectedAthlete}
+          group={selectedGroup}
           weekStart={selectedDate}
           onClose={onPrintClose}
           dayLabels={dayLabels}
