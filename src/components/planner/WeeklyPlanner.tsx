@@ -20,6 +20,7 @@ import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { LogModeView } from './log/LogModeView';
+import { GroupLogView } from './log/GroupLogView';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
@@ -1096,7 +1097,7 @@ export function WeeklyPlanner() {
             )}
 
             {/* ── Plan / Log mode toggle ── */}
-            {planSelection.type === 'individual' && planSelection.athlete && (
+            {(planSelection.athlete || planSelection.group) && (
               <div style={{ display: 'inline-flex', gap: 0, marginBottom: 12, padding: 2, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--color-border-secondary)' }}>
                 <button
                   onClick={() => setViewMode('plan')}
@@ -1147,6 +1148,16 @@ export function WeeklyPlanner() {
                 visibleDays={visibleDays}
                 plannedExercises={plannedExercises}
                 dayLabels={currentWeekPlan?.day_labels ?? null}
+              />
+            ) : viewMode === 'log' && planSelection.group ? (
+              <GroupLogView
+                group={planSelection.group}
+                weekPlan={currentWeekPlan}
+                weekStart={selectedDate}
+                onSelectAthlete={(athlete) => {
+                  handlePlanSelection({ type: 'individual', athlete, group: null });
+                  setViewMode('log');
+                }}
               />
             ) : (
               <WeekOverview
