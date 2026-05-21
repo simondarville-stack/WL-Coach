@@ -99,6 +99,7 @@ export function WeeklyPlanner() {
     updateWeekPlan,
     reorderExercises,
     moveExercise,
+    reorderInDay,
     normalizePositions,
     savePrescription,
     saveNotes,
@@ -379,7 +380,17 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleExerciseDrop = async (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => {
+  const handleExerciseDrop = async (
+    fromDay: number,
+    plannedExId: string,
+    toDay: number,
+    isCopy: boolean,
+    isReplace: boolean,
+    /** Cross-day drop target: ex id to land near, and side. When provided the
+     *  dropped exercise lands at the target visual position instead of being
+     *  appended to the end of the destination day. */
+    target?: { exId: string; position: 'before' | 'after' },
+  ) => {
     if (!currentWeekPlan) return;
     const sourceEx = (plannedExercises[fromDay] || []).find(ex => ex.id === plannedExId);
     if (!sourceEx) return;
@@ -388,10 +399,20 @@ export function WeeklyPlanner() {
       if (targetIds.length > 0) await deleteDayExercises(targetIds);
     }
     const destPosition = isReplace ? 0 : (plannedExercises[toDay] || []).length;
+    let newExId: string | null = null;
     if (isCopy) {
-      await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
+      newExId = await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
     } else {
       await moveExercise(currentWeekPlan.id, plannedExId, fromDay, toDay);
+      newExId = plannedExId;
+    }
+    if (target && newExId && !isReplace) {
+      const destExercises = (plannedExercises[toDay] || []).filter(ex => ex.id !== plannedExId);
+      const targetIdx = destExercises.findIndex(ex => ex.id === target.exId);
+      if (targetIdx >= 0) {
+        const insertAt = target.position === 'before' ? targetIdx : targetIdx + 1;
+        await reorderInDay(currentWeekPlan.id, toDay, newExId, insertAt);
+      }
     }
     await handleRefresh();
   };
@@ -1289,6 +1310,7 @@ export function WeeklyPlanner() {
           copiedWeekStart={copiedWeekStart}
           selectedDate={selectedDate}
           selectedAthlete={planSelection.athlete}
+          selectedGroup={planSelection.group}
           allAthletes={athletes}
           allGroups={groups}
           onPasteClose={() => setShowCopyWeekModal(false)}
