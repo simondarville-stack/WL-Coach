@@ -122,7 +122,16 @@ export function PrescriptionGrid({
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      // For "80%" pre-populated loads, select only the numeric prefix so
+      // typing replaces the number while the "%" survives. Same goes for
+      // anything else that ends in a non-numeric tail (currently just %).
+      const v = editing.value;
+      const sticky = v.endsWith('%') ? 1 : 0;
+      if (sticky > 0 && v.length > sticky) {
+        inputRef.current.setSelectionRange(0, v.length - sticky);
+      } else {
+        inputRef.current.select();
+      }
     }
   }, [editing?.colId, editing?.field]);
 
@@ -173,7 +182,15 @@ export function PrescriptionGrid({
       let currentValue: string;
       if (field === 'reps') currentValue = col.repsText;
       else if (field === 'load' && isFreeTextReps) currentValue = col.loadText;
-      else if (field === 'load') currentValue = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
+      else if (field === 'load') {
+        const base = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
+        // Sticky "%" suffix: when the prescription unit is percentage, the
+        // edit pre-populates with "80%" so the coach can keep typing
+        // numbers without re-adding the symbol. The focus effect selects
+        // only the numeric portion, and the existing detectIntendedUnit
+        // path converts to kg if the coach deliberately deletes the "%".
+        currentValue = unit === 'percentage' ? `${base}%` : base;
+      }
       else currentValue = String(col.sets);
       setEditing({ colId, field, value: currentValue });
       return;
