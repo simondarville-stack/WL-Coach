@@ -11,6 +11,7 @@ import { Loader2, LogOut, Users } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { useWeekPlans } from '../../../hooks/useWeekPlans';
 import { useCombos } from '../../../hooks/useCombos';
+import { supabase } from '../../../lib/supabase';
 import { WeekNavigator, getMondayOf } from '../components/WeekNavigator';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
@@ -19,9 +20,26 @@ import type { PlannedExercise, Exercise, WeekPlan, ComboMemberEntry } from '../.
 
 type PlannedRow = PlannedExercise & { exercise: Exercise };
 
+/** Group-plan lookup that does NOT filter by owner_id — the athlete app
+ *  doesn't populate the coach store, so the helper in useWeekPlans
+ *  (which scopes by getOwnerId()) would always return null here. The
+ *  (group_id, week_start, athlete_id IS NULL) tuple is unique per plan
+ *  in practice. */
+async function loadGroupWeekPlan(groupId: string, weekStart: string): Promise<WeekPlan | null> {
+  const { data, error } = await supabase
+    .from('week_plans')
+    .select('*')
+    .eq('group_id', groupId)
+    .is('athlete_id', null)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as WeekPlan | null) ?? null;
+}
+
 export function GroupViewerScreen() {
   const { group, signOut } = useAuth();
-  const { fetchWeekPlanForGroup, fetchPlannedExercisesFlat } = useWeekPlans();
+  const { fetchPlannedExercisesFlat } = useWeekPlans();
   const { fetchProgrammeData } = useCombos();
 
   const [weekStart, setWeekStart] = useState<string>(() => getMondayOf(new Date()));
@@ -38,7 +56,7 @@ export function GroupViewerScreen() {
       setLoading(true);
       setError(null);
       try {
-        const plan = await fetchWeekPlanForGroup(group!.id, weekStart);
+        const plan = await loadGroupWeekPlan(group!.id, weekStart);
         if (cancelled) return;
         setWeekPlan(plan);
         if (!plan) {
