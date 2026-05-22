@@ -617,7 +617,10 @@ export function useWeekPlans() {
         combo_notation: extras?.combo_notation ?? null,
         combo_color: extras?.combo_color ?? null,
         source: extras?.source ?? null,
-        metadata: extras?.metadata ?? null,
+        // Only set metadata explicitly when a payload is supplied (copy
+        // path). Otherwise let the DB default ('{}') stand — passing null
+        // would violate the NOT NULL constraint on planned_exercises.metadata.
+        ...(extras?.metadata != null ? { metadata: extras.metadata } : {}),
       }])
       .select()
       .single();
