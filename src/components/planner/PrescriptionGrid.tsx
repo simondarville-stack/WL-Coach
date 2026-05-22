@@ -223,9 +223,10 @@ export function PrescriptionGrid({
     if (!col) { setEditing(null); return; }
 
     // Auto-switch unit when the coach signals one via the load cell.
-    // "80%" → percentage, "Heavy" → free_text_reps. Combos keep their
-    // own format and aren't auto-switched.
-    if (editing.field === 'load' && !isCombo) {
+    // "80%" → percentage, "Heavy" → free_text_reps, "80x5" → absolute_kg.
+    // Combos use the same detection but format through formatComboPrescription
+    // so the tuple reps_text ("2+1") survives the switch.
+    if (editing.field === 'load') {
       const text = editing.value.trim();
       const detected = detectIntendedUnit(text);
       if (detected && detected !== unit) {
@@ -256,7 +257,20 @@ export function PrescriptionGrid({
           return c;
         });
 
-        const raw = detected === 'free_text_reps'
+        const isFreeTextRepsDetected = detected === 'free_text_reps';
+        const raw = isCombo
+          ? formatComboPrescription(
+              switchedCols.map(col => ({
+                sets: col.sets,
+                repsText: col.repsText,
+                totalReps: col.reps,
+                load: col.load,
+                loadMax: col.loadMax ?? null,
+                ...(isFreeTextRepsDetected ? { loadText: col.loadText } : {}),
+              })),
+              detected,
+            )
+          : isFreeTextRepsDetected
           ? formatFreeTextPrescription(switchedCols.map(c => ({ loadText: c.loadText, reps: c.reps, sets: c.sets })))
           : formatPrescription(columnsToSetLines(switchedCols), detected);
 
