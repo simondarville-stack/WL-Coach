@@ -49,6 +49,11 @@ interface ExerciseLogCardProps {
   /** When true (a save is in flight at session level), disable the "Log as
    *  prescribed" button and all set-entry inputs to prevent double-writes. */
   globalSaving?: boolean;
+  /** View-only render for the group viewer: hides Log-as-prescribed,
+   *  Mark-complete, Substitute, Add-set, set delete, and the notes editor,
+   *  and threads `readOnly` to every SetEntryRow so inputs are disabled.
+   *  Saves still need callbacks (TS-wise) but they will never be invoked. */
+  readOnly?: boolean;
 }
 
 export function ExerciseLogCard({
@@ -65,6 +70,7 @@ export function ExerciseLogCard({
   onRequestSubstitute,
   performedExercise,
   globalSaving = false,
+  readOnly = false,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
@@ -251,7 +257,7 @@ export function ExerciseLogCard({
                 Combo
               </span>
             )}
-            {onRequestSubstitute && (
+            {onRequestSubstitute && !readOnly && (
               <button
                 onClick={e => {
                   e.stopPropagation();
@@ -311,7 +317,7 @@ export function ExerciseLogCard({
             </div>
           ) : (
             <>
-              {!isFreeTextUnit && (
+              {!isFreeTextUnit && !readOnly && (
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={handleLogAsPrescribed}
@@ -361,6 +367,7 @@ export function ExerciseLogCard({
                       logged={setLogged}
                       onSave={onSaveSet}
                       onDelete={onDelete}
+                      readOnly={readOnly}
                     />
                   );
                 })}
@@ -398,9 +405,10 @@ export function ExerciseLogCard({
                           logged={s}
                           onSave={onSaveSet}
                           onDelete={onDeleteSet ? () => onDeleteSet(s.id) : undefined}
+                          readOnly={readOnly}
                         />
                       ))}
-                      {Array.from({ length: blanks }).map((_, i) => {
+                      {!readOnly && Array.from({ length: blanks }).map((_, i) => {
                         const setNumber = plannedMax + loggedExtraSets.length + 1 + i;
                         return (
                           <SetEntryRow
@@ -423,6 +431,7 @@ export function ExerciseLogCard({
                   );
                 })()}
               </div>
+              {!readOnly && (
               <button
                 onClick={() => setExtraRows(n => n + 1)}
                 className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
@@ -430,23 +439,26 @@ export function ExerciseLogCard({
                 <Plus size={12} />
                 Add set
               </button>
+              )}
             </>
           )}
 
-          <div className="pt-1">
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              onBlur={() => {
-                if ((loggedExercise?.performed_notes ?? '') !== notes) {
-                  void onUpdateNotes(notes);
-                }
-              }}
-              placeholder="Notes on this exercise…"
-              rows={2}
-              className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
-            />
-          </div>
+          {!readOnly && (
+            <div className="pt-1">
+              <textarea
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                onBlur={() => {
+                  if ((loggedExercise?.performed_notes ?? '') !== notes) {
+                    void onUpdateNotes(notes);
+                  }
+                }}
+                placeholder="Notes on this exercise…"
+                rows={2}
+                className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+              />
+            </div>
+          )}
 
         </div>
       )}
