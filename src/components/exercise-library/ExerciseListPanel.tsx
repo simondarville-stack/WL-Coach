@@ -13,12 +13,9 @@ import {
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { StandardPage, Button, Input, Badge, ColorDot } from '../ui';
-import { DEFAULT_UNITS } from '../../lib/constants';
 
 // ── Constants ──────────────────────────────────────────────────────
 
-// Display labels for any unit a row might carry — includes legacy values
-// (rpe, other) so existing exercises tagged with them still render.
 const UNIT_LABELS: Record<string, string> = {
   absolute_kg: 'kg',
   percentage: '%',
@@ -28,9 +25,14 @@ const UNIT_LABELS: Record<string, string> = {
   other: 'other',
 };
 
-// Filter options exposed to coaches mirror the canonical create-form
-// list so the library shows the same vocabulary the planner uses.
-const UNIT_OPTIONS = DEFAULT_UNITS;
+const UNIT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'absolute_kg', label: 'kg' },
+  { value: 'percentage', label: '%' },
+  { value: 'rpe', label: 'RPE' },
+  { value: 'free_text', label: 'Text' },
+  { value: 'free_text_reps', label: 'Reps' },
+  { value: 'other', label: 'Other' },
+];
 
 const LIFT_SLOT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '__none__', label: 'No slot' },

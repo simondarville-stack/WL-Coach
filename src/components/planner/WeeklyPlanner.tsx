@@ -20,7 +20,6 @@ import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { LogModeView } from './log/LogModeView';
-import { GroupLogView } from './log/GroupLogView';
 import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
@@ -100,7 +99,6 @@ export function WeeklyPlanner() {
     updateWeekPlan,
     reorderExercises,
     moveExercise,
-    reorderInDay,
     normalizePositions,
     savePrescription,
     saveNotes,
@@ -381,17 +379,7 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleExerciseDrop = async (
-    fromDay: number,
-    plannedExId: string,
-    toDay: number,
-    isCopy: boolean,
-    isReplace: boolean,
-    /** Cross-day drop target: ex id to land near, and side. When provided the
-     *  dropped exercise lands at the target visual position instead of being
-     *  appended to the end of the destination day. */
-    target?: { exId: string; position: 'before' | 'after' },
-  ) => {
+  const handleExerciseDrop = async (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => {
     if (!currentWeekPlan) return;
     const sourceEx = (plannedExercises[fromDay] || []).find(ex => ex.id === plannedExId);
     if (!sourceEx) return;
@@ -400,20 +388,10 @@ export function WeeklyPlanner() {
       if (targetIds.length > 0) await deleteDayExercises(targetIds);
     }
     const destPosition = isReplace ? 0 : (plannedExercises[toDay] || []).length;
-    let newExId: string | null = null;
     if (isCopy) {
-      newExId = await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
+      await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
     } else {
       await moveExercise(currentWeekPlan.id, plannedExId, fromDay, toDay);
-      newExId = plannedExId;
-    }
-    if (target && newExId && !isReplace) {
-      const destExercises = (plannedExercises[toDay] || []).filter(ex => ex.id !== plannedExId);
-      const targetIdx = destExercises.findIndex(ex => ex.id === target.exId);
-      if (targetIdx >= 0) {
-        const insertAt = target.position === 'before' ? targetIdx : targetIdx + 1;
-        await reorderInDay(currentWeekPlan.id, toDay, newExId, insertAt);
-      }
     }
     await handleRefresh();
   };
@@ -1051,11 +1029,11 @@ export function WeeklyPlanner() {
               />
 
             {/* ── Load Distribution (collapsible) ── */}
-            {currentWeekPlan && showLoadDistribution && (planSelection.athlete || planSelection.group) && (
+            {currentWeekPlan && showLoadDistribution && planSelection.type === 'individual' && planSelection.athlete && (
               <div style={{ marginBottom: 16, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
                 <LoadDistribution
                   plannedExercises={plannedExercises}
-                  athletePRs={planSelection.athlete ? athletePRs : []}
+                  athletePRs={athletePRs}
                   dayLabels={currentWeekPlan.day_labels || {}}
                   activeDays={activeDays}
                   dayDisplayOrder={dayDisplayOrder}
@@ -1097,7 +1075,7 @@ export function WeeklyPlanner() {
             )}
 
             {/* ── Plan / Log mode toggle ── */}
-            {(planSelection.athlete || planSelection.group) && (
+            {planSelection.type === 'individual' && planSelection.athlete && (
               <div style={{ display: 'inline-flex', gap: 0, marginBottom: 12, padding: 2, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', border: '0.5px solid var(--color-border-secondary)' }}>
                 <button
                   onClick={() => setViewMode('plan')}
@@ -1148,16 +1126,6 @@ export function WeeklyPlanner() {
                 visibleDays={visibleDays}
                 plannedExercises={plannedExercises}
                 dayLabels={currentWeekPlan?.day_labels ?? null}
-              />
-            ) : viewMode === 'log' && planSelection.group ? (
-              <GroupLogView
-                group={planSelection.group}
-                weekPlan={currentWeekPlan}
-                weekStart={selectedDate}
-                onSelectAthlete={(athlete) => {
-                  handlePlanSelection({ type: 'individual', athlete, group: null });
-                  setViewMode('log');
-                }}
               />
             ) : (
               <WeekOverview
@@ -1321,7 +1289,6 @@ export function WeeklyPlanner() {
           copiedWeekStart={copiedWeekStart}
           selectedDate={selectedDate}
           selectedAthlete={planSelection.athlete}
-          selectedGroup={planSelection.group}
           allAthletes={athletes}
           allGroups={groups}
           onPasteClose={() => setShowCopyWeekModal(false)}

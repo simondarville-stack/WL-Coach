@@ -23,6 +23,7 @@ interface LogDayCardProps {
   dayLog: DayLog | null;
   /** Returns true when the post succeeded so callers can refresh data. */
   onPostSessionComment?: (sessionId: string, body: string) => Promise<void>;
+  onPostExerciseComment?: (sessionId: string, logExerciseId: string, body: string) => Promise<void>;
   /** Coach actions: delete a logged exercise or the whole session. */
   onDeleteLogExercise?: (logExerciseId: string) => Promise<void>;
   onDeleteSession?: (sessionId: string) => Promise<void>;
@@ -35,6 +36,7 @@ export function LogDayCard({
   plannedExercises,
   dayLog,
   onPostSessionComment,
+  onPostExerciseComment,
   onDeleteLogExercise,
   onDeleteSession,
   onEditLoggedExercise,
@@ -134,6 +136,12 @@ export function LogDayCard({
               key={ex.id}
               planned={ex}
               logged={ledg}
+              sessionMessages={dayLog?.messages ?? []}
+              onPostComment={
+                session && onPostExerciseComment && ledg
+                  ? body => onPostExerciseComment(session.id, ledg.log.id, body)
+                  : undefined
+              }
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
               onDelete={
                 ledg && onDeleteLogExercise
@@ -154,6 +162,12 @@ export function LogDayCard({
                 key={le.log.id}
                 planned={null}
                 logged={le}
+                sessionMessages={dayLog?.messages ?? []}
+                onPostComment={
+                  session && onPostExerciseComment
+                    ? body => onPostExerciseComment(session.id, le.log.id, body)
+                    : undefined
+                }
                 onDelete={
                   onDeleteLogExercise ? () => onDeleteLogExercise(le.log.id) : undefined
                 }

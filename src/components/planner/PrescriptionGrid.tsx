@@ -122,16 +122,7 @@ export function PrescriptionGrid({
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
-      // For "80%" pre-populated loads, select only the numeric prefix so
-      // typing replaces the number while the "%" survives. Same goes for
-      // anything else that ends in a non-numeric tail (currently just %).
-      const v = editing.value;
-      const sticky = v.endsWith('%') ? 1 : 0;
-      if (sticky > 0 && v.length > sticky) {
-        inputRef.current.setSelectionRange(0, v.length - sticky);
-      } else {
-        inputRef.current.select();
-      }
+      inputRef.current.select();
     }
   }, [editing?.colId, editing?.field]);
 
@@ -182,15 +173,7 @@ export function PrescriptionGrid({
       let currentValue: string;
       if (field === 'reps') currentValue = col.repsText;
       else if (field === 'load' && isFreeTextReps) currentValue = col.loadText;
-      else if (field === 'load') {
-        const base = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
-        // Sticky "%" suffix: when the prescription unit is percentage, the
-        // edit pre-populates with "80%" so the coach can keep typing
-        // numbers without re-adding the symbol. The focus effect selects
-        // only the numeric portion, and the existing detectIntendedUnit
-        // path converts to kg if the coach deliberately deletes the "%".
-        currentValue = unit === 'percentage' ? `${base}%` : base;
-      }
+      else if (field === 'load') currentValue = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
       else currentValue = String(col.sets);
       setEditing({ colId, field, value: currentValue });
       return;
@@ -240,10 +223,9 @@ export function PrescriptionGrid({
     if (!col) { setEditing(null); return; }
 
     // Auto-switch unit when the coach signals one via the load cell.
-    // "80%" → percentage, "Heavy" → free_text_reps, "80x5" → absolute_kg.
-    // Combos use the same detection but format through formatComboPrescription
-    // so the tuple reps_text ("2+1") survives the switch.
-    if (editing.field === 'load') {
+    // "80%" → percentage, "Heavy" → free_text_reps. Combos keep their
+    // own format and aren't auto-switched.
+    if (editing.field === 'load' && !isCombo) {
       const text = editing.value.trim();
       const detected = detectIntendedUnit(text);
       if (detected && detected !== unit) {
@@ -274,20 +256,7 @@ export function PrescriptionGrid({
           return c;
         });
 
-        const isFreeTextRepsDetected = detected === 'free_text_reps';
-        const raw = isCombo
-          ? formatComboPrescription(
-              switchedCols.map(col => ({
-                sets: col.sets,
-                repsText: col.repsText,
-                totalReps: col.reps,
-                load: col.load,
-                loadMax: col.loadMax ?? null,
-                ...(isFreeTextRepsDetected ? { loadText: col.loadText } : {}),
-              })),
-              detected,
-            )
-          : isFreeTextRepsDetected
+        const raw = detected === 'free_text_reps'
           ? formatFreeTextPrescription(switchedCols.map(c => ({ loadText: c.loadText, reps: c.reps, sets: c.sets })))
           : formatPrescription(columnsToSetLines(switchedCols), detected);
 
