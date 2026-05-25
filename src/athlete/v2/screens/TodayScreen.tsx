@@ -756,7 +756,21 @@ export function TodayScreen() {
           </div>
         )}
 
-        {loadingDay ? (
+        {/* Subtle "refreshing" badge when loadDay re-runs while we still
+         *  have data for the current day. Without this, runSave's
+         *  fallback loadDay() used to unmount every log card during the
+         *  refetch — destroying optimistic state on the GPP card (Done
+         *  toggle), in-flight Set inputs, and untyped notes textareas.
+         *  The badge keeps the cards mounted and just signals work in
+         *  flight. */}
+        {loadingDay && data && data.dayIndex === dayIndex && (
+          <div className="flex items-center justify-center text-[10px] text-gray-500">
+            <Loader2 size={11} className="animate-spin mr-1" />
+            Refreshing…
+          </div>
+        )}
+
+        {(!data || data.dayIndex !== dayIndex) && loadingDay ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             <Loader2 size={18} className="animate-spin mr-2" />
             <span className="text-sm">Loading session…</span>

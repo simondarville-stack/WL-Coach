@@ -553,13 +553,20 @@ interface EnsureLogExerciseArgs {
 export async function ensureLogExercise(
   args: EnsureLogExerciseArgs,
 ): Promise<TrainingLogExercise> {
-  const { data: existing, error: fErr } = await supabase
+  // .order().limit(1) instead of .maybeSingle() so that historic
+  // duplicate rows (from the pre-queue race condition documented in
+  // GppLogCard) don't permanently brick every save with a PGRST116
+  // "multiple rows" error. We pick the oldest row by created_at and
+  // continue; subsequent edits update that canonical row only.
+  const { data: existingRows, error: fErr } = await supabase
     .from('training_log_exercises')
     .select('*')
     .eq('session_id', args.sessionId)
     .eq('planned_exercise_id', args.plannedExerciseId)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(1);
   if (fErr) throw fErr;
+  const existing = (existingRows ?? [])[0];
   if (existing) return existing as TrainingLogExercise;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
