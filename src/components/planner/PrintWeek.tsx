@@ -256,10 +256,8 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
               Programme
             </button>
             <button
-              onClick={() => athlete && setPrintMode('designer')}
-              disabled={!athlete}
-              title={athlete ? 'Designer view' : 'Designer view requires an athlete (groups not supported yet)'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'} disabled:opacity-40 disabled:cursor-not-allowed`}
+              onClick={() => setPrintMode('designer')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               <Sliders size={14} />
               Designer
@@ -277,9 +275,10 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
         </div>
       </div>
 
-      {printMode === 'designer' && athlete ? (
+      {printMode === 'designer' ? (
         <PrintWeekDesigner
           athlete={athlete}
+          group={group}
           weekPlan={weekPlan}
           plannedExercises={plannedExercises}
           comboMembers={comboMembers}
