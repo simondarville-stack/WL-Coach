@@ -262,7 +262,6 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
       {printMode === 'designer' ? (
         <PrintWeekDesigner
           athlete={athlete}
-          group={group}
           weekPlan={weekPlan}
           plannedExercises={plannedExercises}
           comboMembers={comboMembers}
