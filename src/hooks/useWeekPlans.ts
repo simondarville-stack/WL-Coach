@@ -267,33 +267,6 @@ export function useWeekPlans() {
     ]);
   };
 
-  /** Reorder one exercise within its day so it lands at `targetIndex` (0-based)
-   *  relative to the existing siblings, shifting others. Used after a cross-day
-   *  drop to honour the visual drop position instead of always appending. */
-  const reorderInDay = async (
-    weekPlanId: string,
-    dayIndex: number,
-    exerciseId: string,
-    targetIndex: number,
-  ) => {
-    const { data } = await supabase
-      .from('planned_exercises')
-      .select('id, position')
-      .eq('weekplan_id', weekPlanId)
-      .eq('day_index', dayIndex)
-      .order('position');
-    if (!data) return;
-    const ids = data.map(d => d.id);
-    const currentIdx = ids.indexOf(exerciseId);
-    if (currentIdx < 0) return;
-    ids.splice(currentIdx, 1);
-    const clamped = Math.max(0, Math.min(ids.length, targetIndex));
-    ids.splice(clamped, 0, exerciseId);
-    await Promise.all(
-      ids.map((id, i) => supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id)),
-    );
-  };
-
   const normalizePositions = async (weekPlanId: string, dayIndex: number) => {
     const { data: exData } = await supabase
       .from('planned_exercises')
@@ -592,10 +565,6 @@ export function useWeekPlans() {
       combo_notation?: string | null;
       combo_color?: string | null;
       source?: 'group' | 'individual' | null;
-      /** Free-form payload. Currently carries GPP sections, sentinel
-       *  descriptions, etc. — needs to round-trip on copy or the new row
-       *  loses everything that lived under metadata.* (e.g. metadata.gpp). */
-      metadata?: Record<string, unknown> | null;
     },
   ): Promise<PlannedExercise & { id: string }> => {
     const { data, error } = await supabase
@@ -617,10 +586,6 @@ export function useWeekPlans() {
         combo_notation: extras?.combo_notation ?? null,
         combo_color: extras?.combo_color ?? null,
         source: extras?.source ?? null,
-        // Only set metadata explicitly when a payload is supplied (copy
-        // path). Otherwise let the DB default ('{}') stand — passing null
-        // would violate the NOT NULL constraint on planned_exercises.metadata.
-        ...(extras?.metadata != null ? { metadata: extras.metadata } : {}),
       }])
       .select()
       .single();
@@ -645,7 +610,6 @@ export function useWeekPlans() {
       is_combo: sourceEx.is_combo,
       combo_notation: sourceEx.combo_notation,
       combo_color: sourceEx.combo_color,
-      metadata: (sourceEx.metadata ?? null) as Record<string, unknown> | null,
     });
 
     if (sourceEx.prescription_raw) {
@@ -847,19 +811,6 @@ export function useWeekPlans() {
       .select('*')
       .eq('owner_id', getOwnerId())
       .eq('athlete_id', athleteId)
-      .eq('week_start', weekStart)
-      .maybeSingle();
-    if (error) throw error;
-    return data || null;
-  };
-
-  const fetchWeekPlanForGroup = async (groupId: string, weekStart: string): Promise<WeekPlan | null> => {
-    const { data, error } = await supabase
-      .from('week_plans')
-      .select('*')
-      .eq('owner_id', getOwnerId())
-      .eq('group_id', groupId)
-      .is('athlete_id', null)
       .eq('week_start', weekStart)
       .maybeSingle();
     if (error) throw error;
@@ -1117,7 +1068,6 @@ export function useWeekPlans() {
     updateWeekPlan,
     reorderExercises,
     moveExercise,
-    reorderInDay,
     normalizePositions,
     fetchSetLines,
     addSetLine,
@@ -1138,7 +1088,6 @@ export function useWeekPlans() {
     fetchExerciseByCode,
     fetchPlannedExerciseById,
     fetchWeekPlanForAthlete,
-    fetchWeekPlanForGroup,
     fetchPlannedExercisesFlat,
     createComboExercise,
     swapPlannedExercise,

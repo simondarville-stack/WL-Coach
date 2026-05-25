@@ -23,16 +23,11 @@ export interface FreeTextSetLine {
  * `x`, `X`, `×` and `*` are accepted set/rep separators and are stripped
  * before the letter check so "80x5x3" doesn't trigger free_text_reps.
  */
-export function detectIntendedUnit(input: string): 'percentage' | 'free_text_reps' | 'absolute_kg' | null {
+export function detectIntendedUnit(input: string): 'percentage' | 'free_text_reps' | null {
   if (!input) return null;
   const stripped = input.replace(/[xX×*]/g, '');
   if (/[a-zA-Z]/.test(stripped)) return 'free_text_reps';
   if (input.includes('%')) return 'percentage';
-  // Pure numeric (no letters, no %): the coach is signalling raw kg.
-  // Used as the auto-revert path from percentage / free_text_reps back to
-  // kg — typing "80x5" in a percentage-mode cell now correctly flips the
-  // unit back instead of staying in percentage and reinterpreting 80 as 80%.
-  if (/\d/.test(stripped)) return 'absolute_kg';
   return null;
 }
 

@@ -44,14 +44,7 @@ interface DayCardProps {
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
-  onExerciseDrop: (
-    fromDay: number,
-    plannedExId: string,
-    toDay: number,
-    isCopy: boolean,
-    isReplace: boolean,
-    target?: { exId: string; position: 'before' | 'after' },
-  ) => Promise<void>;
+  onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
@@ -335,11 +328,6 @@ export function DayCard({
                     onDragStart={e => {
                       e.stopPropagation();
                       e.dataTransfer.setData('text/plain', `${dayIndex}:exercise:${ex.id}`);
-                      // Marker type so cross-day DayCards can detect that an
-                      // exercise (not a template/dock item) is being dragged,
-                      // and accept the drop with a positional indicator. The
-                      // value is ignored; only the presence in types matters.
-                      e.dataTransfer.setData('application/x-emos-exercise', '1');
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
                       setDraggingExId(ex.id);
                     }}
@@ -353,15 +341,7 @@ export function DayCard({
                       setIsDragOver(false);
                     }}
                     onDragOver={e => {
-                      // Allow drop when an exercise is being dragged from
-                      // anywhere (same day OR cross-day). Same-day uses the
-                      // local draggingExId; cross-day relies on the dataTransfer
-                      // marker because draggingExId is per-DayCard.
-                      const isExerciseDrag =
-                        draggingExId != null ||
-                        e.dataTransfer.types.includes('application/x-emos-exercise');
-                      if (!isExerciseDrag) return;
-                      if (draggingExId === ex.id) return;
+                      if (!draggingExId || draggingExId === ex.id) return;
                       e.preventDefault();
                       e.stopPropagation();
                       const rect = e.currentTarget.getBoundingClientRect();
@@ -382,44 +362,14 @@ export function DayCard({
                         const fromDay = parseInt(parts[0], 10);
                         const dragType = parts[1];
                         const itemId = parts[2];
-                        if (dragType === 'exercise' && itemId !== ex.id) {
+                        if (fromDay === dayIndex && dragType === 'exercise' && itemId !== ex.id) {
+                          e.preventDefault();
+                          e.stopPropagation();
                           const pos = dropIndicator?.position ?? 'after';
-                          if (fromDay === dayIndex) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setDropIndicator(null);
-                            setDraggingExId(null);
-                            void handleReorder(itemId, ex.id, pos);
-                            return;
-                          }
-                          // Cross-day drop on a specific exercise row:
-                          // route through onExerciseDrop with target info so
-                          // the dropped exercise lands at the visual position
-                          // instead of being appended to the bottom of the day.
-                          // dropIndicator may be null here because the dragover
-                          // gate bailed on cross-day (draggingExId is local to
-                          // the source DayCard), so recompute from mouse Y.
-                          if (!isNaN(fromDay)) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const isCopy = e.ctrlKey || e.metaKey;
-                            const isReplace = e.shiftKey;
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const dropPos: 'before' | 'after' =
-                              e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                            setDropIndicator(null);
-                            setDraggingExId(null);
-                            setIsDragOver(false);
-                            void onExerciseDrop(
-                              fromDay,
-                              itemId,
-                              dayIndex,
-                              isCopy,
-                              isReplace,
-                              { exId: ex.id, position: dropPos },
-                            );
-                            return;
-                          }
+                          setDropIndicator(null);
+                          setDraggingExId(null);
+                          void handleReorder(itemId, ex.id, pos);
+                          return;
                         }
                       }
                       setDropIndicator(null);

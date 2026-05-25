@@ -11,7 +11,6 @@ import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
-import { DEFAULT_UNITS } from '../../lib/constants';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -60,10 +59,12 @@ interface ExerciseDetailProps {
   ) => Promise<OtherDay[]>;
 }
 
-// Unit choices are the canonical DEFAULT_UNITS from constants. Anything
-// else in the DB (legacy rpe / other rows) will still render — the select
-// just won't offer those as new choices.
-const UNIT_OPTIONS = DEFAULT_UNITS;
+const UNIT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'absolute_kg', label: 'kg' },
+  { value: 'percentage', label: '%' },
+  { value: 'free_text_reps', label: 'Free text with reps × sets' },
+  { value: 'free_text', label: 'Free text' },
+];
 
 export function ExerciseDetail({
   plannedExercise,

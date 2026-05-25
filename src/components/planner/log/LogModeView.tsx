@@ -133,6 +133,19 @@ export function LogModeView({
     [appendMessage],
   );
 
+  const postExerciseComment = useCallback(
+    async (sessionId: string, logExerciseId: string, body: string) => {
+      const msg = await addComment({
+        sessionId,
+        exerciseId: logExerciseId,
+        message: body,
+        senderType: 'coach',
+      });
+      appendMessage(msg);
+    },
+    [appendMessage],
+  );
+
   const onDeleteLogExercise = useCallback(
     (logExerciseId: string) => {
       setPendingConfirm({
@@ -252,6 +265,7 @@ export function LogModeView({
           plannedExercises={plannedExercises[day.index] ?? []}
           dayLog={weekLog[day.index] ?? null}
           onPostSessionComment={postSessionComment}
+          onPostExerciseComment={postExerciseComment}
           onDeleteLogExercise={onDeleteLogExercise}
           onDeleteSession={onDeleteSession}
           onEditLoggedExercise={setEditingLogged}

@@ -11,10 +11,9 @@ import { AthleteLayout } from './components/AthleteLayout';
 import { TodayScreen } from './screens/TodayScreen';
 import { WeekScreen } from './screens/WeekScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
-import { GroupViewerScreen } from './screens/GroupViewerScreen';
 
 function AthleteRoutes() {
-  const { loading, mode } = useAuth();
+  const { loading, athlete } = useAuth();
 
   if (loading) {
     return (
@@ -24,8 +23,7 @@ function AthleteRoutes() {
     );
   }
 
-  if (mode === null) return <ProfilePicker />;
-  if (mode === 'group') return <GroupViewerScreen />;
+  if (!athlete) return <ProfilePicker />;
 
   return (
     <Routes>

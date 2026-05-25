@@ -50,14 +50,9 @@ interface SetEntryRowProps {
    *  Can be sync (for removing a pending blank row that has no DB
    *  presence yet) or async (for deleting a persisted row). */
   onDelete?: () => void | Promise<void>;
-  /** View-only render: keeps the same chrome (status pills, kg/reps
-   *  cells, delete affordance) but disables inputs and suppresses the
-   *  done/skip buttons + delete. Used by the group viewer where there's
-   *  no athlete profile to write against. */
-  readOnly?: boolean;
 }
 
-export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false }: SetEntryRowProps) {
+export function SetEntryRow({ input, logged, onSave, onDelete }: SetEntryRowProps) {
   // Prefer performed_text for the reps display when set: combo entries like
   // "2+2+2" round-trip as the raw string instead of being replaced by the
   // numeric sum (6) on re-render. Falls back to performed_reps for legacy
@@ -183,36 +178,34 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         {input.setNumber}
       </span>
 
-      {!readOnly && (
-        <div className="flex flex-shrink-0 gap-1">
-          <button
-            onClick={setDone}
-            disabled={busy}
-            className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
-              isDone
-                ? 'bg-emerald-500 border-emerald-400 text-white'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-emerald-300'
-            }`}
-            title="Did this set"
-            aria-pressed={isDone}
-          >
-            <Check size={16} strokeWidth={3} />
-          </button>
-          <button
-            onClick={setSkipped}
-            disabled={busy}
-            className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
-              isSkipped
-                ? 'bg-red-500 border-red-400 text-white'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-red-300'
-            }`}
-            title="Didn't do this set"
-            aria-pressed={isSkipped}
-          >
-            <X size={16} strokeWidth={3} />
-          </button>
-        </div>
-      )}
+      <div className="flex flex-shrink-0 gap-1">
+        <button
+          onClick={setDone}
+          disabled={busy}
+          className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
+            isDone
+              ? 'bg-emerald-500 border-emerald-400 text-white'
+              : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-emerald-300'
+          }`}
+          title="Did this set"
+          aria-pressed={isDone}
+        >
+          <Check size={16} strokeWidth={3} />
+        </button>
+        <button
+          onClick={setSkipped}
+          disabled={busy}
+          className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
+            isSkipped
+              ? 'bg-red-500 border-red-400 text-white'
+              : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-red-300'
+          }`}
+          title="Didn't do this set"
+          aria-pressed={isSkipped}
+        >
+          <X size={16} strokeWidth={3} />
+        </button>
+      </div>
 
       {input.freeTextMode ? (
         <div className="flex-1 min-w-0">
@@ -233,7 +226,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
                 }
               }}
               placeholder="What did you do?"
-              disabled={busy || isSkipped || readOnly}
+              disabled={busy || isSkipped}
               className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500 placeholder:text-gray-600 disabled:opacity-50"
             />
           )}
@@ -246,29 +239,19 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
             unit="kg"
             onChange={setLoad}
             onCommit={() => commit()}
-            disabled={busy || isSkipped || readOnly}
+            disabled={busy || isSkipped}
           />
-          {input.acceptsTextReps ? (
-            <TextRepsCell
-              value={reps}
-              placeholder={input.plannedRepsText}
-              onChange={setReps}
-              onCommit={() => commit()}
-              disabled={busy || isSkipped || readOnly}
-            />
-          ) : (
-            <NumericCell
-              value={reps}
-              placeholder={input.plannedRepsText}
-              unit="r"
-              onChange={setReps}
-              onCommit={() => commit()}
-              disabled={busy || isSkipped || readOnly}
-            />
-          )}
+          <NumericCell
+            value={reps}
+            placeholder={input.plannedRepsText}
+            unit="r"
+            onChange={setReps}
+            onCommit={() => commit()}
+            disabled={busy || isSkipped}
+          />
         </div>
       )}
-      {onDelete && !readOnly && (
+      {onDelete && (
         <button
           onClick={() => void onDelete()}
           disabled={busy}
