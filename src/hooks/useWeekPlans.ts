@@ -800,6 +800,92 @@ export function useWeekPlans() {
     }
   };
 
+  /** Re-insert a frozen snapshot (taken by the canvas, a template, etc.) into
+   *  a week plan's day. Mirrors copyExerciseWithSetLines but reads from an
+   *  in-memory blob rather than another Supabase row — so the canvas can drop
+   *  items back without round-tripping to the original planned_exercise row,
+   *  which may have been deleted in the meantime. */
+  const insertExerciseSnapshot = async (
+    snapshot: {
+      exercise_id: string;
+      unit: string;
+      prescription_raw: string | null;
+      notes: string | null;
+      variation_note: string | null;
+      summary_total_sets: number;
+      summary_total_reps: number;
+      summary_highest_load: number | null;
+      summary_avg_load: number | null;
+      is_combo: boolean;
+      combo_notation: string | null;
+      combo_color: string | null;
+      metadata: Record<string, unknown> | null;
+      set_lines: {
+        sets: number;
+        reps: number;
+        reps_text: string | null;
+        load_value: number;
+        load_max: number | null;
+        position: number;
+      }[];
+      combo_members: { exercise_id: string; position: number }[];
+    },
+    weekPlanId: string,
+    dayIndex: number,
+    position: number,
+    extras?: { source?: 'group' | 'individual' | null },
+  ): Promise<string> => {
+    const newEx = await addExerciseToDay(
+      weekPlanId,
+      dayIndex,
+      snapshot.exercise_id,
+      position,
+      snapshot.unit as DefaultUnit,
+      {
+        prescription_raw: snapshot.prescription_raw,
+        notes: snapshot.notes,
+        variation_note: snapshot.variation_note,
+        summary_total_sets: snapshot.summary_total_sets,
+        summary_total_reps: snapshot.summary_total_reps,
+        summary_highest_load: snapshot.summary_highest_load,
+        summary_avg_load: snapshot.summary_avg_load,
+        is_combo: snapshot.is_combo,
+        combo_notation: snapshot.combo_notation,
+        combo_color: snapshot.combo_color,
+        metadata: snapshot.metadata,
+        source: extras?.source ?? null,
+      },
+    );
+
+    if (snapshot.set_lines.length > 0) {
+      const { error: linesErr } = await supabase.from('planned_set_lines').insert(
+        snapshot.set_lines.map(line => ({
+          planned_exercise_id: newEx.id,
+          sets: line.sets,
+          reps: line.reps,
+          reps_text: line.reps_text,
+          load_value: line.load_value,
+          load_max: line.load_max,
+          position: line.position,
+        })),
+      );
+      if (linesErr) throw linesErr;
+    }
+
+    if (snapshot.is_combo && snapshot.combo_members.length > 0) {
+      const { error: membersErr } = await supabase.from('planned_exercise_combo_members').insert(
+        snapshot.combo_members.map(m => ({
+          planned_exercise_id: newEx.id,
+          exercise_id: m.exercise_id,
+          position: m.position,
+        })),
+      );
+      if (membersErr) throw membersErr;
+    }
+
+    return newEx.id;
+  };
+
   const deleteDayExercises = async (exerciseIds: string[]): Promise<void> => {
     if (exerciseIds.length === 0) return;
     const { error: delLinesError } = await supabase.from('planned_set_lines').delete().in('planned_exercise_id', exerciseIds);
@@ -1132,6 +1218,7 @@ export function useWeekPlans() {
     addExerciseToDay,
     copyExerciseWithSetLines,
     copyDayExercises,
+    insertExerciseSnapshot,
     deleteDayExercises,
     fetchExercisesForDay,
     updateItemPosition,

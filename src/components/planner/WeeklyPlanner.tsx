@@ -25,6 +25,12 @@ import { PlannerModals } from './PlannerModals';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
 import { TemplateImportDialog } from './dock/TemplateImportDialog';
+import {
+  useCanvasState,
+  type CanvasExerciseSnapshot,
+  type CanvasExerciseDisplay,
+} from './dock/useCanvasState';
+import { getSentinelType } from './sentinelUtils';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroTimeline } from '../planning';
@@ -101,6 +107,7 @@ export function WeeklyPlanner() {
     reorderExercises,
     moveExercise,
     reorderInDay,
+    insertExerciseSnapshot,
     normalizePositions,
     savePrescription,
     saveNotes,
@@ -482,6 +489,166 @@ export function WeeklyPlanner() {
   const handleOpenImportDialog = (templateId: string) => {
     const firstActiveDay = visibleDays[0]?.index ?? activeDays[0] ?? 1;
     setImportTarget({ templateId, startDayIndex: firstActiveDay });
+  };
+
+  // ── Canvas ──────────────────────────────────────────────────────────────
+  // The canvas is a localStorage-backed scratch space living in the dock.
+  // Coaches drag planner items into it to park them, then drag them back
+  // into any day later. Snapshots include set lines + combo members + the
+  // metadata blob, so sentinel types (text / video / image / GPP) round-trip
+  // verbatim.
+  const canvas = useCanvasState();
+
+  const buildExerciseDisplay = (
+    ex: typeof plannedExercises[number][number],
+  ): CanvasExerciseDisplay => {
+    const sentinel = getSentinelType(ex.exercise.exercise_code);
+    if (sentinel === 'text') {
+      return { label: ex.notes?.slice(0, 60) || 'Text note', color: 'var(--color-border-secondary)', sentinel: 'text', caption: null };
+    }
+    if (sentinel === 'video') {
+      return { label: 'Video', color: '#6366F1', sentinel: 'video', caption: ex.notes ?? null };
+    }
+    if (sentinel === 'image') {
+      return { label: 'Image', color: '#EC4899', sentinel: 'image', caption: ex.notes ?? null };
+    }
+    if (sentinel === 'gpp') {
+      const rows = ex.metadata?.gpp?.rows?.length ?? 0;
+      return {
+        label: ex.metadata?.gpp?.title || 'GPP',
+        color: '#10B981',
+        sentinel: 'gpp',
+        caption: rows > 0 ? `${rows} row${rows === 1 ? '' : 's'}` : null,
+      };
+    }
+    if (ex.is_combo) {
+      const members = (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position);
+      const label = ex.combo_notation || members.map(m => m.exercise.name).join(' + ') || 'Combo';
+      return {
+        label,
+        color: ex.combo_color || members[0]?.exercise.color || '#94a3b8',
+        sentinel: 'combo',
+        caption: 'Combo',
+      };
+    }
+    return {
+      label: ex.exercise.name,
+      color: ex.exercise.color || '#94a3b8',
+      sentinel: 'exercise',
+      caption: ex.exercise.category ?? null,
+    };
+  };
+
+  const buildExerciseSnapshot = async (
+    plannedExId: string,
+  ): Promise<{ display: CanvasExerciseDisplay; snapshot: CanvasExerciseSnapshot } | null> => {
+    // Find the row in our in-memory plannedExercises map.
+    let found: { dayIndex: number; ex: typeof plannedExercises[number][number] } | null = null;
+    for (const [dayIdxStr, list] of Object.entries(plannedExercises)) {
+      const match = list.find(e => e.id === plannedExId);
+      if (match) {
+        found = { dayIndex: parseInt(dayIdxStr, 10), ex: match };
+        break;
+      }
+    }
+    if (!found) return null;
+    const { ex } = found;
+
+    // Fetch set_lines for this exercise — they aren't in plannedExercises
+    // state, so a parked snapshot would otherwise drop the per-set breakdown
+    // when re-inserted.
+    const { data: setLines } = await supabase
+      .from('planned_set_lines')
+      .select('sets,reps,reps_text,load_value,load_max,position')
+      .eq('planned_exercise_id', ex.id)
+      .order('position');
+
+    const members = ex.is_combo
+      ? (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position)
+      : [];
+
+    const display = buildExerciseDisplay(ex);
+    const snapshot: CanvasExerciseSnapshot = {
+      exercise_id: ex.exercise_id,
+      unit: ex.unit ?? ex.exercise.default_unit ?? 'absolute_kg',
+      prescription_raw: ex.prescription_raw,
+      notes: ex.notes,
+      variation_note: ex.variation_note,
+      summary_total_sets: ex.summary_total_sets ?? 0,
+      summary_total_reps: ex.summary_total_reps ?? 0,
+      summary_highest_load: ex.summary_highest_load,
+      summary_avg_load: ex.summary_avg_load,
+      is_combo: ex.is_combo,
+      combo_notation: ex.combo_notation,
+      combo_color: ex.combo_color,
+      metadata: (ex.metadata ?? null) as Record<string, unknown> | null,
+      set_lines: (setLines ?? []).map(l => ({
+        sets: l.sets,
+        reps: l.reps,
+        reps_text: l.reps_text ?? null,
+        load_value: l.load_value,
+        load_max: l.load_max ?? null,
+        position: l.position,
+      })),
+      combo_members: members.map(m => ({ exercise_id: m.exerciseId, position: m.position })),
+    };
+    return { display, snapshot };
+  };
+
+  const handleCanvasPlannerDrop = async (data: string) => {
+    if (data.startsWith('DAY:')) {
+      const dayIndex = parseInt(data.slice(4), 10);
+      if (Number.isNaN(dayIndex)) return;
+      const rows = plannedExercises[dayIndex] ?? [];
+      if (rows.length === 0) return;
+      const snapshots: { display: CanvasExerciseDisplay; snapshot: CanvasExerciseSnapshot }[] = [];
+      for (const ex of rows) {
+        const built = await buildExerciseSnapshot(ex.id);
+        if (built) snapshots.push(built);
+      }
+      if (snapshots.length === 0) return;
+      const label = currentWeekPlan?.day_labels?.[dayIndex]
+        || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name
+        || `Day ${dayIndex}`;
+      canvas.addDay(label, snapshots);
+      return;
+    }
+    // <dayIndex>:exercise:<plannedExId>
+    const parts = data.split(':');
+    if (parts.length >= 3 && parts[1] === 'exercise') {
+      const plannedExId = parts[2];
+      const built = await buildExerciseSnapshot(plannedExId);
+      if (built) canvas.addExercise(built.display, built.snapshot);
+    }
+  };
+
+  const handleCanvasItemDrop = async (canvasItemId: string, dayIndex: number, isReplace: boolean) => {
+    if (!currentWeekPlan) return;
+    const item = canvas.findById(canvasItemId);
+    if (!item) return;
+
+    if (isReplace) {
+      const targetIds = (plannedExercises[dayIndex] || []).map(ex => ex.id);
+      if (targetIds.length > 0) await deleteDayExercises(targetIds);
+    }
+
+    const basePosition = isReplace ? 0 : (plannedExercises[dayIndex] || []).length;
+    const source = planSelection.type === 'individual' ? 'individual' : null;
+
+    if (item.kind === 'exercise') {
+      await insertExerciseSnapshot(item.snapshot, currentWeekPlan.id, dayIndex, basePosition + 1, { source });
+    } else {
+      for (let i = 0; i < item.exercises.length; i++) {
+        await insertExerciseSnapshot(
+          item.exercises[i].snapshot,
+          currentWeekPlan.id,
+          dayIndex,
+          basePosition + i + 1,
+          { source },
+        );
+      }
+    }
+    await handleRefresh();
   };
 
   const handleSaveDayAsTemplate = (dayIndex: number) => {
@@ -1180,6 +1347,7 @@ export function WeeklyPlanner() {
                 onDockExerciseDrop={handleDockExerciseDrop}
                 onDockTemplateDrop={handleDockTemplateDrop}
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
+                onCanvasItemDrop={handleCanvasItemDrop}
                 onSaveAsTemplate={handleSaveDayAsTemplate}
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
@@ -1354,6 +1522,10 @@ export function WeeklyPlanner() {
             <PlannerDock
               exercises={allExercises}
               onOpenImport={handleOpenImportDialog}
+              canvasItems={canvas.items}
+              onCanvasRemove={canvas.remove}
+              onCanvasClear={canvas.clear}
+              onCanvasPlannerDrop={handleCanvasPlannerDrop}
             />
           </>
         )}

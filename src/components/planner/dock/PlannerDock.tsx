@@ -3,6 +3,8 @@ import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab, DOCK_MIN_HEIGHT } from './useDockState';
 import { DockExerciseList } from './DockExerciseList';
 import { DockTemplateList } from './DockTemplateList';
+import { CanvasPanel } from './CanvasPanel';
+import type { CanvasItem } from './useCanvasState';
 import type { Exercise } from '../../../lib/database.types';
 
 interface TabDef {
@@ -13,6 +15,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: 'exercises', label: 'Exercises' },
   { key: 'templates', label: 'Templates' },
+  { key: 'canvas', label: 'Canvas' },
 ];
 
 const HEADER_HEIGHT = 32;
@@ -23,9 +26,26 @@ const VIEWPORT_BUFFER = 120;
 interface PlannerDockProps {
   exercises: Exercise[];
   onOpenImport: (templateId: string) => void;
+  /** Snapshots parked on the canvas. */
+  canvasItems: CanvasItem[];
+  /** Remove a single canvas snapshot by id. */
+  onCanvasRemove: (id: string) => void;
+  /** Empty the canvas. */
+  onCanvasClear: () => void;
+  /** Forwarded to CanvasPanel — receives raw dataTransfer text/plain when a
+   *  planner item is dropped onto the canvas. The parent resolves it (single
+   *  exercise vs. day) and snapshots accordingly. */
+  onCanvasPlannerDrop: (data: string) => Promise<void> | void;
 }
 
-export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
+export function PlannerDock({
+  exercises,
+  onOpenImport,
+  canvasItems,
+  onCanvasRemove,
+  onCanvasClear,
+  onCanvasPlannerDrop,
+}: PlannerDockProps) {
   const {
     tab, setTab,
     collapsed, setCollapsed,
@@ -93,7 +113,12 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
   };
 
-  const placeholder = tab === 'exercises' ? 'Search exercises…' : 'Search templates…';
+  const placeholder = tab === 'exercises'
+    ? 'Search exercises…'
+    : tab === 'templates'
+    ? 'Search templates…'
+    : '';
+  const showSearch = tab !== 'canvas';
 
   return (
     <div
@@ -186,6 +211,7 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
         <div style={{ display: 'flex', gap: 2 }}>
           {TABS.map(t => {
             const active = t.key === tab;
+            const badge = t.key === 'canvas' && canvasItems.length > 0 ? canvasItems.length : null;
             return (
               <button
                 key={t.key}
@@ -193,7 +219,17 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
                   setTab(t.key);
                   if (collapsed) setCollapsed(false);
                 }}
+                onDragEnter={() => {
+                  // Auto-switch to a tab when the user drags over its
+                  // label. Lets coaches park items on the canvas without
+                  // first clicking the tab.
+                  if (tab !== t.key) setTab(t.key);
+                  if (collapsed) setCollapsed(false);
+                }}
                 style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
                   fontSize: 11,
                   fontWeight: active ? 500 : 400,
                   padding: '3px 10px',
@@ -207,63 +243,87 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
                 }}
               >
                 {t.label}
+                {badge != null && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 16,
+                      height: 14,
+                      padding: '0 4px',
+                      fontSize: 9,
+                      fontWeight: 500,
+                      background: 'var(--color-accent-muted)',
+                      color: 'var(--color-accent)',
+                      borderRadius: 7,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {badge}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
-        <div style={{ position: 'relative', flex: 1, maxWidth: 320, display: 'flex', alignItems: 'center' }}>
-          <Search
-            size={11}
-            style={{ position: 'absolute', left: 8, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }}
-          />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onFocus={handleSearchFocus}
-            placeholder={placeholder}
-            style={{
-              width: '100%',
-              paddingLeft: 24,
-              paddingRight: query ? 22 : 8,
-              paddingTop: 3,
-              paddingBottom: 3,
-              fontSize: 11,
-              color: 'var(--color-text-primary)',
-              background: 'var(--color-bg-primary)',
-              border: '0.5px solid var(--color-border-secondary)',
-              borderRadius: 'var(--radius-sm)',
-              outline: 'none',
-              transition: 'border-color var(--transition-fast)',
-            }}
-            onFocusCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-accent-border)'; }}
-            onBlurCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border-secondary)'; }}
-          />
-          {query && (
-            <button
-              onClick={() => { setQuery(''); inputRef.current?.focus(); }}
-              title="Clear search"
+        {showSearch ? (
+          <div style={{ position: 'relative', flex: 1, maxWidth: 320, display: 'flex', alignItems: 'center' }}>
+            <Search
+              size={11}
+              style={{ position: 'absolute', left: 8, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }}
+            />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onFocus={handleSearchFocus}
+              placeholder={placeholder}
               style={{
-                position: 'absolute',
-                right: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 16,
-                height: 16,
-                padding: 0,
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: 'var(--color-text-tertiary)',
+                width: '100%',
+                paddingLeft: 24,
+                paddingRight: query ? 22 : 8,
+                paddingTop: 3,
+                paddingBottom: 3,
+                fontSize: 11,
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-bg-primary)',
+                border: '0.5px solid var(--color-border-secondary)',
                 borderRadius: 'var(--radius-sm)',
+                outline: 'none',
+                transition: 'border-color var(--transition-fast)',
               }}
-            >
-              <X size={11} />
-            </button>
-          )}
-        </div>
+              onFocusCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-accent-border)'; }}
+              onBlurCapture={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border-secondary)'; }}
+            />
+            {query && (
+              <button
+                onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+                title="Clear search"
+                style={{
+                  position: 'absolute',
+                  right: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 16,
+                  height: 16,
+                  padding: 0,
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  color: 'var(--color-text-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ flex: 1, maxWidth: 320 }} />
+        )}
         <div style={{ flex: 1 }} />
         <button
           onClick={toggleCollapsed}
@@ -299,8 +359,15 @@ export function PlannerDock({ exercises, onOpenImport }: PlannerDockProps) {
               categoryFilter={exerciseCategoryFilter}
               setCategoryFilter={setExerciseCategoryFilter}
             />
-          ) : (
+          ) : tab === 'templates' ? (
             <DockTemplateList query={query} onOpenImport={onOpenImport} />
+          ) : (
+            <CanvasPanel
+              items={canvasItems}
+              onRemove={onCanvasRemove}
+              onClear={onCanvasClear}
+              onPlannerDrop={onCanvasPlannerDrop}
+            />
           )}
         </div>
       )}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export type DockTab = 'exercises' | 'templates';
+export type DockTab = 'exercises' | 'templates' | 'canvas';
 export type ExerciseSortKey = 'name' | 'category' | 'code';
 
 const TAB_KEY = 'emos_dock_tab';
@@ -13,7 +13,8 @@ export const DOCK_DEFAULT_HEIGHT = 240;
 
 function readTab(): DockTab {
   const v = typeof window !== 'undefined' ? localStorage.getItem(TAB_KEY) : null;
-  return v === 'templates' ? 'templates' : 'exercises';
+  if (v === 'templates' || v === 'canvas') return v;
+  return 'exercises';
 }
 
 function readCollapsed(): boolean {

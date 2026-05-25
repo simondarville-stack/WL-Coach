@@ -56,6 +56,7 @@ interface DayCardProps {
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onCanvasItemDrop?: (canvasItemId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onSaveAsTemplate?: (dayIndex: number) => void;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   /** Persist a GPP block payload on a planned_exercise row. */
@@ -88,6 +89,7 @@ export function DayCard({
   onDockExerciseDrop,
   onDockTemplateDrop,
   onDockTemplateDayDrop,
+  onCanvasItemDrop,
   onSaveAsTemplate,
   savePrescription,
   saveGppSection,
@@ -203,7 +205,11 @@ export function DayCard({
     if (!data) return;
     const isCopy = e.ctrlKey || e.metaKey;
     const isReplace = e.shiftKey;
-    if (data.startsWith('DOCK:exercise:')) {
+    if (data.startsWith('CANVAS:exercise:') || data.startsWith('CANVAS:day:')) {
+      const canvasId = data.slice(data.lastIndexOf(':') + 1);
+      if (!canvasId || !onCanvasItemDrop) return;
+      await onCanvasItemDrop(canvasId, dayIndex, isReplace);
+    } else if (data.startsWith('DOCK:exercise:')) {
       const exerciseId = data.slice('DOCK:exercise:'.length);
       if (!exerciseId || !onDockExerciseDrop) return;
       await onDockExerciseDrop(exerciseId, dayIndex, isReplace);
