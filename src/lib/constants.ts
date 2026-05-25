@@ -8,12 +8,10 @@ export const DEFAULT_PHASE_TYPE_PRESETS: PhaseTypePreset[] = [
 ];
 
 export const DEFAULT_UNITS: { value: DefaultUnit; label: string }[] = [
-  { value: 'percentage', label: 'Percentage (%)' },
-  { value: 'absolute_kg', label: 'Absolute (kg)' },
-  { value: 'rpe', label: 'RPE' },
-  { value: 'free_text_reps', label: 'Free Text (with reps × sets)' },
-  { value: 'free_text', label: 'Free Text' },
-  { value: 'other', label: 'Other' },
+  { value: 'absolute_kg', label: 'kg' },
+  { value: 'percentage', label: '%' },
+  { value: 'free_text_reps', label: 'Free text with reps × sets' },
+  { value: 'free_text', label: 'Free text' },
 ];
 
 export const DAYS_OF_WEEK = [

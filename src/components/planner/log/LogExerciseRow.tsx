@@ -12,7 +12,6 @@
 import type {
   PlannedExercise,
   Exercise,
-  TrainingLogMessage,
 } from '../../../lib/database.types';
 import {
   computeDelta,
@@ -22,13 +21,11 @@ import {
   type DeltaState,
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
-import { useState } from 'react';
-import { MessageSquare, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react';
+import { Trash2, Pencil } from 'lucide-react';
 import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
-import { LogCommentsThread } from './LogCommentsThread';
 
 // Matched intentionally has no tint: the DoneChip already communicates
 // "this is completed and matches the plan", so the row stays neutral.
@@ -44,15 +41,13 @@ const DELTA_BG: Record<DeltaState, string> = {
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
   logged: LoggedExerciseFull | null;
-  sessionMessages: TrainingLogMessage[];
-  onPostComment?: (body: string) => Promise<void>;
   /** Coach-side delete: drops the entire log_exercise + sets. */
   onDelete?: () => Promise<void>;
   /** Coach-side inline edit: opens the set-edit modal. */
   onEdit?: () => void;
 }
 
-export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment, onDelete, onEdit }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, onDelete, onEdit }: LogExerciseRowProps) {
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
 
   // For free-text, GPP, and other non-quantified units, computeDelta would
@@ -70,10 +65,6 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
     isUnquantified ? 0 : performedReps,
     !!logged,
   );
-
-  const exerciseMessages = logged
-    ? sessionMessages.filter(m => m.exercise_id === logged.log.id)
-    : [];
 
   // Detect substitution: planned slot exists, athlete logged a
   // different exercise_id. We show the substituted name primarily and
@@ -334,45 +325,7 @@ export function LogExerciseRow({ planned, logged, sessionMessages, onPostComment
             {logged.log.performed_notes}
           </p>
         )}
-
-        {logged && onPostComment && (
-          <ExerciseCommentsToggle
-            count={exerciseMessages.length}
-            messages={exerciseMessages}
-            onPost={onPostComment}
-          />
-        )}
       </div>
-    </div>
-  );
-}
-
-function ExerciseCommentsToggle({
-  count,
-  messages,
-  onPost,
-}: {
-  count: number;
-  messages: TrainingLogMessage[];
-  onPost: (body: string) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-1.5">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-800"
-        aria-expanded={open}
-      >
-        <MessageSquare size={10} />
-        {count > 0 ? `${count} comment${count > 1 ? 's' : ''}` : 'Comment'}
-        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-      </button>
-      {open && (
-        <div className="mt-1 px-2 py-1.5 bg-gray-50 rounded border border-gray-100">
-          <LogCommentsThread compact messages={messages} onPost={onPost} />
-        </div>
-      )}
     </div>
   );
 }

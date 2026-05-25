@@ -241,61 +241,7 @@ export async function fetchAthleteDay(
     ? knownWeekPlanId
     : (await resolveAthleteWeekPlanId(athleteId, weekStart)).weekPlanId;
 
-  let planned: PlannedExerciseFull[] = [];
-  if (weekPlanId) {
-    const { data: peRows, error: peErr } = await supabase
-      .from('planned_exercises')
-      .select('*, exercise:exercise_id(*)')
-      .eq('weekplan_id', weekPlanId)
-      .eq('day_index', dayIndex)
-      .order('position');
-    if (peErr) throw peErr;
-    const pes = (peRows ?? []) as Array<PlannedExercise & { exercise: Exercise }>;
-    const peIds = pes.map(p => p.id);
-    let setLines: PlannedSetLine[] = [];
-    if (peIds.length > 0) {
-      const { data: slRows, error: slErr } = await supabase
-        .from('planned_set_lines')
-        .select('*')
-        .in('planned_exercise_id', peIds)
-        .order('position');
-      if (slErr) throw slErr;
-      setLines = (slRows ?? []) as PlannedSetLine[];
-    }
-
-    // Combo members: each is_combo planned exercise references its
-    // component lifts via planned_exercise_combo_members. Without this
-    // fetch the athlete only sees the combo's parent name and misses
-    // the component list (e.g. "Snatch + OHS" → empty body).
-    const comboMembersByPlanned = new Map<string, ComboMemberEntry[]>();
-    const comboIds = pes.filter(p => p.is_combo).map(p => p.id);
-    if (comboIds.length > 0) {
-      const { data: cmRows, error: cmErr } = await supabase
-        .from('planned_exercise_combo_members')
-        .select('planned_exercise_id, exercise_id, position, exercise:exercise_id(*)')
-        .in('planned_exercise_id', comboIds)
-        .order('position');
-      if (cmErr) throw cmErr;
-      type Row = {
-        planned_exercise_id: string;
-        exercise_id: string;
-        position: number;
-        exercise: Exercise;
-      };
-      ((cmRows ?? []) as Row[]).forEach(m => {
-        const list = comboMembersByPlanned.get(m.planned_exercise_id) ?? [];
-        list.push({ exerciseId: m.exercise_id, exercise: m.exercise, position: m.position });
-        comboMembersByPlanned.set(m.planned_exercise_id, list);
-      });
-    }
-
-    planned = pes.map(pe => ({
-      exercise: pe,
-      exerciseDef: pe.exercise,
-      setLines: setLines.filter(sl => sl.planned_exercise_id === pe.id),
-      comboMembers: comboMembersByPlanned.get(pe.id) ?? [],
-    }));
-  }
+  const planned = weekPlanId ? await fetchPlannedDay(weekPlanId, dayIndex) : [];
 
   const log = await fetchSessionForSlot(athleteId, weekStart, dayIndex);
 
@@ -308,6 +254,66 @@ export async function fetchAthleteDay(
   ]);
 
   return { weekStart, dayIndex, planned, log, metricsConfig, metricDefinitions };
+}
+
+/**
+ * Read-only fetch of one day's planned exercises for a given weekPlanId.
+ * Shared between the athlete day fetcher (which also pulls log + metrics)
+ * and the group viewer (which only needs the planned side). Includes set
+ * lines and combo members so the same rendering primitives can consume
+ * the result.
+ */
+export async function fetchPlannedDay(
+  weekPlanId: string,
+  dayIndex: number,
+): Promise<PlannedExerciseFull[]> {
+  const { data: peRows, error: peErr } = await supabase
+    .from('planned_exercises')
+    .select('*, exercise:exercise_id(*)')
+    .eq('weekplan_id', weekPlanId)
+    .eq('day_index', dayIndex)
+    .order('position');
+  if (peErr) throw peErr;
+  const pes = (peRows ?? []) as Array<PlannedExercise & { exercise: Exercise }>;
+  if (pes.length === 0) return [];
+
+  const peIds = pes.map(p => p.id);
+  const { data: slRows, error: slErr } = await supabase
+    .from('planned_set_lines')
+    .select('*')
+    .in('planned_exercise_id', peIds)
+    .order('position');
+  if (slErr) throw slErr;
+  const setLines = (slRows ?? []) as PlannedSetLine[];
+
+  const comboMembersByPlanned = new Map<string, ComboMemberEntry[]>();
+  const comboIds = pes.filter(p => p.is_combo).map(p => p.id);
+  if (comboIds.length > 0) {
+    const { data: cmRows, error: cmErr } = await supabase
+      .from('planned_exercise_combo_members')
+      .select('planned_exercise_id, exercise_id, position, exercise:exercise_id(*)')
+      .in('planned_exercise_id', comboIds)
+      .order('position');
+    if (cmErr) throw cmErr;
+    type Row = {
+      planned_exercise_id: string;
+      exercise_id: string;
+      position: number;
+      exercise: Exercise;
+    };
+    ((cmRows ?? []) as Row[]).forEach(m => {
+      const list = comboMembersByPlanned.get(m.planned_exercise_id) ?? [];
+      list.push({ exerciseId: m.exercise_id, exercise: m.exercise, position: m.position });
+      comboMembersByPlanned.set(m.planned_exercise_id, list);
+    });
+  }
+
+  return pes.map(pe => ({
+    exercise: pe,
+    exerciseDef: pe.exercise,
+    setLines: setLines.filter(sl => sl.planned_exercise_id === pe.id),
+    comboMembers: comboMembersByPlanned.get(pe.id) ?? [],
+  }));
 }
 
 // ─── Week overview (athlete day-picker) ───────────────────────────────────

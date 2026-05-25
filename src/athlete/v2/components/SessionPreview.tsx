@@ -29,6 +29,10 @@ interface SessionPreviewProps {
   log: DayLog | null;
   onStart: () => void;
   isBonus?: boolean;
+  /** When true, hides the coach-message reply CTA and the bottom
+   *  Start/Continue/View-in-log button. Used by the group viewer where
+   *  there is no athlete profile to log against. */
+  readOnly?: boolean;
 }
 
 // Binary states: only "Done" surfaces. Everything else renders no pill.
@@ -41,6 +45,7 @@ export function SessionPreview({
   log,
   onStart,
   isBonus,
+  readOnly = false,
 }: SessionPreviewProps) {
   const prettyDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
     weekday: 'long',
@@ -138,6 +143,7 @@ export function SessionPreview({
       )}
 
       {(() => {
+        if (readOnly) return null;
         const sessionMessages = (log?.messages ?? []).filter(m => !m.exercise_id);
         const coachMessages = sessionMessages.filter(m => m.sender_type === 'coach');
         if (coachMessages.length === 0) return null;
@@ -162,17 +168,19 @@ export function SessionPreview({
         );
       })()}
 
-      <button
-        onClick={onStart}
-        className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
-      >
-        <PlayCircle size={18} />
-        {status === 'completed'
-          ? 'View in log'
-          : log?.session
-          ? 'Continue logging'
-          : 'Start logging'}
-      </button>
+      {!readOnly && (
+        <button
+          onClick={onStart}
+          className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
+        >
+          <PlayCircle size={18} />
+          {status === 'completed'
+            ? 'View in log'
+            : log?.session
+            ? 'Continue logging'
+            : 'Start logging'}
+        </button>
+      )}
     </div>
   );
 }

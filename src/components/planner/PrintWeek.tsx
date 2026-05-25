@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, FileText, Sliders } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
-import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry } from '../../lib/database.types';
+import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup } from '../../lib/database.types';
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
@@ -21,7 +21,11 @@ import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekDesigner } from './PrintWeekDesigner';
 
 interface PrintWeekProps {
-  athlete: Athlete;
+  /** Either an athlete OR a group must be provided. When `group` is set
+   *  the printout uses the group plan as its data source and the header
+   *  shows the group name. */
+  athlete?: Athlete | null;
+  group?: TrainingGroup | null;
   weekStart: string;
   onClose: () => void;
   showCategorySummaries?: boolean;
@@ -112,8 +116,8 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
   );
 }
 
-export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription = null }: PrintWeekProps) {
-  const { fetchWeekPlanForAthlete, fetchPlannedExercisesFlat } = useWeekPlans();
+export function PrintWeek({ athlete = null, group = null, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription = null }: PrintWeekProps) {
+  const { fetchWeekPlanForAthlete, fetchWeekPlanForGroup, fetchPlannedExercisesFlat } = useWeekPlans();
   const { fetchProgrammeData } = useCombos();
   const { activeCoach } = useCoachStore();
 
@@ -123,12 +127,16 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
   const [loading, setLoading] = useState(true);
   const [printMode, setPrintMode] = useState<'programme' | 'designer'>('programme');
 
-  useEffect(() => { void loadWeekData(); }, [athlete.id, weekStart]);
+  useEffect(() => { void loadWeekData(); }, [athlete?.id, group?.id, weekStart]);
 
   const loadWeekData = async () => {
     try {
       setLoading(true);
-      const plan = await fetchWeekPlanForAthlete(athlete.id, weekStart);
+      const plan = athlete
+        ? await fetchWeekPlanForAthlete(athlete.id, weekStart)
+        : group
+        ? await fetchWeekPlanForGroup(group.id, weekStart)
+        : null;
       if (!plan) { setLoading(false); return; }
       setWeekPlan(plan);
       const [exercises, { comboMembers: membersMap }] = await Promise.all([
@@ -224,7 +232,15 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
     );
   }
 
-  const age = calculateAge(athlete.birthdate);
+  const age = athlete ? calculateAge(athlete.birthdate) : null;
+  const headerName = athlete?.name ?? group?.name ?? '';
+  const headerStats = athlete
+    ? [age !== null && `${age} years old`, athlete.bodyweight && `${athlete.bodyweight}kg`, athlete.weight_class]
+        .filter(Boolean)
+        .join(' • ')
+    : group
+    ? 'Group plan'
+    : '';
 
   return createPortal((
     <div id="print-programme-root" className="fixed inset-0 bg-white z-50 overflow-auto">
@@ -240,8 +256,10 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
               Programme
             </button>
             <button
-              onClick={() => setPrintMode('designer')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              onClick={() => athlete && setPrintMode('designer')}
+              disabled={!athlete}
+              title={athlete ? 'Designer view' : 'Designer view requires an athlete (groups not supported yet)'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               <Sliders size={14} />
               Designer
@@ -259,7 +277,7 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
         </div>
       </div>
 
-      {printMode === 'designer' ? (
+      {printMode === 'designer' && athlete ? (
         <PrintWeekDesigner
           athlete={athlete}
           weekPlan={weekPlan}
@@ -276,12 +294,8 @@ export function PrintWeek({ athlete, weekStart, onClose, showCategorySummaries =
         <div className="flex items-start justify-between mb-3 pb-2 border-b border-gray-300">
           <div>
             {activeCoach?.name && <p className="text-[10px] text-gray-500 leading-tight">{activeCoach.name}{activeCoach.club_name ? ` · ${activeCoach.club_name}` : ''}</p>}
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">{athlete.name}</h1>
-            <p className="text-xs text-gray-600 leading-tight">
-              {age !== null && `${age} years old`}
-              {athlete.bodyweight && ` • ${athlete.bodyweight}kg`}
-              {athlete.weight_class && ` • ${athlete.weight_class}`}
-            </p>
+            <h1 className="text-lg font-bold text-gray-900 leading-tight">{headerName}</h1>
+            {headerStats && <p className="text-xs text-gray-600 leading-tight">{headerStats}</p>}
           </div>
           <div className="text-right">
             <p className="text-xs font-semibold text-gray-900 leading-tight">{formatDateRange(weekStart)}</p>
