@@ -1004,6 +1004,24 @@ export function useWeekPlans() {
       setLinesByExId.set(l.planned_exercise_id, arr);
     });
 
+    // 2b. Fetch combo members for group combos. Without these, combo
+    // exercises arrive on athletes as a header with no member rows — the
+    // notation renders but the per-member colour dots and the per-member
+    // PR lookup both break.
+    const groupComboIds = (groupExercises || []).filter(e => e.is_combo).map(e => e.id);
+    const { data: groupComboMembers } = groupComboIds.length > 0
+      ? await supabase
+          .from('planned_exercise_combo_members')
+          .select('planned_exercise_id, exercise_id, position')
+          .in('planned_exercise_id', groupComboIds)
+      : { data: [] };
+    const comboMembersByExId = new Map<string, { exercise_id: string; position: number }[]>();
+    (groupComboMembers || []).forEach((m: { planned_exercise_id: string; exercise_id: string; position: number }) => {
+      const arr = comboMembersByExId.get(m.planned_exercise_id) || [];
+      arr.push({ exercise_id: m.exercise_id, position: m.position });
+      comboMembersByExId.set(m.planned_exercise_id, arr);
+    });
+
     // 3. Fetch group members (active only)
     const { data: members, error: memError } = await supabase
       .from('group_members')
@@ -1117,7 +1135,11 @@ export function useWeekPlans() {
       );
 
       if (exsToCopy.length > 0) {
-        // Batch insert all exercises at once; track source group ex id per inserted row via order
+        // Batch insert all exercises at once; track source group ex id per inserted row via order.
+        // metadata and variation_note must round-trip: metadata holds GPP rows
+        // (metadata.gpp) and IMAGE/VIDEO captions (metadata.description), and
+        // variation_note carries the coach's per-row tweak text. Omitting them
+        // here is what caused GPP rows to disappear on synced athletes.
         const { data: insertedExs, error: insError } = await supabase
           .from('planned_exercises')
           .insert(exsToCopy.map(ex => ({
@@ -1128,6 +1150,7 @@ export function useWeekPlans() {
             unit: ex.unit,
             prescription_raw: ex.prescription_raw,
             notes: ex.notes,
+            variation_note: ex.variation_note ?? null,
             summary_total_sets: ex.summary_total_sets,
             summary_total_reps: ex.summary_total_reps,
             summary_highest_load: ex.summary_highest_load,
@@ -1135,6 +1158,10 @@ export function useWeekPlans() {
             is_combo: ex.is_combo,
             combo_notation: ex.combo_notation,
             combo_color: ex.combo_color,
+            // planned_exercises.metadata is NOT NULL with default '{}'::jsonb,
+            // so coerce a missing/null source to {} rather than violating
+            // the constraint.
+            metadata: ex.metadata ?? {},
             source: 'group',
           })))
           .select('id');
@@ -1143,9 +1170,15 @@ export function useWeekPlans() {
         // Batch insert all set lines for all newly inserted exercises
         type SetLineRow = { sets: number; reps: number; reps_text: string | null; load_value: number; load_max: number | null; position: number };
         const allSetLines: Array<SetLineRow & { planned_exercise_id: string }> = [];
+        // Batch insert combo-member rows for any combo exercises we copied.
+        // Without these, the athlete's plan sees a combo header pointing at a
+        // single exercise_id (the lead lift) with no member list — combo
+        // notation renders but per-member features (PR lookup, colour dots,
+        // resolver) break.
+        const allComboMembers: { planned_exercise_id: string; exercise_id: string; position: number }[] = [];
         (insertedExs || []).forEach((newEx, idx) => {
-          const srcExId = exsToCopy[idx].id;
-          const lines: SetLineRow[] = setLinesByExId.get(srcExId) || [];
+          const srcEx = exsToCopy[idx];
+          const lines: SetLineRow[] = setLinesByExId.get(srcEx.id) || [];
           for (const l of lines) {
             allSetLines.push({
               planned_exercise_id: newEx.id,
@@ -1157,10 +1190,26 @@ export function useWeekPlans() {
               position: l.position,
             });
           }
+          if (srcEx.is_combo) {
+            const members = comboMembersByExId.get(srcEx.id) || [];
+            for (const m of members) {
+              allComboMembers.push({
+                planned_exercise_id: newEx.id,
+                exercise_id: m.exercise_id,
+                position: m.position,
+              });
+            }
+          }
         });
         if (allSetLines.length > 0) {
           const { error: linesError } = await supabase.from('planned_set_lines').insert(allSetLines);
           if (linesError) throw linesError;
+        }
+        if (allComboMembers.length > 0) {
+          const { error: membersError } = await supabase
+            .from('planned_exercise_combo_members')
+            .insert(allComboMembers);
+          if (membersError) throw membersError;
         }
       }
     }
