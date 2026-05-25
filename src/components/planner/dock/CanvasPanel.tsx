@@ -27,7 +27,11 @@ export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasP
     const couldBeDayDrag = types.includes('text/plain');
     if (!isExerciseDrag && !couldBeDayDrag) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    // Don't override dropEffect — exercise rows are dragged with
+    // effectAllowed='move' by default, and forcing dropEffect='copy' here
+    // would make the drop incompatible (browser shows "not allowed" cursor
+    // and the drop event never fires). Leaving dropEffect alone lets the
+    // browser pick a compatible value.
     if (!dragOver) setDragOver(true);
   }
 
