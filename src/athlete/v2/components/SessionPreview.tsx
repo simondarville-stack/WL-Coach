@@ -124,6 +124,7 @@ export function SessionPreview({
                 key={p.exercise.id}
                 planned={p}
                 logged={loggedByPlannedId.get(p.exercise.id) ?? null}
+                readOnly={readOnly}
               />
             ))}
             {offPlan.length > 0 && (
@@ -188,9 +189,11 @@ export function SessionPreview({
 function PreviewExerciseRow({
   planned,
   logged,
+  readOnly = false,
 }: {
   planned: PlannedExerciseFull;
   logged: LoggedExerciseFull | null;
+  readOnly?: boolean;
 }) {
   const sentinel = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
   if (sentinel === 'text' || sentinel === 'image' || sentinel === 'video' || sentinel === 'gpp') {
@@ -277,31 +280,33 @@ function PreviewExerciseRow({
           />
         </div>
 
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
-            Did
-          </span>
-          {logged ? (
-            <>
-              <LoggedStackedNotation sets={logged.sets} />
-              {delta.state !== 'pending' && (
-                <span
-                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                    delta.state === 'matched'
-                      ? 'bg-emerald-900/40 text-emerald-300'
-                      : delta.state === 'amber'
-                      ? 'bg-amber-900/40 text-amber-300'
-                      : 'bg-red-900/40 text-red-300'
-                  }`}
-                >
-                  {Math.round(delta.ratio * 100)}%
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-[11px] text-gray-500 italic">Not logged</span>
-          )}
-        </div>
+        {!readOnly && (
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
+              Did
+            </span>
+            {logged ? (
+              <>
+                <LoggedStackedNotation sets={logged.sets} />
+                {delta.state !== 'pending' && (
+                  <span
+                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      delta.state === 'matched'
+                        ? 'bg-emerald-900/40 text-emerald-300'
+                        : delta.state === 'amber'
+                        ? 'bg-amber-900/40 text-amber-300'
+                        : 'bg-red-900/40 text-red-300'
+                    }`}
+                  >
+                    {Math.round(delta.ratio * 100)}%
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-[11px] text-gray-500 italic">Not logged</span>
+            )}
+          </div>
+        )}
 
         {planned.exercise.notes?.trim() && (
           <p className="text-[11px] text-gray-400 italic whitespace-pre-wrap leading-snug">
