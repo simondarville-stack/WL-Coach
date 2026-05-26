@@ -33,13 +33,13 @@ interface LogExerciseRowProps {
   onDelete?: () => Promise<void>;
   /** Coach-side inline edit: opens the set-edit modal. */
   onEdit?: () => void;
-  /** Coach-side GPP row toggle. Called when the coach clicks the ✓ cell
-   *  on a GPP block — used to fix missed check-offs after the fact.
-   *  When omitted the cell stays read-only. */
-  onToggleGppRow?: (rowIndex: number, done: boolean) => Promise<void>;
+  /** Coach-side GPP edit: opens the GPP block editor scoped to the log
+   *  (rows, reps, load, done checkboxes). Same icon pattern as onEdit
+   *  but a different modal. */
+  onEditGpp?: () => void;
 }
 
-export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, onToggleGppRow }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, onEditGpp }: LogExerciseRowProps) {
   const exerciseMessages = logged
     ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
     : [];
@@ -120,18 +120,42 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
     return (
       <div className="flex border-l-4 border-l-emerald-400">
         <div className="flex-1 px-3 py-2 min-w-0">
-          <div className="flex items-baseline gap-2 mb-0.5">
-            <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
-              {plannedGpp?.title || 'GPP'}
-            </span>
-            {displayRows.length > 0 && (
-              <span className="text-[10px] text-gray-500">
-                {doneCount}/{displayRows.length} done
+          <div className="flex items-baseline justify-between gap-2 mb-0.5">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
+                {plannedGpp?.title || 'GPP'}
               </span>
-            )}
-            {hasAthleteData && (
-              <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
-            )}
+              {displayRows.length > 0 && (
+                <span className="text-[10px] text-gray-500">
+                  {doneCount}/{displayRows.length} done
+                </span>
+              )}
+              {hasAthleteData && (
+                <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {onEditGpp && (
+                <button
+                  onClick={onEditGpp}
+                  className="p-1 text-gray-400 hover:text-blue-600"
+                  title="Edit GPP rows (toggle done, change reps/load)"
+                  aria-label="Edit GPP block"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
+              {onDelete && logged && (
+                <button
+                  onClick={() => void onDelete()}
+                  className="p-1 text-gray-400 hover:text-red-600"
+                  title="Remove this logged GPP block"
+                  aria-label="Delete logged GPP block"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </div>
           </div>
           {plannedGpp?.description && (
             <p className="text-[11px] text-gray-600 italic mb-1 whitespace-pre-wrap leading-snug">
@@ -158,7 +182,6 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
                     hasAthleteData &&
                     plannedRow != null &&
                     plannedRow.load !== row.load;
-                  const toggleable = !!onToggleGppRow;
                   return (
                     <tr key={i} className="border-t border-gray-100">
                       <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
@@ -175,25 +198,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
                         )}
                       </td>
                       <td className="px-1 py-0.5 text-center">
-                        {toggleable ? (
-                          <button
-                            type="button"
-                            onClick={() => void onToggleGppRow!(i, !row.done)}
-                            className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[11px] leading-none ${
-                              row.done
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-                                : 'bg-white border-gray-200 text-gray-300 hover:border-gray-300 hover:text-gray-500'
-                            }`}
-                            title={row.done ? 'Mark not done' : 'Mark done'}
-                            aria-label={row.done ? 'Mark not done' : 'Mark done'}
-                          >
-                            {row.done ? '✓' : ''}
-                          </button>
-                        ) : (
-                          <span className={row.done ? 'text-emerald-600' : 'text-gray-300'}>
-                            {row.done ? '✓' : '—'}
-                          </span>
-                        )}
+                        <span className={row.done ? 'text-emerald-600' : 'text-gray-300'}>
+                          {row.done ? '✓' : '—'}
+                        </span>
                       </td>
                     </tr>
                   );

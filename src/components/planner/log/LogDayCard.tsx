@@ -27,14 +27,13 @@ interface LogDayCardProps {
   onDeleteSession?: (sessionId: string) => Promise<void>;
   /** Coach action: open the inline set editor for one logged exercise. */
   onEditLoggedExercise?: (logged: LoggedExerciseFull) => void;
-  /** Coach action: toggle a GPP row's done flag. Routed up to LogModeView
-   *  so it can ensure a log_exercise exists before patching metadata. */
-  onToggleGppRow?: (args: {
+  /** Coach action: open the GPP editor for one planned-GPP slot. Routed
+   *  up to LogModeView, which renders GppBlockEditor in log-fix mode and
+   *  saves via ensureLogExercise + setLogExerciseGppSection. */
+  onEditGppExercise?: (args: {
     planned: PlannedExercise & { exercise: Exercise };
     logged: LoggedExerciseFull | null;
-    rowIndex: number;
-    nextDone: boolean;
-  }) => Promise<void>;
+  }) => void;
 }
 
 export function LogDayCard({
@@ -45,7 +44,7 @@ export function LogDayCard({
   onDeleteLogExercise,
   onDeleteSession,
   onEditLoggedExercise,
-  onToggleGppRow,
+  onEditGppExercise,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const [threadOpen, setThreadOpen] = useState(false);
@@ -166,10 +165,9 @@ export function LogDayCard({
                   ? () => onDeleteLogExercise(ledg.log.id)
                   : undefined
               }
-              onToggleGppRow={
-                onToggleGppRow
-                  ? (rowIndex, nextDone) =>
-                      onToggleGppRow({ planned: ex, logged: ledg, rowIndex, nextDone })
+              onEditGpp={
+                onEditGppExercise
+                  ? () => onEditGppExercise({ planned: ex, logged: ledg })
                   : undefined
               }
             />

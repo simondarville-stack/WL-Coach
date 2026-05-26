@@ -39,6 +39,13 @@ interface GppBlockEditorProps {
    *  typeahead suggestions while typing in the Exercise cell. Free
    *  text is always accepted; suggestions are a shortcut, not a gate. */
   exerciseCatalogue?: Exercise[];
+  /** When true, render a leading "Done" checkbox column so the coach
+   *  can tick / untick rows. Used from the coach Log view to fix
+   *  missed check-offs without leaving the keyboard. Defaults to false
+   *  (planner usage — done flags aren't meaningful while prescribing). */
+  showDoneColumn?: boolean;
+  /** Modal heading override; defaults to "GPP block". */
+  title?: string;
   onClose: () => void;
   onSave: (section: GppSection) => Promise<void>;
 }
@@ -59,6 +66,8 @@ export function GppBlockEditor({
   open,
   initial,
   exerciseCatalogue = [],
+  showDoneColumn = false,
+  title: titleProp,
   onClose,
   onSave,
 }: GppBlockEditorProps) {
@@ -124,6 +133,9 @@ export function GppBlockEditor({
           reps: (r.reps ?? '').trim(),
           sets: Math.max(1, Math.round(r.sets || 1)),
           load: (r.load ?? '').trim(),
+          // Round-trip the done flag when the editor is in log-fix mode so
+          // a coach un-ticking a row doesn't get clobbered on save.
+          ...(showDoneColumn ? { done: !!r.done } : {}),
         }))
         .filter(r => r.exercise.length > 0),
     };
@@ -149,7 +161,7 @@ export function GppBlockEditor({
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="text-sm font-bold text-gray-900">GPP block</h2>
+          <h2 className="text-sm font-bold text-gray-900">{titleProp ?? 'GPP block'}</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-700"
@@ -197,7 +209,15 @@ export function GppBlockEditor({
                 Add row
               </button>
             </div>
-            <div className="grid grid-cols-[1fr_64px_48px_72px_24px] gap-1 text-[10px] uppercase tracking-wide text-gray-500 font-semibold px-1 mb-1">
+            <div
+              className="grid gap-1 text-[10px] uppercase tracking-wide text-gray-500 font-semibold px-1 mb-1"
+              style={{
+                gridTemplateColumns: showDoneColumn
+                  ? '32px 1fr 64px 48px 72px 24px'
+                  : '1fr 64px 48px 72px 24px',
+              }}
+            >
+              {showDoneColumn && <span>✓</span>}
               <span>Exercise</span>
               <span>Reps</span>
               <span>Sets</span>
@@ -208,8 +228,22 @@ export function GppBlockEditor({
               {section.rows.map((row, i) => (
                 <div
                   key={i}
-                  className="grid grid-cols-[1fr_64px_48px_72px_24px] gap-1 items-center"
+                  className="grid gap-1 items-center"
+                  style={{
+                    gridTemplateColumns: showDoneColumn
+                      ? '32px 1fr 64px 48px 72px 24px'
+                      : '1fr 64px 48px 72px 24px',
+                  }}
                 >
+                  {showDoneColumn && (
+                    <input
+                      type="checkbox"
+                      checked={!!row.done}
+                      onChange={e => updateRow(i, { done: e.target.checked })}
+                      className="justify-self-center w-4 h-4 accent-emerald-600 cursor-pointer"
+                      aria-label="Mark this row done"
+                    />
+                  )}
                   <ExerciseAutocomplete
                     value={row.exercise}
                     placeholder={`Exercise ${i + 1}`}

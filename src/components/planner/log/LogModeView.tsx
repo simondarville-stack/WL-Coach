@@ -31,6 +31,7 @@ import { LogWeekOverview } from './LogWeekOverview';
 import { CoachSetEditModal } from './CoachSetEditModal';
 import { WeekMetricsSettings } from './WeekMetricsSettings';
 import { ConfirmModal } from '../../log/ConfirmModal';
+import { GppBlockEditor } from '../GppBlockEditor';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -55,6 +56,10 @@ export function LogModeView({
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [editingLogged, setEditingLogged] = useState<LoggedExerciseFull | null>(null);
+  const [editingGpp, setEditingGpp] = useState<{
+    planned: PlannedExercise & { exercise: Exercise };
+    logged: LoggedExerciseFull | null;
+  } | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{
     title: string;
     description?: string;
@@ -154,20 +159,16 @@ export function LogModeView({
   );
 
   /**
-   * Coach toggles a GPP row's done flag. The athlete may not have
-   * created a log_exercise for the GPP block yet (they didn't open it),
-   * so we ensure one exists, seed it from planned metadata if the
-   * athlete hasn't put their own version yet, then patch the single row.
-   * Requires at least a session row for the day — without it there's
-   * nowhere to anchor the log_exercise.
+   * Save handler for the coach-side GPP editor. Ensures a log_exercise
+   * exists (the athlete may never have opened the block), then writes
+   * the full GppSection — rows, reps, load text, and done flags — to
+   * training_log_exercises.metadata.gpp via the shared service helper.
+   * Requires a session row for the day; without one we silently no-op.
    */
-  const onToggleGppRow = useCallback(
-    async ({ planned, logged, rowIndex, nextDone }: {
-      planned: PlannedExercise & { exercise: Exercise };
-      logged: LoggedExerciseFull | null;
-      rowIndex: number;
-      nextDone: boolean;
-    }) => {
+  const onSaveGppFromModal = useCallback(
+    async (section: GppSection) => {
+      if (!editingGpp) return;
+      const { planned, logged } = editingGpp;
       const session = weekLog[planned.day_index]?.session;
       if (!session) return;
       const logEx =
@@ -178,16 +179,10 @@ export function LogModeView({
           exerciseId: planned.exercise_id,
           position: planned.position,
         }));
-      const currentSection: GppSection | null =
-        (logEx.metadata?.gpp as GppSection | undefined) ?? planned.metadata?.gpp ?? null;
-      if (!currentSection) return;
-      const newRows = currentSection.rows.map((r, i) =>
-        i === rowIndex ? { ...r, done: nextDone } : r,
-      );
-      await setLogExerciseGppSection(logEx.id, { ...currentSection, rows: newRows });
+      await setLogExerciseGppSection(logEx.id, section);
       reload();
     },
-    [weekLog, reload],
+    [editingGpp, weekLog, reload],
   );
 
   const onDeleteSession = useCallback(
@@ -295,7 +290,7 @@ export function LogModeView({
           onDeleteLogExercise={onDeleteLogExercise}
           onDeleteSession={onDeleteSession}
           onEditLoggedExercise={setEditingLogged}
-          onToggleGppRow={onToggleGppRow}
+          onEditGppExercise={setEditingGpp}
         />
       ))}
 
@@ -323,7 +318,7 @@ export function LogModeView({
                   plannedExercises={[]}
                   dayLog={weekLog[idx] ?? null}
                   onPostSessionComment={postSessionComment}
-                  onToggleGppRow={onToggleGppRow}
+                  onEditGppExercise={setEditingGpp}
                 />
               );
             })}
@@ -346,6 +341,21 @@ export function LogModeView({
                   .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
               : null
           }
+        />
+      )}
+
+      {editingGpp && (
+        <GppBlockEditor
+          open
+          title="Edit GPP — athlete log"
+          showDoneColumn
+          initial={
+            (editingGpp.logged?.log.metadata?.gpp as GppSection | undefined) ??
+            editingGpp.planned.metadata?.gpp ??
+            null
+          }
+          onClose={() => setEditingGpp(null)}
+          onSave={onSaveGppFromModal}
         />
       )}
 
