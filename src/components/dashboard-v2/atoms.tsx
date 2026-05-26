@@ -288,26 +288,63 @@ export function ComplianceSpark({
 }
 
 export function BwDelta({
-  bw, expanded,
-}: { bw: BwSummary | null; expanded?: boolean }) {
-  if (!bw) return <span className="text-xs text-gray-400">—</span>;
+  bw, expanded, onClick,
+}: { bw: BwSummary | null; expanded?: boolean; onClick?: () => void }) {
+  if (!bw) {
+    const empty = <span className="text-xs text-gray-400">—</span>;
+    return onClick ? (
+      <button
+        type="button"
+        onClick={onClick}
+        className="cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1"
+        title="Open bodyweight history"
+      >
+        {empty}
+      </button>
+    ) : empty;
+  }
+  // Lead with the 7-day moving average — that's the number a coach
+  // bases decisions on. The latest single reading sits next to it as
+  // context; the delta arrow points to ma7's drift versus the 28-day
+  // baseline (longer-term trend) when expanded, or versus latest in
+  // the compact form so the arrow still feels live.
+  const driftVs28 = bw.ma7 - bw.ma28;
   const up = bw.delta > 0.2, down = bw.delta < -0.2;
+  const trendUp = driftVs28 > 0.2, trendDown = driftVs28 < -0.2;
   const tone = up ? 'text-red-600' : down ? 'text-green-600' : 'text-gray-400';
   const arrow = up ? '▲' : down ? '▼' : '·';
-  return (
+  const trendTone = trendUp ? 'text-red-500' : trendDown ? 'text-green-500' : 'text-gray-400';
+  const trendArrow = trendUp ? '▲' : trendDown ? '▼' : '·';
+  const inner = (
     <div className="inline-flex items-baseline gap-1.5 tabular-nums">
-      <span className="text-sm text-gray-900">{bw.now.toFixed(1)}</span>
-      <span className="text-[10px] text-gray-400">kg</span>
+      <span className="text-sm text-gray-900">{bw.ma7.toFixed(1)}</span>
+      <span className="text-[10px] text-gray-400">kg · 7d MA</span>
       <span className={`text-[11px] ${tone} ml-0.5`}>
         {arrow} {bw.delta > 0 ? '+' : ''}{bw.delta.toFixed(1)}
       </span>
       {expanded && (
         <span className="text-[10px] text-gray-400 ml-1">
-          7d {bw.ma7.toFixed(1)} · 28d {bw.ma28.toFixed(1)}
+          now {bw.now.toFixed(1)} · 28d {bw.ma28.toFixed(1)}
+          <span className={`ml-1 ${trendTone}`}>
+            {trendArrow} {driftVs28 > 0 ? '+' : ''}{driftVs28.toFixed(1)}
+          </span>
         </span>
       )}
     </div>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="cursor-pointer hover:bg-gray-50 rounded px-1 -mx-1 text-left"
+        title="Open bodyweight history"
+      >
+        {inner}
+      </button>
+    );
+  }
+  return inner;
 }
 
 export function EventTag({

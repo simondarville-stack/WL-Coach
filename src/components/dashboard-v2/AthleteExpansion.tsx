@@ -11,6 +11,7 @@ import {
   FlagChip,
   PlannedActualChart,
 } from './atoms';
+import { BodyweightHistoryDialog } from './BodyweightHistoryDialog';
 
 type Metric = 'compliance' | 'raw' | 'reps';
 
@@ -45,6 +46,7 @@ function MiniLabel({ children }: { children: React.ReactNode }) {
 
 export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
   const [metric, setMetric] = useState<Metric>('compliance');
+  const [bwDialogOpen, setBwDialogOpen] = useState(false);
   const a = status.athlete;
 
   const compSeries = enrichment.compTrend;
@@ -67,7 +69,7 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
         <div>
           <div className="mb-1"><MiniLabel>Bodyweight</MiniLabel></div>
           {a.track_bodyweight
-            ? <BwDelta bw={enrichment.bw} expanded />
+            ? <BwDelta bw={enrichment.bw} expanded onClick={() => setBwDialogOpen(true)} />
             : <span className="text-sm text-gray-400">Not tracked</span>}
         </div>
         {enrichment.flags.length > 0 && (
@@ -161,6 +163,13 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
           </div>
         </div>
       </div>
+      {bwDialogOpen && (
+        <BodyweightHistoryDialog
+          athleteId={a.id}
+          athleteName={a.name}
+          onClose={() => setBwDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }
