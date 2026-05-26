@@ -1070,14 +1070,20 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   if (amErr) throw amErr;
   const rows = (athleteMsgs ?? []) as {
     id: string;
-    session_id: string;
+    session_id: string | null;
     message: string;
     created_at: string;
     coach_read_at: string | null;
   }[];
   if (rows.length === 0) return [];
 
-  const sessionIds = Array.from(new Set(rows.map(r => r.session_id)));
+  // Session-bound rows only; general (session_id NULL) athlete messages
+  // are aggregated separately below. Without this filter, sessionIds
+  // would contain null and PostgREST encodes `.in('id', [null,…])` as
+  // the literal string "null", which Postgres rejects with
+  // "invalid input syntax for type uuid: \"null\"".
+  const sessionRows = rows.filter((r): r is typeof r & { session_id: string } => r.session_id !== null);
+  const sessionIds = Array.from(new Set(sessionRows.map(r => r.session_id)));
 
   // 2. For "last activity", we also need coach messages — a thread the
   //    coach just replied to should bubble up.
@@ -1119,9 +1125,11 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   });
 
   // Build threads. rows is already ordered newest-first, so the first
-  // athlete message we see per session is the most recent.
+  // athlete message we see per session is the most recent. Iterate the
+  // non-null subset so the Map key (and downstream sessionId field) is
+  // always a real uuid.
   const threads = new Map<string, InboxThread>();
-  for (const r of rows) {
+  for (const r of sessionRows) {
     const sess = sessionMap.get(r.session_id);
     if (!sess) continue; // orphan message — session was deleted
     const athlete = athleteMap.get(sess.athleteId);
