@@ -23,3 +23,6 @@ dist-ssr
 .env
 # Office temporary lock files
 ~$*
+
+# TypeScript incremental build cache
+*.tsbuildinfo
