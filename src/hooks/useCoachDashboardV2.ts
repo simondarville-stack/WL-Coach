@@ -215,7 +215,13 @@ export function useCoachDashboardV2() {
         }
       });
 
-      // 2) Bodyweight entries (last 35 days covers 28d MA)
+      // 2) Bodyweight entries (last 35 days covers 28d MA).
+      // Source of truth is training_log_sessions.bodyweight_kg — that's
+      // where the athlete app writes when they fill the BW field on
+      // Today, and it's also what the athlete-side profile chart reads
+      // via fetchBodyweightHistory. The legacy bodyweight_entries table
+      // is no longer written to, so reading from it leaves the
+      // dashboard's BW delta perpetually empty.
       const bwSince = new Date();
       bwSince.setDate(bwSince.getDate() - 35);
       const trackedIds = statuses
@@ -224,12 +230,25 @@ export function useCoachDashboardV2() {
       let bwRows: BodyweightEntry[] = [];
       if (trackedIds.length) {
         const { data } = await supabase
-          .from('bodyweight_entries')
-          .select('*')
+          .from('training_log_sessions')
+          .select('id, athlete_id, date, bodyweight_kg, created_at')
           .in('athlete_id', trackedIds)
+          .not('bodyweight_kg', 'is', null)
           .gte('date', bwSince.toISOString().slice(0, 10))
           .order('date', { ascending: true });
-        bwRows = (data || []) as BodyweightEntry[];
+        bwRows = ((data || []) as Array<{
+          id: string;
+          athlete_id: string;
+          date: string;
+          bodyweight_kg: number;
+          created_at: string;
+        }>).map(r => ({
+          id: r.id,
+          athlete_id: r.athlete_id,
+          date: r.date,
+          weight_kg: r.bodyweight_kg,
+          created_at: r.created_at,
+        }));
       }
       const bwByAthlete: Record<string, BodyweightEntry[]> = {};
       bwRows.forEach(e => { (bwByAthlete[e.athlete_id] ||= []).push(e); });
