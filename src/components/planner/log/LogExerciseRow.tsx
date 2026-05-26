@@ -12,6 +12,7 @@
 import type {
   PlannedExercise,
   Exercise,
+  TrainingLogMessage,
 } from '../../../lib/database.types';
 import {
   computeDelta,
@@ -21,7 +22,7 @@ import {
   type DeltaState,
   type LoggedExerciseFull,
 } from '../../../lib/trainingLogModel';
-import { Trash2, Pencil } from 'lucide-react';
+import { Trash2, Pencil, MessageSquare } from 'lucide-react';
 import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
@@ -41,14 +42,21 @@ const DELTA_BG: Record<DeltaState, string> = {
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
   logged: LoggedExerciseFull | null;
+  /** All session-level messages; the row picks out the ones whose
+   *  exercise_id matches its logged.log.id and renders a small comment
+   *  badge. Optional because not every caller needs the badge. */
+  messages?: TrainingLogMessage[];
   /** Coach-side delete: drops the entire log_exercise + sets. */
   onDelete?: () => Promise<void>;
   /** Coach-side inline edit: opens the set-edit modal. */
   onEdit?: () => void;
 }
 
-export function LogExerciseRow({ planned, logged, onDelete, onEdit }: LogExerciseRowProps) {
+export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: LogExerciseRowProps) {
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
+  const exerciseMessages = logged
+    ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
+    : [];
 
   // For free-text, GPP, and other non-quantified units, computeDelta would
   // see performedReps=0 vs a non-null planned total and emit 'red'. Guard

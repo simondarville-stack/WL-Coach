@@ -134,6 +134,7 @@ export function LogDayCard({
               key={ex.id}
               planned={ex}
               logged={ledg}
+              messages={dayLog?.messages}
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
               onDelete={
                 ledg && onDeleteLogExercise
@@ -154,6 +155,7 @@ export function LogDayCard({
                 key={le.log.id}
                 planned={null}
                 logged={le}
+                messages={dayLog?.messages}
                 onDelete={
                   onDeleteLogExercise ? () => onDeleteLogExercise(le.log.id) : undefined
                 }
