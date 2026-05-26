@@ -442,6 +442,15 @@ export function TodayScreen() {
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>
     runSave(async () => {
+      // Safety net for "Log as prescribed". The button is gated in the
+      // card to only render when unit === 'absolute_kg' and every row
+      // has a numeric plannedLoadValue, but if the saver is invoked
+      // some other way (stale call, future caller), refuse to copy a
+      // null planned load over the athlete's data — that's exactly
+      // what produced the "?/<reps>" wipe Asger hit.
+      if (planned.exercise.unit !== 'absolute_kg' || rows.some(r => r.plannedLoadValue == null)) {
+        return;
+      }
       const session = await getOrCreateSession();
       mergeSession(session);
       const logEx = await ensureLogEx(planned, session.id);

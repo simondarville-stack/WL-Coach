@@ -222,6 +222,22 @@ export function ExerciseLogCard({
     }
   };
 
+  /**
+   * "Log as prescribed" copies plannedLoadValue → performedLoad. That
+   * only makes sense when the coach prescribed concrete kg targets;
+   * for percentage / RPE / free-text prescriptions plannedLoadValue is
+   * null or 0, and tapping the button would wipe whatever loads the
+   * athlete had already typed. Gate on:
+   *   1. unit is 'absolute_kg' (concrete kg per set), and
+   *   2. every row carries a non-null plannedLoadValue.
+   * Bodyweight exercises legitimately have load_value === 0, so 0 is
+   * allowed — only null disqualifies a row.
+   */
+  const canLogAsPrescribed =
+    planned.exercise.unit === 'absolute_kg' &&
+    rows.length > 0 &&
+    rows.every(r => r.plannedLoadValue != null);
+
   return (
     <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
       <button
@@ -317,19 +333,21 @@ export function ExerciseLogCard({
             </div>
           ) : (
             <>
-              {!isFreeTextUnit && !readOnly && (
+              {!isFreeTextUnit && !readOnly && (canLogAsPrescribed || (!allCompleted && loggedSets.length > 0)) && (
                 <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={handleLogAsPrescribed}
-                    disabled={savingPrescribed || allCompleted || globalSaving}
-                    className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
-                  >
-                    {savingPrescribed || globalSaving ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
-                  </button>
+                  {canLogAsPrescribed && (
+                    <button
+                      onClick={handleLogAsPrescribed}
+                      disabled={savingPrescribed || allCompleted || globalSaving}
+                      className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
+                    >
+                      {savingPrescribed || globalSaving ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
+                    </button>
+                  )}
                   {!allCompleted && loggedSets.length > 0 && (
                     <button
                       onClick={onMarkComplete}
-                      className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors"
+                      className={`text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors ${canLogAsPrescribed ? '' : 'flex-1'}`}
                       title="Mark this exercise complete"
                     >
                       Mark complete
