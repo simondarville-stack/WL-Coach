@@ -1106,20 +1106,54 @@ export function useWeekPlans() {
         await supabase.from('week_plans').update({ source_group_plan_id: groupPlanId }).eq('id', athletePlanId);
       }
 
-      // 4c. Delete existing group-sourced exercises (uses source column — best effort filter)
-      // If source column doesn't exist, the filter returns nothing and we skip deletion safely.
+      // 4c. Decide which existing group-sourced exercises to delete.
+      // We preserve any planned_exercise the athlete has already logged
+      // against — wiping it would (a) orphan the log via ON DELETE SET
+      // NULL on training_log_exercises.planned_exercise_id and (b) destroy
+      // the prescription the athlete actually executed. "Logged" =
+      // training_log_exercises row exists; the athlete app only inserts
+      // those when the athlete saves a set or marks the exercise done.
       const { data: existingGroupExs } = await supabase
         .from('planned_exercises')
-        .select('id')
+        .select('id, exercise_id, day_index')
         .eq('weekplan_id', athletePlanId)
         .eq('source', 'group');
-      const toDelete = (existingGroupExs || []).map((e: { id: string }) => e.id);
+      const existingGroupRows = (existingGroupExs || []) as {
+        id: string;
+        exercise_id: string;
+        day_index: number;
+      }[];
+      const existingGroupIds = existingGroupRows.map(e => e.id);
+
+      const protectedIds = new Set<string>();
+      if (existingGroupIds.length > 0) {
+        const { data: loggedRefs } = await supabase
+          .from('training_log_exercises')
+          .select('planned_exercise_id')
+          .in('planned_exercise_id', existingGroupIds);
+        ((loggedRefs || []) as { planned_exercise_id: string | null }[]).forEach(r => {
+          if (r.planned_exercise_id) protectedIds.add(r.planned_exercise_id);
+        });
+      }
+
+      // Keyed by (exercise_id:day_index) so we can also skip re-inserting
+      // a fresh copy of a slot the athlete already worked through.
+      const protectedKeys = new Set(
+        existingGroupRows
+          .filter(e => protectedIds.has(e.id))
+          .map(e => `${e.exercise_id}:${e.day_index}`)
+      );
+
+      const toDelete = existingGroupRows
+        .filter(e => !protectedIds.has(e.id))
+        .map(e => e.id);
       if (toDelete.length > 0) {
         await supabase.from('planned_set_lines').delete().in('planned_exercise_id', toDelete);
         await supabase.from('planned_exercises').delete().in('id', toDelete);
       }
 
-      // 4d. Insert copies of group exercises, skipping any that have an individual override
+      // 4d. Insert copies of group exercises, skipping any that have an
+      // individual override OR a logged-protected counterpart from 4c.
       const { data: individualExs } = await supabase
         .from('planned_exercises')
         .select('exercise_id, day_index')
@@ -1129,9 +1163,12 @@ export function useWeekPlans() {
         (individualExs || []).map((e: { exercise_id: string; day_index: number }) => `${e.exercise_id}:${e.day_index}`)
       );
 
-      // Collect exercises to copy (excluding individual overrides)
+      // Collect exercises to copy (excluding individual overrides and
+      // already-logged group slots we just kept in place).
       const exsToCopy = (groupExercises || []).filter(
-        ex => !individualOverrides.has(`${ex.exercise_id}:${ex.day_index}`)
+        ex =>
+          !individualOverrides.has(`${ex.exercise_id}:${ex.day_index}`) &&
+          !protectedKeys.has(`${ex.exercise_id}:${ex.day_index}`)
       );
 
       if (exsToCopy.length > 0) {
