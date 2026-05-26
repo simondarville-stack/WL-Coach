@@ -19,9 +19,12 @@ import {
   addComment,
   deleteLogExercise,
   deleteSession,
+  ensureLogExercise,
+  setLogExerciseGppSection,
   fetchWeekMetricsConfig,
   fetchMetricDefinitions,
 } from '../../../lib/trainingLogService';
+import type { GppSection } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogDayCard } from './LogDayCard';
 import { LogWeekOverview } from './LogWeekOverview';
@@ -150,6 +153,43 @@ export function LogModeView({
     [reload],
   );
 
+  /**
+   * Coach toggles a GPP row's done flag. The athlete may not have
+   * created a log_exercise for the GPP block yet (they didn't open it),
+   * so we ensure one exists, seed it from planned metadata if the
+   * athlete hasn't put their own version yet, then patch the single row.
+   * Requires at least a session row for the day — without it there's
+   * nowhere to anchor the log_exercise.
+   */
+  const onToggleGppRow = useCallback(
+    async ({ planned, logged, rowIndex, nextDone }: {
+      planned: PlannedExercise & { exercise: Exercise };
+      logged: LoggedExerciseFull | null;
+      rowIndex: number;
+      nextDone: boolean;
+    }) => {
+      const session = weekLog[planned.day_index]?.session;
+      if (!session) return;
+      const logEx =
+        logged?.log ??
+        (await ensureLogExercise({
+          sessionId: session.id,
+          plannedExerciseId: planned.id,
+          exerciseId: planned.exercise_id,
+          position: planned.position,
+        }));
+      const currentSection: GppSection | null =
+        (logEx.metadata?.gpp as GppSection | undefined) ?? planned.metadata?.gpp ?? null;
+      if (!currentSection) return;
+      const newRows = currentSection.rows.map((r, i) =>
+        i === rowIndex ? { ...r, done: nextDone } : r,
+      );
+      await setLogExerciseGppSection(logEx.id, { ...currentSection, rows: newRows });
+      reload();
+    },
+    [weekLog, reload],
+  );
+
   const onDeleteSession = useCallback(
     (sessionId: string) => {
       setPendingConfirm({
@@ -255,6 +295,7 @@ export function LogModeView({
           onDeleteLogExercise={onDeleteLogExercise}
           onDeleteSession={onDeleteSession}
           onEditLoggedExercise={setEditingLogged}
+          onToggleGppRow={onToggleGppRow}
         />
       ))}
 
@@ -282,7 +323,7 @@ export function LogModeView({
                   plannedExercises={[]}
                   dayLog={weekLog[idx] ?? null}
                   onPostSessionComment={postSessionComment}
-                  onPostExerciseComment={postExerciseComment}
+                  onToggleGppRow={onToggleGppRow}
                 />
               );
             })}

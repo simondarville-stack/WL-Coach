@@ -14,30 +14,13 @@ import type {
   Exercise,
   TrainingLogMessage,
 } from '../../../lib/database.types';
-import {
-  computeDelta,
-  sumPerformedReps,
-  getDeltaBorderClass,
-  getDeltaChipClass,
-  type DeltaState,
-  type LoggedExerciseFull,
-} from '../../../lib/trainingLogModel';
+import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { Trash2, Pencil, MessageSquare } from 'lucide-react';
-import { DoneChip } from '../../log/DoneChip';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
-
-// Matched intentionally has no tint: the DoneChip already communicates
-// "this is completed and matches the plan", so the row stays neutral.
-// Amber/red still tint so deviations remain visually obvious when scanning
-// a week of sessions.
-const DELTA_BG: Record<DeltaState, string> = {
-  matched: '',
-  amber: 'bg-amber-50/40',
-  red: 'bg-red-50/40',
-  pending: '',
-};
+import { computeExerciseSummary } from './logSummary';
+import { PlanActual } from './PlanActual';
 
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
@@ -50,29 +33,16 @@ interface LogExerciseRowProps {
   onDelete?: () => Promise<void>;
   /** Coach-side inline edit: opens the set-edit modal. */
   onEdit?: () => void;
+  /** Coach-side GPP row toggle. Called when the coach clicks the ✓ cell
+   *  on a GPP block — used to fix missed check-offs after the fact.
+   *  When omitted the cell stays read-only. */
+  onToggleGppRow?: (rowIndex: number, done: boolean) => Promise<void>;
 }
 
-export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: LogExerciseRowProps) {
-  const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
+export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, onToggleGppRow }: LogExerciseRowProps) {
   const exerciseMessages = logged
     ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
     : [];
-
-  // For free-text, GPP, and other non-quantified units, computeDelta would
-  // see performedReps=0 vs a non-null planned total and emit 'red'. Guard
-  // by passing null for both when the unit cannot produce a meaningful ratio.
-  // (UF-04)
-  const isUnquantified =
-    planned != null &&
-    (planned.exercise.unit === 'free_text' ||
-      planned.exercise.unit === 'other' ||
-      planned.exercise.unit === 'free_text_reps' ||
-      getSentinelType(planned.exercise.exercise_code) === 'gpp');
-  const delta = computeDelta(
-    isUnquantified ? null : (planned?.summary_total_reps ?? null),
-    isUnquantified ? 0 : performedReps,
-    !!logged,
-  );
 
   // Detect substitution: planned slot exists, athlete logged a
   // different exercise_id. We show the substituted name primarily and
@@ -188,8 +158,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
                     hasAthleteData &&
                     plannedRow != null &&
                     plannedRow.load !== row.load;
+                  const toggleable = !!onToggleGppRow;
                   return (
-                    <tr key={i} className={`border-t border-gray-100 ${row.done ? 'bg-emerald-50' : ''}`}>
+                    <tr key={i} className="border-t border-gray-100">
                       <td className="px-1 py-0.5 text-gray-800">{row.exercise}</td>
                       <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.reps || '—'}</td>
                       <td className="px-1 py-0.5 text-center text-gray-700 tabular-nums">{row.sets}</td>
@@ -203,7 +174,27 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
                           row.load || '—'
                         )}
                       </td>
-                      <td className="px-1 py-0.5 text-center text-emerald-600">{row.done ? '✓' : '—'}</td>
+                      <td className="px-1 py-0.5 text-center">
+                        {toggleable ? (
+                          <button
+                            type="button"
+                            onClick={() => void onToggleGppRow!(i, !row.done)}
+                            className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[11px] leading-none ${
+                              row.done
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                                : 'bg-white border-gray-200 text-gray-300 hover:border-gray-300 hover:text-gray-500'
+                            }`}
+                            title={row.done ? 'Mark not done' : 'Mark done'}
+                            aria-label={row.done ? 'Mark not done' : 'Mark done'}
+                          >
+                            {row.done ? '✓' : ''}
+                          </button>
+                        ) : (
+                          <span className={row.done ? 'text-emerald-600' : 'text-gray-300'}>
+                            {row.done ? '✓' : '—'}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -215,8 +206,10 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
     );
   }
 
+  const summary = computeExerciseSummary(planned, logged);
+
   return (
-    <div className={`flex border-l-4 ${getDeltaBorderClass(delta.state)} ${DELTA_BG[delta.state]}`}>
+    <div className="flex">
       {accentColor && (
         <div
           className="w-0.5 flex-shrink-0"
@@ -251,9 +244,6 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
                 <MessageSquare size={9} />
                 {exerciseMessages.length}
               </span>
-            )}
-            {logged && logged.log.status === 'completed' && (
-              <DoneChip variant="light" />
             )}
             {logged && onEdit && (
               <button
@@ -303,13 +293,6 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
               Did
             </span>
             <LoggedStackedNotation sets={logged.sets} />
-            {planned && delta.state !== 'pending' && (
-              <span
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${getDeltaChipClass(delta.state)}`}
-              >
-                {Math.round(delta.ratio * 100)}%
-              </span>
-            )}
             {logged.log.technique_rating != null && (
               <span className="text-[10px] text-gray-500">
                 tech {logged.log.technique_rating}/5
@@ -319,6 +302,16 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit }: 
         ) : planned ? (
           <div className="text-[11px] text-gray-400 italic mt-0.5">Not logged</div>
         ) : null}
+
+        {/* Plan vs Did summary — replaces the previous DoneChip + delta-% chip. */}
+        {(logged || planned) && (
+          <div className="mt-1.5 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
+            <PlanActual label="Sets" metric={summary.sets} />
+            <PlanActual label="Reps" metric={summary.reps} />
+            <PlanActual label="Avg" metric={summary.avgLoad} unit="kg" decimals={1} />
+            <PlanActual label="Max" metric={summary.maxLoad} unit="kg" decimals={1} />
+          </div>
+        )}
 
         {planned?.notes?.trim() && (
           <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap">

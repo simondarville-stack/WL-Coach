@@ -13,9 +13,8 @@ import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
-import { DoneChip } from '../../log/DoneChip';
-
-// Binary states: only "Done" pill surfaces.
+import { computeDaySummary, computeExerciseSummary } from './logSummary';
+import { PlanActual } from './PlanActual';
 
 interface LogDayCardProps {
   dayName: string;
@@ -28,6 +27,14 @@ interface LogDayCardProps {
   onDeleteSession?: (sessionId: string) => Promise<void>;
   /** Coach action: open the inline set editor for one logged exercise. */
   onEditLoggedExercise?: (logged: LoggedExerciseFull) => void;
+  /** Coach action: toggle a GPP row's done flag. Routed up to LogModeView
+   *  so it can ensure a log_exercise exists before patching metadata. */
+  onToggleGppRow?: (args: {
+    planned: PlannedExercise & { exercise: Exercise };
+    logged: LoggedExerciseFull | null;
+    rowIndex: number;
+    nextDone: boolean;
+  }) => Promise<void>;
 }
 
 export function LogDayCard({
@@ -38,9 +45,9 @@ export function LogDayCard({
   onDeleteLogExercise,
   onDeleteSession,
   onEditLoggedExercise,
+  onToggleGppRow,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
-  const status = session?.status ?? 'pending';
   const [threadOpen, setThreadOpen] = useState(false);
   // Default collapsed so the week list scans easily for a roster. The
   // coach clicks any header to drill into a day.
@@ -87,7 +94,6 @@ export function LogDayCard({
             <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
           )}
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
-          {status === 'completed' && <DoneChip variant="light" />}
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>
@@ -120,6 +126,25 @@ export function LogDayCard({
 
       {!collapsed && (
       <>
+      {(() => {
+        const exerciseSummaries = [
+          ...sortedPlanned.map(ex => computeExerciseSummary(ex, loggedByPlannedId.get(ex.id) ?? null)),
+          ...offPlan.map(le => computeExerciseSummary(null, le)),
+        ];
+        if (exerciseSummaries.length === 0) return null;
+        const day = computeDaySummary(exerciseSummaries);
+        return (
+          <div className="px-3 py-1.5 border-b border-gray-100 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
+            <span className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mr-1">
+              Day total
+            </span>
+            <PlanActual label="Sets" metric={day.sets} />
+            <PlanActual label="Reps" metric={day.reps} />
+            <PlanActual label="Avg" metric={day.avgLoad} unit="kg" decimals={1} />
+            <PlanActual label="Max" metric={day.maxLoad} unit="kg" decimals={1} />
+          </div>
+        );
+      })()}
       <div className="divide-y divide-gray-100">
         {sortedPlanned.length === 0 && offPlan.length === 0 && (
           <div className="px-3 py-4 text-xs text-gray-400 italic text-center">
@@ -139,6 +164,12 @@ export function LogDayCard({
               onDelete={
                 ledg && onDeleteLogExercise
                   ? () => onDeleteLogExercise(ledg.log.id)
+                  : undefined
+              }
+              onToggleGppRow={
+                onToggleGppRow
+                  ? (rowIndex, nextDone) =>
+                      onToggleGppRow({ planned: ex, logged: ledg, rowIndex, nextDone })
                   : undefined
               }
             />
