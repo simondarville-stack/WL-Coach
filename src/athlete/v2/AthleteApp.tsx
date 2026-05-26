@@ -12,6 +12,7 @@ import { TodayScreen } from './screens/TodayScreen';
 import { WeekScreen } from './screens/WeekScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { GroupViewerScreen } from './screens/GroupViewerScreen';
+import { CoachThreadScreen } from './screens/CoachThreadScreen';
 
 function AthleteRoutes() {
   const { loading, mode } = useAuth();
@@ -32,6 +33,7 @@ function AthleteRoutes() {
       <Route element={<AthleteLayout />}>
         <Route path="today" element={<TodayScreen />} />
         <Route path="week" element={<WeekScreen />} />
+        <Route path="coach" element={<CoachThreadScreen />} />
         <Route path="profile" element={<ProfileScreen />} />
         <Route index element={<Navigate to="today" replace />} />
         <Route path="*" element={<Navigate to="today" replace />} />

@@ -473,7 +473,13 @@ export interface TrainingLogSet {
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
-  session_id: string;
+  /** Session this message belongs to. NULL for "general" athlete↔coach
+   *  threads that are not tied to a specific training day. */
+  session_id: string | null;
+  /** Athlete the thread is with. Populated for both session-bound and
+   *  general messages; backfilled from session.athlete_id for session
+   *  rows (see migration 20260526000001). */
+  athlete_id: string | null;
   exercise_id: string | null;
   sender_type: 'athlete' | 'coach';
   message: string;

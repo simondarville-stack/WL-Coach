@@ -1027,16 +1027,20 @@ export async function markMessagesRead(
 
 // ─── Coach inbox ──────────────────────────────────────────────────────────
 
-/** One thread in the coach inbox = one session that has at least one
- *  athlete-sent message. Used both for the inbox list (preview row) and as
- *  the seed when the coach clicks through to read / reply. */
+/** One thread in the coach inbox. Either a session-bound thread
+ *  (kind: 'session', sessionId set, performedOn set) or a general
+ *  per-athlete thread that is not tied to any one training day
+ *  (kind: 'general', sessionId & performedOn null). The list view
+ *  renders both shapes side by side. */
 export interface InboxThread {
-  sessionId: string;
+  kind: 'session' | 'general';
+  /** Session id for kind='session'; null for kind='general'. */
+  sessionId: string | null;
   athleteId: string;
   athleteName: string;
   athletePhotoUrl: string | null;
-  /** Session date in ISO yyyy-mm-dd. Drives the "(Mon, May 26)" label. */
-  performedOn: string;
+  /** Session date in ISO yyyy-mm-dd; null for general threads. */
+  performedOn: string | null;
   /** Most recent athlete message body — list preview. */
   lastMessage: string;
   /** created_at of the most recent message (athlete or coach), so the
@@ -1044,7 +1048,7 @@ export interface InboxThread {
   lastActivityAt: string;
   /** Athlete messages where coach_read_at IS NULL. */
   unreadCount: number;
-  /** Total athlete-sent messages on this session (used to disambiguate
+  /** Total athlete-sent messages on this thread (used to disambiguate
    *  empty threads from threads that were already read). */
   athleteMessageCount: number;
 }
@@ -1128,6 +1132,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
       const coachAt = latestCoachAt.get(r.session_id) ?? null;
       const lastActivity = coachAt && coachAt > r.created_at ? coachAt : r.created_at;
       t = {
+        kind: 'session',
         sessionId: r.session_id,
         athleteId: sess.athleteId,
         athleteName: athlete.name,
@@ -1144,8 +1149,13 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     if (r.coach_read_at == null) t.unreadCount += 1;
   }
 
+  // 4. General (no-session) threads — one per athlete that has any
+  //    general messages. Keyed separately so the coach sees them next
+  //    to the session threads.
+  const generalThreads = await fetchGeneralThreadsForCoach(ownerId);
+
   // Sort: unread first, then by lastActivity desc.
-  return Array.from(threads.values()).sort((a, b) => {
+  return [...Array.from(threads.values()), ...generalThreads].sort((a, b) => {
     const aUnread = a.unreadCount > 0 ? 1 : 0;
     const bUnread = b.unreadCount > 0 ? 1 : 0;
     if (aUnread !== bUnread) return bUnread - aUnread;
@@ -1153,19 +1163,180 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   });
 }
 
-/** Lightweight count for the sidebar badge. Counts distinct sessions
- *  with at least one unread athlete message — matches what the user
- *  sees as "unread threads" rather than "unread messages". */
+/** Aggregate every general (session_id IS NULL) message owned by this
+ *  coach into one InboxThread per athlete. Same shape as a session
+ *  thread but with kind='general' and sessionId/performedOn null. */
+async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread[]> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('athlete_id, sender_type, message, created_at, coach_read_at')
+    .eq('owner_id', ownerId)
+    .is('session_id', null)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const rows = (data ?? []) as {
+    athlete_id: string | null;
+    sender_type: 'athlete' | 'coach';
+    message: string;
+    created_at: string;
+    coach_read_at: string | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  const athleteIds = Array.from(new Set(rows.map(r => r.athlete_id).filter((x): x is string => !!x)));
+  if (athleteIds.length === 0) return [];
+
+  const { data: athletes } = await supabase
+    .from('athletes')
+    .select('id, name, photo_url')
+    .in('id', athleteIds);
+  const athleteMap = new Map<string, { name: string; photoUrl: string | null }>();
+  (athletes ?? []).forEach((a: { id: string; name: string; photo_url: string | null }) => {
+    athleteMap.set(a.id, { name: a.name, photoUrl: a.photo_url });
+  });
+
+  const byAthlete = new Map<string, InboxThread>();
+  for (const r of rows) {
+    if (!r.athlete_id) continue;
+    const athlete = athleteMap.get(r.athlete_id);
+    if (!athlete) continue;
+    let t = byAthlete.get(r.athlete_id);
+    if (!t) {
+      t = {
+        kind: 'general',
+        sessionId: null,
+        athleteId: r.athlete_id,
+        athleteName: athlete.name,
+        athletePhotoUrl: athlete.photoUrl,
+        performedOn: null,
+        lastMessage: r.message,
+        lastActivityAt: r.created_at,
+        unreadCount: 0,
+        athleteMessageCount: 0,
+      };
+      byAthlete.set(r.athlete_id, t);
+    } else if (r.created_at > t.lastActivityAt) {
+      t.lastActivityAt = r.created_at;
+      // Use the latest athlete message as the preview; if the latest
+      // overall is a coach message, keep the existing athlete preview.
+      if (r.sender_type === 'athlete') t.lastMessage = r.message;
+    }
+    if (r.sender_type === 'athlete') {
+      t.athleteMessageCount += 1;
+      if (r.coach_read_at == null) t.unreadCount += 1;
+    }
+  }
+  return Array.from(byAthlete.values());
+}
+
+/** Lightweight count for the sidebar badge. Counts distinct threads
+ *  (sessions OR per-athlete general threads) with at least one unread
+ *  athlete message — matches what the user sees as "unread threads"
+ *  rather than "unread messages". */
 export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
   const { data, error } = await supabase
     .from('training_log_messages')
-    .select('session_id')
+    .select('session_id, athlete_id')
     .eq('owner_id', ownerId)
     .eq('sender_type', 'athlete')
     .is('coach_read_at', null);
   if (error) throw error;
-  const rows = (data ?? []) as { session_id: string }[];
-  return new Set(rows.map(r => r.session_id)).size;
+  const rows = (data ?? []) as { session_id: string | null; athlete_id: string | null }[];
+  // A "thread key" is the session id for session-bound messages, or
+  // "general:<athleteId>" for general messages — both flavours feed
+  // the same badge.
+  const keys = new Set<string>();
+  for (const r of rows) {
+    if (r.session_id) keys.add(r.session_id);
+    else if (r.athlete_id) keys.add(`general:${r.athlete_id}`);
+  }
+  return keys.size;
+}
+
+// ─── General (no-session) thread helpers ─────────────────────────────────
+
+/** Every message in the general thread between this coach and athlete,
+ *  oldest first (chronological for chat display). */
+export async function fetchGeneralThreadMessages(
+  athleteId: string,
+  ownerId: string,
+): Promise<TrainingLogMessage[]> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('*')
+    .eq('owner_id', ownerId)
+    .eq('athlete_id', athleteId)
+    .is('session_id', null)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as TrainingLogMessage[];
+}
+
+export interface SendGeneralMessageArgs {
+  athleteId: string;
+  ownerId: string;
+  message: string;
+  senderType: 'athlete' | 'coach';
+}
+
+/** Insert a general (no-session) message. Both owner_id and athlete_id
+ *  are required because no session exists to derive them from. */
+export async function sendGeneralMessage(
+  args: SendGeneralMessageArgs,
+): Promise<TrainingLogMessage> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag schema
+  const insertRow: any = {
+    session_id: null,
+    exercise_id: null,
+    athlete_id: args.athleteId,
+    owner_id: args.ownerId,
+    message: args.message,
+    sender_type: args.senderType,
+  };
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .insert(insertRow)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogMessage;
+}
+
+/** Mark every general message from the other party as read by this role. */
+export async function markGeneralThreadRead(
+  athleteId: string,
+  ownerId: string,
+  role: 'coach' | 'athlete',
+): Promise<void> {
+  const column = role === 'coach' ? 'coach_read_at' : 'athlete_read_at';
+  const otherSender: 'athlete' | 'coach' = role === 'coach' ? 'athlete' : 'coach';
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from('training_log_messages')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag
+    .update({ [column]: now } as never)
+    .eq('owner_id', ownerId)
+    .eq('athlete_id', athleteId)
+    .is('session_id', null)
+    .eq('sender_type', otherSender)
+    .is(column, null);
+  if (error) throw error;
+}
+
+/** Lightweight unread count for one athlete's general thread, used by
+ *  the athlete-app badge on the Coach tab. */
+export async function fetchAthleteGeneralUnreadCount(
+  athleteId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('id')
+    .eq('athlete_id', athleteId)
+    .is('session_id', null)
+    .eq('sender_type', 'coach')
+    .is('athlete_read_at', null);
+  if (error) throw error;
+  return (data ?? []).length;
 }
 
 // ─── Profile-screen reads ─────────────────────────────────────────────────

@@ -3,9 +3,12 @@ import { Mail, Send, Loader2, MailOpen, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   addComment,
+  fetchGeneralThreadMessages,
   fetchInboxThreads,
   fetchSessionMessages,
+  markGeneralThreadRead,
   markMessagesRead,
+  sendGeneralMessage,
   type InboxThread,
 } from '../lib/trainingLogService';
 import { getOwnerId } from '../lib/ownerContext';
@@ -27,7 +30,10 @@ export function CoachInbox() {
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  // A thread can be session-bound (key = sessionId) or general
+  // (key = "general:<athleteId>"); we store the composite key so both
+  // shapes can be selected the same way.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const loadThreads = useCallback(async () => {
     setError(null);
@@ -37,7 +43,7 @@ export function CoachInbox() {
       // Auto-select the first thread on initial load so the right pane
       // isn't blank. Subsequent loads (refresh after reply) preserve
       // whatever the user had open.
-      setSelectedSessionId(prev => prev ?? t[0]?.sessionId ?? null);
+      setSelectedKey(prev => prev ?? (t[0] ? threadKey(t[0]) : null));
     } catch (e) {
       console.error('[CoachInbox] loadThreads failed', e);
       setError(describeError(e));
@@ -64,7 +70,7 @@ export function CoachInbox() {
     };
   }, [loadThreads]);
 
-  const selectedThread = threads.find(t => t.sessionId === selectedSessionId) ?? null;
+  const selectedThread = threads.find(t => threadKey(t) === selectedKey) ?? null;
 
   return (
     <div
@@ -117,14 +123,17 @@ export function CoachInbox() {
           ) : threads.length === 0 ? (
             <EmptyInbox />
           ) : (
-            threads.map(t => (
-              <ThreadRow
-                key={t.sessionId}
-                thread={t}
-                active={t.sessionId === selectedSessionId}
-                onClick={() => setSelectedSessionId(t.sessionId)}
-              />
-            ))
+            threads.map(t => {
+              const k = threadKey(t);
+              return (
+                <ThreadRow
+                  key={k}
+                  thread={t}
+                  active={k === selectedKey}
+                  onClick={() => setSelectedKey(k)}
+                />
+              );
+            })
           )}
         </div>
       </div>
@@ -136,18 +145,20 @@ export function CoachInbox() {
             thread={selectedThread}
             ownerId={ownerId}
             onMessagesChanged={loadThreads}
-            onOpenSession={() => {
-              // Hand off to the planner's Log mode at the correct athlete +
-              // week so the coach can see the full session context. We
-              // synthesise the week_start from the session's performed_on
-              // (Monday of that ISO week is what the planner expects).
-              const d = new Date(selectedThread.performedOn + 'T00:00:00Z');
-              const weekday = d.getUTCDay(); // 0 = Sun, 1 = Mon
-              const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
-              d.setUTCDate(d.getUTCDate() - daysFromMonday);
-              const weekStart = d.toISOString().slice(0, 10);
-              navigate(`/planner/${weekStart}`);
-            }}
+            onOpenSession={
+              selectedThread.kind === 'session' && selectedThread.performedOn
+                ? () => {
+                    // Hand off to the planner at the correct athlete + week.
+                    // Synthesise week_start = Monday of that ISO week.
+                    const d = new Date(selectedThread.performedOn + 'T00:00:00Z');
+                    const weekday = d.getUTCDay(); // 0 = Sun, 1 = Mon
+                    const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+                    d.setUTCDate(d.getUTCDate() - daysFromMonday);
+                    const weekStart = d.toISOString().slice(0, 10);
+                    navigate(`/planner/${weekStart}`);
+                  }
+                : null
+            }
           />
         ) : !loading && threads.length === 0 ? null : (
           <div
@@ -277,7 +288,9 @@ function ThreadRow({ thread, active, onClick }: ThreadRowProps) {
           )}
         </div>
         <div style={{ marginTop: 2, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-          Session {formatDate(thread.performedOn)}
+          {thread.kind === 'general'
+            ? 'General'
+            : `Session ${thread.performedOn ? formatDate(thread.performedOn) : ''}`}
         </div>
       </div>
     </button>
@@ -288,7 +301,8 @@ interface ThreadViewProps {
   thread: InboxThread;
   ownerId: string;
   onMessagesChanged: () => void | Promise<void>;
-  onOpenSession: () => void;
+  /** Null for general threads — there's no session week to open. */
+  onOpenSession: (() => void) | null;
 }
 
 function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: ThreadViewProps) {
@@ -302,7 +316,9 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
     setError(null);
     setLoading(true);
     try {
-      const m = await fetchSessionMessages(thread.sessionId);
+      const m = thread.kind === 'session' && thread.sessionId
+        ? await fetchSessionMessages(thread.sessionId)
+        : await fetchGeneralThreadMessages(thread.athleteId, ownerId);
       setMessages(m);
     } catch (e) {
       console.error('[CoachInbox] loadMessages failed', e);
@@ -310,7 +326,7 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
     } finally {
       setLoading(false);
     }
-  }, [thread.sessionId]);
+  }, [thread.kind, thread.sessionId, thread.athleteId, ownerId]);
 
   useEffect(() => {
     void loadMessages();
@@ -321,10 +337,13 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
   // simply stay until the next click.
   useEffect(() => {
     if (thread.unreadCount === 0) return;
-    void markMessagesRead(thread.sessionId, null, 'coach').then(onMessagesChanged).catch(() => {});
+    const p = thread.kind === 'session' && thread.sessionId
+      ? markMessagesRead(thread.sessionId, null, 'coach')
+      : markGeneralThreadRead(thread.athleteId, ownerId, 'coach');
+    void p.then(onMessagesChanged).catch(() => {});
     // Only when the active thread changes — not on every messages refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.sessionId]);
+  }, [thread.kind, thread.sessionId, thread.athleteId]);
 
   const handleSend = async () => {
     const body = reply.trim();
@@ -332,12 +351,21 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
     setSending(true);
     setError(null);
     try {
-      await addComment({
-        sessionId: thread.sessionId,
-        exerciseId: null,
-        message: body,
-        senderType: 'coach',
-      });
+      if (thread.kind === 'session' && thread.sessionId) {
+        await addComment({
+          sessionId: thread.sessionId,
+          exerciseId: null,
+          message: body,
+          senderType: 'coach',
+        });
+      } else {
+        await sendGeneralMessage({
+          athleteId: thread.athleteId,
+          ownerId,
+          message: body,
+          senderType: 'coach',
+        });
+      }
       setReply('');
       await loadMessages();
       await onMessagesChanged();
@@ -367,31 +395,35 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
             {thread.athleteName}
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            Session {formatDate(thread.performedOn)}
+            {thread.kind === 'general'
+              ? 'General thread'
+              : `Session ${thread.performedOn ? formatDate(thread.performedOn) : ''}`}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenSession}
-          style={{
-            fontSize: 11,
-            padding: '4px 10px',
-            background: 'var(--color-bg-primary)',
-            border: '0.5px solid var(--color-border-secondary)',
-            color: 'var(--color-text-secondary)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)';
-          }}
-          title="Open this week's plan in the planner"
-        >
-          Open week
-        </button>
+        {onOpenSession && (
+          <button
+            type="button"
+            onClick={onOpenSession}
+            style={{
+              fontSize: 11,
+              padding: '4px 10px',
+              background: 'var(--color-bg-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              color: 'var(--color-text-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)';
+            }}
+            title="Open this week's plan in the planner"
+          >
+            Open week
+          </button>
+        )}
       </div>
 
       <div
@@ -568,6 +600,15 @@ function Avatar({ name, photoUrl, size = 32 }: { name: string; photoUrl: string 
       {initials || '?'}
     </div>
   );
+}
+
+/** Stable key for a thread that works for both session-bound and general
+ *  threads. Matches the keying used by fetchInboxUnreadCount so badge
+ *  counts and selected-row state stay consistent. */
+function threadKey(t: InboxThread): string {
+  return t.kind === 'session' && t.sessionId
+    ? t.sessionId
+    : `general:${t.athleteId}`;
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────
