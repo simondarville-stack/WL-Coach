@@ -140,8 +140,8 @@ export function LogDayCard({
             </span>
             <PlanActual label="Sets" metric={day.sets} />
             <PlanActual label="Reps" metric={day.reps} />
-            <PlanActual label="Avg" metric={day.avgLoad} unit="kg" decimals={1} />
-            <PlanActual label="Max" metric={day.maxLoad} unit="kg" decimals={1} />
+            <PlanActual label="Avg" metric={day.avgLoad} unit="kg" decimals={0} />
+            <PlanActual label="Max" metric={day.maxLoad} unit="kg" decimals={0} />
           </div>
         );
       })()}

@@ -308,8 +308,8 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
           <div className="mt-1.5 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
             <PlanActual label="Sets" metric={summary.sets} />
             <PlanActual label="Reps" metric={summary.reps} />
-            <PlanActual label="Avg" metric={summary.avgLoad} unit="kg" decimals={1} />
-            <PlanActual label="Max" metric={summary.maxLoad} unit="kg" decimals={1} />
+            <PlanActual label="Avg" metric={summary.avgLoad} unit="kg" decimals={0} />
+            <PlanActual label="Max" metric={summary.maxLoad} unit="kg" decimals={0} />
           </div>
         )}
 
