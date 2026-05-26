@@ -14,15 +14,20 @@ import {
   Calculator,
   Hash,
   Trophy,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
 import { useAthleteStore } from '../store/athleteStore';
+import { useInboxUnreadCount } from '../hooks/useInboxUnreadCount';
 
 interface NavItem {
   path: string;
   label: string;
   icon: LucideIcon;
+  /** Optional badge key. The Sidebar resolves this to a live count and
+   *  renders a chip next to the label. Currently only 'inbox' is wired. */
+  badge?: 'inbox';
 }
 
 interface NavSection {
@@ -48,6 +53,7 @@ const sections: NavSection[] = [
       { path: '/athletes', label: 'Athletes', icon: Users },
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
       // { path: '/training-log', label: 'Training log', icon: ClipboardList }, // hidden: out of scope
+      { path: '/inbox', label: 'Inbox', icon: Mail, badge: 'inbox' },
       { path: '/prs', label: 'Personal Records', icon: Trophy },
     ],
   },
@@ -70,9 +76,15 @@ interface SidebarProps {
 export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
+  const inboxUnread = useInboxUnreadCount();
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('emos_sidebar_collapsed') === 'true';
   });
+
+  const badgeValue = (key: NavItem['badge']): number => {
+    if (key === 'inbox') return inboxUnread;
+    return 0;
+  };
 
   function toggleCollapsed() {
     const next = !collapsed;
@@ -202,19 +214,46 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                       : { minHeight: 36 }),
                   })}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <Icon
-                        size={16}
-                        className={`flex-shrink-0 ${isActive ? 'text-blue-700' : ''}`}
-                      />
-                      {!collapsed && (
-                        <span className="whitespace-nowrap overflow-hidden">
-                          {item.label}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  {({ isActive }) => {
+                    const badge = item.badge ? badgeValue(item.badge) : 0;
+                    return (
+                      <>
+                        <Icon
+                          size={16}
+                          className={`flex-shrink-0 ${isActive ? 'text-blue-700' : ''}`}
+                        />
+                        {!collapsed && (
+                          <span className="whitespace-nowrap overflow-hidden flex-1">
+                            {item.label}
+                          </span>
+                        )}
+                        {badge > 0 && (
+                          <span
+                            title={`${badge} unread`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: collapsed ? 8 : 18,
+                              height: collapsed ? 8 : 16,
+                              padding: collapsed ? 0 : '0 5px',
+                              fontSize: 9,
+                              fontWeight: 600,
+                              background: 'var(--color-accent)',
+                              color: 'var(--color-text-on-accent)',
+                              borderRadius: collapsed ? '50%' : 8,
+                              marginLeft: collapsed ? 0 : 4,
+                              marginRight: collapsed ? -6 : 0,
+                              alignSelf: collapsed ? 'flex-start' : 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {collapsed ? '' : badge}
+                          </span>
+                        )}
+                      </>
+                    );
+                  }}
                 </NavLink>
               );
             })}

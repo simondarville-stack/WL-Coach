@@ -1025,6 +1025,148 @@ export async function markMessagesRead(
   if (error) throw error;
 }
 
+// ─── Coach inbox ──────────────────────────────────────────────────────────
+
+/** One thread in the coach inbox = one session that has at least one
+ *  athlete-sent message. Used both for the inbox list (preview row) and as
+ *  the seed when the coach clicks through to read / reply. */
+export interface InboxThread {
+  sessionId: string;
+  athleteId: string;
+  athleteName: string;
+  athletePhotoUrl: string | null;
+  /** Session date in ISO yyyy-mm-dd. Drives the "(Mon, May 26)" label. */
+  performedOn: string;
+  /** Most recent athlete message body — list preview. */
+  lastMessage: string;
+  /** created_at of the most recent message (athlete or coach), so the
+   *  sort matches what a chat app would show. */
+  lastActivityAt: string;
+  /** Athlete messages where coach_read_at IS NULL. */
+  unreadCount: number;
+  /** Total athlete-sent messages on this session (used to disambiguate
+   *  empty threads from threads that were already read). */
+  athleteMessageCount: number;
+}
+
+/** Fetch every athlete-sent message for the active coach, grouped into
+ *  threads by session. Unread threads sort first; within a sort group,
+ *  most-recently-active threads come first. */
+export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]> {
+  // 1. Pull every athlete-sent message owned by this coach. We need the
+  //    full set so we can compute unreadCount and pick the latest message
+  //    per thread; a per-session top-1 query would force one round-trip
+  //    per thread.
+  const { data: athleteMsgs, error: amErr } = await supabase
+    .from('training_log_messages')
+    .select('id, session_id, message, created_at, coach_read_at')
+    .eq('owner_id', ownerId)
+    .eq('sender_type', 'athlete')
+    .order('created_at', { ascending: false });
+  if (amErr) throw amErr;
+  const rows = (athleteMsgs ?? []) as {
+    id: string;
+    session_id: string;
+    message: string;
+    created_at: string;
+    coach_read_at: string | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  const sessionIds = Array.from(new Set(rows.map(r => r.session_id)));
+
+  // 2. For "last activity", we also need coach messages — a thread the
+  //    coach just replied to should bubble up.
+  const { data: coachMsgs } = await supabase
+    .from('training_log_messages')
+    .select('session_id, created_at')
+    .in('session_id', sessionIds)
+    .eq('sender_type', 'coach')
+    .order('created_at', { ascending: false });
+
+  // 3. Session → athlete map.
+  const { data: sessions, error: sErr } = await supabase
+    .from('training_log_sessions')
+    .select('id, athlete_id, performed_on')
+    .in('id', sessionIds);
+  if (sErr) throw sErr;
+  const sessionMap = new Map<string, { athleteId: string; performedOn: string }>();
+  (sessions ?? []).forEach((s: { id: string; athlete_id: string; performed_on: string }) => {
+    sessionMap.set(s.id, { athleteId: s.athlete_id, performedOn: s.performed_on });
+  });
+
+  const athleteIds = Array.from(new Set(Array.from(sessionMap.values()).map(s => s.athleteId)));
+  const { data: athletes } = athleteIds.length > 0
+    ? await supabase
+        .from('athletes')
+        .select('id, name, photo_url')
+        .in('id', athleteIds)
+    : { data: [] };
+  const athleteMap = new Map<string, { name: string; photoUrl: string | null }>();
+  (athletes ?? []).forEach((a: { id: string; name: string; photo_url: string | null }) => {
+    athleteMap.set(a.id, { name: a.name, photoUrl: a.photo_url });
+  });
+
+  // Latest coach activity per session.
+  const latestCoachAt = new Map<string, string>();
+  (coachMsgs ?? []).forEach((m: { session_id: string; created_at: string }) => {
+    if (!latestCoachAt.has(m.session_id)) latestCoachAt.set(m.session_id, m.created_at);
+  });
+
+  // Build threads. rows is already ordered newest-first, so the first
+  // athlete message we see per session is the most recent.
+  const threads = new Map<string, InboxThread>();
+  for (const r of rows) {
+    const sess = sessionMap.get(r.session_id);
+    if (!sess) continue; // orphan message — session was deleted
+    const athlete = athleteMap.get(sess.athleteId);
+    if (!athlete) continue; // orphan — athlete was deleted
+
+    let t = threads.get(r.session_id);
+    if (!t) {
+      const coachAt = latestCoachAt.get(r.session_id) ?? null;
+      const lastActivity = coachAt && coachAt > r.created_at ? coachAt : r.created_at;
+      t = {
+        sessionId: r.session_id,
+        athleteId: sess.athleteId,
+        athleteName: athlete.name,
+        athletePhotoUrl: athlete.photoUrl,
+        performedOn: sess.performedOn,
+        lastMessage: r.message,
+        lastActivityAt: lastActivity,
+        unreadCount: 0,
+        athleteMessageCount: 0,
+      };
+      threads.set(r.session_id, t);
+    }
+    t.athleteMessageCount += 1;
+    if (r.coach_read_at == null) t.unreadCount += 1;
+  }
+
+  // Sort: unread first, then by lastActivity desc.
+  return Array.from(threads.values()).sort((a, b) => {
+    const aUnread = a.unreadCount > 0 ? 1 : 0;
+    const bUnread = b.unreadCount > 0 ? 1 : 0;
+    if (aUnread !== bUnread) return bUnread - aUnread;
+    return b.lastActivityAt.localeCompare(a.lastActivityAt);
+  });
+}
+
+/** Lightweight count for the sidebar badge. Counts distinct sessions
+ *  with at least one unread athlete message — matches what the user
+ *  sees as "unread threads" rather than "unread messages". */
+export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('session_id')
+    .eq('owner_id', ownerId)
+    .eq('sender_type', 'athlete')
+    .is('coach_read_at', null);
+  if (error) throw error;
+  const rows = (data ?? []) as { session_id: string }[];
+  return new Set(rows.map(r => r.session_id)).size;
+}
+
 // ─── Profile-screen reads ─────────────────────────────────────────────────
 
 export interface BodyweightPoint {

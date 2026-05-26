@@ -21,6 +21,7 @@ import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { Calculator } from './components/tools/Calculator';
 import { CalendarTool } from './components/tools/CalendarTool';
 import { PRPage } from './components/PRPage';
+import { CoachInbox } from './components/CoachInbox';
 import { SystemGuide } from './components/system/SystemGuide';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAthletes } from './hooks/useAthletes';
@@ -41,6 +42,7 @@ const pageTitles: Record<string, string> = {
   '/library': 'Exercise library',
   '/settings': 'Settings',
   '/prs': 'Personal Records',
+  '/inbox': 'Inbox',
 };
 
 function PageTitle() {
@@ -170,6 +172,7 @@ function CoachApp() {
               <Route path="/training-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
               <Route path="/prs" element={<PRPage />} />
+              <Route path="/inbox" element={<CoachInbox />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
