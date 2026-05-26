@@ -1084,15 +1084,16 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     .eq('sender_type', 'coach')
     .order('created_at', { ascending: false });
 
-  // 3. Session → athlete map.
+  // 3. Session → athlete map. The DB column is `date`; we expose it as
+  // `performedOn` on the InboxThread for clarity at the call site.
   const { data: sessions, error: sErr } = await supabase
     .from('training_log_sessions')
-    .select('id, athlete_id, performed_on')
+    .select('id, athlete_id, date')
     .in('id', sessionIds);
   if (sErr) throw sErr;
   const sessionMap = new Map<string, { athleteId: string; performedOn: string }>();
-  (sessions ?? []).forEach((s: { id: string; athlete_id: string; performed_on: string }) => {
-    sessionMap.set(s.id, { athleteId: s.athlete_id, performedOn: s.performed_on });
+  (sessions ?? []).forEach((s: { id: string; athlete_id: string; date: string }) => {
+    sessionMap.set(s.id, { athleteId: s.athlete_id, performedOn: s.date });
   });
 
   const athleteIds = Array.from(new Set(Array.from(sessionMap.values()).map(s => s.athleteId)));
