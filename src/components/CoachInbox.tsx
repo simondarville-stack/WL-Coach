@@ -9,6 +9,7 @@ import {
   type InboxThread,
 } from '../lib/trainingLogService';
 import { getOwnerId } from '../lib/ownerContext';
+import { describeError } from '../lib/errorMessage';
 import type { TrainingLogMessage } from '../lib/database.types';
 
 /**
@@ -38,7 +39,8 @@ export function CoachInbox() {
       // whatever the user had open.
       setSelectedSessionId(prev => prev ?? t[0]?.sessionId ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      console.error('[CoachInbox] loadThreads failed', e);
+      setError(describeError(e));
     } finally {
       setLoading(false);
     }
@@ -303,7 +305,8 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
       const m = await fetchSessionMessages(thread.sessionId);
       setMessages(m);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      console.error('[CoachInbox] loadMessages failed', e);
+      setError(describeError(e));
     } finally {
       setLoading(false);
     }
@@ -339,7 +342,8 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
       await loadMessages();
       await onMessagesChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      console.error('[CoachInbox] handleSend failed', e);
+      setError(describeError(e));
     } finally {
       setSending(false);
     }
