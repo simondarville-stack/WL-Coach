@@ -14,12 +14,15 @@ import type {
   TrainingLogSet,
   TrainingLogExercise,
   Exercise,
+  ExerciseStub,
 } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
 
 interface OffPlanExerciseCardProps {
   logExercise: TrainingLogExercise;
-  exercise: Exercise | null;
+  // Stub is the optimistic shape right after off-plan add — name+color
+  // suffice for what this card renders.
+  exercise: Exercise | ExerciseStub | null;
   loggedSets: TrainingLogSet[];
   onSaveSet: (patch: {
     setNumber: number;
@@ -29,10 +32,12 @@ interface OffPlanExerciseCardProps {
     plannedLoad: number | null;
     plannedReps: number | null;
   }) => Promise<void>;
-  /** Remove the entire log_exercise (delete the card). */
-  onDelete?: () => Promise<void>;
-  /** Remove a single set within this exercise. */
-  onDeleteSet?: (setId: string) => Promise<void>;
+  /** Remove the entire log_exercise (delete the card). The parent
+   *  shows a confirm modal and dispatches the delete from there. */
+  onDelete?: () => void;
+  /** Remove a single set within this exercise. Same fire-and-forget
+   *  pattern as onDelete. */
+  onDeleteSet?: (setId: string) => void;
   /** Persists athlete-written notes on this exercise. */
   onUpdateNotes: (notes: string) => Promise<void>;
 }

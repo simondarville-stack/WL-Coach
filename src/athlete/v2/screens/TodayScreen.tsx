@@ -311,7 +311,12 @@ export function TodayScreen() {
 
   const mergeLogExercise = (
     logEx: import('../../../lib/database.types').TrainingLogExercise,
-    exerciseDef: import('../../../lib/database.types').Exercise | null,
+    // Accepts an ExerciseStub for the optimistic-add path: addOffPlanLogExercise
+    // returns id/name/color only; the full Exercise lands on the next reload.
+    exerciseDef:
+      | import('../../../lib/database.types').Exercise
+      | import('../../../lib/database.types').ExerciseStub
+      | null,
   ) => {
     setData(prev => {
       if (!prev?.log) return prev;

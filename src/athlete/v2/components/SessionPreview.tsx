@@ -13,7 +13,7 @@
  */
 import { PlayCircle, MessageSquare } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
-import type { PlannedExercise, Exercise, TrainingLogSet } from '../../../lib/database.types';
+import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
@@ -202,7 +202,7 @@ function PreviewExerciseRow({
         <SentinelDisplay
           exerciseCode={planned.exerciseDef?.exercise_code}
           notes={planned.exercise.notes}
-          metadata={planned.exercise.metadata}
+          metadata={planned.exercise.metadata as Record<string, unknown> | undefined}
           athleteGpp={sentinel === 'gpp' ? (logged?.log.metadata?.gpp ?? null) : undefined}
           theme="dark"
         />
@@ -327,7 +327,10 @@ function PreviewExerciseRow({
 }
 
 function PreviewOffPlanRow({ logged }: { logged: LoggedExerciseFull }) {
-  const ex: Exercise | null = logged.exercise;
+  // logged.exercise can be a full Exercise or an ExerciseStub (id/name/color
+  // only) right after an off-plan insert. The downstream display fields read
+  // name + color, both of which are on the stub, so widen the receiver.
+  const ex: Exercise | ExerciseStub | null = logged.exercise;
   const accent = ex?.color ?? '#6b7280';
   const completedSets = logged.sets.filter((s: TrainingLogSet) => s.status === 'completed');
   return (

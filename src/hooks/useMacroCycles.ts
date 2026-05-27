@@ -562,7 +562,7 @@ export function useMacroCycles() {
     }
   };
 
-  const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>): Promise<MacroPhase> => {
+  const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at' | 'owner_id'>): Promise<MacroPhase> => {
     try {
       const phaseWithOwner = { ...phase, owner_id: getOwnerId() };
       const { data, error } = await supabase
@@ -618,7 +618,7 @@ export function useMacroCycles() {
     }
   };
 
-  const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at'>): Promise<MacroCompetition> => {
+  const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at' | 'owner_id'>): Promise<MacroCompetition> => {
     try {
       const compWithOwner = { ...comp, owner_id: getOwnerId() };
       const { data, error } = await supabase

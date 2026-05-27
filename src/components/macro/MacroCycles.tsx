@@ -42,11 +42,8 @@ export function MacroCycles() {
   const {
     macrocycles,
     macroWeeks,
-    setMacroWeeks,
     trackedExercises,
-    setTrackedExercises,
     targets,
-    setTargets,
     phases,
     competitions,
     loading,

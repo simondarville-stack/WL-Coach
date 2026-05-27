@@ -32,11 +32,13 @@ interface ExerciseLogCardProps {
   onLogAsPrescribed: (rows: SetRowInput[]) => Promise<void>;
   onUpdateNotes: (notes: string) => Promise<void>;
   onMarkComplete: () => Promise<void>;
-  /** Delete one logged set; passed through to SetEntryRow. */
-  onDeleteSet?: (setId: string) => Promise<void>;
+  /** Delete one logged set; passed through to SetEntryRow. Returns
+   *  void because the parent fires the delete via a confirm modal
+   *  (fire-and-forget) rather than awaiting the round-trip. */
+  onDeleteSet?: (setId: string) => void;
   /** Drop a planned set that the athlete never touched. Persists the
    *  removal so the row stays hidden across reloads. */
-  onRemovePlannedSet?: (setNumber: number) => Promise<void>;
+  onRemovePlannedSet?: (setNumber: number) => void;
   /** Persist a GPP block's row state when the athlete edits or ticks
    *  a row. Required only when the planned exercise is a GPP sentinel. */
   onSaveGppSection?: (section: GppSection) => Promise<void>;
@@ -180,7 +182,7 @@ export function ExerciseLogCard({
         <SentinelDisplay
           exerciseCode={planned.exerciseDef?.exercise_code}
           notes={planned.exercise.notes}
-          metadata={planned.exercise.metadata}
+          metadata={planned.exercise.metadata as Record<string, unknown> | undefined}
           theme="dark"
         />
         <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2">

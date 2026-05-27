@@ -3,21 +3,23 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type {
-  WeekPlan,
-  PlannedExercise,
-  Exercise,
+  Athlete,
   AthletePR,
-  PlannedSetLine,
-  DefaultUnit,
   ComboMemberEntry,
+  DefaultUnit,
+  Exercise,
+  PlannedExercise,
+  PlannedSetLine,
+  TrainingGroup,
+  WeekPlan,
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
 
 export interface PlanSelection {
   type: 'individual' | 'group';
-  athlete: { id: string } | null;
-  group: { id: string } | null;
+  athlete: Athlete | null;
+  group: TrainingGroup | null;
 }
 
 export function useWeekPlans() {
@@ -595,7 +597,7 @@ export function useWeekPlans() {
       /** Free-form payload. Currently carries GPP sections, sentinel
        *  descriptions, etc. — needs to round-trip on copy or the new row
        *  loses everything that lived under metadata.* (e.g. metadata.gpp). */
-      metadata?: Record<string, unknown> | null;
+      metadata?: import('../lib/database.types').PlannedExerciseMetadata;
     },
   ): Promise<PlannedExercise & { id: string }> => {
     const { data, error } = await supabase
