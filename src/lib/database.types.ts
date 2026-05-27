@@ -710,195 +710,245 @@ export interface Database {
   public: {
     Tables: {
       categories: {
-        Row: CategoryRow;
-        Insert: Omit<CategoryRow, 'id' | 'created_at'>;
-        Update: Partial<Omit<CategoryRow, 'id' | 'created_at'>>;
+        Row: CategoryRow & Record<string, unknown>;
+        Insert: Omit<CategoryRow, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<CategoryRow, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       athletes: {
-        Row: Athlete;
-        Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>;
+        Row: Athlete & Record<string, unknown>;
+        Insert: Omit<Athlete, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       bodyweight_entries: {
-        Row: BodyweightEntry;
-        Insert: Omit<BodyweightEntry, 'id' | 'created_at'>;
-        Update: Partial<Omit<BodyweightEntry, 'id' | 'created_at'>>;
+        Row: BodyweightEntry & Record<string, unknown>;
+        Insert: Omit<BodyweightEntry, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<BodyweightEntry, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       athlete_prs: {
-        Row: AthletePR;
-        Insert: Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>>;
+        Row: AthletePR & Record<string, unknown>;
+        Insert: Omit<AthletePR, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<AthletePR, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       athlete_pr_history: {
-        Row: AthletePRHistory;
-        Insert: Omit<AthletePRHistory, 'id' | 'created_at'>;
-        Update: Partial<Omit<AthletePRHistory, 'id' | 'created_at'>>;
+        Row: AthletePRHistory & Record<string, unknown>;
+        Insert: Omit<AthletePRHistory, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<AthletePRHistory, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       exercises: {
-        Row: Exercise;
-        Insert: Omit<Exercise, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Exercise, 'id' | 'created_at' | 'updated_at'>>;
+        Row: Exercise & Record<string, unknown>;
+        Insert: Omit<Exercise, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<Exercise, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       week_plans: {
-        Row: WeekPlan;
-        Insert: Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'>>;
+        Row: WeekPlan & Record<string, unknown>;
+        Insert: Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<WeekPlan, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       planned_exercises: {
-        Row: PlannedExercise;
-        Insert: Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'>>;
+        Row: PlannedExercise & Record<string, unknown>;
+        Insert: Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<PlannedExercise, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       planned_set_lines: {
-        Row: PlannedSetLine;
-        Insert: Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>>;
+        Row: PlannedSetLine & Record<string, unknown>;
+        Insert: Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<PlannedSetLine, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       planned_exercise_combo_members: {
-        Row: PlannedExerciseComboMember;
-        Insert: Omit<PlannedExerciseComboMember, 'id' | 'created_at'>;
-        Update: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>>;
+        Row: PlannedExerciseComboMember & Record<string, unknown>;
+        Insert: Omit<PlannedExerciseComboMember, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macrocycles: {
-        Row: MacroCycle;
-        Insert: Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'>>;
+        Row: MacroCycle & Record<string, unknown>;
+        Insert: Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroCycle, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macro_weeks: {
-        Row: MacroWeek;
-        Insert: Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>>;
+        Row: MacroWeek & Record<string, unknown>;
+        Insert: Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroWeek, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macro_phases: {
-        Row: MacroPhase;
-        Insert: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>>;
+        Row: MacroPhase & Record<string, unknown>;
+        Insert: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macro_tracked_exercises: {
-        Row: MacroTrackedExercise;
-        Insert: Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>>;
+        Row: MacroTrackedExercise & Record<string, unknown>;
+        Insert: Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroTrackedExercise, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macro_targets: {
-        Row: MacroTarget;
-        Insert: Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>>;
+        Row: MacroTarget & Record<string, unknown>;
+        Insert: Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       general_settings: {
-        Row: GeneralSettings;
-        Insert: Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'>>;
+        Row: GeneralSettings & Record<string, unknown>;
+        Insert: Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<GeneralSettings, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       training_log_sessions: {
-        Row: TrainingLogSession;
-        Insert: Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>>;
+        Row: TrainingLogSession & Record<string, unknown>;
+        Insert: Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingLogSession, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       athlete_metric_definitions: {
-        Row: AthleteMetricDefinition;
-        Insert: Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'>>;
+        Row: AthleteMetricDefinition & Record<string, unknown>;
+        Insert: Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<AthleteMetricDefinition, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       athlete_week_metrics_config: {
-        Row: AthleteWeekMetricsConfig;
-        Insert: Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'>>;
+        Row: AthleteWeekMetricsConfig & Record<string, unknown>;
+        Insert: Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<AthleteWeekMetricsConfig, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       training_log_exercises: {
-        Row: TrainingLogExercise;
-        Insert: Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>>;
+        Row: TrainingLogExercise & Record<string, unknown>;
+        Insert: Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingLogExercise, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       training_log_sets: {
-        Row: TrainingLogSet;
-        Insert: Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>>;
+        Row: TrainingLogSet & Record<string, unknown>;
+        Insert: Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       training_log_messages: {
-        Row: TrainingLogMessage;
-        Insert: Omit<TrainingLogMessage, 'id' | 'created_at' | 'coach_read_at' | 'athlete_read_at'>;
-        Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>>;
+        Row: TrainingLogMessage & Record<string, unknown>;
+        Insert: Omit<TrainingLogMessage, 'id' | 'created_at' | 'coach_read_at' | 'athlete_read_at'> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       events: {
-        Row: Event;
-        Insert: Omit<Event, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Event, 'id' | 'created_at' | 'updated_at'>>;
+        Row: Event & Record<string, unknown>;
+        Insert: Omit<Event, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<Event, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       event_athletes: {
-        Row: EventAthlete;
-        Insert: Omit<EventAthlete, 'id' | 'created_at'>;
-        Update: Partial<Omit<EventAthlete, 'id' | 'created_at'>>;
+        Row: EventAthlete & Record<string, unknown>;
+        Insert: Omit<EventAthlete, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<EventAthlete, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       event_attempts: {
-        Row: EventAttempts;
-        Insert: Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'>>;
+        Row: EventAttempts & Record<string, unknown>;
+        Insert: Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<EventAttempts, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       event_videos: {
-        Row: EventVideo;
-        Insert: Omit<EventVideo, 'id' | 'created_at'>;
-        Update: Partial<Omit<EventVideo, 'id' | 'created_at'>>;
+        Row: EventVideo & Record<string, unknown>;
+        Insert: Omit<EventVideo, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<EventVideo, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       exercise_combo_templates: {
-        Row: ExerciseComboTemplate;
-        Insert: Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'>>;
+        Row: ExerciseComboTemplate & Record<string, unknown>;
+        Insert: Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ExerciseComboTemplate, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       exercise_combo_template_parts: {
-        Row: ExerciseComboTemplatePart;
-        Insert: Omit<ExerciseComboTemplatePart, 'id' | 'created_at'>;
-        Update: Partial<Omit<ExerciseComboTemplatePart, 'id' | 'created_at'>>;
+        Row: ExerciseComboTemplatePart & Record<string, unknown>;
+        Insert: Omit<ExerciseComboTemplatePart, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ExerciseComboTemplatePart, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       planned_combos: {
-        Row: PlannedCombo;
-        Insert: Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'>>;
+        Row: PlannedCombo & Record<string, unknown>;
+        Insert: Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<PlannedCombo, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       planned_combo_items: {
-        Row: PlannedComboItem;
-        Insert: Omit<PlannedComboItem, 'id' | 'created_at'>;
-        Update: Partial<Omit<PlannedComboItem, 'id' | 'created_at'>>;
+        Row: PlannedComboItem & Record<string, unknown>;
+        Insert: Omit<PlannedComboItem, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<PlannedComboItem, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       training_groups: {
-        Row: TrainingGroup;
-        Insert: Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'>>;
+        Row: TrainingGroup & Record<string, unknown>;
+        Insert: Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingGroup, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       group_members: {
-        Row: GroupMember;
-        Insert: Omit<GroupMember, 'id' | 'joined_at'>;
-        Update: Partial<Omit<GroupMember, 'id' | 'joined_at'>>;
+        Row: GroupMember & Record<string, unknown>;
+        Insert: Omit<GroupMember, 'id' | 'joined_at'> & Record<string, unknown>;
+        Update: Partial<Omit<GroupMember, 'id' | 'joined_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       coach_profiles: {
-        Row: CoachProfile;
-        Insert: Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'>>;
+        Row: CoachProfile & Record<string, unknown>;
+        Insert: Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<CoachProfile, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       macro_competitions: {
-        Row: MacroCompetition;
-        Insert: Omit<MacroCompetition, 'id' | 'created_at'>;
-        Update: Partial<Omit<MacroCompetition, 'id' | 'created_at'>>;
+        Row: MacroCompetition & Record<string, unknown>;
+        Insert: Omit<MacroCompetition, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<MacroCompetition, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       program_templates: {
-        Row: ProgramTemplate;
-        Insert: Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'>>;
+        Row: ProgramTemplate & Record<string, unknown>;
+        Insert: Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ProgramTemplate, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       program_template_days: {
-        Row: ProgramTemplateDay;
-        Insert: Omit<ProgramTemplateDay, 'id' | 'created_at'>;
-        Update: Partial<Omit<ProgramTemplateDay, 'id' | 'created_at'>>;
+        Row: ProgramTemplateDay & Record<string, unknown>;
+        Insert: Omit<ProgramTemplateDay, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ProgramTemplateDay, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       program_template_exercises: {
-        Row: ProgramTemplateExercise;
-        Insert: Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'>>;
+        Row: ProgramTemplateExercise & Record<string, unknown>;
+        Insert: Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ProgramTemplateExercise, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
       program_template_combo_members: {
-        Row: ProgramTemplateComboMember;
-        Insert: Omit<ProgramTemplateComboMember, 'id' | 'created_at'>;
-        Update: Partial<Omit<ProgramTemplateComboMember, 'id' | 'created_at'>>;
+        Row: ProgramTemplateComboMember & Record<string, unknown>;
+        Insert: Omit<ProgramTemplateComboMember, 'id' | 'created_at'> & Record<string, unknown>;
+        Update: Partial<Omit<ProgramTemplateComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
       };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

@@ -29,8 +29,10 @@ interface LogExerciseRowProps {
    *  exercise_id matches its logged.log.id and renders a small comment
    *  badge. Optional because not every caller needs the badge. */
   messages?: TrainingLogMessage[];
-  /** Coach-side delete: drops the entire log_exercise + sets. */
-  onDelete?: () => Promise<void>;
+  /** Coach-side delete: drops the entire log_exercise + sets. The
+   *  parent wraps this in a confirm modal so the handler itself is
+   *  synchronous. */
+  onDelete?: () => void;
   /** Coach-side inline edit: opens the set-edit modal. */
   onEdit?: () => void;
   /** Coach-side GPP edit: opens the GPP block editor scoped to the log
@@ -71,9 +73,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
       <div className="flex border-l-4 border-l-gray-300">
         <div className="flex-1 px-3 py-2 min-w-0">
           <SentinelDisplay
-            exerciseCode={planned?.exercise_code}
-            notes={planned?.notes}
-            metadata={planned?.metadata}
+            exerciseCode={planned?.exercise.exercise_code ?? null}
+            notes={planned?.notes ?? null}
+            metadata={planned?.metadata as Record<string, unknown> | undefined}
             theme="light"
           />
         </div>
@@ -85,9 +87,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
       <div className="flex border-l-4 border-l-pink-400">
         <div className="flex-1 px-3 py-2 min-w-0">
           <SentinelDisplay
-            exerciseCode={planned?.exercise_code}
-            notes={planned?.notes}
-            metadata={planned?.metadata}
+            exerciseCode={planned?.exercise.exercise_code ?? null}
+            notes={planned?.notes ?? null}
+            metadata={planned?.metadata as Record<string, unknown> | undefined}
             theme="light"
           />
         </div>
@@ -99,9 +101,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
       <div className="flex border-l-4 border-l-indigo-400">
         <div className="flex-1 px-3 py-2 min-w-0">
           <SentinelDisplay
-            exerciseCode={planned?.exercise_code}
-            notes={planned?.notes}
-            metadata={planned?.metadata}
+            exerciseCode={planned?.exercise.exercise_code ?? null}
+            notes={planned?.notes ?? null}
+            metadata={planned?.metadata as Record<string, unknown> | undefined}
             theme="light"
           />
         </div>
@@ -147,7 +149,7 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
               )}
               {onDelete && logged && (
                 <button
-                  onClick={() => void onDelete()}
+                  onClick={onDelete}
                   className="p-1 text-gray-400 hover:text-red-600"
                   title="Remove this logged GPP block"
                   aria-label="Delete logged GPP block"
@@ -264,7 +266,7 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
             )}
             {onDelete && (
               <button
-                onClick={() => void onDelete()}
+                onClick={onDelete}
                 className="p-1 text-gray-400 hover:text-red-600"
                 title="Remove this logged exercise"
                 aria-label="Delete logged exercise"

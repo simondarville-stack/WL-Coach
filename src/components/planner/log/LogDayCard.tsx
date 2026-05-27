@@ -22,9 +22,11 @@ interface LogDayCardProps {
   dayLog: DayLog | null;
   /** Returns true when the post succeeded so callers can refresh data. */
   onPostSessionComment?: (sessionId: string, body: string) => Promise<void>;
-  /** Coach actions: delete a logged exercise or the whole session. */
-  onDeleteLogExercise?: (logExerciseId: string) => Promise<void>;
-  onDeleteSession?: (sessionId: string) => Promise<void>;
+  /** Coach actions: delete a logged exercise or the whole session.
+   *  These open a confirm modal and fire the actual mutation from
+   *  inside the modal, so the handler itself is synchronous. */
+  onDeleteLogExercise?: (logExerciseId: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   /** Coach action: open the inline set editor for one logged exercise. */
   onEditLoggedExercise?: (logged: LoggedExerciseFull) => void;
   /** Coach action: open the GPP editor for one planned-GPP slot. Routed
