@@ -76,6 +76,9 @@ export function PRDetailScreen() {
           .select('*')
           .eq('id', exerciseId)
           .eq('owner_id', athlete.owner_id)
+          // Defensive: refuse to render PR detail for a "— System"
+          // sentinel even if the URL was hand-edited.
+          .neq('category', '— System')
           .single(),
         fetchPRHistory(athlete.id),
       ]);

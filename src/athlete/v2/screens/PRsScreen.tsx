@@ -49,6 +49,9 @@ export function PRsScreen() {
         .eq('track_pr', true)
         .eq('is_archived', false)
         .eq('owner_id', athlete.owner_id)
+        // Drop the "— System" sentinel placeholders (TEXT / IMAGE /
+        // VIDEO / GPP) — they're not lifts to record PRs against.
+        .neq('category', '— System')
         .order('category')
         .order('name');
       if (exErr) throw exErr;

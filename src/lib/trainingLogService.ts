@@ -1538,9 +1538,12 @@ export async function setSessionCustomMetric(
  * heaviest lifts top the list.
  */
 export async function fetchAthletePRs(athleteId: string): Promise<AthletePRRow[]> {
+  // Pulls category alongside the name so the "— System" sentinel
+  // exercises (TEXT / IMAGE / VIDEO / GPP placeholders) can be
+  // filtered out before the row reaches Profile / PR consumers.
   const { data, error } = await supabase
     .from('athlete_prs')
-    .select('exercise_id, pr_value_kg, pr_date, exercise:exercise_id(name)')
+    .select('exercise_id, pr_value_kg, pr_date, exercise:exercise_id(name, category)')
     .eq('athlete_id', athleteId)
     .order('pr_value_kg', { ascending: false });
   if (error) throw error;
@@ -1549,10 +1552,10 @@ export async function fetchAthletePRs(athleteId: string): Promise<AthletePRRow[]
       exercise_id: string;
       pr_value_kg: number | null;
       pr_date: string | null;
-      exercise: { name: string } | null;
+      exercise: { name: string; category: string | null } | null;
     }>
   )
-    .filter(r => r.pr_value_kg != null)
+    .filter(r => r.pr_value_kg != null && r.exercise?.category !== '— System')
     .map(r => ({
       exerciseId: r.exercise_id,
       exerciseName: r.exercise?.name ?? '(unknown)',

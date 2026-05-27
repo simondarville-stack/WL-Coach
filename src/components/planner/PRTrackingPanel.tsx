@@ -100,6 +100,10 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
           .eq('track_pr', true)
           .eq('is_archived', false)
           .eq('owner_id', getOwnerId())
+          // Hide the "— System" category — those rows are sentinel
+          // placeholders for TEXT / IMAGE / VIDEO / GPP blocks, not
+          // lifts the athlete sets a PR on.
+          .neq('category', '— System')
           .order('category')
           .order('name'),
         supabase
