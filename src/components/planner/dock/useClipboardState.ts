@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'emos_planner_canvas_v1';
+const STORAGE_KEY = 'emos_planner_clipboard_v1';
+// One-time migration from the previous name ("canvas"). Read the old key
+// the first time we mount; we'll persist back to the new key, so the old
+// one becomes orphaned harmlessly.
+const LEGACY_STORAGE_KEY = 'emos_planner_canvas_v1';
 
 /** Per-set row payload captured at snapshot time. Mirrors planned_set_lines
  *  minus the IDs/timestamps — those get re-issued on re-insert. */
-export interface CanvasSetLine {
+export interface ClipboardSetLine {
   sets: number;
   reps: number;
   reps_text: string | null;
@@ -13,14 +17,14 @@ export interface CanvasSetLine {
   position: number;
 }
 
-export interface CanvasComboMember {
+export interface ClipboardComboMember {
   exercise_id: string;
   position: number;
 }
 
 /** A frozen planned_exercise row. The `display` fields are only for rendering
- *  the canvas card — re-insert uses `snapshot` exclusively. */
-export interface CanvasExerciseSnapshot {
+ *  the clipboard card — re-insert uses `snapshot` exclusively. */
+export interface ClipboardExerciseSnapshot {
   exercise_id: string;
   unit: string;
   prescription_raw: string | null;
@@ -34,11 +38,11 @@ export interface CanvasExerciseSnapshot {
   combo_notation: string | null;
   combo_color: string | null;
   metadata: Record<string, unknown> | null;
-  set_lines: CanvasSetLine[];
-  combo_members: CanvasComboMember[];
+  set_lines: ClipboardSetLine[];
+  combo_members: ClipboardComboMember[];
 }
 
-export interface CanvasExerciseDisplay {
+export interface ClipboardExerciseDisplay {
   label: string;
   color: string;
   sentinel: 'text' | 'video' | 'image' | 'gpp' | 'combo' | 'exercise';
@@ -46,26 +50,26 @@ export interface CanvasExerciseDisplay {
   caption: string | null;
 }
 
-export interface CanvasExerciseItem {
+export interface ClipboardExerciseItem {
   kind: 'exercise';
   id: string;
   added_at: number;
-  display: CanvasExerciseDisplay;
-  snapshot: CanvasExerciseSnapshot;
+  display: ClipboardExerciseDisplay;
+  snapshot: ClipboardExerciseSnapshot;
 }
 
-export interface CanvasDayItem {
+export interface ClipboardDayItem {
   kind: 'day';
   id: string;
   added_at: number;
   label: string;
   exercises: {
-    display: CanvasExerciseDisplay;
-    snapshot: CanvasExerciseSnapshot;
+    display: ClipboardExerciseDisplay;
+    snapshot: ClipboardExerciseSnapshot;
   }[];
 }
 
-export type CanvasItem = CanvasExerciseItem | CanvasDayItem;
+export type ClipboardItem = ClipboardExerciseItem | ClipboardDayItem;
 
 function genId(): string {
   // Crypto.randomUUID() is available in all evergreen browsers. Falls back
@@ -77,17 +81,19 @@ function genId(): string {
   return `c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function readInitial(): CanvasItem[] {
+function readInitial(): ClipboardItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    // Prefer the new key; fall back to the old "canvas" key once so a
+    // coach who'd parked items before the rename doesn't lose them.
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    // Drop anything that doesn't smell like a CanvasItem — old payloads
+    // Drop anything that doesn't smell like a ClipboardItem — old payloads
     // from a different schema version would otherwise crash the renderer.
     return parsed.filter(
-      (it: unknown): it is CanvasItem =>
+      (it: unknown): it is ClipboardItem =>
         !!it &&
         typeof it === 'object' &&
         'kind' in it &&
@@ -98,20 +104,20 @@ function readInitial(): CanvasItem[] {
   }
 }
 
-export function useCanvasState() {
-  const [items, setItems] = useState<CanvasItem[]>(readInitial);
+export function useClipboardState() {
+  const [items, setItems] = useState<ClipboardItem[]>(readInitial);
 
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     } catch {
-      // Quota exceeded or storage disabled — fail silently; canvas keeps
-      // working in-memory for the rest of the session.
+      // Quota exceeded or storage disabled — fail silently; clipboard
+      // keeps working in-memory for the rest of the session.
     }
   }, [items]);
 
   const addExercise = useCallback(
-    (display: CanvasExerciseDisplay, snapshot: CanvasExerciseSnapshot) => {
+    (display: ClipboardExerciseDisplay, snapshot: ClipboardExerciseSnapshot) => {
       setItems(prev => [
         { kind: 'exercise', id: genId(), added_at: Date.now(), display, snapshot },
         ...prev,
@@ -123,7 +129,7 @@ export function useCanvasState() {
   const addDay = useCallback(
     (
       label: string,
-      exercises: { display: CanvasExerciseDisplay; snapshot: CanvasExerciseSnapshot }[],
+      exercises: { display: ClipboardExerciseDisplay; snapshot: ClipboardExerciseSnapshot }[],
     ) => {
       if (exercises.length === 0) return;
       setItems(prev => [
@@ -143,7 +149,7 @@ export function useCanvasState() {
   }, []);
 
   const findById = useCallback(
-    (id: string): CanvasItem | null => items.find(it => it.id === id) ?? null,
+    (id: string): ClipboardItem | null => items.find(it => it.id === id) ?? null,
     [items],
   );
 

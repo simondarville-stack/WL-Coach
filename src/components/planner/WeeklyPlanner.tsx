@@ -26,10 +26,10 @@ import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
 import { TemplateImportDialog } from './dock/TemplateImportDialog';
 import {
-  useCanvasState,
-  type CanvasExerciseSnapshot,
-  type CanvasExerciseDisplay,
-} from './dock/useCanvasState';
+  useClipboardState,
+  type ClipboardExerciseSnapshot,
+  type ClipboardExerciseDisplay,
+} from './dock/useClipboardState';
 import { getSentinelType } from './sentinelUtils';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
@@ -491,17 +491,17 @@ export function WeeklyPlanner() {
     setImportTarget({ templateId, startDayIndex: firstActiveDay });
   };
 
-  // ── Canvas ──────────────────────────────────────────────────────────────
-  // The canvas is a localStorage-backed scratch space living in the dock.
+  // ── Clipboard ───────────────────────────────────────────────────────────
+  // The clipboard is a localStorage-backed scratch space living in the dock.
   // Coaches drag planner items into it to park them, then drag them back
   // into any day later. Snapshots include set lines + combo members + the
   // metadata blob, so sentinel types (text / video / image / GPP) round-trip
   // verbatim.
-  const canvas = useCanvasState();
+  const clipboard = useClipboardState();
 
   const buildExerciseDisplay = (
     ex: typeof plannedExercises[number][number],
-  ): CanvasExerciseDisplay => {
+  ): ClipboardExerciseDisplay => {
     const sentinel = getSentinelType(ex.exercise.exercise_code);
     if (sentinel === 'text') {
       return { label: ex.notes?.slice(0, 60) || 'Text note', color: 'var(--color-border-secondary)', sentinel: 'text', caption: null };
@@ -541,7 +541,7 @@ export function WeeklyPlanner() {
 
   const buildExerciseSnapshot = async (
     plannedExId: string,
-  ): Promise<{ display: CanvasExerciseDisplay; snapshot: CanvasExerciseSnapshot } | null> => {
+  ): Promise<{ display: ClipboardExerciseDisplay; snapshot: ClipboardExerciseSnapshot } | null> => {
     // Find the row in our in-memory plannedExercises map.
     let found: { dayIndex: number; ex: typeof plannedExercises[number][number] } | null = null;
     for (const [dayIdxStr, list] of Object.entries(plannedExercises)) {
@@ -568,7 +568,7 @@ export function WeeklyPlanner() {
       : [];
 
     const display = buildExerciseDisplay(ex);
-    const snapshot: CanvasExerciseSnapshot = {
+    const snapshot: ClipboardExerciseSnapshot = {
       exercise_id: ex.exercise_id,
       unit: ex.unit ?? ex.exercise.default_unit ?? 'absolute_kg',
       prescription_raw: ex.prescription_raw,
@@ -595,13 +595,13 @@ export function WeeklyPlanner() {
     return { display, snapshot };
   };
 
-  const handleCanvasPlannerDrop = async (data: string) => {
+  const handleClipboardPlannerDrop = async (data: string) => {
     if (data.startsWith('DAY:')) {
       const dayIndex = parseInt(data.slice(4), 10);
       if (Number.isNaN(dayIndex)) return;
       const rows = plannedExercises[dayIndex] ?? [];
       if (rows.length === 0) return;
-      const snapshots: { display: CanvasExerciseDisplay; snapshot: CanvasExerciseSnapshot }[] = [];
+      const snapshots: { display: ClipboardExerciseDisplay; snapshot: ClipboardExerciseSnapshot }[] = [];
       for (const ex of rows) {
         const built = await buildExerciseSnapshot(ex.id);
         if (built) snapshots.push(built);
@@ -610,7 +610,7 @@ export function WeeklyPlanner() {
       const label = currentWeekPlan?.day_labels?.[dayIndex]
         || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name
         || `Day ${dayIndex}`;
-      canvas.addDay(label, snapshots);
+      clipboard.addDay(label, snapshots);
       return;
     }
     // <dayIndex>:exercise:<plannedExId>
@@ -618,13 +618,13 @@ export function WeeklyPlanner() {
     if (parts.length >= 3 && parts[1] === 'exercise') {
       const plannedExId = parts[2];
       const built = await buildExerciseSnapshot(plannedExId);
-      if (built) canvas.addExercise(built.display, built.snapshot);
+      if (built) clipboard.addExercise(built.display, built.snapshot);
     }
   };
 
-  const handleCanvasItemDrop = async (canvasItemId: string, dayIndex: number, isReplace: boolean) => {
+  const handleClipboardItemDrop = async (clipboardItemId: string, dayIndex: number, isReplace: boolean) => {
     if (!currentWeekPlan) return;
-    const item = canvas.findById(canvasItemId);
+    const item = clipboard.findById(clipboardItemId);
     if (!item) return;
 
     if (isReplace) {
@@ -1347,7 +1347,7 @@ export function WeeklyPlanner() {
                 onDockExerciseDrop={handleDockExerciseDrop}
                 onDockTemplateDrop={handleDockTemplateDrop}
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
-                onCanvasItemDrop={handleCanvasItemDrop}
+                onClipboardItemDrop={handleClipboardItemDrop}
                 onSaveAsTemplate={handleSaveDayAsTemplate}
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
@@ -1522,10 +1522,10 @@ export function WeeklyPlanner() {
             <PlannerDock
               exercises={allExercises}
               onOpenImport={handleOpenImportDialog}
-              canvasItems={canvas.items}
-              onCanvasRemove={canvas.remove}
-              onCanvasClear={canvas.clear}
-              onCanvasPlannerDrop={handleCanvasPlannerDrop}
+              clipboardItems={clipboard.items}
+              onClipboardRemove={clipboard.remove}
+              onClipboardClear={clipboard.clear}
+              onClipboardPlannerDrop={handleClipboardPlannerDrop}
             />
           </>
         )}

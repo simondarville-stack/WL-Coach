@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export type DockTab = 'exercises' | 'templates' | 'canvas';
+export type DockTab = 'exercises' | 'templates' | 'clipboard';
 export type ExerciseSortKey = 'name' | 'category' | 'code';
 
 const TAB_KEY = 'emos_dock_tab';
@@ -13,7 +13,9 @@ export const DOCK_DEFAULT_HEIGHT = 240;
 
 function readTab(): DockTab {
   const v = typeof window !== 'undefined' ? localStorage.getItem(TAB_KEY) : null;
-  if (v === 'templates' || v === 'canvas') return v;
+  if (v === 'templates' || v === 'clipboard') return v;
+  // Legacy persisted value from before the canvas → clipboard rename.
+  if (v === 'canvas') return 'clipboard';
   return 'exercises';
 }
 

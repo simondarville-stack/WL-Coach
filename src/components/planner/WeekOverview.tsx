@@ -39,7 +39,7 @@ interface WeekOverviewProps {
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
-  onCanvasItemDrop?: (canvasItemId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
+  onClipboardItemDrop?: (clipboardItemId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onSaveAsTemplate?: (dayIndex: number) => void;
   visibleCardMetrics?: MetricKey[];
   competitionTotal?: number | null;
@@ -69,7 +69,7 @@ export function WeekOverview({
   onDockExerciseDrop,
   onDockTemplateDrop,
   onDockTemplateDayDrop,
-  onCanvasItemDrop,
+  onClipboardItemDrop,
   onSaveAsTemplate,
   visibleCardMetrics,
   competitionTotal,
@@ -156,7 +156,7 @@ export function WeekOverview({
                         onDockExerciseDrop={onDockExerciseDrop}
                         onDockTemplateDrop={onDockTemplateDrop}
                         onDockTemplateDayDrop={onDockTemplateDayDrop}
-                        onCanvasItemDrop={onCanvasItemDrop}
+                        onClipboardItemDrop={onClipboardItemDrop}
                         onSaveAsTemplate={onSaveAsTemplate}
                         savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
@@ -203,7 +203,7 @@ export function WeekOverview({
                   onDockExerciseDrop={onDockExerciseDrop}
                   onDockTemplateDrop={onDockTemplateDrop}
                   onDockTemplateDayDrop={onDockTemplateDayDrop}
-                  onCanvasItemDrop={onCanvasItemDrop}
+                  onClipboardItemDrop={onClipboardItemDrop}
                   onSaveAsTemplate={onSaveAsTemplate}
                   savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
@@ -246,7 +246,7 @@ export function WeekOverview({
             onDockExerciseDrop={onDockExerciseDrop}
             onDockTemplateDrop={onDockTemplateDrop}
             onDockTemplateDayDrop={onDockTemplateDayDrop}
-            onCanvasItemDrop={onCanvasItemDrop}
+            onClipboardItemDrop={onClipboardItemDrop}
             onSaveAsTemplate={onSaveAsTemplate}
             savePrescription={savePrescription}
                         saveGppSection={saveGppSection}

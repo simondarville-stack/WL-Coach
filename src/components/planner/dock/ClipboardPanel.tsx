@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
-import type { CanvasItem, CanvasExerciseDisplay } from './useCanvasState';
+import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
 
-interface CanvasPanelProps {
-  items: CanvasItem[];
+interface ClipboardPanelProps {
+  items: ClipboardItem[];
   onRemove: (id: string) => void;
   onClear: () => void;
-  /** Called when a planner item is dragged from a DayCard into the canvas.
-   *  data is the raw dataTransfer text/plain string; the parent decides
-   *  whether it's a single exercise drop or a day drop and snapshots
-   *  accordingly. */
+  /** Called when a planner item is dragged from a DayCard into the
+   *  clipboard. `data` is the raw dataTransfer text/plain string; the
+   *  parent decides whether it's a single exercise drop or a day drop
+   *  and snapshots accordingly. */
   onPlannerDrop: (data: string) => Promise<void> | void;
 }
 
-export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasPanelProps) {
+export function ClipboardPanel({ items, onRemove, onClear, onPlannerDrop }: ClipboardPanelProps) {
   const [dragOver, setDragOver] = useState(false);
   const empty = items.length === 0;
 
@@ -44,8 +44,11 @@ export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasP
     setDragOver(false);
     const data = e.dataTransfer.getData('text/plain');
     if (!data) return;
-    // Canvas → Canvas drag is a no-op (don't dupe an item by dragging it onto itself).
-    if (data.startsWith('CANVAS:')) return;
+    // Clipboard → Clipboard drag is a no-op (don't dupe an item by
+    // dragging it onto itself). Accept the legacy CANVAS: prefix during
+    // the rename window for any in-flight drags that started before
+    // the page picked up the new bundle.
+    if (data.startsWith('CLIPBOARD:') || data.startsWith('CANVAS:')) return;
     await onPlannerDrop(data);
   }
 
@@ -86,7 +89,7 @@ export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasP
             letterSpacing: '0.04em',
           }}
         >
-          Scratch space
+          Clipboard
         </span>
         <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
           Drop exercises or day headers here to park them; drag back into any day to use them.
@@ -98,7 +101,7 @@ export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasP
         {!empty && (
           <button
             onClick={onClear}
-            title="Clear canvas"
+            title="Clear clipboard"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -160,7 +163,7 @@ export function CanvasPanel({ items, onRemove, onClear, onPlannerDrop }: CanvasP
   );
 }
 
-function SentinelIcon({ kind, color }: { kind: CanvasExerciseDisplay['sentinel']; color: string }) {
+function SentinelIcon({ kind, color }: { kind: ClipboardExerciseDisplay['sentinel']; color: string }) {
   const common = { size: 11, style: { flexShrink: 0, color } } as const;
   if (kind === 'video') return <Video {...common} />;
   if (kind === 'image') return <ImageIcon {...common} />;
@@ -170,7 +173,7 @@ function SentinelIcon({ kind, color }: { kind: CanvasExerciseDisplay['sentinel']
 }
 
 interface ExerciseCardProps {
-  item: Extract<CanvasItem, { kind: 'exercise' }>;
+  item: Extract<ClipboardItem, { kind: 'exercise' }>;
   onRemove: () => void;
 }
 
@@ -180,7 +183,7 @@ function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
     <div
       draggable
       onDragStart={e => {
-        e.dataTransfer.setData('text/plain', `CANVAS:exercise:${item.id}`);
+        e.dataTransfer.setData('text/plain', `CLIPBOARD:exercise:${item.id}`);
         e.dataTransfer.effectAllowed = 'copy';
       }}
       title={display.label}
@@ -238,7 +241,7 @@ function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
 }
 
 interface DayCardItemProps {
-  item: Extract<CanvasItem, { kind: 'day' }>;
+  item: Extract<ClipboardItem, { kind: 'day' }>;
   onRemove: () => void;
 }
 
@@ -247,7 +250,7 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
     <div
       draggable
       onDragStart={e => {
-        e.dataTransfer.setData('text/plain', `CANVAS:day:${item.id}`);
+        e.dataTransfer.setData('text/plain', `CLIPBOARD:day:${item.id}`);
         e.dataTransfer.effectAllowed = 'copy';
       }}
       title={`${item.label} — ${item.exercises.length} exercise${item.exercises.length === 1 ? '' : 's'}`}
@@ -339,7 +342,7 @@ function RemoveBtn({ onClick }: { onClick: () => void }) {
         e.preventDefault();
         e.stopPropagation();
       }}
-      title="Remove from canvas"
+      title="Remove from clipboard"
       style={{
         position: 'absolute',
         top: 3,

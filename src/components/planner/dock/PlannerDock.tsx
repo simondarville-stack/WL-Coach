@@ -3,8 +3,8 @@ import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab, DOCK_MIN_HEIGHT } from './useDockState';
 import { DockExerciseList } from './DockExerciseList';
 import { DockTemplateList } from './DockTemplateList';
-import { CanvasPanel } from './CanvasPanel';
-import type { CanvasItem } from './useCanvasState';
+import { ClipboardPanel } from './ClipboardPanel';
+import type { ClipboardItem } from './useClipboardState';
 import type { Exercise } from '../../../lib/database.types';
 
 interface TabDef {
@@ -15,7 +15,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: 'exercises', label: 'Exercises' },
   { key: 'templates', label: 'Templates' },
-  { key: 'canvas', label: 'Canvas' },
+  { key: 'clipboard', label: 'Clipboard' },
 ];
 
 const HEADER_HEIGHT = 32;
@@ -26,25 +26,25 @@ const VIEWPORT_BUFFER = 120;
 interface PlannerDockProps {
   exercises: Exercise[];
   onOpenImport: (templateId: string) => void;
-  /** Snapshots parked on the canvas. */
-  canvasItems: CanvasItem[];
-  /** Remove a single canvas snapshot by id. */
-  onCanvasRemove: (id: string) => void;
-  /** Empty the canvas. */
-  onCanvasClear: () => void;
-  /** Forwarded to CanvasPanel — receives raw dataTransfer text/plain when a
-   *  planner item is dropped onto the canvas. The parent resolves it (single
-   *  exercise vs. day) and snapshots accordingly. */
-  onCanvasPlannerDrop: (data: string) => Promise<void> | void;
+  /** Snapshots parked on the clipboard. */
+  clipboardItems: ClipboardItem[];
+  /** Remove a single clipboard snapshot by id. */
+  onClipboardRemove: (id: string) => void;
+  /** Empty the clipboard. */
+  onClipboardClear: () => void;
+  /** Forwarded to ClipboardPanel — receives raw dataTransfer text/plain
+   *  when a planner item is dropped onto the clipboard. The parent
+   *  resolves it (single exercise vs. day) and snapshots accordingly. */
+  onClipboardPlannerDrop: (data: string) => Promise<void> | void;
 }
 
 export function PlannerDock({
   exercises,
   onOpenImport,
-  canvasItems,
-  onCanvasRemove,
-  onCanvasClear,
-  onCanvasPlannerDrop,
+  clipboardItems,
+  onClipboardRemove,
+  onClipboardClear,
+  onClipboardPlannerDrop,
 }: PlannerDockProps) {
   const {
     tab, setTab,
@@ -118,7 +118,7 @@ export function PlannerDock({
     : tab === 'templates'
     ? 'Search templates…'
     : '';
-  const showSearch = tab !== 'canvas';
+  const showSearch = tab !== 'clipboard';
 
   return (
     <div
@@ -211,7 +211,8 @@ export function PlannerDock({
         <div style={{ display: 'flex', gap: 2 }}>
           {TABS.map(t => {
             const active = t.key === tab;
-            const badge = t.key === 'canvas' && canvasItems.length > 0 ? canvasItems.length : null;
+            const badge =
+              t.key === 'clipboard' && clipboardItems.length > 0 ? clipboardItems.length : null;
             return (
               <button
                 key={t.key}
@@ -221,8 +222,8 @@ export function PlannerDock({
                 }}
                 onDragEnter={() => {
                   // Auto-switch to a tab when the user drags over its
-                  // label. Lets coaches park items on the canvas without
-                  // first clicking the tab.
+                  // label. Lets coaches park items on the clipboard
+                  // without first clicking the tab.
                   if (tab !== t.key) setTab(t.key);
                   if (collapsed) setCollapsed(false);
                 }}
@@ -362,11 +363,11 @@ export function PlannerDock({
           ) : tab === 'templates' ? (
             <DockTemplateList query={query} onOpenImport={onOpenImport} />
           ) : (
-            <CanvasPanel
-              items={canvasItems}
-              onRemove={onCanvasRemove}
-              onClear={onCanvasClear}
-              onPlannerDrop={onCanvasPlannerDrop}
+            <ClipboardPanel
+              items={clipboardItems}
+              onRemove={onClipboardRemove}
+              onClear={onClipboardClear}
+              onPlannerDrop={onClipboardPlannerDrop}
             />
           )}
         </div>
