@@ -13,6 +13,8 @@ import { WeekScreen } from './screens/WeekScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { GroupViewerScreen } from './screens/GroupViewerScreen';
 import { CoachThreadScreen } from './screens/CoachThreadScreen';
+import { PRsScreen } from './screens/PRsScreen';
+import { PRDetailScreen } from './screens/PRDetailScreen';
 
 function AthleteRoutes() {
   const { loading, mode } = useAuth();
@@ -35,6 +37,8 @@ function AthleteRoutes() {
         <Route path="week" element={<WeekScreen />} />
         <Route path="coach" element={<CoachThreadScreen />} />
         <Route path="profile" element={<ProfileScreen />} />
+        <Route path="prs" element={<PRsScreen />} />
+        <Route path="prs/:exerciseId" element={<PRDetailScreen />} />
         <Route index element={<Navigate to="today" replace />} />
         <Route path="*" element={<Navigate to="today" replace />} />
       </Route>

@@ -3,25 +3,15 @@ import { Trophy, X, ArrowLeft, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
-import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUtils';
+import { estimate1RM, roundToHalf } from '../../lib/xrmUtils';
+import {
+  buildPRRows,
+  REP_COUNTS,
+  syncAthletePRs as syncAthletePRsService,
+  type ExerciseRow,
+  type RepCount,
+} from '../../lib/prTable';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
-
-const REP_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
-type RepCount = typeof REP_COUNTS[number];
-
-interface PRCell {
-  repCount: RepCount;
-  /** Most-recent entry for this rep count (or null). */
-  current: AthletePRHistory | null;
-  /** Estimated value derived from best implied 1RM (no real entry yet). */
-  phantom: number | null;
-}
-
-interface ExerciseRow {
-  exercise: Exercise;
-  cells: PRCell[];
-  implied1RM: number | null;
-}
 
 interface EditingCell {
   exerciseId: string;
@@ -193,39 +183,10 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
     }
   }
 
-  function buildRows(exList: Exercise[], hist: AthletePRHistory[]): ExerciseRow[] {
-    return exList.map(ex => {
-      // hist is sorted desc by achieved_date, created_at — first match per
-      // (exercise, rep_count) is the most recent.
-      const currentByRep = new Map<RepCount, AthletePRHistory>();
-      for (const entry of hist) {
-        if (entry.exercise_id !== ex.id) continue;
-        if (entry.rep_count < 1 || entry.rep_count > 10) continue;
-        const rc = entry.rep_count as RepCount;
-        if (!currentByRep.has(rc)) currentByRep.set(rc, entry);
-      }
-
-      let best1RM: number | null = null;
-      for (const [rep, entry] of currentByRep) {
-        const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
-        if (best1RM === null || implied > best1RM) best1RM = implied;
-      }
-
-      const cells: PRCell[] = REP_COUNTS.map(rc => {
-        const current = currentByRep.get(rc) ?? null;
-        const phantom = best1RM !== null && !current
-          ? roundToHalf(estimateWeightAtReps(best1RM, rc))
-          : null;
-        return { repCount: rc, current, phantom };
-      });
-
-      return {
-        exercise: ex,
-        cells,
-        implied1RM: best1RM !== null ? roundToHalf(best1RM) : null,
-      };
-    });
-  }
+  // buildPRRows + syncAthletePRs live in lib/prTable.ts now so the
+  // athlete app and this coach panel agree on the current cell for
+  // every (exercise, rep_count). Behaviour unchanged.
+  const buildRows = buildPRRows;
 
   function startEdit(exerciseId: string, repCount: RepCount, prefill: string) {
     setError(null);
@@ -237,60 +198,7 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   // analysis charts, etc. all still read from athlete_prs — keeping it in
   // sync here means the new historical grid is the single editing surface
   // without breaking those consumers.
-  async function syncAthletePRs(exerciseId: string) {
-    const { data: hist } = await supabase
-      .from('athlete_pr_history')
-      .select('rep_count, value_kg, achieved_date, created_at')
-      .eq('athlete_id', athlete.id)
-      .eq('exercise_id', exerciseId)
-      .order('achieved_date', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    const rows = (hist as Pick<AthletePRHistory, 'rep_count' | 'value_kg' | 'achieved_date'>[] | null) ?? [];
-
-    if (rows.length === 0) {
-      // No history left → drop the cached row too.
-      await supabase
-        .from('athlete_prs')
-        .delete()
-        .eq('athlete_id', athlete.id)
-        .eq('exercise_id', exerciseId);
-      return;
-    }
-
-    // Most-recent value per rep count (history is already sorted desc).
-    const recentByRep = new Map<number, { value_kg: number; achieved_date: string }>();
-    for (const r of rows) {
-      if (!recentByRep.has(r.rep_count)) {
-        recentByRep.set(r.rep_count, { value_kg: r.value_kg, achieved_date: r.achieved_date });
-      }
-    }
-
-    // Best implied 1RM among the most-recent values.
-    let best1RM = 0;
-    let bestDate = '';
-    for (const [rep, entry] of recentByRep) {
-      const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
-      if (implied > best1RM) {
-        best1RM = implied;
-        bestDate = entry.achieved_date;
-      }
-    }
-    if (best1RM <= 0) return;
-
-    const { error: upsertErr } = await supabase
-      .from('athlete_prs')
-      .upsert(
-        {
-          athlete_id: athlete.id,
-          exercise_id: exerciseId,
-          pr_value_kg: roundToHalf(best1RM),
-          pr_date: bestDate,
-        },
-        { onConflict: 'athlete_id,exercise_id' }
-      );
-    if (upsertErr) console.error('athlete_prs sync failed:', upsertErr);
-  }
+  const syncAthletePRs = (exerciseId: string) => syncAthletePRsService(athlete.id, exerciseId);
 
   async function commitEdit() {
     if (!editing || saving) return;
@@ -903,10 +811,11 @@ function PRHistoryChart({ data, color }: { data: { date: string; label: string; 
           <Tooltip
             contentStyle={{ background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', borderRadius: 6, fontSize: 11 }}
             labelStyle={{ color: 'var(--color-text-secondary)' }}
-            formatter={(value: number, _name: string, entry: { payload: { raw: number; reps: number } }) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts Formatter generic over-narrow
+            formatter={((value: number, _name: string, entry: { payload: { raw: number; reps: number } }) => {
               const p = entry.payload;
               return [`${value} kg (raw ${p.raw}×${p.reps})`, 'e1RM'];
-            }}
+            }) as any}
           />
           <Line type="monotone" dataKey="e1rm" stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} activeDot={{ r: 5 }} />
         </LineChart>

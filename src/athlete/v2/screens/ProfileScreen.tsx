@@ -7,7 +7,8 @@
  * exercise names.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { LogOut, User as UserIcon, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronRight, LogOut, Trophy, User as UserIcon, Loader2 } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -31,6 +32,7 @@ function shortDate(iso: string): string {
 }
 
 export function ProfileScreen() {
+  const navigate = useNavigate();
   const { athlete, signOut } = useAuth();
   const [bw, setBw] = useState<BodyweightPoint[]>([]);
   const [prs, setPrs] = useState<AthletePRRow[]>([]);
@@ -172,39 +174,27 @@ export function ProfileScreen() {
             )}
           </section>
 
-          {/* PR table */}
-          <section className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
-            <div className="px-3 py-2 border-b border-gray-800">
-              <h2 className="text-[11px] uppercase tracking-wide font-semibold text-gray-500">
-                Personal records
-              </h2>
+          {/* Personal records — link to the dedicated PRs screen.
+              Shows a small preview of count + best lift so the row is
+              meaningful at a glance without taking the full table inline. */}
+          <button
+            type="button"
+            onClick={() => navigate('/athlete/prs')}
+            className="w-full rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 hover:bg-gray-900/80 transition-colors text-left flex items-center gap-3 px-3 py-3"
+          >
+            <div className="w-9 h-9 rounded-full bg-blue-950 border border-blue-900 flex items-center justify-center flex-shrink-0">
+              <Trophy size={16} className="text-blue-400" />
             </div>
-            {prs.length === 0 ? (
-              <p className="text-xs text-gray-500 italic py-6 px-3 text-center">
-                No PRs recorded. Your coach can enter them on your profile.
-              </p>
-            ) : (
-              <ul className="divide-y divide-gray-800">
-                {prs.map(pr => (
-                  <li
-                    key={pr.exerciseId}
-                    className="flex items-baseline justify-between gap-3 px-3 py-2"
-                  >
-                    <span className="text-sm text-gray-200 truncate">{pr.exerciseName}</span>
-                    <div className="flex items-baseline gap-2 flex-shrink-0">
-                      <span className="text-sm font-bold text-white">
-                        {pr.prValueKg?.toFixed(1)}
-                        <span className="text-xs text-gray-500 font-normal ml-1">kg</span>
-                      </span>
-                      {pr.prDate && (
-                        <span className="text-[10px] text-gray-500">{shortDate(pr.prDate)}</span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-white">Personal records</div>
+              <div className="text-[11px] text-gray-500 mt-0.5">
+                {prs.length === 0
+                  ? 'No PRs yet — tap to log one'
+                  : `${prs.length} exercise${prs.length === 1 ? '' : 's'} with a PR`}
+              </div>
+            </div>
+            <ChevronRight size={16} className="text-gray-500 flex-shrink-0" />
+          </button>
         </>
       )}
     </div>
