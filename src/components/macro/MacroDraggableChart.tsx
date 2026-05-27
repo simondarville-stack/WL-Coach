@@ -430,7 +430,8 @@ export function MacroDraggableChart({
 
             <XAxis
               dataKey="weekNum"
-              tick={renderTick}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts TickProp generic too strict for our renderer
+              tick={renderTick as any}
               tickLine={false}
               axisLine={{ stroke: '#e5e7eb' }}
               height={52}
@@ -462,17 +463,18 @@ export function MacroDraggableChart({
                 fontSize: 'var(--text-caption)', padding: '6px 10px',
                 border: '0.5px solid var(--color-border-secondary)', borderRadius: 6,
               }}
-              labelFormatter={(wn: number) => {
+              labelFormatter={((wn: number) => {
                 const week = macroWeeks.find(w => w.week_number === wn);
                 const wt = week?.week_type_text || week?.week_type || '';
                 return `Week ${wn}${wt ? ' \u2014 ' + wt : ''}`;
-              }}
-              formatter={(value: number | null, name: string) => {
+              }) as unknown as (l: unknown) => string}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts Formatter generic over-narrow
+              formatter={((value: number | null, name: string) => {
                 if (value === null || value === 0) return [null, null];
                 if (name.includes('actual') || name.includes('drag')) return [null, null];
                 const isReps = name.toLowerCase().includes('reps');
                 return [`${value}${isReps ? '' : ' kg'}`, name];
-              }}
+              }) as any}
             />
 
             {phases.map(phase => (

@@ -157,7 +157,7 @@ export function LoadDistribution({
                 <XAxis {...chartProps.xAxis} />
                 <YAxis {...chartProps.yAxis} yAxisId="left" />
                 <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} stroke="#f87171" width={36} />
-                <Tooltip {...chartProps.tooltip} formatter={(v: number, n: string) => [`${Math.round(v)} ${n === 'stressCurve' ? '' : 'kg'}`, n === 'stressCurve' ? 'Stress acc.' : 'Load']} />
+                <Tooltip {...chartProps.tooltip} formatter={((v: number, n: string) => [`${Math.round(v)} ${n === 'stressCurve' ? '' : 'kg'}`, n === 'stressCurve' ? 'Stress acc.' : 'Load']) as any} />
                 <Bar yAxisId="left" dataKey="load" fill="#3b82f6" />
                 <Line yAxisId="right" type="monotone" dataKey="stressCurve" stroke="#f87171" strokeWidth={2} dot={false} />
               </ComposedChart>
@@ -166,7 +166,7 @@ export function LoadDistribution({
                 <CartesianGrid {...chartProps.cartesianGrid} />
                 <XAxis {...chartProps.xAxis} />
                 <YAxis {...chartProps.yAxis} />
-                <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${Math.round(v)} kg`} />
+                <Tooltip {...chartProps.tooltip} formatter={((v: number) => `${Math.round(v)} kg`) as unknown as (v: unknown) => string} />
                 <Bar dataKey="load" fill="#3b82f6" />
               </BarChart>
             )}
@@ -181,7 +181,7 @@ export function LoadDistribution({
               <CartesianGrid {...chartProps.cartesianGrid} />
               <XAxis {...chartProps.xAxis} />
               <YAxis {...chartProps.yAxis} />
-              <Tooltip {...chartProps.tooltip} formatter={(v: number) => `${v} reps`} />
+              <Tooltip {...chartProps.tooltip} formatter={((v: number) => `${v} reps`) as unknown as (v: unknown) => string} />
               <Bar dataKey="reps" fill="#10b981" />
             </BarChart>
           </ResponsiveContainer>
@@ -197,7 +197,8 @@ export function LoadDistribution({
                 <XAxis {...chartProps.xAxis} />
                 <YAxis {...chartProps.yAxis} yAxisId="left" />
                 <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} stroke="#f87171" width={36} />
-                <Tooltip {...chartProps.tooltip} formatter={(v: number, n: string) => [v.toFixed(1), n === 'stressCurve' ? 'Stress acc.' : 'Stress']} />
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts Formatter generic is over-narrow */}
+                <Tooltip {...chartProps.tooltip} formatter={((v: number, n: string) => [v.toFixed(1), n === 'stressCurve' ? 'Stress acc.' : 'Stress']) as any} />
                 <Bar yAxisId="left" dataKey="stress" fill="#f59e0b" />
                 <Line yAxisId="right" type="monotone" dataKey="stressCurve" stroke="#f87171" strokeWidth={2} dot={false} />
               </ComposedChart>
@@ -206,7 +207,7 @@ export function LoadDistribution({
                 <CartesianGrid {...chartProps.cartesianGrid} />
                 <XAxis {...chartProps.xAxis} />
                 <YAxis {...chartProps.yAxis} />
-                <Tooltip {...chartProps.tooltip} formatter={(v: number) => v.toFixed(1)} />
+                <Tooltip {...chartProps.tooltip} formatter={((v: number) => v.toFixed(1)) as unknown as (v: unknown) => string} />
                 <Bar dataKey="stress" fill="#f59e0b" />
               </BarChart>
             )}

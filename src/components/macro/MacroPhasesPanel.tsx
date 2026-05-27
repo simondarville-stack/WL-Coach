@@ -335,7 +335,9 @@ function ListView({ phases, totalWeeks, onEdit, onAdd, onDelete }: ListViewProps
                       {phase.name}
                     </span>
                     {overlapping && (
-                      <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" title="Overlaps with another phase" />
+                      <span title="Overlaps with another phase" className="inline-flex">
+                        <AlertTriangle size={12} className="flex-shrink-0 text-amber-500" aria-label="Overlaps with another phase" />
+                      </span>
                     )}
                   </div>
                   <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>

@@ -323,11 +323,13 @@ export function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDupli
         </span>
         {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
         {isDuplicate && (
-          <AlertTriangle
-            size={11}
-            style={{ color: 'var(--color-warning-text)', flexShrink: 0 }}
-            title="Duplicate exercise name"
-          />
+          <span title="Duplicate exercise name" style={{ display: 'inline-flex' }}>
+            <AlertTriangle
+              size={11}
+              style={{ color: 'var(--color-warning-text)', flexShrink: 0 }}
+              aria-label="Duplicate exercise name"
+            />
+          </span>
         )}
       </div>
 
@@ -412,7 +414,9 @@ export function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDu
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
         {isDuplicate && !exercise.is_competition_lift && (
-          <AlertTriangle size={11} style={{ color: 'var(--color-warning-text)' }} title="Duplicate exercise name" />
+          <span title="Duplicate exercise name" style={{ display: 'inline-flex' }}>
+            <AlertTriangle size={11} style={{ color: 'var(--color-warning-text)' }} aria-label="Duplicate exercise name" />
+          </span>
         )}
       </div>
 

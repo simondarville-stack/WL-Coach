@@ -134,7 +134,7 @@ export function BodyweightHistoryDialog({ athleteId, athleteName, onClose }: Pro
             </div>
           ) : error ? (
             <div className="text-sm text-red-600">{error}</div>
-          ) : entries.length === 0 ? (
+          ) : (entries ?? []).length === 0 ? (
             <div className="text-sm text-gray-400 italic text-center py-12">
               No bodyweight entries yet.
             </div>
@@ -160,11 +160,16 @@ export function BodyweightHistoryDialog({ athleteId, athleteName, onClose }: Pro
                       />
                       <Tooltip
                         contentStyle={{ fontSize: 11, borderRadius: 6, border: '1px solid #e5e7eb' }}
-                        labelFormatter={formatChartDate}
-                        formatter={(value: number | null | undefined, name: string) => {
+                        // Recharts' Tooltip generics demand a Formatter / label
+                        // shape with positional Payload args we never use; runtime
+                        // happily accepts the simpler arity. Cast through unknown
+                        // to keep the callsite legible.
+                        labelFormatter={formatChartDate as unknown as (label: unknown) => string}
+                        formatter={((value: number | null | undefined, name: string) => {
                           if (value == null) return ['—', name];
                           return [`${value.toFixed(1)} kg`, name];
-                        }}
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        }) as any}
                       />
                       <Legend
                         wrapperStyle={{ fontSize: 11 }}

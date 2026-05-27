@@ -177,7 +177,7 @@ export function MacroDistributionChart({
           plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: (c: TooltipItem<'bar'>) => (c.dataset.label ?? '') + ': ' + (c.raw as number) + '%' } } },
           scales: {
             x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
-            y: { stacked: true, max: 100, title: { display: true, text: '%', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 }, callback: (v: number) => v + '%' } },
+            y: { stacked: true, max: 100, title: { display: true, text: '%', font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11 }, callback: ((v: number) => v + '%') as unknown as (v: number | string) => string } },
           },
         },
       });

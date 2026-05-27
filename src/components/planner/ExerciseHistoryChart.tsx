@@ -307,7 +307,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
           <YAxis domain={[minY, maxY]} tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} width={32} />
           <Tooltip
             contentStyle={{ fontSize: 11, padding: '4px 8px', borderColor: '#e5e7eb' }}
-            formatter={(value: number, name: string) => [
+            formatter={((value: number, name: string) => [
               `${value} kg`,
               name === 'plan_max'  ? 'Planned max'
               : name === 'plan_avg' ? 'Planned avg'
@@ -315,8 +315,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
               : name === 'perf_avg' ? 'Performed avg'
               : name === 'soll_max'  ? 'SOLL max'
               : 'SOLL avg',
-            ]}
-            labelFormatter={(label: string) => `Week: ${label}`}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ]) as any}
+            labelFormatter={((label: string) => `Week: ${label}`) as unknown as (l: unknown) => string}
           />
           {nowLabel && (
             <ReferenceLine x={nowLabel} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
