@@ -248,24 +248,19 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
             onCommit={() => commit()}
             disabled={busy || isSkipped || readOnly}
           />
-          {input.acceptsTextReps ? (
-            <TextRepsCell
-              value={reps}
-              placeholder={input.plannedRepsText}
-              onChange={setReps}
-              onCommit={() => commit()}
-              disabled={busy || isSkipped || readOnly}
-            />
-          ) : (
-            <NumericCell
-              value={reps}
-              placeholder={input.plannedRepsText}
-              unit="r"
-              onChange={setReps}
-              onCommit={() => commit()}
-              disabled={busy || isSkipped || readOnly}
-            />
-          )}
+          <NumericCell
+            value={reps}
+            placeholder={input.plannedRepsText}
+            unit="r"
+            onChange={setReps}
+            onCommit={() => commit()}
+            disabled={busy || isSkipped || readOnly}
+            // Combo prescriptions ("1+1") need a keyboard that can type "+".
+            // inputMode="decimal" gives a numeric pad with no plus key on
+            // mobile, trapping athletes once they clear the carried-over
+            // sum and try to enter combo notation.
+            inputMode={input.plannedRepsText.includes('+') ? 'text' : 'decimal'}
+          />
         </div>
       )}
       {onDelete && !readOnly && (
@@ -284,7 +279,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
 }
 
 function NumericCell({
-  value, placeholder, unit, onChange, onCommit, disabled,
+  value, placeholder, unit, onChange, onCommit, disabled, inputMode = 'decimal',
 }: {
   value: string;
   placeholder: string;
@@ -292,12 +287,13 @@ function NumericCell({
   onChange: (v: string) => void;
   onCommit: () => void;
   disabled?: boolean;
+  inputMode?: 'decimal' | 'text';
 }) {
   return (
     <div className="flex items-baseline gap-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 focus-within:border-blue-500">
       <input
         type="text"
-        inputMode="decimal"
+        inputMode={inputMode}
         value={value}
         onChange={e => onChange(e.target.value)}
         onBlur={onCommit}
