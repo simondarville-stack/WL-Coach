@@ -15,6 +15,7 @@ import {
   Hash,
   Trophy,
   Mail,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
@@ -62,6 +63,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/library', label: 'Exercise library', icon: BookOpen },
       { path: '/settings', label: 'Settings', icon: Settings },
+      { path: '/system/errors', label: 'Error log', icon: AlertTriangle },
     ],
   },
 ];

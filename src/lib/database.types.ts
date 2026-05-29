@@ -706,6 +706,35 @@ export interface ProgramTemplateSummary extends ProgramTemplate {
   days: ProgramTemplateDayLite[];
 }
 
+/** Single breadcrumb captured by the in-app error logger.
+ *  Persisted as one element in error_logs.breadcrumbs (jsonb). */
+export interface ErrorBreadcrumb {
+  ts: string;
+  category: 'nav' | 'click' | 'mutation' | 'query' | 'auth' | 'info';
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export interface ErrorLogEntry {
+  id: string;
+  created_at: string;
+  source: 'react' | 'window' | 'promise' | 'manual' | 'supabase';
+  name: string | null;
+  message: string;
+  stack: string | null;
+  error_code: string | null;
+  url: string | null;
+  user_agent: string | null;
+  app_version: string | null;
+  actor_role: 'coach' | 'athlete' | 'unknown' | null;
+  actor_id: string | null;
+  actor_label: string | null;
+  breadcrumbs: ErrorBreadcrumb[];
+  context: Record<string, unknown> | null;
+  resolved_at: string | null;
+  resolved_note: string | null;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -935,6 +964,12 @@ export interface Database {
         Row: ProgramTemplateComboMember & Record<string, unknown>;
         Insert: Partial<Omit<ProgramTemplateComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ProgramTemplateComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      error_logs: {
+        Row: ErrorLogEntry & Record<string, unknown>;
+        Insert: Partial<Omit<ErrorLogEntry, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ErrorLogEntry, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
     };

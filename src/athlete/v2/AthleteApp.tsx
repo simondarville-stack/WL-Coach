@@ -4,6 +4,7 @@
  * Shell: AuthProvider → ProfilePicker (if no athlete) → AthleteLayout
  * with bottom-tab nav between Today / Week / Profile.
  */
+import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ProfilePicker } from './components/ProfilePicker';
@@ -15,9 +16,20 @@ import { GroupViewerScreen } from './screens/GroupViewerScreen';
 import { CoachThreadScreen } from './screens/CoachThreadScreen';
 import { PRsScreen } from './screens/PRsScreen';
 import { PRDetailScreen } from './screens/PRDetailScreen';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { setActorResolver } from '../../lib/errorLogger';
+import { useRouteBreadcrumbs } from '../../hooks/useRouteBreadcrumbs';
 
 function AthleteRoutes() {
-  const { loading, mode } = useAuth();
+  const { loading, mode, athlete, group } = useAuth();
+  useRouteBreadcrumbs();
+  useEffect(() => {
+    setActorResolver(() => {
+      if (athlete) return { role: 'athlete', id: athlete.id, label: athlete.name };
+      if (group) return { role: 'athlete', id: group.id, label: `Group: ${group.name}` };
+      return { role: 'athlete', id: null, label: null };
+    });
+  }, [athlete?.id, athlete?.name, group?.id, group?.name]);
 
   if (loading) {
     return (
@@ -53,7 +65,9 @@ export function AthleteApp() {
   return (
     <div data-theme="dark">
       <AuthProvider>
-        <AthleteRoutes />
+        <ErrorBoundary>
+          <AthleteRoutes />
+        </ErrorBoundary>
       </AuthProvider>
     </div>
   );

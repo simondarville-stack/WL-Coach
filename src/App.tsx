@@ -23,7 +23,10 @@ import { CalendarTool } from './components/tools/CalendarTool';
 import { PRPage } from './components/PRPage';
 import { CoachInbox } from './components/CoachInbox';
 import { SystemGuide } from './components/system/SystemGuide';
+import { ErrorLogViewer } from './components/system/ErrorLogViewer';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { setActorResolver } from './lib/errorLogger';
+import { useRouteBreadcrumbs } from './hooks/useRouteBreadcrumbs';
 import { useAthletes } from './hooks/useAthletes';
 import { useTrainingGroups } from './hooks/useTrainingGroups';
 import { useAthleteStore } from './store/athleteStore';
@@ -43,6 +46,7 @@ const pageTitles: Record<string, string> = {
   '/settings': 'Settings',
   '/prs': 'Personal Records',
   '/inbox': 'Inbox',
+  '/system/errors': 'Error log',
 };
 
 function PageTitle() {
@@ -69,6 +73,14 @@ function CoachApp() {
   const { activeCoach, setActiveCoach, setCoaches } = useCoachStore();
   const { fetchCoaches } = useCoachProfiles();
   const navigate = useNavigate();
+  useRouteBreadcrumbs();
+  useEffect(() => {
+    setActorResolver(() => ({
+      role: 'coach',
+      id: activeCoach?.id ?? null,
+      label: activeCoach?.name ?? null,
+    }));
+  }, [activeCoach?.id, activeCoach?.name]);
 
   const [showNewCoachModal, setShowNewCoachModal] = useState(false);
   const [showRepMaxCalc, setShowRepMaxCalc] = useState(false);
@@ -178,6 +190,7 @@ function CoachApp() {
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={<ExerciseLibrary />} />
               <Route path="/system" element={<SystemGuide />} />
+              <Route path="/system/errors" element={<ErrorLogViewer />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </ErrorBoundary>

@@ -2,6 +2,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
 import './index.css';
+import { installGlobalHandlers } from './lib/errorLogger';
+
+installGlobalHandlers();
 
 // StrictMode removed: MacroDistributionChart uses Chart.js which does not
 // tolerate the double-mount/unmount cycle in development StrictMode.
