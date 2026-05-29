@@ -59,13 +59,11 @@ future reactivation. Deleting them is a SCOPE VIOLATION.
 
 ## Supabase & migrations
 
-- Schema changes require an explicit migration file under
-  `supabase/migrations/<timestamp>_<n>.sql`.
-- Migrations are never applied without explicit per-call user approval.
-  Agents may apply migrations only via tools that surface a confirmation
-  prompt to the user (e.g. the Supabase MCP server). Agents never apply
-  migrations via raw psql, scripts, or any path that bypasses the
-  per-call prompt.
++ Migrations are never applied without explicit per-call user approval.
++  Agents may apply migrations only via tools that surface a confirmation
++  prompt to the user (e.g. the Supabase MCP server). Agents never apply
++  migrations via raw psql, scripts, or any path that bypasses the
++  per-call prompt.
 
 ## Code conventions
 
