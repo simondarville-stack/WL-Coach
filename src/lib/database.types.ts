@@ -154,6 +154,10 @@ export interface WeekPlan {
   day_display_order: number[] | null;
   week_description: string | null;
   day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+  /** Which coach last touched this week plan. Null on rows created before
+   *  the column existed or only ever edited by the host. Lets the planner
+   *  show "Updated by Coach X" when last_edited_by_coach_id ≠ owner_id. */
+  last_edited_by_coach_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -482,6 +486,10 @@ export interface TrainingLogMessage {
   athlete_id: string | null;
   exercise_id: string | null;
   sender_type: 'athlete' | 'coach';
+  /** Which coach posted this message. Null for sender_type='athlete' and
+   *  for legacy rows written before the column existed. Used by the
+   *  shared-inbox UI to label messages from multiple coaches. */
+  sender_coach_id: string | null;
   message: string;
   /** Timestamp when the coach last read this message. Null = unread by coach.
    *  Set by the service when the coach views the session. See UF-10 / A5. */
@@ -735,6 +743,38 @@ export interface ErrorLogEntry {
   resolved_note: string | null;
 }
 
+export type CollaboratorRole = 'co_coach' | 'viewer';
+
+/** Coach-to-coach sharing of an athlete. Created when a host coach
+ *  invites another coach to co-coach or view; accepted_at flips on
+ *  acceptance, revoked_at on revocation. The host coach is
+ *  athletes.owner_id; this row only ever describes additional access. */
+export interface AthleteCollaborator {
+  id: string;
+  athlete_id: string;
+  coach_id: string;
+  role: CollaboratorRole;
+  invited_by: string;
+  invited_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TrainingGroupCollaborator {
+  id: string;
+  group_id: string;
+  coach_id: string;
+  role: CollaboratorRole;
+  invited_by: string;
+  invited_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -970,6 +1010,18 @@ export interface Database {
         Row: ErrorLogEntry & Record<string, unknown>;
         Insert: Partial<Omit<ErrorLogEntry, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ErrorLogEntry, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      athlete_collaborators: {
+        Row: AthleteCollaborator & Record<string, unknown>;
+        Insert: Partial<Omit<AthleteCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<AthleteCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      training_group_collaborators: {
+        Row: TrainingGroupCollaborator & Record<string, unknown>;
+        Insert: Partial<Omit<TrainingGroupCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingGroupCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
     };
