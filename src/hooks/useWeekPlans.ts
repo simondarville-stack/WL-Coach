@@ -40,10 +40,14 @@ export function useWeekPlans() {
       setLoading(true);
       setError(null);
 
+      // For an individual or group plan, athlete_id or group_id is the
+      // access boundary — those rows are unique per (target, week_start),
+      // so we don't need an owner_id filter. Dropping it is what lets a
+      // co-coach see the host's existing plan instead of trying to insert
+      // their own duplicate.
       let query = supabase
         .from('week_plans')
         .select('*')
-        .eq('owner_id', getOwnerId())
         .eq('week_start', selectedDate);
 
       if (type === 'individual' && athlete) {
@@ -57,10 +61,18 @@ export function useWeekPlans() {
 
       let plan = existingPlan;
       if (!plan) {
+        // Write under the target's host coach, not the active coach. For
+        // unshared athletes this equals getOwnerId(); for shared ones it
+        // points at the host so both coaches edit the same row.
+        const hostOwnerId =
+          (type === 'individual' && athlete ? athlete.owner_id : null) ??
+          (type === 'group' && group ? group.owner_id : null) ??
+          getOwnerId();
         const insertData: Record<string, unknown> = {
           week_start: selectedDate,
           is_group_plan: type === 'group',
-          owner_id: getOwnerId(),
+          owner_id: hostOwnerId,
+          last_edited_by_coach_id: getOwnerId(),
         };
 
         if (type === 'individual' && athlete) {
@@ -227,9 +239,15 @@ export function useWeekPlans() {
 
   const updateWeekPlan = async (id: string, updates: Partial<WeekPlan>) => {
     try {
-      const { data: existing } = await supabase.from('week_plans').select('owner_id').eq('id', id).single();
-      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
-      const { error } = await supabase.from('week_plans').update(updates).eq('id', id);
+      // No owner_id pre-check: co-coaches editing a shared athlete's week
+      // plan need to be able to update the host's row. The athlete-list
+      // filter (athleteStore.athletes) is the access gate — if a coach
+      // can see the week plan in the UI they can edit it. Real isolation
+      // will come with RLS in the auth phase.
+      const { error } = await supabase
+        .from('week_plans')
+        .update({ ...updates, last_edited_by_coach_id: getOwnerId() })
+        .eq('id', id);
       if (error) throw error;
       setWeekPlan(prev => prev ? { ...prev, ...updates } : prev);
     } catch (err) {

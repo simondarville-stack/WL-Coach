@@ -9,6 +9,8 @@ import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
+import { useCoachStore } from '../../store/coachStore';
+import { useExerciseStore } from '../../store/exerciseStore';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
@@ -182,6 +184,22 @@ export function WeeklyPlanner() {
     fetchAllAthletes();
     fetchSettings();
   }, []);
+
+  // Hot-swap the exercise + category library when the planning context
+  // changes. For unshared athletes/groups the host == active coach and
+  // this is a no-op (the store's cache hits). For shared athletes the
+  // store repopulates with the host's library so the picker shows the
+  // exercises that the programme is actually written against.
+  const { fetchExercisesByName: fetchContextExercises, fetchCategories: fetchContextCategories } =
+    useExerciseStore();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const contextOwnerId =
+    selectedAthlete?.owner_id ?? storeSelectedGroup?.owner_id ?? activeCoachId;
+  useEffect(() => {
+    if (!contextOwnerId) return;
+    void fetchContextExercises(contextOwnerId);
+    void fetchContextCategories(contextOwnerId);
+  }, [contextOwnerId, fetchContextExercises, fetchContextCategories]);
 
   useEffect(() => {
     if (selectedAthlete) {
@@ -1144,6 +1162,12 @@ export function WeeklyPlanner() {
           </div>
         )}
 
+        <SharedContextBanner
+          athlete={planSelection.athlete}
+          group={planSelection.group}
+          activeCoachId={activeCoachId}
+        />
+
         {!planSelection.athlete && !planSelection.group ? (
           <div style={{ paddingTop: 16, paddingBottom: 16 }}>
             <AthleteCardPicker />
@@ -1589,6 +1613,50 @@ export function WeeklyPlanner() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Renders a small banner at the top of the planner when the active coach
+ * is working on an athlete or group hosted by another coach. Pulls the
+ * host name from the athleteStore's hostName map (populated on fetch).
+ */
+function SharedContextBanner({
+  athlete,
+  group,
+  activeCoachId,
+}: {
+  athlete: { id: string; owner_id: string; name: string } | null;
+  group: { id: string; owner_id: string; name: string } | null;
+  activeCoachId: string | null;
+}) {
+  const athleteHostName = useAthleteStore(s => s.athleteHostName);
+  const hostOwnerId = athlete?.owner_id ?? group?.owner_id ?? null;
+  if (!hostOwnerId || !activeCoachId || hostOwnerId === activeCoachId) return null;
+  const targetLabel = athlete?.name ?? group?.name ?? 'this athlete';
+  const hostName = athlete ? athleteHostName[athlete.id] : null;
+  const hostDescriptor = hostName ?? 'another coach';
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: '8px 12px',
+        background: 'var(--color-info-bg, #eff6ff)',
+        border: '1px solid var(--color-info-border, #bfdbfe)',
+        borderRadius: 'var(--radius-md)',
+        color: 'var(--color-info-text, #1e40af)',
+        fontSize: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <span style={{ fontWeight: 500 }}>Shared:</span>
+      <span>
+        Planning for <strong>{targetLabel}</strong> · using {hostDescriptor}'s exercise library.
+        New exercises you add land in their library.
+      </span>
     </div>
   );
 }

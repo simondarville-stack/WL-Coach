@@ -8,6 +8,7 @@ import { PRTrackingPanel } from './planner/PRTrackingPanel';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
+import { useAthleteStore } from '../store/athleteStore';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
 
@@ -312,6 +313,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
             Inactive
           </span>
         )}
+        <SharedChip athleteId={athlete.id} />
       </div>
 
       {/* Age */}
@@ -672,5 +674,25 @@ export function Athletes() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Renders a small "Shared by X" chip when the athlete is shared with the
+ * active coach rather than owned by them. Reads from the athleteStore's
+ * access map, which is populated alongside the athletes list.
+ */
+function SharedChip({ athleteId }: { athleteId: string }) {
+  const access = useAthleteStore(s => s.athleteAccess[athleteId]);
+  const hostName = useAthleteStore(s => s.athleteHostName[athleteId]);
+  if (!access || access === 'owned') return null;
+  const label = access === 'viewer' ? 'View only' : 'Shared';
+  return (
+    <span
+      className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
+      title={hostName ? `${label} · host: ${hostName}` : label}
+    >
+      {hostName ? `${label} · ${hostName}` : label}
+    </span>
   );
 }

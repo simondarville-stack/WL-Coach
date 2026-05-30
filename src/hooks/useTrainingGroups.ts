@@ -14,15 +14,44 @@ export function useTrainingGroups() {
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('training_groups')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      setGroups(result);
-      storeSetGroups(result);
+      const coachId = getOwnerId();
+
+      // Owned and collaborator queries run in parallel. The collaborator
+      // table may not exist yet (migration not applied) — we degrade
+      // gracefully to the owned set in that case.
+      const [ownedRes, collabRes] = await Promise.all([
+        supabase.from('training_groups').select('*').eq('owner_id', coachId).order('name'),
+        supabase
+          .from('training_group_collaborators')
+          .select('group_id')
+          .eq('coach_id', coachId)
+          .not('accepted_at', 'is', null)
+          .is('revoked_at', null),
+      ]);
+      if (ownedRes.error) throw ownedRes.error;
+      const sharedIds = collabRes.error
+        ? []
+        : (collabRes.data ?? []).map(r => r.group_id as string);
+
+      let sharedGroups: TrainingGroup[] = [];
+      if (sharedIds.length > 0) {
+        const sharedRes = await supabase
+          .from('training_groups')
+          .select('*')
+          .in('id', sharedIds)
+          .order('name');
+        if (!sharedRes.error) sharedGroups = (sharedRes.data ?? []) as TrainingGroup[];
+      }
+
+      const seen = new Set<string>();
+      const merged: TrainingGroup[] = [];
+      for (const g of [...(ownedRes.data ?? []), ...sharedGroups]) {
+        if (seen.has(g.id)) continue;
+        seen.add(g.id);
+        merged.push(g);
+      }
+      setGroups(merged);
+      storeSetGroups(merged);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups');
     } finally {
