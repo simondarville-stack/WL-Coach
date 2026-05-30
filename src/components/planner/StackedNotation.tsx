@@ -217,6 +217,49 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
   if (visible.length === 0) {
     return <span style={empty}>—</span>;
   }
+
+  // Free-text completion: when every visible set carries no numeric load
+  // and no numeric reps, the exercise was a prose/note prescription and
+  // the kg-over-reps grid would just render "?/?" for every column. Show
+  // the athlete's prose (performed_text) if they typed any, otherwise a
+  // simple done marker. Mirrors the coach-side log so both surfaces stop
+  // showing meaningless question marks for note-style exercises.
+  const allNonNumeric = visible.every(
+    s => s.performed_load == null && s.performed_reps == null,
+  );
+  if (allNonNumeric) {
+    const texts = visible
+      .map(s => s.performed_text?.trim() || s.notes?.trim() || '')
+      .filter(t => t.length > 0);
+    if (texts.length > 0) {
+      return (
+        <span
+          style={{
+            fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-primary)',
+            fontStyle: 'italic',
+            whiteSpace: 'pre-wrap',
+            lineHeight: 1.4,
+          }}
+        >
+          {texts.join(' · ')}
+        </span>
+      );
+    }
+    const anyCompleted = visible.some(s => s.status === 'completed');
+    return (
+      <span
+        style={{
+          fontSize: 'var(--text-caption)',
+          color: anyCompleted ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+          fontStyle: 'italic',
+        }}
+      >
+        {anyCompleted ? '✓ Done' : 'Skipped'}
+      </span>
+    );
+  }
+
   return (
     <div style={stackRow}>
       {visible.map(s => {
