@@ -1168,6 +1168,11 @@ export function WeeklyPlanner() {
           activeCoachId={activeCoachId}
         />
 
+        <LastEditedByIndicator
+          weekPlan={currentWeekPlan}
+          activeCoachId={activeCoachId}
+        />
+
         {!planSelection.athlete && !planSelection.group ? (
           <div style={{ paddingTop: 16, paddingBottom: 16 }}>
             <AthleteCardPicker />
@@ -1615,6 +1620,67 @@ export function WeeklyPlanner() {
       </div>
     </div>
   );
+}
+
+/**
+ * Renders a "Last edited by Coach X · 2 min ago" hint when the week plan
+ * was last touched by someone other than the active coach. Silent when
+ * the active coach is the most recent editor or when the column is null
+ * (legacy plans created before the column existed). Looks up the editor's
+ * display name from coach_profiles on first mount.
+ */
+function LastEditedByIndicator({
+  weekPlan,
+  activeCoachId,
+}: {
+  weekPlan: { id: string; last_edited_by_coach_id: string | null; updated_at: string } | null;
+  activeCoachId: string | null;
+}) {
+  const editorId = weekPlan?.last_edited_by_coach_id ?? null;
+  const [editorName, setEditorName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editorId || editorId === activeCoachId) {
+      setEditorName(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('coach_profiles')
+        .select('name')
+        .eq('id', editorId)
+        .maybeSingle();
+      if (!cancelled) setEditorName((data?.name as string | undefined) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [editorId, activeCoachId]);
+  if (!weekPlan || !editorId || editorId === activeCoachId || !editorName) return null;
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: '4px 10px',
+        fontSize: 11,
+        color: 'var(--color-text-secondary)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <span>Last edited by</span>
+      <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{editorName}</span>
+      <span>·</span>
+      <span>{formatRelativeShort(weekPlan.updated_at)}</span>
+    </div>
+  );
+}
+
+function formatRelativeShort(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 /**

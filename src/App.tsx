@@ -25,6 +25,7 @@ import { PRPage } from './components/PRPage';
 import { CoachInbox } from './components/CoachInbox';
 import { SystemGuide } from './components/system/SystemGuide';
 import { ErrorLogViewer } from './components/system/ErrorLogViewer';
+import { InvitationsPage } from './components/system/InvitationsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { setActorResolver } from './lib/errorLogger';
 import { useRouteBreadcrumbs } from './hooks/useRouteBreadcrumbs';
@@ -48,6 +49,7 @@ const pageTitles: Record<string, string> = {
   '/prs': 'Personal Records',
   '/inbox': 'Inbox',
   '/system/errors': 'Error log',
+  '/system/invitations': 'Invitations',
 };
 
 function PageTitle() {
@@ -194,6 +196,7 @@ function CoachApp() {
               <Route path="/library" element={<ExerciseLibrary />} />
               <Route path="/system" element={<SystemGuide />} />
               <Route path="/system/errors" element={<ErrorLogViewer />} />
+              <Route path="/system/invitations" element={<InvitationsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </ErrorBoundary>
