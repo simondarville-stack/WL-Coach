@@ -21,6 +21,7 @@ import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { PlannerControlPanel } from './PlannerControlPanel';
+import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
 import { GroupLogView } from './log/GroupLogView';
 import { PlannerModals } from './PlannerModals';
@@ -1189,6 +1190,14 @@ export function WeeklyPlanner() {
           />
         ) : (
           <>
+
+            {/* ── Unsaved-changes recovery (dropped-connection safety) ── */}
+            <UnsavedDraftsBanner
+              weekPlanId={currentWeekPlan?.id ?? null}
+              plannedExercises={plannedExercises}
+              savePrescription={savePrescription}
+              onReload={loadWeekPlan}
+            />
 
             {/* ── Back to overview ── */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>

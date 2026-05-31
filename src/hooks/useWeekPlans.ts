@@ -16,6 +16,7 @@ import type {
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
+import { recordPrescriptionDraft, clearPrescriptionDraft } from '../lib/prescriptionDraftStore';
 
 export interface PlanSelection {
   type: 'individual' | 'group';
@@ -394,7 +395,21 @@ export function useWeekPlans() {
       .eq('id', plannedExerciseId);
   };
 
-  const savePrescription = async (
+  // Locate an exercise's display name and day within the currently loaded
+  // week so a draft can be labelled in the restore banner.
+  const findExerciseContext = (
+    plannedExId: string,
+  ): { name: string; dayIndex: number | null; weekPlanId: string | null } => {
+    for (const [dayIdx, list] of Object.entries(plannedExercises)) {
+      const ex = list.find(e => e.id === plannedExId);
+      if (ex) return { name: ex.exercise?.name ?? 'Exercise', dayIndex: Number(dayIdx), weekPlanId: weekPlan?.id ?? null };
+    }
+    return { name: 'Exercise', dayIndex: null, weekPlanId: weekPlan?.id ?? null };
+  };
+
+  // Internal: performs the actual Supabase writes for a prescription. Wrapped
+  // by savePrescription, which adds local-draft safety around it.
+  const writePrescription = async (
     plannedExId: string,
     data: { prescription: string; unit: DefaultUnit; isCombo?: boolean },
   ): Promise<void> => {
@@ -508,6 +523,33 @@ export function useWeekPlans() {
     }
     // Promote group-sourced exercise to individual when coach edits it
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
+  };
+
+  // Public entry point for persisting a prescription. Mirrors the edit to a
+  // localStorage draft BEFORE the destructive write so a dropped connection
+  // mid-save can't lose the coach's typing, then clears the draft only after
+  // the write fully succeeds. A surviving draft therefore always means "this
+  // edit was never confirmed saved" — surfaced on next load for restore.
+  const savePrescription = async (
+    plannedExId: string,
+    data: { prescription: string; unit: DefaultUnit; isCombo?: boolean },
+  ): Promise<void> => {
+    const ctx = findExerciseContext(plannedExId);
+    const draftWeekPlanId = weekPlan?.id ?? ctx.weekPlanId;
+    if (draftWeekPlanId) {
+      recordPrescriptionDraft({
+        plannedExId,
+        weekPlanId: draftWeekPlanId,
+        exerciseName: ctx.name,
+        dayIndex: ctx.dayIndex,
+        prescription: data.prescription,
+        unit: data.unit,
+        isCombo: !!data.isCombo,
+        updatedAt: Date.now(),
+      });
+    }
+    await writePrescription(plannedExId, data);
+    clearPrescriptionDraft(plannedExId);
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
