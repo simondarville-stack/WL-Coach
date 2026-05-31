@@ -14,7 +14,12 @@
  *    the dashboard) from the history after any insert / update / delete.
  */
 import { supabase } from './supabase';
-import { estimate1RM, estimateWeightAtReps, roundToHalf } from './xrmUtils';
+import {
+  estimate1RM,
+  estimateAtRepsFromAnchors,
+  roundToHalf,
+  type PRAnchor,
+} from './xrmUtils';
 import type { AthletePRHistory, Exercise } from './database.types';
 
 export const REP_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -40,9 +45,19 @@ export interface ExerciseRow {
 
 /**
  * Derive per-exercise PR rows from a flat list of history entries.
+ *
  * History must be sorted desc by (achieved_date, created_at) so the first
  * match per (exercise, rep_count) is the most recent. Returns one row per
  * input exercise in the same order.
+ *
+ * Estimation: every real entry on an exercise is treated as an anchor.
+ * Empty cells get a weighted blend of per-anchor estimates, with weights
+ * proportional to 1/(1 + d²) where d is the rep distance from the anchor
+ * to the empty cell. So a 5RM and a 1RM both feed a 4RM estimate, but the
+ * 5RM dominates because it's only 1 rep away while the 1RM is 3 away.
+ * See xrmUtils.estimateAtRepsFromAnchors for the math.
+ *
+ * implied1RM is the same blended estimate evaluated at targetReps=1.
  */
 export function buildPRRows(
   exercises: Exercise[],
@@ -57,17 +72,20 @@ export function buildPRRows(
       if (!currentByRep.has(rc)) currentByRep.set(rc, entry);
     }
 
-    let best1RM: number | null = null;
-    for (const [rep, entry] of currentByRep) {
-      const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
-      if (best1RM === null || implied > best1RM) best1RM = implied;
-    }
+    const anchors: PRAnchor[] = Array.from(currentByRep, ([rep, entry]) => ({
+      reps: rep,
+      valueKg: entry.value_kg,
+    }));
+
+    const implied1RM = anchors.length > 0
+      ? estimateAtRepsFromAnchors(anchors, 1)
+      : null;
 
     const cells: PRCell[] = REP_COUNTS.map(rc => {
       const current = currentByRep.get(rc) ?? null;
       const phantom =
-        best1RM !== null && !current
-          ? roundToHalf(estimateWeightAtReps(best1RM, rc))
+        anchors.length > 0 && !current
+          ? roundToHalf(estimateAtRepsFromAnchors(anchors, rc))
           : null;
       return { repCount: rc, current, phantom };
     });
@@ -75,7 +93,7 @@ export function buildPRRows(
     return {
       exercise: ex,
       cells,
-      implied1RM: best1RM !== null ? roundToHalf(best1RM) : null,
+      implied1RM: implied1RM !== null ? roundToHalf(implied1RM) : null,
     };
   });
 }
@@ -119,16 +137,28 @@ export async function syncAthletePRs(
     }
   }
 
-  let best1RM = 0;
+  // Implied 1RM: same weighted-multi-anchor model the table uses.
+  // pr_date follows the anchor with the highest per-anchor implied 1RM,
+  // so the cached date reflects the lift that pushed the curve highest —
+  // useful for "when did this PR happen" surfaces.
+  const anchors: PRAnchor[] = Array.from(recentByRep, ([rep, entry]) => ({
+    reps: rep,
+    valueKg: entry.value_kg,
+  }));
+  if (anchors.length === 0) return;
+
+  const blended1RM = estimateAtRepsFromAnchors(anchors, 1);
+  if (blended1RM <= 0) return;
+
   let bestDate = '';
+  let bestImplied = 0;
   for (const [rep, entry] of recentByRep) {
     const implied = rep === 1 ? entry.value_kg : estimate1RM(entry.value_kg, rep);
-    if (implied > best1RM) {
-      best1RM = implied;
+    if (implied > bestImplied) {
+      bestImplied = implied;
       bestDate = entry.achieved_date;
     }
   }
-  if (best1RM <= 0) return;
 
   const { error } = await supabase
     .from('athlete_prs')
@@ -136,7 +166,7 @@ export async function syncAthletePRs(
       {
         athlete_id: athleteId,
         exercise_id: exerciseId,
-        pr_value_kg: roundToHalf(best1RM),
+        pr_value_kg: roundToHalf(blended1RM),
         pr_date: bestDate,
       },
       { onConflict: 'athlete_id,exercise_id' },
