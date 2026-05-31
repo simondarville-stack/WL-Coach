@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise } from '../../lib/database.types';
 import { formatDateShort } from '../../lib/dateUtils';
 import { supabase } from '../../lib/supabase';
+import { getContextOwnerId } from '../../lib/ownerContext';
 import { PlanningPRPanel } from './PlanningPRPanel';
 
 interface MacroExcelIOProps {
@@ -446,10 +447,15 @@ export function MacroExcelIO({
     e.target.value = '';
     setTemplateFilename(file.name);
 
-    // Load all exercises for mapping
+    // Load the host coach's library for mapping. When importing a
+    // template for a shared athlete, the dropdown must show the host's
+    // exercises — otherwise the active coach maps template rows onto
+    // their own catalogue and the programme references exercises the
+    // athlete's owner doesn't have.
     const { data: exercises } = await supabase
       .from('exercises')
       .select('*')
+      .eq('owner_id', getContextOwnerId())
       .order('name');
     setAllExercises(exercises || []);
 

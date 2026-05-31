@@ -80,7 +80,7 @@ export function WeeklyPlanner() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { exercises: allExercises } = useExercises();
   const { athletes, fetchAllAthletes } = useAthletes();
   const { groups, fetchGroups } = useTrainingGroups();
 
@@ -179,7 +179,12 @@ export function WeeklyPlanner() {
   }, [urlWeekStart]);
 
   useEffect(() => {
-    fetchExercisesByName();
+    // No standalone fetchExercisesByName here — the context-aware effect
+    // below covers both "no athlete selected" (active coach's library)
+    // and "shared athlete" (host coach's library). Issuing both in
+    // parallel races: the store no-ops the second call while the first
+    // is loading, which would otherwise pin Coach B's library when
+    // working on a shared athlete.
     fetchGroups();
     fetchAllAthletes();
     fetchSettings();
@@ -300,7 +305,12 @@ export function WeeklyPlanner() {
     };
   }, [selectedAthlete, currentWeekPlan]);
 
-  const loadExercises = () => fetchExercisesByName();
+  // Refresh the exercise library on tab focus / visibility change. Uses
+  // the context-aware fetch so a shared athlete's planner stays on the
+  // host's catalogue across blur/focus cycles.
+  const loadExercises = () => {
+    if (contextOwnerId) void fetchContextExercises(contextOwnerId);
+  };
   const loadAthletePRs = (athleteId: string) => fetchAthletePRs(athleteId);
 
   const loadWeekPlan = async () => {

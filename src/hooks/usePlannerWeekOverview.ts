@@ -131,11 +131,12 @@ export function usePlannerWeekOverview() {
         d = addDays(d, 7);
       }
 
-      // 2. Fetch week plans in range
+      // 2. Fetch week plans in range. No owner_id filter — athlete_id /
+      // group_id is the access boundary, and a shared athlete's plans
+      // are owned by the host coach.
       let wpQuery = supabase
         .from('week_plans')
         .select('*')
-        .eq('owner_id', getOwnerId())
         .gte('week_start', rangeStart)
         .lte('week_start', rangeEnd);
 
@@ -205,11 +206,11 @@ export function usePlannerWeekOverview() {
         });
       }
 
-      // 5. Fetch macro context
+      // 5. Fetch macro context. Same access pattern as week plans —
+      // a shared athlete's macrocycle is owned by the host.
       let macroQuery = supabase
         .from('macrocycles')
         .select('id, name, start_date, end_date')
-        .eq('owner_id', getOwnerId())
         .lte('start_date', rangeEnd)
         .gte('end_date', rangeStart);
 
