@@ -13,6 +13,7 @@ import {
 } from '../lib/trainingLogService';
 import { getOwnerId } from '../lib/ownerContext';
 import { describeError } from '../lib/errorMessage';
+import { useAthleteStore } from '../store/athleteStore';
 import type { TrainingLogMessage } from '../lib/database.types';
 
 /**
@@ -26,6 +27,8 @@ import type { TrainingLogMessage } from '../lib/database.types';
 export function CoachInbox() {
   const navigate = useNavigate();
   const ownerId = getOwnerId();
+  const setSelectedAthlete = useAthleteStore(s => s.setSelectedAthlete);
+  const accessibleAthletes = useAthleteStore(s => s.athletes);
 
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,8 +151,14 @@ export function CoachInbox() {
             onOpenSession={
               selectedThread.kind === 'session' && selectedThread.performedOn
                 ? () => {
-                    // Hand off to the planner at the correct athlete + week.
-                    // Synthesise week_start = Monday of that ISO week.
+                    // Set the planner context to the thread's athlete first,
+                    // otherwise the planner lands on whoever was previously
+                    // selected. Then navigate to the week containing the
+                    // session.
+                    const target = accessibleAthletes.find(
+                      a => a.id === selectedThread.athleteId,
+                    );
+                    if (target) setSelectedAthlete(target);
                     const d = new Date(selectedThread.performedOn + 'T00:00:00Z');
                     const weekday = d.getUTCDay(); // 0 = Sun, 1 = Mon
                     const daysFromMonday = weekday === 0 ? 6 : weekday - 1;

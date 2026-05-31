@@ -1351,6 +1351,25 @@ export async function fetchAthleteGeneralUnreadCount(
   return (data ?? []).length;
 }
 
+/**
+ * Total unread coach messages for an athlete — counts both general
+ * (session_id IS NULL) and session-bound coach comments. Drives the
+ * Coach-tab badge on the athlete bottom nav so the athlete is alerted
+ * regardless of which inbox surface the coach used.
+ */
+export async function fetchAthleteInboxUnreadCount(
+  athleteId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('id')
+    .eq('athlete_id', athleteId)
+    .eq('sender_type', 'coach')
+    .is('athlete_read_at', null);
+  if (error) throw error;
+  return (data ?? []).length;
+}
+
 // ─── Profile-screen reads ─────────────────────────────────────────────────
 
 export interface BodyweightPoint {
