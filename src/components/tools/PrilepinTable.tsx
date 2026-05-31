@@ -15,6 +15,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { useDraggable } from '../../hooks/useDraggable';
 
 interface Zone {
   key: 'light' | 'medium' | 'heavy' | 'maximum';
@@ -88,6 +89,8 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
   const [setsText, setSetsText] = useState('');
   const [repsText, setRepsText] = useState('');
   const oneRMRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { containerStyle, handleProps } = useDraggable(containerRef);
 
   useEffect(() => {
     oneRMRef.current?.focus();
@@ -116,12 +119,17 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
 
   return (
     <div
+      ref={containerRef}
       className={`fixed z-50 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col w-[440px] ${positionClass}`}
+      style={containerStyle}
       role="dialog"
       aria-label="Prilepin's table"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50">
+      <div
+        {...handleProps}
+        className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50"
+      >
         <span className="text-sm font-medium text-gray-900">Prilepin's table</span>
         <button
           onClick={onClose}

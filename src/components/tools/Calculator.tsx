@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Delete } from 'lucide-react';
 import { evaluate } from 'mathjs';
+import { useDraggable } from '../../hooks/useDraggable';
 
 function toMathExpr(input: string): string {
   return input.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
@@ -68,6 +69,7 @@ export function Calculator({ onClose, positionClass = 'bottom-4 right-4' }: Calc
   const [input, setInput] = useState('');
   const [justEvaled, setJustEvaled] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { containerStyle, handleProps } = useDraggable(panelRef);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -140,11 +142,15 @@ export function Calculator({ onClose, positionClass = 'bottom-4 right-4' }: Calc
     <div
       ref={panelRef}
       className={`fixed z-50 w-[280px] bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col ${positionClass}`}
+      style={containerStyle}
       role="dialog"
       aria-label="Calculator"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50">
+      <div
+        {...handleProps}
+        className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50"
+      >
         <span className="text-sm font-medium text-gray-900">Calculator</span>
         <button
           onClick={onClose}
