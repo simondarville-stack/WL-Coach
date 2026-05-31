@@ -81,7 +81,6 @@ export function MacroDraggableChart({
   onDragTarget,
   linkedExerciseIds,
   onToggleLink,
-  focusedExerciseId,
   showReps,
 }: MacroDraggableChartProps) {
   const [dragOverrides, setDragOverrides] = useState<Record<string, number>>({});

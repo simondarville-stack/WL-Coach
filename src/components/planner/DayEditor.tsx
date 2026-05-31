@@ -243,7 +243,7 @@ export function DayEditor({
     await handleDragEnd(reordered);
   }
 
-  const itemHeaderStyle = (isDragging: boolean, isDragTarget: boolean): React.CSSProperties => ({
+  const itemHeaderStyle = (isDragging: boolean, _isDragTarget: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
     borderBottom: '1px solid var(--color-border-tertiary)',
     borderRadius: '4px 4px 0 0',

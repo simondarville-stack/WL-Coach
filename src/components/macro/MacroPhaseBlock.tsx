@@ -81,7 +81,6 @@ export function MacroPhaseBlock({
     return Object.values(wa).some(a => a.totalReps > 0);
   }).length;
 
-  const stickyBg = phase ? '' : 'bg-gray-50';
   const phaseHeaderStyle = phase ? { backgroundColor: phase.color } : {};
 
   return (

@@ -254,8 +254,6 @@ export function PlannerControlPanel({
   onSaveAsTemplate,
   onToggleLoadDistribution,
   onResolvePercentages,
-  onNavigateToWeek,
-  weekTypesByNum,
   weekTypes = [],
 }: PlannerControlPanelProps) {
   const navigate = useNavigate();
@@ -293,7 +291,7 @@ export function PlannerControlPanel({
       .eq('athlete_id', athleteId)
       .not('pr_value_kg', 'is', null);
     if (!data) return;
-    const prs = (data as Array<{ pr_value_kg: number; exercise: { name: string; exercise_code: string | null; category: string; is_competition_lift: boolean } | null }>)
+    const prs = (data as unknown as Array<{ pr_value_kg: number; exercise: { name: string; exercise_code: string | null; category: string; is_competition_lift: boolean } | null }>)
       .filter(d => d.exercise?.is_competition_lift)
       .map(d => ({ exerciseName: d.exercise!.name, exerciseCode: d.exercise!.exercise_code, category: d.exercise!.category, value: d.pr_value_kg }))
       .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName));
@@ -342,7 +340,6 @@ export function PlannerControlPanel({
 
   const athleteInitials = selectedAthlete?.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '';
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
-  const totalWeeks      = macroContext?.totalWeeks ?? 1;
 
   const subLabel = [
     athleteAge !== null ? `${athleteAge} yr` : null,

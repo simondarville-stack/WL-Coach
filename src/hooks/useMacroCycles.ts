@@ -279,7 +279,7 @@ export function useMacroCycles() {
         .eq('macrocycle_id', macrocycleId)
         .order('position');
       if (error) throw error;
-      setTrackedExercises(data || []);
+      setTrackedExercises((data ?? []) as unknown as MacroTrackedExerciseWithExercise[]);
     } catch (err) {
       setError(errMsg(err, 'Failed to load tracked exercises'));
     }
@@ -490,7 +490,7 @@ export function useMacroCycles() {
       .order('position');
 
     type TrackedExerciseRow = { id: string; exercise_id: string; exercises: import('../lib/database.types').Exercise | null };
-    const typedTrackedData = (trackedExercisesData || []) as TrackedExerciseRow[];
+    const typedTrackedData = (trackedExercisesData || []) as unknown as TrackedExerciseRow[];
     const exercises = typedTrackedData.map(item => item.exercises).filter((e): e is import('../lib/database.types').Exercise => e !== null);
 
     const { data: targetsData } = await supabase

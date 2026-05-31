@@ -83,7 +83,6 @@ export function MacroTableV2({
   trackedExercises,
   targets,
   phases,
-  actuals,
   onUpdateTarget,
   onUpdateWeekType,
   onUpdateWeekLabel,
@@ -94,7 +93,6 @@ export function MacroTableV2({
   onMoveExerciseLeft,
   onMoveExerciseRight,
   onRemoveExercise,
-  onPasteTargets,
   onExerciseDoubleClick,
   onSwapWeeks,
   competitionTotal,
@@ -376,8 +374,6 @@ export function MacroTableV2({
                 weekK += reps;
                 if (reps > 0 && avg > 0) weekTonnage += reps * avg;
               });
-              const weekAvgInt = weekK > 0 && weekTonnage > 0 ? Math.round(weekTonnage / weekK) : null;
-
               const wtColor = getWeekTypeColor(week.week_type, weekTypes);
               const wtAbbr = getWeekTypeAbbr(week.week_type, weekTypes);
 

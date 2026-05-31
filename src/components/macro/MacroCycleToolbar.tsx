@@ -51,7 +51,6 @@ export function MacroCycleToolbar({
   macrocycles,
   cycleMenuOpen,
   isGroupMode,
-  selectedGroup,
   groupMembers,
   individualViewAthleteId,
   showAddExercise,

@@ -156,7 +156,7 @@ export function useCombos() {
 
     const membersMap: Record<string, ComboMemberEntry[]> = {};
     type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
-    (members || []).forEach((m: MemberRow) => {
+    ((members || []) as unknown as MemberRow[]).forEach(m => {
       if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
       membersMap[m.planned_exercise_id].push({
         exerciseId: m.exercise_id,

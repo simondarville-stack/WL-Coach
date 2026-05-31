@@ -139,7 +139,8 @@ export function useWeekPlans() {
         });
       }
 
-      (data || []).forEach(item => {
+      const rows = (data ?? []) as unknown as Array<PlannedExercise & { exercise: Exercise }>;
+      rows.forEach(item => {
         if (!grouped[item.day_index]) {
           grouped[item.day_index] = [];
         }
@@ -149,7 +150,7 @@ export function useWeekPlans() {
       setPlannedExercises(grouped);
 
       // Load combo members for any is_combo exercises
-      const comboExs = (data || []).filter(e => e.is_combo);
+      const comboExs = rows.filter(e => e.is_combo);
       if (comboExs.length > 0) {
         const { data: members } = await supabase
           .from('planned_exercise_combo_members')
@@ -158,7 +159,7 @@ export function useWeekPlans() {
           .order('position');
         const membersMap: Record<string, ComboMemberEntry[]> = {};
         type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
-        (members || []).forEach((m: MemberRow) => {
+        ((members || []) as unknown as MemberRow[]).forEach(m => {
           if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
           membersMap[m.planned_exercise_id].push({
             exerciseId: m.exercise_id,
@@ -256,7 +257,7 @@ export function useWeekPlans() {
     }
   };
 
-  const reorderExercises = async (weekPlanId: string, orderedIds: string[]) => {
+  const reorderExercises = async (_weekPlanId: string, orderedIds: string[]) => {
     await Promise.all(
       orderedIds.map((id, i) => supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id))
     );
@@ -981,7 +982,7 @@ export function useWeekPlans() {
       .order('day_index')
       .order('position');
     if (error) throw error;
-    return data || [];
+    return (data ?? []) as unknown as (PlannedExercise & { exercise: Exercise })[];
   };
 
   /**

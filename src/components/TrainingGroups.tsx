@@ -8,7 +8,7 @@ import { ShareGroupModal } from './ShareGroupModal';
 
 export function TrainingGroups() {
   const {
-    groups, groupAccess, groupMembers, loading, error, setError,
+    groups, groupAccess, groupMembers, loading, error,
     fetchGroups, fetchGroupMembers,
     createGroup, updateGroup, deleteGroup,
     addMember, removeMember,

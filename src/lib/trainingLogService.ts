@@ -68,7 +68,7 @@ export async function fetchWeekLog(
     .select('*, exercise:exercises(*)')
     .in('session_id', sessionIds);
   if (exErr) throw exErr;
-  const exercises = (exRows ?? []) as Array<TrainingLogExercise & { exercise: Exercise | null }>;
+  const exercises = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
   const exIds = exercises.map(e => e.id);
 
   let sets: TrainingLogSet[] = [];
@@ -137,7 +137,7 @@ export async function fetchSessionForSlot(
     .eq('session_id', session.id)
     .order('position', { ascending: true });
   if (exErr) throw exErr;
-  const exercises = (exRows ?? []) as Array<TrainingLogExercise & { exercise: Exercise | null }>;
+  const exercises = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
   const exIds = exercises.map(e => e.id);
 
   let sets: TrainingLogSet[] = [];
@@ -274,7 +274,7 @@ export async function fetchPlannedDay(
     .eq('day_index', dayIndex)
     .order('position');
   if (peErr) throw peErr;
-  const pes = (peRows ?? []) as Array<PlannedExercise & { exercise: Exercise }>;
+  const pes = (peRows ?? []) as unknown as Array<PlannedExercise & { exercise: Exercise }>;
   if (pes.length === 0) return [];
 
   const peIds = pes.map(p => p.id);
@@ -301,7 +301,7 @@ export async function fetchPlannedDay(
       position: number;
       exercise: Exercise;
     };
-    ((cmRows ?? []) as Row[]).forEach(m => {
+    ((cmRows ?? []) as unknown as Row[]).forEach(m => {
       const list = comboMembersByPlanned.get(m.planned_exercise_id) ?? [];
       list.push({ exerciseId: m.exercise_id, exercise: m.exercise, position: m.position });
       comboMembersByPlanned.set(m.planned_exercise_id, list);
@@ -1548,7 +1548,7 @@ export async function fetchAthletePRs(athleteId: string): Promise<AthletePRRow[]
     .order('pr_value_kg', { ascending: false });
   if (error) throw error;
   return (
-    (data ?? []) as Array<{
+    (data ?? []) as unknown as Array<{
       exercise_id: string;
       pr_value_kg: number | null;
       pr_date: string | null;

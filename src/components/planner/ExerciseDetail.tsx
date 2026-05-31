@@ -146,11 +146,9 @@ export function ExerciseDetail({
   const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   useEffect(() => {
-    let cancelled = false;
     if (hasMacro && plannedExercise) void loadSollTarget();
     if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
     if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [macroContext?.macroId, plannedExercise?.id]);
 

@@ -122,7 +122,6 @@ function parsePlannedExercise(pe: {
 
   // Fall back to parsing prescription_raw
   if (pe.prescription_raw) {
-    const parser = pe.is_combo ? parseComboPrescription : parsePrescription;
     if (pe.is_combo) {
       const lines = parseComboPrescription(pe.prescription_raw);
       if (lines.length > 0) {
@@ -172,7 +171,6 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     macroWeeksRes,
     macroPhasesRes,
     sessionsRes,
-    logExercisesRes,
     bodyweightRes,
     exercisesRes,
   ] = await Promise.all([
@@ -201,10 +199,6 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .neq('status', 'planned')
       .gte('date', startDate)
       .lte('date', endDate),
-    supabase
-      .from('training_log_exercises')
-      .select('session_id, exercise_id, performed_raw, status, planned_exercise_id')
-      .in('session_id', []),  // placeholder; we'll refetch below
     supabase
       .from('bodyweight_entries')
       .select('date, weight_kg')

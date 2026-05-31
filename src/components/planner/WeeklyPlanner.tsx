@@ -94,7 +94,6 @@ export function WeeklyPlanner() {
     setAthletePRs,
     macroWeekTarget,
     setMacroWeekTarget,
-    macroWeekTypeText,
     setMacroWeekTypeText,
     loading,
     error,
@@ -855,16 +854,6 @@ export function WeeklyPlanner() {
     }
   };
 
-
-  const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
-    if (!currentWeekPlan) return;
-    try {
-      await reorderExercises(currentWeekPlan.id, orderedIds);
-      await fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels);
-    } catch {
-      // error already set in hook
-    }
-  };
 
   const handleNavigateToDay = (dayIndex: number) => {
     setSelectedDayIndex(dayIndex);
