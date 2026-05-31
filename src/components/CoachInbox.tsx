@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Mail, Send, Loader2, MailOpen, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Mail, Send, Loader2, MailOpen, AlertCircle, Search, X as XIcon, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   addComment,
@@ -37,6 +37,10 @@ export function CoachInbox() {
   // (key = "general:<athleteId>"); we store the composite key so both
   // shapes can be selected the same way.
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // Inbox organization controls. Session-scoped — restart resets them.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [groupByAthlete, setGroupByAthlete] = useState(false);
 
   const loadThreads = useCallback(async () => {
     setError(null);
@@ -75,6 +79,41 @@ export function CoachInbox() {
 
   const selectedThread = threads.find(t => threadKey(t) === selectedKey) ?? null;
 
+  // Apply filters. Search matches against athlete name (case-insensitive);
+  // unread-only hides threads with 0 unread; both compose with the
+  // grouping decision below.
+  const filteredThreads = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return threads.filter(t => {
+      if (unreadOnly && t.unreadCount === 0) return false;
+      if (q && !t.athleteName.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [threads, searchQuery, unreadOnly]);
+
+  // Group by athlete: alphabetise by athlete name, then keep the existing
+  // within-athlete order (unread-first then by activity). Adds a small
+  // header row per athlete with the athlete's total unread across
+  // their threads.
+  const groupedThreads = useMemo(() => {
+    if (!groupByAthlete) return null;
+    type Group = { athleteId: string; athleteName: string; athletePhotoUrl: string | null; threads: InboxThread[]; unread: number };
+    const byAthlete = new Map<string, Group>();
+    for (const t of filteredThreads) {
+      let g = byAthlete.get(t.athleteId);
+      if (!g) {
+        g = { athleteId: t.athleteId, athleteName: t.athleteName, athletePhotoUrl: t.athletePhotoUrl, threads: [], unread: 0 };
+        byAthlete.set(t.athleteId, g);
+      }
+      g.threads.push(t);
+      g.unread += t.unreadCount;
+    }
+    return Array.from(byAthlete.values()).sort((a, b) => {
+      if ((a.unread > 0) !== (b.unread > 0)) return a.unread > 0 ? -1 : 1;
+      return a.athleteName.localeCompare(b.athleteName);
+    });
+  }, [filteredThreads, groupByAthlete]);
+
   return (
     <div
       style={{
@@ -109,9 +148,95 @@ export function CoachInbox() {
           </span>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-            {threads.length === 0 ? '0' : `${threads.length} thread${threads.length === 1 ? '' : 's'}`}
+            {filteredThreads.length === threads.length
+              ? `${threads.length} thread${threads.length === 1 ? '' : 's'}`
+              : `${filteredThreads.length} of ${threads.length}`}
           </span>
         </div>
+
+        {/* Search + filter chips */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            padding: '8px 12px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={11} style={{ position: 'absolute', left: 8, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search athlete"
+              style={{
+                flex: 1,
+                padding: '4px 8px 4px 24px',
+                fontSize: 11,
+                border: '1px solid var(--color-border-secondary)',
+                borderRadius: 'var(--radius-sm)',
+                outline: 'none',
+                background: 'var(--color-bg-primary)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                title="Clear"
+                style={{ position: 'absolute', right: 4, padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'flex', alignItems: 'center' }}
+              >
+                <XIcon size={11} />
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button
+              onClick={() => setUnreadOnly(v => !v)}
+              title="Show only threads with unread messages"
+              style={{
+                padding: '2px 7px',
+                fontSize: 10,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid ' + (unreadOnly ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'),
+                background: unreadOnly ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+                color: unreadOnly ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Mail size={10} />
+              Unread
+            </button>
+            <button
+              onClick={() => setGroupByAthlete(v => !v)}
+              title="Group threads by athlete"
+              style={{
+                padding: '2px 7px',
+                fontSize: 10,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid ' + (groupByAthlete ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'),
+                background: groupByAthlete ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+                color: groupByAthlete ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Users size={10} />
+              Group
+            </button>
+          </div>
+        </div>
+
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {loading ? (
             <div style={{ padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)' }}>
@@ -125,8 +250,62 @@ export function CoachInbox() {
             </div>
           ) : threads.length === 0 ? (
             <EmptyInbox />
+          ) : filteredThreads.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              No threads match the current filters.
+            </div>
+          ) : groupedThreads ? (
+            groupedThreads.map(g => (
+              <div key={g.athleteId}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 16px 4px',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: 'var(--color-text-tertiary)',
+                    fontWeight: 600,
+                    background: 'var(--color-bg-secondary)',
+                    borderTop: '0.5px solid var(--color-border-tertiary)',
+                  }}
+                >
+                  <Avatar name={g.athleteName} photoUrl={g.athletePhotoUrl} size={16} />
+                  <span style={{ flex: 1 }}>{g.athleteName}</span>
+                  {g.unread > 0 && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        padding: '0 5px',
+                        background: 'var(--color-accent)',
+                        color: 'var(--color-text-on-accent)',
+                        borderRadius: 7,
+                      }}
+                    >
+                      {g.unread}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+                    {g.threads.length}
+                  </span>
+                </div>
+                {g.threads.map(t => {
+                  const k = threadKey(t);
+                  return (
+                    <ThreadRow
+                      key={k}
+                      thread={t}
+                      active={k === selectedKey}
+                      onClick={() => setSelectedKey(k)}
+                    />
+                  );
+                })}
+              </div>
+            ))
           ) : (
-            threads.map(t => {
+            filteredThreads.map(t => {
               const k = threadKey(t);
               return (
                 <ThreadRow
