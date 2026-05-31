@@ -42,11 +42,17 @@ export function useCombos() {
       destinationHasData,
     } = params;
 
-    type ChainableQuery = { eq(c: string, v: string): ChainableQuery; is(c: string, v: null): ChainableQuery };
-    const buildOwnerFilter = (query: ChainableQuery, athleteId: string | null, groupId: string | null): ChainableQuery => {
-      if (athleteId) return query.eq('athlete_id', athleteId).is('group_id', null);
-      if (groupId) return query.eq('group_id', groupId).is('athlete_id', null);
-      return query.is('athlete_id', null).is('group_id', null);
+    // Generic chain wrapper: preserves the actual Supabase builder type so
+    // downstream calls like .maybeSingle() and await still work. The
+    // alternative — a hand-rolled ChainableQuery interface — confused TS
+    // into a TS2589 "excessively deep" loop against Supabase's massive
+    // generic surface.
+    type Chain<T> = T & { eq(c: string, v: string): Chain<T>; is(c: string, v: null): Chain<T> };
+    const buildOwnerFilter = <T>(query: T, athleteId: string | null, groupId: string | null): Chain<T> => {
+      const q = query as Chain<T>;
+      if (athleteId) return q.eq('athlete_id', athleteId).is('group_id', null);
+      if (groupId) return q.eq('group_id', groupId).is('athlete_id', null);
+      return q.is('athlete_id', null).is('group_id', null);
     };
 
     // 1. Fetch source week plan
@@ -156,7 +162,7 @@ export function useCombos() {
 
     const membersMap: Record<string, ComboMemberEntry[]> = {};
     type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
-    (members || []).forEach((m: MemberRow) => {
+    ((members || []) as unknown as MemberRow[]).forEach(m => {
       if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
       membersMap[m.planned_exercise_id].push({
         exerciseId: m.exercise_id,

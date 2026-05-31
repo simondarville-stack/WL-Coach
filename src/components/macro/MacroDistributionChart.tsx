@@ -126,11 +126,6 @@ export function MacroDistributionChart({
     });
   };
 
-  // Phase for a week
-  const getPhase = (weekNum: number) => {
-    return phases.find(p => weekNum >= p.start_week_number && weekNum <= p.end_week_number);
-  };
-
   // Render main chart
   useEffect(() => {
     if (view === 'perweek' || !mainRef.current) return;

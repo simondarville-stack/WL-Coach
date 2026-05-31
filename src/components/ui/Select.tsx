@@ -1,7 +1,8 @@
 import { forwardRef } from 'react';
 import type { SelectHTMLAttributes, ReactNode } from 'react';
 
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+  // Override the native 'size' attribute (number) with our design-system token.
   size?: 'md' | 'lg';
   children: ReactNode;
 }

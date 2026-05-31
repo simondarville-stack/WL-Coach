@@ -132,7 +132,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
 
       const perfByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
       for (const row of logRows ?? []) {
-        const session = row.session as { date: string } | null;
+        const session = row.session as unknown as { date: string } | null;
         if (!session) continue;
         const ws = getMondayUTC(session.date);
         const setsForRow = setsByLogEx.get(row.id) ?? [];

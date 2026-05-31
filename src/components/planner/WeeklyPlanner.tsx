@@ -94,7 +94,6 @@ export function WeeklyPlanner() {
     setAthletePRs,
     macroWeekTarget,
     setMacroWeekTarget,
-    macroWeekTypeText,
     setMacroWeekTypeText,
     loading,
     error,
@@ -370,7 +369,7 @@ export function WeeklyPlanner() {
       setMacroContext({
         macroId: mw.macrocycle_id,
         macroName: macro?.name ?? 'Macrocycle',
-        weekType: mw.week_type,
+        weekType: mw.week_type ?? '',
         weekTypeText: mw.week_type_text,
         weekNumber: mw.week_number,
         totalWeeks: countResult.count ?? 0,
@@ -855,16 +854,6 @@ export function WeeklyPlanner() {
     }
   };
 
-
-  const handleReorderItems = async (dayIndex: number, orderedIds: string[]) => {
-    if (!currentWeekPlan) return;
-    try {
-      await reorderExercises(currentWeekPlan.id, orderedIds);
-      await fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels);
-    } catch {
-      // error already set in hook
-    }
-  };
 
   const handleNavigateToDay = (dayIndex: number) => {
     setSelectedDayIndex(dayIndex);
@@ -1417,7 +1406,7 @@ export function WeeklyPlanner() {
                   className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
                   style={isSidebar
                     ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
+                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
                   tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
@@ -1437,7 +1426,6 @@ export function WeeklyPlanner() {
                     addExerciseToDay={addExerciseToDayWrapped}
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
-                saveGppSection={saveGppSection}
                     saveNotes={saveNotes}
                     deletePlannedExercise={deletePlannedExercise}
                     reorderExercises={reorderExercises}
@@ -1488,7 +1476,6 @@ export function WeeklyPlanner() {
                     onBack={() => setPanelView('day')}
                     onSaved={handleRefresh}
                     savePrescription={savePrescription}
-                    saveGppSection={saveGppSection}
                     saveMediaDescription={saveMediaDescription}
                     saveNotes={saveNotes}
                     swapPlannedExercise={swapPlannedExercise}

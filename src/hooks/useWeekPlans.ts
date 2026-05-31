@@ -9,6 +9,7 @@ import type {
   DefaultUnit,
   Exercise,
   PlannedExercise,
+  PlannedExerciseMetadata,
   PlannedSetLine,
   TrainingGroup,
   WeekPlan,
@@ -139,7 +140,8 @@ export function useWeekPlans() {
         });
       }
 
-      (data || []).forEach(item => {
+      const rows = (data ?? []) as unknown as Array<PlannedExercise & { exercise: Exercise }>;
+      rows.forEach(item => {
         if (!grouped[item.day_index]) {
           grouped[item.day_index] = [];
         }
@@ -149,7 +151,7 @@ export function useWeekPlans() {
       setPlannedExercises(grouped);
 
       // Load combo members for any is_combo exercises
-      const comboExs = (data || []).filter(e => e.is_combo);
+      const comboExs = rows.filter(e => e.is_combo);
       if (comboExs.length > 0) {
         const { data: members } = await supabase
           .from('planned_exercise_combo_members')
@@ -158,7 +160,7 @@ export function useWeekPlans() {
           .order('position');
         const membersMap: Record<string, ComboMemberEntry[]> = {};
         type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number; exercise: Exercise };
-        (members || []).forEach((m: MemberRow) => {
+        ((members || []) as unknown as MemberRow[]).forEach(m => {
           if (!membersMap[m.planned_exercise_id]) membersMap[m.planned_exercise_id] = [];
           membersMap[m.planned_exercise_id].push({
             exerciseId: m.exercise_id,
@@ -256,7 +258,7 @@ export function useWeekPlans() {
     }
   };
 
-  const reorderExercises = async (weekPlanId: string, orderedIds: string[]) => {
+  const reorderExercises = async (_weekPlanId: string, orderedIds: string[]) => {
     await Promise.all(
       orderedIds.map((id, i) => supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id))
     );
@@ -665,7 +667,7 @@ export function useWeekPlans() {
       is_combo: sourceEx.is_combo,
       combo_notation: sourceEx.combo_notation,
       combo_color: sourceEx.combo_color,
-      metadata: (sourceEx.metadata ?? null) as Record<string, unknown> | null,
+      metadata: sourceEx.metadata as PlannedExerciseMetadata | undefined,
     });
 
     if (sourceEx.prescription_raw) {
@@ -872,7 +874,7 @@ export function useWeekPlans() {
         is_combo: snapshot.is_combo,
         combo_notation: snapshot.combo_notation,
         combo_color: snapshot.combo_color,
-        metadata: snapshot.metadata,
+        metadata: snapshot.metadata as PlannedExerciseMetadata | undefined,
         source: extras?.source ?? null,
       },
     );
@@ -981,7 +983,7 @@ export function useWeekPlans() {
       .order('day_index')
       .order('position');
     if (error) throw error;
-    return data || [];
+    return (data ?? []) as unknown as (PlannedExercise & { exercise: Exercise })[];
   };
 
   /**
@@ -1015,11 +1017,12 @@ export function useWeekPlans() {
 
     // 2. Fetch group plan set lines
     const groupExIds = (groupExercises || []).map(e => e.id);
-    const { data: groupSetLines } = groupExIds.length > 0
+    const { data: groupSetLinesData } = groupExIds.length > 0
       ? await supabase.from('planned_set_lines').select('*').in('planned_exercise_id', groupExIds)
-      : { data: [] };
-    const setLinesByExId = new Map<string, typeof groupSetLines>();
-    (groupSetLines || []).forEach((l: { planned_exercise_id: string }) => {
+      : { data: [] as PlannedSetLine[] };
+    const groupSetLines = (groupSetLinesData ?? []) as unknown as PlannedSetLine[];
+    const setLinesByExId = new Map<string, PlannedSetLine[]>();
+    groupSetLines.forEach(l => {
       const arr = setLinesByExId.get(l.planned_exercise_id) || [];
       arr.push(l);
       setLinesByExId.set(l.planned_exercise_id, arr);
@@ -1219,8 +1222,8 @@ export function useWeekPlans() {
             // planned_exercises.metadata is NOT NULL with default '{}'::jsonb,
             // so coerce a missing/null source to {} rather than violating
             // the constraint.
-            metadata: ex.metadata ?? {},
-            source: 'group',
+            metadata: (ex.metadata ?? {}) as PlannedExerciseMetadata,
+            source: 'group' as const,
           })))
           .select('id');
         if (insError) throw insError;

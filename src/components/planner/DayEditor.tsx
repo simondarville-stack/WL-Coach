@@ -42,8 +42,8 @@ interface DayEditorProps {
   saveNotes: (id: string, notes: string) => Promise<unknown>;
   deletePlannedExercise: (id: string) => Promise<unknown>;
   reorderExercises: (weekPlanId: string, orderedIds: string[]) => Promise<unknown>;
-  moveExercise: (...args: unknown[]) => Promise<unknown>;
-  normalizePositions: (...args: unknown[]) => Promise<unknown>;
+  moveExercise: (weekPlanId: string, exerciseId: string, fromDayIndex: number, toDayIndex: number) => Promise<unknown>;
+  normalizePositions: (weekPlanId: string, dayIndex: number) => Promise<unknown>;
 }
 
 const UNIT_BADGE: Record<string, string> = {
@@ -243,7 +243,7 @@ export function DayEditor({
     await handleDragEnd(reordered);
   }
 
-  const itemHeaderStyle = (isDragging: boolean, isDragTarget: boolean): React.CSSProperties => ({
+  const itemHeaderStyle = (isDragging: boolean, _isDragTarget: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
     borderBottom: '1px solid var(--color-border-tertiary)',
     borderRadius: '4px 4px 0 0',

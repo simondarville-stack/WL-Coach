@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, ChevronLeft, ChevronRight, LayoutList, CalendarDays, Download } from 'lucide-react';
-import type { Athlete } from '../../lib/database.types';
+import type { Athlete, Event } from '../../lib/database.types';
 import type { EventWithAthletes } from '../../hooks/useEvents';
 import { useEvents } from '../../hooks/useEvents';
 import { useAthletes } from '../../hooks/useAthletes';
@@ -89,7 +89,10 @@ export function CompetitionCalendar() {
       name: data.name,
       event_date: data.event_date,
       description: data.description || null,
-      event_type: data.event_type,
+      // The form's event_type is a free string at the input boundary; cast
+      // to the EventType union — the form options are constrained to its
+      // members at the UI level.
+      event_type: data.event_type as Event['event_type'],
       location: data.location || null,
       end_date: data.end_date || null,
       color: data.color || null,

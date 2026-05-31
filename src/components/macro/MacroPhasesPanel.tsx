@@ -9,7 +9,7 @@ interface MacroPhasesPanelProps {
   phases: MacroPhase[];
   initialEditingPhase?: MacroPhase | null;
   phaseTypePresets?: PhaseTypePreset[];
-  onSave: (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at'>, editingId?: string) => Promise<void>;
+  onSave: (phase: Omit<MacroPhase, 'id' | 'owner_id' | 'created_at' | 'updated_at'>, editingId?: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
 }

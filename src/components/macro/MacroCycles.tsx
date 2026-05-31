@@ -499,7 +499,7 @@ export function MacroCycles() {
   // ─── Phase save / delete ──────────────────────────────────────────────────────
 
   const handleSavePhase = async (
-    phaseData: Omit<import('../../lib/database.types').MacroPhase, 'id' | 'created_at' | 'updated_at'>,
+    phaseData: Omit<import('../../lib/database.types').MacroPhase, 'id' | 'owner_id' | 'created_at' | 'updated_at'>,
     editingId?: string
   ) => {
     if (editingId) {

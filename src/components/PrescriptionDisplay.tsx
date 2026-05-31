@@ -33,11 +33,9 @@ export function PrescriptionDisplay({ prescription, unit }: PrescriptionDisplayP
     return <span>{prescription}</span>;
   }
 
-  const getUnitSymbol = () => {
-    if (unit === 'percentage') return '%';
-    if (unit === 'rpe') return 'RPE';
-    return '';
-  };
+  // unit === 'rpe' / 'free_text' / 'free_text_reps' all return early above,
+  // so only 'percentage' / 'absolute_kg' / 'other' / null reach here.
+  const getUnitSymbol = () => (unit === 'percentage' ? '%' : '');
 
   const unitSymbol = getUnitSymbol();
 

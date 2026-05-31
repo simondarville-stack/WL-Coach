@@ -36,7 +36,7 @@ export function useTrainingGroups() {
         .is('left_at', null)
         .order('joined_at');
       if (error) throw error;
-      setGroupMembers(data || []);
+      setGroupMembers((data ?? []) as unknown as GroupMemberWithAthlete[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load group members');
     }

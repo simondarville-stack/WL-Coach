@@ -48,7 +48,6 @@ export function GeneralSettings() {
   const [pctToKgRoundIncrement, setPctToKgRoundIncrement] = useState(0.5);
   const [gridSaveError, setGridSaveError] = useState<string | null>(null);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
-  const [showStressMetric, setShowStressMetric] = useState(false);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [weekTypes, setWeekTypes] = useState<WeekTypeConfig[]>(DEFAULT_WEEK_TYPES);
@@ -134,7 +133,6 @@ export function GeneralSettings() {
       setPctToKgRoundEnabled(settings.percent_to_kg_round_enabled ?? true);
       setPctToKgRoundIncrement(settings.percent_to_kg_round_increment ?? 0.5);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
-      setShowStressMetric(settings.show_stress_metric ?? false);
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setWeekTypes((settings.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES);
@@ -219,11 +217,6 @@ export function GeneralSettings() {
     await updateSettings(settings.id, { visible_card_metrics: next });
   }
 
-  async function toggleStressMetric(value: boolean) {
-    if (!settings) return;
-    setShowStressMetric(value);
-    await updateSettings(settings.id, { show_stress_metric: value });
-  }
 
   async function toggleMacroTableColumn(col: MacroTableColumnKey) {
     if (!settings) return;

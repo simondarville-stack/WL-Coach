@@ -86,7 +86,7 @@ export function ExerciseDetail({
   settings,
 }: ExerciseDetailProps) {
   const isCombo = plannedExercise?.is_combo ?? false;
-  const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code);
+  const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code ?? null);
   const members = isCombo && plannedExercise
     ? (comboMembers[plannedExercise.id] ?? []).sort((a, b) => a.position - b.position)
     : [];
@@ -146,11 +146,9 @@ export function ExerciseDetail({
   const defaultPrescriptionLoad = settings?.default_prescription_load ?? 50;
 
   useEffect(() => {
-    let cancelled = false;
     if (hasMacro && plannedExercise) void loadSollTarget();
     if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
     if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [macroContext?.macroId, plannedExercise?.id]);
 
@@ -262,7 +260,8 @@ export function ExerciseDetail({
     });
     if (plannedExercise) {
       const id = plannedExercise.id;
-      const tasks: Promise<unknown>[] = [
+      // Supabase query builders are PromiseLike, not strict Promise.
+      const tasks: PromiseLike<unknown>[] = [
         saveNotes(id, notesRef.current).catch(() => {}),
         supabase.from('planned_exercises').update({
           variation_note: variationNote || null,

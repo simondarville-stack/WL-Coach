@@ -373,7 +373,7 @@ export function useCoachDashboard() {
           .eq('event_id', event.id);
 
         type EventAthleteRow = { athlete: { name: string } | null };
-        const athleteNames = eventAthletes?.map((ea: EventAthleteRow) => ea.athlete?.name ?? '').filter(Boolean).join(', ') || 'All Athletes';
+        const athleteNames = (eventAthletes as unknown as EventAthleteRow[] | null)?.map(ea => ea.athlete?.name ?? '').filter(Boolean).join(', ') || 'All Athletes';
 
         const eventDate = new Date(event.event_date);
         eventDate.setHours(0, 0, 0, 0);
@@ -413,7 +413,7 @@ export function useCoachDashboard() {
         .is('left_at', null);
 
       type GroupMemberRow = { athlete: { id: string; name: string } | null };
-      const memberList = (members || []).map((m: GroupMemberRow) => ({
+      const memberList = ((members || []) as unknown as GroupMemberRow[]).map(m => ({
         id: m.athlete?.id ?? '',
         name: m.athlete?.name ?? '',
       })).filter(m => m.id);

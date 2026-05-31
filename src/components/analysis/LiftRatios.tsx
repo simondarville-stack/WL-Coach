@@ -169,7 +169,9 @@ export function LiftRatios({ athleteId }: Props) {
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }} axisLine={false} tickLine={false} unit="%" width={40} domain={[70, 95]} />
-              <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} formatter={(v: number) => [`${v}%`, 'Sn/CJ']} />
+              {/* Recharts' Formatter generic chains a verbose signature; the
+                  runtime only sees [valueLabel, nameLabel]. */}
+              <Tooltip contentStyle={{ fontSize: 12, border: '0.5px solid var(--color-border-secondary)' }} formatter={((v: number) => [`${v}%`, 'Sn/CJ']) as never} />
               <Line type="monotone" dataKey="snCj" name="Sn/CJ" stroke="#378ADD" strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>

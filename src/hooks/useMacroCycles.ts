@@ -242,7 +242,8 @@ export function useMacroCycles() {
       });
 
       await Promise.all(swaps.flatMap(({ teId, vals1, vals2, t1, t2 }) => {
-        const writes: Promise<unknown>[] = [];
+        // Supabase query builders are PromiseLike, not strict Promise.
+        const writes: PromiseLike<unknown>[] = [];
         if (t1) writes.push(supabase.from('macro_targets').update(vals2).eq('id', t1.id));
         if (t2) writes.push(supabase.from('macro_targets').update(vals1).eq('id', t2.id));
         if (!t1 && t2) writes.push(supabase.from('macro_targets').upsert(
@@ -279,7 +280,7 @@ export function useMacroCycles() {
         .eq('macrocycle_id', macrocycleId)
         .order('position');
       if (error) throw error;
-      setTrackedExercises(data || []);
+      setTrackedExercises((data ?? []) as unknown as MacroTrackedExerciseWithExercise[]);
     } catch (err) {
       setError(errMsg(err, 'Failed to load tracked exercises'));
     }
@@ -416,7 +417,7 @@ export function useMacroCycles() {
         .from('macrocycles')
         .select('id')
         .eq('is_active', true)
-        .eq('athlete_id', weekPlan.athlete_id)
+        .eq('athlete_id', weekPlan.athlete_id ?? '')
         .maybeSingle();
 
       if (!macrocycle) return null;
@@ -490,7 +491,7 @@ export function useMacroCycles() {
       .order('position');
 
     type TrackedExerciseRow = { id: string; exercise_id: string; exercises: import('../lib/database.types').Exercise | null };
-    const typedTrackedData = (trackedExercisesData || []) as TrackedExerciseRow[];
+    const typedTrackedData = (trackedExercisesData || []) as unknown as TrackedExerciseRow[];
     const exercises = typedTrackedData.map(item => item.exercises).filter((e): e is import('../lib/database.types').Exercise => e !== null);
 
     const { data: targetsData } = await supabase
@@ -705,14 +706,38 @@ export function useMacroCycles() {
 
       const comboIds = (combos || []).map(c => c.id);
 
-      const [{ data: comboItems }, { data: comboSetLines }] = await Promise.all([
-        comboIds.length > 0
-          ? supabase.from('planned_combo_items').select('planned_combo_id, exercise_id, position').in('planned_combo_id', comboIds)
-          : Promise.resolve({ data: [] }),
-        comboIds.length > 0
-          ? supabase.from('planned_combo_set_lines').select('planned_combo_id, sets, reps_tuple_text, load_value').in('planned_combo_id', comboIds)
-          : Promise.resolve({ data: [] }),
-      ]);
+      type ComboItemRow = { planned_combo_id: string; exercise_id: string; position: number };
+      type ComboSetLineRow = { planned_combo_id: string; sets: number; reps_tuple_text: string; load_value: number };
+
+      // Wrap the conditional in async helpers so each branch returns a
+      // uniform Promise<Row[]>; Promise.all can't reconcile a Supabase
+      // builder with a Promise.resolve in a single conditional without
+      // tripping its overload resolution.
+      const fetchComboItems = async (): Promise<ComboItemRow[]> => {
+        if (comboIds.length === 0) return [];
+        const { data } = await supabase
+          .from('planned_combo_items')
+          .select('planned_combo_id, exercise_id, position')
+          .in('planned_combo_id', comboIds);
+        return (data ?? []) as unknown as ComboItemRow[];
+      };
+      const fetchComboSetLines = async (): Promise<ComboSetLineRow[]> => {
+        if (comboIds.length === 0) return [];
+        // planned_combo_set_lines isn't in the generated database.types yet;
+        // cast the client to avoid the table-name overload check.
+        const { data } = await (supabase as unknown as {
+          from: (t: string) => {
+            select: (cols: string) => {
+              in: (col: string, vals: string[]) => Promise<{ data: ComboSetLineRow[] | null }>;
+            };
+          };
+        })
+          .from('planned_combo_set_lines')
+          .select('planned_combo_id, sets, reps_tuple_text, load_value')
+          .in('planned_combo_id', comboIds);
+        return (data ?? []) as ComboSetLineRow[];
+      };
+      const [comboItems, comboSetLines] = await Promise.all([fetchComboItems(), fetchComboSetLines()]);
 
       const weekStartToWpId = new Map<string, string>();
       weekPlans.forEach(wp => weekStartToWpId.set(wp.week_start, wp.id));
