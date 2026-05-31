@@ -14,6 +14,7 @@ import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { DEFAULT_UNITS } from '../../lib/constants';
 import { SollIstChart } from './SollIstChart';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
+import { ExercisePrescriptionHistory } from './ExercisePrescriptionHistory';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 
@@ -38,6 +39,8 @@ interface ExerciseDetailProps {
   weekPlanId: string;
   dayIndex: number;
   dayName: string;
+  /** Monday-anchored start of the week being planned, for history context. */
+  weekStart: string;
   athleteId: string;
   macroContext: MacroContext | null;
   athletePRs: AthletePR[];
@@ -70,6 +73,7 @@ export function ExerciseDetail({
   comboMembers,
   weekPlanId,
   dayName,
+  weekStart,
   athleteId,
   macroContext,
   dayLabels,
@@ -549,7 +553,10 @@ export function ExerciseDetail({
         {/* Prescription */}
         {plannedExercise && !sentinel && (
           <div>
-            <ExerciseHistoryChart exerciseId={plannedExercise.exercise_id} athleteId={athleteId} macroContext={macroContext} />
+            <ExerciseHistoryChart exerciseId={plannedExercise.exercise_id} athleteId={athleteId} macroContext={macroContext} currentWeekStart={weekStart} />
+            {athleteId && (
+              <ExercisePrescriptionHistory exerciseId={plannedExercise.exercise_id} athleteId={athleteId} weekStart={weekStart} />
+            )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={sectionHeaderStyle}>Prescription</span>
               <button

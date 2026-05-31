@@ -26,6 +26,18 @@ export const DAYS_OF_WEEK = [
 
 export const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+/**
+ * Default label for a training unit when the coach hasn't named it.
+ * Numbered by position in the week's display order ("Unit 1", "Unit 2", …)
+ * rather than by weekday — a unit isn't tied to a calendar day until the
+ * coach explicitly assigns one. Falls back to the raw index if the day
+ * isn't in the display order (e.g. a transient gap index).
+ */
+export function defaultUnitLabel(dayIndex: number, displayOrder: number[]): string {
+  const pos = displayOrder.indexOf(dayIndex);
+  return `Unit ${pos >= 0 ? pos + 1 : dayIndex}`;
+}
+
 export function getUnitSymbol(unit: string | null): string {
   switch (unit) {
     case 'percentage':

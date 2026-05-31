@@ -16,6 +16,12 @@ React 18 · TypeScript (strict) · Vite · Tailwind CSS · Supabase (Postgres;
 Auth + RLS are future phases) · Recharts. German locale conventions apply only
 to user-facing numeric formatting (comma decimals); UI labels remain English.
 
+**Always use European standards for dates, times, and weeks.** Times are
+24-hour (e.g. `16:00`, never `4:00 PM`). Dates are day-first
+(`DD.MM.YYYY` / `DD/MM`), never US month-first. Weeks start on Monday. Any
+new date/time UI, presets, parsing, or formatting must follow these
+conventions.
+
 ## Current review scope
 
 **IN SCOPE — agents may audit and propose modifications:**

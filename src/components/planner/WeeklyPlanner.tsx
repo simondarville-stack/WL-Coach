@@ -11,7 +11,7 @@ import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { useCoachStore } from '../../store/coachStore';
 import { useExerciseStore } from '../../store/exerciseStore';
-import { DAYS_OF_WEEK } from '../../lib/constants';
+import { defaultUnitLabel } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
@@ -251,16 +251,15 @@ export function WeeklyPlanner() {
     if (currentWeekPlan) {
       setActiveDays(currentWeekPlan.active_days);
       const labels = currentWeekPlan.day_labels || {};
+      const order = currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b);
       const initialLabels: Record<number, string> = {};
       const maxDay = Math.max(...currentWeekPlan.active_days, 7);
       for (let i = 1; i <= maxDay; i++) {
-        initialLabels[i] = labels[i] || DAYS_OF_WEEK.find(d => d.index === i)?.name || `Day ${i}`;
+        initialLabels[i] = labels[i] || defaultUnitLabel(i, order);
       }
       setEditingDayLabels(initialLabels);
       setWeekDescription(currentWeekPlan.week_description || '');
-      setDayDisplayOrder(
-        currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
-      );
+      setDayDisplayOrder(order);
       setEditingDaySchedule(
         (currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? {}
       );
@@ -636,8 +635,7 @@ export function WeeklyPlanner() {
       }
       if (snapshots.length === 0) return;
       const label = currentWeekPlan?.day_labels?.[dayIndex]
-        || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name
-        || `Day ${dayIndex}`;
+        || defaultUnitLabel(dayIndex, dayDisplayOrder);
       clipboard.addDay(label, snapshots);
       return;
     }
@@ -896,15 +894,14 @@ export function WeeklyPlanner() {
     if (currentWeekPlan) {
       setActiveDays(currentWeekPlan.active_days);
       const labels = currentWeekPlan.day_labels || {};
+      const order = currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b);
       const initialLabels: Record<number, string> = {};
       const maxDay = Math.max(...currentWeekPlan.active_days, 7);
       for (let i = 1; i <= maxDay; i++) {
-        initialLabels[i] = labels[i] || DAYS_OF_WEEK.find(d => d.index === i)?.name || `Day ${i}`;
+        initialLabels[i] = labels[i] || defaultUnitLabel(i, order);
       }
       setEditingDayLabels(initialLabels);
-      setDayDisplayOrder(
-        currentWeekPlan.day_display_order || currentWeekPlan.active_days.slice().sort((a, b) => a - b)
-      );
+      setDayDisplayOrder(order);
       setEditingDaySchedule(
         (currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? {}
       );
@@ -959,14 +956,15 @@ export function WeeklyPlanner() {
 
   const getDayLabel = (dayIndex: number): string => {
     if (currentWeekPlan?.day_labels?.[dayIndex]) return currentWeekPlan.day_labels[dayIndex];
-    return DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    if (editingDayLabels[dayIndex]) return editingDayLabels[dayIndex];
+    return defaultUnitLabel(dayIndex, dayDisplayOrder);
   };
 
   const addNewDay = () => {
     if (!currentWeekPlan) return;
     const allDayIndices = Object.keys(editingDayLabels).map(Number);
     const nextIndex = allDayIndices.length > 0 ? Math.max(...allDayIndices) + 1 : 1;
-    setEditingDayLabels({ ...editingDayLabels, [nextIndex]: `Day ${nextIndex}` });
+    setEditingDayLabels({ ...editingDayLabels, [nextIndex]: `Unit ${dayDisplayOrder.length + 1}` });
     setActiveDays([...activeDays, nextIndex].sort((a, b) => a - b));
     setDayDisplayOrder([...dayDisplayOrder, nextIndex]);
   };
@@ -1475,6 +1473,7 @@ export function WeeklyPlanner() {
                     weekPlanId={currentWeekPlan.id}
                     dayIndex={selectedDayIndex}
                     dayName={getDayLabel(selectedDayIndex)}
+                    weekStart={selectedDate}
                     athleteId={planSelection.athlete?.id ?? ''}
                     macroContext={macroContext}
                     athletePRs={athletePRs}

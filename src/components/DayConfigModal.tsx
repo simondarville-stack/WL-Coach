@@ -2,8 +2,9 @@ import { X } from 'lucide-react';
 import { ModalShell } from './ModalShell';
 
 const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DEFAULT_LABELS = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'];
-const TIME_PRESETS = ['06:00', '09:00', '12:00', '15:30', '17:00', '19:00'];
+// 24-hour European time presets. 10:00 and 16:00 are very common training
+// times and are included alongside the usual morning/midday/evening slots.
+const TIME_PRESETS = ['07:00', '09:00', '10:00', '12:00', '16:00', '17:00', '19:00'];
 
 export type DaySchedule = Record<number, { weekday: number; time: string | null }>;
 
@@ -142,7 +143,7 @@ export function DayConfigModal({
                         type="text"
                         value={editingDayLabels[dayIndex] || ''}
                         onChange={e => onLabelChange(dayIndex, e.target.value)}
-                        placeholder={`Day ${dayIndex}`}
+                        placeholder={`Unit ${dayDisplayOrder.indexOf(dayIndex) + 1}`}
                         className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
 
@@ -155,11 +156,9 @@ export function DayConfigModal({
                             onScheduleChange(dayIndex, null);
                           } else {
                             const wd = Number(val);
-                            // Auto-fill label if it's a default "Day N" label
-                            const currentLabel = editingDayLabels[dayIndex] || '';
-                            if (!currentLabel || DEFAULT_LABELS.includes(currentLabel)) {
-                              onLabelChange(dayIndex, WEEKDAY_NAMES[wd]);
-                            }
+                            // The unit keeps its coach-set name. Assigning a
+                            // weekday only schedules the unit onto the calendar
+                            // — it no longer renames the card to the weekday.
                             onScheduleChange(dayIndex, { weekday: wd, time: entry?.time ?? null });
                           }
                         }}

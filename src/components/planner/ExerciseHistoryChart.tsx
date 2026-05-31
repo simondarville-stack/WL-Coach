@@ -23,6 +23,10 @@ interface ExerciseHistoryChartProps {
   exerciseId: string;
   athleteId:  string;
   macroContext: MacroContext | null;
+  /** The week the coach is currently planning (Monday-anchored). The "Now"
+   *  marker and the look-ahead window follow THIS week, not the real today,
+   *  so the chart gives direction relative to where the coach is writing. */
+  currentWeekStart?: string;
 }
 
 const WINDOW_WEEKS = 16;
@@ -45,21 +49,24 @@ function addWeeksUTC(dateStr: string, weeks: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: ExerciseHistoryChartProps) {
+export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart }: ExerciseHistoryChartProps) {
   const [data, setData]     = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView]     = useState<'max' | 'avg'>('max');
 
-  useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId]);
+  // Anchor the window on the week being planned (falls back to today when the
+  // planner didn't pass one, e.g. legacy call sites).
+  const anchorWeek = getMondayUTC(currentWeekStart ?? new Date().toISOString().slice(0, 10));
+
+  useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId, anchorWeek]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const todayStr  = new Date().toISOString().slice(0, 10);
-      const lookBack  = addWeeksUTC(todayStr, -WINDOW_WEEKS);
+      const lookBack  = addWeeksUTC(anchorWeek, -WINDOW_WEEKS);
       const lookAhead = macroContext
-        ? addWeeksUTC(todayStr, macroContext.totalWeeks - macroContext.weekNumber + 2)
-        : addWeeksUTC(todayStr, 4);
+        ? addWeeksUTC(anchorWeek, macroContext.totalWeeks - macroContext.weekNumber + 2)
+        : addWeeksUTC(anchorWeek, 4);
 
       const { data: weekPlans } = await supabase
         .from('week_plans')
@@ -270,10 +277,11 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
   const minY = allVals.length > 0 ? Math.max(0, Math.min(...allVals) - 10) : 0;
   const maxY = allVals.length > 0 ? Math.max(...allVals) + 10 : 100;
 
-  const nowWeekStart = getMondayUTC(new Date().toISOString().slice(0, 10));
+  // "Now" marks the week being planned. With a macro we use its current week
+  // number; otherwise we match the anchor week's label in the data.
   const nowLabel = macroContext
     ? `W${macroContext.weekNumber}`
-    : data.find(d => d.weekStart === nowWeekStart)?.label;
+    : data.find(d => d.weekStart === anchorWeek)?.label;
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -321,7 +329,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext }: Ex
           />
           {nowLabel && (
             <ReferenceLine x={nowLabel} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
-              label={{ value: 'Now', position: 'top', fontSize: 9, fill: '#f97316' }} />
+              label={{ value: 'This week', position: 'top', fontSize: 9, fill: '#f97316' }} />
           )}
           {hasSoll && (
             <Line type="stepAfter" dataKey={sollKey} stroke="#fb923c" strokeWidth={1.5}
