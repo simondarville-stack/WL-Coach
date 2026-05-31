@@ -96,7 +96,20 @@ export interface LogErrorOptions {
   context?: Record<string, unknown>;
 }
 
+/**
+ * Skip capture during local development. The error_logs table is for real
+ * production/coach-session errors; in dev, Vite Fast Refresh (HMR) routinely
+ * throws transient "X is not defined" / "Should have a queue" errors from
+ * half-applied edits against hot-reloaded, timestamped bundles. Those polluted
+ * the log with non-bugs. import.meta.env.DEV is true under `vite dev` and false
+ * in any production build, so this cleanly separates the two.
+ */
+function shouldSkipCapture(): boolean {
+  return import.meta.env.DEV === true;
+}
+
 export async function logError(err: unknown, opts: LogErrorOptions = {}): Promise<void> {
+  if (shouldSkipCapture()) return;
   try {
     const { name, message, stack, code } = normaliseError(err);
     const actor = resolveActor();
