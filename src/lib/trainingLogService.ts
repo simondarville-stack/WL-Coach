@@ -1370,6 +1370,99 @@ export async function fetchAthleteInboxUnreadCount(
   return (data ?? []).length;
 }
 
+/**
+ * Athlete-facing inbox: one InboxThread row per general conversation +
+ * one per session that has any messages. Same shape as the coach inbox
+ * so the rendering can be shared. Sorted unread-first then by activity.
+ *
+ * The athlete sees only their own threads, so we filter by athlete_id.
+ * Co-coach activity (shared athletes) appears in the same threads —
+ * messages are athlete-scoped, not coach-scoped, so a co-coach's reply
+ * shows up here just like the host's.
+ */
+export async function fetchAthleteInboxThreads(
+  athleteId: string,
+): Promise<InboxThread[]> {
+  const { data, error } = await supabase
+    .from('training_log_messages')
+    .select('id, session_id, sender_type, message, created_at, athlete_read_at')
+    .eq('athlete_id', athleteId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const rows = (data ?? []) as {
+    id: string;
+    session_id: string | null;
+    sender_type: 'athlete' | 'coach';
+    message: string;
+    created_at: string;
+    athlete_read_at: string | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  // Session ids we need to hydrate with their performed-on dates.
+  const sessionIds = Array.from(
+    new Set(rows.map(r => r.session_id).filter((id): id is string => !!id)),
+  );
+  const sessionMap = new Map<string, string>();
+  if (sessionIds.length > 0) {
+    const { data: sessions } = await supabase
+      .from('training_log_sessions')
+      .select('id, date')
+      .in('id', sessionIds);
+    (sessions ?? []).forEach((s: { id: string; date: string }) => {
+      sessionMap.set(s.id, s.date);
+    });
+  }
+
+  // Look up the athlete row once for name/photo (the InboxThread shape
+  // expects these even on the athlete's own inbox view).
+  const { data: athleteRow } = await supabase
+    .from('athletes')
+    .select('name, photo_url')
+    .eq('id', athleteId)
+    .maybeSingle();
+  const athleteName = (athleteRow?.name as string | undefined) ?? '';
+  const athletePhotoUrl = (athleteRow?.photo_url as string | null | undefined) ?? null;
+
+  // Build thread map keyed by session id, or 'general' for session-less.
+  const threads = new Map<string, InboxThread>();
+  for (const r of rows) {
+    const key = r.session_id ?? 'general';
+    let t = threads.get(key);
+    if (!t) {
+      const performedOn = r.session_id ? sessionMap.get(r.session_id) ?? null : null;
+      // Skip session-bound messages whose session has been deleted.
+      if (r.session_id && !performedOn) continue;
+      t = {
+        kind: r.session_id ? 'session' : 'general',
+        sessionId: r.session_id,
+        athleteId,
+        athleteName,
+        athletePhotoUrl,
+        performedOn,
+        lastMessage: r.message,
+        lastActivityAt: r.created_at,
+        unreadCount: 0,
+        athleteMessageCount: 0,
+      };
+      threads.set(key, t);
+    } else if (r.created_at > t.lastActivityAt) {
+      t.lastActivityAt = r.created_at;
+      // Preview prefers the most-recent coach message — that's the one
+      // the athlete most cares about. Athlete-sent text echoes are less
+      // useful as a "what's new" hint.
+      if (r.sender_type === 'coach') t.lastMessage = r.message;
+    }
+    if (r.sender_type === 'athlete') t.athleteMessageCount += 1;
+    if (r.sender_type === 'coach' && r.athlete_read_at == null) t.unreadCount += 1;
+  }
+
+  return Array.from(threads.values()).sort((a, b) => {
+    if ((a.unreadCount > 0) !== (b.unreadCount > 0)) return a.unreadCount > 0 ? -1 : 1;
+    return b.lastActivityAt.localeCompare(a.lastActivityAt);
+  });
+}
+
 // ─── Profile-screen reads ─────────────────────────────────────────────────
 
 export interface BodyweightPoint {
