@@ -164,19 +164,74 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
         </div>
       </div>
 
+      {/* Plan check — reps × sets (OWL convention). */}
+      <div className="px-4 pt-1 pb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-medium text-gray-600">Check plan</span>
+          {activeZone && (
+            <span className="text-[10px] text-gray-400">
+              against <span className="font-medium text-gray-600">{activeZone.label}</span> zone
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          <input
+            type="number"
+            step="1"
+            min="1"
+            value={repsText}
+            onChange={e => setRepsText(e.target.value)}
+            placeholder="reps"
+            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+          />
+          <span className="text-gray-400">×</span>
+          <input
+            type="number"
+            step="1"
+            min="1"
+            value={setsText}
+            onChange={e => setSetsText(e.target.value)}
+            placeholder="sets"
+            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+          />
+          {nl != null && (
+            <span className="text-xs text-gray-500 ml-1">
+              = <span className="font-mono font-medium text-gray-800">{nl}</span> NL
+            </span>
+          )}
+          {!activeZone && (setsText || repsText) && (
+            <span className="text-[10px] text-gray-400 italic ml-2">
+              enter intensity to compare
+            </span>
+          )}
+        </div>
+        {verdict && activeZone && nl != null && (
+          <div
+            className={`mt-2 px-2.5 py-1.5 border rounded text-[11px] flex items-center justify-between ${VERDICT_STYLES[verdict].bg}`}
+          >
+            <span className={`font-medium ${VERDICT_STYLES[verdict].text}`}>
+              {VERDICT_STYLES[verdict].label}
+            </span>
+            <span className={`font-mono text-[10px] ${VERDICT_STYLES[verdict].text}`}>
+              {nl} vs {activeZone.optimal} (opt.) · range {activeZone.rangeMin}-{activeZone.rangeMax}
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Zones table */}
-      <div className="px-4 pb-2">
+      <div className="px-4 pb-3 pt-1 border-t border-gray-100">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-gray-100">
-              <th className="text-left font-medium text-gray-400 pb-1">Zone</th>
-              <th className="text-right font-medium text-gray-400 pb-1">%1RM</th>
+              <th className="text-left font-medium text-gray-400 pb-1 pt-2">Zone</th>
+              <th className="text-right font-medium text-gray-400 pb-1 pt-2">%1RM</th>
               {hasOneRM && (
-                <th className="text-right font-medium text-gray-400 pb-1">kg</th>
+                <th className="text-right font-medium text-gray-400 pb-1 pt-2">kg</th>
               )}
-              <th className="text-right font-medium text-gray-400 pb-1">Reps</th>
-              <th className="text-right font-medium text-gray-400 pb-1">Opt.</th>
-              <th className="text-right font-medium text-gray-400 pb-1 pr-1">Range</th>
+              <th className="text-right font-medium text-gray-400 pb-1 pt-2">Reps</th>
+              <th className="text-right font-medium text-gray-400 pb-1 pt-2">Opt.</th>
+              <th className="text-right font-medium text-gray-400 pb-1 pt-2 pr-1">Range</th>
             </tr>
           </thead>
           <tbody>
@@ -210,61 +265,6 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
           <p className="text-[10px] text-amber-600 mt-1 italic">
             Intensity outside 0–100% — no zone match.
           </p>
-        )}
-      </div>
-
-      {/* Plan check */}
-      <div className="px-4 pt-2 pb-3 border-t border-gray-100">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-medium text-gray-600">Check plan</span>
-          {activeZone && (
-            <span className="text-[10px] text-gray-400">
-              against <span className="font-medium text-gray-600">{activeZone.label}</span> zone
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 text-xs">
-          <input
-            type="number"
-            step="1"
-            min="1"
-            value={setsText}
-            onChange={e => setSetsText(e.target.value)}
-            placeholder="sets"
-            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
-          />
-          <span className="text-gray-400">×</span>
-          <input
-            type="number"
-            step="1"
-            min="1"
-            value={repsText}
-            onChange={e => setRepsText(e.target.value)}
-            placeholder="reps"
-            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
-          />
-          {nl != null && (
-            <span className="text-xs text-gray-500 ml-1">
-              = <span className="font-mono font-medium text-gray-800">{nl}</span> NL
-            </span>
-          )}
-          {!activeZone && (setsText || repsText) && (
-            <span className="text-[10px] text-gray-400 italic ml-2">
-              enter intensity to compare
-            </span>
-          )}
-        </div>
-        {verdict && activeZone && nl != null && (
-          <div
-            className={`mt-2 px-2.5 py-1.5 border rounded text-[11px] flex items-center justify-between ${VERDICT_STYLES[verdict].bg}`}
-          >
-            <span className={`font-medium ${VERDICT_STYLES[verdict].text}`}>
-              {VERDICT_STYLES[verdict].label}
-            </span>
-            <span className={`font-mono text-[10px] ${VERDICT_STYLES[verdict].text}`}>
-              {nl} vs {activeZone.optimal} (opt.) · range {activeZone.rangeMin}-{activeZone.rangeMax}
-            </span>
-          </div>
         )}
       </div>
     </div>
