@@ -18,6 +18,7 @@ import { ArrowLeft, ExternalLink, Loader2, Send, MessageCircle, Calendar } from 
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteInboxThreads,
+  fetchCoachNamesForMessages,
   fetchGeneralThreadMessages,
   fetchSessionMessages,
   markGeneralThreadRead,
@@ -183,6 +184,7 @@ function ChatView({
 }) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
+  const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
@@ -197,6 +199,11 @@ function ChatView({
         ? await fetchSessionMessages(thread.sessionId)
         : await fetchGeneralThreadMessages(athleteId, ownerId);
       setMessages(m);
+      // Look up coach display names so each coach bubble can show
+      // which coach wrote it — important on shared athletes where
+      // multiple coaches reply in the same thread.
+      const names = await fetchCoachNamesForMessages(m);
+      setCoachNames(names);
     } catch (e) {
       console.error('[CoachInbox] load chat failed', e);
       setError(describeError(e));
@@ -320,7 +327,13 @@ function ChatView({
             No messages yet.
           </div>
         ) : (
-          messages.map(m => <Bubble key={m.id} message={m} />)
+          messages.map(m => (
+            <Bubble
+              key={m.id}
+              message={m}
+              senderLabel={coachLabelForAthlete(m, coachNames)}
+            />
+          ))
         )}
       </div>
 
@@ -352,7 +365,7 @@ function ChatView({
   );
 }
 
-function Bubble({ message }: { message: TrainingLogMessage }) {
+function Bubble({ message, senderLabel }: { message: TrainingLogMessage; senderLabel: string | null }) {
   const fromAthlete = message.sender_type === 'athlete';
   return (
     <div className={`flex ${fromAthlete ? 'justify-end' : 'justify-start'}`}>
@@ -363,6 +376,11 @@ function Bubble({ message }: { message: TrainingLogMessage }) {
             : 'bg-gray-800 text-gray-100 border border-gray-700'
         }`}
       >
+        {senderLabel && !fromAthlete && (
+          <div className="text-[10px] font-semibold opacity-90 mb-1 text-blue-300">
+            {senderLabel}
+          </div>
+        )}
         {message.message}
         <div className="text-[9px] mt-1 opacity-60 text-right">
           {formatStamp(message.created_at)}
@@ -370,6 +388,22 @@ function Bubble({ message }: { message: TrainingLogMessage }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Athlete-side bubble label. Athletes never see "You" on their own
+ * bubbles (the right-alignment + colour already conveys that). Coach
+ * bubbles get the coach's name when available so the athlete can tell
+ * which coach (host vs co-coach) wrote each message. Legacy rows with
+ * no sender_coach_id fall back to no label.
+ */
+function coachLabelForAthlete(
+  m: TrainingLogMessage,
+  names: Map<string, string>,
+): string | null {
+  if (m.sender_type !== 'coach') return null;
+  if (!m.sender_coach_id) return null;
+  return names.get(m.sender_coach_id) ?? null;
 }
 
 function EmptyAthleteInbox() {

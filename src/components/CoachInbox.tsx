@@ -3,6 +3,7 @@ import { Mail, Send, Loader2, MailOpen, AlertCircle, Search, X as XIcon, Users }
 import { useNavigate } from 'react-router-dom';
 import {
   addComment,
+  fetchCoachNamesForMessages,
   fetchGeneralThreadMessages,
   fetchInboxThreads,
   fetchSessionMessages,
@@ -14,7 +15,30 @@ import {
 import { getOwnerId } from '../lib/ownerContext';
 import { describeError } from '../lib/errorMessage';
 import { useAthleteStore } from '../store/athleteStore';
+import { useCoachStore } from '../store/coachStore';
 import type { TrainingLogMessage } from '../lib/database.types';
+
+/**
+ * Label a bubble with the sender's display name.
+ *
+ *  - Athlete sends: athlete name.
+ *  - Coach sends, sender_coach_id matches the viewing coach: "You".
+ *  - Coach sends, different sender_coach_id: that coach's name from
+ *    the lookup map.
+ *  - Coach sends, sender_coach_id null (legacy pre-share rows): null,
+ *    so the bubble shows no label (collapses to today's behaviour).
+ */
+function coachLabelFor(
+  m: TrainingLogMessage,
+  names: Map<string, string>,
+  viewingCoachId: string | null,
+  athleteName: string,
+): string | null {
+  if (m.sender_type === 'athlete') return athleteName || null;
+  if (!m.sender_coach_id) return null;
+  if (m.sender_coach_id === viewingCoachId) return 'You';
+  return names.get(m.sender_coach_id) ?? null;
+}
 
 /**
  * Coach-facing inbox: every athlete-sent message lands here grouped by
@@ -494,7 +518,9 @@ interface ThreadViewProps {
 }
 
 function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: ThreadViewProps) {
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
+  const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
@@ -508,6 +534,10 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
         ? await fetchSessionMessages(thread.sessionId)
         : await fetchGeneralThreadMessages(thread.athleteId, ownerId);
       setMessages(m);
+      // Resolve coach display names for every coach-sent message so the
+      // bubble can label which coach (host or co-coach) wrote it.
+      const names = await fetchCoachNamesForMessages(m);
+      setCoachNames(names);
     } catch (e) {
       console.error('[CoachInbox] loadMessages failed', e);
       setError(describeError(e));
@@ -545,6 +575,7 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
           exerciseId: null,
           message: body,
           senderType: 'coach',
+          senderCoachId: activeCoachId,
         });
       } else {
         await sendGeneralMessage({
@@ -552,6 +583,7 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
           ownerId,
           message: body,
           senderType: 'coach',
+          senderCoachId: activeCoachId,
         });
       }
       setReply('');
@@ -637,7 +669,13 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
             No messages on this session.
           </div>
         ) : (
-          messages.map(m => <MessageBubble key={m.id} message={m} />)
+          messages.map(m => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              senderLabel={coachLabelFor(m, coachNames, activeCoachId, thread.athleteName)}
+            />
+          ))
         )}
       </div>
 
@@ -705,7 +743,7 @@ function ThreadView({ thread, ownerId, onMessagesChanged, onOpenSession }: Threa
   );
 }
 
-function MessageBubble({ message }: { message: TrainingLogMessage }) {
+function MessageBubble({ message, senderLabel }: { message: TrainingLogMessage; senderLabel: string | null }) {
   const fromCoach = message.sender_type === 'coach';
   return (
     <div
@@ -728,6 +766,11 @@ function MessageBubble({ message }: { message: TrainingLogMessage }) {
           wordBreak: 'break-word',
         }}
       >
+        {senderLabel && (
+          <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 600, marginBottom: 2, letterSpacing: '0.02em' }}>
+            {senderLabel}
+          </div>
+        )}
         {message.message}
         <div
           style={{

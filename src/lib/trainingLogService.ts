@@ -975,6 +975,10 @@ export interface AddCommentArgs {
   exerciseId?: string | null;
   message: string;
   senderType: 'athlete' | 'coach';
+  /** Active coach id for coach-sent messages; null for athlete sends.
+   *  Lets a shared inbox label which coach wrote each bubble — without
+   *  it, multi-coach threads collapse to "Coach" with no disambiguation. */
+  senderCoachId?: string | null;
 }
 
 export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessage> {
@@ -984,6 +988,7 @@ export async function addComment(args: AddCommentArgs): Promise<TrainingLogMessa
     exercise_id: args.exerciseId ?? null,
     message: args.message,
     sender_type: args.senderType,
+    sender_coach_id: args.senderType === 'coach' ? args.senderCoachId ?? null : null,
   };
   const { data, error } = await supabase
     .from('training_log_messages')
@@ -1289,6 +1294,8 @@ export interface SendGeneralMessageArgs {
   ownerId: string;
   message: string;
   senderType: 'athlete' | 'coach';
+  /** Active coach id for coach-sent messages; null for athlete sends. */
+  senderCoachId?: string | null;
 }
 
 /** Insert a general (no-session) message. Both owner_id and athlete_id
@@ -1304,6 +1311,7 @@ export async function sendGeneralMessage(
     owner_id: args.ownerId,
     message: args.message,
     sender_type: args.senderType,
+    sender_coach_id: args.senderType === 'coach' ? args.senderCoachId ?? null : null,
   };
   const { data, error } = await supabase
     .from('training_log_messages')
@@ -1380,6 +1388,32 @@ export async function fetchAthleteInboxUnreadCount(
  * messages are athlete-scoped, not coach-scoped, so a co-coach's reply
  * shows up here just like the host's.
  */
+/**
+ * Resolve coach display names for a batch of messages. Looks up unique
+ * sender_coach_ids and returns a Map id → name. Used by both inboxes
+ * to label coach-sent bubbles in a shared thread; messages without a
+ * sender_coach_id (athlete sends, or legacy pre-share-feature rows)
+ * are not in the map and the caller falls back to "Coach".
+ */
+export async function fetchCoachNamesForMessages(
+  messages: TrainingLogMessage[],
+): Promise<Map<string, string>> {
+  const coachIds = Array.from(
+    new Set(
+      messages
+        .map(m => m.sender_coach_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ),
+  );
+  if (coachIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('coach_profiles')
+    .select('id, name')
+    .in('id', coachIds);
+  if (error || !data) return new Map();
+  return new Map(data.map(r => [r.id as string, r.name as string]));
+}
+
 export async function fetchAthleteInboxThreads(
   athleteId: string,
 ): Promise<InboxThread[]> {
