@@ -3,9 +3,11 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type { TrainingGroup, GroupMemberWithAthlete } from '../lib/database.types';
 import { useAthleteStore } from '../store/athleteStore';
+import { fetchAccessibleGroups, type AccessRole } from '../lib/accessScope';
 
 export function useTrainingGroups() {
   const [groups, setGroups] = useState<TrainingGroup[]>([]);
+  const [groupAccess, setGroupAccess] = useState<Record<string, AccessRole>>({});
   const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,15 +16,10 @@ export function useTrainingGroups() {
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('training_groups')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      setGroups(result);
-      storeSetGroups(result);
+      const { groups: merged, accessById } = await fetchAccessibleGroups(getOwnerId());
+      setGroups(merged);
+      setGroupAccess(accessById);
+      storeSetGroups(merged);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups');
     } finally {
@@ -77,6 +74,10 @@ export function useTrainingGroups() {
 
   const deleteGroup = async (id: string) => {
     try {
+      // Deleting cascades group_members — host coach only. A co-coach
+      // leaves via the share dialog instead of deleting the host's group.
+      const { data: existing } = await supabase.from('training_groups').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Only the host coach can delete this group');
       const { error } = await supabase.from('training_groups').delete().eq('id', id);
       if (error) throw error;
       setGroups(prev => prev.filter(g => g.id !== id));
@@ -115,6 +116,7 @@ export function useTrainingGroups() {
 
   return {
     groups,
+    groupAccess,
     setGroups,
     groupMembers,
     loading,

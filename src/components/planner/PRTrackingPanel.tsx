@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Trophy, X, ArrowLeft, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
 import { estimate1RM, roundToHalf } from '../../lib/xrmUtils';
 import {
   buildPRRows,
@@ -11,6 +10,8 @@ import {
   type ExerciseRow,
   type RepCount,
 } from '../../lib/prTable';
+import { usePREstimationMode } from '../../hooks/usePREstimationMode';
+import { PREstimationModeToggle } from '../PREstimationModeToggle';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
 
 interface EditingCell {
@@ -68,7 +69,13 @@ interface PRTrackingPanelProps {
 export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
-  const [rows, setRows] = useState<ExerciseRow[]>([]);
+  const [mode, setMode] = usePREstimationMode();
+  // Derive rows from exercises + history + mode so the table re-blends
+  // instantly when the coach flips between Weighted and 1RM-only.
+  const rows = useMemo<ExerciseRow[]>(
+    () => buildPRRows(exercises, history, mode),
+    [exercises, history, mode],
+  );
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [saving, setSaving] = useState(false);
@@ -97,9 +104,13 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
         supabase
           .from('exercises')
           .select('*')
+          // Use the HOST coach's library (athlete.owner_id), not the
+          // active coach's. For a shared athlete the PR table must show
+          // the catalogue the athlete's programmes are written against —
+          // otherwise a co-coach sees their own exercises here.
           .eq('track_pr', true)
           .eq('is_archived', false)
-          .eq('owner_id', getOwnerId())
+          .eq('owner_id', athlete.owner_id)
           // Hide the "— System" category — those rows are sentinel
           // placeholders for TEXT / IMAGE / VIDEO / GPP blocks, not
           // lifts the athlete sets a PR on.
@@ -120,7 +131,6 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
       const hist = (histData as AthletePRHistory[] | null) || [];
       setExercises(exList);
       setHistory(hist);
-      setRows(buildRows(exList, hist));
     } finally {
       setLoading(false);
     }
@@ -186,11 +196,6 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
       setSortDir(key === 'name' || key === 'category' ? 'asc' : 'desc');
     }
   }
-
-  // buildPRRows + syncAthletePRs live in lib/prTable.ts now so the
-  // athlete app and this coach panel agree on the current cell for
-  // every (exercise, rep_count). Behaviour unchanged.
-  const buildRows = buildPRRows;
 
   function startEdit(exerciseId: string, repCount: RepCount, prefill: string) {
     setError(null);
@@ -380,6 +385,7 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
         <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>
           {displayedRows.length} of {rows.length} exercises
         </span>
+        <PREstimationModeToggle mode={mode} onChange={setMode} />
       </div>
 
       {/* Table */}
@@ -485,6 +491,10 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                   const isEditing = editing?.exerciseId === row.exercise.id && editing.repCount === cell.repCount;
                   const isReal = cell.current !== null;
                   const displayValue = isReal ? cell.current!.value_kg : cell.phantom;
+                  // Delta is only populated in 1RM-only mode on real
+                  // non-1RM cells. Positive = athlete beat the 1RM-based
+                  // prediction; negative = fell short.
+                  const delta = cell.delta;
 
                   return (
                     <td key={cell.repCount} style={{ padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle' }}>
@@ -500,7 +510,7 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                         <button
                           onClick={() => startEdit(row.exercise.id, cell.repCount, isReal ? String(cell.current!.value_kg) : '')}
                           title={isReal
-                            ? `${cell.current!.value_kg} kg on ${formatDate(cell.current!.achieved_date)} · click to log new`
+                            ? `${cell.current!.value_kg} kg on ${formatDate(cell.current!.achieved_date)}${delta != null ? ` · ${delta >= 0 ? '+' : ''}${delta} kg vs 1RM-predicted` : ''} · click to log new`
                             : 'Click to log a PR'}
                           style={cellChromeStyle({ isReal, hasContent: displayValue !== null, color: isReal ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', italic: !isReal })}
                           onMouseEnter={e => {
@@ -514,9 +524,18 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                             el.style.borderColor = 'transparent';
                           }}
                         >
-                          {displayValue !== null
-                            ? (isReal ? displayValue : `~${displayValue}`)
-                            : <span style={{ color: 'var(--color-border-secondary)' }}>—</span>}
+                          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
+                            <span>
+                              {displayValue !== null
+                                ? (isReal ? displayValue : `~${displayValue}`)
+                                : <span style={{ color: 'var(--color-border-secondary)' }}>—</span>}
+                            </span>
+                            {delta != null && (
+                              <span style={{ fontSize: 9, color: delta >= 0 ? 'var(--color-success-text, #15803d)' : 'var(--color-danger-text, #b91c1c)' }}>
+                                {delta >= 0 ? '+' : ''}{delta}
+                              </span>
+                            )}
+                          </span>
                         </button>
                       )}
                     </td>

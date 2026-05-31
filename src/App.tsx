@@ -20,10 +20,12 @@ import { Sidebar } from './components/Sidebar';
 import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
 import { Calculator } from './components/tools/Calculator';
 import { CalendarTool } from './components/tools/CalendarTool';
+import { PrilepinTable } from './components/tools/PrilepinTable';
 import { PRPage } from './components/PRPage';
 import { CoachInbox } from './components/CoachInbox';
 import { SystemGuide } from './components/system/SystemGuide';
 import { ErrorLogViewer } from './components/system/ErrorLogViewer';
+import { InvitationsPage } from './components/system/InvitationsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { setActorResolver } from './lib/errorLogger';
 import { useRouteBreadcrumbs } from './hooks/useRouteBreadcrumbs';
@@ -47,6 +49,7 @@ const pageTitles: Record<string, string> = {
   '/prs': 'Personal Records',
   '/inbox': 'Inbox',
   '/system/errors': 'Error log',
+  '/system/invitations': 'Invitations',
 };
 
 function PageTitle() {
@@ -86,6 +89,7 @@ function CoachApp() {
   const [showRepMaxCalc, setShowRepMaxCalc] = useState(false);
   const [showCalculator, setShowCalculator] = useState(false);
   const [showCalendarTool, setShowCalendarTool] = useState(false);
+  const [showPrilepin, setShowPrilepin] = useState(false);
   const [coachesLoaded, setCoachesLoaded] = useState(false);
 
   useEffect(() => {
@@ -156,6 +160,7 @@ function CoachApp() {
         onOpenCalc={() => setShowRepMaxCalc(true)}
         onOpenCalculator={() => setShowCalculator(true)}
         onOpenCalendarTool={() => setShowCalendarTool(true)}
+        onOpenPrilepin={() => setShowPrilepin(true)}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -191,6 +196,7 @@ function CoachApp() {
               <Route path="/library" element={<ExerciseLibrary />} />
               <Route path="/system" element={<SystemGuide />} />
               <Route path="/system/errors" element={<ErrorLogViewer />} />
+              <Route path="/system/invitations" element={<InvitationsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </ErrorBoundary>
@@ -228,6 +234,24 @@ function CoachApp() {
             showCalendarTool && showRepMaxCalc ? 'bottom-4 right-[740px]'
             : showCalendarTool ? 'bottom-4 right-[340px]'
             : showRepMaxCalc ? 'bottom-4 right-[400px]'
+            : 'bottom-4 right-4'
+          }
+        />
+      )}
+      {showPrilepin && (
+        <PrilepinTable
+          onClose={() => setShowPrilepin(false)}
+          // Stacks left of any other open tool. Each slot is the cumulative
+          // width-plus-gap of the panels already occupying space to its
+          // right (Calendar 320, xRM 380, Calculator 280; 4px gap each).
+          positionClass={
+            showCalendarTool && showRepMaxCalc && showCalculator ? 'bottom-4 right-[1008px]'
+            : showCalendarTool && showRepMaxCalc ? 'bottom-4 right-[724px]'
+            : showCalendarTool && showCalculator ? 'bottom-4 right-[624px]'
+            : showRepMaxCalc && showCalculator ? 'bottom-4 right-[684px]'
+            : showCalendarTool ? 'bottom-4 right-[340px]'
+            : showRepMaxCalc ? 'bottom-4 right-[400px]'
+            : showCalculator ? 'bottom-4 right-[300px]'
             : 'bottom-4 right-4'
           }
         />

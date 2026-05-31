@@ -153,6 +153,20 @@ function parsePlannedExercise(pe: {
 export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<WeeklyAggregate[]> {
   const { athleteId, startDate, endDate, exerciseFilter = [], categoryFilter = [] } = params;
 
+  // Resolve the athlete's host coach. Week plans, macrocycles, phases
+  // and the exercise library all belong to the host — for a shared
+  // athlete this is NOT the active coach. Filtering by the active
+  // coach's owner_id (as before) zeroed out the planned-volume side of
+  // every weekly aggregate, which silently broke compliance on the
+  // dashboard. Falling back to getOwnerId keeps unshared athletes
+  // working when the row is somehow missing.
+  const { data: athleteRow } = await supabase
+    .from('athletes')
+    .select('owner_id')
+    .eq('id', athleteId)
+    .maybeSingle();
+  const hostOwnerId = (athleteRow?.owner_id as string | undefined) ?? getOwnerId();
+
   const [
     weekPlansRes,
     macroWeeksRes,
@@ -165,7 +179,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     supabase
       .from('week_plans')
       .select('id, week_start')
-      .eq('owner_id', getOwnerId())
+      .eq('owner_id', hostOwnerId)
       .eq('athlete_id', athleteId)
       .gte('week_start', startDate)
       .lte('week_start', endDate)
@@ -173,13 +187,13 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     supabase
       .from('macro_weeks')
       .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id, macrocycles!inner(owner_id)')
-      .eq('macrocycles.owner_id', getOwnerId())
+      .eq('macrocycles.owner_id', hostOwnerId)
       .gte('week_start', startDate)
       .lte('week_start', endDate),
     supabase
       .from('macro_phases')
       .select('id, name, color, macrocycle_id')
-      .eq('owner_id', getOwnerId()),
+      .eq('owner_id', hostOwnerId),
     supabase
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')
@@ -201,7 +215,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     supabase
       .from('exercises')
       .select('id, name, category, color')
-      .eq('owner_id', getOwnerId()),
+      .eq('owner_id', hostOwnerId),
   ]);
 
   const weekPlans = weekPlansRes.data ?? [];

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
+import { useDraggable } from '../../hooks/useDraggable';
 
 // ─── Formulas ────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,8 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
   const [reps, setReps] = useState('');
   const [showBreakdown, setShowBreakdown] = useState(false);
   const weightRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { containerStyle, handleProps } = useDraggable(containerRef);
 
   useEffect(() => {
     weightRef.current?.focus();
@@ -147,14 +150,19 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
 
   return (
     <div
+      ref={containerRef}
       className={`fixed z-50 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden flex flex-col transition-[width] duration-200 ${positionClass} ${
         showBreakdown ? 'w-[620px]' : 'w-[380px]'
       }`}
+      style={containerStyle}
       role="dialog"
       aria-label="xRM Calculator"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50">
+      <div
+        {...handleProps}
+        className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50"
+      >
         <span className="text-sm font-medium text-gray-900">xRM Calculator</span>
         <button
           onClick={onClose}

@@ -16,6 +16,8 @@ import {
   Trophy,
   Mail,
   AlertTriangle,
+  Layers,
+  UserPlus,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
@@ -63,6 +65,7 @@ const sections: NavSection[] = [
     items: [
       { path: '/library', label: 'Exercise library', icon: BookOpen },
       { path: '/settings', label: 'Settings', icon: Settings },
+      { path: '/system/invitations', label: 'Invitations', icon: UserPlus },
       { path: '/system/errors', label: 'Error log', icon: AlertTriangle },
     ],
   },
@@ -73,9 +76,10 @@ interface SidebarProps {
   onOpenCalc?: () => void;
   onOpenCalculator?: () => void;
   onOpenCalendarTool?: () => void;
+  onOpenPrilepin?: () => void;
 }
 
-export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool }: SidebarProps) {
+export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool, onOpenPrilepin }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const inboxUnread = useInboxUnreadCount();
@@ -308,6 +312,19 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
           <CalendarDays size={16} className="flex-shrink-0" />
           {!collapsed && (
             <span className="whitespace-nowrap overflow-hidden">Calendar</span>
+          )}
+        </button>
+        <button
+          onClick={() => onOpenPrilepin?.()}
+          title={collapsed ? "Prilepin's table" : undefined}
+          className={`w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
+            collapsed ? 'justify-center' : 'py-1.5 px-3'
+          }`}
+          style={{ color: 'var(--color-text-secondary)', transition: 'background var(--transition-fast), color var(--transition-fast)', ...(collapsed ? { width: 40, height: 40, padding: 0, justifyContent: 'center' } : { minHeight: 36 }) }}
+        >
+          <Layers size={16} className="flex-shrink-0" />
+          {!collapsed && (
+            <span className="whitespace-nowrap overflow-hidden">Prilepin's table</span>
           )}
         </button>
       </div>

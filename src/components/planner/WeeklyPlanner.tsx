@@ -9,6 +9,8 @@ import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthletes } from '../../hooks/useAthletes';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
+import { useCoachStore } from '../../store/coachStore';
+import { useExerciseStore } from '../../store/exerciseStore';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
@@ -78,7 +80,7 @@ export function WeeklyPlanner() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
-  const { exercises: allExercises, fetchExercisesByName } = useExercises();
+  const { exercises: allExercises } = useExercises();
   const { athletes, fetchAllAthletes } = useAthletes();
   const { groups, fetchGroups } = useTrainingGroups();
 
@@ -177,11 +179,32 @@ export function WeeklyPlanner() {
   }, [urlWeekStart]);
 
   useEffect(() => {
-    fetchExercisesByName();
+    // No standalone fetchExercisesByName here — the context-aware effect
+    // below covers both "no athlete selected" (active coach's library)
+    // and "shared athlete" (host coach's library). Issuing both in
+    // parallel races: the store no-ops the second call while the first
+    // is loading, which would otherwise pin Coach B's library when
+    // working on a shared athlete.
     fetchGroups();
     fetchAllAthletes();
     fetchSettings();
   }, []);
+
+  // Hot-swap the exercise + category library when the planning context
+  // changes. For unshared athletes/groups the host == active coach and
+  // this is a no-op (the store's cache hits). For shared athletes the
+  // store repopulates with the host's library so the picker shows the
+  // exercises that the programme is actually written against.
+  const { fetchExercisesByName: fetchContextExercises, fetchCategories: fetchContextCategories } =
+    useExerciseStore();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
+  const contextOwnerId =
+    selectedAthlete?.owner_id ?? storeSelectedGroup?.owner_id ?? activeCoachId;
+  useEffect(() => {
+    if (!contextOwnerId) return;
+    void fetchContextExercises(contextOwnerId);
+    void fetchContextCategories(contextOwnerId);
+  }, [contextOwnerId, fetchContextExercises, fetchContextCategories]);
 
   useEffect(() => {
     if (selectedAthlete) {
@@ -282,7 +305,12 @@ export function WeeklyPlanner() {
     };
   }, [selectedAthlete, currentWeekPlan]);
 
-  const loadExercises = () => fetchExercisesByName();
+  // Refresh the exercise library on tab focus / visibility change. Uses
+  // the context-aware fetch so a shared athlete's planner stays on the
+  // host's catalogue across blur/focus cycles.
+  const loadExercises = () => {
+    if (contextOwnerId) void fetchContextExercises(contextOwnerId);
+  };
   const loadAthletePRs = (athleteId: string) => fetchAthletePRs(athleteId);
 
   const loadWeekPlan = async () => {
@@ -1144,6 +1172,17 @@ export function WeeklyPlanner() {
           </div>
         )}
 
+        <SharedContextBanner
+          athlete={planSelection.athlete}
+          group={planSelection.group}
+          activeCoachId={activeCoachId}
+        />
+
+        <LastEditedByIndicator
+          weekPlan={currentWeekPlan}
+          activeCoachId={activeCoachId}
+        />
+
         {!planSelection.athlete && !planSelection.group ? (
           <div style={{ paddingTop: 16, paddingBottom: 16 }}>
             <AthleteCardPicker />
@@ -1589,6 +1628,111 @@ export function WeeklyPlanner() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Renders a "Last edited by Coach X · 2 min ago" hint when the week plan
+ * was last touched by someone other than the active coach. Silent when
+ * the active coach is the most recent editor or when the column is null
+ * (legacy plans created before the column existed). Looks up the editor's
+ * display name from coach_profiles on first mount.
+ */
+function LastEditedByIndicator({
+  weekPlan,
+  activeCoachId,
+}: {
+  weekPlan: { id: string; last_edited_by_coach_id: string | null; updated_at: string } | null;
+  activeCoachId: string | null;
+}) {
+  const editorId = weekPlan?.last_edited_by_coach_id ?? null;
+  const [editorName, setEditorName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editorId || editorId === activeCoachId) {
+      setEditorName(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('coach_profiles')
+        .select('name')
+        .eq('id', editorId)
+        .maybeSingle();
+      if (!cancelled) setEditorName((data?.name as string | undefined) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [editorId, activeCoachId]);
+  if (!weekPlan || !editorId || editorId === activeCoachId || !editorName) return null;
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: '4px 10px',
+        fontSize: 11,
+        color: 'var(--color-text-secondary)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <span>Last edited by</span>
+      <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{editorName}</span>
+      <span>·</span>
+      <span>{formatRelativeShort(weekPlan.updated_at)}</span>
+    </div>
+  );
+}
+
+function formatRelativeShort(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * Renders a small banner at the top of the planner when the active coach
+ * is working on an athlete or group hosted by another coach. Pulls the
+ * host name from the athleteStore's hostName map (populated on fetch).
+ */
+function SharedContextBanner({
+  athlete,
+  group,
+  activeCoachId,
+}: {
+  athlete: { id: string; owner_id: string; name: string } | null;
+  group: { id: string; owner_id: string; name: string } | null;
+  activeCoachId: string | null;
+}) {
+  const athleteHostName = useAthleteStore(s => s.athleteHostName);
+  const hostOwnerId = athlete?.owner_id ?? group?.owner_id ?? null;
+  if (!hostOwnerId || !activeCoachId || hostOwnerId === activeCoachId) return null;
+  const targetLabel = athlete?.name ?? group?.name ?? 'this athlete';
+  const hostName = athlete ? athleteHostName[athlete.id] : null;
+  const hostDescriptor = hostName ?? 'another coach';
+  return (
+    <div
+      style={{
+        marginBottom: 12,
+        padding: '8px 12px',
+        background: 'var(--color-info-bg, #eff6ff)',
+        border: '1px solid var(--color-info-border, #bfdbfe)',
+        borderRadius: 'var(--radius-md)',
+        color: 'var(--color-info-text, #1e40af)',
+        fontSize: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <span style={{ fontWeight: 500 }}>Shared:</span>
+      <span>
+        Planning for <strong>{targetLabel}</strong> · using {hostDescriptor}'s exercise library.
+        New exercises you add land in their library.
+      </span>
     </div>
   );
 }

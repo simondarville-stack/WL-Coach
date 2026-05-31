@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import type { Athlete } from '../lib/database.types';
 import {
   User, Edit2, Trash2, Award, Plus, Search, X as XIcon,
-  MapPin, Trophy,
+  MapPin, Trophy, Share2,
 } from 'lucide-react';
 import { PRTrackingPanel } from './planner/PRTrackingPanel';
+import { ShareAthleteModal } from './ShareAthleteModal';
 import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
+import { useAthleteStore } from '../store/athleteStore';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
 
@@ -271,9 +273,10 @@ interface AthleteRowProps {
   onEdit: () => void;
   onPRs: () => void;
   onDelete: () => void;
+  onShare: () => void;
 }
 
-function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onDelete }: AthleteRowProps) {
+function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onDelete, onShare }: AthleteRowProps) {
   const isEven = rowIndex % 2 === 0;
   const bg = isSelected
     ? 'bg-blue-50 border-l-2 border-l-blue-400'
@@ -312,6 +315,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
             Inactive
           </span>
         )}
+        <SharedChip athleteId={athlete.id} />
       </div>
 
       {/* Age */}
@@ -340,7 +344,14 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
       </span>
 
       {/* Actions */}
-      <div className="w-20 flex-shrink-0 flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="w-24 flex-shrink-0 flex justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={e => { e.stopPropagation(); onShare(); }}
+          className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+          title="Share with another coach"
+        >
+          <Share2 size={13} />
+        </button>
         <button
           onClick={e => { e.stopPropagation(); onPRs(); }}
           className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
@@ -496,6 +507,7 @@ export function Athletes() {
   const [showModal, setShowModal] = useState(false);
   const [editingAthlete, setEditingAthlete] = useState<Athlete | null>(null);
   const [showPRsFor, setShowPRsFor] = useState<Athlete | null>(null);
+  const [shareTarget, setShareTarget] = useState<Athlete | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => { fetchAthletes(); }, []);
@@ -643,6 +655,7 @@ export function Athletes() {
                 onEdit={() => openEdit(athlete)}
                 onPRs={() => setShowPRsFor(athlete)}
                 onDelete={() => handleDelete(athlete)}
+                onShare={() => setShareTarget(athlete)}
               />
             ))
           )}
@@ -671,6 +684,33 @@ export function Athletes() {
           isSubmitting={isSubmitting}
         />
       )}
+
+      {shareTarget && (
+        <ShareAthleteModal
+          athlete={shareTarget}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Renders a small "Shared by X" chip when the athlete is shared with the
+ * active coach rather than owned by them. Reads from the athleteStore's
+ * access map, which is populated alongside the athletes list.
+ */
+function SharedChip({ athleteId }: { athleteId: string }) {
+  const access = useAthleteStore(s => s.athleteAccess[athleteId]);
+  const hostName = useAthleteStore(s => s.athleteHostName[athleteId]);
+  if (!access || access === 'owned') return null;
+  const label = access === 'viewer' ? 'View only' : 'Shared';
+  return (
+    <span
+      className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
+      title={hostName ? `${label} · host: ${hostName}` : label}
+    >
+      {hostName ? `${label} · ${hostName}` : label}
+    </span>
   );
 }

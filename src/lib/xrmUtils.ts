@@ -1,7 +1,14 @@
 /**
  * Shared xRM estimation utilities.
- * Averages 11 well-known 1RM formulas for both forward (weight@reps → 1RM)
- * and reverse (1RM → weight@reps) calculations.
+ *
+ * Two layers:
+ *   - The eleven published 1RM formulas, exposed as estimate1RM /
+ *     estimateWeightAtReps. These short-circuit at reps=1 and otherwise
+ *     average the formula set. Same as the calculators have always done.
+ *   - estimateAtRepsFromAnchors: the weighted multi-anchor model used by
+ *     the PR table. Every real entry contributes an estimate at the
+ *     target rep count; contributions are blended by inverse-square
+ *     distance so close anchors dominate and far ones nudge.
  */
 
 const FORMULAS: Record<string, (w: number, r: number) => number> = {
@@ -46,6 +53,57 @@ export function estimateWeightAtReps(oneRM: number, targetReps: number): number 
   if (targetReps === 1) return oneRM;
   const vals = Object.values(REVERSE_FORMULAS).map(fn => fn(oneRM, targetReps));
   return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+export interface PRAnchor {
+  /** Rep count of the real entry (1–10 in practice; any positive integer
+   *  works in math). */
+  reps: number;
+  /** Weight lifted, in kg. */
+  valueKg: number;
+}
+
+/**
+ * Multi-anchor weighted estimate of the weight an athlete should hit at
+ * targetReps, given a list of real PR entries.
+ *
+ * Each anchor produces its own estimate at targetReps by routing through
+ * the 11-formula average (forward to implied 1RM, then reverse to the
+ * target rep count). Those per-anchor estimates are blended with weights
+ * proportional to 1/(1 + d²), where d is the integer rep distance from
+ * the anchor to the target. So an anchor 1 rep away contributes 4× the
+ * weight of an anchor 3 reps away (1/2 vs 1/10).
+ *
+ * Special cases:
+ *  - Empty anchor list → returns 0.
+ *  - One anchor exactly at targetReps → returns that anchor's value untouched.
+ *  - Multiple anchors with one at targetReps → still returns the exact match,
+ *    because d=0 gives weight=1 and every other weight is finite and smaller
+ *    in the numerator/denominator pair; the exact-distance branch short-circuits
+ *    for cleanliness.
+ */
+export function estimateAtRepsFromAnchors(
+  anchors: PRAnchor[],
+  targetReps: number,
+): number {
+  if (anchors.length === 0 || targetReps <= 0) return 0;
+
+  // Direct hit: a real entry already exists at this rep count.
+  const exact = anchors.find(a => a.reps === targetReps);
+  if (exact) return exact.valueKg;
+
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const a of anchors) {
+    if (a.reps <= 0 || a.valueKg <= 0) continue;
+    const implied1RM = estimate1RM(a.valueKg, a.reps);
+    const perAnchorEstimate = estimateWeightAtReps(implied1RM, targetReps);
+    const distance = Math.abs(a.reps - targetReps);
+    const weight = 1 / (1 + distance * distance);
+    weightedSum += perAnchorEstimate * weight;
+    weightTotal += weight;
+  }
+  return weightTotal > 0 ? weightedSum / weightTotal : 0;
 }
 
 /** Round a kg value to the nearest 0.5 kg. */

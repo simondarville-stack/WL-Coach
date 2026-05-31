@@ -36,10 +36,19 @@ export function AthleteCardPicker() {
     }
 
     try {
-      const { data: members } = await supabase
-        .from('group_members')
-        .select('group_id, athlete_id')
-        .is('left_at', null);
+      // Restrict to memberships in groups the coach can actually see.
+      // Querying unfiltered would mark a shared athlete as "in a group"
+      // because of their host's other groups — and then hide them from
+      // the Individual section without placing them under any group
+      // card the coach can see.
+      const accessibleGroupIds = groups.map(g => g.id);
+      const { data: members } = accessibleGroupIds.length > 0
+        ? await supabase
+            .from('group_members')
+            .select('group_id, athlete_id')
+            .in('group_id', accessibleGroupIds)
+            .is('left_at', null)
+        : { data: [] as Array<{ group_id: string; athlete_id: string }> };
 
       const memberMap = new Map<string, Set<string>>();
       const athleteInGroup = new Set<string>();

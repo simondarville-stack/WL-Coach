@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import type { Athlete, AthletePR } from '../lib/database.types';
 import { useAthleteStore } from '../store/athleteStore';
 import { getOwnerId } from '../lib/ownerContext';
+import { fetchAccessibleAthletes } from '../lib/accessScope';
 
 export function useAthletes() {
   const [loading, setLoading] = useState(false);
@@ -14,6 +15,7 @@ export function useAthletes() {
   const {
     athletes,
     setAthletes: storeSetAthletes,
+    setAthletesWithAccess,
     fetchAthletes: storeFetchAthletes,
     athletesLoading,
   } = useAthleteStore();
@@ -31,19 +33,15 @@ export function useAthletes() {
     }
   };
 
+  // Owned + shared (direct and via group cascade), active only. Populates
+  // the store WITH its access metadata so screens that gate on access
+  // (planner edit, share chip) stay correct.
   const fetchActiveAthletes = async () => {
     try {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .eq('is_active', true)
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      storeSetAthletes(result);
+      const result = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
+      setAthletesWithAccess(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
     } finally {
@@ -53,14 +51,8 @@ export function useAthletes() {
 
   const fetchAllAthletes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('athletes')
-        .select('*')
-        .eq('owner_id', getOwnerId())
-        .order('name');
-      if (error) throw error;
-      const result = data || [];
-      storeSetAthletes(result);
+      const result = await fetchAccessibleAthletes(getOwnerId());
+      setAthletesWithAccess(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load athletes');
     }
@@ -86,8 +78,14 @@ export function useAthletes() {
 
   const updateAthlete = async (id: string, athleteData: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>) => {
     try {
-      const { data: existing } = await supabase.from('athletes').select('owner_id').eq('id', id).single();
-      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
+      // Co-coaches may edit a shared athlete's training data (bodyweight,
+      // competition total, notes). The owner and co_coach both pass; a
+      // viewer or a coach with no access does not. Access comes from the
+      // store map, which is populated whenever the athlete is listed.
+      const access = useAthleteStore.getState().athleteAccess[id];
+      if (access !== 'owned' && access !== 'co_coach') {
+        throw new Error('Access denied: you do not have edit access to this athlete');
+      }
       const { error } = await supabase.from('athletes').update(athleteData).eq('id', id);
       if (error) throw error;
     } catch (err) {
@@ -98,8 +96,11 @@ export function useAthletes() {
 
   const deleteAthlete = async (id: string) => {
     try {
+      // Delete cascades every PR, week plan, and log the athlete owns —
+      // restricted to the host coach. A co-coach can stop collaborating
+      // via the share dialog instead.
       const { data: existing } = await supabase.from('athletes').select('owner_id').eq('id', id).single();
-      if (existing?.owner_id !== getOwnerId()) throw new Error('Access denied: resource belongs to another environment');
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Only the host coach can delete this athlete');
       const { error } = await supabase.from('athletes').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {

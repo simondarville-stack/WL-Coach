@@ -44,7 +44,11 @@ export function useMacroCycles() {
         ? { type: 'athlete', id: target }
         : target;
 
-      let query = supabase.from('macrocycles').select('*').eq('owner_id', getOwnerId());
+      // No owner_id filter: athlete_id / group_id is the access boundary,
+      // and a shared athlete's (or group's) macrocycle is owned by the
+      // host coach. Filtering on the active coach's id would hide it from
+      // a co-coach. Same pattern as week_plans reads.
+      let query = supabase.from('macrocycles').select('*');
 
       if (resolved.type === 'athlete') {
         query = query.eq('athlete_id', resolved.id);

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { useAthleteStore } from '../../store/athleteStore';
+import { useDraggable } from '../../hooks/useDraggable';
 import type { Event, MacroWeek } from '../../lib/database.types';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -78,6 +79,8 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
   const [month, setMonth] = useState(today.getMonth());
   const [events, setEvents] = useState<Event[]>([]);
   const [macroCycle, setMacroCycle] = useState<MacroCycleInfo | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { containerStyle, handleProps } = useDraggable(containerRef);
 
   const { selectedAthlete } = useAthleteStore();
 
@@ -162,11 +165,16 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
   return (
     <div
       className={`fixed z-50 w-[320px] bg-white rounded-xl border border-gray-200 shadow-xl flex flex-col overflow-hidden ${positionClass}`}
+      ref={containerRef}
+      style={containerStyle}
       role="dialog"
       aria-label="Calendar"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50">
+      <div
+        {...handleProps}
+        className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50"
+      >
         <span className="text-sm font-medium text-gray-900">Calendar</span>
         {selectedAthlete && (
           <span className="text-[9px] text-blue-500 font-medium truncate max-w-[120px]">

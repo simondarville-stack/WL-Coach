@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { getOwnerId } from '../lib/ownerContext';
 import { fetchWeeklyAggregates } from './useAnalysis';
 import {
   useCoachDashboard,
@@ -186,7 +185,6 @@ export function useCoachDashboardV2() {
     }
     setEnrichLoading(true);
     try {
-      const ownerId = getOwnerId();
       const athleteIds = statuses.map(s => s.athlete.id);
 
       // 1) Latest non-planned session per athlete for RAW pillars only —
@@ -303,11 +301,14 @@ export function useCoachDashboardV2() {
       );
       let phasesByCycle: Record<string, MacroPhase[]> = {};
       if (macrocycleIds.length) {
+        // No owner_id filter: macrocycle_id is the access boundary, and
+        // a shared athlete's macrocycle (and its phases) belong to the
+        // host coach. Filtering on the active coach hid all phases for
+        // shared athletes, which knocked out the dashboard's phase tag.
         const { data } = await supabase
           .from('macro_phases')
           .select('*')
           .in('macrocycle_id', macrocycleIds)
-          .eq('owner_id', ownerId)
           .order('position');
         const phases = (data || []) as MacroPhase[];
         phases.forEach(p => { (phasesByCycle[p.macrocycle_id] ||= []).push(p); });

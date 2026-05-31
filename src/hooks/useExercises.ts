@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Exercise, CategoryRow } from '../lib/database.types';
 import { useExerciseStore } from '../store/exerciseStore';
-import { getOwnerId } from '../lib/ownerContext';
+import { getOwnerId, getContextOwnerId } from '../lib/ownerContext';
 
 // Re-export CategoryRow as Category for backward compatibility
 export type Category = CategoryRow;
@@ -61,9 +61,14 @@ export function useExercises() {
 
   const createExercise = async (exerciseData: Partial<Exercise>): Promise<Exercise | null> => {
     try {
+      // Mid-planning exercise creation should land in the host's library
+      // when the active coach is co-coaching a shared athlete (the
+      // programme references this exercise, and the programme lives in
+      // the host's context). Defaults to the active coach for everything
+      // else (managing your own library directly).
       const { data, error } = await supabase
         .from('exercises')
-        .insert([{ ...exerciseData, owner_id: getOwnerId() }])
+        .insert([{ ...exerciseData, owner_id: getContextOwnerId() }])
         .select()
         .single();
       if (error) throw error;
