@@ -42,8 +42,8 @@ interface DayEditorProps {
   saveNotes: (id: string, notes: string) => Promise<unknown>;
   deletePlannedExercise: (id: string) => Promise<unknown>;
   reorderExercises: (weekPlanId: string, orderedIds: string[]) => Promise<unknown>;
-  moveExercise: (...args: unknown[]) => Promise<unknown>;
-  normalizePositions: (...args: unknown[]) => Promise<unknown>;
+  moveExercise: (weekPlanId: string, exerciseId: string, fromDayIndex: number, toDayIndex: number) => Promise<unknown>;
+  normalizePositions: (weekPlanId: string, dayIndex: number) => Promise<unknown>;
 }
 
 const UNIT_BADGE: Record<string, string> = {

@@ -783,7 +783,7 @@ export function ExerciseListPanel({
 
           {unspecifiedExercises.length > 0 && (() => {
             const orphanCat: Category = {
-              id: '__unspecified__', name: 'Unspecified',
+              id: '__unspecified__', name: 'Unspecified', owner_id: '',
               color: 'var(--color-gray-400)', display_order: 9999, created_at: '',
             };
             const isCollapsed = collapsedCategories.has(orphanCat.id);

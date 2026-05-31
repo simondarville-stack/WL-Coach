@@ -1120,7 +1120,11 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
 
   // Latest coach activity per session.
   const latestCoachAt = new Map<string, string>();
-  (coachMsgs ?? []).forEach((m: { session_id: string; created_at: string }) => {
+  (coachMsgs ?? []).forEach(m => {
+    // session_id is nullable on the row but we filtered out nulls at the
+    // query level (.not('session_id', 'is', null)). Coerce explicitly so
+    // downstream Map ops keep their string key type.
+    if (!m.session_id) return;
     if (!latestCoachAt.has(m.session_id)) latestCoachAt.set(m.session_id, m.created_at);
   });
 

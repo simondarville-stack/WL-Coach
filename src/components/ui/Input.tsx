@@ -1,7 +1,8 @@
 import { forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  // Override the native 'size' attribute (number) with our design-system token.
   size?: 'md' | 'lg';
   mono?: boolean; // Use monospace font for numeric input
 }

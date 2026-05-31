@@ -58,7 +58,7 @@ export function useAthletes() {
     }
   };
 
-  const createAthlete = async (athleteData: Omit<Athlete, 'id' | 'created_at' | 'updated_at'>, initialBodyweight?: number): Promise<Athlete> => {
+  const createAthlete = async (athleteData: Partial<Omit<Athlete, 'id' | 'created_at' | 'updated_at'>>, initialBodyweight?: number): Promise<Athlete> => {
     try {
       const { data, error } = await supabase.from('athletes').insert([{ ...athleteData, owner_id: getOwnerId() }]).select().single();
       if (error) throw error;

@@ -104,12 +104,7 @@ export function useEvents() {
   };
 
   const createEvent = async (
-    eventData: {
-      name: string; event_date: string; description: string | null;
-      event_type: string; location: string | null; end_date: string | null;
-      color: string | null; notes: string | null; is_all_day: boolean;
-      start_time: string | null; end_time: string | null; external_url: string | null;
-    },
+    eventData: Partial<Omit<Event, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>,
     athleteIds: string[],
   ) => {
     try {
@@ -133,12 +128,7 @@ export function useEvents() {
 
   const updateEvent = async (
     id: string,
-    eventData: {
-      name: string; event_date: string; description: string | null;
-      event_type: string; location: string | null; end_date: string | null;
-      color: string | null; notes: string | null; is_all_day: boolean;
-      start_time: string | null; end_time: string | null; external_url: string | null;
-    },
+    eventData: Partial<Omit<Event, 'id' | 'owner_id' | 'created_at' | 'updated_at'>>,
     athleteIds: string[],
   ) => {
     try {

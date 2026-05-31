@@ -9,6 +9,7 @@ import type {
   DefaultUnit,
   Exercise,
   PlannedExercise,
+  PlannedExerciseMetadata,
   PlannedSetLine,
   TrainingGroup,
   WeekPlan,
@@ -666,7 +667,7 @@ export function useWeekPlans() {
       is_combo: sourceEx.is_combo,
       combo_notation: sourceEx.combo_notation,
       combo_color: sourceEx.combo_color,
-      metadata: (sourceEx.metadata ?? null) as Record<string, unknown> | null,
+      metadata: sourceEx.metadata as PlannedExerciseMetadata | undefined,
     });
 
     if (sourceEx.prescription_raw) {
@@ -873,7 +874,7 @@ export function useWeekPlans() {
         is_combo: snapshot.is_combo,
         combo_notation: snapshot.combo_notation,
         combo_color: snapshot.combo_color,
-        metadata: snapshot.metadata,
+        metadata: snapshot.metadata as PlannedExerciseMetadata | undefined,
         source: extras?.source ?? null,
       },
     );
@@ -1016,11 +1017,12 @@ export function useWeekPlans() {
 
     // 2. Fetch group plan set lines
     const groupExIds = (groupExercises || []).map(e => e.id);
-    const { data: groupSetLines } = groupExIds.length > 0
+    const { data: groupSetLinesData } = groupExIds.length > 0
       ? await supabase.from('planned_set_lines').select('*').in('planned_exercise_id', groupExIds)
-      : { data: [] };
-    const setLinesByExId = new Map<string, typeof groupSetLines>();
-    (groupSetLines || []).forEach((l: { planned_exercise_id: string }) => {
+      : { data: [] as PlannedSetLine[] };
+    const groupSetLines = (groupSetLinesData ?? []) as unknown as PlannedSetLine[];
+    const setLinesByExId = new Map<string, PlannedSetLine[]>();
+    groupSetLines.forEach(l => {
       const arr = setLinesByExId.get(l.planned_exercise_id) || [];
       arr.push(l);
       setLinesByExId.set(l.planned_exercise_id, arr);
@@ -1220,8 +1222,8 @@ export function useWeekPlans() {
             // planned_exercises.metadata is NOT NULL with default '{}'::jsonb,
             // so coerce a missing/null source to {} rather than violating
             // the constraint.
-            metadata: ex.metadata ?? {},
-            source: 'group',
+            metadata: (ex.metadata ?? {}) as PlannedExerciseMetadata,
+            source: 'group' as const,
           })))
           .select('id');
         if (insError) throw insError;

@@ -456,7 +456,7 @@ export function ExerciseDetailPanel({
         borderBottom: '0.5px solid var(--color-border-tertiary)',
         flexShrink: 0,
       }}>
-        <ColorDot size={12} color={exercise.color} />
+        <ColorDot size={10} color={exercise.color} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 'var(--text-body)',

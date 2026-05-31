@@ -236,7 +236,7 @@ export async function fetchMacroPhaseBarEvents(
       const end = ev.end_date || ev.event_date;
       return start <= rangeEnd && end >= rangeStart;
     })
-    .map((ev: Event) => convertEventToPhaseBarEvent(ev));
+    .map(ev => convertEventToPhaseBarEvent(ev as unknown as Event));
 }
 
 /**

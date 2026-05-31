@@ -162,10 +162,10 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
           <YAxis domain={[minY, maxY]} tick={{ fontSize: 10 }} stroke="#9ca3af" width={32} />
           <Tooltip
             contentStyle={{ fontSize: 11 }}
-            formatter={(value: number, name: string) => [
+            formatter={((value: number, name: string) => [
               `${value} kg`,
               name.includes('soll') ? 'SOLL' : 'IST',
-            ]}
+            ]) as never}
           />
           <ReferenceLine
             x={nowLabel}

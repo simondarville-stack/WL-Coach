@@ -86,7 +86,7 @@ export function ExerciseDetail({
   settings,
 }: ExerciseDetailProps) {
   const isCombo = plannedExercise?.is_combo ?? false;
-  const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code);
+  const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code ?? null);
   const members = isCombo && plannedExercise
     ? (comboMembers[plannedExercise.id] ?? []).sort((a, b) => a.position - b.position)
     : [];
@@ -260,7 +260,8 @@ export function ExerciseDetail({
     });
     if (plannedExercise) {
       const id = plannedExercise.id;
-      const tasks: Promise<unknown>[] = [
+      // Supabase query builders are PromiseLike, not strict Promise.
+      const tasks: PromiseLike<unknown>[] = [
         saveNotes(id, notesRef.current).catch(() => {}),
         supabase.from('planned_exercises').update({
           variation_note: variationNote || null,

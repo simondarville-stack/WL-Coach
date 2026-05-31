@@ -340,7 +340,7 @@ export function MacroExcelIO({
 
         wb.SheetNames.forEach(sheetName => {
           const ws = wb.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { header: 1 }) as unknown[][];
+          const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { header: 1 }) as unknown as unknown[][];
           if (rows.length < 3) return;
 
           const exHeaderRow = rows[0] as (string | null)[];
