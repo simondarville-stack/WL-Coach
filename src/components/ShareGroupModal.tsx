@@ -172,6 +172,21 @@ export function ShareGroupModal({ group, onClose }: Props) {
               <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                 Invite a coach
               </h3>
+              <div className="flex items-start gap-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-900">
+                <input
+                  type="checkbox"
+                  checked
+                  readOnly
+                  className="mt-0.5 flex-shrink-0 accent-blue-600"
+                  aria-label="Inboxes are shared"
+                />
+                <span>
+                  <strong>Athlete inboxes are shared.</strong> If a member athlete is
+                  also shared with this coach, their general thread and session
+                  comments are visible to both coaches. New replies show the sender's
+                  name so each athlete can see which coach wrote what.
+                </span>
+              </div>
               <div className="flex items-center gap-2 mb-2">
                 <label className="text-xs text-gray-600">Role:</label>
                 <div className="flex gap-1">
