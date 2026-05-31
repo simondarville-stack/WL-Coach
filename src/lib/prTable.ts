@@ -17,6 +17,7 @@ import { supabase } from './supabase';
 import {
   estimate1RM,
   estimateAtRepsFromAnchors,
+  estimateWeightAtReps,
   roundToHalf,
   type PRAnchor,
 } from './xrmUtils';
@@ -25,14 +26,32 @@ import type { AthletePRHistory, Exercise } from './database.types';
 export const REP_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 export type RepCount = (typeof REP_COUNTS)[number];
 
+/**
+ * How empty cells are estimated.
+ *
+ *   - 'weighted': default. Multi-anchor blend across every real entry,
+ *     weighted by 1/(1 + d²) on rep distance. Far anchors nudge, close
+ *     anchors dominate.
+ *   - 'one_rm_only': empty cells are projected purely from the real 1RM.
+ *     Real non-1RM cells also gain a delta (actual − predicted) so the
+ *     coach can spot fatigue-resistance gaps. Falls back to 'weighted'
+ *     per-row when an exercise has no real 1RM (graceful degradation).
+ */
+export type PREstimationMode = 'weighted' | 'one_rm_only';
+
 export interface PRCell {
   repCount: RepCount;
   /** Most-recent history entry for this rep count, or null if never set. */
   current: AthletePRHistory | null;
-  /** Estimated weight at this rep count, derived from the best implied 1RM
-   *  across the exercise's filled cells. Null when no PRs exist on the
-   *  exercise. */
+  /** Estimated weight at this rep count, derived from the active mode.
+   *  Null when no PRs exist on the exercise, or when this cell is real. */
   phantom: number | null;
+  /** Only populated in one_rm_only mode on real non-1RM cells: the gap
+   *  between the real value and what the real 1RM predicts at this rep
+   *  count. Positive = athlete beats prediction (good fatigue resistance);
+   *  negative = athlete falls short. Null in 'weighted' mode and on 1RM
+   *  cells themselves (no prediction to compare against). */
+  delta: number | null;
 }
 
 export interface ExerciseRow {
@@ -62,6 +81,7 @@ export interface ExerciseRow {
 export function buildPRRows(
   exercises: Exercise[],
   history: AthletePRHistory[],
+  mode: PREstimationMode = 'weighted',
 ): ExerciseRow[] {
   return exercises.map(ex => {
     const currentByRep = new Map<RepCount, AthletePRHistory>();
@@ -77,17 +97,37 @@ export function buildPRRows(
       valueKg: entry.value_kg,
     }));
 
+    // implied1RM is always the multi-anchor blend — it's the canonical
+    // "what's this athlete's 1RM" answer used by %1RM math and the
+    // dashboard. The mode only influences cell phantoms / deltas.
     const implied1RM = anchors.length > 0
       ? estimateAtRepsFromAnchors(anchors, 1)
       : null;
 
+    const real1RM = currentByRep.get(1)?.value_kg ?? null;
+    // 1RM-only mode requires a real 1RM. Without one, fall back to
+    // weighted for this row so the UI stays useful per-exercise.
+    const effectiveMode: PREstimationMode =
+      mode === 'one_rm_only' && real1RM === null ? 'weighted' : mode;
+
     const cells: PRCell[] = REP_COUNTS.map(rc => {
       const current = currentByRep.get(rc) ?? null;
-      const phantom =
-        anchors.length > 0 && !current
-          ? roundToHalf(estimateAtRepsFromAnchors(anchors, rc))
-          : null;
-      return { repCount: rc, current, phantom };
+
+      let phantom: number | null = null;
+      let delta: number | null = null;
+
+      if (effectiveMode === 'one_rm_only' && real1RM !== null) {
+        if (current && rc !== 1) {
+          const predicted = estimateWeightAtReps(real1RM, rc);
+          delta = roundToHalf(current.value_kg - predicted);
+        } else if (!current) {
+          phantom = roundToHalf(estimateWeightAtReps(real1RM, rc));
+        }
+      } else if (anchors.length > 0 && !current) {
+        phantom = roundToHalf(estimateAtRepsFromAnchors(anchors, rc));
+      }
+
+      return { repCount: rc, current, phantom, delta };
     });
 
     return {
