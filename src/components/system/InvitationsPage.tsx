@@ -1,23 +1,37 @@
 /**
- * InvitationsPage — pending coach-sharing invites for the active coach.
+ * InvitationsPage — pending coach-sharing invites for the active coach,
+ * covering both athlete shares and training-group shares.
  *
- * Lists every athlete_collaborators row where coach_id = me, accepted_at
- * is null, and revoked_at is null. Accept brings the athlete into the
- * coach's list immediately; decline writes revoked_at so the host
- * sees the invite was turned down.
+ * Each invite (athlete_collaborators / training_group_collaborators row
+ * where coach_id = me, not accepted, not revoked) shows who invited you,
+ * the role, and the target. Accept brings the athlete or group (and its
+ * member athletes, via the cascade) into your lists immediately; decline
+ * stamps revoked_at so the host sees it was turned down.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Check, X, RefreshCw, Inbox } from 'lucide-react';
-import { useAthleteCollaborators, type InviteWithContext } from '../../hooks/useAthleteCollaborators';
+import { Check, X, RefreshCw, Inbox, User, Users } from 'lucide-react';
+import { useAthleteCollaborators } from '../../hooks/useAthleteCollaborators';
+import { useTrainingGroupCollaborators } from '../../hooks/useTrainingGroupCollaborators';
 import { useCoachStore } from '../../store/coachStore';
 import { useAthleteStore } from '../../store/athleteStore';
+
+type UnifiedInvite = {
+  id: string;
+  kind: 'athlete' | 'group';
+  role: 'co_coach' | 'viewer';
+  inviterName: string;
+  targetName: string;
+  invitedAt: string;
+  notes: string | null;
+};
 
 export function InvitationsPage() {
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const refreshAthletes = useAthleteStore(s => s.fetchAthletes);
-  const { listPendingInvites, acceptInvite, declineInvite } = useAthleteCollaborators();
+  const athleteCollab = useAthleteCollaborators();
+  const groupCollab = useTrainingGroupCollaborators();
 
-  const [invites, setInvites] = useState<InviteWithContext[] | null>(null);
+  const [invites, setInvites] = useState<UnifiedInvite[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -25,8 +39,31 @@ export function InvitationsPage() {
     if (!activeCoachId) return;
     setError(null);
     try {
-      const data = await listPendingInvites(activeCoachId);
-      setInvites(data);
+      const [athleteInvites, groupInvites] = await Promise.all([
+        athleteCollab.listPendingInvites(activeCoachId),
+        groupCollab.listPendingInvites(activeCoachId),
+      ]);
+      const merged: UnifiedInvite[] = [
+        ...athleteInvites.map(i => ({
+          id: i.id,
+          kind: 'athlete' as const,
+          role: i.role,
+          inviterName: i.inviter?.name ?? 'A coach',
+          targetName: i.athlete?.name ?? 'an athlete',
+          invitedAt: i.invited_at,
+          notes: i.notes,
+        })),
+        ...groupInvites.map(i => ({
+          id: i.id,
+          kind: 'group' as const,
+          role: i.role,
+          inviterName: i.inviter?.name ?? 'A coach',
+          targetName: i.group?.name ?? 'a group',
+          invitedAt: i.invited_at,
+          notes: i.notes,
+        })),
+      ].sort((a, b) => b.invitedAt.localeCompare(a.invitedAt));
+      setInvites(merged);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load invitations');
     }
@@ -36,12 +73,15 @@ export function InvitationsPage() {
     void load();
   }, [load]);
 
-  const accept = async (id: string) => {
-    setBusy(id);
+  const accept = async (inv: UnifiedInvite) => {
+    setBusy(inv.id);
     try {
-      await acceptInvite(id);
+      if (inv.kind === 'athlete') await athleteCollab.acceptInvite(inv.id);
+      else await groupCollab.acceptInvite(inv.id);
+      // Both kinds can change the accessible-athlete set (a group brings
+      // its members via the cascade), so refresh the athlete store.
       await refreshAthletes(true);
-      setInvites(prev => (prev ? prev.filter(i => i.id !== id) : prev));
+      setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to accept');
     } finally {
@@ -49,11 +89,12 @@ export function InvitationsPage() {
     }
   };
 
-  const decline = async (id: string) => {
-    setBusy(id);
+  const decline = async (inv: UnifiedInvite) => {
+    setBusy(inv.id);
     try {
-      await declineInvite(id);
-      setInvites(prev => (prev ? prev.filter(i => i.id !== id) : prev));
+      if (inv.kind === 'athlete') await athleteCollab.declineInvite(inv.id);
+      else await groupCollab.declineInvite(inv.id);
+      setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to decline');
     } finally {
@@ -67,7 +108,7 @@ export function InvitationsPage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Invitations</h1>
           <p className="text-sm text-gray-600 mt-0.5">
-            Pending requests from other coaches to share their athletes with you.
+            Pending requests from other coaches to share their athletes and groups with you.
           </p>
         </div>
         <button
@@ -99,25 +140,27 @@ export function InvitationsPage() {
       <div className="space-y-2">
         {(invites ?? []).map(inv => (
           <div
-            key={inv.id}
+            key={`${inv.kind}-${inv.id}`}
             className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3"
           >
+            <span className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+              {inv.kind === 'group' ? <Users size={14} /> : <User size={14} />}
+            </span>
             <div className="flex-1 min-w-0">
               <div className="text-sm text-gray-900">
-                <strong>{inv.inviter?.name ?? 'A coach'}</strong> invited you to{' '}
+                <strong>{inv.inviterName}</strong> invited you to{' '}
                 {inv.role === 'co_coach' ? 'co-coach' : 'view'}{' '}
-                <strong>{inv.athlete?.name ?? 'an athlete'}</strong>.
+                {inv.kind === 'group' ? 'the group ' : ''}
+                <strong>{inv.targetName}</strong>.
               </div>
               <div className="text-xs text-gray-500 mt-0.5">
-                Invited {formatRelativeTime(inv.invited_at)}
-                {inv.notes && (
-                  <span className="ml-2 italic">· "{inv.notes}"</span>
-                )}
+                Invited {formatRelativeTime(inv.invitedAt)}
+                {inv.notes && <span className="ml-2 italic">· "{inv.notes}"</span>}
               </div>
             </div>
             <div className="flex gap-1.5 flex-shrink-0">
               <button
-                onClick={() => void decline(inv.id)}
+                onClick={() => void decline(inv)}
                 disabled={busy === inv.id}
                 className="px-2.5 py-1 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-50 disabled:opacity-50 inline-flex items-center gap-1"
               >
@@ -125,7 +168,7 @@ export function InvitationsPage() {
                 Decline
               </button>
               <button
-                onClick={() => void accept(inv.id)}
+                onClick={() => void accept(inv)}
                 disabled={busy === inv.id}
                 className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-1"
               >

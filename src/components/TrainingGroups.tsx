@@ -1,20 +1,24 @@
 import { useState, useEffect } from 'react';
 import type { TrainingGroup } from '../lib/database.types';
-import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share2 } from 'lucide-react';
 import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { useAthletes } from '../hooks/useAthletes';
+import { useCoachStore } from '../store/coachStore';
+import { ShareGroupModal } from './ShareGroupModal';
 
 export function TrainingGroups() {
   const {
-    groups, groupMembers, loading, error, setError,
+    groups, groupAccess, groupMembers, loading, error, setError,
     fetchGroups, fetchGroupMembers,
     createGroup, updateGroup, deleteGroup,
     addMember, removeMember,
   } = useTrainingGroups();
 
   const { athletes: allAthletes, fetchActiveAthletes } = useAthletes();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
 
   const [selectedGroup, setSelectedGroup] = useState<TrainingGroup | null>(null);
+  const [shareTarget, setShareTarget] = useState<TrainingGroup | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -146,12 +150,29 @@ export function TrainingGroups() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 truncate">{group.name}</h3>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-medium text-gray-900 truncate">{group.name}</h3>
+                          {activeCoachId && group.owner_id !== activeCoachId && (
+                            <span
+                              className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
+                              title={groupAccess[group.id] === 'viewer' ? 'View only' : 'Shared with you'}
+                            >
+                              {groupAccess[group.id] === 'viewer' ? 'View only' : 'Shared'}
+                            </span>
+                          )}
+                        </div>
                         {group.description && (
                           <p className="text-xs text-gray-600 truncate mt-1">{group.description}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-1 ml-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShareTarget(group); }}
+                          className="p-1.5 hover:bg-white rounded transition-colors text-gray-600"
+                          title="Share with another coach"
+                        >
+                          <Share2 size={14} />
+                        </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setSelectedGroup(group); openEditModal(); }}
                           className="p-1.5 hover:bg-white rounded transition-colors"
@@ -375,6 +396,10 @@ export function TrainingGroups() {
               </div>
             </div>
           </div>
+        )}
+
+        {shareTarget && (
+          <ShareGroupModal group={shareTarget} onClose={() => setShareTarget(null)} />
         )}
       </div>
     </div>
