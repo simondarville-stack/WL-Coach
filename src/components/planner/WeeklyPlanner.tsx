@@ -1228,7 +1228,7 @@ export function WeeklyPlanner() {
                 settings={settings}
                 weekDescription={weekDescription}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
-                canCopyPaste={planSelection.type === 'individual'}
+                canCopyPaste={planSelection.type === 'individual' || planSelection.type === 'group'}
                 copiedWeekStart={copiedWeekStart}
                 showLoadDistribution={showLoadDistribution}
                 onPrevWeek={goToPreviousWeek}

@@ -64,7 +64,23 @@ export function useCombos() {
     if (sourceError) throw sourceError;
     if (!sourceWeekPlan) throw new Error('Source week has no data to paste');
 
-    // 2. Delete destination if exists
+    // 2. Read the source exercises BEFORE touching the destination. The
+    //    previous order deleted the destination first, so copying from an
+    //    empty source (e.g. an unfilled scaffold week sitting beside a real
+    //    one) would wipe a populated destination and replace it with nothing.
+    //    Refuse to proceed unless the source actually has something to copy.
+    const { data: sourceExercises, error: exercisesError } = await supabase
+      .from('planned_exercises')
+      .select('*')
+      .eq('weekplan_id', sourceWeekPlan.id);
+    if (exercisesError) throw exercisesError;
+    if (!sourceExercises || sourceExercises.length === 0) {
+      throw new Error('Source week has no exercises to copy.');
+    }
+
+    // 3. Delete destination if it exists. Safe now that the source is fully
+    //    read: a failure here can no longer leave the destination emptied
+    //    with nothing to replace it.
     if (destinationHasData) {
       const deleteQuery = buildOwnerFilter(
         supabase.from('week_plans').delete().eq('week_start', destinationWeekStart),
@@ -74,7 +90,7 @@ export function useCombos() {
       if (deleteError) throw deleteError;
     }
 
-    // 3. Create new week plan with destination owner
+    // 4. Create new week plan with destination owner
     const { id: _oldId, created_at: _created, ...weekPlanData } = sourceWeekPlan;
     const { data: createdWeekPlan, error: createError } = await supabase
       .from('week_plans')
@@ -90,28 +106,20 @@ export function useCombos() {
       .single();
     if (createError) throw createError;
 
-    // 4. Copy planned exercises (including is_combo ones)
-    const { data: sourceExercises, error: exercisesError } = await supabase
-      .from('planned_exercises')
-      .select('*')
-      .eq('weekplan_id', sourceWeekPlan.id);
-    if (exercisesError) throw exercisesError;
-
+    // 5. Copy the source exercises (including is_combo ones) into the new plan.
     const exerciseIdMap = new Map<string, string>();
-    if (sourceExercises && sourceExercises.length > 0) {
-      for (const ex of sourceExercises) {
-        const { id: oldExId, created_at: _c, updated_at: _u, weekplan_id: _wpId, ...exData } = ex;
-        const { data: newExercise, error: insertExError } = await supabase
-          .from('planned_exercises')
-          .insert([{ ...exData, weekplan_id: createdWeekPlan.id }])
-          .select()
-          .single();
-        if (insertExError) throw insertExError;
-        if (newExercise) exerciseIdMap.set(oldExId, newExercise.id);
-      }
+    for (const ex of sourceExercises) {
+      const { id: oldExId, created_at: _c, updated_at: _u, weekplan_id: _wpId, ...exData } = ex;
+      const { data: newExercise, error: insertExError } = await supabase
+        .from('planned_exercises')
+        .insert([{ ...exData, weekplan_id: createdWeekPlan.id }])
+        .select()
+        .single();
+      if (insertExError) throw insertExError;
+      if (newExercise) exerciseIdMap.set(oldExId, newExercise.id);
     }
 
-    // 5. Copy planned_set_lines for all exercises
+    // 6. Copy planned_set_lines for all exercises
     if (exerciseIdMap.size > 0) {
       const { data: sourceSetLines } = await supabase
         .from('planned_set_lines')
@@ -126,7 +134,7 @@ export function useCombos() {
         await supabase.from('planned_set_lines').insert(newLines);
       }
 
-      // 6. Copy combo members
+      // 7. Copy combo members
       const { data: sourceMembers } = await supabase
         .from('planned_exercise_combo_members')
         .select('*')
