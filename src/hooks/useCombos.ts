@@ -127,10 +127,24 @@ export function useCombos() {
         .in('planned_exercise_id', Array.from(exerciseIdMap.keys()));
 
       if (sourceSetLines && sourceSetLines.length > 0) {
-        const newLines = sourceSetLines.map((line: { id: string; created_at: string; updated_at: string; planned_exercise_id: string } & Record<string, unknown>) => {
+        // Group source lines by their (new) exercise and re-number `position`
+        // 1..n per exercise. Copying the source `position` verbatim risks
+        // violating planned_set_lines_planned_exercise_id_position_key when the
+        // source has any gap or duplicate, which aborted the whole paste.
+        const linesByNewExId = new Map<string, ({ position?: number } & Record<string, unknown>)[]>();
+        for (const line of sourceSetLines as ({ id: string; created_at: string; updated_at: string; planned_exercise_id: string; position?: number } & Record<string, unknown>)[]) {
           const { id: _id, created_at: _c, updated_at: _u, planned_exercise_id: oldExId, ...lineData } = line;
-          return { ...lineData, planned_exercise_id: exerciseIdMap.get(oldExId as string)! };
-        });
+          const newExId = exerciseIdMap.get(oldExId as string);
+          if (!newExId) continue;
+          const arr = linesByNewExId.get(newExId) ?? [];
+          arr.push(lineData);
+          linesByNewExId.set(newExId, arr);
+        }
+        const newLines = Array.from(linesByNewExId.entries()).flatMap(([newExId, lines]) =>
+          lines
+            .sort((a, b) => ((a.position as number) ?? 0) - ((b.position as number) ?? 0))
+            .map((lineData, idx) => ({ ...lineData, planned_exercise_id: newExId, position: idx + 1 })),
+        );
         await supabase.from('planned_set_lines').insert(newLines);
       }
 
