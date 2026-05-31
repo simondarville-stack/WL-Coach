@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronDown, User, Users } from 'lucide-react';
 import { useAthleteStore } from '../store/athleteStore';
 
@@ -7,6 +8,7 @@ export function AthleteSelector() {
     athletes, selectedAthlete, setSelectedAthlete,
     groups, selectedGroup, setSelectedGroup,
   } = useAthleteStore();
+  const navigate = useNavigate();
 
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -58,7 +60,16 @@ export function AthleteSelector() {
           {hasSelection && (
             <div className="p-2 border-b border-gray-100">
               <button
-                onClick={() => { setSelectedAthlete(null); setSelectedGroup(null); setIsOpen(false); }}
+                onClick={() => {
+                  setSelectedAthlete(null);
+                  setSelectedGroup(null);
+                  setIsOpen(false);
+                  // Clearing while on a deep URL (e.g. /planner/2026-05-25)
+                  // would leave the page pinned to the prior athlete's week
+                  // even though the store is empty. Navigate home so the
+                  // coach sees a sensible landing view.
+                  navigate('/dashboard');
+                }}
                 className="w-full px-3 py-1.5 text-left text-sm text-gray-500 hover:bg-gray-50 rounded-md"
               >
                 Clear selection
