@@ -3,9 +3,11 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type { TrainingGroup, GroupMemberWithAthlete } from '../lib/database.types';
 import { useAthleteStore } from '../store/athleteStore';
+import { fetchAccessibleGroups, type AccessRole } from '../lib/accessScope';
 
 export function useTrainingGroups() {
   const [groups, setGroups] = useState<TrainingGroup[]>([]);
+  const [groupAccess, setGroupAccess] = useState<Record<string, AccessRole>>({});
   const [groupMembers, setGroupMembers] = useState<GroupMemberWithAthlete[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,43 +16,9 @@ export function useTrainingGroups() {
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const coachId = getOwnerId();
-
-      // Owned and collaborator queries run in parallel. The collaborator
-      // table may not exist yet (migration not applied) — we degrade
-      // gracefully to the owned set in that case.
-      const [ownedRes, collabRes] = await Promise.all([
-        supabase.from('training_groups').select('*').eq('owner_id', coachId).order('name'),
-        supabase
-          .from('training_group_collaborators')
-          .select('group_id')
-          .eq('coach_id', coachId)
-          .not('accepted_at', 'is', null)
-          .is('revoked_at', null),
-      ]);
-      if (ownedRes.error) throw ownedRes.error;
-      const sharedIds = collabRes.error
-        ? []
-        : (collabRes.data ?? []).map(r => r.group_id as string);
-
-      let sharedGroups: TrainingGroup[] = [];
-      if (sharedIds.length > 0) {
-        const sharedRes = await supabase
-          .from('training_groups')
-          .select('*')
-          .in('id', sharedIds)
-          .order('name');
-        if (!sharedRes.error) sharedGroups = (sharedRes.data ?? []) as TrainingGroup[];
-      }
-
-      const seen = new Set<string>();
-      const merged: TrainingGroup[] = [];
-      for (const g of [...(ownedRes.data ?? []), ...sharedGroups]) {
-        if (seen.has(g.id)) continue;
-        seen.add(g.id);
-        merged.push(g);
-      }
+      const { groups: merged, accessById } = await fetchAccessibleGroups(getOwnerId());
       setGroups(merged);
+      setGroupAccess(accessById);
       storeSetGroups(merged);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups');
@@ -106,6 +74,10 @@ export function useTrainingGroups() {
 
   const deleteGroup = async (id: string) => {
     try {
+      // Deleting cascades group_members — host coach only. A co-coach
+      // leaves via the share dialog instead of deleting the host's group.
+      const { data: existing } = await supabase.from('training_groups').select('owner_id').eq('id', id).single();
+      if (existing?.owner_id !== getOwnerId()) throw new Error('Only the host coach can delete this group');
       const { error } = await supabase.from('training_groups').delete().eq('id', id);
       if (error) throw error;
       setGroups(prev => prev.filter(g => g.id !== id));
@@ -144,6 +116,7 @@ export function useTrainingGroups() {
 
   return {
     groups,
+    groupAccess,
     setGroups,
     groupMembers,
     loading,

@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import {
+  fetchAccessibleAthletes,
+  fetchAccessibleGroups,
+  getAccessibleAthleteIds,
+} from '../lib/accessScope';
 import type {
   Athlete,
   MacroCycle,
@@ -83,13 +88,8 @@ export function useCoachDashboard() {
   }
 
   async function loadAthleteStatuses(settingsData: GeneralSettingsType | null) {
-    const { data: athletes } = await supabase
-      .from('athletes')
-      .select('*')
-      .eq('owner_id', getOwnerId())
-      .eq('is_active', true)
-      .order('name');
-
+    // Owned + shared (direct and via group cascade), active only.
+    const { athletes } = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
     if (!athletes) return;
 
     const rawAverageDays = settingsData?.raw_average_days || 7;
@@ -195,11 +195,7 @@ export function useCoachDashboard() {
   }
 
   async function loadActivityFeed() {
-    const { data: ownerAthletes } = await supabase
-      .from('athletes')
-      .select('id')
-      .eq('owner_id', getOwnerId());
-    const athleteIds = ownerAthletes?.map(a => a.id) || [];
+    const athleteIds = await getAccessibleAthleteIds(getOwnerId());
     const idFilter = athleteIds.length > 0 ? athleteIds : [''];
 
     const { data: sessions } = await supabase
@@ -233,10 +229,13 @@ export function useCoachDashboard() {
       }
     }
 
+    // Scope recent-macrocycle activity to accessible athletes (owned +
+    // shared) rather than owner_id, so a co-coach sees activity on
+    // athletes shared with them. idFilter is computed above.
     const { data: macrocycles } = await supabase
       .from('macrocycles')
       .select('*, athlete:athletes(name)')
-      .eq('owner_id', getOwnerId())
+      .in('athlete_id', idFilter)
       .order('created_at', { ascending: false })
       .limit(10);
 
@@ -259,12 +258,7 @@ export function useCoachDashboard() {
   async function loadMacroAlignments() {
     const alignments: MacroAlignment[] = [];
 
-    const { data: athletes } = await supabase
-      .from('athletes')
-      .select('*')
-      .eq('owner_id', getOwnerId())
-      .eq('is_active', true);
-
+    const { athletes } = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
     if (!athletes) return;
 
     const { weekStartISO } = getCurrentAndNextWeekStart();
@@ -401,11 +395,7 @@ export function useCoachDashboard() {
   }
 
   async function loadGroupStatuses() {
-    const { data: groups } = await supabase
-      .from('training_groups')
-      .select('*')
-      .eq('owner_id', getOwnerId())
-      .order('name');
+    const { groups } = await fetchAccessibleGroups(getOwnerId());
 
     if (!groups || groups.length === 0) {
       setGroupStatuses([]);

@@ -948,10 +948,12 @@ export function useWeekPlans() {
   };
 
   const fetchWeekPlanForAthlete = async (athleteId: string, weekStart: string): Promise<WeekPlan | null> => {
+    // No owner_id filter: athlete_id is the access boundary and a shared
+    // athlete's plan is owned by the host coach. Co-coaches must read the
+    // host's row, not look for one under their own id.
     const { data, error } = await supabase
       .from('week_plans')
       .select('*')
-      .eq('owner_id', getOwnerId())
       .eq('athlete_id', athleteId)
       .eq('week_start', weekStart)
       .maybeSingle();
@@ -963,7 +965,6 @@ export function useWeekPlans() {
     const { data, error } = await supabase
       .from('week_plans')
       .select('*')
-      .eq('owner_id', getOwnerId())
       .eq('group_id', groupId)
       .is('athlete_id', null)
       .eq('week_start', weekStart)
