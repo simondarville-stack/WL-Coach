@@ -1,20 +1,19 @@
 /**
  * CoachThreadScreen — athlete-facing inbox.
  *
- * Shows a thread list (general thread + one per session that has any
- * messages) and switches to a chat view when a thread is opened.
- * Symmetric with the coach inbox: both sides see the same set of
- * threads with the same shape, so a session comment by the coach
- * surfaces here even if the athlete hasn't opened that session in the
- * log.
+ * Model: the conversation between an athlete and their coach is a
+ * single general chat (the parent). Sessions that have been commented
+ * on are sub-threads underneath that parent. Default view is the
+ * general chat; a "Session discussions" panel at the top exposes the
+ * sub-threads inline. Tapping a sub-thread switches into that
+ * session's chat with a back button that returns to general.
  *
- * Session-bound threads have a Jump to session button on the chat
- * header that navigates the athlete to that day on the Today screen,
- * so the message context (which set, which exercise) is one tap away.
+ * Session sub-threads carry a "View session" button so the athlete can
+ * jump straight to that day on the Today screen for context.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Loader2, Send, MessageCircle, Calendar } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, MessageCircle, Send } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteInboxThreads,
@@ -30,12 +29,14 @@ import {
 import { describeError } from '../../../lib/errorMessage';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 
+type ViewMode = 'general' | { kind: 'session'; thread: InboxThread };
+
 export function CoachThreadScreen() {
   const { athlete } = useAuth();
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>('general');
 
   const athleteId = athlete?.id ?? null;
   const ownerId = athlete?.owner_id ?? null;
@@ -58,8 +59,6 @@ export function CoachThreadScreen() {
     void loadThreads();
   }, [loadThreads]);
 
-  // Refresh on tab focus so a new coach reply lands without manual
-  // pull-to-refresh.
   useEffect(() => {
     const onVis = () => { if (!document.hidden) void loadThreads(); };
     document.addEventListener('visibilitychange', onVis);
@@ -70,12 +69,16 @@ export function CoachThreadScreen() {
     };
   }, [loadThreads]);
 
-  const selectedThread = useMemo(
-    () => threads.find(t => threadKeyOf(t) === selectedKey) ?? null,
-    [threads, selectedKey],
+  const sessionThreads = useMemo(
+    () => threads.filter(t => t.kind === 'session'),
+    [threads],
+  );
+  const generalThread = useMemo(
+    () => threads.find(t => t.kind === 'general') ?? syntheticGeneralThread(athleteId),
+    [threads, athleteId],
   );
 
-  if (!athlete) {
+  if (!athlete || !athleteId || !ownerId) {
     return (
       <div className="px-4 py-6 text-sm text-gray-400">
         Pick an athlete from the profile picker to access the coach thread.
@@ -83,87 +86,102 @@ export function CoachThreadScreen() {
     );
   }
 
-  if (selectedThread && athleteId && ownerId) {
+  // Either we're inside a session sub-thread (back button → general)
+  // or we're on the general chat (sub-threads panel visible above it).
+  if (view !== 'general') {
     return (
       <ChatView
-        thread={selectedThread}
+        thread={view.thread}
         athleteId={athleteId}
         ownerId={ownerId}
-        onBack={() => { setSelectedKey(null); void loadThreads(); }}
+        onBack={() => { setView('general'); void loadThreads(); }}
         onMessagesChanged={loadThreads}
+        showSubThreadsPanel={false}
+        sessionThreads={sessionThreads}
+        onSelectSubThread={t => setView({ kind: 'session', thread: t })}
       />
     );
   }
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
-      <header className="px-4 pt-4 pb-3 border-b border-gray-800">
-        <h1 className="text-base font-semibold text-white">Coach</h1>
-        <p className="text-[11px] text-gray-500 mt-0.5">
-          General messages plus any comments from your coach on a session.
-        </p>
-      </header>
-
-      <div className="flex-1 overflow-y-auto">
-        {loadingThreads ? (
-          <div className="flex items-center justify-center py-12 text-gray-500 text-xs gap-1.5">
-            <Loader2 size={14} className="animate-spin" />
-            Loading…
-          </div>
-        ) : error ? (
-          <div className="text-[11px] text-red-400 px-4 py-3">{error}</div>
-        ) : threads.length === 0 ? (
-          <EmptyAthleteInbox />
-        ) : (
-          threads.map(t => (
-            <ThreadRow
-              key={threadKeyOf(t)}
-              thread={t}
-              onClick={() => setSelectedKey(threadKeyOf(t))}
-            />
-          ))
-        )}
-      </div>
-    </div>
+    <ChatView
+      thread={generalThread}
+      athleteId={athleteId}
+      ownerId={ownerId}
+      onBack={null}
+      onMessagesChanged={loadThreads}
+      showSubThreadsPanel
+      sessionThreads={sessionThreads}
+      onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+      loadingThreads={loadingThreads}
+      threadsError={error}
+    />
   );
 }
 
-// ── Thread list row ──────────────────────────────────────────────────
+// ── Sub-threads panel ────────────────────────────────────────────────
 
-function ThreadRow({ thread, onClick }: { thread: InboxThread; onClick: () => void }) {
-  const isSession = thread.kind === 'session';
-  const dateLabel = isSession && thread.performedOn ? formatSessionDate(thread.performedOn) : null;
+function SubThreadsPanel({
+  sessions,
+  onSelect,
+}: {
+  sessions: InboxThread[];
+  onSelect: (t: InboxThread) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const totalUnread = sessions.reduce((s, t) => s + t.unreadCount, 0);
+
+  if (sessions.length === 0) return null;
+
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-4 py-3 border-b border-gray-800/70 hover:bg-gray-900/60 transition-colors flex items-start gap-3 ${
-        thread.unreadCount > 0 ? 'bg-blue-950/20' : ''
-      }`}
-    >
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-        isSession ? 'bg-blue-900/40 text-blue-300' : 'bg-gray-800 text-gray-400'
-      }`}>
-        {isSession ? <Calendar size={14} /> : <MessageCircle size={14} />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-white truncate">
-            {isSession && dateLabel ? `Session · ${dateLabel}` : 'Coach'}
+    <div className="border-b border-gray-800 bg-gray-900/40">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-gray-900/80"
+        aria-expanded={open}
+      >
+        {open
+          ? <ChevronDown size={14} className="text-gray-500" />
+          : <ChevronRight size={14} className="text-gray-500" />}
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+          Session discussions
+        </span>
+        <span className="text-[10px] text-gray-500">({sessions.length})</span>
+        {totalUnread > 0 && (
+          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white">
+            {totalUnread}
           </span>
-          {thread.unreadCount > 0 && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white">
-              {thread.unreadCount}
-            </span>
-          )}
-          <span className="ml-auto text-[10px] text-gray-500 flex-shrink-0">
-            {formatStamp(thread.lastActivityAt)}
-          </span>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-gray-800">
+          {sessions.map(t => (
+            <button
+              key={t.sessionId ?? 'unknown'}
+              onClick={() => onSelect(t)}
+              className={`w-full px-4 py-2 flex items-center gap-2 text-left text-[12px] hover:bg-gray-900 border-b border-gray-900 last:border-b-0 ${
+                t.unreadCount > 0 ? 'bg-blue-950/20' : ''
+              }`}
+            >
+              <span className="text-blue-300 flex-shrink-0">↳</span>
+              <span className="flex-1 min-w-0">
+                <span className="text-white font-medium">
+                  {t.performedOn ? formatSessionDate(t.performedOn) : 'Session'}
+                </span>
+                <span className="text-gray-500 truncate ml-2 text-[11px]">
+                  {t.lastMessage}
+                </span>
+              </span>
+              {t.unreadCount > 0 && (
+                <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white flex-shrink-0">
+                  {t.unreadCount}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-        <div className="text-[11px] text-gray-400 truncate mt-0.5">
-          {thread.lastMessage || <span className="italic">No messages</span>}
-        </div>
-      </div>
-    </button>
+      )}
+    </div>
   );
 }
 
@@ -175,12 +193,24 @@ function ChatView({
   ownerId,
   onBack,
   onMessagesChanged,
+  showSubThreadsPanel,
+  sessionThreads,
+  onSelectSubThread,
+  loadingThreads = false,
+  threadsError = null,
 }: {
   thread: InboxThread;
   athleteId: string;
   ownerId: string;
-  onBack: () => void;
+  /** Null when this is the root general view; otherwise dismisses the
+   *  session sub-thread back to general. */
+  onBack: (() => void) | null;
   onMessagesChanged: () => Promise<void>;
+  showSubThreadsPanel: boolean;
+  sessionThreads: InboxThread[];
+  onSelectSubThread: (t: InboxThread) => void;
+  loadingThreads?: boolean;
+  threadsError?: string | null;
 }) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
@@ -199,9 +229,6 @@ function ChatView({
         ? await fetchSessionMessages(thread.sessionId)
         : await fetchGeneralThreadMessages(athleteId, ownerId);
       setMessages(m);
-      // Look up coach display names so each coach bubble can show
-      // which coach wrote it — important on shared athletes where
-      // multiple coaches reply in the same thread.
       const names = await fetchCoachNamesForMessages(m);
       setCoachNames(names);
     } catch (e) {
@@ -216,16 +243,13 @@ function ChatView({
     void load();
   }, [load]);
 
-  // Mark this thread read on open. Session-bound: per session. General:
-  // via the dedicated helper. Fire-and-forget; a failure leaves the
-  // badge alone for next time.
+  // Mark read on open. Both general and session-bound branches.
   useEffect(() => {
     if (thread.unreadCount === 0) return;
     const p = thread.kind === 'session' && thread.sessionId
       ? markMessagesRead(thread.sessionId, null, 'athlete')
       : markGeneralThreadRead(athleteId, ownerId, 'athlete');
     void p.then(onMessagesChanged).catch(() => {});
-    // Intentionally only on thread change; not on every message refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread.kind, thread.sessionId]);
 
@@ -268,10 +292,8 @@ function ChatView({
 
   const jumpToSession = thread.kind === 'session' && thread.performedOn
     ? () => {
-        // Athlete's TodayScreen accepts ?week=<MondayISO>&slot=<dayIndex>
-        // where slot 0=Mon … 6=Sun. Compute both from performedOn.
         const d = new Date(thread.performedOn! + 'T00:00:00Z');
-        const weekday = d.getUTCDay(); // 0 = Sun, 1 = Mon
+        const weekday = d.getUTCDay();
         const slot = weekday === 0 ? 6 : weekday - 1;
         const mon = new Date(d);
         mon.setUTCDate(mon.getUTCDate() - slot);
@@ -287,19 +309,21 @@ function ChatView({
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
       <header className="px-3 pt-3 pb-2 border-b border-gray-800 flex items-center gap-2">
-        <button
-          onClick={onBack}
-          className="p-1.5 rounded hover:bg-gray-800 text-gray-400"
-          aria-label="Back to inbox"
-        >
-          <ArrowLeft size={16} />
-        </button>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded hover:bg-gray-800 text-gray-400"
+            aria-label="Back to general thread"
+          >
+            <ArrowLeft size={16} />
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold text-white truncate">
             {thread.kind === 'session' ? `Session · ${dateLabel ?? ''}` : 'Coach'}
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5">
-            {thread.kind === 'session' ? 'Session comments' : 'General thread'}
+            {thread.kind === 'session' ? 'Session sub-thread' : 'General thread with your coach'}
           </div>
         </div>
         {jumpToSession && (
@@ -314,6 +338,10 @@ function ChatView({
         )}
       </header>
 
+      {showSubThreadsPanel && !loadingThreads && !threadsError && (
+        <SubThreadsPanel sessions={sessionThreads} onSelect={onSelectSubThread} />
+      )}
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-500 text-xs gap-1.5">
@@ -323,9 +351,7 @@ function ChatView({
         ) : error ? (
           <div className="text-[11px] text-red-400 px-2 py-3">{error}</div>
         ) : messages.length === 0 ? (
-          <div className="text-center text-[11px] text-gray-500 italic py-12">
-            No messages yet.
-          </div>
+          <EmptyChat kind={thread.kind} />
         ) : (
           messages.map(m => (
             <Bubble
@@ -348,7 +374,7 @@ function ChatView({
             }
           }}
           rows={2}
-          placeholder="Write a message…"
+          placeholder={thread.kind === 'session' ? 'Ask about this session…' : 'Write a message…'}
           className="flex-1 resize-none rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
         />
         <button
@@ -390,12 +416,26 @@ function Bubble({ message, senderLabel }: { message: TrainingLogMessage; senderL
   );
 }
 
+function EmptyChat({ kind }: { kind: 'general' | 'session' }) {
+  return (
+    <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center gap-3">
+      <MessageCircle size={28} className="text-gray-700" />
+      <div className="text-sm">No messages yet</div>
+      <div className="text-[11px] text-gray-600 max-w-xs">
+        {kind === 'general'
+          ? 'Say hi to your coach or ask a general question.'
+          : 'Ask a question about this specific session.'}
+      </div>
+    </div>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
 /**
- * Athlete-side bubble label. Athletes never see "You" on their own
- * bubbles (the right-alignment + colour already conveys that). Coach
- * bubbles get the coach's name when available so the athlete can tell
- * which coach (host vs co-coach) wrote each message. Legacy rows with
- * no sender_coach_id fall back to no label.
+ * Athlete-side bubble label. Athletes don't get "You" on their own
+ * bubbles. Coach bubbles get the coach's name when sender_coach_id is
+ * populated; legacy rows fall back to no label.
  */
 function coachLabelForAthlete(
   m: TrainingLogMessage,
@@ -406,22 +446,23 @@ function coachLabelForAthlete(
   return names.get(m.sender_coach_id) ?? null;
 }
 
-function EmptyAthleteInbox() {
-  return (
-    <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center gap-3">
-      <MessageCircle size={28} className="text-gray-700" />
-      <div className="text-sm">No messages yet</div>
-      <div className="text-[11px] text-gray-600 max-w-xs">
-        When your coach writes you — or comments on one of your sessions — it will show up here.
-      </div>
-    </div>
-  );
-}
-
-// ── Utilities ────────────────────────────────────────────────────────
-
-function threadKeyOf(t: InboxThread): string {
-  return t.kind === 'session' && t.sessionId ? `s:${t.sessionId}` : 'general';
+/**
+ * Stub InboxThread for the general view when no general messages exist
+ * yet. Lets ChatView render an empty general chat without special-casing.
+ */
+function syntheticGeneralThread(athleteId: string | null): InboxThread {
+  return {
+    kind: 'general',
+    sessionId: null,
+    athleteId: athleteId ?? '',
+    athleteName: '',
+    athletePhotoUrl: null,
+    performedOn: null,
+    lastMessage: '',
+    lastActivityAt: new Date(0).toISOString(),
+    unreadCount: 0,
+    athleteMessageCount: 0,
+  };
 }
 
 function formatSessionDate(iso: string): string {
