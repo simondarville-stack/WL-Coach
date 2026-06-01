@@ -11,6 +11,7 @@ import {
 import { MetricStrip } from '../ui/MetricStrip';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
 import { usePlannerWeekOverview, type MacroBlock, type PhaseBlock } from '../../hooks/usePlannerWeekOverview';
+import { formatDateShort } from '../../lib/dateUtils';
 import { useState } from 'react';
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -18,12 +19,6 @@ import { useState } from 'react';
 const WEEKS_BACK = 2;
 const WEEKS_FORWARD = 2;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()}`;
-}
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -339,13 +334,13 @@ export function PlannerWeekOverview({
                       color: 'var(--color-text-primary)',
                       fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
+                      {weekNum || formatDateShort(week.weekStart)}
                     </span>
                     <div style={{
                       fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2,
                       fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
+                      {formatDateShort(week.weekStart)}–{formatDateShort(endDate)}
                     </div>
                     {week.compliance !== null && (
                       <div style={{ marginTop: 6 }}>
