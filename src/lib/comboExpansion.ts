@@ -64,7 +64,7 @@ function lump<E>(row: CountableRow<E>): CountedContribution<E> {
  * parseable prescription are unavailable, so a combo's work is never silently
  * dropped.
  */
-export function expandForCounting<E>(
+export function expandForCounting<E extends { counts_towards_totals?: boolean | null }>(
   row: CountableRow<E>,
   members: MemberRef<E>[] | undefined,
 ): CountedContribution<E>[] {
@@ -83,30 +83,40 @@ export function expandForCounting<E>(
 
   const out: CountedContribution<E>[] = [];
   ordered.forEach((m, i) => {
-    let reps = 0, sets = 0, weighted = 0;
+    let reps = 0, weighted = 0;
     let highest: number | null = null;
     for (const ln of parsed) {
       const part = ln.parts[i] ?? 0;
       if (part <= 0) continue;            // member not performed in this line
       const lineReps = part * ln.sets;
       reps += lineReps;
-      sets += ln.sets;                    // per-instance: member is in every round
       const eff = ln.loadMax != null ? (ln.load + ln.loadMax) / 2 : ln.load;
       weighted += eff * lineReps;
       const hi = ln.loadMax ?? ln.load;
       if (highest === null || hi > highest) highest = hi;
     }
-    if (reps === 0 && sets === 0) return;
+    if (reps === 0) return;               // member not performed
     out.push({
       exercise_id: m.exerciseId,
       exercise: m.exercise,
       unit: row.unit,
-      summary_total_sets: sets,
+      summary_total_sets: 0,              // a set is a set — assigned once below
       summary_total_reps: reps,
       summary_highest_load: highest,
       summary_avg_load: reps > 0 ? weighted / reps : null,
     });
   });
 
-  return out.length > 0 ? out : [lump(row)];
+  if (out.length === 0) return [lump(row)];
+
+  // "A set is a set": a combo round is one set whether it is "power snatch +
+  // snatch" or "2 reps of snatch", so the combo's rounds count once — not once
+  // per member. Reps stay split per member; the set count is attributed to the
+  // first member that counts towards totals (so the set survives even when the
+  // lead movement is a non-counting one), leaving the others at 0 sets.
+  const totalRounds = parsed.reduce((s, ln) => s + ln.sets, 0);
+  const setHolder = out.find(c => c.exercise.counts_towards_totals !== false) ?? out[0];
+  setHolder.summary_total_sets = totalRounds;
+
+  return out;
 }
