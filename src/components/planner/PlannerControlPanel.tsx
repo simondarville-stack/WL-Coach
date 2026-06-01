@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight,
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
   ChevronDown, ChevronRight as ChevronRightSmall,
   Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
@@ -13,7 +12,6 @@ import type {
 } from '../../lib/database.types';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
-import { formatDateRange } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { abbreviateExercise } from './sentinelUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
@@ -233,7 +231,6 @@ export interface PlannerControlPanelProps {
 export function PlannerControlPanel({
   selectedAthlete,
   selectedGroup,
-  selectedDate,
   macroContext,
   macroWeekTarget,
   plannedExercises,
@@ -244,8 +241,6 @@ export function PlannerControlPanel({
   canCopyPaste,
   copiedWeekStart,
   showLoadDistribution,
-  onPrevWeek,
-  onNextWeek,
   onSaveWeekDescription,
   onDayConfig,
   onCopy,
@@ -487,70 +482,8 @@ export function PlannerControlPanel({
           ) : null}
         </div>
 
-        {/* CENTER: week navigation */}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 'var(--space-sm)',
-          }}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<ChevronLeft size={14} />}
-            onClick={onPrevWeek}
-          >
-            Prev
-          </Button>
-
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              padding: '0 var(--space-md)',
-            }}
-          >
-            <span
-              style={{
-                fontSize: 'var(--text-section)',
-                fontWeight: 500,
-                color: 'var(--color-text-primary)',
-                lineHeight: 1.2,
-                fontFamily: 'var(--font-mono)',
-                fontVariantNumeric: 'tabular-nums',
-                userSelect: 'none',
-              }}
-            >
-              {formatDateRange(selectedDate, 7)}
-            </span>
-            {macroContext && (
-              <span
-                style={{
-                  fontSize: 'var(--text-caption)',
-                  color: 'var(--color-text-tertiary)',
-                  lineHeight: 1,
-                  marginTop: '2px',
-                }}
-              >
-                Week {macroContext.weekNumber}{macroContext.totalWeeks > 0 ? ` of ${macroContext.totalWeeks}` : ''}
-              </span>
-            )}
-          </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<ChevronRight size={14} />}
-            iconPosition="right"
-            onClick={onNextWeek}
-          >
-            Next
-          </Button>
-        </div>
+        {/* CENTER: spacer (week navigation moved to its own ribbon) */}
+        <div style={{ flex: 1 }} />
 
         {/* RIGHT: tool buttons */}
         <div

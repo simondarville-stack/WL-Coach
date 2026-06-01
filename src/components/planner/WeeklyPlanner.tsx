@@ -21,6 +21,7 @@ import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
 import { WeekSummaryBox } from './WeekSummaryBox';
+import { WeekNavRibbon } from './WeekNavRibbon';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
@@ -1224,6 +1225,17 @@ export function WeeklyPlanner() {
               </div>
             )}
 
+            {/* ── Week navigation ribbon (primary nav) ── */}
+            {(planSelection.athlete || planSelection.group) && (
+              <WeekNavRibbon
+                selectedDate={selectedDate}
+                macroContext={macroContext}
+                weekTypes={settings?.week_types ?? []}
+                onPrevWeek={goToPreviousWeek}
+                onNextWeek={goToNextWeek}
+              />
+            )}
+
             {/* ── Control Panel ── */}
             <PlannerControlPanel
                 selectedAthlete={planSelection.athlete}
@@ -1253,19 +1265,15 @@ export function WeeklyPlanner() {
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
               />
 
-            {/* ── Week summary box (by-category + load distribution + totals) ── */}
+            {/* ── Week summary box (by-category + load breakdown) ── */}
             {(planSelection.athlete || planSelection.group) && (
               <WeekSummaryBox
                 selectedAthlete={planSelection.athlete}
-                selectedDate={selectedDate}
-                macroContext={macroContext}
                 plannedExercises={plannedExercises}
                 activeDays={activeDays}
                 dayDisplayOrder={dayDisplayOrder}
                 dayLabels={currentWeekPlan?.day_labels || {}}
-                weekTypes={settings?.week_types ?? []}
-                onPrevWeek={goToPreviousWeek}
-                onNextWeek={goToNextWeek}
+                daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
               />
             )}
 
