@@ -17,6 +17,7 @@ import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet } from '..
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
+import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
@@ -211,11 +212,18 @@ function PreviewExerciseRow({
   }
   const accent = planned.exerciseDef?.color ?? '#6b7280';
   const performedReps = logged ? sumPerformedReps(logged.sets) : 0;
-  const delta = computeDelta(
-    planned.exercise.summary_total_reps ?? null,
-    performedReps,
-    !!logged,
-  );
+  // Compliance divides by the planned reps. Fall back to a live parse of the
+  // prescription when the cached summary is stale-zero, so the percentage is
+  // not wrongly 0% for an exercise whose cache never got recomputed.
+  const cachedPlannedReps = planned.exercise.summary_total_reps ?? 0;
+  const plannedReps = cachedPlannedReps > 0
+    ? cachedPlannedReps
+    : computePrescriptionSummary(
+        planned.exercise.prescription_raw ?? '',
+        planned.exercise.unit,
+        planned.exercise.is_combo,
+      ).total_reps;
+  const delta = computeDelta(plannedReps || null, performedReps, !!logged);
   const allCompleted =
     logged != null && logged.sets.length > 0 && logged.sets.every(s => s.status === 'completed');
 

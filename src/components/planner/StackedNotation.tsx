@@ -271,7 +271,15 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
         // Athlete may have typed tuple notation like "2+2+2" for a combo;
         // when present, performed_text holds the raw string and the coach
         // sees what was actually logged instead of just the numeric sum.
-        const repsDisplay = s.performed_text ?? (s.performed_reps != null ? String(s.performed_reps) : '?');
+        // A not-completed set with no reps is a missed attempt → show "x"
+        // (an unsuccessful lift at the shown load), not a "?".
+        const repsDisplay =
+          s.performed_text ??
+          (s.performed_reps != null
+            ? String(s.performed_reps)
+            : s.status === 'completed'
+            ? '?'
+            : 'x');
         return (
           <div key={s.id} style={stackPair} title={s.status}>
             <div style={stackColumn}>
