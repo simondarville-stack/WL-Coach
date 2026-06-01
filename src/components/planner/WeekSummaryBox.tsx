@@ -261,55 +261,55 @@ export function WeekSummaryBox({
             </div>
           </div>
 
-          {/* RIGHT — across the week (fixed, framed chart window) */}
-          <div style={{ padding: '10px 14px' }}>
+          {/* RIGHT — across the week (fills the panel height) */}
+          <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column' }}>
             <div style={eyebrow}>{calendarMapped ? 'Across the week' : 'Across the units'}</div>
 
-            {/* value labels */}
-            <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 6, marginTop: 8 }}>
-              {columns.map(col => {
-                const v = colVal(col);
-                return (
-                  <span key={col.key} style={{ ...mono, fontSize: 'var(--text-caption)', textAlign: 'center', color: v > 0 ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)' }}>
-                    {fmtMetric(metric, v || null)}
-                  </span>
-                );
-              })}
-            </div>
-            {/* plot row — bars anchored to the bottom axis */}
+            {/* plot — grows to fill the panel; value labels float above each bar */}
             <div style={{
               display: 'grid', gridTemplateColumns: cols, gap: 6,
-              height: PLOT_H, alignItems: 'end', marginTop: 4,
+              flex: 1, minHeight: PLOT_H, alignItems: 'end', marginTop: 20,
               borderBottom: '0.5px solid var(--color-border-tertiary)',
             }}>
               {columns.map(col => {
                 const v = colVal(col);
-                const h = v > 0 ? Math.max(3, (v / maxCol) * PLOT_H) : 2;
+                const pct = v > 0 ? Math.max(4, (v / maxCol) * 90) : 2;
                 const isPeak = additive && peak?.key === col.key;
                 const stack = additive && col.units.length > 1
                   ? col.units.filter(u => (metricValue(u.agg, metric, compTotal) ?? 0) > 0)
                   : [];
                 return (
                   <div key={col.key} style={{
-                    height: h, width: '72%', justifySelf: 'center',
-                    borderRadius: '2px 2px 0 0', overflow: 'hidden',
-                    display: 'flex', flexDirection: 'column',
-                    background: v > 0 ? undefined : 'var(--color-border-tertiary)',
-                    opacity: v > 0 ? 1 : 0.45,
+                    height: `${pct}%`, width: '72%', justifySelf: 'center',
+                    position: 'relative', display: 'flex', flexDirection: 'column',
                     transition: 'height 0.2s',
                   }}>
-                    {v > 0 && stack.length > 0
-                      ? stack.map((u, idx) => {
-                          const uv = metricValue(u.agg, metric, compTotal) ?? 0;
-                          return (
-                            <div key={u.index} title={`${u.label}: ${fmtMetric(metric, uv)}`} style={{
-                              height: `${(uv / v) * 100}%`,
-                              background: idx % 2 === 0 ? 'var(--color-accent)' : 'var(--color-accent-border)',
-                              borderTop: idx > 0 ? '0.5px solid var(--color-bg-primary)' : 'none',
-                            }} />
-                          );
-                        })
-                      : v > 0 && <div style={{ height: '100%', background: isPeak ? 'var(--color-accent)' : 'var(--color-accent-border)' }} />}
+                    <span style={{
+                      position: 'absolute', bottom: '100%', left: 0, right: 0, textAlign: 'center', marginBottom: 3,
+                      ...mono, fontSize: 'var(--text-caption)', whiteSpace: 'nowrap',
+                      color: v > 0 ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)',
+                    }}>
+                      {fmtMetric(metric, v || null)}
+                    </span>
+                    <div style={{
+                      flex: 1, borderRadius: '2px 2px 0 0', overflow: 'hidden',
+                      display: 'flex', flexDirection: 'column',
+                      background: v > 0 ? undefined : 'var(--color-border-tertiary)',
+                      opacity: v > 0 ? 1 : 0.45,
+                    }}>
+                      {v > 0 && stack.length > 0
+                        ? stack.map((u, idx) => {
+                            const uv = metricValue(u.agg, metric, compTotal) ?? 0;
+                            return (
+                              <div key={u.index} title={`${u.label}: ${fmtMetric(metric, uv)}`} style={{
+                                height: `${(uv / v) * 100}%`,
+                                background: idx % 2 === 0 ? 'var(--color-accent)' : 'var(--color-accent-border)',
+                                borderTop: idx > 0 ? '0.5px solid var(--color-bg-primary)' : 'none',
+                              }} />
+                            );
+                          })
+                        : v > 0 && <div style={{ height: '100%', background: isPeak ? 'var(--color-accent)' : 'var(--color-accent-border)' }} />}
+                    </div>
                   </div>
                 );
               })}
