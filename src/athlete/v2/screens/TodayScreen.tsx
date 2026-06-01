@@ -187,13 +187,20 @@ export function TodayScreen() {
     setLoadingDay(true);
     setError(null);
     try {
-      // Pass the pre-resolved weekPlanId when available to skip the 3-step
-      // resolution chain in fetchAthleteDay. (UF-44 / H4)
+      // Pass the pre-resolved weekPlanId only when the cached overview is for
+      // the week we are loading. On a week change loadWeek's fetch is still in
+      // flight, so overviewRef holds the PREVIOUS week's plan id — using it
+      // would reload the old week's day. When stale, pass undefined so
+      // fetchAthleteDay resolves the correct plan from weekStart. (UF-44 / H4)
+      const knownWeekPlanId =
+        overviewRef.current?.weekStart === weekStart
+          ? overviewRef.current.weekPlanId
+          : undefined;
       const d = await fetchAthleteDay(
         athlete.id,
         weekStart,
         dayIndex,
-        overviewRef.current?.weekPlanId,
+        knownWeekPlanId,
       );
       setData(d);
     } catch (e) {
