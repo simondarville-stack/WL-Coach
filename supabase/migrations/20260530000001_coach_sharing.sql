@@ -1,4 +1,3 @@
--- PROPOSED MIGRATION — REQUIRES MANUAL APPLICATION
 -- Coach-to-coach sharing of athletes and groups.
 --
 -- Adds two join tables (athlete_collaborators, training_group_collaborators)
