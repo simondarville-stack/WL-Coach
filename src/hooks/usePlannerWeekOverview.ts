@@ -2,7 +2,19 @@ import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { computeMetrics, type ComputedMetrics } from '../lib/metrics';
+import { expandForCounting } from '../lib/comboExpansion';
 import type { WeekTypeConfig } from '../lib/database.types';
+
+// Minimal exercise shape loaded for the overview (subset of Exercise columns).
+interface OverviewExercise {
+  name: string | null; color: string | null;
+  exercise_code: string | null; counts_towards_totals: boolean | null;
+}
+// A combo-expanded row used only for the tick-filtered metrics (R/S/tonnage/…).
+interface MetricRow {
+  dayIndex: number; sets: number; reps: number;
+  highestLoad: number; avgLoad: number; countsTowardsTotals: boolean;
+}
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -153,22 +165,45 @@ export function usePlannerWeekOverview() {
 
       // 3. Fetch planned exercises for all week plans
       const wpIds = (weekPlans || []).map(wp => wp.id);
-      const exerciseMap = new Map<string, ExerciseRaw[]>();
+      const exerciseMap = new Map<string, ExerciseRaw[]>();   // display rows (one per planned exercise)
+      const metricMap = new Map<string, MetricRow[]>();       // combo-expanded rows for tick-filtered metrics
 
       if (wpIds.length > 0) {
         const { data: exercises } = await supabase
           .from('planned_exercises')
           .select(`
-            weekplan_id, day_index, exercise_id, is_combo,
+            id, weekplan_id, day_index, exercise_id, is_combo, prescription_raw,
             summary_total_reps, summary_total_sets, summary_avg_load, summary_highest_load,
             exercises(name, color, exercise_code, counts_towards_totals)
           `)
           .in('weekplan_id', wpIds);
 
+        // Combo members (with their own exercise metadata) so a combo can be
+        // expanded into per-member instances when computing tick-filtered metrics.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const comboIds = (exercises || []).filter((ex: any) => ex.is_combo).map((ex: any) => ex.id);
+        const membersByPe = new Map<string, { exerciseId: string; exercise: OverviewExercise; position: number }[]>();
+        if (comboIds.length > 0) {
+          const { data: members } = await supabase
+            .from('planned_exercise_combo_members')
+            .select('planned_exercise_id, exercise_id, position, exercise:exercise_id(name, color, exercise_code, counts_towards_totals)')
+            .in('planned_exercise_id', comboIds);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (members || []).forEach((m: any) => {
+            const arr = membersByPe.get(m.planned_exercise_id) || [];
+            arr.push({ exerciseId: m.exercise_id, exercise: m.exercise, position: m.position });
+            membersByPe.set(m.planned_exercise_id, arr);
+          });
+        }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (exercises || []).forEach((ex: any) => {
           const key = ex.weekplan_id;
           if (!exerciseMap.has(key)) exerciseMap.set(key, []);
+          if (!metricMap.has(key)) metricMap.set(key, []);
+
+          // Display row: keep the combo as a single entry (the grid renders it
+          // as one item). Reps/tonnage totals are invariant under expansion.
           const reps = ex.summary_total_reps || 0;
           const sets = ex.summary_total_sets || 0;
           const avgLoad = ex.summary_avg_load || 0;
@@ -187,6 +222,29 @@ export function usePlannerWeekOverview() {
             countsTowardsTotals: ex.exercises?.counts_towards_totals !== false,
             isCombo: ex.is_combo === true,
           });
+
+          // Metric rows: a combo expands into its members so each member's reps
+          // count under its own tick (a combo merely governs structure).
+          for (const c of expandForCounting<OverviewExercise>({
+            exercise_id: ex.exercise_id,
+            exercise: ex.exercises,
+            unit: null,
+            is_combo: ex.is_combo === true,
+            prescription_raw: ex.prescription_raw ?? null,
+            summary_total_sets: ex.summary_total_sets,
+            summary_total_reps: ex.summary_total_reps,
+            summary_highest_load: ex.summary_highest_load,
+            summary_avg_load: ex.summary_avg_load,
+          }, membersByPe.get(ex.id))) {
+            metricMap.get(key)!.push({
+              dayIndex: ex.day_index,
+              sets: c.summary_total_sets,
+              reps: c.summary_total_reps,
+              highestLoad: c.summary_highest_load || 0,
+              avgLoad: c.summary_avg_load || 0,
+              countsTowardsTotals: c.exercise?.counts_towards_totals !== false,
+            });
+          }
         });
       }
 
@@ -282,6 +340,7 @@ export function usePlannerWeekOverview() {
       const summaries: WeekSummary[] = weekDates.map(ws => {
         const wp = wpMap.get(ws);
         const wpExercises: ExerciseRaw[] = wp ? (exerciseMap.get(wp.id) || []) : [];
+        const wpMetricRows: MetricRow[] = wp ? (metricMap.get(wp.id) || []) : [];
         const activeDays = wp?.active_days || [];
         const logged = logMap.get(ws) || new Set<number>();
 
@@ -292,7 +351,7 @@ export function usePlannerWeekOverview() {
           weightedLoadSum: number; tonnage: number;
         }>();
         for (const ex of wpExercises) {
-          if (!ex.countsTowardsTotals && !ex.isCombo) continue;
+          if (!ex.countsTowardsTotals) continue;
           if (!exSummaryMap.has(ex.exerciseId)) {
             exSummaryMap.set(ex.exerciseId, {
               color: ex.color, name: ex.name,
@@ -320,13 +379,12 @@ export function usePlannerWeekOverview() {
           const dayExs = wpExercises.filter(e => e.dayIndex === di);
           const isRest = !activeDays.includes(di);
           const dayMetrics = computeMetrics(
-            dayExs.map(e => ({
+            wpMetricRows.filter(e => e.dayIndex === di).map(e => ({
               summary_total_sets: e.sets,
               summary_total_reps: e.reps,
               summary_highest_load: e.highestLoad,
               summary_avg_load: e.avgLoad,
               counts_towards_totals: e.countsTowardsTotals,
-              is_combo: e.isCombo,
             })),
             competitionTotal,
           );
@@ -344,13 +402,12 @@ export function usePlannerWeekOverview() {
 
         // Week-level metrics
         const weekMetrics = computeMetrics(
-          wpExercises.map(e => ({
+          wpMetricRows.map(e => ({
             summary_total_sets: e.sets,
             summary_total_reps: e.reps,
             summary_highest_load: e.highestLoad,
             summary_avg_load: e.avgLoad,
             counts_towards_totals: e.countsTowardsTotals,
-            is_combo: e.isCombo,
           })),
           competitionTotal,
         );

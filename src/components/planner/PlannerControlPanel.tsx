@@ -7,8 +7,9 @@ import {
 import { supabase } from '../../lib/supabase';
 import type {
   Athlete, TrainingGroup, AthletePR, Exercise, PlannedExercise,
-  GeneralSettings, WeekTypeConfig,
+  GeneralSettings, WeekTypeConfig, ComboMemberEntry,
 } from '../../lib/database.types';
+import { expandForCounting } from '../../lib/comboExpansion';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 import type { MacroContext } from './WeeklyPlanner';
 import { calculateAge } from '../../lib/calculations';
@@ -183,6 +184,7 @@ export interface PlannerControlPanelProps {
   macroContext: MacroContext | null;
   macroWeekTarget: number | null;
   plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
+  comboMembers: Record<string, ComboMemberEntry[]>;
   athletePRs: AthletePR[];
   settings: GeneralSettings | null;
   weekDescription: string;
@@ -211,6 +213,7 @@ export function PlannerControlPanel({
   macroContext,
   macroWeekTarget,
   plannedExercises,
+  comboMembers,
   athletePRs,
   settings,
   weekDescription,
@@ -274,16 +277,28 @@ export function PlannerControlPanel({
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
     let totalStress = 0;
-    const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; is_combo: boolean; unit: string | null; exercise_id: string }> = [];
+    const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; unit: string | null; exercise_id: string }> = [];
+    // Expand combos into member instances: each member's reps and PR-based
+    // stress are attributed to that member's exercise (a combo merely governs
+    // structure; it is not a separate counted exercise).
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
-        allExercises.push({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals, is_combo: ex.is_combo });
-        if (!ex.exercise.counts_towards_totals) return;
-        const r = ex.summary_total_reps ?? 0;
-        const avg = ex.summary_avg_load ?? 0;
-        if (ex.unit === 'absolute_kg' && avg > 0) {
-          const pr = prMap.get(ex.exercise_id);
-          if (pr && pr > 0) totalStress += r * Math.pow(avg / pr, 2);
+        for (const c of expandForCounting(ex, comboMembers[ex.id])) {
+          allExercises.push({
+            summary_total_sets: c.summary_total_sets,
+            summary_total_reps: c.summary_total_reps,
+            summary_highest_load: c.summary_highest_load,
+            summary_avg_load: c.summary_avg_load,
+            counts_towards_totals: c.exercise.counts_towards_totals,
+            unit: c.unit,
+            exercise_id: c.exercise_id,
+          });
+          if (c.exercise.counts_towards_totals === false) continue;
+          const avg = c.summary_avg_load ?? 0;
+          if (c.unit === 'absolute_kg' && avg > 0) {
+            const pr = prMap.get(c.exercise_id);
+            if (pr && pr > 0) totalStress += c.summary_total_reps * Math.pow(avg / pr, 2);
+          }
         }
       });
     });
@@ -291,7 +306,7 @@ export function PlannerControlPanel({
       metrics: computeMetrics(allExercises, selectedAthlete?.competition_total ?? null),
       totalStress: Math.round(totalStress * 10) / 10,
     };
-  }, [plannedExercises, athletePRs, selectedAthlete?.competition_total]);
+  }, [plannedExercises, comboMembers, athletePRs, selectedAthlete?.competition_total]);
 
   const visibleMetrics: MetricKey[] = (settings?.visible_summary_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS;
   const showStress     = settings?.show_stress_metric ?? false;

@@ -12,15 +12,18 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { Athlete, Exercise, PlannedExercise } from '../../lib/database.types';
+import type { Athlete, Exercise, PlannedExercise, ComboMemberEntry } from '../../lib/database.types';
 import { defaultUnitLabel } from '../../lib/constants';
 import { METRICS, METRIC_ORDER, type MetricKey } from '../../lib/metrics';
+import { expandForCounting, type CountedContribution } from '../../lib/comboExpansion';
 
 type PlannedRow = PlannedExercise & { exercise: Exercise };
+type Contribution = CountedContribution<Exercise>;
 
 interface WeekSummaryBoxProps {
   selectedAthlete: Athlete | null;
   plannedExercises: Record<number, PlannedRow[]>;
+  comboMembers: Record<string, ComboMemberEntry[]>;
   activeDays: number[];
   dayDisplayOrder: number[];
   dayLabels: Record<number, string>;
@@ -53,22 +56,21 @@ function categoryColor(name: string): string {
 interface Agg { reps: number; sets: number; tonnageKg: number; max: number; repsKg: number; }
 const emptyAgg = (): Agg => ({ reps: 0, sets: 0, tonnageKg: 0, max: 0, repsKg: 0 });
 
-function addEx(a: Agg, ex: PlannedRow): void {
-  // A combo always counts: its reps belong to its member movements. The
-  // counts_towards_totals flag on a combo row reflects only its lead member,
-  // so it must not gate the whole combo out of the totals.
-  if (ex.exercise.counts_towards_totals === false && !ex.is_combo) return;
-  const r = ex.summary_total_reps ?? 0;
-  const s = ex.summary_total_sets ?? 0;
-  const avg = ex.summary_avg_load ?? 0;
-  const hi = ex.summary_highest_load ?? 0;
+// Contributions are already combo-expanded, so each carries its own exercise
+// and tick; we only skip the ones whose exercise does not count.
+function addEx(a: Agg, c: Contribution): void {
+  if (c.exercise.counts_towards_totals === false) return;
+  const r = c.summary_total_reps;
+  const s = c.summary_total_sets;
+  const avg = c.summary_avg_load ?? 0;
+  const hi = c.summary_highest_load ?? 0;
   a.reps += r; a.sets += s;
   if (hi > a.max) a.max = hi;
-  if (ex.unit === 'absolute_kg' && avg > 0) { a.tonnageKg += avg * r; a.repsKg += r; }
+  if (c.unit === 'absolute_kg' && avg > 0) { a.tonnageKg += avg * r; a.repsKg += r; }
 }
-function aggList(exs: PlannedRow[]): Agg {
+function aggList(cs: Contribution[]): Agg {
   const a = emptyAgg();
-  for (const ex of exs) addEx(a, ex);
+  for (const c of cs) addEx(a, c);
   return a;
 }
 function metricValue(a: Agg, key: MetricKey, compTotal: number | null): number | null {
@@ -105,7 +107,7 @@ const eyebrow: React.CSSProperties = {
 };
 
 export function WeekSummaryBox({
-  selectedAthlete, plannedExercises, activeDays, dayDisplayOrder, dayLabels, daySchedule,
+  selectedAthlete, plannedExercises, comboMembers, activeDays, dayDisplayOrder, dayLabels, daySchedule,
   expanded, onToggle,
 }: WeekSummaryBoxProps) {
   const [metric, setMetric] = useState<MetricKey>('tonnage');
@@ -116,32 +118,37 @@ export function WeekSummaryBox({
     const labelOf = (i: number) => dayLabels[i] || defaultUnitLabel(i, dayDisplayOrder);
     const visible = dayDisplayOrder.filter(d => activeDays.includes(d));
 
+    // Combos expand into their member instances, so each member's reps land in
+    // its own category and under its own tick (a combo merely governs structure).
+    const contribsFor = (i: number): Contribution[] =>
+      (plannedExercises[i] ?? []).flatMap(ex => expandForCounting(ex, comboMembers[ex.id]));
+
     let columns: Column[];
     if (calendarMapped && daySchedule) {
       columns = WEEKDAY_SHORT.map((wdLabel, wd) => {
         const dayIdxs = visible
           .filter(i => daySchedule[i]?.weekday === wd)
           .sort((a, b) => (daySchedule[a]?.time ?? '').localeCompare(daySchedule[b]?.time ?? ''));
-        const units: Unit[] = dayIdxs.map(i => ({ index: i, label: labelOf(i), agg: aggList(plannedExercises[i] ?? []) }));
+        const units: Unit[] = dayIdxs.map(i => ({ index: i, label: labelOf(i), agg: aggList(contribsFor(i)) }));
         const agg = emptyAgg();
-        for (const i of dayIdxs) for (const ex of plannedExercises[i] ?? []) addEx(agg, ex);
+        for (const i of dayIdxs) for (const c of contribsFor(i)) addEx(agg, c);
         return { key: `wd${wd}`, label: wdLabel, units, agg };
       });
     } else {
       columns = visible.map(i => {
-        const agg = aggList(plannedExercises[i] ?? []);
+        const agg = aggList(contribsFor(i));
         return { key: `u${i}`, label: labelOf(i), units: [{ index: i, label: labelOf(i), agg }], agg };
       });
     }
 
     const catMap = new Map<string, CatRow>();
     for (const i of visible) {
-      for (const ex of plannedExercises[i] ?? []) {
-        if (ex.exercise.counts_towards_totals === false && !ex.is_combo) continue;
-        const category = ex.exercise.category;
+      for (const c of contribsFor(i)) {
+        if (c.exercise.counts_towards_totals === false) continue;
+        const category = c.exercise.category;
         if (!category || category === '— System') continue;
         const row = catMap.get(category) ?? { category, color: categoryColor(category), agg: emptyAgg() };
-        addEx(row.agg, ex);
+        addEx(row.agg, c);
         catMap.set(category, row);
       }
     }
@@ -149,7 +156,7 @@ export function WeekSummaryBox({
       .sort((a, b) => (metricValue(b.agg, metric, compTotal) ?? 0) - (metricValue(a.agg, metric, compTotal) ?? 0));
 
     return { columns, cats };
-  }, [plannedExercises, activeDays, dayDisplayOrder, dayLabels, daySchedule, calendarMapped, metric, compTotal]);
+  }, [plannedExercises, comboMembers, activeDays, dayDisplayOrder, dayLabels, daySchedule, calendarMapped, metric, compTotal]);
 
   const additive = ADDITIVE[metric];
   const colVal = (c: Column) => metricValue(c.agg, metric, compTotal) ?? 0;

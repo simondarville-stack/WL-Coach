@@ -13,6 +13,7 @@ import { getOrCreateSentinel } from './sentinelService';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { Button } from '../ui';
 
@@ -125,16 +126,16 @@ export function DayEditor({
 
   const sortedExercises = exercises.slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  // Match the unit-card / week-summary rule: an exercise contributes to the
-  // header totals when its lift counts towards totals OR it is a combo (a
-  // combo's reps belong to its member movements, so it always counts).
-  const countsToTotals = (ex: PlannedExercise & { exercise: Exercise }) =>
-    ex.is_combo || ex.exercise.counts_towards_totals !== false;
-  const countedExercises = exercises.filter(countsToTotals);
-  const totalSets = countedExercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
-  const totalReps = countedExercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
-  const totalTonnage = countedExercises.reduce((s, ex) =>
-    ex.unit === 'absolute_kg' ? s + (ex.summary_avg_load ?? 0) * (ex.summary_total_reps ?? 0) : s, 0
+  // Expand combos into member instances, then sum the contributions whose
+  // exercise counts towards totals (a combo merely governs structure; each
+  // member's reps belong to that member).
+  const counted = exercises
+    .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
+    .filter(c => c.exercise.counts_towards_totals !== false);
+  const totalSets = counted.reduce((s, c) => s + c.summary_total_sets, 0);
+  const totalReps = counted.reduce((s, c) => s + c.summary_total_reps, 0);
+  const totalTonnage = counted.reduce((s, c) =>
+    c.unit === 'absolute_kg' ? s + (c.summary_avg_load ?? 0) * c.summary_total_reps : s, 0
   );
 
   const loadIncrement = settings?.grid_load_increment ?? 5;

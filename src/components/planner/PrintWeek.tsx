@@ -16,6 +16,7 @@ import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
+import { expandForCounting } from '../../lib/comboExpansion';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekDesigner } from './PrintWeekDesigner';
@@ -174,16 +175,21 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
 
   const calculateCategorySummaries = () => {
     const totals: Record<string, { sets: number; reps: number; totalLoad: number; avgLoad: number; loadCount: number }> = {};
+    // Combos expand into member instances so each member's reps land in its own
+    // category (a combo merely governs structure).
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
-        if (ex.exercise.counts_towards_totals && ex.exercise.category && ex.exercise.category !== '— System') {
-          if (!totals[ex.exercise.category]) totals[ex.exercise.category] = { sets: 0, reps: 0, totalLoad: 0, avgLoad: 0, loadCount: 0 };
-          totals[ex.exercise.category].sets += ex.summary_total_sets || 0;
-          totals[ex.exercise.category].reps += ex.summary_total_reps || 0;
-          if (ex.unit === 'absolute_kg' && ex.summary_avg_load) {
-            totals[ex.exercise.category].totalLoad += ex.summary_avg_load * (ex.summary_total_reps || 0);
-            totals[ex.exercise.category].avgLoad += ex.summary_avg_load;
-            totals[ex.exercise.category].loadCount += 1;
+        for (const c of expandForCounting(ex, comboMembers[ex.id])) {
+          if (c.exercise.counts_towards_totals && c.exercise.category && c.exercise.category !== '— System') {
+            const cat = c.exercise.category;
+            if (!totals[cat]) totals[cat] = { sets: 0, reps: 0, totalLoad: 0, avgLoad: 0, loadCount: 0 };
+            totals[cat].sets += c.summary_total_sets;
+            totals[cat].reps += c.summary_total_reps;
+            if (c.unit === 'absolute_kg' && c.summary_avg_load) {
+              totals[cat].totalLoad += c.summary_avg_load * c.summary_total_reps;
+              totals[cat].avgLoad += c.summary_avg_load;
+              totals[cat].loadCount += 1;
+            }
           }
         }
       });
@@ -198,10 +204,12 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
     let totalSets = 0; let totalReps = 0; let totalLoad = 0;
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
-        if (ex.exercise.counts_towards_totals) {
-          totalSets += ex.summary_total_sets || 0;
-          totalReps += ex.summary_total_reps || 0;
-          if (ex.unit === 'absolute_kg' && ex.summary_avg_load) totalLoad += ex.summary_avg_load * (ex.summary_total_reps || 0);
+        for (const c of expandForCounting(ex, comboMembers[ex.id])) {
+          if (c.exercise.counts_towards_totals) {
+            totalSets += c.summary_total_sets;
+            totalReps += c.summary_total_reps;
+            if (c.unit === 'absolute_kg' && c.summary_avg_load) totalLoad += c.summary_avg_load * c.summary_total_reps;
+          }
         }
       });
     });
@@ -361,8 +369,11 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           const dayExs = (plannedExercises[day.index] || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
           if (dayExs.length === 0) return null;
 
-          const daySets = dayExs.filter(ex => ex.exercise.counts_towards_totals).reduce((s, ex) => s + (ex.summary_total_sets || 0), 0);
-          const dayReps = dayExs.filter(ex => ex.exercise.counts_towards_totals).reduce((s, ex) => s + (ex.summary_total_reps || 0), 0);
+          const dayContribs = dayExs
+            .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
+            .filter(c => c.exercise.counts_towards_totals);
+          const daySets = dayContribs.reduce((s, c) => s + c.summary_total_sets, 0);
+          const dayReps = dayContribs.reduce((s, c) => s + c.summary_total_reps, 0);
 
           return (
             <div key={day.index} className="mb-3 break-inside-avoid">

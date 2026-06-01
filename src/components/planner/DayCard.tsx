@@ -14,6 +14,7 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { expandForCounting } from '../../lib/comboExpansion';
 import { MetricStrip } from '../ui/MetricStrip';
 
 interface DayCardProps {
@@ -120,7 +121,14 @@ export function DayCard({
     refreshTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
   }
 
-  const dayMetrics = computeMetrics(exercises.map(ex => ({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals })), competitionTotal);
+  // Expand combos into their member instances so each member's reps count
+  // under its own exercise and tick (a combo merely governs structure).
+  const dayMetrics = computeMetrics(
+    exercises
+      .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
+      .map(c => ({ ...c, counts_towards_totals: c.exercise.counts_towards_totals })),
+    competitionTotal,
+  );
   const isEmpty = exercises.length === 0;
 
   async function handleAddExercise(exercise: Exercise) {

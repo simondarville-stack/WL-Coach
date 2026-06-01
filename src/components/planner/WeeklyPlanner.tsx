@@ -1324,6 +1324,7 @@ export function WeeklyPlanner() {
                 macroContext={macroContext}
                 macroWeekTarget={macroWeekTarget}
                 plannedExercises={plannedExercises}
+                comboMembers={comboMembers}
                 athletePRs={athletePRs}
                 settings={settings}
                 weekDescription={weekDescription}
@@ -1348,6 +1349,7 @@ export function WeeklyPlanner() {
               <WeekSummaryBox
                 selectedAthlete={planSelection.athlete}
                 plannedExercises={plannedExercises}
+                comboMembers={comboMembers}
                 activeDays={activeDays}
                 dayDisplayOrder={dayDisplayOrder}
                 dayLabels={currentWeekPlan?.day_labels || {}}
