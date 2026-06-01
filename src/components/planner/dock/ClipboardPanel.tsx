@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
+import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2, CalendarDays } from 'lucide-react';
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
 
 interface ClipboardPanelProps {
@@ -153,8 +153,10 @@ export function ClipboardPanel({ items, onRemove, onClear, onPlannerDrop }: Clip
           {items.map(item =>
             item.kind === 'exercise' ? (
               <ExerciseCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
-            ) : (
+            ) : item.kind === 'day' ? (
               <DayCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
+            ) : (
+              <WeekCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
             ),
           )}
         </div>
@@ -322,6 +324,83 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
             +{item.exercises.length - 4} more
           </div>
         )}
+      </div>
+      <RemoveBtn onClick={onRemove} />
+    </div>
+  );
+}
+
+interface WeekCardItemProps {
+  item: Extract<ClipboardItem, { kind: 'week' }>;
+  onRemove: () => void;
+}
+
+// A parked week: one parent holding all its training days. The whole week
+// drags out via CLIPBOARD:week:<id>; each day drags out on its own via
+// CLIPBOARD:week-day:<id>:<dayIndex> so a coach can reuse just one day.
+function WeekCard({ item, onRemove }: WeekCardItemProps) {
+  const totalEx = item.days.reduce((s, d) => s + d.exercises.length, 0);
+  return (
+    <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      title={`${item.label} — ${item.days.length} day${item.days.length === 1 ? '' : 's'}, ${totalEx} exercise${totalEx === 1 ? '' : 's'} (drag to apply the whole week)`}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        padding: '5px 22px 6px 6px',
+        gridColumn: '1 / -1',
+        background: 'var(--color-bg-primary)',
+        border: '0.5px solid var(--color-border-secondary)',
+        borderLeft: '3px solid var(--color-accent)',
+        borderRadius: 'var(--radius-sm)',
+        cursor: 'grab',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <CalendarDays size={11} style={{ flexShrink: 0, color: 'var(--color-accent)' }} />
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item.label}
+        </span>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+          · {item.days.length} day{item.days.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 3, paddingLeft: 15 }}>
+        {item.days.map(day => (
+          <div
+            key={day.dayIndex}
+            draggable
+            onDragStart={e => {
+              e.stopPropagation();
+              e.dataTransfer.setData('text/plain', `CLIPBOARD:week-day:${item.id}:${day.dayIndex}`);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            title={`${day.label} — ${day.exercises.length} exercise${day.exercises.length === 1 ? '' : 's'} (drag to apply just this day)`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              padding: '2px 6px', cursor: 'grab', userSelect: 'none',
+              background: 'var(--color-bg-secondary)',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              minWidth: 0,
+            }}
+          >
+            <Layers size={9} style={{ flexShrink: 0, color: 'var(--color-text-tertiary)' }} />
+            <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+              {day.label}
+            </span>
+            <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+              {day.exercises.length}
+            </span>
+          </div>
+        ))}
       </div>
       <RemoveBtn onClick={onRemove} />
     </div>

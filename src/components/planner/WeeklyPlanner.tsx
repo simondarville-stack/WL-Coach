@@ -12,6 +12,7 @@ import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { useCoachStore } from '../../store/coachStore';
 import { useExerciseStore } from '../../store/exerciseStore';
 import { defaultUnitLabel } from '../../lib/constants';
+import { formatDateRange } from '../../lib/dateUtils';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
@@ -678,7 +679,7 @@ export function WeeklyPlanner() {
 
     if (item.kind === 'exercise') {
       await insertExerciseSnapshot(item.snapshot, currentWeekPlan.id, dayIndex, basePosition + 1, { source });
-    } else {
+    } else if (item.kind === 'day') {
       for (let i = 0; i < item.exercises.length; i++) {
         await insertExerciseSnapshot(
           item.exercises[i].snapshot,
@@ -1006,9 +1007,27 @@ export function WeeklyPlanner() {
     }
   };
 
-  const handleCopyWeek = () => {
+  const handleCopyWeek = async () => {
     if (!currentWeekPlan) { alert('No week data to copy'); return; }
     setCopiedWeekStart(selectedDate);
+    // Park the whole week on the dock clipboard — one parent holding all of its
+    // training days (labels included), draggable as a week or per-day. Every
+    // content type round-trips via buildExerciseSnapshot (regular, combo, and
+    // the text/image/video/GPP sentinels carry through exercise_id + metadata).
+    const visible = dayDisplayOrder.filter(d => activeDays.includes(d));
+    const days = [];
+    for (const dayIndex of visible) {
+      const rows = plannedExercises[dayIndex] ?? [];
+      const exercises: { display: ClipboardExerciseDisplay; snapshot: ClipboardExerciseSnapshot }[] = [];
+      for (const ex of rows) {
+        const built = await buildExerciseSnapshot(ex.id);
+        if (built) exercises.push(built);
+      }
+      const label = currentWeekPlan.day_labels?.[dayIndex] || defaultUnitLabel(dayIndex, dayDisplayOrder);
+      days.push({ dayIndex, label, exercises });
+    }
+    const who = planSelection.athlete?.name ?? planSelection.group?.name ?? 'Week';
+    clipboard.addWeek(`${who} · ${formatDateRange(selectedDate, 7)}`, selectedDate, days);
   };
 
   const handlePasteWeek = () => {
@@ -1269,7 +1288,7 @@ export function WeeklyPlanner() {
                 onNextWeek={goToNextWeek}
                 onSaveWeekDescription={saveWeekDescription}
                 onDayConfig={() => setShowSettings(s => !s)}
-                onCopy={handleCopyWeek}
+                onCopy={() => void handleCopyWeek()}
                 onPaste={handlePasteWeek}
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
