@@ -84,8 +84,8 @@ export function WeeklyPlanner() {
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
 
   const { exercises: allExercises } = useExercises();
-  const { athletes, fetchAllAthletes } = useAthletes();
-  const { groups, fetchGroups } = useTrainingGroups();
+  const { fetchAllAthletes } = useAthletes();
+  const { fetchGroups } = useTrainingGroups();
 
   const {
     weekPlan: currentWeekPlan,
@@ -139,7 +139,7 @@ export function WeeklyPlanner() {
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
+  const [pendingWeekPaste, setPendingWeekPaste] = useState<string | null>(null);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
 
   // Press "L" toggles the load-distribution band (D stays bound to the dock).
@@ -174,7 +174,6 @@ export function WeeklyPlanner() {
   const [dayDisplayOrder, setDayDisplayOrder] = useState<number[]>([]);
   const [editingDaySchedule, setEditingDaySchedule] = useState<Record<number, { weekday: number; time: string | null }>>({});
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
-  const [copiedWeekStart, setCopiedWeekStart] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showWeekList, setShowWeekList] = useState(() => {
     return !urlWeekStart;
@@ -664,8 +663,62 @@ export function WeeklyPlanner() {
     }
   };
 
+  const applyWeekFromClipboard = async (weekId: string, overwrite: boolean) => {
+    if (!currentWeekPlan) return;
+    const week = clipboard.findById(weekId);
+    if (!week || week.kind !== 'week') return;
+    const src = planSelection.type === 'individual' ? 'individual' : null;
+    for (const day of week.days) {
+      const di = day.dayIndex;
+      if (overwrite) {
+        const existing = (plannedExercises[di] || []).map(ex => ex.id);
+        if (existing.length > 0) await deleteDayExercises(existing);
+      }
+      const base = overwrite ? 0 : (plannedExercises[di] || []).length;
+      for (let i = 0; i < day.exercises.length; i++) {
+        await insertExerciseSnapshot(day.exercises[i].snapshot, currentWeekPlan.id, di, base + i + 1, { source: src });
+      }
+    }
+    await handleRefresh();
+  };
+
+  const handleApplyWeekFromClipboard = (weekId: string) => {
+    const week = clipboard.findById(weekId);
+    if (!week || week.kind !== 'week') return;
+    const anyData = week.days.some(d => (plannedExercises[d.dayIndex] || []).length > 0);
+    if (anyData) setPendingWeekPaste(weekId);
+    else void applyWeekFromClipboard(weekId, false);
+  };
+
   const handleClipboardItemDrop = async (clipboardItemId: string, dayIndex: number, isReplace: boolean) => {
     if (!currentWeekPlan) return;
+
+    // A single day from a parked week: "week-day:<weekId>:<srcDayIndex>".
+    if (clipboardItemId.startsWith('week-day:')) {
+      const [, weekId, srcStr] = clipboardItemId.split(':');
+      const week = clipboard.findById(weekId);
+      if (!week || week.kind !== 'week') return;
+      const day = week.days.find(d => d.dayIndex === Number(srcStr));
+      if (!day || day.exercises.length === 0) return;
+      if (isReplace) {
+        const targetIds = (plannedExercises[dayIndex] || []).map(ex => ex.id);
+        if (targetIds.length > 0) await deleteDayExercises(targetIds);
+      }
+      const base = isReplace ? 0 : (plannedExercises[dayIndex] || []).length;
+      const src = planSelection.type === 'individual' ? 'individual' : null;
+      for (let i = 0; i < day.exercises.length; i++) {
+        await insertExerciseSnapshot(day.exercises[i].snapshot, currentWeekPlan.id, dayIndex, base + i + 1, { source: src });
+      }
+      await handleRefresh();
+      return;
+    }
+
+    // A whole parked week → ask append vs overwrite.
+    if (clipboardItemId.startsWith('week:')) {
+      handleApplyWeekFromClipboard(clipboardItemId.slice('week:'.length));
+      return;
+    }
+
     const item = clipboard.findById(clipboardItemId);
     if (!item) return;
 
@@ -1009,7 +1062,6 @@ export function WeeklyPlanner() {
 
   const handleCopyWeek = async () => {
     if (!currentWeekPlan) { alert('No week data to copy'); return; }
-    setCopiedWeekStart(selectedDate);
     // Park the whole week on the dock clipboard — one parent holding all of its
     // training days (labels included), draggable as a week or per-day. Every
     // content type round-trips via buildExerciseSnapshot (regular, combo, and
@@ -1028,11 +1080,6 @@ export function WeeklyPlanner() {
     }
     const who = planSelection.athlete?.name ?? planSelection.group?.name ?? 'Week';
     clipboard.addWeek(`${who} · ${formatDateRange(selectedDate, 7)}`, selectedDate, days);
-  };
-
-  const handlePasteWeek = () => {
-    if (!copiedWeekStart) { alert('No week copied to clipboard'); return; }
-    setShowCopyWeekModal(true);
   };
 
   const handleResolvePercentages = (direction: ResolveDirection = 'percent-to-kg') => {
@@ -1282,14 +1329,12 @@ export function WeeklyPlanner() {
                 weekDescription={weekDescription}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
                 canCopyPaste={planSelection.type === 'individual' || planSelection.type === 'group'}
-                copiedWeekStart={copiedWeekStart}
                 showLoadDistribution={showLoadDistribution}
                 onPrevWeek={goToPreviousWeek}
                 onNextWeek={goToNextWeek}
                 onSaveWeekDescription={saveWeekDescription}
                 onDayConfig={() => setShowSettings(s => !s)}
                 onCopy={() => void handleCopyWeek()}
-                onPaste={handlePasteWeek}
                 onPrint={() => setShowPrintModal(true)}
                 onToggleLoadDistribution={() => setShowLoadDistribution(s => !s)}
                 onResolvePercentages={planSelection.type === 'individual' ? handleResolvePercentages : undefined}
@@ -1566,15 +1611,9 @@ export function WeeklyPlanner() {
           onAddDay={addNewDay}
           onDayConfigCancel={handleCancelSettings}
           onDayConfigSave={saveDayLabels}
-          showPasteModal={showCopyWeekModal}
-          copiedWeekStart={copiedWeekStart}
           selectedDate={selectedDate}
           selectedAthlete={planSelection.athlete}
           selectedGroup={planSelection.group}
-          allAthletes={athletes}
-          allGroups={groups}
-          onPasteClose={() => setShowCopyWeekModal(false)}
-          onPasteComplete={() => { setShowCopyWeekModal(false); void loadWeekPlan(); }}
           showPrintModal={showPrintModal}
           dayLabels={currentWeekPlan?.day_labels ?? {}}
           weekDescription={currentWeekPlan?.week_description}
@@ -1596,6 +1635,31 @@ export function WeeklyPlanner() {
             }
           />
         )}
+
+        {/* Append vs overwrite prompt when applying a parked week onto a week that already has content */}
+        {pendingWeekPaste && (() => {
+          const w = clipboard.findById(pendingWeekPaste);
+          const wkLabel = w && w.kind === 'week' ? w.label : '';
+          const dayCount = w && w.kind === 'week' ? w.days.length : 0;
+          const close = () => setPendingWeekPaste(null);
+          const apply = (overwrite: boolean) => { const id = pendingWeekPaste; close(); void applyWeekFromClipboard(id, overwrite); };
+          const btn: React.CSSProperties = { padding: '6px 14px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-label)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)' };
+          return (
+            <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 28px rgba(0,0,0,0.18)', padding: 18, maxWidth: 400, width: '90%' }}>
+                <div style={{ fontSize: 'var(--text-section)', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Apply week</div>
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: '0 0 16px' }}>
+                  This week already has planned content. Apply <b style={{ color: 'var(--color-text-primary)' }}>{wkLabel}</b> ({dayCount} day{dayCount === 1 ? '' : 's'}) by appending to the existing plan, or overwriting it?
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button onClick={close} style={{ ...btn, background: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}>Cancel</button>
+                  <button onClick={() => apply(false)} style={{ ...btn, background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', color: 'var(--color-text-primary)' }}>Append</button>
+                  <button onClick={() => apply(true)} style={{ ...btn, background: 'var(--color-accent)', border: '0.5px solid var(--color-accent)', color: 'var(--color-text-on-accent)' }}>Overwrite</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {currentWeekPlan && !showWeekList && !showPrintModal && (
           <>

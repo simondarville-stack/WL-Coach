@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Settings2, Copy, ClipboardPaste, Printer, BarChart2,
+  Settings2, Copy, Printer, BarChart2,
   Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -188,14 +188,12 @@ export interface PlannerControlPanelProps {
   weekDescription: string;
   daySchedule: Record<number, { weekday: number; time: string | null }> | null;
   canCopyPaste: boolean;
-  copiedWeekStart: string | null;
   showLoadDistribution: boolean;
   onPrevWeek: () => void;
   onNextWeek: () => void;
   onSaveWeekDescription: (value: string) => Promise<void>;
   onDayConfig: () => void;
   onCopy: () => void;
-  onPaste: () => void;
   onPrint: () => void;
   onSaveAsTemplate?: () => void;
   onToggleLoadDistribution: () => void;
@@ -218,12 +216,10 @@ export function PlannerControlPanel({
   weekDescription,
   daySchedule,
   canCopyPaste,
-  copiedWeekStart,
   showLoadDistribution,
   onSaveWeekDescription,
   onDayConfig,
   onCopy,
-  onPaste,
   onPrint,
   onSaveAsTemplate,
   onToggleLoadDistribution,
@@ -469,22 +465,13 @@ export function PlannerControlPanel({
           </IconButton>
 
           {canCopyPaste && (
-            <>
-              <IconButton
-                title="Copy week"
-                onClick={() => { onCopy(); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1200); }}
-                highlight={copyFlash ? 'success' : undefined}
-              >
-                <Copy size={16} />
-              </IconButton>
-              <IconButton
-                title="Paste week"
-                onClick={onPaste}
-                disabled={!copiedWeekStart}
-              >
-                <ClipboardPaste size={16} />
-              </IconButton>
-            </>
+            <IconButton
+              title="Copy week to clipboard"
+              onClick={() => { onCopy(); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1200); }}
+              highlight={copyFlash ? 'success' : undefined}
+            >
+              <Copy size={16} />
+            </IconButton>
           )}
 
           {onSaveAsTemplate && (

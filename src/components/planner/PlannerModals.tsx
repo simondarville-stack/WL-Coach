@@ -2,7 +2,6 @@ import type { Athlete, TrainingGroup } from '../../lib/database.types';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { DayConfigModal } from '../DayConfigModal';
 import type { DaySchedule } from '../DayConfigModal';
-import { CopyWeekModal } from './CopyWeekModal';
 import { PrintWeek } from './PrintWeek';
 
 interface PlannerModalsProps {
@@ -23,16 +22,10 @@ interface PlannerModalsProps {
   onAddDay: () => void;
   onDayConfigCancel: () => void;
   onDayConfigSave: () => void;
-  // Copy/Paste
-  showPasteModal: boolean;
-  copiedWeekStart: string | null;
+  // Shared (print)
   selectedDate: string;
   selectedAthlete: Athlete | null;
   selectedGroup: TrainingGroup | null;
-  allAthletes: Athlete[];
-  allGroups: TrainingGroup[];
-  onPasteClose: () => void;
-  onPasteComplete: () => void;
   // Print
   showPrintModal: boolean;
   dayLabels: Record<number, string>;
@@ -44,8 +37,7 @@ export function PlannerModals({
   showDayConfig, dayDisplayOrder, editingDayLabels, activeDays, daySchedule, dayDragIndex,
   onDayDragStart, onDayDragOver, onDayDragEnd, onToggleDay, onLabelChange, onScheduleChange,
   onRemoveDay, onAddDay, onDayConfigCancel, onDayConfigSave,
-  showPasteModal, copiedWeekStart, selectedDate, selectedAthlete, selectedGroup,
-  allAthletes, allGroups, onPasteClose, onPasteComplete,
+  selectedDate, selectedAthlete, selectedGroup,
   showPrintModal, dayLabels, weekDescription, onPrintClose,
 }: PlannerModalsProps) {
   return (
@@ -67,21 +59,6 @@ export function PlannerModals({
           onAddDay={onAddDay}
           onCancel={onDayConfigCancel}
           onSave={onDayConfigSave}
-        />
-      )}
-
-      {showPasteModal && copiedWeekStart && (
-        <CopyWeekModal
-          onClose={onPasteClose}
-          onPasteComplete={onPasteComplete}
-          destinationWeekStart={selectedDate}
-          sourceWeekStart={copiedWeekStart}
-          sourceAthlete={selectedAthlete}
-          sourceGroup={null}
-          destinationAthlete={selectedAthlete}
-          destinationGroup={null}
-          allAthletes={allAthletes}
-          allGroups={allGroups}
         />
       )}
 
