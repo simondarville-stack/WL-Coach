@@ -14,6 +14,7 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
+import { Button } from '../ui';
 
 interface MacroTargetData {
   reps: number | null;
@@ -275,14 +276,14 @@ export function DayEditor({
               </div>
             )}
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<X size={16} />}
+            title="Close"
             onClick={() => void flushAndClose()}
-            style={{ padding: 6, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-          >
-            <X size={16} />
-          </button>
+          />
         </div>
 
         {/* Exercise list */}
@@ -386,24 +387,22 @@ export function DayEditor({
                         )}
                       </div>
                     )}
-                    <button
-                      onClick={() => onNavigateToExercise(ex.id)}
-                      style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'flex', flexShrink: 0 }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-tertiary)'; }}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      iconOnly
+                      icon={<GearIcon size={16} />}
                       title="Detail"
-                    >
-                      <GearIcon size={12} />
-                    </button>
-                    <button
-                      onClick={() => void handleDeleteExercise(ex.id)}
-                      style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-border-primary)', display: 'flex', flexShrink: 0 }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)'; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-border-primary)'; }}
+                      onClick={() => onNavigateToExercise(ex.id)}
+                    />
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      iconOnly
+                      icon={<Trash2 size={16} />}
                       title="Remove"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                      onClick={() => void handleDeleteExercise(ex.id)}
+                    />
                   </div>
                 </div>
 
