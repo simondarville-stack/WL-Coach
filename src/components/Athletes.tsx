@@ -10,6 +10,7 @@ import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
 import { useAthleteStore } from '../store/athleteStore';
+import { Button } from './ui';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
 
@@ -225,21 +226,22 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
 
         {/* Footer */}
         <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">
-          <button
+          <Button
+            variant="primary"
             form="athlete-form"
             type="submit"
             disabled={isSubmitting || !name.trim()}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium transition-colors"
+            className="flex-1"
           >
             {editingAthlete ? 'Update' : 'Create'}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -279,7 +281,7 @@ interface AthleteRowProps {
 function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onDelete, onShare }: AthleteRowProps) {
   const isEven = rowIndex % 2 === 0;
   const bg = isSelected
-    ? 'bg-blue-50 border-l-2 border-l-blue-400'
+    ? ''
     : isEven ? 'bg-white' : 'bg-gray-50/70';
 
   const initials = athlete.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -290,6 +292,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
       className={`flex items-center px-3 py-2 cursor-pointer transition-colors hover:bg-blue-50/40 group ${bg} ${
         !athlete.is_active ? 'opacity-60' : ''
       }`}
+      style={isSelected ? { background: 'var(--color-info-bg)', borderLeft: '2px solid var(--color-accent-border)' } : undefined}
     >
       {/* Avatar */}
       <div className="w-8 flex-shrink-0 flex items-center">
@@ -339,7 +342,10 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
       </span>
 
       {/* Competition total */}
-      <span className="w-16 flex-shrink-0 text-right font-mono text-[11px] font-medium text-blue-600">
+      <span
+        className="w-16 flex-shrink-0 text-right font-mono text-[11px]"
+        style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}
+      >
         {athlete.competition_total ? `${athlete.competition_total}` : ''}
       </span>
 
@@ -612,12 +618,13 @@ export function Athletes() {
           {showInactive ? 'All' : 'Active'}
         </button>
 
-        <button
+        <Button
+          variant="primary"
           onClick={openCreate}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+          icon={<Plus size={14} />}
         >
-          <Plus size={14} /> Add athlete
-        </button>
+          Add athlete
+        </Button>
       </div>
 
       {error && (
