@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
+import { DockGroupCard } from './DockGroupCard';
+import { ClipboardWeekPreviewDialog } from './ClipboardWeekPreviewDialog';
 
 interface ClipboardPanelProps {
   items: ClipboardItem[];
@@ -146,15 +148,18 @@ export function ClipboardPanel({ items, onRemove, onClear, onPlannerDrop }: Clip
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
             gap: 6,
+            alignItems: 'start',
           }}
         >
           {items.map(item =>
             item.kind === 'exercise' ? (
               <ExerciseCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
-            ) : (
+            ) : item.kind === 'day' ? (
               <DayCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
+            ) : (
+              <WeekCard key={item.id} item={item} onRemove={() => onRemove(item.id)} />
             ),
           )}
         </div>
@@ -325,6 +330,72 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
       </div>
       <RemoveBtn onClick={onRemove} />
     </div>
+  );
+}
+
+interface WeekCardItemProps {
+  item: Extract<ClipboardItem, { kind: 'week' }>;
+  onRemove: () => void;
+}
+
+// A parked week shown like a programme template: one parent (the week) holding
+// all its training days. The whole week drags out via CLIPBOARD:week:<id>; each
+// day drags out on its own via CLIPBOARD:week-day:<id>:<dayIndex>.
+function WeekCard({ item, onRemove }: WeekCardItemProps) {
+  const [showPreview, setShowPreview] = useState(false);
+  return (
+    <>
+      <DockGroupCard
+        title={item.label}
+        countLabel={`${item.days.length} ${item.days.length === 1 ? 'day' : 'days'}`}
+        dragTitle="Drag to apply the whole week"
+        onDoubleClick={() => setShowPreview(true)}
+        onHeaderDragStart={e => {
+          e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
+          e.dataTransfer.setData('application/x-emos-week-paste', '1');
+          e.dataTransfer.effectAllowed = 'copy';
+        }}
+        headerAction={
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(); }}
+            onMouseDown={e => e.stopPropagation()}
+            onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+            title="Remove from clipboard"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+              padding: 0,
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-bg-primary)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
+          >
+            <X size={10} />
+          </button>
+        }
+        days={item.days.map((day, i) => ({
+          key: String(day.dayIndex),
+          index: i + 1,
+          label: day.label,
+          previewNames: day.exercises.map(ex => ex.display.label),
+          title: `Drag ${day.label} onto a day to apply just this day`,
+          onDragStart: e => {
+            e.stopPropagation();
+            e.dataTransfer.setData('text/plain', `CLIPBOARD:week-day:${item.id}:${day.dayIndex}`);
+            e.dataTransfer.effectAllowed = 'copy';
+          },
+        }))}
+      />
+      {showPreview && <ClipboardWeekPreviewDialog week={item} onClose={() => setShowPreview(false)} />}
+    </>
   );
 }
 

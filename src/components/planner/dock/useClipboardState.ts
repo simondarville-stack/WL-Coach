@@ -69,7 +69,30 @@ export interface ClipboardDayItem {
   }[];
 }
 
-export type ClipboardItem = ClipboardExerciseItem | ClipboardDayItem;
+/** A single training day inside a parked week — its label and (snapshot)
+ *  exercises, plus the original day index so it can be re-applied to the
+ *  matching day on paste. */
+export interface ClipboardDay {
+  dayIndex: number;
+  label: string;
+  exercises: {
+    display: ClipboardExerciseDisplay;
+    snapshot: ClipboardExerciseSnapshot;
+  }[];
+}
+
+/** A whole week parked on the clipboard — one parent holding all its training
+ *  days. The week (or any single day) can be dragged back out. */
+export interface ClipboardWeekItem {
+  kind: 'week';
+  id: string;
+  added_at: number;
+  label: string;
+  weekStart: string;
+  days: ClipboardDay[];
+}
+
+export type ClipboardItem = ClipboardExerciseItem | ClipboardDayItem | ClipboardWeekItem;
 
 function genId(): string {
   // Crypto.randomUUID() is available in all evergreen browsers. Falls back
@@ -97,7 +120,7 @@ function readInitial(): ClipboardItem[] {
         !!it &&
         typeof it === 'object' &&
         'kind' in it &&
-        ((it as { kind: unknown }).kind === 'exercise' || (it as { kind: unknown }).kind === 'day'),
+        ['exercise', 'day', 'week'].includes((it as { kind: unknown }).kind as string),
     );
   } catch {
     return [];
@@ -140,6 +163,17 @@ export function useClipboardState() {
     [],
   );
 
+  const addWeek = useCallback(
+    (label: string, weekStart: string, days: ClipboardDay[]) => {
+      if (days.every(d => d.exercises.length === 0)) return;
+      setItems(prev => [
+        { kind: 'week', id: genId(), added_at: Date.now(), label, weekStart, days },
+        ...prev,
+      ]);
+    },
+    [],
+  );
+
   const remove = useCallback((id: string) => {
     setItems(prev => prev.filter(it => it.id !== id));
   }, []);
@@ -153,5 +187,5 @@ export function useClipboardState() {
     [items],
   );
 
-  return { items, addExercise, addDay, remove, clear, findById };
+  return { items, addExercise, addDay, addWeek, remove, clear, findById };
 }

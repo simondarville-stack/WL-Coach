@@ -205,7 +205,7 @@ function ExercisePreview({ ex }: { ex: ProgramTemplateFull['days'][number]['exer
 
 /** Pretty-print the prescription_raw for read-only display in the
  *  preview. Falls back to the raw string if parsing fails. */
-function readableLines(raw: string | null, unit: string | null, isCombo: boolean): string[] {
+export function readableLines(raw: string | null, unit: string | null, isCombo: boolean): string[] {
   if (!raw) return [];
   const sym = unit === 'percentage' ? '%' : '';
   try {

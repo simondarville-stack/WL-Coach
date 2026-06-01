@@ -207,7 +207,15 @@ export function DayCard({
     // Accept both prefixes during the rename window — a card already on
     // screen when the bundle reloads might still emit the legacy CANVAS:
     // marker until the user reloads the page.
-    if (
+    if (data.startsWith('CLIPBOARD:week-day:')) {
+      // A single day from a parked week → "week-day:<weekId>:<srcDayIndex>".
+      const rest = data.slice('CLIPBOARD:week-day:'.length);
+      if (rest && onClipboardItemDrop) await onClipboardItemDrop(`week-day:${rest}`, dayIndex, isReplace);
+    } else if (data.startsWith('CLIPBOARD:week:')) {
+      // A whole parked week → apply all its days (prompts append/overwrite).
+      const weekId = data.slice('CLIPBOARD:week:'.length);
+      if (weekId && onClipboardItemDrop) await onClipboardItemDrop(`week:${weekId}`, dayIndex, isReplace);
+    } else if (
       data.startsWith('CLIPBOARD:exercise:') ||
       data.startsWith('CLIPBOARD:day:') ||
       data.startsWith('CANVAS:exercise:') ||
