@@ -1048,14 +1048,10 @@ export function useWeekPlans() {
     const groupDayLabels: Record<string, string> = groupPlanMeta?.day_labels ?? {};
     const groupDaySchedule: Record<string, { weekday: number; time: string | null }> = groupPlanMeta?.day_schedule ?? {};
 
-    // Athlete plans must be written under the GROUP's host coach, never the
-    // active coach. When a co-coach syncs a shared group, getOwnerId() is the
-    // co-coach — but the athletes (and any plans they already have) live under
-    // the host. Using the host owner here means we find/reuse the existing
-    // host-owned athlete plan instead of inserting a duplicate that collides
-    // with the (athlete_id, week_start) unique index and aborts the sync.
-    // The group plan's own owner_id is the authoritative host id (see
-    // fetchOrCreateWeekPlan, which creates group plans under group.owner_id).
+    // The group plan's own owner_id is the group's host coach. Used only as a
+    // fallback owner for member athletes whose own owner can't be resolved
+    // (see ownerByAthleteId below) — never as the active (possibly co-coach)
+    // owner, which is what previously caused cross-owner duplicate-key aborts.
     const hostOwnerId: string = groupPlanMeta?.owner_id ?? getOwnerId();
 
     // 1. Fetch group plan exercises
@@ -1106,16 +1102,39 @@ export function useWeekPlans() {
       .is('left_at', null);
     if (memError) throw memError;
 
+    // Each athlete's plan lives under THAT athlete's host coach, which may
+    // differ from the group's host: a co-edited group (e.g. a competition
+    // squad shared between two coaches) can contain athletes owned by
+    // different coaches. Resolve each member's owner so a new plan is created
+    // under the correct host — creating it under the wrong owner collides
+    // with the (athlete_id, week_start) unique index and aborts the sync.
+    const memberAthleteIds = (members || []).map(m => m.athlete_id);
+    const ownerByAthleteId = new Map<string, string>();
+    if (memberAthleteIds.length > 0) {
+      const { data: athleteRows, error: athErr } = await supabase
+        .from('athletes')
+        .select('id, owner_id')
+        .in('id', memberAthleteIds);
+      if (athErr) throw athErr;
+      (athleteRows || []).forEach((a: { id: string; owner_id: string }) => ownerByAthleteId.set(a.id, a.owner_id));
+    }
+
     for (const member of members || []) {
       const athleteId = member.athlete_id;
+      // Owner of THIS athlete's plan. Falls back to the group host, then the
+      // active coach, only if the athlete row somehow lacks an owner.
+      const athleteOwnerId: string = ownerByAthleteId.get(athleteId) ?? hostOwnerId;
 
-      // 4a. Get or create athlete's week plan
-      // Note: do NOT filter by group_id here — the unique constraint covers (owner_id, athlete_id, week_start)
-      // regardless of group_id, so we must find any existing plan for this athlete+week first.
+      // 4a. Get or create athlete's week plan.
+      // Do NOT filter by owner_id (or group_id) here: the (athlete_id,
+      // week_start) unique index guarantees at most one individual plan per
+      // athlete per week regardless of owner, so we must find ANY existing
+      // plan first. Filtering by owner misses a plan owned by the athlete's
+      // host (≠ the active coach when syncing a shared/co-edited group) and
+      // would trigger a duplicate-key insert that aborts the whole sync.
       const { data: existingPlan } = await supabase
         .from('week_plans')
         .select('id')
-        .eq('owner_id', hostOwnerId)
         .eq('athlete_id', athleteId)
         .eq('week_start', weekStart)
         .maybeSingle();
@@ -1126,7 +1145,7 @@ export function useWeekPlans() {
       } else {
         const { data: newPlan, error: createError } = await supabase
           .from('week_plans')
-          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: hostOwnerId }])
+          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: athleteOwnerId }])
           .select('id')
           .single();
         if (createError) {
@@ -1135,7 +1154,6 @@ export function useWeekPlans() {
             const { data: racePlan } = await supabase
               .from('week_plans')
               .select('id')
-              .eq('owner_id', hostOwnerId)
               .eq('athlete_id', athleteId)
               .eq('week_start', weekStart)
               .maybeSingle();
