@@ -1040,13 +1040,23 @@ export function useWeekPlans() {
     // athlete plan so that units like "Extra" are visible even if not previously in the athlete's plan.
     const { data: groupPlanMeta, error: metaError } = await supabase
       .from('week_plans')
-      .select('active_days, day_labels, day_schedule')
+      .select('owner_id, active_days, day_labels, day_schedule')
       .eq('id', groupPlanId)
       .single();
     if (metaError) throw metaError;
     const groupActiveDays: number[] = groupPlanMeta?.active_days ?? [];
     const groupDayLabels: Record<string, string> = groupPlanMeta?.day_labels ?? {};
     const groupDaySchedule: Record<string, { weekday: number; time: string | null }> = groupPlanMeta?.day_schedule ?? {};
+
+    // Athlete plans must be written under the GROUP's host coach, never the
+    // active coach. When a co-coach syncs a shared group, getOwnerId() is the
+    // co-coach — but the athletes (and any plans they already have) live under
+    // the host. Using the host owner here means we find/reuse the existing
+    // host-owned athlete plan instead of inserting a duplicate that collides
+    // with the (athlete_id, week_start) unique index and aborts the sync.
+    // The group plan's own owner_id is the authoritative host id (see
+    // fetchOrCreateWeekPlan, which creates group plans under group.owner_id).
+    const hostOwnerId: string = groupPlanMeta?.owner_id ?? getOwnerId();
 
     // 1. Fetch group plan exercises
     const { data: groupExercises, error: exError } = await supabase
@@ -1105,7 +1115,7 @@ export function useWeekPlans() {
       const { data: existingPlan } = await supabase
         .from('week_plans')
         .select('id')
-        .eq('owner_id', getOwnerId())
+        .eq('owner_id', hostOwnerId)
         .eq('athlete_id', athleteId)
         .eq('week_start', weekStart)
         .maybeSingle();
@@ -1116,7 +1126,7 @@ export function useWeekPlans() {
       } else {
         const { data: newPlan, error: createError } = await supabase
           .from('week_plans')
-          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: getOwnerId() }])
+          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: hostOwnerId }])
           .select('id')
           .single();
         if (createError) {
@@ -1125,7 +1135,7 @@ export function useWeekPlans() {
             const { data: racePlan } = await supabase
               .from('week_plans')
               .select('id')
-              .eq('owner_id', getOwnerId())
+              .eq('owner_id', hostOwnerId)
               .eq('athlete_id', athleteId)
               .eq('week_start', weekStart)
               .maybeSingle();
