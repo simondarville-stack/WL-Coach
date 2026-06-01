@@ -36,6 +36,7 @@ import {
   type WeekOverview,
 } from '../../../lib/trainingLogService';
 import type {
+  AthletePRHistory,
   CustomMetricEntry,
   ExerciseStub,
   GppSection,
@@ -44,6 +45,7 @@ import type {
 } from '../../../lib/database.types';
 import { isExerciseDone } from '../../../lib/trainingLogModel';
 import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
+import { fetchPRHistory, insertPRHistory, syncAthletePRs } from '../../../lib/prTable';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -132,6 +134,19 @@ export function TodayScreen() {
    * the eye toggle in SessionHeader.
    */
   const [mode, setMode] = useState<'preview' | 'edit'>('preview');
+
+  // ── PR detection ──────────────────────────────────────────────────────────
+  // The athlete's full PR history (newest-first), so a freshly-logged set can
+  // be compared against the current record at its rep count without a per-save
+  // round-trip. Loaded once per athlete, kept in sync as PRs are registered.
+  const [prHistory, setPrHistory] = useState<AthletePRHistory[]>([]);
+  const [prPrompt, setPrPrompt] = useState<{
+    exerciseId: string; exerciseName: string;
+    repCount: number; valueKg: number; achievedDate: string; previous: number;
+  } | null>(null);
+  // Values the athlete declined this session, so we don't re-nag for the same
+  // (exercise, reps, value) on every subsequent set save.
+  const prDismissedRef = useRef<Set<string>>(new Set());
   /**
    * One-shot bypass for the preview-on-slot-change effect, so that
    * explicit setMode('edit') after bonus-day creation isn't immediately
@@ -394,6 +409,78 @@ export function TodayScreen() {
       position: planned.exercise.position,
     });
 
+  // Load the athlete's PR history once per athlete (newest-first).
+  const athleteId = athlete?.id ?? null;
+  useEffect(() => {
+    if (!athleteId) { setPrHistory([]); return; }
+    let cancelled = false;
+    fetchPRHistory(athleteId)
+      .then(h => { if (!cancelled) setPrHistory(h); })
+      .catch(() => { /* PR prompt is best-effort; ignore load failures */ });
+    return () => { cancelled = true; };
+  }, [athleteId]);
+
+  /**
+   * After a set is saved, decide whether it beats the athlete's current PR at
+   * that rep count and, if so, surface the register-PR prompt. Best-effort and
+   * deliberately conservative: only quantified single lifts (not combos), a
+   * positive kg load, a whole rep count in 1–10, a completed set, and an
+   * existing record at that rep count to beat. First-ever rep-count entries do
+   * not auto-prompt — those are set from the PR screen.
+   */
+  const checkForPR = useCallback((args: {
+    exerciseId: string | null | undefined;
+    exerciseName: string | null | undefined;
+    isCombo: boolean;
+    repCount: number | null;
+    valueKg: number | null;
+    status: string;
+    achievedDate: string;
+  }) => {
+    const { exerciseId, exerciseName, isCombo, repCount, valueKg, status, achievedDate } = args;
+    if (status !== 'completed' || isCombo || !exerciseId) return;
+    if (valueKg == null || !Number.isFinite(valueKg) || valueKg <= 0) return;
+    if (repCount == null || !Number.isInteger(repCount) || repCount < 1 || repCount > 10) return;
+    // prHistory is newest-first, so the first match is the current PR.
+    const current = prHistory.find(h => h.exercise_id === exerciseId && h.rep_count === repCount);
+    if (!current || valueKg <= current.value_kg) return;
+    const key = `${exerciseId}:${repCount}:${valueKg}`;
+    if (prDismissedRef.current.has(key)) return;
+    setPrPrompt({
+      exerciseId,
+      exerciseName: exerciseName ?? 'this lift',
+      repCount,
+      valueKg,
+      achievedDate,
+      previous: current.value_kg,
+    });
+  }, [prHistory]);
+
+  const handleRegisterPR = () => {
+    if (!prPrompt || !athlete) return;
+    const { exerciseId, repCount, valueKg, achievedDate } = prPrompt;
+    setPrPrompt(null);
+    void runSave(async () => {
+      const entry = await insertPRHistory({
+        athleteId: athlete.id,
+        exerciseId,
+        repCount,
+        valueKg,
+        achievedDate,
+      });
+      await syncAthletePRs(athlete.id, exerciseId);
+      // Prepend so it becomes the current record for subsequent checks.
+      setPrHistory(prev => [entry, ...prev]);
+    });
+  };
+
+  const dismissPRPrompt = () => {
+    if (prPrompt) {
+      prDismissedRef.current.add(`${prPrompt.exerciseId}:${prPrompt.repCount}:${prPrompt.valueKg}`);
+    }
+    setPrPrompt(null);
+  };
+
   const handleSaveSet = (planned: PlannedExerciseFull) => (patch: {
     setNumber: number;
     performedLoad: number | null;
@@ -443,6 +530,20 @@ export function TodayScreen() {
           mergeLogExercise(promoted, planned.exerciseDef);
         }
       }
+      // PR prompt: compare against the actually-performed exercise (honours a
+      // substitution) and the session's performed-on date.
+      const performedDef = data?.log?.exercises
+        .find(e => e.log.planned_exercise_id === planned.exercise.id)?.exercise;
+      const prEx = performedDef ?? planned.exerciseDef;
+      checkForPR({
+        exerciseId: prEx?.id,
+        exerciseName: prEx?.name,
+        isCombo: planned.exercise.is_combo,
+        repCount: patch.performedReps,
+        valueKg: patch.performedLoad,
+        status: patch.status,
+        achievedDate: session.date,
+      });
     });
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>
@@ -726,6 +827,17 @@ export function TodayScreen() {
         status: patch.status,
       });
       mergeLoggedSet(savedSet);
+      // PR prompt for off-plan logging (off-plan exercises are never combos).
+      const offPlanEx = data?.log?.exercises.find(e => e.log.id === logExerciseId)?.exercise;
+      checkForPR({
+        exerciseId: offPlanEx?.id,
+        exerciseName: offPlanEx?.name,
+        isCombo: false,
+        repCount: patch.performedReps,
+        valueKg: patch.performedLoad,
+        status: patch.status,
+        achievedDate: data?.log?.session?.date ?? todayISO(),
+      });
     });
 
   // ─── Render ──────────────────────────────────────────────────────────────
@@ -957,6 +1069,20 @@ export function TodayScreen() {
           variant={pendingConfirm?.variant ?? 'default'}
           onConfirm={() => { if (pendingConfirm) void pendingConfirm.onConfirm(); }}
           onCancel={() => setPendingConfirm(null)}
+        />
+
+        {/* New-PR prompt: a logged set that beats the current record at its
+            rep count. Confirm registers it (and overwrites the current PR). */}
+        <ConfirmModal
+          open={prPrompt != null}
+          title={prPrompt ? `New PR — ${prPrompt.exerciseName}` : ''}
+          description={prPrompt
+            ? `You lifted ${prPrompt.valueKg} kg × ${prPrompt.repCount}, beating your current ${prPrompt.repCount}RM of ${prPrompt.previous} kg. Register it as your new ${prPrompt.repCount}RM?`
+            : undefined}
+          confirmLabel="Register PR"
+          cancelLabel="Not now"
+          onConfirm={handleRegisterPR}
+          onCancel={dismissPRPrompt}
         />
 
         {/* Undo toast for low-risk single-set delete (UF-12) */}
