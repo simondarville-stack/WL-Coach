@@ -11,6 +11,7 @@ import {
 import { MetricStrip } from '../ui/MetricStrip';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
 import { usePlannerWeekOverview, type MacroBlock, type PhaseBlock } from '../../hooks/usePlannerWeekOverview';
+import { formatDateShort } from '../../lib/dateUtils';
 import { useState } from 'react';
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -18,12 +19,6 @@ import { useState } from 'react';
 const WEEKS_BACK = 2;
 const WEEKS_FORWARD = 2;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function formatDateShort(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${months[d.getMonth()]} ${d.getDate()}`;
-}
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -154,11 +149,21 @@ export function PlannerWeekOverview({
   if (loading) {
     return (
       <StandardPage>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: '16rem', fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
-        }}>
-          Loading weeks…
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', padding: 'var(--space-lg)' }}>
+          {[0, 1, 2, 3].map(row => (
+            <div key={row} className="animate-pulse" style={{ display: 'flex', alignItems: 'stretch', gap: 'var(--space-sm)' }}>
+              <div style={{
+                width: '76px', height: '90px', flexShrink: 0,
+                background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)',
+              }} />
+              {[0, 1, 2, 3, 4, 5, 6].map(day => (
+                <div key={day} style={{
+                  flex: 1, height: '90px',
+                  background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)',
+                }} />
+              ))}
+            </div>
+          ))}
         </div>
       </StandardPage>
     );
@@ -182,11 +187,11 @@ export function PlannerWeekOverview({
             color: currentPhaseInfo?.phase.color || '#7F77DD',
             background: `${currentPhaseInfo?.phase.color || '#7F77DD'}15`,
           }}>
-            {currentMacro.macroName}
+            {currentPhaseInfo ? currentPhaseInfo.phase.phaseName : currentMacro.macroName}
           </span>
           {currentPhaseInfo && (
             <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-              {currentPhaseInfo.phase.phaseName}
+              {currentMacro.macroName}
             </span>
           )}
           <span style={{
@@ -329,13 +334,13 @@ export function PlannerWeekOverview({
                       color: 'var(--color-text-primary)',
                       fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {weekNum || formatDateShort(week.weekStart).split(' ')[1]}
+                      {weekNum || formatDateShort(week.weekStart)}
                     </span>
                     <div style={{
                       fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2,
                       fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                     }}>
-                      {formatDateShort(week.weekStart)}–{formatDateShort(endDate).split(' ')[1]}
+                      {formatDateShort(week.weekStart)}–{formatDateShort(endDate)}
                     </div>
                     {week.compliance !== null && (
                       <div style={{ marginTop: 6 }}>

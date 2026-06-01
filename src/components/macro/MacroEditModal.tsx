@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import type { MacroCycle, MacroCompetition } from '../../lib/database.types';
+import { Button } from '../ui';
 import { DateInput } from '../ui/DateInput';
 
 interface CompetitionRow {
@@ -74,25 +75,25 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-base font-medium text-gray-900">Edit Macrocycle</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--color-border-tertiary)] flex-shrink-0">
+          <h2 className="text-base font-medium" style={{ color: 'var(--color-text-primary)' }}>Edit Macrocycle</h2>
+          <button onClick={onClose} className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)]"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Name *</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start date *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start date *</label>
               <DateInput value={startDate} onChange={setStartDate} />
               {startChanged && (
                 <p className="text-[11px] text-amber-600 mt-1">
@@ -101,7 +102,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End date *</label>
               <DateInput value={endDate} onChange={setEndDate} />
               {endExtended && (
                 <p className="text-[11px] text-green-600 mt-1">New weeks will be added to the end.</p>
@@ -114,17 +115,17 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Competition dates</label>
+              <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Competition dates</label>
               <button
                 onClick={addCompetition}
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                className="text-xs text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] flex items-center gap-1"
               >
                 <Plus size={12} /> Add
               </button>
             </div>
 
             {comps.length === 0 && (
-              <p className="text-xs text-gray-400">No competitions added yet.</p>
+              <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No competitions added yet.</p>
             )}
 
             {comps.map((comp, i) => (
@@ -134,25 +135,25 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
                   value={comp.name}
                   onChange={e => updateComp(i, 'name', e.target.value)}
                   placeholder="Competition name"
-                  className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 px-2 py-1.5 text-xs border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                 />
                 <div className="w-32">
                   <DateInput
                     value={comp.date}
                     onChange={v => updateComp(i, 'date', v)}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full px-2 py-1.5 text-xs border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                   />
                 </div>
-                <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
+                <label className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: 'var(--color-text-secondary)' }}>
                   <input
                     type="checkbox"
                     checked={comp.is_primary}
                     onChange={e => updateComp(i, 'is_primary', e.target.checked)}
-                    className="text-blue-600"
+                    style={{ color: 'var(--color-accent)' }}
                   />
                   Primary
                 </label>
-                <button onClick={() => removeCompetition(i)} className="text-red-500 hover:text-red-700">
+                <button onClick={() => removeCompetition(i)} className="text-[color:var(--color-danger-text)] hover:text-red-700">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -160,20 +161,22 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
           </div>
         </div>
 
-        <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">
-          <button
+        <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">
+          <Button
+            variant="secondary"
             onClick={onClose}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="flex-1"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleSubmit}
             disabled={!canSubmit || submitting || loading}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex-1"
           >
             {submitting ? 'Saving...' : 'Save changes'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { useSettings } from '../../hooks/useSettings';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
-import { addDaysToISO } from '../../lib/dateUtils';
+import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
 import {
   buildCellsForSingleMacro,
   buildCellsForContinuousRange,
@@ -322,7 +322,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
             }}
           >
             {cells.length > 0
-              ? `${cells[0].weekStart} → ${addDaysToISO(cells[cells.length - 1].weekStart, 6)}`
+              ? `${formatDateShort(cells[0].weekStart)} → ${formatDateShort(addDaysToISO(cells[cells.length - 1].weekStart, 6))}`
               : ''}
           </span>
           <div style={{ display: 'flex', gap: '6px' }}>

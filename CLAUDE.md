@@ -80,6 +80,75 @@ future reactivation. Deleting them is a SCOPE VIOLATION.
   rewrite over incremental patching. Mark it explicitly as a rewrite
   candidate in the plan.
 
+## UI & Design-System conventions
+
+> Distilled from the 2026-06 UX/design review. The goal is a professional,
+> coherent product — not a "vibe-coded" patchwork. Follow these for any UI work.
+
+### Use the shared primitives — never hand-roll
+
+- **Buttons:** always use `Button` from `src/components/ui` (re-exported via the
+  `ui` barrel). Variants: `primary | secondary | ghost | danger`; sizes
+  `sm | md | lg`; props `icon`, `iconPosition`, `iconOnly` (square, label-less).
+  **Never** hand-roll `bg-blue-600` / `bg-blue-700` buttons or bespoke
+  `onMouseEnter/onMouseLeave` hover-colour icon buttons — use
+  `<Button iconOnly variant="ghost|danger" icon={…} />`.
+- **Pages:** use `StandardPage` (or at minimum the `var(--color-bg-page)`
+  background). No gradient page backgrounds (`bg-gradient-to-br from-slate-*`).
+- The brand accent is `var(--color-accent)` (`#185FA5`) — **not** Tailwind
+  `blue-600` (`#2563EB`). They look similar and reading like the latter is the
+  single most common "off-brand" tell.
+
+### Colour = design tokens, not raw Tailwind palette
+
+- Use the CSS custom properties in `src/styles/tokens.css`
+  (`var(--color-text-primary)`, `…-secondary`, `…-tertiary`,
+  `--color-bg-primary/secondary/page`, `--color-border-tertiary`,
+  `--color-accent[-muted/-border/-hover]`, `--color-danger-text/-bg/-border`,
+  `--color-success-*`). Raw `gray-*/blue-*/slate-*` literals can't theme
+  (dark mode) and drift. Migration mapping used in the review:
+  `text-gray-900/800 → text-primary`, `gray-700/600/500 → text-secondary`,
+  `gray-400/300/200 → text-tertiary`, `bg-white → bg-primary`,
+  `bg-gray-50/100 → bg-secondary`, `border-gray-* → border-tertiary`,
+  `blue-600 → accent`, `bg-blue-50 → accent-muted`,
+  `border/ring-blue-* → accent-border`, `red-* → danger-*`.
+- Prefer inline `style={{ color: 'var(--token)' }}` for a static colour; use a
+  Tailwind arbitrary-value class only when a `hover:`/`group-hover:`/`focus:`
+  variant must be preserved.
+- **Tailwind gotcha (silent bug):** for `border`/`ring`/`outline`/`divide`
+  colours via a CSS var, you MUST add the `color:` type hint —
+  `border-[color:var(--token)]`, `ring-[color:var(--token)]`. Bare
+  `border-[var(--token)]` is parsed as a *length* (border-width) and silently
+  renders wrong. `bg-[var(--token)]` and `text-[color:var(--token)]` are the
+  safe forms. Do **not** use the `/opacity` modifier on an arbitrary `var()`
+  (`bg-[var(--x)]/60` won't resolve).
+
+### Never tokenise data-driven or semantic colour
+
+When migrating colours, leave anything that encodes meaning: phase / week-type
+colours, chart & SVG series colours, heat/value colouring, `type="color"`
+values, competition-type badges, and category shades (e.g.
+`getExerciseCategoryShade(...)`). Only neutral chrome (greys, generic blue
+accents, delete-mode reds) becomes tokens. When unsure whether a colour is
+data-driven, **leave it**.
+
+### Dates, chips, and density
+
+- **Dates:** format via `src/lib/dateUtils.ts` (`formatDateShort` → `DD/MM`,
+  `formatDateToDDMMYYYY`, `formatDateRange`). Never write a local US-style
+  formatter (`'Apr 27'`). European day-first, 24h, Monday-first (see Stack).
+- **Chips/badges:** render a chip only when it conveys actionable, non-obvious
+  information. A chip that appears on *every* row carries no signal — drop it.
+  Prefer a `title` tooltip for terse/jargon labels (e.g. a `RAW …/12` score)
+  rather than an unexplained chip.
+
+### Verify before you trust
+
+Run `npm run typecheck` and `npm run build` after each change group. Typecheck
+and build both pass even when a Tailwind arbitrary-value class is malformed, so
+also read the diff: confirm handlers/`onClick`/`disabled`/`title` are preserved,
+no imports went unused, and no data colour was touched.
+
 ## Review workflow artifacts (shared convention between agents)
 
 All review agents share this filesystem layout at the repo root:

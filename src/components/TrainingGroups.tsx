@@ -5,6 +5,7 @@ import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { useAthletes } from '../hooks/useAthletes';
 import { useCoachStore } from '../store/coachStore';
 import { ShareGroupModal } from './ShareGroupModal';
+import { Button } from './ui';
 
 export function TrainingGroups() {
   const {
@@ -104,17 +105,17 @@ export function TrainingGroups() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+    <div className="min-h-screen p-6" style={{ background: 'var(--color-bg-page)' }}>
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-medium text-gray-900">Training Groups</h1>
-          <button
+          <Button
+            variant="primary"
             onClick={() => { setFormName(''); setFormDescription(''); setShowCreateModal(true); }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            icon={<Plus size={20} />}
           >
-            <Plus size={20} />
             Create Group
-          </button>
+          </Button>
         </div>
 
         {error && (
@@ -141,11 +142,12 @@ export function TrainingGroups() {
                 {groups.map((group) => (
                   <div
                     key={group.id}
-                    className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`p-3 rounded-lg cursor-pointer transition-colors ${
                       selectedGroup?.id === group.id
-                        ? 'bg-blue-50 border-blue-300'
-                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                        ? ''
+                        : 'border bg-gray-50 border-gray-200 hover:bg-gray-100'
                     }`}
+                    style={selectedGroup?.id === group.id ? { background: 'var(--color-info-bg)', border: '0.5px solid var(--color-accent-border)' } : undefined}
                     onClick={() => setSelectedGroup(group)}
                   >
                     <div className="flex items-center justify-between">
@@ -292,16 +294,16 @@ export function TrainingGroups() {
                   />
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
-                  <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                  <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="primary"
                     onClick={handleCreateGroup}
                     disabled={!formName.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Create Group
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -337,16 +339,16 @@ export function TrainingGroups() {
                   />
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
-                  <button onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                  <Button variant="secondary" onClick={() => setShowEditModal(false)}>
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="primary"
                     onClick={handleUpdateGroup}
                     disabled={!formName.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Save Changes
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -390,9 +392,9 @@ export function TrainingGroups() {
                 </div>
               )}
               <div className="flex justify-end pt-4">
-                <button onClick={() => setShowAddMemberModal(false)} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                <Button variant="secondary" onClick={() => setShowAddMemberModal(false)}>
                   Close
-                </button>
+                </Button>
               </div>
             </div>
           </div>

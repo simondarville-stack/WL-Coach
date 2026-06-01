@@ -551,9 +551,6 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
-                            <span style={{ fontSize: 'var(--text-caption)', padding: '1px 6px', background: 'var(--color-accent-muted)', color: 'var(--color-accent)', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>
-                              Combo
-                            </span>
                           </div>
                           {ex.variation_note && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
@@ -590,10 +587,10 @@ export function DayCard({
                               <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
                             )}
                             {isLinkedToGroupPlan && ex.source === 'group' && (
-                              <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>G</span>
+                              <span title="Group exercise" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>G</span>
                             )}
                             {isLinkedToGroupPlan && ex.source === 'individual' && (
-                              <span style={{ fontSize: 'var(--text-caption)', padding: '1px 4px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 500, flexShrink: 0 }}>I</span>
+                              <span title="Individual override" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>I</span>
                             )}
                           </div>
                           <div

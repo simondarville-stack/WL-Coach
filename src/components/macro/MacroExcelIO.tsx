@@ -6,6 +6,7 @@ import { formatDateShort } from '../../lib/dateUtils';
 import { supabase } from '../../lib/supabase';
 import { getContextOwnerId } from '../../lib/ownerContext';
 import { PlanningPRPanel } from './PlanningPRPanel';
+import { Button } from '../ui';
 
 interface MacroExcelIOProps {
   macroWeeks: MacroWeek[];
@@ -758,23 +759,25 @@ export function MacroExcelIO({
       <div className="flex items-center gap-1">
         {/* Export dropdown */}
         <div ref={exportRef} className="relative">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Download size={12} />}
             onClick={() => { setExportOpen(o => !o); setImportOpen(false); }}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            <Download size={12} /> Export <ChevronDown size={10} />
-          </button>
+            Export <ChevronDown size={10} />
+          </Button>
           {exportOpen && (
             <div className="absolute top-full mt-1 left-0 rounded-lg z-30 min-w-[160px] overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
               <button
                 onClick={() => { handleExport(); setExportOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"
               >
                 <Download size={11} /> Excel (with actuals)
               </button>
               <button
                 onClick={() => { handleExportTemplate(); setExportOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"
               >
                 <Download size={11} /> Template (%)
               </button>
@@ -784,23 +787,25 @@ export function MacroExcelIO({
 
         {/* Import dropdown */}
         <div ref={importRef} className="relative">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Upload size={12} />}
             onClick={() => { setImportOpen(o => !o); setExportOpen(false); }}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            <Upload size={12} /> Import <ChevronDown size={10} />
-          </button>
+            Import <ChevronDown size={10} />
+          </Button>
           {importOpen && (
             <div className="absolute top-full mt-1 left-0 rounded-lg z-30 min-w-[160px] overflow-hidden" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
               <button
                 onClick={() => { fileInputRef.current?.click(); setImportOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"
               >
                 <Upload size={11} /> Excel (kg targets)
               </button>
               <button
                 onClick={() => { templateFileInputRef.current?.click(); setImportOpen(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"
               >
                 <Upload size={11} /> Template (%)
               </button>
@@ -816,11 +821,9 @@ export function MacroExcelIO({
       {showImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="rounded-lg max-w-2xl w-full max-h-[80vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
-              <h2 className="text-sm font-medium text-gray-900">Import Targets from Excel</h2>
-              <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--color-border-tertiary)] flex-shrink-0">
+              <h2 className="text-sm font-medium text-[color:var(--color-text-primary)]">Import Targets from Excel</h2>
+              <Button variant="ghost" size="sm" iconOnly icon={<X size={16} />} title="Close" onClick={() => setShowImportModal(false)} />
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
@@ -829,56 +832,57 @@ export function MacroExcelIO({
                   <div className="text-green-600 text-sm font-medium mb-1">
                     {validRows.length} target{validRows.length !== 1 ? 's' : ''} imported successfully.
                   </div>
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={() => setShowImportModal(false)}
-                    className="mt-3 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                    className="mt-3"
                   >
                     Close
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center gap-4 mb-4 text-xs">
                     <span className="text-green-700 font-medium">{validRows.length} valid rows</span>
                     {invalidRows.length > 0 && (
-                      <span className="text-red-600 font-medium">{invalidRows.length} errors</span>
+                      <span className="text-[color:var(--color-danger-text)] font-medium">{invalidRows.length} errors</span>
                     )}
                   </div>
 
                   {importRows.length === 0 ? (
-                    <p className="text-xs text-gray-400">No data found in file.</p>
+                    <p className="text-xs text-[color:var(--color-text-tertiary)]">No data found in file.</p>
                   ) : (
-                    <div className="border border-gray-200 rounded overflow-hidden">
+                    <div className="border border-[color:var(--color-border-tertiary)] rounded overflow-hidden">
                       <table className="w-full text-xs">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-[var(--color-bg-secondary)]">
                           <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-600">Wk</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-600">Exercise</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-600">Field</th>
-                            <th className="px-3 py-2 text-right font-medium text-gray-600">Value</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-600">Status</th>
+                            <th className="px-3 py-2 text-left font-medium text-[color:var(--color-text-secondary)]">Wk</th>
+                            <th className="px-3 py-2 text-left font-medium text-[color:var(--color-text-secondary)]">Exercise</th>
+                            <th className="px-3 py-2 text-left font-medium text-[color:var(--color-text-secondary)]">Field</th>
+                            <th className="px-3 py-2 text-right font-medium text-[color:var(--color-text-secondary)]">Value</th>
+                            <th className="px-3 py-2 text-left font-medium text-[color:var(--color-text-secondary)]">Status</th>
                           </tr>
                         </thead>
                         <tbody>
                           {importRows.slice(0, 200).map((row, i) => (
-                            <tr key={i} className={row.valid ? 'bg-white' : 'bg-red-50'}>
-                              <td className="px-3 py-1.5 text-gray-700">{row.weekNumber}</td>
-                              <td className="px-3 py-1.5 text-gray-700">{row.exerciseName}</td>
-                              <td className="px-3 py-1.5 text-gray-500">
+                            <tr key={i} className={row.valid ? 'bg-white' : 'bg-[var(--color-danger-bg)]'}>
+                              <td className="px-3 py-1.5 text-[color:var(--color-text-secondary)]">{row.weekNumber}</td>
+                              <td className="px-3 py-1.5 text-[color:var(--color-text-secondary)]">{row.exerciseName}</td>
+                              <td className="px-3 py-1.5 text-[color:var(--color-text-secondary)]">
                                 {TARGET_FIELDS.find(f => f.field === row.field)?.label ?? row.field}
                               </td>
-                              <td className="px-3 py-1.5 text-right text-gray-700">{row.valid ? row.value : '—'}</td>
+                              <td className="px-3 py-1.5 text-right text-[color:var(--color-text-secondary)]">{row.valid ? row.value : '—'}</td>
                               <td className="px-3 py-1.5">
                                 {row.valid
                                   ? <span className="text-green-600">✓</span>
-                                  : <span className="text-red-600">{row.error}</span>
+                                  : <span className="text-[color:var(--color-danger-text)]">{row.error}</span>
                                 }
                               </td>
                             </tr>
                           ))}
                           {importRows.length > 200 && (
                             <tr>
-                              <td colSpan={5} className="px-3 py-2 text-center text-gray-400">
+                              <td colSpan={5} className="px-3 py-2 text-center text-[color:var(--color-text-tertiary)]">
                                 … and {importRows.length - 200} more rows
                               </td>
                             </tr>
@@ -892,20 +896,22 @@ export function MacroExcelIO({
             </div>
 
             {!importDone && (
-              <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">
-                <button
+              <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">
+                <Button
+                  variant="secondary"
                   onClick={() => setShowImportModal(false)}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
                   onClick={handleImport}
                   disabled={validRows.length === 0 || importing}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1"
                 >
                   {importing ? 'Importing…' : `Import ${validRows.length} rows`}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -916,39 +922,37 @@ export function MacroExcelIO({
       {showTemplateModal && templateData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--color-border-tertiary)] flex-shrink-0">
               <div>
-                <h2 className="text-sm font-medium text-gray-900">
+                <h2 className="text-sm font-medium text-[color:var(--color-text-primary)]">
                   Import template: {templateData.name}
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">{templateFilename} · {templateData.weeks.length} weeks · {templateData.unit}</p>
+                <p className="text-xs text-[color:var(--color-text-secondary)] mt-0.5">{templateFilename} · {templateData.weeks.length} weeks · {templateData.unit}</p>
               </div>
-              <button onClick={() => setShowTemplateModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
+              <Button variant="ghost" size="sm" iconOnly icon={<X size={16} />} title="Close" onClick={() => setShowTemplateModal(false)} />
             </div>
 
             {templateImportDone ? (
               <div className="flex-1 flex flex-col items-center justify-center py-8 gap-3">
                 <div className="text-green-600 text-sm font-medium">Template imported successfully!</div>
-                <button
+                <Button
+                  variant="primary"
                   onClick={() => setShowTemplateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
                 >
                   Close
-                </button>
+                </Button>
               </div>
             ) : (
               <>
                 <div className="flex-1 overflow-y-auto p-5 space-y-5">
                   {/* Exercise mapping */}
                   <div>
-                    <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Exercise mapping</h3>
+                    <h3 className="text-xs font-semibold text-[color:var(--color-text-secondary)] mb-2 uppercase tracking-wide">Exercise mapping</h3>
                     <div className="space-y-2">
                       {templateData.exercises.map(code => (
                         <div key={code} className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-20 flex-shrink-0">Template "{code}"</span>
-                          <span className="text-xs text-gray-400">→</span>
+                          <span className="text-xs text-[color:var(--color-text-secondary)] w-20 flex-shrink-0">Template "{code}"</span>
+                          <span className="text-xs text-[color:var(--color-text-tertiary)]">→</span>
                           <select
                             value={exerciseMapping.get(code) ?? ''}
                             onChange={async e => {
@@ -982,7 +986,7 @@ export function MacroExcelIO({
                                 }
                               }
                             }}
-                            className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            className="flex-1 text-xs border border-[color:var(--color-border-tertiary)] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                           >
                             <option value="">— Not mapped (skip) —</option>
                             {allExercises.map(ex => (
@@ -1011,7 +1015,7 @@ export function MacroExcelIO({
                   {/* Preview */}
                   {templateData.unit === 'percentage' && panelExercises.length > 0 && (
                     <div>
-                      <h3 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Preview (first 4 weeks)</h3>
+                      <h3 className="text-xs font-semibold text-[color:var(--color-text-secondary)] mb-2 uppercase tracking-wide">Preview (first 4 weeks)</h3>
                       <div className="space-y-1">
                         {templateData.weeks.slice(0, 4).map(week => {
                           const parts: string[] = [];
@@ -1028,7 +1032,7 @@ export function MacroExcelIO({
                           });
                           if (parts.length === 0) return null;
                           return (
-                            <div key={week.weekNumber} className="text-xs text-gray-600">
+                            <div key={week.weekNumber} className="text-xs text-[color:var(--color-text-secondary)]">
                               <span className="font-medium">Wk {week.weekNumber}:</span> {parts.join(' · ')}
                             </div>
                           );
@@ -1039,12 +1043,12 @@ export function MacroExcelIO({
 
                   {/* Update PRs checkbox */}
                   {athleteId && templateData.unit === 'percentage' && (
-                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                    <label className="flex items-center gap-2 text-xs text-[color:var(--color-text-secondary)] cursor-pointer">
                       <input
                         type="checkbox"
                         checked={updatePRsAfterImport}
                         onChange={e => setUpdatePRsAfterImport(e.target.checked)}
-                        className="rounded border-gray-300"
+                        className="rounded border-[color:var(--color-border-tertiary)]"
                       />
                       Also update athlete's PR table with these planning values
                     </label>
@@ -1052,36 +1056,36 @@ export function MacroExcelIO({
 
                   {/* Group mode note */}
                   {!athleteId && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                    <div className="rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--color-accent-muted)', border: '0.5px solid var(--color-accent-border)', color: 'var(--color-accent)' }}>
                       Group macro: "Import as %" is recommended. PRs will be resolved per-athlete later.
                     </div>
                   )}
                 </div>
 
-                <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">
-                  <button
+                <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">
+                  <Button
+                    variant="secondary"
                     onClick={() => setShowTemplateModal(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
-                  </button>
+                  </Button>
                   <div className="flex-1" />
                   {templateData.unit === 'percentage' && (
-                    <button
+                    <Button
+                      variant="secondary"
                       onClick={() => handleImportTemplate('percentage')}
                       disabled={templateImporting}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                     >
                       {templateImporting ? 'Importing…' : 'Import as %'}
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={() => handleImportTemplate('kg')}
                     disabled={templateImporting}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                   >
                     {templateImporting ? 'Importing…' : 'Import as kg'}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}

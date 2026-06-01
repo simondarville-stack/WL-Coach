@@ -162,8 +162,10 @@ export function RawChip({
 }: { pillars: RawPillars | null; avg: number | null; size?: 'sm' | 'md' }) {
   const c = rawTokens(avg);
   const total = pillars?.total ?? null;
+  const rawTitle = `Readiness (RAW wellness score): ${total !== null ? total : '–'}/12${avg !== null ? ` · avg ${avg.toFixed(1)}` : ''}`;
   return (
     <span
+      title={rawTitle}
       className={`inline-flex items-baseline gap-1 rounded-full ring-1 ${c.bg} ${c.text} ${c.ring} whitespace-nowrap tabular-nums`}
       style={{
         padding: size === 'sm' ? '1px 8px' : '2px 10px',

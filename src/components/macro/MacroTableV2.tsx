@@ -206,11 +206,11 @@ export function MacroTableV2({
   // Sticky cell class helpers
   function stickyTh(col: MacroTableColumnKey, extra = '') {
     const isLast = col === lastStickyVisible;
-    return `sticky z-[10] bg-slate-100 text-[8px] text-gray-400 font-normal px-1${isLast ? ' border-r border-gray-300' : ''} ${extra}`;
+    return `sticky z-[10] bg-slate-100 text-[8px] text-[color:var(--color-text-tertiary)] font-normal px-1${isLast ? ' border-r border-[color:var(--color-border-tertiary)]' : ''} ${extra}`;
   }
   function stickyTd(col: MacroTableColumnKey, extra = '') {
     const isLast = col === lastStickyVisible;
-    return `sticky z-[5] bg-white${isLast ? ' border-r border-gray-300' : ''} ${extra}`;
+    return `sticky z-[5] bg-[var(--color-bg-primary)]${isLast ? ' border-r border-[color:var(--color-border-tertiary)]' : ''} ${extra}`;
   }
 
   // Summary stats computed from week-level explicit targets (only populated weeks counted)
@@ -233,15 +233,15 @@ export function MacroTableV2({
     ? Math.max(...weeksWithAvg.map(w => w.avg_intensity_target ?? 0)) : null;
 
   return (
-    <div className="overflow-auto flex-1 border border-gray-200 rounded-lg">
+    <div className="overflow-auto flex-1 border border-[color:var(--color-border-tertiary)] rounded-lg">
       <table className="text-xs" style={{ minWidth: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead className="sticky top-0 z-20">
           {/* Top header row: "Week" section + General section + exercise sections */}
-          <tr className="bg-gray-100 border-b border-gray-300">
+          <tr className="bg-[var(--color-bg-secondary)] border-b border-[color:var(--color-border-tertiary)]">
             {/* Sticky section header: Week + Type + Notes */}
             <th
               colSpan={stickyColCount || 1}
-              className="sticky left-0 z-[10] bg-slate-100 px-2 py-1 text-left text-[10px] font-medium text-gray-600"
+              className="sticky left-0 z-[10] bg-slate-100 px-2 py-1 text-left text-[10px] font-medium text-[color:var(--color-text-secondary)]"
               style={{ minWidth: stickyOffset || 40 }}
             >
               Week
@@ -250,7 +250,7 @@ export function MacroTableV2({
             {generalColCount > 0 && (
               <th
                 colSpan={generalColCount}
-                className="bg-blue-50 border-l border-gray-300 px-2 py-1 text-left text-[10px] font-medium text-blue-500"
+                className="bg-[var(--color-accent-muted)] border-l border-[color:var(--color-border-tertiary)] px-2 py-1 text-left text-[10px] font-medium text-[color:var(--color-accent)]"
               >
                 General
               </th>
@@ -260,7 +260,7 @@ export function MacroTableV2({
               <th
                 key={te.id}
                 colSpan={3}
-                className="px-1 py-1 border-l-2 border-gray-300 text-center cursor-pointer select-none"
+                className="px-1 py-1 border-l-2 border-[color:var(--color-border-tertiary)] text-center cursor-pointer select-none"
                 style={{ minWidth: 140 }}
                 onDoubleClick={() => onExerciseDoubleClick(te.id)}
                 title="Double-click to focus chart"
@@ -269,13 +269,13 @@ export function MacroTableV2({
                   <button
                     onClick={() => onMoveExerciseLeft(te.id)}
                     disabled={idx === 0}
-                    className="text-gray-400 hover:text-gray-600 disabled:opacity-20 flex-shrink-0 p-0.5"
+                    className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 flex-shrink-0 p-0.5"
                   >
                     <ChevronLeft size={10} />
                   </button>
                   <div className="flex items-center gap-1 min-w-0">
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, displayed) }} />
-                    <span className="text-[10px] font-medium text-gray-800 truncate">
+                    <span className="text-[10px] font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
                       {te.exercise.exercise_code || te.exercise.name}
                     </span>
                   </div>
@@ -283,13 +283,13 @@ export function MacroTableV2({
                     <button
                       onClick={() => onMoveExerciseRight(te.id)}
                       disabled={idx === displayed.length - 1}
-                      className="text-gray-400 hover:text-gray-600 disabled:opacity-20 p-0.5"
+                      className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 p-0.5"
                     >
                       <ChevronRight size={10} />
                     </button>
                     <button
                       onClick={() => onRemoveExercise(te.id)}
-                      className="text-gray-300 hover:text-red-500 p-0.5"
+                      className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-danger-text)] p-0.5"
                       title="Remove exercise"
                     >
                       <X size={10} />
@@ -299,11 +299,11 @@ export function MacroTableV2({
               </th>
             ))}
             {/* Drag handle column header */}
-            {onSwapWeeks && <th className="bg-gray-100 w-5 px-0" />}
+            {onSwapWeeks && <th className="bg-[var(--color-bg-secondary)] w-5 px-0" />}
           </tr>
 
           {/* Sub-headers */}
-          <tr className="bg-gray-50 border-b border-gray-200">
+          <tr className="bg-[var(--color-bg-secondary)] border-b border-[color:var(--color-border-tertiary)]">
             {showCol('week') && (
               <th className={stickyTh('week')} style={{ width: 68, left: stickyLeft['week'] }}>Wk</th>
             )}
@@ -314,7 +314,7 @@ export function MacroTableV2({
               <th className={stickyTh('notes')} style={{ width: 100, left: stickyLeft['notes'] }}>Notes</th>
             )}
             {showCol('k') && (
-              <th className="bg-blue-50/60 border-l border-gray-300 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
+              <th className="bg-blue-50/60 border-l border-[color:var(--color-border-tertiary)] text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
             )}
             {showCol('tonnage') && (
               <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
@@ -327,9 +327,9 @@ export function MacroTableV2({
             )}
             {displayed.map((te, idx) => (
               <React.Fragment key={te.id}>
-                <td className={`${idx === 0 ? 'border-l-2' : 'border-l'} border-gray-300 text-[8px] text-gray-400 font-normal text-center px-1`}>Reps</td>
-                <td className="text-[8px] text-gray-400 font-normal text-center px-1">Max set</td>
-                <td className="text-[8px] text-gray-400 font-normal text-center px-1">Avg</td>
+                <td className={`${idx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] text-[8px] text-[color:var(--color-text-tertiary)] font-normal text-center px-1`}>Reps</td>
+                <td className="text-[8px] text-[color:var(--color-text-tertiary)] font-normal text-center px-1">Max set</td>
+                <td className="text-[8px] text-[color:var(--color-text-tertiary)] font-normal text-center px-1">Avg</td>
               </React.Fragment>
             ))}
             {onSwapWeeks && <td className="w-5 px-0" />}
@@ -347,7 +347,7 @@ export function MacroTableV2({
               if (phase && phase.id !== lastPhaseId) {
                 lastPhaseId = phase.id ?? null;
                 rows.push(
-                  <tr key={`phase-${phase.id}`} data-phase-id={phase.id} className="border-t-2 border-gray-300">
+                  <tr key={`phase-${phase.id}`} data-phase-id={phase.id} className="border-t-2 border-[color:var(--color-border-tertiary)]">
                     <td
                       colSpan={leftColCount + displayed.length * 3 + (onSwapWeeks ? 1 : 0)}
                       className="sticky left-0 text-left px-2 py-1 text-[9px] font-medium tracking-wide"
@@ -402,9 +402,9 @@ export function MacroTableV2({
                       style={{ width: 68, left: stickyLeft['week'] }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[12px] font-medium text-gray-900 leading-none">{week.week_number}</span>
-                        <span className="text-[9px] font-medium text-gray-500 leading-none mt-0.5">W{getISOWeek(week.week_start)}</span>
-                        <span className="text-[7px] text-gray-400 leading-none mt-0.5">
+                        <span className="text-[12px] font-medium leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
+                        <span className="text-[9px] font-medium leading-none mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
+                        <span className="text-[7px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
                           {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}
                         </span>
                       </div>
@@ -439,7 +439,7 @@ export function MacroTableV2({
                               type="text"
                               defaultValue={week.week_type_text ?? ''}
                               autoFocus
-                              className="w-[50px] text-center text-[8px] border-none outline-none bg-blue-50 rounded px-0.5 py-px"
+                              className="w-[50px] text-center text-[8px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-0.5 py-px"
                               onBlur={(e) => {
                                 onUpdateWeekLabel(week.id, e.target.value);
                                 setEditingWeekTypeTextId(null);
@@ -452,11 +452,11 @@ export function MacroTableV2({
                           </div>
                         ) : (
                           <span
-                            className="text-[8px] text-gray-400 cursor-pointer truncate max-w-[52px] hover:text-gray-600"
+                            className="text-[8px] text-[color:var(--color-text-tertiary)] cursor-pointer truncate max-w-[52px] hover:text-[color:var(--color-text-secondary)]"
                             onClick={() => setEditingWeekTypeTextId(week.id)}
                             title={week.week_type_text ?? ''}
                           >
-                            {week.week_type_text || <span className="text-gray-300">—</span>}
+                            {week.week_type_text || <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                           </span>
                         )}
                       </div>
@@ -466,7 +466,7 @@ export function MacroTableV2({
                   {/* Notes — now STICKY, part of Week section */}
                   {showCol('notes') && (
                     <td
-                      className={`${stickyTd('notes')} px-1 py-0 transition-colors ${deleteMode && week.notes ? 'bg-red-50' : ''}`}
+                      className={`${stickyTd('notes')} px-1 py-0 transition-colors ${deleteMode && week.notes ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ width: 100, left: stickyLeft['notes'] }}
                     >
                       {editingNotesId === week.id ? (
@@ -475,7 +475,7 @@ export function MacroTableV2({
                             type="text"
                             defaultValue={week.notes ?? ''}
                             autoFocus
-                            className="w-full text-[10px] border-none outline-none bg-blue-50 rounded px-1 py-0.5"
+                            className="w-full text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-1 py-0.5"
                             onBlur={(e) => { onUpdateNotes(week.id, e.target.value); setEditingNotesId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -486,7 +486,7 @@ export function MacroTableV2({
                       ) : (
                         <span
                           className={`block truncate text-[10px] cursor-pointer transition-colors ${
-                            deleteMode && week.notes ? 'text-red-500 hover:text-red-700' : 'text-gray-500 hover:text-gray-800'
+                            deleteMode && week.notes ? 'text-[color:var(--color-danger-text)] hover:text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
                           }`}
                           style={{ maxWidth: 96 }}
                           onClick={() => {
@@ -495,7 +495,7 @@ export function MacroTableV2({
                           }}
                           title={deleteMode ? 'Click to clear' : (week.notes ?? '')}
                         >
-                          {week.notes || <span className="text-gray-300 italic text-[9px]">—</span>}
+                          {week.notes || <span className="italic text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </span>
                       )}
                     </td>
@@ -504,7 +504,7 @@ export function MacroTableV2({
                   {/* Σreps — now in General section */}
                   {showCol('k') && (
                     <td
-                      className={`bg-blue-50/10 border-l border-gray-300 text-center font-mono font-medium text-[10px] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-red-50' : ''}`}
+                      className={`bg-blue-50/10 border-l border-[color:var(--color-border-tertiary)] text-center font-mono font-medium text-[10px] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 44 }}
                       onClick={() => {
                         if (deleteMode && week.total_reps_target != null) onUpdateTotalReps(week.id, '');
@@ -518,7 +518,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.total_reps_target ?? ''}
                             autoFocus
-                            className="w-[38px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            className="w-[38px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateTotalReps(week.id, e.target.value); setEditingKWeekId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -527,8 +527,8 @@ export function MacroTableV2({
                           />
                         </div>
                       ) : (
-                        <span className={deleteMode && week.total_reps_target != null ? 'text-red-500' : 'text-gray-900'}>
-                          {week.total_reps_target != null ? week.total_reps_target : <span className="text-gray-300 italic text-[8px]">—</span>}
+                        <span className={deleteMode && week.total_reps_target != null ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]'}>
+                          {week.total_reps_target != null ? week.total_reps_target : <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </span>
                       )}
                     </td>
@@ -536,7 +536,7 @@ export function MacroTableV2({
 
                   {showCol('tonnage') && (
                     <td
-                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-gray-700 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-red-50' : ''}`}
+                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 52 }}
                       onClick={() => {
                         if (deleteMode && week.tonnage_target != null) onUpdateTonnageTarget(week.id, '');
@@ -550,7 +550,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.tonnage_target ?? ''}
                             autoFocus
-                            className="w-[44px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            className="w-[44px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateTonnageTarget(week.id, e.target.value); setEditingTonnageId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -559,10 +559,10 @@ export function MacroTableV2({
                           />
                         </div>
                       ) : (
-                        <span className={deleteMode && week.tonnage_target != null ? 'text-red-500' : ''}>
+                        <span className={deleteMode && week.tonnage_target != null ? 'text-[color:var(--color-danger-text)]' : ''}>
                           {week.tonnage_target != null
                             ? (week.tonnage_target / 1000).toFixed(1)
-                            : <span className="text-gray-300 italic text-[8px]">—</span>}
+                            : <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </span>
                       )}
                     </td>
@@ -570,7 +570,7 @@ export function MacroTableV2({
 
                   {showCol('avg') && (
                     <td
-                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-gray-500 px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-red-50' : ''}`}
+                      className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 40 }}
                       onClick={() => {
                         if (deleteMode && week.avg_intensity_target != null) onUpdateAvgTarget(week.id, '');
@@ -584,7 +584,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.avg_intensity_target ?? ''}
                             autoFocus
-                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateAvgTarget(week.id, e.target.value); setEditingAvgTargetId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -593,10 +593,10 @@ export function MacroTableV2({
                           />
                         </div>
                       ) : (
-                        <span className={deleteMode && week.avg_intensity_target != null ? 'text-red-500' : ''}>
+                        <span className={deleteMode && week.avg_intensity_target != null ? 'text-[color:var(--color-danger-text)]' : ''}>
                           {week.avg_intensity_target != null
                             ? week.avg_intensity_target
-                            : <span className="text-gray-300 italic text-[8px]">—</span>}
+                            : <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </span>
                       )}
                     </td>
@@ -607,7 +607,7 @@ export function MacroTableV2({
                     <td className="bg-blue-50/10 text-center font-mono text-[10px] text-indigo-600 px-1 py-0" style={{ minWidth: 40 }}>
                       {(() => {
                         const ton = week.tonnage_target ?? weekTonnage;
-                        if (!ton || !competitionTotal) return <span className="text-gray-300 italic text-[8px]">—</span>;
+                        if (!ton || !competitionTotal) return <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>;
                         return (ton / competitionTotal).toFixed(1);
                       })()}
                     </td>
@@ -638,10 +638,10 @@ export function MacroTableV2({
                       <React.Fragment key={te.id}>
                         {/* Reps */}
                         <td
-                          className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 transition-colors ${
+                          className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 transition-colors ${
                             repsIsDeleteTarget
-                              ? 'bg-red-50 hover:bg-red-100'
-                              : 'hover:bg-blue-50'
+                              ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
+                              : 'hover:bg-[var(--color-accent-muted)]'
                           }`}
                           onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
                           onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_reps', repsVal, prevReps)}
@@ -653,7 +653,7 @@ export function MacroTableV2({
                                 type="number"
                                 defaultValue={repsVal ?? ''}
                                 autoFocus
-                                className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-blue-50 rounded"
+                                className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                 onBlur={(e) => {
                                   onUpdateTarget(week.id, te.id, 'target_reps', e.target.value);
                                   setEditingCell(null);
@@ -665,7 +665,7 @@ export function MacroTableV2({
                               />
                             </div>
                           ) : (
-                            <span className={repsVal !== null ? (repsIsDeleteTarget ? 'text-red-500' : 'text-gray-900') : 'text-gray-300 italic text-[9px]'}>
+                            <span className={repsVal !== null ? (repsIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[9px]'}>
                               {repsVal !== null ? repsVal : (prevReps !== null ? prevReps : '-')}
                             </span>
                           )}
@@ -690,8 +690,8 @@ export function MacroTableV2({
                         <td
                           className={`text-center font-mono text-[9px] cursor-pointer select-none px-1 py-0 transition-colors ${
                             avgIsDeleteTarget
-                              ? 'bg-red-50 hover:bg-red-100'
-                              : 'hover:bg-blue-50'
+                              ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
+                              : 'hover:bg-[var(--color-accent-muted)]'
                           }`}
                           onClick={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
                           onContextMenu={(e) => handleInlineClick(e, week.id, te.id, 'target_avg', avgVal, prevAvg)}
@@ -703,7 +703,7 @@ export function MacroTableV2({
                                 type="number"
                                 defaultValue={avgVal ?? ''}
                                 autoFocus
-                                className="w-[32px] text-center font-mono text-[9px] border-none outline-none bg-blue-50 rounded"
+                                className="w-[32px] text-center font-mono text-[9px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                 onBlur={(e) => {
                                   onUpdateTarget(week.id, te.id, 'target_avg', e.target.value);
                                   setEditingCell(null);
@@ -715,7 +715,7 @@ export function MacroTableV2({
                               />
                             </div>
                           ) : (
-                            <span className={avgVal !== null ? (avgIsDeleteTarget ? 'text-red-500' : 'text-gray-500') : 'text-gray-300 italic text-[8px]'}>
+                            <span className={avgVal !== null ? (avgIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[8px]'}>
                               {avgVal !== null ? avgVal : (prevAvg !== null ? prevAvg : '-')}
                             </span>
                           )}
@@ -727,7 +727,8 @@ export function MacroTableV2({
                   {/* Drag handle — rightmost column */}
                   {onSwapWeeks && (
                     <td
-                      className="w-5 px-0 text-center text-gray-300 select-none cursor-grab active:cursor-grabbing"
+                      className="w-5 px-0 text-center select-none cursor-grab active:cursor-grabbing"
+                      style={{ color: 'var(--color-text-tertiary)' }}
                       title="Drag to reorder weeks"
                     >
                       <span className="text-[10px]">⠿</span>
@@ -739,8 +740,8 @@ export function MacroTableV2({
 
             // Summary / average row — grey bg, small italic non-bold text so it reads as metadata not entries
             // ── Average row ────────────────────────────────────────────────────────
-            const avgBg = 'bg-gray-100';
-            const summaryText = 'font-normal italic text-gray-400 text-[7px]';
+            const avgBg = 'bg-[var(--color-bg-secondary)]';
+            const summaryText = 'font-normal italic text-[color:var(--color-text-tertiary)] text-[7px]';
             rows.push(
               <tr key="avg-row" className={`border-t-2 border-gray-400 ${avgBg}`}>
                 {showCol('week') && (
@@ -757,7 +758,7 @@ export function MacroTableV2({
                   </td>
                 )}
                 {showCol('k') && (
-                  <td className={`${avgBg} border-l border-gray-300 text-center font-mono ${summaryText} px-1 py-0`}>
+                  <td className={`${avgBg} border-l border-[color:var(--color-border-tertiary)] text-center font-mono ${summaryText} px-1 py-0`}>
                     {avgK != null ? avgK : ''}
                   </td>
                 )}
@@ -789,7 +790,7 @@ export function MacroTableV2({
                     : (wAvg.length > 0 ? Math.round(wAvg.reduce((s, t) => s + (t.target_avg ?? 0), 0) / wAvg.length) : null);
                   return (
                     <React.Fragment key={te.id}>
-                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono ${summaryText} px-1 py-0`}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] text-center font-mono ${summaryText} px-1 py-0`}>
                         {avgReps != null ? avgReps : ''}
                       </td>
                       <td className="text-center px-0 py-0">
@@ -806,9 +807,9 @@ export function MacroTableV2({
             );
 
             // ── Max / peak row ─────────────────────────────────────────────────────
-            const maxBg = 'bg-gray-50';
+            const maxBg = 'bg-[var(--color-bg-secondary)]';
             rows.push(
-              <tr key="max-row" className={`border-t border-gray-200 ${maxBg}`}>
+              <tr key="max-row" className={`border-t border-[color:var(--color-border-tertiary)] ${maxBg}`}>
                 {showCol('week') && (
                   <td className={`${stickyTd('week')} text-center ${summaryText} px-1 py-0 ${maxBg}`} style={{ left: stickyLeft['week'] }}>
                     ↑
@@ -823,7 +824,7 @@ export function MacroTableV2({
                   </td>
                 )}
                 {showCol('k') && (
-                  <td className={`${maxBg} border-l border-gray-300 text-center font-mono ${summaryText} px-1 py-0`}>
+                  <td className={`${maxBg} border-l border-[color:var(--color-border-tertiary)] text-center font-mono ${summaryText} px-1 py-0`}>
                     {maxK != null ? maxK : ''}
                   </td>
                 )}
@@ -850,7 +851,7 @@ export function MacroTableV2({
                   const maxAvg = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_avg ?? 0)) : null;
                   return (
                     <React.Fragment key={te.id}>
-                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-gray-200 text-center font-mono ${summaryText} px-1 py-0`}>
+                      <td className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] text-center font-mono ${summaryText} px-1 py-0`}>
                         {maxReps ? maxReps : ''}
                       </td>
                       <td className="text-center px-0 py-0">

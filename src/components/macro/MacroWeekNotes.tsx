@@ -37,8 +37,8 @@ export function MacroWeekNotes({ weekId, notes, onSave }: MacroWeekNotesProps) {
         onBlur={handleBlur}
         rows={1}
         placeholder="Add note…"
-        className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white leading-snug overflow-hidden"
-        style={{ minHeight: '18px' }}
+        className="w-full text-[10px] border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)] resize-none leading-snug overflow-hidden"
+        style={{ minHeight: '18px', borderColor: 'var(--color-accent-border)', backgroundColor: 'var(--color-bg-primary)' }}
       />
     );
   }
@@ -47,8 +47,8 @@ export function MacroWeekNotes({ weekId, notes, onSave }: MacroWeekNotesProps) {
     <div
       onClick={startEdit}
       title="Click to edit"
-      className={`text-[10px] leading-snug cursor-text rounded px-1 py-0.5 min-h-[18px] whitespace-pre-wrap break-words hover:bg-white/60 transition-colors ${
-        notes.trim() ? 'text-gray-700' : 'text-gray-300 italic'
+      className={`text-[10px] leading-snug cursor-text rounded px-1 py-0.5 min-h-[18px] whitespace-pre-wrap break-words hover:bg-[var(--color-bg-secondary)] transition-colors ${
+        notes.trim() ? 'text-[color:var(--color-text-secondary)]' : 'text-[color:var(--color-text-tertiary)] italic'
       }`}
     >
       {notes.trim() || 'Add note…'}

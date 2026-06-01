@@ -76,7 +76,7 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete }: Props) 
                 </div>
                 <span className="text-xs text-gray-500 truncate">{ev.details}</span>
                 {ev.rawScore !== undefined && ev.rawScore !== null && (
-                  <span className="text-[11px] text-gray-400 tabular-nums">RAW {ev.rawScore}/12</span>
+                  <span className="text-[11px] text-gray-400 tabular-nums" title="Readiness (RAW wellness score) out of 12">RAW {ev.rawScore}/12</span>
                 )}
               </div>
               <div className="flex flex-col items-end gap-0.5">
