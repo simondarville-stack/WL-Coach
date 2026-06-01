@@ -147,7 +147,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
     <div className="flex flex-col" style={{ minHeight: 0 }}>
       {/* Header */}
       <div className="flex items-center gap-2 px-5 py-4 flex-shrink-0" style={{ borderBottom: '0.5px solid var(--color-border-primary)' }}>
-        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-xs">
+        <button onClick={onBack} className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] flex items-center gap-1 text-xs">
           <ArrowLeft size={14} /> Back
         </button>
         <span style={{ fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
@@ -163,7 +163,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             placeholder="e.g. Accumulation, Strength Block"
             autoFocus
           />
@@ -175,7 +175,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             list="phase-type-suggestions"
             value={phaseType}
             onChange={e => handleTypeChange(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             placeholder="e.g. Preparatory, Strength, Competition…"
           />
           <datalist id="phase-type-suggestions">
@@ -189,7 +189,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             <select
               value={startWeek}
               onChange={e => handleStartChange(Number(e.target.value))}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             >
               {weeks.map(n => <option key={n} value={n}>Week {n}</option>)}
             </select>
@@ -199,7 +199,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             <select
               value={endWeek}
               onChange={e => setEndWeek(Number(e.target.value))}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             >
               {weeks.filter(n => n >= startWeek).map(n => <option key={n} value={n}>Week {n}</option>)}
             </select>
@@ -217,7 +217,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
         />
 
         {overlapError && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded text-xs text-red-700 bg-red-50" style={{ border: '0.5px solid #fca5a5' }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded text-xs" style={{ color: 'var(--color-danger-text)', backgroundColor: 'var(--color-danger-bg)', border: '0.5px solid var(--color-danger-border)' }}>
             <AlertTriangle size={13} className="flex-shrink-0" />
             {overlapError}
           </div>
@@ -230,9 +230,9 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
               type="color"
               value={color}
               onChange={e => setColor(e.target.value)}
-              className="w-10 h-10 rounded border border-gray-300 cursor-pointer"
+              className="w-10 h-10 rounded border border-[color:var(--color-border-tertiary)] cursor-pointer"
             />
-            <span className="text-sm text-gray-400">Phase ribbon color</span>
+            <span className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>Phase ribbon color</span>
           </div>
         </div>
 
@@ -246,7 +246,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
               e.target.style.height = `${e.target.scrollHeight}px`;
             }}
             rows={2}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
+            className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)] resize-none overflow-hidden"
             placeholder="Optional notes…"
           />
         </div>
@@ -258,7 +258,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
           <button
             onClick={handleDelete}
             disabled={deleting || saving}
-            className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-[color:var(--color-danger-text)] border border-[color:var(--color-danger-border)] rounded-lg hover:bg-[var(--color-danger-bg)] disabled:opacity-50"
           >
             <Trash2 size={13} />
             {deleting ? 'Deleting…' : 'Delete'}
@@ -353,7 +353,7 @@ function ListView({ phases, totalWeeks, onEdit, onAdd, onDelete }: ListViewProps
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
                     onClick={() => onEdit(phase)}
-                    className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                    className="p-1.5 rounded hover:bg-[var(--color-bg-secondary)] text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)]"
                     title="Edit phase"
                   >
                     <Pencil size={13} />
@@ -361,7 +361,7 @@ function ListView({ phases, totalWeeks, onEdit, onAdd, onDelete }: ListViewProps
                   <button
                     onClick={() => handleDelete(phase.id)}
                     disabled={deletingId === phase.id}
-                    className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 disabled:opacity-40"
+                    className="p-1.5 rounded hover:bg-[var(--color-danger-bg)] text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-danger-text)] disabled:opacity-40"
                     title="Delete phase"
                   >
                     <Trash2 size={13} />
@@ -377,7 +377,7 @@ function ListView({ phases, totalWeeks, onEdit, onAdd, onDelete }: ListViewProps
       <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: '0.5px solid var(--color-border-primary)' }}>
         <button
           onClick={onAdd}
-          className="flex items-center gap-1.5 w-full justify-center px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+          className="flex items-center gap-1.5 w-full justify-center px-4 py-2 text-sm font-medium text-[color:var(--color-accent)] border border-[color:var(--color-accent-border)] rounded-lg hover:bg-[var(--color-accent-muted)]"
         >
           <Plus size={14} /> Add phase
         </button>
@@ -424,7 +424,7 @@ export function MacroPhasesPanel({
           <span style={{ fontSize: 'var(--text-body)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
             Phases
           </span>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)]">
             <X size={18} />
           </button>
         </div>

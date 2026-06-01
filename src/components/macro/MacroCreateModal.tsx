@@ -69,39 +69,39 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col" style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-base font-medium text-gray-900">Create Macrocycle</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[color:var(--color-border-tertiary)] flex-shrink-0">
+          <h2 className="text-base font-medium" style={{ color: 'var(--color-text-primary)' }}>Create Macrocycle</h2>
+          <button onClick={onClose} className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)]"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Name *</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g. 2026 Olympic Prep"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start date *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start date *</label>
               <DateInput value={startDate} onChange={setStartDate} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End date *</label>
               <DateInput value={endDate} onChange={setEndDate} />
               {startDate && endDate && startDate > endDate && (
-                <p className="text-[11px] text-red-600 mt-1">End date must be after start date.</p>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--color-danger-text)' }}>End date must be after start date.</p>
               )}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Phase preset</label>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-secondary)' }}>Phase preset</label>
             <div className="space-y-2">
               {([
                 ['none', 'No phases'],
@@ -116,7 +116,7 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
                     value={val}
                     checked={phasePreset === val}
                     onChange={() => setPhasePreset(val)}
-                    className="text-blue-600"
+                    style={{ color: 'var(--color-accent)' }}
                   />
                   {label}
                 </label>
@@ -126,17 +126,17 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">Competition dates</label>
+              <label className="block text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Competition dates</label>
               <button
                 onClick={addCompetition}
-                className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                className="text-xs text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] flex items-center gap-1"
               >
                 <Plus size={12} /> Add
               </button>
             </div>
 
             {competitions.length === 0 && (
-              <p className="text-xs text-gray-400">No competitions added yet.</p>
+              <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No competitions added yet.</p>
             )}
 
             {competitions.map((comp, i) => (
@@ -146,25 +146,25 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
                   value={comp.name}
                   onChange={e => updateCompetition(i, 'name', e.target.value)}
                   placeholder="Competition name"
-                  className="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 px-2 py-1.5 text-xs border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                 />
                 <div className="w-32">
                   <DateInput
                     value={comp.date}
                     onChange={v => updateCompetition(i, 'date', v)}
-                    className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full px-2 py-1.5 text-xs border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                   />
                 </div>
-                <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
+                <label className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: 'var(--color-text-secondary)' }}>
                   <input
                     type="checkbox"
                     checked={comp.is_primary}
                     onChange={e => updateCompetition(i, 'is_primary', e.target.checked)}
-                    className="text-blue-600"
+                    style={{ color: 'var(--color-accent)' }}
                   />
                   Primary
                 </label>
-                <button onClick={() => removeCompetition(i)} className="text-red-500 hover:text-red-700">
+                <button onClick={() => removeCompetition(i)} className="text-[color:var(--color-danger-text)] hover:text-red-700">
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -172,11 +172,11 @@ export function MacroCreateModal({ loading, onClose, onCreate }: MacroCreateModa
           </div>
 
           {error && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+            <p className="text-xs rounded px-3 py-2" style={{ color: 'var(--color-danger-text)', backgroundColor: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)' }}>{error}</p>
           )}
         </div>
 
-        <div className="flex gap-2 px-5 py-4 border-t border-gray-200 flex-shrink-0">
+        <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">
           <Button
             variant="secondary"
             onClick={onClose}

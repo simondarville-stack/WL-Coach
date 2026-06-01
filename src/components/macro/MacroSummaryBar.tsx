@@ -32,25 +32,32 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
   }).filter(x => x.peak > 0);
 
   return (
-    <div className="border-t border-gray-200 bg-gray-50 px-4 py-2 flex flex-wrap items-center gap-4 text-xs text-gray-600">
+    <div
+      className="border-t px-4 py-2 flex flex-wrap items-center gap-4 text-xs"
+      style={{
+        borderColor: 'var(--color-border-tertiary)',
+        backgroundColor: 'var(--color-bg-secondary)',
+        color: 'var(--color-text-secondary)',
+      }}
+    >
       <div className="flex items-center gap-1">
-        <span className="font-medium text-gray-800">Planned volume:</span>
+        <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Planned volume:</span>
         <span>{totalTargetReps.toLocaleString()} reps</span>
       </div>
       <div className="flex items-center gap-1">
-        <span className="font-medium text-gray-800">Actual so far:</span>
+        <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Actual so far:</span>
         <span>{totalActualReps.toLocaleString()} reps</span>
         {totalTargetReps > 0 && (
-          <span className="text-gray-400">({Math.round((totalActualReps / totalTargetReps) * 100)}%)</span>
+          <span style={{ color: 'var(--color-text-tertiary)' }}>({Math.round((totalActualReps / totalTargetReps) * 100)}%)</span>
         )}
       </div>
       <div className="flex items-center gap-1">
-        <span className="font-medium text-gray-800">Weeks:</span>
+        <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Weeks:</span>
         <span>{completedWeeks}/{macroWeeks.length} done</span>
       </div>
       {peakHiPerExercise.length > 0 && (
         <div className="flex items-center gap-2 ml-auto">
-          <span className="font-medium text-gray-800">Peak Hi:</span>
+          <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Peak Hi:</span>
           {peakHiPerExercise.map(ex => (
             <span key={ex.name} className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ex.color }} />

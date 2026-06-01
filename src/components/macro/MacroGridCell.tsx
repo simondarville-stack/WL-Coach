@@ -121,15 +121,15 @@ export function MacroGridCell({
   if (isEmpty) {
     return (
       <div
-        className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-blue-50"
+        className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-[var(--color-accent-muted)]"
         style={{ minWidth: 52, height: 38 }}
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
         {hasPrev ? (
-          <span className="text-[9px] text-gray-300 italic font-mono">{prevLoad}</span>
+          <span className="text-[9px] italic font-mono" style={{ color: 'var(--color-text-tertiary)' }}>{prevLoad}</span>
         ) : (
-          <span className="text-[9px] text-gray-300">-</span>
+          <span className="text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>-</span>
         )}
       </div>
     );
@@ -144,7 +144,8 @@ export function MacroGridCell({
             ref={loadRef}
             type="number"
             defaultValue={load ?? 0}
-            className="w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none bg-blue-50 rounded px-1 py-0.5"
+            className="w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
+            style={{ backgroundColor: 'var(--color-accent-muted)' }}
             onBlur={(e) => commitLoad(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -156,11 +157,11 @@ export function MacroGridCell({
               }
             }}
           />
-          <div className="w-[80%] border-t border-gray-200 my-0.5" />
-          <div className="text-[9px] font-mono text-gray-400">{reps ?? 1}</div>
+          <div className="w-[80%] border-t my-0.5" style={{ borderColor: 'var(--color-border-tertiary)' }} />
+          <div className="text-[9px] font-mono" style={{ color: 'var(--color-text-tertiary)' }}>{reps ?? 1}</div>
         </div>
         {!setsIsOne && (
-          <div className="text-[9px] font-mono text-gray-400 self-center pl-0.5">{sets}</div>
+          <div className="text-[9px] font-mono self-center pl-0.5" style={{ color: 'var(--color-text-tertiary)' }}>{sets}</div>
         )}
       </div>
     );
@@ -171,15 +172,16 @@ export function MacroGridCell({
     return (
       <div className="group flex items-center" style={{ minWidth: 52, height: 38 }}>
         <div className="flex flex-col items-center flex-1">
-          <div className="text-[11px] font-mono font-medium text-gray-900">{load ?? 0}</div>
-          <div className="w-[80%] border-t border-gray-200 my-0.5" />
+          <div className="text-[11px] font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>{load ?? 0}</div>
+          <div className="w-[80%] border-t my-0.5" style={{ borderColor: 'var(--color-border-tertiary)' }} />
           <div className="flex items-center gap-0.5">
             <input
               ref={repsRef}
               type="number"
               defaultValue={reps ?? 1}
               min={1}
-              className="w-[22px] text-center font-mono text-[9px] border-none outline-none bg-blue-50 rounded px-0.5 py-0.5"
+              className="w-[22px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5"
+              style={{ backgroundColor: 'var(--color-accent-muted)' }}
               onKeyDown={(e) => {
                 if (e.key === 'Tab') {
                   e.preventDefault();
@@ -202,7 +204,8 @@ export function MacroGridCell({
           type="number"
           defaultValue={sets ?? 1}
           min={1}
-          className="w-[18px] text-center font-mono text-[9px] border-none outline-none bg-blue-50 rounded px-0.5 py-0.5 self-center"
+          className="w-[18px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5 self-center"
+          style={{ backgroundColor: 'var(--color-accent-muted)' }}
           onBlur={(e) => {
             commitReps(
               repsRef.current?.value ?? String(reps ?? 1),
@@ -223,9 +226,9 @@ export function MacroGridCell({
     return (
       <div className="flex items-center justify-center" style={{ minWidth: 52, height: 20 }}>
         {load ? (
-          <span className="text-[8px] font-mono text-gray-400 italic">{load}</span>
+          <span className="text-[8px] font-mono italic" style={{ color: 'var(--color-text-tertiary)' }}>{load}</span>
         ) : (
-          <span className="text-[8px] text-gray-200">—</span>
+          <span className="text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>
         )}
       </div>
     );
@@ -236,8 +239,8 @@ export function MacroGridCell({
     <div
       className={`group flex items-center select-none rounded border transition-colors ${
         isDeleteMode
-          ? 'border-red-300 bg-red-50 cursor-pointer'
-          : 'border-transparent hover:bg-blue-50 hover:border-blue-100'
+          ? 'border-[color:var(--color-danger-border)] bg-[var(--color-danger-bg)] cursor-pointer'
+          : 'border-transparent hover:bg-[var(--color-accent-muted)] hover:border-[color:var(--color-accent-border)]'
       }`}
       style={{ minWidth: 52, height: 38 }}
     >
@@ -245,17 +248,17 @@ export function MacroGridCell({
       <div className="flex flex-col items-center flex-1">
         <div
           className={`text-[11px] font-mono font-medium cursor-pointer px-2 leading-tight ${
-            isDeleteMode ? 'text-red-500' : 'text-gray-900'
+            isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]'
           }`}
           onClick={handleLoadClick}
           onContextMenu={handleLoadClick}
         >
           {load ?? 0}
         </div>
-        <div className={`w-[80%] border-t ${isDeleteMode ? 'border-red-200' : 'border-gray-200'}`} />
+        <div className={`w-[80%] border-t ${isDeleteMode ? 'border-[color:var(--color-danger-border)]' : 'border-[color:var(--color-border-tertiary)]'}`} />
         <div
           className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
-            isDeleteMode ? 'text-red-400' : 'text-gray-500'
+            isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]'
           }`}
           onClick={handleRepsClick}
           onContextMenu={handleRepsClick}
@@ -269,8 +272,8 @@ export function MacroGridCell({
         className={`text-[9px] font-mono self-center pr-1.5 pl-1 py-2 cursor-pointer transition-opacity ${
           setsIsOne
             ? 'opacity-0 group-hover:opacity-40'
-            : (isDeleteMode ? 'opacity-80 text-red-400' : 'opacity-80 text-gray-400')
-        } ${isDeleteMode && !setsIsOne ? '' : 'text-gray-400'}`}
+            : (isDeleteMode ? 'opacity-80 text-[color:var(--color-danger-text)]' : 'opacity-80 text-[color:var(--color-text-tertiary)]')
+        } ${isDeleteMode && !setsIsOne ? '' : 'text-[color:var(--color-text-tertiary)]'}`}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
