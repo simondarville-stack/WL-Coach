@@ -352,7 +352,6 @@ export function DayEditor({
                       <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                         {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                       </span>
-                      <span style={{ fontSize: 9, background: 'var(--color-accent-muted)', color: 'var(--color-accent)', fontWeight: 500, padding: '2px 6px', borderRadius: 'var(--radius-sm)', flexShrink: 0 }}>Combo</span>
                     </>
                   ) : (
                     <>
