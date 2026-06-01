@@ -19,6 +19,7 @@ import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } 
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekDesigner } from './PrintWeekDesigner';
+import { Button } from '../ui';
 
 interface PrintWeekProps {
   /** Either an athlete OR a group must be provided. When `group` is set
@@ -250,14 +251,20 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           <div className="flex rounded-lg border border-gray-300 overflow-hidden bg-white">
             <button
               onClick={() => setPrintMode('programme')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${printMode === 'programme' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors"
+              style={printMode === 'programme'
+                ? { background: 'var(--color-accent)', color: 'var(--color-text-on-accent)' }
+                : { background: 'var(--color-bg-primary)', color: 'var(--color-text-secondary)' }}
             >
               <FileText size={14} />
               Programme
             </button>
             <button
               onClick={() => setPrintMode('designer')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors ${printMode === 'designer' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors"
+              style={printMode === 'designer'
+                ? { background: 'var(--color-accent)', color: 'var(--color-text-on-accent)' }
+                : { background: 'var(--color-bg-primary)', color: 'var(--color-text-secondary)' }}
             >
               <Sliders size={14} />
               Designer
@@ -265,10 +272,9 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            <Printer size={18} />
+          <Button variant="primary" onClick={() => window.print()} icon={<Printer size={18} />}>
             Print
-          </button>
+          </Button>
           <button onClick={onClose} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg">
             <X size={20} />
           </button>
@@ -307,19 +313,19 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           <div className="mb-3 pb-2 border-b border-gray-300">
             <div className="flex items-stretch gap-3">
               {weeklyTotal.totalSets > 0 && (
-                <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded px-2 py-1.5 flex-shrink-0">
+                <div className="flex items-center gap-3 bg-white border border-gray-400 rounded px-2 py-1.5 flex-shrink-0">
                   <div className="text-center px-1">
-                    <p className="text-[9px] text-blue-600 font-medium uppercase tracking-wide leading-tight">Sets</p>
-                    <p className="text-sm font-bold text-blue-900 leading-tight">{weeklyTotal.totalSets}</p>
+                    <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Sets</p>
+                    <p className="text-base font-bold text-gray-900 leading-tight">{weeklyTotal.totalSets}</p>
                   </div>
-                  <div className="text-center px-1 border-l border-blue-200">
-                    <p className="text-[9px] text-blue-600 font-medium uppercase tracking-wide leading-tight">Reps</p>
-                    <p className="text-sm font-bold text-blue-900 leading-tight">{weeklyTotal.totalReps}</p>
+                  <div className="text-center px-1 border-l border-gray-400">
+                    <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Reps</p>
+                    <p className="text-base font-bold text-gray-900 leading-tight">{weeklyTotal.totalReps}</p>
                   </div>
                   {weeklyTotal.totalLoad > 0 && (
-                    <div className="text-center px-1 border-l border-blue-200">
-                      <p className="text-[9px] text-blue-600 font-medium uppercase tracking-wide leading-tight">Load</p>
-                      <p className="text-sm font-bold text-blue-900 leading-tight">{Math.round(weeklyTotal.totalLoad)}kg</p>
+                    <div className="text-center px-1 border-l border-gray-400">
+                      <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Load</p>
+                      <p className="text-base font-bold text-gray-900 leading-tight">{Math.round(weeklyTotal.totalLoad)}kg</p>
                     </div>
                   )}
                 </div>
@@ -488,10 +494,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                             {ex.variation_note && (
                               <span className="text-[10px] text-gray-500 italic leading-tight">{ex.variation_note}</span>
                             )}
-                            {ex.is_combo && (
-                              <span className="text-[8px] bg-blue-50 text-blue-600 font-medium px-1 py-px rounded">Combo</span>
-                            )}
-                            {unitSymbol && <span className="text-[9px] font-medium text-gray-600 bg-gray-100 px-1 py-px rounded">{unitSymbol}</span>}
+                            {unitSymbol && <span className="text-[9px] font-medium text-gray-800 bg-gray-200 px-1 py-px rounded">{unitSymbol}</span>}
                             {hasSummary && (
                               <span className="text-[10px] text-gray-500 ml-auto leading-tight">
                                 S{ex.summary_total_sets} · R{ex.summary_total_reps}
