@@ -9,6 +9,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   icon?: ReactNode;
   iconPosition?: 'left' | 'right';
+  /** Square, label-less icon button. Renders only `icon`, centered, with
+   *  equal width/height per size and no horizontal padding. */
+  iconOnly?: boolean;
   children?: ReactNode;
 }
 
@@ -26,7 +29,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'md', icon, iconPosition = 'left', children, className = '', disabled, ...rest },
+  { variant = 'secondary', size = 'md', icon, iconPosition = 'left', iconOnly = false, children, className = '', disabled, ...rest },
   ref
 ) {
   const sizeStyle = SIZE_STYLES[size];
@@ -42,15 +45,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         cursor: disabled ? 'not-allowed' : 'pointer',
         display: 'inline-flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 'var(--space-xs)',
         transition: 'all 100ms ease-out',
         opacity: disabled ? 0.4 : 1,
         ...sizeStyle,
+        ...(iconOnly ? { width: sizeStyle.height, padding: 0 } : {}),
       }}
       {...rest}
     >
       {icon && iconPosition === 'left' && icon}
-      {children}
+      {!iconOnly && children}
       {icon && iconPosition === 'right' && icon}
     </button>
   );
