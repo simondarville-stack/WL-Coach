@@ -54,7 +54,10 @@ interface Agg { reps: number; sets: number; tonnageKg: number; max: number; reps
 const emptyAgg = (): Agg => ({ reps: 0, sets: 0, tonnageKg: 0, max: 0, repsKg: 0 });
 
 function addEx(a: Agg, ex: PlannedRow): void {
-  if (ex.exercise.counts_towards_totals === false) return;
+  // A combo always counts: its reps belong to its member movements. The
+  // counts_towards_totals flag on a combo row reflects only its lead member,
+  // so it must not gate the whole combo out of the totals.
+  if (ex.exercise.counts_towards_totals === false && !ex.is_combo) return;
   const r = ex.summary_total_reps ?? 0;
   const s = ex.summary_total_sets ?? 0;
   const avg = ex.summary_avg_load ?? 0;
@@ -134,7 +137,7 @@ export function WeekSummaryBox({
     const catMap = new Map<string, CatRow>();
     for (const i of visible) {
       for (const ex of plannedExercises[i] ?? []) {
-        if (ex.exercise.counts_towards_totals === false) continue;
+        if (ex.exercise.counts_towards_totals === false && !ex.is_combo) continue;
         const category = ex.exercise.category;
         if (!category || category === '— System') continue;
         const row = catMap.get(category) ?? { category, color: categoryColor(category), agg: emptyAgg() };

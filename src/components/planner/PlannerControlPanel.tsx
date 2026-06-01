@@ -274,10 +274,10 @@ export function PlannerControlPanel({
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
     let totalStress = 0;
-    const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; unit: string | null; exercise_id: string }> = [];
+    const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; is_combo: boolean; unit: string | null; exercise_id: string }> = [];
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
-        allExercises.push({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals });
+        allExercises.push({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals, is_combo: ex.is_combo });
         if (!ex.exercise.counts_towards_totals) return;
         const r = ex.summary_total_reps ?? 0;
         const avg = ex.summary_avg_load ?? 0;

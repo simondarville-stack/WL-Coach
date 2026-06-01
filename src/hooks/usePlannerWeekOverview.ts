@@ -18,6 +18,7 @@ export interface ExerciseRaw {
   avgLoad: number;
   tonnage: number;
   countsTowardsTotals: boolean;
+  isCombo: boolean;
 }
 
 export interface ExerciseSummary {
@@ -158,7 +159,7 @@ export function usePlannerWeekOverview() {
         const { data: exercises } = await supabase
           .from('planned_exercises')
           .select(`
-            weekplan_id, day_index, exercise_id,
+            weekplan_id, day_index, exercise_id, is_combo,
             summary_total_reps, summary_total_sets, summary_avg_load, summary_highest_load,
             exercises(name, color, exercise_code, counts_towards_totals)
           `)
@@ -184,6 +185,7 @@ export function usePlannerWeekOverview() {
             avgLoad,
             tonnage: reps * avgLoad,
             countsTowardsTotals: ex.exercises?.counts_towards_totals !== false,
+            isCombo: ex.is_combo === true,
           });
         });
       }
@@ -290,7 +292,7 @@ export function usePlannerWeekOverview() {
           weightedLoadSum: number; tonnage: number;
         }>();
         for (const ex of wpExercises) {
-          if (!ex.countsTowardsTotals) continue;
+          if (!ex.countsTowardsTotals && !ex.isCombo) continue;
           if (!exSummaryMap.has(ex.exerciseId)) {
             exSummaryMap.set(ex.exerciseId, {
               color: ex.color, name: ex.name,
@@ -324,6 +326,7 @@ export function usePlannerWeekOverview() {
               summary_highest_load: e.highestLoad,
               summary_avg_load: e.avgLoad,
               counts_towards_totals: e.countsTowardsTotals,
+              is_combo: e.isCombo,
             })),
             competitionTotal,
           );
@@ -347,6 +350,7 @@ export function usePlannerWeekOverview() {
             summary_highest_load: e.highestLoad,
             summary_avg_load: e.avgLoad,
             counts_towards_totals: e.countsTowardsTotals,
+            is_combo: e.isCombo,
           })),
           competitionTotal,
         );

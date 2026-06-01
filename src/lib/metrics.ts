@@ -83,6 +83,7 @@ export function computeMetrics(
     summary_highest_load: number | null;
     summary_avg_load: number | null;
     counts_towards_totals?: boolean;
+    is_combo?: boolean;
   }>,
   competitionTotal: number | null,
 ): ComputedMetrics {
@@ -90,7 +91,10 @@ export function computeMetrics(
   let weightedLoadSum = 0;
 
   for (const ex of exercises) {
-    if (ex.counts_towards_totals === false) continue;
+    // A combo's reps belong to its member movements (real work), so it always
+    // counts. counts_towards_totals on a combo row is inherited from the lead
+    // member only and must not gate the whole combo out of the totals.
+    if (ex.counts_towards_totals === false && ex.is_combo !== true) continue;
     const s = ex.summary_total_sets ?? 0;
     const r = ex.summary_total_reps ?? 0;
     const hi = ex.summary_highest_load ?? 0;

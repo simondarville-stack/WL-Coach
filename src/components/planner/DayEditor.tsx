@@ -125,9 +125,15 @@ export function DayEditor({
 
   const sortedExercises = exercises.slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  const totalSets = exercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
-  const totalReps = exercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
-  const totalTonnage = exercises.reduce((s, ex) =>
+  // Match the unit-card / week-summary rule: an exercise contributes to the
+  // header totals when its lift counts towards totals OR it is a combo (a
+  // combo's reps belong to its member movements, so it always counts).
+  const countsToTotals = (ex: PlannedExercise & { exercise: Exercise }) =>
+    ex.is_combo || ex.exercise.counts_towards_totals !== false;
+  const countedExercises = exercises.filter(countsToTotals);
+  const totalSets = countedExercises.reduce((s, ex) => s + (ex.summary_total_sets ?? 0), 0);
+  const totalReps = countedExercises.reduce((s, ex) => s + (ex.summary_total_reps ?? 0), 0);
+  const totalTonnage = countedExercises.reduce((s, ex) =>
     ex.unit === 'absolute_kg' ? s + (ex.summary_avg_load ?? 0) * (ex.summary_total_reps ?? 0) : s, 0
   );
 
