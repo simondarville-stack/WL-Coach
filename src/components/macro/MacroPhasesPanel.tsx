@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Plus, Pencil, Trash2, ArrowLeft, AlertTriangle } from 'lucide-react';
 import type { MacroPhase, MacroWeek, PhaseType, PhaseTypePreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
+import { Button } from '../ui';
 
 interface MacroPhasesPanelProps {
   macrocycleId: string;
@@ -263,19 +264,21 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             {deleting ? 'Deleting…' : 'Delete'}
           </button>
         )}
-        <button
+        <Button
+          variant="secondary"
           onClick={onBack}
-          className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+          className="flex-1"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="primary"
           onClick={handleSave}
           disabled={saving || !name.trim()}
-          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          className="flex-1"
         >
           {saving ? 'Saving…' : editingPhase ? 'Update' : 'Add phase'}
-        </button>
+        </Button>
       </div>
     </div>
   );
