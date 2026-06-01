@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2, CalendarDays } from 'lucide-react';
+import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
+import { DockGroupCard } from './DockGroupCard';
 
 interface ClipboardPanelProps {
   items: ClipboardItem[];
@@ -335,74 +336,60 @@ interface WeekCardItemProps {
   onRemove: () => void;
 }
 
-// A parked week: one parent holding all its training days. The whole week
-// drags out via CLIPBOARD:week:<id>; each day drags out on its own via
-// CLIPBOARD:week-day:<id>:<dayIndex> so a coach can reuse just one day.
+// A parked week shown like a programme template: one parent (the week) holding
+// all its training days. The whole week drags out via CLIPBOARD:week:<id>; each
+// day drags out on its own via CLIPBOARD:week-day:<id>:<dayIndex>.
 function WeekCard({ item, onRemove }: WeekCardItemProps) {
-  const totalEx = item.days.reduce((s, d) => s + d.exercises.length, 0);
   return (
-    <div
-      draggable
-      onDragStart={e => {
-        e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
-        e.dataTransfer.effectAllowed = 'copy';
-      }}
-      title={`${item.label} — ${item.days.length} day${item.days.length === 1 ? '' : 's'}, ${totalEx} exercise${totalEx === 1 ? '' : 's'} (drag to apply the whole week)`}
-      style={{
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        padding: '5px 22px 6px 6px',
-        gridColumn: '1 / -1',
-        background: 'var(--color-bg-primary)',
-        border: '0.5px solid var(--color-border-secondary)',
-        borderLeft: '3px solid var(--color-accent)',
-        borderRadius: 'var(--radius-sm)',
-        cursor: 'grab',
-        userSelect: 'none',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <CalendarDays size={11} style={{ flexShrink: 0, color: 'var(--color-accent)' }} />
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {item.label}
-        </span>
-        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
-          · {item.days.length} day{item.days.length === 1 ? '' : 's'}
-        </span>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 3, paddingLeft: 15 }}>
-        {item.days.map(day => (
-          <div
-            key={day.dayIndex}
-            draggable
-            onDragStart={e => {
-              e.stopPropagation();
-              e.dataTransfer.setData('text/plain', `CLIPBOARD:week-day:${item.id}:${day.dayIndex}`);
-              e.dataTransfer.effectAllowed = 'copy';
-            }}
-            title={`${day.label} — ${day.exercises.length} exercise${day.exercises.length === 1 ? '' : 's'} (drag to apply just this day)`}
+    <div style={{ gridColumn: '1 / -1' }}>
+      <DockGroupCard
+        title={item.label}
+        countLabel={`${item.days.length} ${item.days.length === 1 ? 'day' : 'days'}`}
+        dragTitle="Drag to apply the whole week"
+        onHeaderDragStart={e => {
+          e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
+          e.dataTransfer.setData('application/x-emos-week-paste', '1');
+          e.dataTransfer.effectAllowed = 'copy';
+        }}
+        headerAction={
+          <button
+            onClick={e => { e.stopPropagation(); onRemove(); }}
+            onMouseDown={e => e.stopPropagation()}
+            onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+            title="Remove from clipboard"
             style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              padding: '2px 6px', cursor: 'grab', userSelect: 'none',
-              background: 'var(--color-bg-secondary)',
-              border: '0.5px solid var(--color-border-tertiary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+              padding: 0,
+              border: '0.5px solid var(--color-border-secondary)',
               borderRadius: 'var(--radius-sm)',
-              minWidth: 0,
+              background: 'var(--color-bg-primary)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+              flexShrink: 0,
             }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-tertiary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-danger-text)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-primary)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-text-secondary)'; }}
           >
-            <Layers size={9} style={{ flexShrink: 0, color: 'var(--color-text-tertiary)' }} />
-            <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-              {day.label}
-            </span>
-            <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
-              {day.exercises.length}
-            </span>
-          </div>
-        ))}
-      </div>
-      <RemoveBtn onClick={onRemove} />
+            <X size={10} />
+          </button>
+        }
+        days={item.days.map((day, i) => ({
+          key: String(day.dayIndex),
+          index: i + 1,
+          label: day.label,
+          previewNames: day.exercises.map(ex => ex.display.label),
+          title: `Drag ${day.label} onto a day to apply just this day`,
+          onDragStart: e => {
+            e.stopPropagation();
+            e.dataTransfer.setData('text/plain', `CLIPBOARD:week-day:${item.id}:${day.dayIndex}`);
+            e.dataTransfer.effectAllowed = 'copy';
+          },
+        }))}
+      />
     </div>
   );
 }
