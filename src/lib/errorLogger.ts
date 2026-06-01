@@ -21,6 +21,7 @@
  */
 import { supabase } from './supabase';
 import type { ErrorBreadcrumb } from './database.types';
+import { APP_VERSION, BUILD_SHA } from './version';
 
 const MAX_BREADCRUMBS = 25;
 
@@ -122,7 +123,7 @@ export async function logError(err: unknown, opts: LogErrorOptions = {}): Promis
       error_code: code,
       url: typeof location !== 'undefined' ? location.pathname + location.search : null,
       user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-      app_version: (import.meta.env.VITE_APP_VERSION as string | undefined) ?? null,
+      app_version: `${APP_VERSION} (${BUILD_SHA})`,
       actor_role: actor.role,
       actor_id: actor.id,
       actor_label: actor.label,

@@ -23,6 +23,7 @@ import {
 import { useCoachStore } from '../store/coachStore';
 import { useAthleteStore } from '../store/athleteStore';
 import { useInboxUnreadCount } from '../hooks/useInboxUnreadCount';
+import { VERSION_LABEL, BUILD_INFO } from '../lib/version';
 
 interface NavItem {
   path: string;
@@ -332,7 +333,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
       {/* Collapse toggle + version */}
       <div className="flex-shrink-0" style={{ borderTop: '0.5px solid var(--color-border-primary)' }}>
         {!collapsed && (
-          <div className="px-4 pt-2 select-none" style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>v2.0</div>
+          <div className="px-4 pt-2 select-none" style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }} title={BUILD_INFO}>{VERSION_LABEL}</div>
         )}
         <button
           onClick={toggleCollapsed}
