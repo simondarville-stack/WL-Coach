@@ -15,7 +15,7 @@ import type {
   WeekPlan,
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
-import { parsePrescription, parseFreeTextPrescription, parseComboPrescription } from '../lib/prescriptionParser';
+import { parsePrescription, parseComboPrescription, computePrescriptionSummary } from '../lib/prescriptionParser';
 import { recordPrescriptionDraft, clearPrescriptionDraft } from '../lib/prescriptionDraftStore';
 
 export interface PlanSelection {
@@ -415,14 +415,24 @@ export function useWeekPlans() {
   ): Promise<void> => {
     const { prescription, unit, isCombo } = data;
     const isFreeText = unit === 'free_text';
-    const isRPE = unit === 'rpe';
     const isOtherUnit = unit === 'other';
     const isFreeTextReps = unit === 'free_text_reps';
-    const isTextBased = isFreeText || isRPE || isFreeTextReps;
     const isNonNumeric = isFreeText || isOtherUnit;
 
     const { error: deleteError } = await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
     if (deleteError) throw deleteError;
+
+    // Summary (sets/reps/loads) is computed by the single shared helper so the
+    // stored cache always matches what the counting layer would derive.
+    const summary = computePrescriptionSummary(prescription, unit, !!isCombo);
+    const summaryUpdate = {
+      prescription_raw: prescription,
+      unit,
+      summary_total_sets: summary.total_sets,
+      summary_total_reps: summary.total_reps,
+      summary_highest_load: summary.highest_load,
+      summary_avg_load: summary.avg_load,
+    };
 
     if (isCombo) {
       const parsed = parseComboPrescription(prescription);
@@ -438,38 +448,12 @@ export function useWeekPlans() {
         }));
         const { error: insertError } = await supabase.from('planned_set_lines').insert(lines);
         if (insertError) throw insertError;
-
-        const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
-        const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.totalReps, 0);
-        const highestLoad = Math.max(...parsed.map(l => l.loadMax ?? l.load));
-        const effectiveLoad = (l: typeof parsed[0]) =>
-          l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
-        const weightedSum = parsed.reduce((sum, l) => sum + effectiveLoad(l) * l.sets * l.totalReps, 0);
-        const avgLoad = totalReps > 0 ? weightedSum / totalReps : null;
-
-        await supabase.from('planned_exercises').update({
-          prescription_raw: prescription,
-          unit,
-          summary_total_sets: totalSets,
-          summary_total_reps: totalReps,
-          summary_highest_load: highestLoad,
-          summary_avg_load: avgLoad,
-        }).eq('id', plannedExId);
-      } else {
-        await supabase.from('planned_exercises').update({
-          prescription_raw: prescription,
-          unit,
-          summary_total_sets: 0,
-          summary_total_reps: 0,
-          summary_highest_load: null,
-          summary_avg_load: null,
-        }).eq('id', plannedExId);
       }
+      await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
       return;
     }
 
     const parsed = isNonNumeric ? [] : parsePrescription(prescription);
-    const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
 
     if (parsed.length > 0 && !isNonNumeric && !isFreeTextReps) {
       const lines = parsed.map((line, idx) => ({
@@ -482,45 +466,8 @@ export function useWeekPlans() {
       }));
       const { error: insertLinesError } = await supabase.from('planned_set_lines').insert(lines);
       if (insertLinesError) throw insertLinesError;
-
-      const totalSets = parsed.reduce((sum, l) => sum + l.sets, 0);
-      const totalReps = parsed.reduce((sum, l) => sum + l.sets * l.reps, 0);
-      const highestLoad = Math.max(...parsed.map(l => l.loadMax ?? l.load));
-      const effectiveLoad = (l: typeof parsed[0]) =>
-        l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
-      const weightedSum = parsed.reduce((sum, l) => sum + effectiveLoad(l) * l.sets * l.reps, 0);
-      const avgLoad = totalReps > 0 ? weightedSum / totalReps : null;
-
-      await supabase.from('planned_exercises').update({
-        prescription_raw: prescription,
-        unit,
-        summary_total_sets: totalSets,
-        summary_total_reps: totalReps,
-        summary_highest_load: highestLoad,
-        summary_avg_load: avgLoad,
-      }).eq('id', plannedExId);
-    } else if (parsedText.length > 0 && isTextBased) {
-      const totalSets = parsedText.reduce((sum, l) => sum + l.sets, 0);
-      const totalReps = parsedText.reduce((sum, l) => sum + l.sets * l.reps, 0);
-
-      await supabase.from('planned_exercises').update({
-        prescription_raw: prescription,
-        unit,
-        summary_total_sets: totalSets,
-        summary_total_reps: totalReps,
-        summary_highest_load: null,
-        summary_avg_load: null,
-      }).eq('id', plannedExId);
-    } else {
-      await supabase.from('planned_exercises').update({
-        prescription_raw: prescription,
-        unit,
-        summary_total_sets: 0,
-        summary_total_reps: 0,
-        summary_highest_load: null,
-        summary_avg_load: null,
-      }).eq('id', plannedExId);
     }
+    await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
     // Promote group-sourced exercise to individual when coach edits it
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };

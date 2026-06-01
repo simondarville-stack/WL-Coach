@@ -342,3 +342,64 @@ export function formatFreeTextPrescription(lines: FreeTextSetLine[]): string {
     })
     .join(', ');
 }
+
+export interface PrescriptionSummary {
+  total_sets: number;
+  total_reps: number;
+  highest_load: number | null;
+  avg_load: number | null;
+}
+
+/**
+ * Compute the cached summary (total sets/reps, highest load, weighted-average
+ * load) for a prescription. Single source of truth shared by the save path
+ * (useWeekPlans.writePrescription, which persists it) and the counting layer's
+ * stale-cache fallback (comboExpansion), so a displayed prescription and its
+ * counted totals can never disagree.
+ *
+ * Mirrors the unit branching of the save path exactly: combos and numeric
+ * units carry load; text-based units (rpe / free_text / free_text_reps) carry
+ * reps & sets only; 'other' carries nothing.
+ */
+export function computePrescriptionSummary(
+  prescription: string,
+  unit: string | null,
+  isCombo: boolean,
+): PrescriptionSummary {
+  const empty: PrescriptionSummary = { total_sets: 0, total_reps: 0, highest_load: null, avg_load: null };
+
+  if (isCombo) {
+    const parsed = parseComboPrescription(prescription);
+    if (parsed.length === 0) return empty;
+    const total_sets = parsed.reduce((s, l) => s + l.sets, 0);
+    const total_reps = parsed.reduce((s, l) => s + l.sets * l.totalReps, 0);
+    const highest_load = Math.max(...parsed.map(l => l.loadMax ?? l.load));
+    const weighted = parsed.reduce(
+      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * l.totalReps, 0);
+    return { total_sets, total_reps, highest_load, avg_load: total_reps > 0 ? weighted / total_reps : null };
+  }
+
+  const isFreeText = unit === 'free_text';
+  const isOtherUnit = unit === 'other';
+  const isFreeTextReps = unit === 'free_text_reps';
+  const isTextBased = isFreeText || unit === 'rpe' || isFreeTextReps;
+  const isNonNumeric = isFreeText || isOtherUnit;
+
+  const parsed = isNonNumeric ? [] : parsePrescription(prescription);
+  const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
+
+  if (parsed.length > 0 && !isNonNumeric && !isFreeTextReps) {
+    const total_sets = parsed.reduce((s, l) => s + l.sets, 0);
+    const total_reps = parsed.reduce((s, l) => s + l.sets * l.reps, 0);
+    const highest_load = Math.max(...parsed.map(l => l.loadMax ?? l.load));
+    const weighted = parsed.reduce(
+      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * l.reps, 0);
+    return { total_sets, total_reps, highest_load, avg_load: total_reps > 0 ? weighted / total_reps : null };
+  }
+  if (parsedText.length > 0 && isTextBased) {
+    const total_sets = parsedText.reduce((s, l) => s + l.sets, 0);
+    const total_reps = parsedText.reduce((s, l) => s + l.sets * l.reps, 0);
+    return { total_sets, total_reps, highest_load: null, avg_load: null };
+  }
+  return empty;
+}

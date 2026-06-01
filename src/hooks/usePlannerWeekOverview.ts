@@ -172,7 +172,7 @@ export function usePlannerWeekOverview() {
         const { data: exercises } = await supabase
           .from('planned_exercises')
           .select(`
-            id, weekplan_id, day_index, exercise_id, is_combo, prescription_raw,
+            id, weekplan_id, day_index, exercise_id, is_combo, prescription_raw, unit,
             summary_total_reps, summary_total_sets, summary_avg_load, summary_highest_load,
             exercises(name, color, exercise_code, counts_towards_totals)
           `)
@@ -228,7 +228,7 @@ export function usePlannerWeekOverview() {
           for (const c of expandForCounting<OverviewExercise>({
             exercise_id: ex.exercise_id,
             exercise: ex.exercises,
-            unit: null,
+            unit: ex.unit ?? null,
             is_combo: ex.is_combo === true,
             prescription_raw: ex.prescription_raw ?? null,
             summary_total_sets: ex.summary_total_sets,

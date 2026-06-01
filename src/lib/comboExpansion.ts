@@ -12,7 +12,7 @@
 // position. We reuse parseComboPrescription so this stays consistent with how
 // the combo's own summary cache is computed in useWeekPlans.
 
-import { parseComboPrescription } from './prescriptionParser';
+import { parseComboPrescription, computePrescriptionSummary } from './prescriptionParser';
 
 // Generic over the exercise shape so callers that only load a subset of
 // Exercise columns (e.g. the week-overview hook) can still use it.
@@ -68,7 +68,29 @@ export function expandForCounting<E extends { counts_towards_totals?: boolean | 
   row: CountableRow<E>,
   members: MemberRef<E>[] | undefined,
 ): CountedContribution<E>[] {
-  if (!row.is_combo) return [lump(row)];
+  if (!row.is_combo) {
+    // Trust the cached summary, but if it is empty fall back to a live parse of
+    // the prescription. A stale/zero cache (e.g. a row whose summary was never
+    // recomputed) would otherwise silently drop a fully-prescribed exercise
+    // from the totals even though its prescription renders correctly.
+    const cachedReps = row.summary_total_reps ?? 0;
+    const cachedSets = row.summary_total_sets ?? 0;
+    if (cachedReps === 0 && cachedSets === 0 && row.prescription_raw) {
+      const s = computePrescriptionSummary(row.prescription_raw, row.unit, false);
+      if (s.total_reps > 0 || s.total_sets > 0) {
+        return [{
+          exercise_id: row.exercise_id,
+          exercise: row.exercise,
+          unit: row.unit,
+          summary_total_sets: s.total_sets,
+          summary_total_reps: s.total_reps,
+          summary_highest_load: s.highest_load,
+          summary_avg_load: s.avg_load,
+        }];
+      }
+    }
+    return [lump(row)];
+  }
 
   const ordered = (members ?? []).slice().sort((a, b) => a.position - b.position);
   const lines = parseComboPrescription(row.prescription_raw ?? '');
