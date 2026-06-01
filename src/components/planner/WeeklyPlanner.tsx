@@ -20,6 +20,7 @@ import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { LoadDistribution } from './LoadDistribution';
+import { WeekSummaryBox } from './WeekSummaryBox';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
@@ -1251,6 +1252,22 @@ export function WeeklyPlanner() {
                 weekTypes={settings?.week_types ?? []}
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
               />
+
+            {/* ── Week summary box (by-category + load distribution + totals) ── */}
+            {(planSelection.athlete || planSelection.group) && (
+              <WeekSummaryBox
+                selectedAthlete={planSelection.athlete}
+                selectedDate={selectedDate}
+                macroContext={macroContext}
+                plannedExercises={plannedExercises}
+                activeDays={activeDays}
+                dayDisplayOrder={dayDisplayOrder}
+                dayLabels={currentWeekPlan?.day_labels || {}}
+                weekTypes={settings?.week_types ?? []}
+                onPrevWeek={goToPreviousWeek}
+                onNextWeek={goToNextWeek}
+              />
+            )}
 
             {/* ── Load Distribution (collapsible) ── */}
             {currentWeekPlan && showLoadDistribution && (planSelection.athlete || planSelection.group) && (
