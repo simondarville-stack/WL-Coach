@@ -46,6 +46,7 @@ import type {
 import { isExerciseDone } from '../../../lib/trainingLogModel';
 import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
 import { fetchPRHistory, insertPRHistory, syncAthletePRs } from '../../../lib/prTable';
+import { estimateAtRepsFromAnchors, roundToHalf } from '../../../lib/xrmUtils';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
@@ -142,7 +143,8 @@ export function TodayScreen() {
   const [prHistory, setPrHistory] = useState<AthletePRHistory[]>([]);
   const [prPrompt, setPrPrompt] = useState<{
     exerciseId: string; exerciseName: string;
-    repCount: number; valueKg: number; achievedDate: string; previous: number;
+    repCount: number; valueKg: number; achievedDate: string;
+    previous: number; isEstimate: boolean;
   } | null>(null);
   // Values the athlete declined this session, so we don't re-nag for the same
   // (exercise, reps, value) on every subsequent set save.
@@ -421,12 +423,16 @@ export function TodayScreen() {
   }, [athleteId]);
 
   /**
-   * After a set is saved, decide whether it beats the athlete's current PR at
-   * that rep count and, if so, surface the register-PR prompt. Best-effort and
-   * deliberately conservative: only quantified single lifts (not combos), a
-   * positive kg load, a whole rep count in 1–10, a completed set, and an
-   * existing record at that rep count to beat. First-ever rep-count entries do
-   * not auto-prompt — those are set from the PR screen.
+   * After a set is saved, decide whether it would be a new PR at its rep count
+   * and, if so, surface the register-PR prompt. Best-effort and limited to
+   * quantified single lifts (not combos), a positive kg load, a whole rep
+   * count in 1–10, and a completed set.
+   *
+   * The bar is the same the PR table shows: the current record at that rep
+   * count if one exists, otherwise the value ESTIMATED at that rep count from
+   * the athlete's other PRs (same multi-anchor model as buildPRRows). So a
+   * logged xRM above the estimate also prompts. Only an exercise with no PRs
+   * at all has no bar and stays silent.
    */
   const checkForPR = useCallback((args: {
     exerciseId: string | null | undefined;
@@ -441,9 +447,29 @@ export function TodayScreen() {
     if (status !== 'completed' || isCombo || !exerciseId) return;
     if (valueKg == null || !Number.isFinite(valueKg) || valueKg <= 0) return;
     if (repCount == null || !Number.isInteger(repCount) || repCount < 1 || repCount > 10) return;
-    // prHistory is newest-first, so the first match is the current PR.
-    const current = prHistory.find(h => h.exercise_id === exerciseId && h.rep_count === repCount);
-    if (!current || valueKg <= current.value_kg) return;
+
+    // Current record per rep count (prHistory is newest-first, so the first
+    // match is the current value) — the table's "current" semantics.
+    const currentByRep = new Map<number, number>();
+    for (const h of prHistory) {
+      if (h.exercise_id !== exerciseId || h.rep_count < 1 || h.rep_count > 10) continue;
+      if (!currentByRep.has(h.rep_count)) currentByRep.set(h.rep_count, h.value_kg);
+    }
+
+    const realAtRep = currentByRep.get(repCount);
+    let threshold: number;
+    let isEstimate: boolean;
+    if (realAtRep != null) {
+      threshold = realAtRep;
+      isEstimate = false;
+    } else {
+      const anchors = Array.from(currentByRep, ([reps, valueKg]) => ({ reps, valueKg }));
+      if (anchors.length === 0) return;            // no PRs at all → no bar
+      threshold = roundToHalf(estimateAtRepsFromAnchors(anchors, repCount));
+      isEstimate = true;
+    }
+    if (!(valueKg > threshold)) return;
+
     const key = `${exerciseId}:${repCount}:${valueKg}`;
     if (prDismissedRef.current.has(key)) return;
     setPrPrompt({
@@ -452,7 +478,8 @@ export function TodayScreen() {
       repCount,
       valueKg,
       achievedDate,
-      previous: current.value_kg,
+      previous: threshold,
+      isEstimate,
     });
   }, [prHistory]);
 
@@ -1077,7 +1104,9 @@ export function TodayScreen() {
           open={prPrompt != null}
           title={prPrompt ? `New PR — ${prPrompt.exerciseName}` : ''}
           description={prPrompt
-            ? `You lifted ${prPrompt.valueKg} kg × ${prPrompt.repCount}, beating your current ${prPrompt.repCount}RM of ${prPrompt.previous} kg. Register it as your new ${prPrompt.repCount}RM?`
+            ? (prPrompt.isEstimate
+              ? `You lifted ${prPrompt.valueKg} kg × ${prPrompt.repCount}, above your estimated ${prPrompt.repCount}RM of ~${prPrompt.previous} kg. Register it as your ${prPrompt.repCount}RM?`
+              : `You lifted ${prPrompt.valueKg} kg × ${prPrompt.repCount}, beating your current ${prPrompt.repCount}RM of ${prPrompt.previous} kg. Register it as your new ${prPrompt.repCount}RM?`)
             : undefined}
           confirmLabel="Register PR"
           cancelLabel="Not now"
