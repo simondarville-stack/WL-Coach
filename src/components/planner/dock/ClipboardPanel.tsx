@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
 import { DockGroupCard } from './DockGroupCard';
+import { ClipboardWeekPreviewDialog } from './ClipboardWeekPreviewDialog';
 
 interface ClipboardPanelProps {
   items: ClipboardItem[];
@@ -147,8 +148,9 @@ export function ClipboardPanel({ items, onRemove, onClear, onPlannerDrop }: Clip
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
             gap: 6,
+            alignItems: 'start',
           }}
         >
           {items.map(item =>
@@ -340,12 +342,14 @@ interface WeekCardItemProps {
 // all its training days. The whole week drags out via CLIPBOARD:week:<id>; each
 // day drags out on its own via CLIPBOARD:week-day:<id>:<dayIndex>.
 function WeekCard({ item, onRemove }: WeekCardItemProps) {
+  const [showPreview, setShowPreview] = useState(false);
   return (
-    <div style={{ gridColumn: '1 / -1' }}>
+    <>
       <DockGroupCard
         title={item.label}
         countLabel={`${item.days.length} ${item.days.length === 1 ? 'day' : 'days'}`}
         dragTitle="Drag to apply the whole week"
+        onDoubleClick={() => setShowPreview(true)}
         onHeaderDragStart={e => {
           e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
           e.dataTransfer.setData('application/x-emos-week-paste', '1');
@@ -390,7 +394,8 @@ function WeekCard({ item, onRemove }: WeekCardItemProps) {
           },
         }))}
       />
-    </div>
+      {showPreview && <ClipboardWeekPreviewDialog week={item} onClose={() => setShowPreview(false)} />}
+    </>
   );
 }
 
