@@ -19,7 +19,6 @@ import type { PlanSelection } from '../../hooks/useWeekPlans';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
-import { LoadDistribution } from './LoadDistribution';
 import { WeekSummaryBox } from './WeekSummaryBox';
 import { WeekNavRibbon } from './WeekNavRibbon';
 import { PlannerControlPanel } from './PlannerControlPanel';
@@ -141,6 +140,20 @@ export function WeeklyPlanner() {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
+
+  // Press "L" toggles the load-distribution band (D stays bound to the dock).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.key !== 'l' && e.key !== 'L') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      setShowLoadDistribution(s => !s);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [resolveCandidates, setResolveCandidates] = useState<ResolveCandidate[] | null>(null);
   const [resolveDirection, setResolveDirection] = useState<ResolveDirection>('percent-to-kg');
   const [importTarget, setImportTarget] = useState<{ templateId: string; startDayIndex: number } | null>(null);
@@ -1225,7 +1238,8 @@ export function WeeklyPlanner() {
               </div>
             )}
 
-            {/* ── Week navigation ribbon (primary nav) ── */}
+            {/* ── Unified week header card (overview · profile · brief · load) ── */}
+            <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
             {(planSelection.athlete || planSelection.group) && (
               <WeekNavRibbon
                 selectedDate={selectedDate}
@@ -1265,7 +1279,7 @@ export function WeeklyPlanner() {
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
               />
 
-            {/* ── Week summary box (by-category + load breakdown) ── */}
+            {/* ── Load distribution (collapsible band) ── */}
             {(planSelection.athlete || planSelection.group) && (
               <WeekSummaryBox
                 selectedAthlete={planSelection.athlete}
@@ -1274,22 +1288,11 @@ export function WeeklyPlanner() {
                 dayDisplayOrder={dayDisplayOrder}
                 dayLabels={currentWeekPlan?.day_labels || {}}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
+                expanded={showLoadDistribution}
+                onToggle={() => setShowLoadDistribution(s => !s)}
               />
             )}
-
-            {/* ── Load Distribution (collapsible) ── */}
-            {currentWeekPlan && showLoadDistribution && (planSelection.athlete || planSelection.group) && (
-              <div style={{ marginBottom: 16, background: 'var(--color-bg-primary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border-secondary)', overflow: 'hidden' }}>
-                <LoadDistribution
-                  plannedExercises={plannedExercises}
-                  athletePRs={planSelection.athlete ? athletePRs : []}
-                  dayLabels={currentWeekPlan.day_labels || {}}
-                  activeDays={activeDays}
-                  dayDisplayOrder={dayDisplayOrder}
-                  daySchedule={(currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
-                />
-              </div>
-            )}
+            </div>{/* end unified week header card */}
 
             {/* ── Group plan banner ── */}
             {planSelection.type === 'group' && planSelection.group && (

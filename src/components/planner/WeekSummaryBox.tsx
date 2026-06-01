@@ -1,15 +1,17 @@
-// WeekSummaryBox — the load-breakdown header that sits above the day cards.
-// It shows, for a single coach-selected metric (the app's standard set:
-// reps / sets / max / avg / tonnage / K), the planned work broken down BY
-// CATEGORY (left) and ACROSS THE WEEK (right). The selector drives both panels.
+// WeekSummaryBox — the "Load distribution" band of the week header. For one
+// coach-selected metric (the app's standard set: reps / sets / max / avg /
+// tonnage / K) it breaks the planned work down BY CATEGORY (left) and ACROSS
+// THE WEEK (right). The selector drives both panels.
 //
 // - Unit-based weeks: one bar per training unit.
 // - Calendar-mapped weeks: one bar per weekday (Mon–Sun); units that share a
 //   weekday stack on top of each other.
-// Week totals live in the control-panel banner; week navigation lives in its
-// own ribbon — this box is purely the breakdown.
+//
+// It renders as a collapsible band inside the unified week-header card; only
+// this band collapses (toggled by the load-distribution button or the "D" key).
 
 import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Athlete, Exercise, PlannedExercise } from '../../lib/database.types';
 import { defaultUnitLabel } from '../../lib/constants';
 import { METRICS, METRIC_ORDER, type MetricKey } from '../../lib/metrics';
@@ -23,12 +25,18 @@ interface WeekSummaryBoxProps {
   dayDisplayOrder: number[];
   dayLabels: Record<number, string>;
   daySchedule: Record<number, { weekday: number; time: string | null }> | null;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const ADDITIVE: Record<MetricKey, boolean> = {
   reps: true, sets: true, tonnage: true, max: false, avg: false, k: false,
 };
+const BALANCE_HELP =
+  'Balance = how evenly the selected metric is spread across the training days '
+  + '(coefficient of variation of the daily values). Lower is more even. '
+  + 'Under 25% reads as “even”, 25–50% as “moderate”, over 50% as “concentrated”.';
 
 // Deterministic, stable colour per category so any coach-defined category gets
 // a consistent swatch without a hardcoded lift enum.
@@ -42,7 +50,6 @@ function categoryColor(name: string): string {
   return CAT_PALETTE[h % CAT_PALETTE.length];
 }
 
-// ── metric aggregation ────────────────────────────────────────────────────
 interface Agg { reps: number; sets: number; tonnageKg: number; max: number; repsKg: number; }
 const emptyAgg = (): Agg => ({ reps: 0, sets: 0, tonnageKg: 0, max: 0, repsKg: 0 });
 
@@ -88,13 +95,15 @@ interface Unit { index: number; label: string; agg: Agg; }
 interface Column { key: string; label: string; units: Unit[]; agg: Agg; }
 interface CatRow { category: string; color: string; agg: Agg; }
 
+const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' };
+const eyebrow: React.CSSProperties = {
+  fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+  textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500,
+};
+
 export function WeekSummaryBox({
-  selectedAthlete,
-  plannedExercises,
-  activeDays,
-  dayDisplayOrder,
-  dayLabels,
-  daySchedule,
+  selectedAthlete, plannedExercises, activeDays, dayDisplayOrder, dayLabels, daySchedule,
+  expanded, onToggle,
 }: WeekSummaryBoxProps) {
   const [metric, setMetric] = useState<MetricKey>('tonnage');
   const compTotal = selectedAthlete?.competition_total ?? null;
@@ -104,7 +113,6 @@ export function WeekSummaryBox({
     const labelOf = (i: number) => dayLabels[i] || defaultUnitLabel(i, dayDisplayOrder);
     const visible = dayDisplayOrder.filter(d => activeDays.includes(d));
 
-    // Build columns: one per unit (unit mode) or one per weekday (calendar mode).
     let columns: Column[];
     if (calendarMapped && daySchedule) {
       columns = WEEKDAY_SHORT.map((wdLabel, wd) => {
@@ -123,7 +131,6 @@ export function WeekSummaryBox({
       });
     }
 
-    // Categories across the whole week.
     const catMap = new Map<string, CatRow>();
     for (const i of visible) {
       for (const ex of plannedExercises[i] ?? []) {
@@ -147,7 +154,6 @@ export function WeekSummaryBox({
   const maxCat = Math.max(1, ...cats.map(c => metricValue(c.agg, metric, compTotal) ?? 0));
   const catSum = cats.reduce((s, c) => s + (metricValue(c.agg, metric, compTotal) ?? 0), 0);
 
-  // Peak + balance (only meaningful / shown for additive metrics).
   const { peak, cvPct, verdict, verdictColor } = useMemo(() => {
     const active = columns.filter(c => colVal(c) > 0);
     if (!additive || active.length === 0) {
@@ -164,158 +170,170 @@ export function WeekSummaryBox({
     };
   }, [columns, additive, metric, compTotal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const BAR_AREA = 56;
-  const eyebrow: React.CSSProperties = {
-    fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-    textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500,
-  };
-  const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' };
+  const PLOT_H = 60;
+  const cols = `repeat(${Math.max(columns.length, 1)}, 1fr)`;
 
   return (
-    <div style={{
-      background: 'var(--color-bg-primary)',
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: 'var(--radius-lg)',
-      overflow: 'hidden',
-      marginBottom: 16,
-    }}>
-      {/* Metric selector */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-        padding: '8px 14px', borderBottom: '0.5px solid var(--color-border-tertiary)',
-      }}>
-        <span style={eyebrow}>Load breakdown</span>
-        <div style={{ display: 'inline-flex', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-          {METRIC_ORDER.map((m, i) => {
-            const def = METRICS.find(d => d.key === m)!;
-            return (
-              <button
-                key={m}
-                onClick={() => setMetric(m)}
-                title={def.description}
-                style={{
-                  fontSize: 'var(--text-caption)', padding: '3px 10px', cursor: 'pointer', border: 'none',
-                  fontFamily: 'var(--font-sans)',
-                  borderLeft: i > 0 ? '0.5px solid var(--color-border-tertiary)' : 'none',
-                  background: metric === m ? 'var(--color-accent)' : 'transparent',
-                  color: metric === m ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
-                  fontWeight: metric === m ? 500 : 400,
-                }}
-              >
-                {def.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr' }}>
-        {/* LEFT — by category */}
-        <div style={{ padding: '10px 14px', borderRight: '0.5px solid var(--color-border-tertiary)' }}>
-          <div style={eyebrow}>By category</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {cats.length === 0 && (
-              <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
-                Nothing planned yet.
-              </span>
-            )}
-            {cats.map(cat => {
-              const v = metricValue(cat.agg, metric, compTotal) ?? 0;
-              const pct = additive && catSum > 0 ? Math.round((v / catSum) * 100) : null;
+    <div>
+      {/* Collapsible header */}
+      <button
+        onClick={onToggle}
+        title="Toggle load distribution (L)"
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer',
+          borderBottom: expanded ? '0.5px solid var(--color-border-tertiary)' : 'none',
+        }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)' }}>
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span style={eyebrow}>Load distribution</span>
+        </span>
+        {expanded ? (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ display: 'inline-flex', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}
+          >
+            {METRIC_ORDER.map((m, i) => {
+              const def = METRICS.find(d => d.key === m)!;
               return (
-                <div key={cat.category} style={{ display: 'grid', gridTemplateColumns: '9px 1fr', gap: 8, alignItems: 'center' }}>
-                  <span style={{ width: 9, height: 15, borderRadius: 2, background: cat.color }} />
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                      <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {cat.category}
-                      </span>
-                      <span style={{ ...mono, fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                        {fmtMetric(metric, v)}
-                      </span>
-                      {pct !== null && (
-                        <span style={{ ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', width: 30, textAlign: 'right' }}>
-                          {pct}%
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ height: 4, background: 'var(--color-bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
-                      <div style={{ height: '100%', borderRadius: 2, width: `${(v / maxCat) * 100}%`, background: cat.color, transition: 'width 0.2s' }} />
-                    </div>
-                  </div>
-                </div>
+                <button
+                  key={m}
+                  onClick={() => setMetric(m)}
+                  title={def.description}
+                  style={{
+                    fontSize: 'var(--text-caption)', padding: '3px 10px', cursor: 'pointer', border: 'none',
+                    fontFamily: 'var(--font-sans)',
+                    borderLeft: i > 0 ? '0.5px solid var(--color-border-tertiary)' : 'none',
+                    background: metric === m ? 'var(--color-accent)' : 'transparent',
+                    color: metric === m ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                    fontWeight: metric === m ? 500 : 400,
+                  }}
+                >
+                  {def.label}
+                </button>
               );
             })}
           </div>
-        </div>
+        ) : (
+          <span style={{ ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>press L</span>
+        )}
+      </button>
 
-        {/* RIGHT — across the week */}
-        <div style={{ padding: '10px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <div style={eyebrow}>{calendarMapped ? 'Across the week' : 'Across the units'}</div>
+      {expanded && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr' }}>
+          {/* LEFT — by category */}
+          <div style={{ padding: '10px 14px', borderRight: '0.5px solid var(--color-border-tertiary)' }}>
+            <div style={eyebrow}>By category</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {cats.length === 0 && (
+                <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                  Nothing planned yet.
+                </span>
+              )}
+              {cats.map(cat => {
+                const v = metricValue(cat.agg, metric, compTotal) ?? 0;
+                const pct = additive && catSum > 0 ? Math.round((v / catSum) * 100) : null;
+                return (
+                  <div key={cat.category} style={{ display: 'grid', gridTemplateColumns: '9px 1fr', gap: 8, alignItems: 'center' }}>
+                    <span style={{ width: 9, height: 15, borderRadius: 2, background: cat.color }} />
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {cat.category}
+                        </span>
+                        <span style={{ ...mono, fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                          {fmtMetric(metric, v)}
+                        </span>
+                        {pct !== null && (
+                          <span style={{ ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', width: 30, textAlign: 'right' }}>
+                            {pct}%
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ height: 4, background: 'var(--color-bg-tertiary)', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
+                        <div style={{ height: '100%', borderRadius: 2, width: `${(v / maxCat) * 100}%`, background: cat.color, transition: 'width 0.2s' }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, 1fr)`, gap: 6, marginTop: 8 }}>
-            {columns.map(col => {
-              const v = colVal(col);
-              const totalH = v > 0 ? Math.max(3, (v / maxCol) * BAR_AREA) : 2;
-              const isPeak = additive && peak?.key === col.key;
-              const stackUnits = additive && col.units.length > 1 ? col.units.filter(u => (metricValue(u.agg, metric, compTotal) ?? 0) > 0) : [];
-              return (
-                <div key={col.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
-                  {/* value label */}
-                  <span style={{ ...mono, fontSize: 'var(--text-caption)', color: v > 0 ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', height: 13, lineHeight: '13px' }}>
+          {/* RIGHT — across the week (fixed, framed chart window) */}
+          <div style={{ padding: '10px 14px' }}>
+            <div style={eyebrow}>{calendarMapped ? 'Across the week' : 'Across the units'}</div>
+
+            {/* value labels */}
+            <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 6, marginTop: 8 }}>
+              {columns.map(col => {
+                const v = colVal(col);
+                return (
+                  <span key={col.key} style={{ ...mono, fontSize: 'var(--text-caption)', textAlign: 'center', color: v > 0 ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)' }}>
                     {fmtMetric(metric, v || null)}
                   </span>
-                  {/* baseline-anchored bar area */}
-                  <div style={{ height: BAR_AREA, width: '68%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <div style={{
-                      height: totalH, minHeight: 2, borderRadius: '2px 2px 0 0', overflow: 'hidden',
-                      display: 'flex', flexDirection: 'column',
-                      background: v > 0 ? undefined : 'var(--color-border-tertiary)',
-                      opacity: v > 0 ? 1 : 0.5,
-                      transition: 'height 0.2s',
-                    }}>
-                      {v > 0 && stackUnits.length > 0
-                        ? stackUnits.map((u, idx) => {
-                            const uv = metricValue(u.agg, metric, compTotal) ?? 0;
-                            return (
-                              <div
-                                key={u.index}
-                                title={`${u.label}: ${fmtMetric(metric, uv)}`}
-                                style={{
-                                  height: `${(uv / v) * 100}%`,
-                                  background: idx % 2 === 0 ? 'var(--color-accent)' : 'var(--color-accent-border)',
-                                  borderTop: idx > 0 ? '0.5px solid var(--color-bg-primary)' : 'none',
-                                }}
-                              />
-                            );
-                          })
-                        : v > 0 && <div style={{ height: '100%', background: isPeak ? 'var(--color-accent)' : 'var(--color-accent-border)' }} />}
-                    </div>
-                  </div>
-                  {/* day / unit label */}
-                  <span style={{
-                    ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-                    borderTop: '0.5px solid var(--color-border-tertiary)', paddingTop: 3, marginTop: 2,
-                    width: '100%', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {col.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
-          {peak && (
-            <div style={{ display: 'flex', gap: 14, marginTop: 8, ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-              <span>peak <b style={{ color: 'var(--color-text-secondary)' }}>{peak.label} · {fmtMetric(metric, colVal(peak))}</b></span>
-              <span>balance <b style={{ color: 'var(--color-text-secondary)' }}>CV {cvPct}%</b></span>
-              <span style={{ color: verdictColor }}>{verdict}</span>
+                );
+              })}
             </div>
-          )}
+            {/* plot row — bars anchored to the bottom axis */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: cols, gap: 6,
+              height: PLOT_H, alignItems: 'end', marginTop: 4,
+              borderBottom: '0.5px solid var(--color-border-tertiary)',
+            }}>
+              {columns.map(col => {
+                const v = colVal(col);
+                const h = v > 0 ? Math.max(3, (v / maxCol) * PLOT_H) : 2;
+                const isPeak = additive && peak?.key === col.key;
+                const stack = additive && col.units.length > 1
+                  ? col.units.filter(u => (metricValue(u.agg, metric, compTotal) ?? 0) > 0)
+                  : [];
+                return (
+                  <div key={col.key} style={{
+                    height: h, width: '72%', justifySelf: 'center',
+                    borderRadius: '2px 2px 0 0', overflow: 'hidden',
+                    display: 'flex', flexDirection: 'column',
+                    background: v > 0 ? undefined : 'var(--color-border-tertiary)',
+                    opacity: v > 0 ? 1 : 0.45,
+                    transition: 'height 0.2s',
+                  }}>
+                    {v > 0 && stack.length > 0
+                      ? stack.map((u, idx) => {
+                          const uv = metricValue(u.agg, metric, compTotal) ?? 0;
+                          return (
+                            <div key={u.index} title={`${u.label}: ${fmtMetric(metric, uv)}`} style={{
+                              height: `${(uv / v) * 100}%`,
+                              background: idx % 2 === 0 ? 'var(--color-accent)' : 'var(--color-accent-border)',
+                              borderTop: idx > 0 ? '0.5px solid var(--color-bg-primary)' : 'none',
+                            }} />
+                          );
+                        })
+                      : v > 0 && <div style={{ height: '100%', background: isPeak ? 'var(--color-accent)' : 'var(--color-accent-border)' }} />}
+                  </div>
+                );
+              })}
+            </div>
+            {/* day labels */}
+            <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 6, marginTop: 4 }}>
+              {columns.map(col => (
+                <span key={col.key} style={{ ...mono, fontSize: 'var(--text-caption)', textAlign: 'center', color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {col.label}
+                </span>
+              ))}
+            </div>
+
+            {peak && (
+              <div style={{ display: 'flex', gap: 14, marginTop: 10, ...mono, fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                <span>peak <b style={{ color: 'var(--color-text-secondary)' }}>{peak.label} · {fmtMetric(metric, colVal(peak))}</b></span>
+                <span title={BALANCE_HELP} style={{ cursor: 'help', borderBottom: '1px dotted var(--color-border-tertiary)' }}>
+                  balance <b style={{ color: 'var(--color-text-secondary)' }}>CV {cvPct}%</b> <span style={{ color: verdictColor }}>{verdict}</span>
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

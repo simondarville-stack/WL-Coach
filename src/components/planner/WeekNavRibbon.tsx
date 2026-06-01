@@ -34,10 +34,9 @@ export function WeekNavRibbon({ selectedDate, macroContext, weekTypes, onPrevWee
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-      padding: '8px 12px', marginBottom: 16,
+      padding: '8px 12px',
       background: 'var(--color-bg-secondary)',
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: 'var(--radius-lg)',
+      borderBottom: '0.5px solid var(--color-border-tertiary)',
     }}>
       <button onClick={onPrevWeek} style={navButton} title="Previous week">
         <ChevronLeft size={15} /> Prev

@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings2, Copy, ClipboardPaste, Printer, BarChart2,
-  ChevronDown, ChevronRight as ChevronRightSmall,
   Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -168,26 +167,6 @@ function ConvertMenuItem({ label, hint, onClick }: { label: string; hint: string
   );
 }
 
-function CategoryMetric({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px' }}>
-      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-caption)' }}>
-        {label}
-      </span>
-      <span
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontVariantNumeric: 'tabular-nums',
-          fontWeight: 500,
-          color: 'var(--color-text-primary)',
-        }}
-      >
-        {value}
-      </span>
-    </span>
-  );
-}
-
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface CompetitionPR {
@@ -254,7 +233,6 @@ export function PlannerControlPanel({
   const navigate = useNavigate();
 
   const [competitionPRs, setCompetitionPRs] = useState<CompetitionPR[]>([]);
-  const [showCategories, setShowCategories] = useState(false);
   const [localDesc, setLocalDesc]           = useState(weekDescription);
   const [copyFlash, setCopyFlash]           = useState(false);
   const [showAthleteProfile, setShowAthleteProfile] = useState(false);
@@ -295,35 +273,27 @@ export function PlannerControlPanel({
 
   // ── metrics ──────────────────────────────────────────────────────────────
 
-  const { metrics, totalStress, categories } = useMemo(() => {
+  const { metrics, totalStress } = useMemo(() => {
     const prMap = new Map<string, number>(
       athletePRs.filter(pr => pr.pr_value_kg).map(pr => [pr.exercise_id, pr.pr_value_kg!])
     );
     let totalStress = 0;
-    const catMap = new Map<string, { category: string; sets: number; reps: number; tonnage: number }>();
     const allExercises: Array<{ summary_total_sets: number | null; summary_total_reps: number | null; summary_highest_load: number | null; summary_avg_load: number | null; counts_towards_totals: boolean; unit: string | null; exercise_id: string }> = [];
     Object.values(plannedExercises).forEach(dayExs => {
       dayExs.forEach(ex => {
         allExercises.push({ ...ex, counts_towards_totals: ex.exercise.counts_towards_totals });
         if (!ex.exercise.counts_towards_totals) return;
-        const s = ex.summary_total_sets ?? 0;
         const r = ex.summary_total_reps ?? 0;
         const avg = ex.summary_avg_load ?? 0;
-        const ton = ex.unit === 'absolute_kg' ? avg * r : 0;
         if (ex.unit === 'absolute_kg' && avg > 0) {
           const pr = prMap.get(ex.exercise_id);
           if (pr && pr > 0) totalStress += r * Math.pow(avg / pr, 2);
-        }
-        if (ex.exercise.category !== '— System') {
-          const prev = catMap.get(ex.exercise.category) || { category: ex.exercise.category, sets: 0, reps: 0, tonnage: 0 };
-          catMap.set(ex.exercise.category, { ...prev, sets: prev.sets + s, reps: prev.reps + r, tonnage: prev.tonnage + ton });
         }
       });
     });
     return {
       metrics: computeMetrics(allExercises, selectedAthlete?.competition_total ?? null),
       totalStress: Math.round(totalStress * 10) / 10,
-      categories: Array.from(catMap.values()).sort((a, b) => b.reps - a.reps),
     };
   }, [plannedExercises, athletePRs, selectedAthlete?.competition_total]);
 
@@ -669,33 +639,6 @@ export function PlannerControlPanel({
           </>
         )}
 
-        {categories.length > 0 && (
-          <>
-            <MetricSeparator />
-            <button
-              onClick={() => setShowCategories(v => !v)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                background: 'transparent',
-                border: 'none',
-                padding: '2px 4px',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-                fontSize: 'var(--text-label)',
-                color: 'var(--color-text-tertiary)',
-                transition: 'color 100ms ease-out',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
-            >
-              {showCategories ? <ChevronDown size={12} /> : <ChevronRightSmall size={12} />}
-              <span>Categories</span>
-            </button>
-          </>
-        )}
-
         {macroContext && (
           <>
             <MetricSeparator />
@@ -753,47 +696,6 @@ export function PlannerControlPanel({
           </>
         )}
       </div>
-
-      {/* ── Categories strip (collapsible) ───────────────────────────────── */}
-      {showCategories && categories.length > 0 && (
-        <div
-          style={{
-            padding: 'var(--space-sm) var(--space-lg) var(--space-md)',
-            display: 'flex',
-            flexWrap: 'wrap',
-            columnGap: 'var(--space-xl)',
-            rowGap: '4px',
-            borderTop: '0.5px solid var(--color-border-tertiary)',
-          }}
-        >
-          {categories.map(cat => (
-            <div
-              key={cat.category}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-sm)',
-                fontSize: 'var(--text-label)',
-              }}
-            >
-              <span
-                style={{
-                  color: 'var(--color-text-secondary)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  maxWidth: '120px',
-                }}
-              >
-                {cat.category}
-              </span>
-              <CategoryMetric label="S" value={cat.sets} />
-              <CategoryMetric label="R" value={cat.reps} />
-              {cat.tonnage > 0 && <CategoryMetric label="T" value={cat.tonnage.toLocaleString()} />}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* ── Schedule indicator (calendar-mapped mode only) ───────────────────── */}
       {daySchedule && Object.keys(daySchedule).length > 0 && (() => {
@@ -859,39 +761,38 @@ export function PlannerControlPanel({
         );
       })()}
 
-      {/* ── WEEK NOTES ───────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          padding: '10px var(--space-lg)',
-          borderTop: '0.5px solid var(--color-border-tertiary)',
-          background: 'var(--color-bg-secondary)',
-        }}
-      >
-        <textarea
-          value={localDesc}
-          onChange={e => {
-            setLocalDesc(e.target.value);
-            e.target.style.height = 'auto';
-            e.target.style.height = `${e.target.scrollHeight}px`;
-          }}
-          onBlur={e => { void onSaveWeekDescription(e.target.value); }}
-          placeholder="Week brief — tell the athlete what to expect this week…"
-          rows={1}
-          className="planner-week-notes"
-          style={{
-            width: '100%',
-            fontSize: 'var(--text-body)',
-            color: 'var(--color-text-primary)',
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            resize: 'none',
-            overflow: 'hidden',
-            lineHeight: 1.55,
-            minHeight: '1.5rem',
-            fontFamily: 'var(--font-sans)',
-          }}
-        />
+      {/* ── WEEK BRIEF (boxed) ───────────────────────────────────────────────── */}
+      <div style={{ padding: '10px var(--space-lg)', borderTop: '0.5px solid var(--color-border-tertiary)' }}>
+        <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, marginBottom: 6 }}>
+          Week brief
+        </div>
+        <div style={{ border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-secondary)', padding: '8px 10px' }}>
+          <textarea
+            value={localDesc}
+            onChange={e => {
+              setLocalDesc(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            onBlur={e => { void onSaveWeekDescription(e.target.value); }}
+            placeholder="Tell the athlete what to expect this week…"
+            rows={1}
+            className="planner-week-notes"
+            style={{
+              width: '100%',
+              fontSize: 'var(--text-body)',
+              color: 'var(--color-text-primary)',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              resize: 'none',
+              overflow: 'hidden',
+              lineHeight: 1.55,
+              minHeight: '1.5rem',
+              fontFamily: 'var(--font-sans)',
+            }}
+          />
+        </div>
       </div>
 
       {/* ── Athlete profile dialog ───────────────────────────────────────────── */}
