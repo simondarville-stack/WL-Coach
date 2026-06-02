@@ -1,5 +1,5 @@
 // TODO: Consider splitting into useWeekPlanData (loading) and useWeekPlanMutations (writes)
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type {
@@ -27,6 +27,10 @@ export interface PlanSelection {
 export function useWeekPlans() {
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
+  // Per-exercise write chain: serializes prescription DB writes so a burst of
+  // rapid clicks persists in click order (never out-of-order, which would leave
+  // a stale value as the final state).
+  const writeChainRef = useRef<Map<string, Promise<unknown>>>(new Map());
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
   const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
@@ -495,15 +499,11 @@ export function useWeekPlans() {
         updatedAt: Date.now(),
       });
     }
-    await writePrescription(plannedExId, data);
-    clearPrescriptionDraft(plannedExId);
-
-    // Patch the in-memory row so summaries/totals update live WITHOUT a full
-    // refetch. A refetch replaces the whole array and remounts the prescription
-    // grid mid-edit (lost keystrokes / reverted clicks). The saved
-    // prescription_raw equals what the grid last sent, so the grid's own guard
-    // skips re-parsing — no remount. Same computePrescriptionSummary the write
-    // path uses, so the cached summary stays consistent.
+    // Optimistic + immediate: patch the in-memory row so summaries/totals
+    // update live without a full refetch (which would remount the grid mid-edit
+    // and revert keystrokes). The grid suppresses the prescription_raw echo
+    // (sentRawsRef), so this never remounts it. Same computePrescriptionSummary
+    // the write path uses, so the cached summary stays consistent.
     const summary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
     setPlannedExercises(prev => {
       let changed = false;
@@ -526,6 +526,16 @@ export function useWeekPlans() {
       }
       return changed ? next : prev;
     });
+
+    // Serialize the DB write per exercise: chain after any in-flight write so a
+    // burst of clicks persists strictly in order. Returning the chained promise
+    // keeps flushAndClose's await covering the whole pending chain, and lets
+    // callers .catch() to resync on failure.
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writePrescription(plannedExId, data).then(() => clearPrescriptionDraft(plannedExId));
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
