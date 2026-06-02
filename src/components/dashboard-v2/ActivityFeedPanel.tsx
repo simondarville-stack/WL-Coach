@@ -1,6 +1,6 @@
 // Activity feed — recent events from the EMOS data layer with click-to-jump.
 
-import { CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import { CheckCircle2, XCircle, Sparkles, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { ActivityEvent, AthleteStatus } from '../../hooks/useCoachDashboard';
 
@@ -10,6 +10,7 @@ const TYPE_META: Record<ActivityEvent['type'], { label: string; tone: Tone; icon
   training_logged:    { label: 'Training logged',  tone: 'success', icon: <CheckCircle2 size={14} /> },
   session_skipped:    { label: 'Session skipped',  tone: 'danger',  icon: <XCircle      size={14} /> },
   macrocycle_created: { label: 'Macrocycle',       tone: 'accent',  icon: <Sparkles     size={14} /> },
+  pr_set:             { label: 'New PR',           tone: 'accent',  icon: <Trophy       size={14} /> },
 };
 
 const TONE_CLS: Record<Tone, string> = {
@@ -33,9 +34,11 @@ interface Props {
   events: ActivityEvent[];
   statuses: AthleteStatus[];
   onJumpToAthlete: (status: AthleteStatus) => void;
+  /** Open the coach Log for an athlete's week (used by day-logged + PR rows). */
+  onOpenLog: (status: AthleteStatus, weekStart: string) => void;
 }
 
-export function ActivityFeedPanel({ events, statuses, onJumpToAthlete }: Props) {
+export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog }: Props) {
   const byName: Record<string, AthleteStatus> = {};
   statuses.forEach(s => { byName[s.athlete.name] = s; });
 
@@ -60,7 +63,13 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete }: Props) 
           return (
             <button
               key={`${ev.type}-${ev.timestamp.toISOString()}-${i}`}
-              onClick={() => { if (status) onJumpToAthlete(status); }}
+              onClick={() => {
+                if (!status) return;
+                // Day-logged / skipped / PR rows carry a week → open the Log.
+                // Macrocycle rows have no week → just jump to the athlete.
+                if (ev.weekStart) onOpenLog(status, ev.weekStart);
+                else onJumpToAthlete(status);
+              }}
               disabled={!clickable}
               className={`w-full grid grid-cols-[24px_1fr_auto] gap-3 items-start px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 ${
                 clickable ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'

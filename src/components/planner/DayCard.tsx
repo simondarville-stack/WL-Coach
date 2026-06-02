@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
@@ -109,16 +109,16 @@ export function DayCard({
   /** When non-null, opens the GPP editor for that planned_exercise. */
   const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const deleteHeld = useDeleteHeld();
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
+    // savePrescription writes to the DB and patches the in-memory row, so the
+    // header totals update live. No success-path refetch — that would remount
+    // the grid mid-edit. On failure, resync once to recover from divergence.
     void savePrescription(ex.id, {
       prescription: raw,
       unit: ((unitOverride ?? ex.unit) as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
-    });
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
+    }).catch(() => { void onRefresh(); });
   }
 
   // Expand combos into their member instances so each member's reps count

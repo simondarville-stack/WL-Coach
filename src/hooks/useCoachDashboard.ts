@@ -14,7 +14,7 @@ import type {
   Event,
   TrainingGroup,
 } from '../lib/database.types';
-import { formatDateToDDMMYYYY } from '../lib/dateUtils';
+import { formatDateToDDMMYYYY, getMondayOfWeek, toLocalISO } from '../lib/dateUtils';
 import { getCurrentAndNextWeekStart, findCurrentMacroWeek } from '../lib/weekUtils';
 import { computeRawAverage } from '../lib/calculations';
 
@@ -33,11 +33,15 @@ export interface AthleteStatus {
 }
 
 export interface ActivityEvent {
-  type: 'training_logged' | 'session_skipped' | 'macrocycle_created';
+  type: 'training_logged' | 'session_skipped' | 'macrocycle_created' | 'pr_set';
   timestamp: Date;
   athleteName: string;
   details: string;
   rawScore?: number | null;
+  // Deep-link payload for click-through to the Log. Null for macrocycle rows
+  // (which only jump to the athlete on the board).
+  weekStart?: string | null;
+  dayIndex?: number | null;
 }
 
 export interface UpcomingEvent {
@@ -217,6 +221,8 @@ export function useCoachDashboard() {
             athleteName: athlete.name,
             details: formatDateToDDMMYYYY(session.date),
             rawScore: session.raw_total,
+            weekStart: session.week_start,
+            dayIndex: session.day_index,
           });
         } else if (session.status === 'skipped') {
           events.push({
@@ -224,6 +230,8 @@ export function useCoachDashboard() {
             timestamp: new Date(session.date),
             athleteName: athlete.name,
             details: formatDateToDDMMYYYY(session.date),
+            weekStart: session.week_start,
+            dayIndex: session.day_index,
           });
         }
       }
@@ -247,6 +255,31 @@ export function useCoachDashboard() {
           timestamp: new Date(macro.created_at),
           athleteName: athlete.name,
           details: macro.name,
+        });
+      }
+    }
+
+    // Recent PRs — deep-link to the Log for the week the PR was achieved.
+    const { data: prs } = await supabase
+      .from('athlete_pr_history')
+      .select('athlete_id, exercise_id, rep_count, value_kg, achieved_date, created_at, athlete:athletes(name), exercise:exercises(name)')
+      .in('athlete_id', idFilter)
+      .order('achieved_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (prs) {
+      for (const pr of prs) {
+        const athlete = pr.athlete as unknown as { name: string } | null;
+        const exercise = pr.exercise as unknown as { name: string | null } | null;
+        if (!athlete) continue;
+        events.push({
+          type: 'pr_set',
+          timestamp: new Date(pr.achieved_date),
+          athleteName: athlete.name,
+          details: `${exercise?.name ?? 'Lift'} · ${pr.value_kg} kg × ${pr.rep_count}`,
+          weekStart: toLocalISO(getMondayOfWeek(new Date(pr.achieved_date))),
+          dayIndex: null,
         });
       }
     }

@@ -497,6 +497,35 @@ export function useWeekPlans() {
     }
     await writePrescription(plannedExId, data);
     clearPrescriptionDraft(plannedExId);
+
+    // Patch the in-memory row so summaries/totals update live WITHOUT a full
+    // refetch. A refetch replaces the whole array and remounts the prescription
+    // grid mid-edit (lost keystrokes / reverted clicks). The saved
+    // prescription_raw equals what the grid last sent, so the grid's own guard
+    // skips re-parsing — no remount. Same computePrescriptionSummary the write
+    // path uses, so the cached summary stays consistent.
+    const summary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
+    setPlannedExercises(prev => {
+      let changed = false;
+      const next: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        next[day] = prev[day].map(ex => {
+          if (ex.id !== plannedExId) return ex;
+          changed = true;
+          return {
+            ...ex,
+            prescription_raw: data.prescription,
+            unit: data.unit,
+            summary_total_sets: summary.total_sets,
+            summary_total_reps: summary.total_reps,
+            summary_highest_load: summary.highest_load,
+            summary_avg_load: summary.avg_load,
+          };
+        });
+      }
+      return changed ? next : prev;
+    });
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {

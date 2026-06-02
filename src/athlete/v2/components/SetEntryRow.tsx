@@ -7,7 +7,7 @@
  * - useEffect deps are primitive so a parent re-render with a fresh
  *   `logged` reference does NOT stomp the user's mid-edit local state.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, X, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
 import { parseNumericInput, parseRepsInput } from '../../../lib/trainingLogModel';
@@ -91,6 +91,12 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
     setStatus(logged?.status ?? 'pending');
   }, [logged?.status]);
 
+  // Per-row write queue: a numeric cell's onBlur-commit and a status button's
+  // onClick-commit can fire in the same gesture. Serializing them so they run
+  // in call order (button after blur) makes the later write win, instead of
+  // racing at the DB and dropping the status toggle or the typed value.
+  const chainRef = useRef<Promise<unknown>>(Promise.resolve());
+
   const commit = async (overrides: Partial<{
     load: string;
     reps: string;
@@ -102,30 +108,28 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
     const nextText = overrides.text ?? text;
     const nextStat = overrides.status ?? status;
 
-    setBusy(true);
-    try {
-      if (input.freeTextMode) {
-        // Free-text rows: no numeric load/reps. The merged cell either
-        // shows the coach's prose (planned row, freeTextPlanned set) or
-        // captures the athlete's prose (extra row → stored on notes).
-        await onSave({
-          setNumber: input.setNumber,
-          performedLoad: null,
-          performedReps: null,
-          status: nextStat,
-          plannedLoad: null,
-          plannedReps: null,
-          performedText: input.freeTextPlanned !== undefined ? null : nextText.trim() || null,
-        });
-        return;
-      }
-
+    // Build the payload synchronously from the values at call time, so each
+    // commit captures its own snapshot before being queued.
+    let arg: Parameters<typeof onSave>[0];
+    if (input.freeTextMode) {
+      // Free-text rows: no numeric load/reps. The merged cell either shows the
+      // coach's prose (planned row, freeTextPlanned set) or captures the
+      // athlete's prose (extra row → stored on notes).
+      arg = {
+        setNumber: input.setNumber,
+        performedLoad: null,
+        performedReps: null,
+        status: nextStat,
+        plannedLoad: null,
+        plannedReps: null,
+        performedText: input.freeTextPlanned !== undefined ? null : nextText.trim() || null,
+      };
+    } else {
       const parsedLoad = parseNumericInput(nextLoad);
       const parsedReps = parseRepsInput(nextReps);
-      // When marking completed without explicit values, assume the
-      // athlete executed the set as prescribed. This means tapping the
-      // checkmark on a planned set is enough — no manual entry needed
-      // if everything went as written.
+      // When marking completed without explicit values, assume the athlete
+      // executed the set as prescribed — tapping the checkmark on a planned set
+      // is enough if everything went as written.
       const completing = nextStat === 'completed';
       const performedLoad =
         parsedLoad ?? (completing ? input.plannedLoadValue : null);
@@ -135,14 +139,14 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
           : completing
           ? input.plannedRepsValue
           : null;
-      // Preserve combo / tuple notation ("2+2+2") in performed_text so the
-      // raw string round-trips on display. Numeric-only entries leave it
-      // null. Empty input clears it explicitly so cleared rows don't show
-      // a stale string after re-render.
+      // Preserve combo / tuple notation ("2+2+2") in performed_text so the raw
+      // string round-trips on display. Numeric-only entries leave it null.
+      // Empty input clears it explicitly so cleared rows don't show a stale
+      // string after re-render.
       const trimmedReps = nextReps.trim();
       const performedText =
         trimmedReps.includes('+') ? trimmedReps : trimmedReps === '' ? null : undefined;
-      await onSave({
+      arg = {
         setNumber: input.setNumber,
         performedLoad,
         performedReps,
@@ -150,9 +154,16 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         plannedLoad: input.plannedLoadValue,
         plannedReps: input.plannedRepsValue,
         ...(performedText !== undefined ? { performedText } : {}),
-      });
+      };
+    }
+
+    setBusy(true);
+    const mine = chainRef.current.then(() => onSave(arg), () => onSave(arg));
+    chainRef.current = mine;
+    try {
+      await mine;
     } finally {
-      setBusy(false);
+      if (chainRef.current === mine) setBusy(false);
     }
   };
 

@@ -106,9 +106,9 @@ function CoachApp() {
     fetchGroups();
   }, []);
 
-  const handleNavigateToPlanner = (athlete: Athlete, weekStart: string) => {
+  const handleNavigateToPlanner = (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log') => {
     setSelectedAthlete(athlete);
-    navigate(`/planner/${weekStart}`);
+    navigate(`/planner/${weekStart}${mode === 'log' ? '?mode=log' : ''}`);
   };
 
   const handleNavigateToGroupPlanner = (group: TrainingGroup, weekStart: string) => {

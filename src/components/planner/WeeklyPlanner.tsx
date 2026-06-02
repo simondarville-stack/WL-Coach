@@ -1,7 +1,7 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useSettings } from '../../hooks/useSettings';
@@ -65,6 +65,7 @@ type PanelView = 'overview' | 'day' | 'exercise';
 export function WeeklyPlanner() {
   const { weekStart: urlWeekStart } = useParams<{ weekStart?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { selectedAthlete, setSelectedAthlete, selectedGroup: storeSelectedGroup, setSelectedGroup } = useAthleteStore();
   const { settings, fetchSettings } = useSettings();
 
@@ -178,7 +179,13 @@ export function WeeklyPlanner() {
   const [showWeekList, setShowWeekList] = useState(() => {
     return !urlWeekStart;
   });
-  const [viewMode, setViewMode] = useState<'plan' | 'log'>('plan');
+  // `?mode=log` (e.g. from a dashboard activity click) opens straight into Log.
+  const [viewMode, setViewMode] = useState<'plan' | 'log'>(
+    searchParams.get('mode') === 'log' ? 'log' : 'plan',
+  );
+  useEffect(() => {
+    if (searchParams.get('mode') === 'log') setViewMode('log');
+  }, [searchParams]);
 
   // Keep internal view in sync with URL on subsequent navigations.
   // useState initializers only run once; this effect handles the

@@ -483,26 +483,69 @@ export function PrescriptionGrid({
       : unit === 'percentage' ? `${col.load}%`
       : String(col.load);
 
+    // Intervals render as two independent boxes (min · max), mirroring the
+    // combo reps cell — not one wide box with a tinted background.
+    if (isInterval) {
+      const adjustBound = (bound: 'min' | 'max', e: React.MouseEvent) => {
+        if (e.button !== 0 && e.button !== 2) return;
+        e.preventDefault();
+        if (isDeleting) { removeColumn(col.id); return; }
+        if (e.ctrlKey || e.metaKey) {
+          const base = `${col.load}-${col.loadMax}`;
+          setEditing({ colId: col.id, field: 'load', value: unit === 'percentage' ? `${base}%` : base });
+          return;
+        }
+        const delta = e.button === 2 ? -1 : 1;
+        if (bound === 'min') {
+          const nextMin = Math.max(0, col.load + delta);
+          const adjustedMax = Math.max(nextMin, col.loadMax ?? nextMin);
+          updateColumn(col.id, { load: nextMin, loadMax: adjustedMax, loadText: `${nextMin}-${adjustedMax}` });
+        } else {
+          const nextMax = Math.max(col.load, (col.loadMax ?? 0) + delta);
+          updateColumn(col.id, { loadMax: nextMax, loadText: `${col.load}-${nextMax}` });
+        }
+      };
+      const boxTitle = (which: string) =>
+        isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
+          <button
+            onMouseDown={e => adjustBound('min', e)}
+            onContextMenu={e => e.preventDefault()}
+            tabIndex={-1}
+            disabled={disabled}
+            title={boxTitle('min')}
+            className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
+            style={{ minWidth: '1.25rem', padding: '0 2px' }}
+          >
+            {col.load}
+          </button>
+          <span style={{ fontSize: 10, lineHeight: 1, userSelect: 'none', color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>-</span>
+          <button
+            onMouseDown={e => adjustBound('max', e)}
+            onContextMenu={e => e.preventDefault()}
+            tabIndex={-1}
+            disabled={disabled}
+            title={boxTitle('max')}
+            className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
+            style={{ minWidth: '1.25rem', padding: '0 2px' }}
+          >
+            {col.loadMax}{unit === 'percentage' ? '%' : ''}
+          </button>
+        </div>
+      );
+    }
+
     return (
       <button
         onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
         onContextMenu={e => e.preventDefault()}
         tabIndex={-1}
         disabled={disabled}
-        title={isDeleting ? 'Click to delete column' : isInterval ? 'Left half: adjust min · Right half: adjust max · Ctrl+click: edit' : undefined}
-        className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}${isInterval ? ' pgrid-interval' : ''}`}
+        title={isDeleting ? 'Click to delete column' : undefined}
+        className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
       >
-        {isInterval ? (
-          <span style={{ userSelect: 'none' }}>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>{col.load}</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', margin: '0 6px' }}>-</span>
-            <span style={{ color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-secondary)' }}>
-              {col.loadMax}{unit === 'percentage' ? '%' : ''}
-            </span>
-          </span>
-        ) : (
-          <span>{loadDisplay}</span>
-        )}
+        <span>{loadDisplay}</span>
       </button>
     );
   }
@@ -573,7 +616,7 @@ export function PrescriptionGrid({
             onBlur={() => setFocusedColId(prev => prev === col.id ? null : prev)}
           >
             {/* Stacked fraction: load / reps */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isCombo ? 'auto' : col.loadMax !== null ? (compact ? '2.75rem' : '3.5rem') : (compact ? '1.75rem' : '2.5rem') }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isCombo || col.loadMax !== null ? 'auto' : (compact ? '1.75rem' : '2.5rem') }}>
               <div style={{ width: '100%' }}>{renderLoadCell(col)}</div>
               <div style={{ width: '100%', margin: compact ? 0 : '1px 0', borderTop: `1px solid ${isDeleting ? 'var(--color-danger-text)' : 'var(--color-border-primary)'}` }} />
               <div style={{ width: '100%' }}>

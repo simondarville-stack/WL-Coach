@@ -410,15 +410,6 @@ samp {
   font-weight: 500;
   opacity: 0.8;
 }
-.pgrid-interval {
-  background: rgba(59,130,246,0.04);
-  border: 0.5px solid rgba(59,130,246,0.15);
-  border-radius: var(--radius-sm);
-}
-.pgrid-interval:hover:not(:disabled) {
-  background: var(--color-accent-muted);
-  outline: none;
-}
 .pgrid-add-btn {
   display: flex;
   align-items: center;

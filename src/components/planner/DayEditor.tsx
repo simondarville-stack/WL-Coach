@@ -88,7 +88,6 @@ export function DayEditor({
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
@@ -163,17 +162,19 @@ export function DayEditor({
   }
 
   function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    pendingSaveRef.current = savePrescription(ex.id, {
+    // Track the in-flight save so flushAndClose can await it. No success-path
+    // refetch — that would remount the grid mid-edit; savePrescription patches
+    // the in-memory row so totals stay live. Resync once on failure.
+    const p = savePrescription(ex.id, {
       prescription: raw,
       unit: ((unitOverride ?? ex.unit) as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     });
-    saveTimerRef.current = setTimeout(() => { void onRefresh(); }, 800);
+    pendingSaveRef.current = p;
+    p.catch(() => { void onRefresh(); });
   }
 
   async function flushAndClose() {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (pendingSaveRef.current) {
       try { await pendingSaveRef.current; } catch {}
       pendingSaveRef.current = null;
