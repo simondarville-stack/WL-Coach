@@ -26,3 +26,6 @@ dist-ssr
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Vite writes a temp compiled config next to vite.config.ts when it loads it
+vite.config.ts.timestamp-*.mjs
