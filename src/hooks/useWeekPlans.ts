@@ -411,6 +411,39 @@ export function useWeekPlans() {
     return { name: 'Exercise', dayIndex: null, weekPlanId: weekPlan?.id ?? null };
   };
 
+  // Internal: replace an exercise's set lines with `lines` (positions 1..n).
+  //
+  // Uses upsert-on-conflict + tail-delete instead of delete-all + insert. The
+  // old pattern was not atomic: a burst of overlapping writes for the same
+  // exercise could interleave as delete/delete/insert/insert, and the second
+  // insert collided on the (planned_exercise_id, position) unique constraint
+  // (Postgres 23505). Upserting on that exact constraint converges the rows
+  // last-write-wins instead of throwing, so the crash can't happen even if the
+  // per-exercise serialization in savePrescription is bypassed (e.g. a second
+  // tab editing the same exercise). The tail-delete trims any rows left over
+  // when the new prescription has fewer lines than the old one.
+  //
+  // Every line carries the full column set (reps_text/load_max defaulted to
+  // null) so an upsert UPDATE always overwrites a row's previous shape — e.g.
+  // a line that used to be a combo member won't keep a stale reps_text.
+  const replaceSetLines = async (
+    plannedExId: string,
+    lines: Array<Record<string, unknown>>,
+  ): Promise<void> => {
+    if (lines.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('planned_set_lines')
+        .upsert(lines, { onConflict: 'planned_exercise_id,position' });
+      if (upsertError) throw upsertError;
+    }
+    const { error: trimError } = await supabase
+      .from('planned_set_lines')
+      .delete()
+      .eq('planned_exercise_id', plannedExId)
+      .gt('position', lines.length);
+    if (trimError) throw trimError;
+  };
+
   // Internal: performs the actual Supabase writes for a prescription. Wrapped
   // by savePrescription, which adds local-draft safety around it.
   const writePrescription = async (
@@ -422,9 +455,6 @@ export function useWeekPlans() {
     const isOtherUnit = unit === 'other';
     const isFreeTextReps = unit === 'free_text_reps';
     const isNonNumeric = isFreeText || isOtherUnit;
-
-    const { error: deleteError } = await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExId);
-    if (deleteError) throw deleteError;
 
     // Summary (sets/reps/loads) is computed by the single shared helper so the
     // stored cache always matches what the counting layer would derive.
@@ -440,37 +470,34 @@ export function useWeekPlans() {
 
     if (isCombo) {
       const parsed = parseComboPrescription(prescription);
-      if (parsed.length > 0) {
-        const lines = parsed.map((line, idx) => ({
-          planned_exercise_id: plannedExId,
-          sets: line.sets,
-          reps: line.totalReps,
-          reps_text: line.repsText,
-          load_value: line.load,
-          load_max: line.loadMax ?? null,
-          position: idx + 1,
-        }));
-        const { error: insertError } = await supabase.from('planned_set_lines').insert(lines);
-        if (insertError) throw insertError;
-      }
+      const lines = parsed.map((line, idx) => ({
+        planned_exercise_id: plannedExId,
+        sets: line.sets,
+        reps: line.totalReps,
+        reps_text: line.repsText,
+        load_value: line.load,
+        load_max: line.loadMax ?? null,
+        position: idx + 1,
+      }));
+      await replaceSetLines(plannedExId, lines);
       await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
       return;
     }
 
     const parsed = isNonNumeric ? [] : parsePrescription(prescription);
-
-    if (parsed.length > 0 && !isNonNumeric && !isFreeTextReps) {
-      const lines = parsed.map((line, idx) => ({
-        planned_exercise_id: plannedExId,
-        sets: line.sets,
-        reps: line.reps,
-        load_value: line.load,
-        load_max: line.loadMax ?? null,
-        position: idx + 1,
-      }));
-      const { error: insertLinesError } = await supabase.from('planned_set_lines').insert(lines);
-      if (insertLinesError) throw insertLinesError;
-    }
+    const hasNumericLines = parsed.length > 0 && !isNonNumeric && !isFreeTextReps;
+    const lines = hasNumericLines
+      ? parsed.map((line, idx) => ({
+          planned_exercise_id: plannedExId,
+          sets: line.sets,
+          reps: line.reps,
+          reps_text: null,
+          load_value: line.load,
+          load_max: line.loadMax ?? null,
+          position: idx + 1,
+        }))
+      : [];
+    await replaceSetLines(plannedExId, lines);
     await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
     // Promote group-sourced exercise to individual when coach edits it
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');

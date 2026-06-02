@@ -609,7 +609,9 @@ export function ExerciseDetail({
                 onSave={(raw, unitOverride) => {
                   const effective = (unitOverride ?? unit) as DefaultUnit;
                   if (unitOverride && unitOverride !== unit) setUnit(unitOverride);
-                  void savePrescription(plannedExercise.id, { prescription: raw, unit: effective || 'absolute_kg', isCombo });
+                  // Catch so a failed write can't surface as an unhandled
+                  // rejection; debouncedRefresh below resyncs local state.
+                  void savePrescription(plannedExercise.id, { prescription: raw, unit: effective || 'absolute_kg', isCombo }).catch(() => {});
                   debouncedRefresh();
                 }}
               />
