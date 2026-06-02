@@ -14,7 +14,7 @@ import type {
   Event,
   TrainingGroup,
 } from '../lib/database.types';
-import { formatDateToDDMMYYYY, getMondayOfWeek, toLocalISO } from '../lib/dateUtils';
+import { formatDateToDDMMYYYY } from '../lib/dateUtils';
 import { getCurrentAndNextWeekStart, findCurrentMacroWeek } from '../lib/weekUtils';
 import { computeRawAverage } from '../lib/calculations';
 
@@ -42,6 +42,9 @@ export interface ActivityEvent {
   // (which only jump to the athlete on the board).
   weekStart?: string | null;
   dayIndex?: number | null;
+  // For PR rows: the exercise + rep count to highlight in the PR table.
+  exerciseId?: string | null;
+  repCount?: number | null;
 }
 
 export interface UpcomingEvent {
@@ -278,8 +281,8 @@ export function useCoachDashboard() {
           timestamp: new Date(pr.achieved_date),
           athleteName: athlete.name,
           details: `${exercise?.name ?? 'Lift'} · ${pr.value_kg} kg × ${pr.rep_count}`,
-          weekStart: toLocalISO(getMondayOfWeek(new Date(pr.achieved_date))),
-          dayIndex: null,
+          exerciseId: pr.exercise_id,
+          repCount: pr.rep_count,
         });
       }
     }

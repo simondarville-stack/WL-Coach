@@ -1,9 +1,16 @@
 import { Trophy } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAthleteStore } from '../store/athleteStore';
 import { PRTrackingPanel } from './planner/PRTrackingPanel';
 
 export function PRPage() {
   const { selectedAthlete } = useAthleteStore();
+  // ?ex=<exercise_id>&rep=<n> deep-links from a dashboard PR activity and
+  // highlights that cell in the table.
+  const [searchParams] = useSearchParams();
+  const highlightExerciseId = searchParams.get('ex');
+  const repParam = searchParams.get('rep');
+  const highlightRepCount = repParam != null && repParam !== '' ? Number(repParam) : null;
 
   if (!selectedAthlete) {
     return (
@@ -19,7 +26,11 @@ export function PRPage() {
 
   return (
     <div className="px-4 py-3">
-      <PRTrackingPanel athlete={selectedAthlete} />
+      <PRTrackingPanel
+        athlete={selectedAthlete}
+        highlightExerciseId={highlightExerciseId}
+        highlightRepCount={highlightRepCount}
+      />
     </div>
   );
 }

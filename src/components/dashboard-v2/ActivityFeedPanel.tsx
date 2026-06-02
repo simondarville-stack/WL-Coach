@@ -34,11 +34,13 @@ interface Props {
   events: ActivityEvent[];
   statuses: AthleteStatus[];
   onJumpToAthlete: (status: AthleteStatus) => void;
-  /** Open the coach Log for an athlete's week (used by day-logged + PR rows). */
+  /** Open the coach Log for an athlete's week (day-logged / skipped rows). */
   onOpenLog: (status: AthleteStatus, weekStart: string) => void;
+  /** Open the PR table for an athlete and highlight one PR (PR rows). */
+  onOpenPR: (status: AthleteStatus, exerciseId: string, repCount: number) => void;
 }
 
-export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog }: Props) {
+export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog, onOpenPR }: Props) {
   const byName: Record<string, AthleteStatus> = {};
   statuses.forEach(s => { byName[s.athlete.name] = s; });
 
@@ -65,10 +67,15 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog
               key={`${ev.type}-${ev.timestamp.toISOString()}-${i}`}
               onClick={() => {
                 if (!status) return;
-                // Day-logged / skipped / PR rows carry a week → open the Log.
-                // Macrocycle rows have no week → just jump to the athlete.
-                if (ev.weekStart) onOpenLog(status, ev.weekStart);
-                else onJumpToAthlete(status);
+                // PR rows → the PR table (highlight the lift). Day-logged /
+                // skipped rows → the Log. Macrocycle rows → jump to athlete.
+                if (ev.type === 'pr_set' && ev.exerciseId && ev.repCount != null) {
+                  onOpenPR(status, ev.exerciseId, ev.repCount);
+                } else if (ev.weekStart) {
+                  onOpenLog(status, ev.weekStart);
+                } else {
+                  onJumpToAthlete(status);
+                }
               }}
               disabled={!clickable}
               className={`w-full grid grid-cols-[24px_1fr_auto] gap-3 items-start px-4 py-2.5 text-left border-b border-gray-50 last:border-b-0 ${

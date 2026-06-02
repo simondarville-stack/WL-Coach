@@ -64,9 +64,12 @@ interface PRTrackingPanelProps {
    * rendered in the header — used when this panel is opened from the
    * athlete profile. The sidebar /prs route omits this. */
   onClose?: () => void;
+  /** When set (from a dashboard PR activity), scroll to and blink this cell. */
+  highlightExerciseId?: string | null;
+  highlightRepCount?: number | null;
 }
 
-export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
+export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlightRepCount }: PRTrackingPanelProps) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
   const [mode, setMode] = usePREstimationMode();
@@ -137,6 +140,23 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
   }, [athlete.id]);
 
   useEffect(() => { void fetchData(); }, [fetchData]);
+
+  // Deep-link highlight (from a dashboard PR activity): scroll the cell into
+  // view once loaded; the .pr-cell-blink class (applied on the matching cell
+  // below) plays the attention pulse.
+  const highlightKey =
+    highlightExerciseId && highlightRepCount != null
+      ? `${highlightExerciseId}:${highlightRepCount}`
+      : null;
+  useEffect(() => {
+    if (!highlightKey || loading) return;
+    const id = window.setTimeout(() => {
+      document
+        .querySelector(`[data-pr-cell="${highlightKey}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [highlightKey, loading]);
 
   // Unique non-system categories in this owner's PR-tracked exercises.
   const categories = useMemo(() => {
@@ -497,7 +517,7 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                   const delta = cell.delta;
 
                   return (
-                    <td key={cell.repCount} style={{ padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle' }}>
+                    <td key={cell.repCount} data-pr-cell={`${row.exercise.id}:${cell.repCount}`} style={{ padding: '2px 3px', textAlign: 'center', verticalAlign: 'middle' }}>
                       {isEditing ? (
                         <PRCellEditor
                           value={editing!.value}
@@ -508,6 +528,7 @@ export function PRTrackingPanel({ athlete, onClose }: PRTrackingPanelProps) {
                         />
                       ) : (
                         <button
+                          className={highlightKey === `${row.exercise.id}:${cell.repCount}` ? 'pr-cell-blink' : undefined}
                           onClick={() => startEdit(row.exercise.id, cell.repCount, isReal ? String(cell.current!.value_kg) : '')}
                           title={isReal
                             ? `${cell.current!.value_kg} kg on ${formatDate(cell.current!.achieved_date)}${delta != null ? ` · ${delta >= 0 ? '+' : ''}${delta} kg vs 1RM-predicted` : ''} · click to log new`

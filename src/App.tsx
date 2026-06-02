@@ -121,6 +121,11 @@ function CoachApp() {
     navigate(`/macrocycles/${macrocycleId}`);
   };
 
+  const handleNavigateToPRs = (athlete: Athlete, exerciseId: string, repCount: number) => {
+    setSelectedAthlete(athlete);
+    navigate(`/prs?ex=${encodeURIComponent(exerciseId)}&rep=${repCount}`);
+  };
+
   // Show spinner while fetching coach profiles on first load
   if (!coachesLoaded) {
     return (
@@ -173,7 +178,7 @@ function CoachApp() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} />} />
+              <Route path="/dashboard" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} onNavigateToPRs={handleNavigateToPRs} />} />
               {/* /dashboard-v2 was the staging route while v2 lived alongside v1; redirect any old bookmark to the now-primary dashboard */}
               <Route path="/dashboard-v2" element={<Navigate to="/dashboard" replace />} />
               <Route path="/planner" element={<WeeklyPlanner />} />

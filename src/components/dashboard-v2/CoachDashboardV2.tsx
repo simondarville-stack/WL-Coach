@@ -32,6 +32,7 @@ interface CoachDashboardV2Props {
   onNavigateToPlanner: (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log') => void;
   onNavigateToGroupPlanner: (group: TrainingGroup, weekStart: string) => void;
   onNavigateToMacro: (athlete: Athlete, macrocycleId: string) => void;
+  onNavigateToPRs: (athlete: Athlete, exerciseId: string, repCount: number) => void;
 }
 
 const ATHLETE_PIN_KEY = 'emos_v2_dashboard_pinned';
@@ -59,7 +60,7 @@ function loadSectionByGroup(): boolean {
 }
 
 export function CoachDashboardV2({
-  onNavigateToPlanner, onNavigateToGroupPlanner, onNavigateToMacro,
+  onNavigateToPlanner, onNavigateToGroupPlanner, onNavigateToMacro, onNavigateToPRs,
 }: CoachDashboardV2Props) {
   const navigate = useNavigate();
   const {
@@ -123,6 +124,10 @@ export function CoachDashboardV2({
   const openLogForAthlete = useCallback((status: AthleteStatus, weekStart: string) => {
     onNavigateToPlanner(status.athlete, weekStart, 'log');
   }, [onNavigateToPlanner]);
+
+  const openPRForAthlete = useCallback((status: AthleteStatus, exerciseId: string, repCount: number) => {
+    onNavigateToPRs(status.athlete, exerciseId, repCount);
+  }, [onNavigateToPRs]);
 
   const openPlannerForGroup = useCallback((gs: GroupStatus, weekStart?: string) => {
     onNavigateToGroupPlanner(gs.group, weekStart ?? gs.currentWeekStart);
@@ -262,6 +267,7 @@ export function CoachDashboardV2({
           statuses={orderedAthletes}
           onJumpToAthlete={jumpToAthlete}
           onOpenLog={openLogForAthlete}
+          onOpenPR={openPRForAthlete}
         />
         <UpcomingEventsPanel
           events={upcomingEvents}
