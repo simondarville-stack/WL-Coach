@@ -7,7 +7,7 @@
  * label. Coach comments live in a collapsible session-level thread at
  * the bottom.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
@@ -18,6 +18,9 @@ import { PlanActual } from './PlanActual';
 
 interface LogDayCardProps {
   dayName: string;
+  /** When true (deep-linked from a dashboard activity), this day starts
+   *  expanded, scrolls into view, and blinks once. */
+  highlight?: boolean;
   plannedExercises: (PlannedExercise & { exercise: Exercise })[];
   dayLog: DayLog | null;
   /** Returns true when the post succeeded so callers can refresh data. */
@@ -40,6 +43,7 @@ interface LogDayCardProps {
 
 export function LogDayCard({
   dayName,
+  highlight = false,
   plannedExercises,
   dayLog,
   onPostSessionComment,
@@ -50,9 +54,20 @@ export function LogDayCard({
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const [threadOpen, setThreadOpen] = useState(false);
-  // Default collapsed so the week list scans easily for a roster. The
-  // coach clicks any header to drill into a day.
-  const [collapsed, setCollapsed] = useState(true);
+  // Default collapsed so the week list scans easily for a roster. The coach
+  // clicks any header to drill into a day. A deep-linked day starts expanded.
+  const [collapsed, setCollapsed] = useState(!highlight);
+
+  // Scroll a deep-linked day into view on mount; the .log-day-blink class
+  // (applied below) plays the attention pulse.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!highlight) return;
+    const id = window.setTimeout(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [highlight]);
 
   const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
   const offPlan: LoggedExerciseFull[] = [];
@@ -81,7 +96,7 @@ export function LogDayCard({
   const canComment = !!session && !!onPostSessionComment;
 
   return (
-    <div className="border border-gray-200 rounded-lg bg-white overflow-hidden mb-3">
+    <div ref={cardRef} className={`border border-gray-200 rounded-lg bg-white overflow-hidden mb-3${highlight ? ' log-day-blink' : ''}`}>
       <button
         onClick={() => setCollapsed(c => !c)}
         className={`w-full flex items-center justify-between bg-gray-50 ${collapsed ? '' : 'border-b border-gray-200'} px-3 py-2 flex-wrap gap-2 text-left hover:bg-gray-100 transition-colors`}

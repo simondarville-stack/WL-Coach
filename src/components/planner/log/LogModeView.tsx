@@ -40,6 +40,8 @@ interface LogModeViewProps {
   plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
   /** day_labels from the week plan, used to label bonus athlete-added days. */
   dayLabels?: Record<number, string> | null;
+  /** Day to auto-expand, scroll to and blink (deep-link from an activity). */
+  highlightDayIndex?: number | null;
 }
 
 export function LogModeView({
@@ -48,6 +50,7 @@ export function LogModeView({
   visibleDays,
   plannedExercises,
   dayLabels,
+  highlightDayIndex,
 }: LogModeViewProps) {
   const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
   const [metricsConfig, setMetricsConfig] = useState<AthleteWeekMetricsConfig | null>(null);
@@ -284,6 +287,7 @@ export function LogModeView({
         <LogDayCard
           key={day.index}
           dayName={day.name}
+          highlight={highlightDayIndex != null && day.index === highlightDayIndex}
           plannedExercises={plannedExercises[day.index] ?? []}
           dayLog={weekLog[day.index] ?? null}
           onPostSessionComment={postSessionComment}
@@ -315,6 +319,7 @@ export function LogModeView({
                 <LogDayCard
                   key={`extra-${idx}`}
                   dayName={label}
+                  highlight={highlightDayIndex != null && idx === highlightDayIndex}
                   plannedExercises={[]}
                   dayLog={weekLog[idx] ?? null}
                   onPostSessionComment={postSessionComment}

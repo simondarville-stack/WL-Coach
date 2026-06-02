@@ -29,7 +29,7 @@ import { AthleteInfoDialog } from './AthleteInfoDialog';
 type BoardView = 'athletes' | 'groups';
 
 interface CoachDashboardV2Props {
-  onNavigateToPlanner: (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log') => void;
+  onNavigateToPlanner: (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log', dayIndex?: number | null) => void;
   onNavigateToGroupPlanner: (group: TrainingGroup, weekStart: string) => void;
   onNavigateToMacro: (athlete: Athlete, macrocycleId: string) => void;
   onNavigateToPRs: (athlete: Athlete, exerciseId: string, repCount: number) => void;
@@ -121,8 +121,8 @@ export function CoachDashboardV2({
     onNavigateToPlanner(status.athlete, weekStart ?? status.currentWeekStart);
   }, [onNavigateToPlanner]);
 
-  const openLogForAthlete = useCallback((status: AthleteStatus, weekStart: string) => {
-    onNavigateToPlanner(status.athlete, weekStart, 'log');
+  const openLogForAthlete = useCallback((status: AthleteStatus, weekStart: string, dayIndex?: number | null) => {
+    onNavigateToPlanner(status.athlete, weekStart, 'log', dayIndex);
   }, [onNavigateToPlanner]);
 
   const openPRForAthlete = useCallback((status: AthleteStatus, exerciseId: string, repCount: number) => {

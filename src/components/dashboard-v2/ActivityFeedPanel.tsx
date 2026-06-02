@@ -35,7 +35,7 @@ interface Props {
   statuses: AthleteStatus[];
   onJumpToAthlete: (status: AthleteStatus) => void;
   /** Open the coach Log for an athlete's week (day-logged / skipped rows). */
-  onOpenLog: (status: AthleteStatus, weekStart: string) => void;
+  onOpenLog: (status: AthleteStatus, weekStart: string, dayIndex?: number | null) => void;
   /** Open the PR table for an athlete and highlight one PR (PR rows). */
   onOpenPR: (status: AthleteStatus, exerciseId: string, repCount: number) => void;
 }
@@ -72,7 +72,7 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog
                 if (ev.type === 'pr_set' && ev.exerciseId && ev.repCount != null) {
                   onOpenPR(status, ev.exerciseId, ev.repCount);
                 } else if (ev.weekStart) {
-                  onOpenLog(status, ev.weekStart);
+                  onOpenLog(status, ev.weekStart, ev.dayIndex);
                 } else {
                   onJumpToAthlete(status);
                 }

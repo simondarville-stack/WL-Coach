@@ -419,6 +419,14 @@ samp {
   animation: pr-cell-blink 0.7s ease-in-out 3;
   border-radius: var(--radius-sm);
 }
+/* Attention pulse for a Log day deep-linked from a dashboard activity. */
+@keyframes log-day-blink {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  35%, 70% { box-shadow: 0 0 0 3px var(--color-accent); }
+}
+.log-day-blink {
+  animation: log-day-blink 0.8s ease-in-out 3;
+}
 .pgrid-add-btn {
   display: flex;
   align-items: center;

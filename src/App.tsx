@@ -106,9 +106,12 @@ function CoachApp() {
     fetchGroups();
   }, []);
 
-  const handleNavigateToPlanner = (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log') => {
+  const handleNavigateToPlanner = (athlete: Athlete, weekStart: string, mode?: 'plan' | 'log', dayIndex?: number | null) => {
     setSelectedAthlete(athlete);
-    navigate(`/planner/${weekStart}${mode === 'log' ? '?mode=log' : ''}`);
+    const query = mode === 'log'
+      ? `?mode=log${dayIndex != null ? `&day=${dayIndex}` : ''}`
+      : '';
+    navigate(`/planner/${weekStart}${query}`);
   };
 
   const handleNavigateToGroupPlanner = (group: TrainingGroup, weekStart: string) => {

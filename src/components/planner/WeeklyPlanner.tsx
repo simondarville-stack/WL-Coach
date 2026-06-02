@@ -179,13 +179,16 @@ export function WeeklyPlanner() {
   const [showWeekList, setShowWeekList] = useState(() => {
     return !urlWeekStart;
   });
-  // `?mode=log` (e.g. from a dashboard activity click) opens straight into Log.
+  // `?mode=log` (e.g. from a dashboard activity click) opens straight into Log;
+  // `?day=<n>` highlights that day in the Log.
   const [viewMode, setViewMode] = useState<'plan' | 'log'>(
     searchParams.get('mode') === 'log' ? 'log' : 'plan',
   );
   useEffect(() => {
     if (searchParams.get('mode') === 'log') setViewMode('log');
   }, [searchParams]);
+  const logDayParam = searchParams.get('day');
+  const logHighlightDay = logDayParam != null && logDayParam !== '' ? Number(logDayParam) : null;
 
   // Keep internal view in sync with URL on subsequent navigations.
   // useState initializers only run once; this effect handles the
@@ -1451,6 +1454,7 @@ export function WeeklyPlanner() {
                 visibleDays={visibleDays}
                 plannedExercises={plannedExercises}
                 dayLabels={currentWeekPlan?.day_labels ?? null}
+                highlightDayIndex={logHighlightDay}
               />
             ) : viewMode === 'log' && planSelection.group ? (
               <GroupLogView
