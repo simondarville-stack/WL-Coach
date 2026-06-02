@@ -80,6 +80,27 @@ future reactivation. Deleting them is a SCOPE VIOLATION.
   rewrite over incremental patching. Mark it explicitly as a rewrite
   candidate in the plan.
 
+## Versioning
+
+The single source of truth is the `version` field in `package.json`; Vite
+injects it (plus git SHA + build time) so the running app shows it (sidebar,
+hover for full provenance) and error logs carry it. See `src/lib/version.ts`.
+
+Claude owns version bumps — bump as part of the change that ships, in the same
+commit, before merging to `main`. EMOS is in beta, so stay on the `0.x` line
+(`0.MINOR.PATCH`):
+
+- **MINOR** (`0.1.0 → 0.2.0`) — any user-facing feature or new capability.
+- **PATCH** (`0.1.0 → 0.1.1`) — bug fixes, refactors, chores, copy/UI tweaks.
+- When a single ship mixes both, take the highest applicable bump (a feature
+  wins → MINOR), and reset PATCH to 0.
+- Reserve `1.0.0` for the first stable (post-beta) release; do not cross to
+  `1.x` without explicit user approval.
+
+Bump exactly once per ship (one merge to `main`), not per intermediate commit.
+Mention the new version number in the reply when merging.
+
+
 ## UI & Design-System conventions
 
 > Distilled from the 2026-06 UX/design review. The goal is a professional,
