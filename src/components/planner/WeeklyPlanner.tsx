@@ -640,14 +640,25 @@ export function WeeklyPlanner() {
     if (!found) return null;
     const { ex } = found;
 
-    // Fetch set_lines for this exercise — they aren't in plannedExercises
-    // state, so a parked snapshot would otherwise drop the per-set breakdown
-    // when re-inserted.
-    const { data: setLines } = await supabase
-      .from('planned_set_lines')
-      .select('sets,reps,reps_text,load_value,load_max,position')
-      .eq('planned_exercise_id', ex.id)
-      .order('position');
+    // Fetch set_lines AND the live metadata blob from the DB. set_lines aren't
+    // in plannedExercises state; metadata (especially metadata.gpp) must come
+    // from the persisted row, not a possibly-stale in-memory copy — otherwise
+    // GPP container content silently drops when the day is re-inserted.
+    const [{ data: setLines }, { data: freshRow }] = await Promise.all([
+      supabase
+        .from('planned_set_lines')
+        .select('sets,reps,reps_text,load_value,load_max,position')
+        .eq('planned_exercise_id', ex.id)
+        .order('position'),
+      supabase
+        .from('planned_exercises')
+        .select('metadata')
+        .eq('id', ex.id)
+        .maybeSingle(),
+    ]);
+    const liveMetadata =
+      ((freshRow as { metadata?: Record<string, unknown> | null } | null)?.metadata) ??
+      (ex.metadata ?? null);
 
     const members = ex.is_combo
       ? (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position)
@@ -667,7 +678,7 @@ export function WeeklyPlanner() {
       is_combo: ex.is_combo,
       combo_notation: ex.combo_notation,
       combo_color: ex.combo_color,
-      metadata: (ex.metadata ?? null) as Record<string, unknown> | null,
+      metadata: liveMetadata as Record<string, unknown> | null,
       set_lines: (setLines ?? []).map(l => ({
         sets: l.sets,
         reps: l.reps,
