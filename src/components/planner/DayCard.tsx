@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
+import { supabase } from '../../lib/supabase';
 import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection } from '../../lib/database.types';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { getOrCreateSentinel } from './sentinelService';
@@ -42,9 +43,6 @@ interface DayCardProps {
     data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
-  /** Optimistic reorder within this day: updates local order immediately and
-   *  persists positions in the background (no full refetch / remount). */
-  onReorderInDay: (dayIndex: number, orderedIds: string[]) => void;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (
     fromDay: number,
@@ -85,7 +83,6 @@ export function DayCard({
   addExerciseToDay,
   createComboExercise,
   onRefresh,
-  onReorderInDay,
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
@@ -186,16 +183,17 @@ export function DayCard({
     setShowComboModal(false);
   }
 
-  function handleReorder(draggedId: string, targetId: string, pos: 'before' | 'after') {
+  async function handleReorder(draggedId: string, targetId: string, pos: 'before' | 'after') {
     const ids = exercises.map(e => e.id);
     const fromIdx = ids.indexOf(draggedId);
     if (fromIdx < 0) return;
     ids.splice(fromIdx, 1);
     const toIdx = pos === 'before' ? ids.indexOf(targetId) : ids.indexOf(targetId) + 1;
     ids.splice(toIdx, 0, draggedId);
-    // Optimistic: reorder locally + persist in the background. A full refetch
-    // would remount every day card and make the drag visibly "jump".
-    onReorderInDay(dayIndex, ids);
+    await Promise.all(ids.map((id, i) =>
+      supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', id)
+    ));
+    await onRefresh();
   }
 
   function handleCardDragOver(e: React.DragEvent) {

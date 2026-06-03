@@ -106,12 +106,7 @@ export function PrescriptionGrid({
   const [focusedColId, setFocusedColId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Every raw this grid has emitted. The parent echoes saves back into
-  // `prescriptionRaw` (to keep summaries live); under rapid clicks an older or
-  // out-of-order echo would otherwise re-parse the grid to a stale value
-  // mid-edit. Suppress any incoming value we ourselves produced — only a value
-  // the grid never emitted is a genuine external change worth re-parsing.
-  const sentRawsRef = useRef<Set<string>>(new Set());
+  const lastSentRef = useRef<string | null>(null);
   const prevRawRef = useRef(prescriptionRaw);
   const prevUnitRef = useRef(unit);
 
@@ -120,13 +115,8 @@ export function PrescriptionGrid({
     prevUnitRef.current = unit;
     if (prescriptionRaw === prevRawRef.current && !unitChanged) return;
     prevRawRef.current = prescriptionRaw;
-    if (!unitChanged && prescriptionRaw != null && sentRawsRef.current.has(prescriptionRaw)) return;
-    setColumns(prev => {
-      const parsed = parseToColumns(prescriptionRaw, isCombo, unit);
-      // Preserve column ids by position so a legitimate external re-sync reuses
-      // the existing inputs instead of remounting them (focus loss / jump).
-      return parsed.map((col, i) => (prev[i] ? { ...col, id: prev[i].id } : col));
-    });
+    if (!unitChanged && prescriptionRaw === lastSentRef.current) return;
+    setColumns(parseToColumns(prescriptionRaw, isCombo, unit));
   }, [prescriptionRaw, isCombo, unit]);
 
   useEffect(() => {
@@ -161,7 +151,7 @@ export function PrescriptionGrid({
     } else {
       raw = formatPrescription(columnsToSetLines(cols), unit);
     }
-    sentRawsRef.current.add(raw);
+    lastSentRef.current = raw;
     onSave(raw);
   }, [isCombo, isFreeTextReps, unit, onSave]);
 
@@ -301,7 +291,7 @@ export function PrescriptionGrid({
           ? formatFreeTextPrescription(switchedCols.map(c => ({ loadText: c.loadText, reps: c.reps, sets: c.sets })))
           : formatPrescription(columnsToSetLines(switchedCols), detected);
 
-        sentRawsRef.current.add(raw);
+        lastSentRef.current = raw;
         setColumns(switchedCols);
         onSave(raw, detected);
         setEditing(null);

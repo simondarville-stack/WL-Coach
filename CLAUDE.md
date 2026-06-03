@@ -10,11 +10,6 @@ web application. The name **EMOS is fixed and must never be changed** by any
 agent. Interface text stays English; i18n infrastructure is a future concern
 and not in scope for this review.
 
-It is an **expert-oriented** training-planning **and monitoring** system; its
-users are coaches and athletes with high domain knowledge. Prioritise
-information density, clarity, and low interaction cost over spacious or
-"marketing-style" layouts.
-
 ## Stack
 
 React 18 · TypeScript (strict) · Vite · Tailwind CSS · Supabase (Postgres;
@@ -23,21 +18,9 @@ to user-facing numeric formatting (comma decimals); UI labels remain English.
 
 **Always use European standards for dates, times, and weeks.** Times are
 24-hour (e.g. `16:00`, never `4:00 PM`). Dates are day-first
-(`DD/MM/YYYY` / `DD/MM`), never US month-first. Weeks start on Monday. Any
+(`DD.MM.YYYY` / `DD/MM`), never US month-first. Weeks start on Monday. Any
 new date/time UI, presets, parsing, or formatting must follow these
 conventions.
-
-## Product & UX principles
-
-- Prefer compact tables, tight spacing, and a scan-friendly hierarchy.
-- Avoid wizard flows and unnecessary modals; use inline editing where it fits.
-- Information density and low interaction cost beat whitespace and marketing
-  polish — these are expert tools.
-- Styling uses Tailwind CSS and `lucide-react` icons **only** (details in the
-  design-system section). Keep it professional, minimal, and compact; avoid
-  cookie-cutter SaaS aesthetics.
-- Use consistent numeric formatting across tables and views (comma decimals;
-  see Stack).
 
 ## Current review scope
 
@@ -73,27 +56,6 @@ future reactivation. Deleting them is a SCOPE VIOLATION.
 4. **Last-write-wins with timestamps** for any collaborative scenario. No
    real-time sync work.
 
-## Data integrity (planned vs. logged)
-
-- Planned data is **coach-authored** and is **read-only in athlete-facing
-  views**. Athletes never edit the plan.
-- Athlete input is stored **separately as logs** (`training_log_*`) and must
-  **never overwrite planned data**. Planned and performed are distinct records;
-  compliance and deltas are derived by comparison, not by mutation.
-
-## Prescription notation
-
-Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
-`src/components/planner/StackedNotation.tsx` (display) — don't fork it.
-
-- **Input grammar:** `load × reps` implies `sets = 1`; `load × reps × sets`
-  defines sets explicitly; comma-separated segments are allowed (e.g.
-  `80×3, 85×2×3`). Combos carry `+`-tuple reps (e.g. `80×1+2×3`).
-- **Display:** when `sets = 1`, never render the sets indicator.
-- **Stacked Load Notation** (load above, reps below a divider, sets to the
-  right) is the canonical read-only visual for kg / % / RPE, shown where
-  enabled per exercise.
-
 ## Branch strategy
 
 - Reviewer and synthesizer agents are read-only.
@@ -117,17 +79,6 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
   imports, commented code) and the debris-to-logic ratio is high, prefer a
   rewrite over incremental patching. Mark it explicitly as a rewrite
   candidate in the plan.
-
-## Working style & scope
-
-- Build in small, incremental slices; reuse existing data models, naming, and
-  structures rather than inventing parallel ones.
-- Do not rename or delete existing fields unless explicitly instructed.
-- Do not introduce new packages, UI libraries, or architectural patterns
-  unless explicitly requested.
-- When requirements are ambiguous: choose the simplest implementation that
-  satisfies them, do not invent features or behaviours, and ask for
-  clarification in the next step instead of guessing.
 
 ## Versioning
 

@@ -419,23 +419,6 @@ export function WeeklyPlanner() {
     }
   };
 
-  // Optimistic reorder within a day: reorder the in-memory list immediately so
-  // the drag lands instantly, then persist positions in the background. A full
-  // refetch would remount every day card and make the drag visibly jump.
-  const handleReorderInDay = (dayIndex: number, orderedIds: string[]) => {
-    setPlannedExercises(prev => {
-      const list = prev[dayIndex];
-      if (!list) return prev;
-      const byId = new Map(list.map(e => [e.id, e]));
-      const reordered = orderedIds
-        .map((id, i) => { const e = byId.get(id); return e ? { ...e, position: i + 1 } : undefined; })
-        .filter((e): e is (typeof list)[number] => e !== undefined);
-      if (reordered.length !== list.length) return prev;
-      return { ...prev, [dayIndex]: reordered };
-    });
-    void reorderExercises(currentWeekPlan?.id ?? '', orderedIds).catch(() => { void handleRefresh(); });
-  };
-
   // Close any dialog — wait briefly for any in-flight saves, then refresh so day cards reflect changes
   const closeDialog = async () => {
     await new Promise(resolve => setTimeout(resolve, 150));
@@ -1498,7 +1481,6 @@ export function WeeklyPlanner() {
                 addExerciseToDay={addExerciseToDayWrapped}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
-                onReorderInDay={handleReorderInDay}
                 onDeleteExercise={handleDeleteExercise}
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
