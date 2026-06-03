@@ -33,6 +33,7 @@ interface WeekOverviewProps {
     data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
+  onReorderInDay: (dayIndex: number, orderedIds: string[]) => void;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
@@ -63,6 +64,7 @@ export function WeekOverview({
   addExerciseToDay,
   createComboExercise,
   onRefresh,
+  onReorderInDay,
   onDeleteExercise,
   onExerciseDrop,
   onDayDrop,
@@ -150,6 +152,7 @@ export function WeekOverview({
                         addExerciseToDay={addExerciseToDay}
                         createComboExercise={createComboExercise}
                         onRefresh={onRefresh}
+                        onReorderInDay={onReorderInDay}
                         onDeleteExercise={onDeleteExercise}
                         onExerciseDrop={onExerciseDrop}
                         onDayDrop={onDayDrop}
@@ -197,6 +200,7 @@ export function WeekOverview({
                   addExerciseToDay={addExerciseToDay}
                   createComboExercise={createComboExercise}
                   onRefresh={onRefresh}
+                  onReorderInDay={onReorderInDay}
                   onDeleteExercise={onDeleteExercise}
                   onExerciseDrop={onExerciseDrop}
                   onDayDrop={onDayDrop}
@@ -240,6 +244,7 @@ export function WeekOverview({
             addExerciseToDay={addExerciseToDay}
             createComboExercise={createComboExercise}
             onRefresh={onRefresh}
+            onReorderInDay={onReorderInDay}
             onDeleteExercise={onDeleteExercise}
             onExerciseDrop={onExerciseDrop}
             onDayDrop={onDayDrop}

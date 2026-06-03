@@ -47,6 +47,7 @@ import {
   fetchTemplateFull,
 } from '../../lib/templateService';
 import { SaveAsTemplateModal, type SaveAsTemplateInput } from './SaveAsTemplateModal';
+import { ConfirmModal } from '../log/ConfirmModal';
 
 export interface MacroContext {
   macroId: string;
@@ -108,6 +109,7 @@ export function WeeklyPlanner() {
     fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
+    deleteWeekPrescription,
     updateWeekPlan,
     reorderExercises,
     moveExercise,
@@ -140,6 +142,8 @@ export function WeeklyPlanner() {
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [pendingWeekPaste, setPendingWeekPaste] = useState<string | null>(null);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
 
@@ -416,6 +420,36 @@ export function WeeklyPlanner() {
         fetchPlannedExercises(currentWeekPlan.id, currentWeekPlan.day_labels),
         fetchWeekCombos(currentWeekPlan.id),
       ]);
+    }
+  };
+
+  // Optimistic reorder within a day: reorder the in-memory list immediately so
+  // the drag lands instantly, then persist positions in the background. A full
+  // refetch would remount every day card and make the drag visibly jump.
+  const handleReorderInDay = (dayIndex: number, orderedIds: string[]) => {
+    setPlannedExercises(prev => {
+      const list = prev[dayIndex];
+      if (!list) return prev;
+      const byId = new Map(list.map(e => [e.id, e]));
+      const reordered = orderedIds
+        .map((id, i) => { const e = byId.get(id); return e ? { ...e, position: i + 1 } : undefined; })
+        .filter((e): e is (typeof list)[number] => e !== undefined);
+      if (reordered.length !== list.length) return prev;
+      return { ...prev, [dayIndex]: reordered };
+    });
+    void reorderExercises(currentWeekPlan?.id ?? '', orderedIds).catch(() => { void handleRefresh(); });
+  };
+
+  // Delete the whole week's prescription, keeping any logged exercises.
+  const confirmDeleteAll = async () => {
+    if (!currentWeekPlan || deletingAll) { setShowDeleteAllConfirm(false); return; }
+    setDeletingAll(true);
+    try {
+      await deleteWeekPrescription(currentWeekPlan.id);
+      await handleRefresh();
+    } finally {
+      setDeletingAll(false);
+      setShowDeleteAllConfirm(false);
     }
   };
 
@@ -1352,6 +1386,7 @@ export function WeeklyPlanner() {
                 onNavigateToWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
                 weekTypes={settings?.week_types ?? []}
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
+                onDeleteAll={currentWeekPlan ? () => setShowDeleteAllConfirm(true) : undefined}
               />
 
             {/* ── Load distribution (collapsible band) ── */}
@@ -1481,6 +1516,7 @@ export function WeeklyPlanner() {
                 addExerciseToDay={addExerciseToDayWrapped}
                 createComboExercise={createComboExercise}
                 onRefresh={handleRefresh}
+                onReorderInDay={handleReorderInDay}
                 onDeleteExercise={handleDeleteExercise}
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
@@ -1603,6 +1639,16 @@ export function WeeklyPlanner() {
         )}
 
         {/* ── Modals ── */}
+        <ConfirmModal
+          open={showDeleteAllConfirm}
+          title="Delete the week's prescription?"
+          description="Removes every planned exercise for this week. Exercises an athlete has already logged are kept (along with their logs). This can't be undone."
+          confirmLabel={deletingAll ? 'Deleting…' : 'Delete all'}
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => { void confirmDeleteAll(); }}
+          onCancel={() => { if (!deletingAll) setShowDeleteAllConfirm(false); }}
+        />
         <PlannerModals
           showDayConfig={showSettings}
           dayDisplayOrder={dayDisplayOrder}

@@ -1,5 +1,5 @@
 // TODO: Consider splitting into useWeekPlanData (loading) and useWeekPlanMutations (writes)
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type {
@@ -27,6 +27,10 @@ export interface PlanSelection {
 export function useWeekPlans() {
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
+  // Per-exercise write chain: serializes prescription DB writes so a burst of
+  // rapid clicks persists in click order (never out-of-order, which would leave
+  // a stale value as the final state).
+  const writeChainRef = useRef<Map<string, Promise<unknown>>>(new Map());
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [athletePRs, setAthletePRs] = useState<AthletePR[]>([]);
   const [macroWeekTarget, setMacroWeekTarget] = useState<number | null>(null);
@@ -238,6 +242,48 @@ export function useWeekPlans() {
       setError(err instanceof Error ? err.message : 'Failed to delete exercise');
       throw err;
     }
+  };
+
+  /**
+   * Delete the entire week's prescription (all planned exercises) EXCEPT any
+   * planned exercise an athlete has already logged against. Logged elements —
+   * and the training_log_* rows that reference them — are left untouched, so
+   * the planned-vs-performed record for completed training stays intact.
+   * Returns how many were deleted vs. kept.
+   */
+  const deleteWeekPrescription = async (
+    weekPlanId: string,
+  ): Promise<{ deleted: number; kept: number }> => {
+    const { data: planned, error: planErr } = await supabase
+      .from('planned_exercises')
+      .select('id')
+      .eq('weekplan_id', weekPlanId);
+    if (planErr) throw planErr;
+    const allIds = (planned ?? []).map((p: { id: string }) => p.id);
+    if (allIds.length === 0) return { deleted: 0, kept: 0 };
+
+    // Planned exercises that have been logged against — keep these.
+    const { data: logged, error: logErr } = await supabase
+      .from('training_log_exercises')
+      .select('planned_exercise_id')
+      .in('planned_exercise_id', allIds);
+    if (logErr) throw logErr;
+    const loggedIds = new Set(
+      (logged ?? [])
+        .map((l: { planned_exercise_id: string | null }) => l.planned_exercise_id)
+        .filter((id): id is string => !!id),
+    );
+
+    const toDelete = allIds.filter(id => !loggedIds.has(id));
+    if (toDelete.length === 0) return { deleted: 0, kept: allIds.length };
+
+    // Clear children explicitly (cascade-safe), then the planned exercises.
+    await supabase.from('planned_set_lines').delete().in('planned_exercise_id', toDelete);
+    await supabase.from('planned_exercise_combo_members').delete().in('planned_exercise_id', toDelete);
+    const { error: delErr } = await supabase.from('planned_exercises').delete().in('id', toDelete);
+    if (delErr) throw delErr;
+
+    return { deleted: toDelete.length, kept: allIds.length - toDelete.length };
   };
 
   const updateWeekPlan = async (id: string, updates: Partial<WeekPlan>) => {
@@ -495,15 +541,11 @@ export function useWeekPlans() {
         updatedAt: Date.now(),
       });
     }
-    await writePrescription(plannedExId, data);
-    clearPrescriptionDraft(plannedExId);
-
-    // Patch the in-memory row so summaries/totals update live WITHOUT a full
-    // refetch. A refetch replaces the whole array and remounts the prescription
-    // grid mid-edit (lost keystrokes / reverted clicks). The saved
-    // prescription_raw equals what the grid last sent, so the grid's own guard
-    // skips re-parsing — no remount. Same computePrescriptionSummary the write
-    // path uses, so the cached summary stays consistent.
+    // Optimistic + immediate: patch the in-memory row so summaries/totals
+    // update live without a full refetch (which would remount the grid mid-edit
+    // and revert keystrokes). The grid suppresses the prescription_raw echo
+    // (sentRawsRef), so this never remounts it. Same computePrescriptionSummary
+    // the write path uses, so the cached summary stays consistent.
     const summary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
     setPlannedExercises(prev => {
       let changed = false;
@@ -526,6 +568,16 @@ export function useWeekPlans() {
       }
       return changed ? next : prev;
     });
+
+    // Serialize the DB write per exercise: chain after any in-flight write so a
+    // burst of clicks persists strictly in order. Returning the chained promise
+    // keeps flushAndClose's await covering the whole pending chain, and lets
+    // callers .catch() to resync on failure.
+    const prevWrite = writeChainRef.current.get(plannedExId) ?? Promise.resolve();
+    const run = () => writePrescription(plannedExId, data).then(() => clearPrescriptionDraft(plannedExId));
+    const nextWrite = prevWrite.then(run, run);
+    writeChainRef.current.set(plannedExId, nextWrite);
+    await nextWrite;
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
@@ -1356,6 +1408,7 @@ export function useWeekPlans() {
     fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
+    deleteWeekPrescription,
     updateWeekPlan,
     reorderExercises,
     moveExercise,
