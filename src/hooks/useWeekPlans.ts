@@ -244,6 +244,48 @@ export function useWeekPlans() {
     }
   };
 
+  /**
+   * Delete the entire week's prescription (all planned exercises) EXCEPT any
+   * planned exercise an athlete has already logged against. Logged elements —
+   * and the training_log_* rows that reference them — are left untouched, so
+   * the planned-vs-performed record for completed training stays intact.
+   * Returns how many were deleted vs. kept.
+   */
+  const deleteWeekPrescription = async (
+    weekPlanId: string,
+  ): Promise<{ deleted: number; kept: number }> => {
+    const { data: planned, error: planErr } = await supabase
+      .from('planned_exercises')
+      .select('id')
+      .eq('weekplan_id', weekPlanId);
+    if (planErr) throw planErr;
+    const allIds = (planned ?? []).map((p: { id: string }) => p.id);
+    if (allIds.length === 0) return { deleted: 0, kept: 0 };
+
+    // Planned exercises that have been logged against — keep these.
+    const { data: logged, error: logErr } = await supabase
+      .from('training_log_exercises')
+      .select('planned_exercise_id')
+      .in('planned_exercise_id', allIds);
+    if (logErr) throw logErr;
+    const loggedIds = new Set(
+      (logged ?? [])
+        .map((l: { planned_exercise_id: string | null }) => l.planned_exercise_id)
+        .filter((id): id is string => !!id),
+    );
+
+    const toDelete = allIds.filter(id => !loggedIds.has(id));
+    if (toDelete.length === 0) return { deleted: 0, kept: allIds.length };
+
+    // Clear children explicitly (cascade-safe), then the planned exercises.
+    await supabase.from('planned_set_lines').delete().in('planned_exercise_id', toDelete);
+    await supabase.from('planned_exercise_combo_members').delete().in('planned_exercise_id', toDelete);
+    const { error: delErr } = await supabase.from('planned_exercises').delete().in('id', toDelete);
+    if (delErr) throw delErr;
+
+    return { deleted: toDelete.length, kept: allIds.length - toDelete.length };
+  };
+
   const updateWeekPlan = async (id: string, updates: Partial<WeekPlan>) => {
     try {
       // No owner_id pre-check: co-coaches editing a shared athlete's week
@@ -1366,6 +1408,7 @@ export function useWeekPlans() {
     fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
+    deleteWeekPrescription,
     updateWeekPlan,
     reorderExercises,
     moveExercise,
