@@ -16,3 +16,17 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Security headers applied to every response. A Content-Security-Policy is
+# intentionally NOT set here: a correct policy must enumerate the Supabase,
+# Google Fonts, YouTube-thumbnail and QR-code origins and be tested against the
+# live app first, or it silently breaks data loading. Add it as a separate,
+# verified step.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=()"
