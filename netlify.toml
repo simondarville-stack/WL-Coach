@@ -1,0 +1,18 @@
+# Netlify build & deploy configuration for EMOS.
+# The production branch (main) is selected in the Netlify UI; this file pins
+# the build itself so deploys stay reproducible regardless of dashboard drift.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback: serve index.html for any non-asset path so client-side routing
+# survives hard refreshes and deep links. Single source of truth for the
+# redirect (replaces public/_redirects).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
