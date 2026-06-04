@@ -23,6 +23,7 @@ import type {
   CustomMetricEntry,
 } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
+import { plannedExerciseTotals } from './logSummary';
 
 interface LogWeekOverviewProps {
   visibleDays: Array<{ index: number; name: string }>;
@@ -48,9 +49,13 @@ function plannedTotals(rows: (PlannedExercise & { exercise: Exercise })[]): Tota
   let reps = 0;
   let tonnage = 0;
   rows.forEach(ex => {
-    const s = ex.summary_total_sets ?? 0;
-    const r = ex.summary_total_reps ?? 0;
-    const avg = ex.summary_avg_load ?? 0;
+    // Use the shared planned-totals helper so a stale-zero summary cache
+    // (combos, free_text_reps zone labels) is recomputed from the
+    // prescription instead of counting as 0 — matching the day/exercise rows.
+    const t = plannedExerciseTotals(ex);
+    const s = t.sets ?? 0;
+    const r = t.reps ?? 0;
+    const avg = t.avg ?? 0;
     sets += s;
     reps += r;
     if (ex.unit === 'absolute_kg' && avg > 0 && r > 0) {
