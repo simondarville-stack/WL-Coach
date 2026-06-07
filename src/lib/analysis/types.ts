@@ -292,4 +292,6 @@ export interface AggregateOptions {
   athleteLabels?: Record<string, string>;
   /** groupId → display name. */
   groupLabels?: Record<string, string>;
+  /** athlete display-name → bodyweight (kg), for perBodyweight normalization. */
+  athleteBodyweight?: Record<string, number>;
 }

@@ -510,6 +510,7 @@ export interface FetchFactsResult {
   window: ResolvedScope;
   athleteLabels: Record<string, string>;
   groupLabels: Record<string, string>;
+  athleteBodyweight: Record<string, number>;
   intensityZones: Array<{ zone: string; min: number; max: number }> | undefined;
 }
 
@@ -557,6 +558,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     window,
     athleteLabels: {},
     groupLabels: {},
+    athleteBodyweight: {},
     intensityZones: undefined,
   };
   if (athleteIds.length === 0) return empty;
@@ -564,14 +566,16 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   // 3. Athletes + host owners + labels.
   const { data: athleteRows } = await supabase
     .from('athletes')
-    .select('id, name, owner_id')
+    .select('id, name, owner_id, bodyweight')
     .in('id', athleteIds);
-  const athletes = (athleteRows ?? []) as Array<{ id: string; name: string; owner_id: string }>;
+  const athletes = (athleteRows ?? []) as Array<{ id: string; name: string; owner_id: string; bodyweight: number | null }>;
   const hostOwnerByAthlete: Record<string, string> = {};
   const athleteNameById: Record<string, string> = {};
+  const athleteBodyweight: Record<string, number> = {}; // keyed by display name (grouping value)
   for (const a of athletes) {
     hostOwnerByAthlete[a.id] = a.owner_id;
     athleteNameById[a.id] = a.name;
+    if (a.bodyweight) athleteBodyweight[a.name] = a.bodyweight;
   }
   const fallbackOwner = getOwnerId();
   for (const id of athleteIds) if (!hostOwnerByAthlete[id]) hostOwnerByAthlete[id] = fallbackOwner;
@@ -764,5 +768,5 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     macroContext,
   });
 
-  return { facts, window, athleteLabels: athleteNameById, groupLabels, intensityZones };
+  return { facts, window, athleteLabels: athleteNameById, groupLabels, athleteBodyweight, intensityZones };
 }

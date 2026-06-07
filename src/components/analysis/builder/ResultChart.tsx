@@ -22,22 +22,27 @@ import {
   Legend,
 } from 'recharts';
 import type { AnalysisResult, VizType } from '../../../lib/analysis';
-import { toChartModel } from './vizAdapter';
+import { toChartModel, mergeCompare, isGhostSeries } from './vizAdapter';
 import { HeatmapGrid } from './HeatmapGrid';
 import { formatValue } from './format';
 
 interface ResultChartProps {
   result: AnalysisResult;
   type: VizType;
+  /** Previous-period result for the ghost overlay (line/bar). */
+  compare?: AnalysisResult | null;
 }
 
 const axisTick = { fontSize: 11, fontFamily: 'var(--font-mono)', fill: 'var(--color-text-tertiary)' };
 const HEIGHT = 440;
 
-export function ResultChart({ result, type }: ResultChartProps) {
+export function ResultChart({ result, type, compare }: ResultChartProps) {
   if (type === 'heatmap') return <HeatmapGrid result={result} />;
 
-  const model = toChartModel(result);
+  let model = toChartModel(result);
+  if (compare && (type === 'line' || type === 'bar' || type === 'groupedBar' || type === 'stackedBar')) {
+    model = mergeCompare(model, toChartModel(compare));
+  }
   if (model.data.length === 0 || model.series.length === 0) {
     return <Empty label="No data to chart in this scope." />;
   }
@@ -101,7 +106,7 @@ export function ResultChart({ result, type }: ResultChartProps) {
             <Tooltip contentStyle={tooltipStyle} formatter={fmt} />
             <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
             {model.series.map((s) => (
-              <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} strokeDasharray={s.state === 'planned' ? '5 4' : undefined} connectNulls />
+              <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} strokeDasharray={s.state === 'planned' ? '5 4' : isGhostSeries(s.key) ? '2 3' : undefined} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -121,7 +126,7 @@ export function ResultChart({ result, type }: ResultChartProps) {
           <Tooltip contentStyle={tooltipStyle} formatter={fmt} cursor={{ fill: 'var(--color-accent-muted)' }} />
           <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
           {model.series.map((s) => (
-            <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} stackId={stacked ? 'a' : undefined} radius={stacked ? 0 : [2, 2, 0, 0]} />
+            <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} fillOpacity={isGhostSeries(s.key) ? 0.4 : 1} stackId={stacked ? 'a' : undefined} radius={stacked ? 0 : [2, 2, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>

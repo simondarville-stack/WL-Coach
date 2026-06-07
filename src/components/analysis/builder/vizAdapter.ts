@@ -87,3 +87,32 @@ export function toChartModel(result: AnalysisResult): ChartModel {
 
   return { data, series, xLabel };
 }
+
+const GHOST_COLOR = '#B4B2A9'; // gray-200 — muted previous-period overlay
+
+/**
+ * Merge a previous-period chart model as ghost series, aligned by POSITION
+ * (period-over-period: week 1 of this period vs week 1 of the prior period),
+ * not by x-value (the dates differ). Ghost series are muted and dashed.
+ */
+export function mergeCompare(base: ChartModel, compare: ChartModel): ChartModel {
+  const data = base.data.map((d, i) => {
+    const merged: ChartDatum = { ...d };
+    for (const s of base.series) {
+      const prev = compare.data[i]?.[s.key];
+      merged[`${s.key}__prev`] = typeof prev === 'number' ? prev : null;
+    }
+    return merged;
+  });
+  const ghost: ChartSeries[] = base.series.map((s) => ({
+    ...s,
+    key: `${s.key}__prev`,
+    label: `${s.label} (prev)`,
+    color: GHOST_COLOR,
+  }));
+  return { data, series: [...base.series, ...ghost], xLabel: base.xLabel };
+}
+
+export function isGhostSeries(key: string): boolean {
+  return key.endsWith('__prev');
+}

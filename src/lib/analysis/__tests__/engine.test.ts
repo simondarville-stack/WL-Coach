@@ -7,7 +7,7 @@ import {
   defaultRegistry,
   emptyQuery,
 } from '../index';
-import type { AnalysisQuery, AnalysisResult } from '../index';
+import type { AnalysisQuery, AnalysisResult, FactRow as FactRowT } from '../index';
 import type { BuildFactsInput, MacroContext, RawExercise } from '../factFetch';
 
 // ── fixture helpers ───────────────────────────────────────────────────────────
@@ -317,6 +317,85 @@ describe('validateAnalysisQuery', () => {
     q.scope = { mode: 'rolling', windowDays: 0 };
     const { query } = validateAnalysisQuery(q, defaultRegistry);
     expect(query.scope).toMatchObject({ mode: 'rolling', windowDays: 28 });
+  });
+});
+
+describe('normalization (multi-athlete comparison)', () => {
+  // Two athletes, tonnage by week with athlete as the column series.
+  function fact(over: Partial<FactRowT> & { athleteId: string; athleteName: string; weekStart: string; tonnage: number }): FactRowT {
+    return {
+      state: 'performed',
+      ownerId: 'O1',
+      groupIds: [],
+      exerciseId: 'EX',
+      exerciseName: 'Snatch',
+      category: 'Snatch',
+      movement: 'snatch',
+      isCompetitionLift: true,
+      countsTowardsTotals: true,
+      unit: 'absolute_kg',
+      date: null,
+      dayIndex: 1,
+      dayOfWeek: null,
+      weekType: null,
+      macroId: null,
+      macroName: null,
+      phaseId: null,
+      phaseName: null,
+      relativeWeek: null,
+      sets: 1,
+      reps: 1,
+      maxLoad: over.tonnage,
+      load: over.tonnage,
+      loadIsKg: true,
+      loadIsPct: false,
+      pct1rm: null,
+      pairKey: null,
+      ...over,
+    };
+  }
+
+  const facts = [
+    fact({ athleteId: 'A1', athleteName: 'Anna', weekStart: '2026-06-01', tonnage: 100 }),
+    fact({ athleteId: 'A1', athleteName: 'Anna', weekStart: '2026-06-08', tonnage: 300 }),
+    fact({ athleteId: 'A2', athleteName: 'Bo', weekStart: '2026-06-01', tonnage: 400 }),
+    fact({ athleteId: 'A2', athleteName: 'Bo', weekStart: '2026-06-08', tonnage: 400 }),
+  ];
+
+  function compareQuery(normalization: AnalysisQuery['subjects']['normalization']): AnalysisQuery {
+    return {
+      version: 1,
+      scope: { mode: 'dateRange', from: '2026-06-01', to: '2026-06-14' },
+      subjects: { athletes: ['A1', 'A2'], groups: [], normalization },
+      filters: [],
+      rows: ['week'],
+      cols: ['athlete'],
+      measures: [{ metricId: 'volume', agg: 'sum', state: 'performed' }],
+      viz: { type: 'line' },
+    };
+  }
+
+  const cell = (r: AnalysisResult, week: string, athlete: string) =>
+    r.records.find((rec) => rec.row[0] === week && rec.col[0] === athlete)?.values['volume::performed'];
+
+  it('perAthleteMean indexes each athlete to their own mean = 100', () => {
+    const r = analyzeFacts(facts, compareQuery('perAthleteMean'));
+    expect(cell(r, '2026-06-01', 'Anna')).toBeCloseTo(50, 4); // 100 / mean(200)
+    expect(cell(r, '2026-06-08', 'Anna')).toBeCloseTo(150, 4); // 300 / 200
+    expect(cell(r, '2026-06-01', 'Bo')).toBeCloseTo(100, 4); // 400 / mean(400)
+  });
+
+  it('perBodyweight divides by each athlete bodyweight', () => {
+    const r = analyzeFacts(facts, compareQuery('perBodyweight'), { aggregate: { athleteBodyweight: { Anna: 50, Bo: 100 } } });
+    expect(cell(r, '2026-06-01', 'Anna')).toBeCloseTo(2, 4); // 100 / 50
+    expect(cell(r, '2026-06-08', 'Bo')).toBeCloseTo(4, 4); // 400 / 100
+  });
+
+  it('notes when normalization is requested without an Athlete dimension', () => {
+    const q = compareQuery('perAthleteMean');
+    q.cols = [];
+    const r = analyzeFacts(facts, q);
+    expect(r.meta.notes.join(' ')).toMatch(/needs Athlete/i);
   });
 });
 

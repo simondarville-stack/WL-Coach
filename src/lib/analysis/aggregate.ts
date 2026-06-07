@@ -17,6 +17,7 @@ import type {
   Filter,
   MetricDef,
   MetricRegistry,
+  Normalization,
   ResolvedMeasure,
   ResultRecord,
 } from './types';
@@ -278,6 +279,69 @@ function naturalCompare(a: string[], b: string[]): number {
   return 0;
 }
 
+/**
+ * Rescales each athlete's series so multiple athletes are comparable (Phase 3).
+ * Requires `athlete` to be a row/column dimension — otherwise the athletes are
+ * summed together and there is nothing to normalize (returns a note instead).
+ * Sinclair is gated on the athlete sex field (sign-off) and falls back to raw.
+ */
+function applyNormalization(
+  records: ResultRecord[],
+  rowDims: Dimension[],
+  colDims: Dimension[],
+  measures: ResolvedMeasure[],
+  normalization: Normalization,
+  options: AggregateOptions,
+): { records: ResultRecord[]; note: string | null } {
+  if (normalization === 'none') return { records, note: null };
+  const ri = rowDims.indexOf('athlete');
+  const ci = colDims.indexOf('athlete');
+  if (ri < 0 && ci < 0) {
+    return { records, note: 'Normalization needs Athlete as a row or column dimension — showing raw values.' };
+  }
+  if (normalization === 'sinclair') {
+    return { records, note: 'Sinclair needs the athlete sex field (sign-off required) — showing raw values.' };
+  }
+  const athleteOf = (rec: ResultRecord) => (ri >= 0 ? rec.row[ri] : rec.col[ci]);
+  const out = records.map((r) => ({ ...r, values: { ...r.values } }));
+
+  if (normalization === 'perBodyweight') {
+    const bw = options.athleteBodyweight ?? {};
+    for (const rec of out) {
+      const w = bw[athleteOf(rec)];
+      for (const m of measures) {
+        const v = rec.values[m.key];
+        rec.values[m.key] = v == null || !w ? null : v / w;
+      }
+    }
+    return { records: out, note: 'Normalized per bodyweight (value ÷ kg).' };
+  }
+
+  // perAthleteMean → each athlete's own mean across the result = 100 (index).
+  const acc: Record<string, Record<string, { sum: number; n: number }>> = {};
+  for (const rec of out) {
+    const a = athleteOf(rec);
+    const byKey = (acc[a] ??= {});
+    for (const m of measures) {
+      const v = rec.values[m.key];
+      if (v == null) continue;
+      const cell = (byKey[m.key] ??= { sum: 0, n: 0 });
+      cell.sum += v;
+      cell.n += 1;
+    }
+  }
+  for (const rec of out) {
+    const a = athleteOf(rec);
+    for (const m of measures) {
+      const v = rec.values[m.key];
+      const cell = acc[a]?.[m.key];
+      const mean = cell && cell.n > 0 ? cell.sum / cell.n : 0;
+      rec.values[m.key] = v == null || !mean ? null : (v / mean) * 100;
+    }
+  }
+  return { records: out, note: 'Normalized to each athlete’s mean = 100 (index).' };
+}
+
 interface Bucket {
   row: string[];
   col: string[];
@@ -342,6 +406,16 @@ export function aggregate(
   const rowKeys = [...rowKeySet.values()].sort(naturalCompare);
   const colKeys = [...colKeySet.values()].sort(naturalCompare);
 
+  const resolved = resolveMeasures(query, registry);
+  const { records: finalRecords, note: normNote } = applyNormalization(
+    records,
+    rowDims,
+    colDims,
+    resolved,
+    query.subjects.normalization,
+    options,
+  );
+
   const athleteIds = [...new Set(filtered.map((r) => r.athleteId))];
   const notes: string[] = [];
   if (unresolvedPct > 0) {
@@ -349,15 +423,16 @@ export function aggregate(
       `${unresolvedPct} contribution(s) used percentage loads and were excluded from tonnage/load metrics (no kg resolved).`,
     );
   }
+  if (normNote) notes.push(normNote);
 
   return {
     query,
     rowDimensions: query.rows,
     colDimensions: query.cols,
-    measures: resolveMeasures(query, registry),
+    measures: resolved,
     rowKeys,
     colKeys,
-    records,
+    records: finalRecords,
     meta: {
       factCount: filtered.length,
       plannedFactCount: plannedCount,

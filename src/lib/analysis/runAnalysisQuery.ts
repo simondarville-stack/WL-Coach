@@ -36,6 +36,7 @@ export async function runAnalysisQuery(
     intensityZones: fetched.intensityZones,
     athleteLabels: fetched.athleteLabels,
     groupLabels: fetched.groupLabels,
+    athleteBodyweight: fetched.athleteBodyweight,
   });
 }
 

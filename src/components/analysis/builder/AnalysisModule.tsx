@@ -4,11 +4,11 @@
 // (right), with a cell drill-down docking on the far right. Everything renders
 // from `runAnalysisQuery`; this component never aggregates (invariant #6).
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useAthleteStore } from '../../../store/athleteStore';
 import { AthleteCardPicker } from '../../AthleteCardPicker';
-import { Button, Select, Spinner } from '../../ui';
+import { Badge, Button, Select, Spinner } from '../../ui';
 import { createRegistry } from '../../../lib/analysis';
 import type { AnalysisQuery, Filter } from '../../../lib/analysis';
 import { toLocalISO } from '../../../lib/dateUtils';
@@ -18,8 +18,15 @@ import { ResultChart } from './ResultChart';
 import { DrillPanel } from './DrillPanel';
 import { MetricsModal } from './MetricsModal';
 import { useRunQuery } from './useRunQuery';
-import { buildQuery, defaultBuilderState, VIZ_LABEL, type BuilderState, type Subjects } from './builderState';
-import type { VizType } from '../../../lib/analysis';
+import { buildQuery, defaultBuilderState, isMultiSubject, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
+import type { Normalization, VizType } from '../../../lib/analysis';
+
+const NORM_LABEL: Record<Normalization, string> = {
+  none: '',
+  perAthleteMean: 'mean=100',
+  perBodyweight: '÷ kg',
+  sinclair: 'Sinclair',
+};
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
 
@@ -29,8 +36,13 @@ const VIZ_TYPES: VizType[] = ['table', 'line', 'bar', 'stackedBar', 'groupedBar'
 const VIZ_OPTIONS = VIZ_TYPES.map((id) => ({ id, label: VIZ_LABEL[id] }));
 
 export function AnalysisModule() {
-  const { selectedAthlete, selectedGroup } = useAthleteStore();
-  const [state, setState] = useState<BuilderState>(() => defaultBuilderState(today));
+  const { selectedAthlete, selectedGroup, athletes, groups } = useAthleteStore();
+  const [state, setState] = useState<BuilderState>(() =>
+    defaultBuilderState(today, {
+      athleteIds: selectedGroup ? [] : selectedAthlete ? [selectedAthlete.id] : [],
+      groupIds: selectedGroup ? [selectedGroup.id] : [],
+    }),
+  );
   const [drill, setDrill] = useState<{ query: AnalysisQuery; title: string } | null>(null);
   const [coachSpecs, setCoachSpecs] = useState<CoachMetricSpec[]>(() => loadCoachMetricSpecs());
   const [metricsOpen, setMetricsOpen] = useState(false);
@@ -41,15 +53,27 @@ export function AnalysisModule() {
     saveCoachMetricSpecs(next);
   };
 
-  const subjects: Subjects = useMemo(() => {
-    if (selectedGroup) return { athletes: [], groups: [selectedGroup.id], normalization: 'none' };
-    if (selectedAthlete) return { athletes: [selectedAthlete.id], groups: [], normalization: 'none' };
-    return { athletes: [], groups: [], normalization: 'none' };
+  // Seed subjects from the header selector once, when the builder has none.
+  useEffect(() => {
+    setState((s) => {
+      if (s.athleteIds.length > 0 || s.groupIds.length > 0) return s;
+      if (selectedGroup) return { ...s, groupIds: [selectedGroup.id] };
+      if (selectedAthlete) return { ...s, athleteIds: [selectedAthlete.id] };
+      return s;
+    });
   }, [selectedAthlete, selectedGroup]);
 
-  const hasSubject = subjects.athletes.length > 0 || subjects.groups.length > 0;
-  const query = useMemo(() => buildQuery(state, subjects, registry, today), [state, subjects, registry]);
+  const hasSubject = state.athleteIds.length > 0 || state.groupIds.length > 0;
+  const multi = isMultiSubject(state);
+  const query = useMemo(() => buildQuery(state, registry, today), [state, registry]);
   const { result, loading, error } = useRunQuery(query, hasSubject);
+
+  // Period-over-period: a second query for the immediately-preceding window.
+  const compareQuery = useMemo<AnalysisQuery>(
+    () => ({ ...query, scope: previousScope(query.scope, today), viz: { ...query.viz, overlay: { mode: 'none' } } }),
+    [query],
+  );
+  const { result: compareResult } = useRunQuery(compareQuery, state.comparePrevious && hasSubject && state.vizType !== 'table');
 
   const set = (patch: Partial<BuilderState>) => setState((s) => ({ ...s, ...patch }));
 
@@ -79,7 +103,12 @@ export function AnalysisModule() {
     );
   }
 
-  const subjectLabel = selectedGroup?.name ?? selectedAthlete?.name ?? 'Subject';
+  const subjectLabel =
+    state.groupIds.length > 0
+      ? `${state.groupIds.length} group${state.groupIds.length > 1 ? 's' : ''}`
+      : state.athleteIds.length === 1
+      ? athletes.find((a) => a.id === state.athleteIds[0])?.name ?? 'Athlete'
+      : `${state.athleteIds.length} athletes`;
 
   return (
     <div style={{ background: 'var(--color-bg-page)', height: '100%', padding: 'var(--space-xl) 0 var(--space-xl) 48px', boxSizing: 'border-box' }}>
@@ -95,7 +124,7 @@ export function AnalysisModule() {
         }}
       >
         {/* left: config */}
-        <ConfigRail state={state} set={set} metrics={registry.list()} subjectLabel={subjectLabel} vizOptions={VIZ_OPTIONS} />
+        <ConfigRail state={state} set={set} metrics={registry.list()} athletes={athletes} groups={groups} vizOptions={VIZ_OPTIONS} />
 
         {/* centre: results */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -113,6 +142,9 @@ export function AnalysisModule() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', minWidth: 0 }}>
               <span style={{ fontSize: 'var(--text-section)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Analysis</span>
               <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)' }}>· {subjectLabel}</span>
+              {multi && state.normalization !== 'none' && (
+                <Badge variant="info">Normalized · {NORM_LABEL[state.normalization]}</Badge>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
               {loading && <Spinner />}
@@ -148,7 +180,7 @@ export function AnalysisModule() {
               (state.vizType === 'table' ? (
                 <PivotTable result={result} onDrill={onDrill} />
               ) : (
-                <ResultChart result={result} type={state.vizType} />
+                <ResultChart result={result} type={state.vizType} compare={state.comparePrevious ? compareResult : null} />
               ))}
             {result && result.meta.notes.length > 0 && (
               <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 4 }}>

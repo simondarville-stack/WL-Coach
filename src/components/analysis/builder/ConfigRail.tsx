@@ -5,17 +5,30 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Select } from '../../ui';
-import type { Dimension, MeasureState, MetricDef, VizType } from '../../../lib/analysis';
+import type { Dimension, MeasureState, MetricDef, Normalization, VizType } from '../../../lib/analysis';
 import { DIMENSIONS, dimLabel } from './dimensions';
 import type { BuilderState, ScopeMode } from './builderState';
+
+interface NamedEntity {
+  id: string;
+  name: string;
+}
 
 interface ConfigRailProps {
   state: BuilderState;
   set: (patch: Partial<BuilderState>) => void;
   metrics: MetricDef[];
-  subjectLabel: string;
+  athletes: NamedEntity[];
+  groups: NamedEntity[];
   vizOptions: { id: VizType; label: string }[];
 }
+
+const NORMALIZATION_OPTIONS: { id: Normalization; label: string; hint: string }[] = [
+  { id: 'none', label: 'Off', hint: 'Raw values' },
+  { id: 'perAthleteMean', label: 'Mean=100', hint: 'Each athlete indexed to their own mean — fair for any metric' },
+  { id: 'perBodyweight', label: '÷ kg', hint: 'Per kilogram of bodyweight' },
+  { id: 'sinclair', label: 'Sinclair', hint: 'Performance/max metrics only — needs athlete sex (sign-off)' },
+];
 
 const SCOPE_PRESETS: { mode: ScopeMode; windowDays?: number; label: string }[] = [
   { mode: 'rolling', windowDays: 28, label: '4w' },
@@ -33,8 +46,11 @@ const COMPARE_OPTIONS: { id: MeasureState; label: string; hint: string }[] = [
   { id: 'adherence', label: 'Adherence', hint: 'Performed ÷ planned' },
 ];
 
-export function ConfigRail({ state, set, metrics, subjectLabel, vizOptions }: ConfigRailProps) {
+export function ConfigRail({ state, set, metrics, athletes, groups, vizOptions }: ConfigRailProps) {
   const usedDims = new Set<string>([...state.rows, ...state.cols]);
+  const athleteName = (id: string) => athletes.find((a) => a.id === id)?.name ?? id;
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? id;
+  const multi = state.athleteIds.length > 1 || state.groupIds.length > 0;
 
   return (
     <div
@@ -72,10 +88,58 @@ export function ConfigRail({ state, set, metrics, subjectLabel, vizOptions }: Co
         )}
       </Section>
 
-      <Section label="Subject">
-        <div style={{ ...chip, cursor: 'default' }}>{subjectLabel}</div>
-        <p style={hint}>Multi-athlete &amp; group comparison comes from the header selector.</p>
+      <Section label="Subjects">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+          {state.groupIds.map((id) => (
+            <Chip key={`g-${id}`} label={`▦ ${groupName(id)}`} onRemove={() => set({ groupIds: state.groupIds.filter((x) => x !== id) })} />
+          ))}
+          {state.athleteIds.map((id) => (
+            <Chip key={`a-${id}`} label={athleteName(id)} onRemove={() => set({ athleteIds: state.athleteIds.filter((x) => x !== id) })} />
+          ))}
+        </div>
+        <Select
+          value=""
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v.startsWith('g:')) {
+              const id = v.slice(2);
+              if (!state.groupIds.includes(id)) set({ groupIds: [...state.groupIds, id] });
+            } else if (v.startsWith('a:')) {
+              const id = v.slice(2);
+              if (!state.athleteIds.includes(id)) set({ athleteIds: [...state.athleteIds, id] });
+            }
+          }}
+        >
+          <option value="">+ Add subject…</option>
+          {groups.length > 0 && (
+            <optgroup label="Groups">
+              {groups.filter((g) => !state.groupIds.includes(g.id)).map((g) => (
+                <option key={g.id} value={`g:${g.id}`}>{g.name}</option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Athletes">
+            {athletes.filter((a) => !state.athleteIds.includes(a.id)).map((a) => (
+              <option key={a.id} value={`a:${a.id}`}>{a.name}</option>
+            ))}
+          </optgroup>
+        </Select>
+        {multi && (
+          <p style={hint}>
+            Comparing multiple athletes — add <strong>Athlete</strong> as a row/column to split them, and normalize below.
+          </p>
+        )}
       </Section>
+
+      {multi && (
+        <Section label="Normalize">
+          <Segmented
+            options={NORMALIZATION_OPTIONS.map((o) => ({ id: o.id, label: o.label, active: state.normalization === o.id }))}
+            onSelect={(id) => set({ normalization: id as Normalization })}
+          />
+          <p style={hint}>{NORMALIZATION_OPTIONS.find((o) => o.id === state.normalization)?.hint}</p>
+        </Section>
+      )}
 
       <Section label="Rows">
         <ChipPicker
@@ -145,6 +209,24 @@ export function ConfigRail({ state, set, metrics, subjectLabel, vizOptions }: Co
             options={vizOptions.map((v) => ({ id: v.id, label: v.label, active: state.vizType === v.id }))}
             onSelect={(id) => set({ vizType: id as VizType })}
           />
+        </Section>
+      )}
+
+      {state.vizType !== 'table' && (
+        <Section label="Overlay">
+          <button
+            onClick={() => set({ comparePrevious: !state.comparePrevious })}
+            className="emos-btn"
+            style={{
+              ...optionRow,
+              width: '100%',
+              background: state.comparePrevious ? 'var(--color-accent-muted)' : 'transparent',
+              color: state.comparePrevious ? 'var(--color-accent-hover)' : 'var(--color-text-secondary)',
+              border: state.comparePrevious ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-tertiary)',
+            }}
+          >
+            {state.comparePrevious ? '✓ ' : ''}Previous period (ghost)
+          </button>
         </Section>
       )}
     </div>
