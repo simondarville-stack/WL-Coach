@@ -4,8 +4,8 @@
 // (right), with a cell drill-down docking on the far right. Everything renders
 // from `runAnalysisQuery`; this component never aggregates (invariant #6).
 
-import { useEffect, useMemo, useState } from 'react';
-import { SlidersHorizontal } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { SlidersHorizontal, Save, Download } from 'lucide-react';
 import { useAthleteStore } from '../../../store/athleteStore';
 import { AthleteCardPicker } from '../../AthleteCardPicker';
 import { Badge, Button, Select, Spinner } from '../../ui';
@@ -17,6 +17,7 @@ import { PivotTable } from './PivotTable';
 import { ResultChart } from './ResultChart';
 import { DrillPanel } from './DrillPanel';
 import { MetricsModal } from './MetricsModal';
+import { SaveViewModal } from './SaveViewModal';
 import { useRunQuery } from './useRunQuery';
 import { buildQuery, defaultBuilderState, isMultiSubject, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
 import type { Normalization, VizType } from '../../../lib/analysis';
@@ -29,6 +30,8 @@ const NORM_LABEL: Record<Normalization, string> = {
 };
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
+import { loadSavedViews, saveView, deleteView, type SavedView } from './savedViews';
+import { resultToCsv, downloadText, exportChartSvg, triggerPrint } from './exportUtils';
 
 const today = toLocalISO(new Date());
 
@@ -46,6 +49,10 @@ export function AnalysisModule() {
   const [drill, setDrill] = useState<{ query: AnalysisQuery; title: string } | null>(null);
   const [coachSpecs, setCoachSpecs] = useState<CoachMetricSpec[]>(() => loadCoachMetricSpecs());
   const [metricsOpen, setMetricsOpen] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   const registry = useMemo(() => createRegistry(coachSpecs.map(specToMetric)), [coachSpecs]);
   const updateSpecs = (next: CoachMetricSpec[]) => {
@@ -148,29 +155,64 @@ export function AnalysisModule() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
               {loading && <Spinner />}
-              <div style={{ width: 200 }}>
+              <div style={{ width: 190 }}>
                 <Select
                   value=""
                   onChange={(e) => {
-                    const p = PRESETS.find((x) => x.id === e.target.value);
-                    if (p) set(p.patch);
+                    const v = e.target.value;
+                    if (v.startsWith('preset:')) {
+                      const p = PRESETS.find((x) => x.id === v.slice(7));
+                      if (p) set(p.patch);
+                    } else if (v.startsWith('view:')) {
+                      const sv = savedViews.find((x) => x.id === v.slice(5));
+                      if (sv) setState(sv.state);
+                    }
                   }}
                 >
-                  <option value="">Load a preset…</option>
-                  {PRESETS.map((p) => (
-                    <option key={p.id} value={p.id} title={p.description}>
-                      {p.name}
-                    </option>
-                  ))}
+                  <option value="">Open…</option>
+                  <optgroup label="Presets">
+                    {PRESETS.map((p) => (
+                      <option key={p.id} value={`preset:${p.id}`} title={p.description}>{p.name}</option>
+                    ))}
+                  </optgroup>
+                  {savedViews.length > 0 && (
+                    <optgroup label="Saved views">
+                      {savedViews.map((v) => (
+                        <option key={v.id} value={`view:${v.id}`}>{v.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
               </div>
-              <Button variant="ghost" size="md" icon={<SlidersHorizontal size={14} />} onClick={() => setMetricsOpen(true)}>
-                Metrics
-              </Button>
+              <Button variant="ghost" size="md" icon={<Save size={14} />} onClick={() => setSaveOpen(true)}>Save</Button>
+              <div style={{ position: 'relative' }}>
+                <Button variant="ghost" size="md" icon={<Download size={14} />} onClick={() => setExportOpen((o) => !o)}>Export</Button>
+                {exportOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      zIndex: 20,
+                      background: 'var(--color-bg-primary)',
+                      border: '0.5px solid var(--color-border-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: '0 6px 20px rgba(0,0,0,0.10)',
+                      minWidth: 160,
+                      padding: 4,
+                    }}
+                  >
+                    <ExportItem label="CSV (table)" onClick={() => { if (result) downloadText('analysis.csv', resultToCsv(result), 'text/csv;charset=utf-8'); setExportOpen(false); }} />
+                    <ExportItem label="Chart SVG" onClick={() => { exportChartSvg(resultRef.current, 'analysis-chart.svg'); setExportOpen(false); }} />
+                    <ExportItem label="Print…" onClick={() => { setExportOpen(false); setTimeout(triggerPrint, 100); }} />
+                  </div>
+                )}
+              </div>
+              <Button variant="ghost" size="md" icon={<SlidersHorizontal size={14} />} onClick={() => setMetricsOpen(true)}>Metrics</Button>
             </div>
           </div>
 
-          <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
+          <div ref={resultRef} className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
             {error && (
               <div style={{ color: 'var(--color-danger-text)', fontSize: 'var(--text-label)', padding: 'var(--space-md)' }}>
                 {error}
@@ -206,6 +248,40 @@ export function AnalysisModule() {
         onAdd={(spec) => updateSpecs([...coachSpecs, spec])}
         onDelete={(id) => updateSpecs(coachSpecs.filter((s) => s.id !== id))}
       />
+
+      <SaveViewModal
+        isOpen={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        views={savedViews}
+        onSave={(name) => setSavedViews(saveView(name, state))}
+        onDelete={(id) => setSavedViews(deleteView(id))}
+      />
+
+      {/* Print: hide all chrome, print only the result pane. */}
+      <style>{`@media print {
+        body * { visibility: hidden !important; }
+        .analysis-print-area, .analysis-print-area * { visibility: visible !important; }
+        .analysis-print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; overflow: visible !important; }
+      }`}</style>
     </div>
+  );
+}
+
+function ExportItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="emos-btn emos-btn-ghost"
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: '6px 10px',
+        fontSize: 'var(--text-label)',
+        borderRadius: 'var(--radius-sm)',
+      }}
+    >
+      {label}
+    </button>
   );
 }
