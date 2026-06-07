@@ -1,13 +1,13 @@
 // Pure week/cycle utility functions — no React dependencies
-import { getMondayOfWeek } from './dateUtils';
+import { getMondayOfWeek, addDaysToISO, toLocalISO } from './dateUtils';
 
 export function getCurrentAndNextWeekStart(): { weekStartISO: string; nextWeekStartISO: string } {
-  const monday = getMondayOfWeek(new Date());
-  const weekStartISO = monday.toISOString().split('T')[0];
-
-  const nextMonday = new Date(monday);
-  nextMonday.setDate(nextMonday.getDate() + 7);
-  const nextWeekStartISO = nextMonday.toISOString().split('T')[0];
+  // Serialise via local-component formatting (getMondayOfWeekISO / addDaysToISO),
+  // never `.toISOString()` on a locally-constructed Date — the latter rolls the
+  // date back a day for positive-UTC coaches and is the source of the non-Monday
+  // `week_start` rows in production. See REVIEW_PLAN_analysis_module.md DD-01/02.
+  const weekStartISO = getMondayOfWeekISO(new Date());
+  const nextWeekStartISO = addDaysToISO(weekStartISO, 7);
 
   return { weekStartISO, nextWeekStartISO };
 }
@@ -42,7 +42,9 @@ export function generateMacroWeeks(
 
   while (current <= end) {
     weeks.push({
-      week_start: current.toISOString().split('T')[0],
+      // Local-component serialisation (toLocalISO), not `.toISOString()`, so a
+      // Monday stays a Monday for positive-UTC coaches. See DD-01/02.
+      week_start: toLocalISO(current),
       week_number: weekNumber,
     });
     current.setDate(current.getDate() + 7);

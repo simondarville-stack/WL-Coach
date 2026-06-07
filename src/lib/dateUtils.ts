@@ -53,6 +53,71 @@ export function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
+// ── Canonical UTC-consistent week-key arithmetic ────────────────────────────
+// Week starts Monday (European convention). All operations parse with an
+// explicit UTC midnight and serialise by slicing the ISO string, so a coach in
+// ANY timezone — especially positive-UTC Europe — gets identical, DST-stable
+// week keys. Use these for week bucketing and macro joins. Do NOT mix local
+// Date math with `.toISOString()`: that rolls the date back a day for
+// positive-UTC users and is what produced the non-Monday `week_start` rows in
+// production (see REVIEW_PLAN_analysis_module.md, invariant #4 / DD-01/02).
+
+/** UTC-consistent Monday of the week containing the given YYYY-MM-DD date. */
+export function isoMonday(dateStr: string): string {
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00Z');
+  const day = d.getUTCDay(); // 0=Sun..6=Sat
+  d.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Add (or subtract) days from a YYYY-MM-DD date, UTC-consistent. */
+export function isoAddDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Add (or subtract) weeks from a YYYY-MM-DD date, UTC-consistent. */
+export function isoAddWeeks(dateStr: string, weeks: number): string {
+  return isoAddDays(dateStr, weeks * 7);
+}
+
+/**
+ * Snap a possibly-corrupted `week_start` to the NEAREST Monday.
+ *
+ * The legacy `toISOString()` serialisation bug stored some week-starts one day
+ * early (a Monday saved as the preceding Sunday for positive-UTC coaches).
+ * "Monday of this week" would snap such a Sunday *backward six days*; snapping
+ * to the nearest Monday instead moves it forward one day to the intended week.
+ * A value that is already a Monday is returned unchanged.
+ */
+export function snapToMonday(dateStr: string): string {
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00Z');
+  const offset = (d.getUTCDay() + 6) % 7; // 0=Mon..6=Sun (days since Monday)
+  const shift = offset <= 3 ? -offset : 7 - offset; // nearest Monday
+  d.setUTCDate(d.getUTCDate() + shift);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Inclusive list of Monday week-starts spanning the two dates (UTC-consistent). */
+export function weekStartsBetween(fromStr: string, toStr: string): string[] {
+  const out: string[] = [];
+  const end = toStr.slice(0, 10);
+  let cur = isoMonday(fromStr);
+  while (cur <= end) {
+    out.push(cur);
+    cur = isoAddWeeks(cur, 1);
+  }
+  return out;
+}
+
+/** Whole weeks between two dates (b − a), using Monday-aligned keys. */
+export function weeksBetween(aStr: string, bStr: string): number {
+  const a = new Date(isoMonday(aStr) + 'T00:00:00Z').getTime();
+  const b = new Date(isoMonday(bStr) + 'T00:00:00Z').getTime();
+  return Math.round((b - a) / (7 * 86400000));
+}
+
 /**
  * ISO 8601 week number. Week starts Monday. Week 1 of a year is the
  * week containing the first Thursday (equivalently, 4 Jan).
