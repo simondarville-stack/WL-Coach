@@ -6,6 +6,7 @@ import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
 import { useCoachProfiles } from './hooks/useCoachProfiles';
 import { ExerciseLibrary } from './components/exercise-library/ExerciseLibrary';
+import { AnalysisModule } from './components/analysis/builder/AnalysisModule';
 import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
 import { TemplatesPage } from './components/templates/TemplatesPage';
 import { TemplateEditor } from './components/templates/TemplateEditor';
@@ -44,6 +45,7 @@ const pageTitles: Record<string, string> = {
   '/training-groups': 'Training groups',
   '/training-log': 'Training log',
   '/athlete-log': 'Training log',
+  '/analysis': 'Analysis',
   '/library': 'Exercise library',
   '/settings': 'Settings',
   '/prs': 'Personal Records',
@@ -195,7 +197,8 @@ function CoachApp() {
               <Route path="/training-groups" element={<TrainingGroups />} />
               {/* hidden: out of scope — keep imports and files, redirect to dashboard */}
               <Route path="/training-log" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/analysis" element={<Navigate to="/dashboard" replace />} />
+              {/* Analysis module rebuild (backlog #4) — route live; nav re-enabled separately */}
+              <Route path="/analysis" element={<AnalysisModule />} />
               <Route path="/prs" element={<PRPage />} />
               <Route path="/inbox" element={<CoachInbox />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
