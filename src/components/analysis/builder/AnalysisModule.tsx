@@ -18,6 +18,7 @@ import { ResultChart } from './ResultChart';
 import { DrillPanel } from './DrillPanel';
 import { MetricsModal } from './MetricsModal';
 import { SaveViewModal } from './SaveViewModal';
+import { MonitoringView } from './MonitoringView';
 import { useRunQuery } from './useRunQuery';
 import { buildQuery, defaultBuilderState, isMultiSubject, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
 import type { Normalization, VizType } from '../../../lib/analysis';
@@ -52,6 +53,7 @@ export function AnalysisModule() {
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
   const [saveOpen, setSaveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [mode, setMode] = useState<'build' | 'monitor'>('build');
   const resultRef = useRef<HTMLDivElement>(null);
 
   const registry = useMemo(() => createRegistry(coachSpecs.map(specToMetric)), [coachSpecs]);
@@ -149,12 +151,35 @@ export function AnalysisModule() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', minWidth: 0 }}>
               <span style={{ fontSize: 'var(--text-section)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Analysis</span>
               <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)' }}>· {subjectLabel}</span>
-              {multi && state.normalization !== 'none' && (
+              {multi && state.normalization !== 'none' && mode === 'build' && (
                 <Badge variant="info">Normalized · {NORM_LABEL[state.normalization]}</Badge>
               )}
+              <div style={{ display: 'flex', gap: 2, marginLeft: 'var(--space-sm)' }}>
+                {(['build', 'monitor'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className="emos-btn"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 'var(--text-caption)',
+                      borderRadius: 'var(--radius-md)',
+                      background: mode === m ? 'var(--color-accent)' : 'transparent',
+                      color: mode === m ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                      border: mode === m ? 'none' : '0.5px solid var(--color-border-secondary)',
+                      fontWeight: mode === m ? 500 : 400,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
               {loading && <Spinner />}
+              {mode === 'build' && (
+                <>
               <div style={{ width: 190 }}>
                 <Select
                   value=""
@@ -209,9 +234,14 @@ export function AnalysisModule() {
                 )}
               </div>
               <Button variant="ghost" size="md" icon={<SlidersHorizontal size={14} />} onClick={() => setMetricsOpen(true)}>Metrics</Button>
+                </>
+              )}
             </div>
           </div>
 
+          {mode === 'monitor' ? (
+            <MonitoringView baseQuery={query} enabled={hasSubject} />
+          ) : (
           <div ref={resultRef} className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
             {error && (
               <div style={{ color: 'var(--color-danger-text)', fontSize: 'var(--text-label)', padding: 'var(--space-md)' }}>
@@ -234,6 +264,7 @@ export function AnalysisModule() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* right: drill-down */}

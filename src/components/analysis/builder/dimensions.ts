@@ -20,6 +20,7 @@ export const DIMENSIONS: DimOption[] = [
   { id: 'movement', label: 'Movement', section: 'Exercise', hint: 'Snatch / C&J / squat / pull slot' },
   { id: 'intensityZone', label: 'Intensity zone', section: 'Exercise', hint: 'Banded by %1RM' },
   { id: 'week', label: 'Week', section: 'Time' },
+  { id: 'date', label: 'Date', section: 'Time', hint: 'Calendar date of performed sessions' },
   { id: 'dayOfWeek', label: 'Weekday', section: 'Time', hint: 'Only when a day has a scheduled weekday' },
   { id: 'day', label: 'Day slot', section: 'Time' },
   { id: 'relativeWeek', label: 'Macro week', section: 'Macro', hint: 'Week index within the macrocycle' },

@@ -24,6 +24,7 @@ const VALID_DIMENSIONS = new Set<string>([
   'weekType',
   'intensityZone',
   'day',
+  'date',
   'week',
   'macro',
   'meso',

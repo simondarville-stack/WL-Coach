@@ -16,3 +16,16 @@ export {
   defaultRegistry,
   DEFAULT_VISIBLE_METRIC_IDS,
 } from './metricRegistry';
+export {
+  dailyLoadSeries,
+  densifyDaily,
+  acwr,
+  monotonyStrain,
+  latestAcwr,
+  DEFAULT_ACWR,
+  type DailyLoad,
+  type AcwrPoint,
+  type AcwrThresholds,
+  type AcwrFlag,
+  type WeekMonotony,
+} from './monitoring';

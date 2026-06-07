@@ -24,6 +24,7 @@ export type Dimension =
   | 'weekType'
   | 'intensityZone'
   | 'day'
+  | 'date'
   | 'week'
   | 'macro'
   | 'meso'

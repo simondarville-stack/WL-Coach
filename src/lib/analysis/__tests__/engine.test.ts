@@ -6,6 +6,9 @@ import {
   validateAnalysisQuery,
   defaultRegistry,
   emptyQuery,
+  densifyDaily as densify,
+  acwr as acwrFn,
+  monotonyStrain as monotonyFn,
 } from '../index';
 import type { AnalysisQuery, AnalysisResult, FactRow as FactRowT } from '../index';
 import type { BuildFactsInput, MacroContext, RawExercise } from '../factFetch';
@@ -396,6 +399,42 @@ describe('normalization (multi-athlete comparison)', () => {
     q.cols = [];
     const r = analyzeFacts(facts, q);
     expect(r.meta.notes.join(' ')).toMatch(/needs Athlete/i);
+  });
+});
+
+describe('monitoring — ACWR & Foster monotony', () => {
+  // 28 days at load 100 then 7 days at load 200 (a spike).
+  const series = Array.from({ length: 35 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+    return { date: d, load: i < 28 ? 100 : 200 };
+  });
+
+  it('densifies a gappy series to contiguous calendar days', () => {
+    const sparse = [
+      { date: '2026-01-01', load: 100 },
+      { date: '2026-01-04', load: 50 },
+    ];
+    const dense = densify(sparse);
+    expect(dense).toHaveLength(4); // 01,02,03,04
+    expect(dense[1].load).toBe(0); // rest day filled
+    expect(dense[3].load).toBe(50);
+  });
+
+  it('flags a high ACWR after a load spike', () => {
+    const points = acwrFn(series);
+    const last = points[points.length - 1];
+    // acute = 200, chronic = (21×100 + 7×200)/28 = 125 → 1.6
+    expect(last.acute).toBeCloseTo(200, 4);
+    expect(last.chronic).toBeCloseTo(125, 4);
+    expect(last.ratio).toBeCloseTo(1.6, 4);
+    expect(last.flag).toBe('high');
+  });
+
+  it('reports a steady week as monotonous when load is flat', () => {
+    const flat = Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.UTC(2026, 0, 5 + i)).toISOString().slice(0, 10), load: 100 }));
+    const weeks = monotonyFn(flat);
+    expect(weeks[0].monotony).toBeNull(); // zero SD → undefined monotony (flat = infinite)
+    expect(weeks[0].weeklyLoad).toBe(700);
   });
 });
 

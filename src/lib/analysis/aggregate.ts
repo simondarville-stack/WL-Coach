@@ -77,6 +77,8 @@ function dimValues(row: FactRow, dim: Dimension, opts: AggregateOptions): string
       return [classifyZone(row.pct1rm, opts.intensityZones ?? DEFAULT_INTENSITY_ZONES)];
     case 'day':
       return [`Day ${row.dayIndex}`];
+    case 'date':
+      return [row.date ?? '(planned)'];
     case 'dayOfWeek':
       return [row.dayOfWeek == null ? '(slot)' : (WEEKDAY_LABELS[row.dayOfWeek] ?? '(slot)')];
     case 'week':
