@@ -4,6 +4,7 @@ import {
   BarChart3,
   Calendar,
   TrendingUp,
+  LineChart,
   CalendarDays,
   Users,
   UsersRound,
@@ -47,7 +48,7 @@ const sections: NavSection[] = [
       { path: '/planner', label: 'Weekly planner', icon: Calendar },
       { path: '/templates', label: 'Programme templates', icon: BookCopy },
       { path: '/macrocycles', label: 'Macro cycles', icon: TrendingUp },
-      // { path: '/analysis', label: 'Analysis', icon: LineChart }, // hidden: out of scope
+      { path: '/analysis', label: 'Analysis', icon: LineChart },
       { path: '/events', label: 'Calendar', icon: CalendarDays },
     ],
   },

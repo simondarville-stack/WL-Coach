@@ -743,13 +743,12 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   }
 
   // 9. Intensity-zone config (host owner's general_settings).
-  let intensityZones: Array<{ zone: string; min: number; max: number }> | undefined;
   const { data: gsRows } = await supabase
     .from('general_settings')
     .select('owner_id, intensity_zones')
     .in('owner_id', hostOwners);
   const gs = (gsRows ?? []) as Array<{ owner_id: string; intensity_zones: Array<{ zone: string; min: number; max: number }> | null }>;
-  intensityZones = gs.find((g) => g.intensity_zones)?.intensity_zones ?? undefined;
+  const intensityZones = gs.find((g) => g.intensity_zones)?.intensity_zones ?? undefined;
 
   const facts = buildFacts({
     athleteIds,
