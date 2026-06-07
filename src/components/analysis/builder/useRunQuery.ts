@@ -15,7 +15,17 @@ interface RunState {
 export function useRunQuery(query: AnalysisQuery, enabled: boolean, debounceMs = 250): RunState {
   const [state, setState] = useState<RunState>({ result: null, loading: false, error: null });
   const reqId = useRef(0);
-  const key = JSON.stringify(query);
+  // Re-run only when the data-determining parts change. `viz` only reshapes an
+  // already-computed result (table ↔ chart), so switching view types is instant
+  // and never re-hits Supabase.
+  const key = JSON.stringify({
+    scope: query.scope,
+    subjects: query.subjects,
+    filters: query.filters,
+    rows: query.rows,
+    cols: query.cols,
+    measures: query.measures,
+  });
 
   useEffect(() => {
     if (!enabled) {

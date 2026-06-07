@@ -1,6 +1,6 @@
-// Starter presets — a coach opens one and tweaks it, rather than facing a blank
-// builder ("presets-first", UX-01). Phase 2 formalises the five chart presets;
-// these table presets exist from Phase 1 so the front door is never empty.
+// The five seed presets (Phase 2). Each is a serialized query a coach opens and
+// tweaks ("presets-first", UX-01). The weekly-stress-curve preset is
+// deliberately held until the stress model is defined (REVIEW_PLAN D-07).
 
 import type { BuilderState } from './builderState';
 
@@ -13,33 +13,33 @@ export interface Preset {
 
 export const PRESETS: Preset[] = [
   {
-    id: 'weekly-tonnage',
-    name: 'Weekly tonnage — plan vs done',
-    description: 'Prescribed and performed volume per week, side by side.',
-    patch: { rows: ['week'], cols: [], metrics: ['volume'], compare: 'both', vizType: 'table' },
-  },
-  {
-    id: 'volume-by-category',
-    name: 'Volume by category',
-    description: 'Performed tonnage and sets across your exercise categories.',
-    patch: { rows: ['category'], cols: [], metrics: ['volume', 'sets'], compare: 'performed', vizType: 'table' },
+    id: 'planned-vs-performed',
+    name: 'Planned vs performed',
+    description: 'Prescribed vs completed tonnage, week by week.',
+    patch: { rows: ['week'], cols: [], metrics: ['volume'], compare: 'both', vizType: 'bar' },
   },
   {
     id: 'intensity-zones',
     name: 'Intensity-zone distribution',
     description: 'Reps performed in each %1RM band.',
-    patch: { rows: ['intensityZone'], cols: [], metrics: ['reps'], compare: 'performed', vizType: 'table' },
+    patch: { rows: ['intensityZone'], cols: [], metrics: ['reps'], compare: 'performed', vizType: 'bar' },
   },
   {
-    id: 'adherence-by-week',
-    name: 'Adherence by week',
-    description: 'How much of each week’s prescribed volume was completed.',
-    patch: { rows: ['week'], cols: [], metrics: ['volume'], compare: 'adherence', vizType: 'table' },
+    id: 'lift-ratios',
+    name: 'Lift ratios',
+    description: 'Snatch ÷ C&J and pull share of total volume.',
+    patch: { rows: [], cols: [], metrics: ['snatchCleanRatio', 'pullPctOfTotal'], compare: 'performed', vizType: 'table' },
   },
   {
-    id: 'loads-by-movement',
-    name: 'Top loads by movement',
-    description: 'Heaviest kg reached per competition-lift slot.',
-    patch: { rows: ['movement'], cols: [], metrics: ['maxLoad'], compare: 'performed', vizType: 'table' },
+    id: 'competition-lift-trend',
+    name: 'Competition-lift trend',
+    description: 'Top kg reached per movement over time.',
+    patch: { rows: ['week'], cols: ['movement'], metrics: ['maxLoad'], compare: 'performed', vizType: 'line' },
+  },
+  {
+    id: 'category-distribution',
+    name: 'Category distribution',
+    description: 'Planned vs performed volume across your categories.',
+    patch: { rows: ['category'], cols: [], metrics: ['volume'], compare: 'both', vizType: 'bar' },
   },
 ];

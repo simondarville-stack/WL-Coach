@@ -14,14 +14,19 @@ import type { AnalysisQuery, Filter } from '../../../lib/analysis';
 import { toLocalISO } from '../../../lib/dateUtils';
 import { ConfigRail } from './ConfigRail';
 import { PivotTable } from './PivotTable';
+import { ResultChart } from './ResultChart';
 import { DrillPanel } from './DrillPanel';
 import { MetricsModal } from './MetricsModal';
 import { useRunQuery } from './useRunQuery';
-import { buildQuery, defaultBuilderState, type BuilderState, type Subjects } from './builderState';
+import { buildQuery, defaultBuilderState, VIZ_LABEL, type BuilderState, type Subjects } from './builderState';
+import type { VizType } from '../../../lib/analysis';
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
 
 const today = toLocalISO(new Date());
+
+const VIZ_TYPES: VizType[] = ['table', 'line', 'bar', 'stackedBar', 'groupedBar', 'scatter', 'heatmap', 'radar'];
+const VIZ_OPTIONS = VIZ_TYPES.map((id) => ({ id, label: VIZ_LABEL[id] }));
 
 export function AnalysisModule() {
   const { selectedAthlete, selectedGroup } = useAthleteStore();
@@ -90,7 +95,7 @@ export function AnalysisModule() {
         }}
       >
         {/* left: config */}
-        <ConfigRail state={state} set={set} metrics={registry.list()} subjectLabel={subjectLabel} vizOptions={[{ id: 'table', label: 'Table' }]} />
+        <ConfigRail state={state} set={set} metrics={registry.list()} subjectLabel={subjectLabel} vizOptions={VIZ_OPTIONS} />
 
         {/* centre: results */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -139,7 +144,12 @@ export function AnalysisModule() {
                 {error}
               </div>
             )}
-            {result && <PivotTable result={result} onDrill={onDrill} />}
+            {result &&
+              (state.vizType === 'table' ? (
+                <PivotTable result={result} onDrill={onDrill} />
+              ) : (
+                <ResultChart result={result} type={state.vizType} />
+              ))}
             {result && result.meta.notes.length > 0 && (
               <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {result.meta.notes.map((n, i) => (
