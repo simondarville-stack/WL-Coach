@@ -10,7 +10,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Calendar, CalendarDays, MessageCircle, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { fetchAthleteGeneralUnreadCount } from '../../../lib/trainingLogService';
+import { fetchAthleteInboxUnreadCount } from '../../../lib/trainingLogService';
 
 const TABS = [
   { to: '/athlete/today', icon: Calendar, label: 'Today' },
@@ -76,7 +76,7 @@ function useCoachThreadUnread(athleteId: string | null): number {
     let alive = true;
     const load = async () => {
       try {
-        const n = await fetchAthleteGeneralUnreadCount(athleteId);
+        const n = await fetchAthleteInboxUnreadCount(athleteId);
         if (alive) setCount(n);
       } catch {
         // Silent — a transient failure shouldn't take down the nav.
