@@ -418,6 +418,21 @@ export function aggregate(
     options,
   );
 
+  // Distinct values per filterable dimension over the UNFILTERED facts, so the
+  // builder's filter UI can offer the full candidate list regardless of the
+  // filters currently applied.
+  const availableValues: Record<string, string[]> = {};
+  const STANDARD_FILTERABLE: Dimension[] = ['exercise', 'category', 'movement', 'weekType'];
+  const filterDims = [...new Set<Dimension>([...rowDims, ...colDims, ...STANDARD_FILTERABLE])];
+  for (const dim of filterDims) {
+    const set = new Set<string>();
+    for (const row of facts) {
+      for (const v of dimValues(row, dim, options)) set.add(v);
+      if (set.size > 500) break;
+    }
+    availableValues[dim] = [...set].sort((a, b) => a.localeCompare(b));
+  }
+
   const athleteIds = [...new Set(filtered.map((r) => r.athleteId))];
   const notes: string[] = [];
   if (unresolvedPct > 0) {
@@ -442,6 +457,7 @@ export function aggregate(
       unresolvedPctFacts: unresolvedPct,
       athleteIds,
       normalization: query.subjects.normalization,
+      availableValues,
       notes,
     },
   };

@@ -20,6 +20,8 @@ interface ConfigRailProps {
   metrics: MetricDef[];
   athletes: NamedEntity[];
   groups: NamedEntity[];
+  /** Distinct values per dimension (from the result) to populate filter choices. */
+  availableValues: Record<string, string[]>;
   vizOptions: { id: VizType; label: string }[];
 }
 
@@ -46,11 +48,26 @@ const COMPARE_OPTIONS: { id: MeasureState; label: string; hint: string }[] = [
   { id: 'adherence', label: 'Adherence', hint: 'Performed ÷ planned' },
 ];
 
-export function ConfigRail({ state, set, metrics, athletes, groups, vizOptions }: ConfigRailProps) {
+export function ConfigRail({ state, set, metrics, athletes, groups, availableValues, vizOptions }: ConfigRailProps) {
   const usedDims = new Set<string>([...state.rows, ...state.cols]);
   const athleteName = (id: string) => athletes.find((a) => a.id === id)?.name ?? id;
   const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? id;
   const multi = state.athleteIds.length > 1 || state.groupIds.length > 0;
+
+  const filters = state.filters ?? [];
+  const avail = availableValues ?? {};
+  const filteredDims = new Set<string>(filters.map((f) => f.dimension));
+  const filterableDims = Object.keys(avail).filter(
+    (d) => (avail[d]?.length ?? 0) > 0 && !filteredDims.has(d),
+  );
+  const toggleFilterValue = (i: number, v: string) =>
+    set({
+      filters: filters.map((f, j) =>
+        j === i && f.op === 'in'
+          ? { ...f, values: f.values.includes(v) ? f.values.filter((x) => x !== v) : [...f.values, v] }
+          : f,
+      ),
+    });
 
   return (
     <div
@@ -157,6 +174,35 @@ export function ConfigRail({ state, set, metrics, athletes, groups, vizOptions }
           onRemove={(d) => set({ cols: state.cols.filter((x) => x !== d) })}
           disabledIds={usedDims}
         />
+      </Section>
+
+      <Section label="Filters">
+        {filters.map((f, i) =>
+          f.op === 'in' ? (
+            <FilterRow
+              key={f.dimension}
+              label={dimLabel(f.dimension)}
+              selected={f.values}
+              options={avail[f.dimension] ?? []}
+              onToggle={(v) => toggleFilterValue(i, v)}
+              onRemove={() => set({ filters: filters.filter((_, j) => j !== i) })}
+            />
+          ) : null,
+        )}
+        <Select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) set({ filters: [...filters, { dimension: e.target.value as Dimension, op: 'in', values: [] }] });
+          }}
+        >
+          <option value="">+ Add filter…</option>
+          {filterableDims.map((d) => (
+            <option key={d} value={d}>{dimLabel(d)}</option>
+          ))}
+        </Select>
+        {filterableDims.length === 0 && filters.length === 0 && (
+          <p style={hint}>Filters narrow which exercises, categories, etc. are included — useful when a chart has too many.</p>
+        )}
       </Section>
 
       <Section label="Measures">
@@ -329,6 +375,57 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
         <X size={11} />
       </button>
     </span>
+  );
+}
+
+function FilterRow({
+  label,
+  selected,
+  options,
+  onToggle,
+  onRemove,
+}: {
+  label: string;
+  selected: string[];
+  options: string[];
+  onToggle: (v: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div style={{ marginBottom: 8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', padding: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+          {label}
+          {selected.length ? ` · ${selected.length}` : ''}
+        </span>
+        <button onClick={onRemove} aria-label={`Remove ${label} filter`} style={chipX}>
+          <X size={11} />
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 132, overflowY: 'auto' }}>
+        {options.map((v) => {
+          const on = selected.includes(v);
+          return (
+            <button
+              key={v}
+              onClick={() => onToggle(v)}
+              className="emos-btn"
+              style={{
+                padding: '2px 6px',
+                fontSize: 'var(--text-caption)',
+                borderRadius: 'var(--radius-sm)',
+                background: on ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+                color: on ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                border: '0.5px solid var(--color-border-tertiary)',
+              }}
+            >
+              {v}
+            </button>
+          );
+        })}
+      </div>
+      {selected.length === 0 && <p style={{ ...hint, marginTop: 4 }}>None selected = all included.</p>}
+    </div>
   );
 }
 

@@ -201,6 +201,9 @@ export interface AnalysisMeta {
   athleteIds: string[];
   /** Per-subject normalization basis (athlete id → divisor) when applicable. */
   normalization: Normalization;
+  /** Distinct values per filterable dimension (over the unfiltered fact set),
+   *  so the builder can offer real filter choices. Capped per dimension. */
+  availableValues: Record<string, string[]>;
   /** Non-fatal notes for the UI (e.g. "12 % loads excluded from tonnage"). */
   notes: string[];
 }

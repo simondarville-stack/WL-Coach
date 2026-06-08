@@ -7,6 +7,7 @@ import { isoAddDays } from '../../../lib/dateUtils';
 import type {
   AnalysisQuery,
   Dimension,
+  Filter,
   MeasureState,
   MetricRegistry,
   Normalization,
@@ -24,6 +25,7 @@ export interface BuilderState {
   athleteIds: string[];
   groupIds: string[];
   normalization: Normalization;
+  filters: Filter[];
   rows: Dimension[];
   cols: Dimension[];
   metrics: string[]; // metric ids; agg comes from the registry default
@@ -42,6 +44,7 @@ export function defaultBuilderState(today: string, seed: { athleteIds?: string[]
     athleteIds: seed.athleteIds ?? [],
     groupIds: seed.groupIds ?? [],
     normalization: 'none',
+    filters: [],
     rows: ['week'],
     cols: [],
     metrics: ['volume'],
@@ -94,7 +97,9 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
       groups: state.groupIds,
       normalization: state.normalization,
     },
-    filters: [],
+    // Drop incomplete filters (an empty `in` would otherwise exclude everything).
+    // `?? []` guards a saved view persisted before filters existed.
+    filters: (state.filters ?? []).filter((f) => !(f.op === 'in' && f.values.length === 0)),
     rows: state.rows,
     cols: state.cols,
     measures,

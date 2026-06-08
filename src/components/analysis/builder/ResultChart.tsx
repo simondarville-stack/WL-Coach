@@ -47,6 +47,22 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
     return <Empty label="No data to chart in this scope." />;
   }
 
+  // Guard against an unreadable chart (e.g. exercises as a column dimension →
+  // dozens of series). Tell the coach how to narrow it rather than rendering a
+  // broken, overloaded graph.
+  const MAX_SERIES = 24;
+  const isBar = type === 'bar' || type === 'stackedBar' || type === 'groupedBar';
+  const tooManyBars = isBar && model.data.length * model.series.length > 240;
+  if (model.series.length > MAX_SERIES || tooManyBars) {
+    return (
+      <Overload
+        seriesCount={model.series.length}
+        categoryCount={model.data.length}
+        seriesLimit={MAX_SERIES}
+      />
+    );
+  }
+
   const tooltipStyle = {
     background: 'var(--color-bg-primary)',
     border: '0.5px solid var(--color-border-secondary)',
@@ -153,6 +169,20 @@ function Empty({ label }: { label: string }) {
   return (
     <div style={{ padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 'var(--text-body)' }}>
       {label}
+    </div>
+  );
+}
+
+function Overload({ seriesCount, categoryCount, seriesLimit }: { seriesCount: number; categoryCount: number; seriesLimit: number }) {
+  return (
+    <div style={{ padding: 'var(--space-2xl)', textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 'var(--space-sm)' }}>
+        Too many series to chart legibly
+      </div>
+      <p style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+        This view would draw <strong>{seriesCount}</strong> series across {categoryCount} categories — past the ~{seriesLimit} a chart can show clearly.
+        Narrow it with a <strong>Filter</strong> in the rail, drop a <strong>Column</strong> dimension, or switch to the <strong>Table</strong> view.
+      </p>
     </div>
   );
 }

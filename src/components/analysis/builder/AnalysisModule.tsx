@@ -133,7 +133,7 @@ export function AnalysisModule() {
         }}
       >
         {/* left: config */}
-        <ConfigRail state={state} set={set} metrics={registry.list()} athletes={athletes} groups={groups} vizOptions={VIZ_OPTIONS} />
+        <ConfigRail state={state} set={set} metrics={registry.list()} athletes={athletes} groups={groups} availableValues={result?.meta.availableValues ?? {}} vizOptions={VIZ_OPTIONS} />
 
         {/* centre: results */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -190,7 +190,9 @@ export function AnalysisModule() {
                       if (p) set(p.patch);
                     } else if (v.startsWith('view:')) {
                       const sv = savedViews.find((x) => x.id === v.slice(5));
-                      if (sv) setState(sv.state);
+                      // Merge over defaults so a view saved before a field existed
+                      // (e.g. filters) still loads with sane values.
+                      if (sv) setState({ ...defaultBuilderState(today), ...sv.state });
                     }
                   }}
                 >
