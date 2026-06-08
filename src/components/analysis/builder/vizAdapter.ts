@@ -51,13 +51,20 @@ export function toChartModel(result: AnalysisResult): ChartModel {
 
   // Build the series list (colTuple × measure).
   const singleMetric = new Set(result.measures.map((m) => m.metricId)).size === 1 && colKeys.length === 1;
+  // When the column axis is a single dimension the coach has coloured (exercise,
+  // category, phase, week-type), use those stored colours for the series — both
+  // on-brand and instantly readable (CLAUDE.md: data-driven colour is sacred).
+  const colourDim = colDims.length === 1 ? colDims[0] : null;
+  const dimColors = colourDim ? result.meta.dimensionColors?.[colourDim] : undefined;
+  const colourFor = (ck: string[]): string | null => (dimColors && ck.length ? dimColors[ck[0]] ?? null : null);
+
   const series: ChartSeries[] = [];
   let idx = 0;
   for (const ck of colKeys) {
     for (const m of result.measures) {
       const colPrefix = ck.length ? `${ck.join(' · ')} · ` : '';
       const facet = m.state === 'planned' ? ' (plan)' : m.state === 'performed' ? ' (perf)' : m.state === 'delta' ? ' Δ' : m.state === 'adherence' ? ' adh' : '';
-      const color = (singleMetric && facetColor(m.state)) || PALETTE[idx % PALETTE.length];
+      const color = colourFor(ck) || (singleMetric && facetColor(m.state)) || PALETTE[idx % PALETTE.length];
       series.push({
         key: `${JSON.stringify(ck)}|${m.key}`,
         label: `${colPrefix}${m.label}${facet}`,

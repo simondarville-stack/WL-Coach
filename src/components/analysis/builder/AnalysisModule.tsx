@@ -86,6 +86,15 @@ export function AnalysisModule() {
 
   const set = (patch: Partial<BuilderState>) => setState((s) => ({ ...s, ...patch }));
 
+  // Recover from the chart "too many series" wall: cap the high-cardinality axis
+  // to its top 12 by the first measure (engine-side ranking).
+  const onLimitTopN = () => {
+    const dim = state.cols[state.cols.length - 1] ?? state.rows[state.rows.length - 1];
+    if (!dim) return;
+    const facet = state.compare === 'both' ? 'performed' : state.compare;
+    set({ topN: { dimension: dim, measureKey: `${state.metrics[0]?.id ?? 'volume'}::${facet}`, n: 12, dir: 'desc' } });
+  };
+
   const onDrill = (rowKey: string[], colKey: string[]) => {
     const filters: Filter[] = [];
     state.rows.forEach((dim, i) => filters.push({ dimension: dim, op: 'in', values: [rowKey[i]] }));
@@ -255,7 +264,7 @@ export function AnalysisModule() {
               (state.vizType === 'table' ? (
                 <PivotTable result={result} onDrill={onDrill} sort={state.sort} onSortChange={(s) => set({ sort: s })} />
               ) : (
-                <ResultChart result={result} type={state.vizType} compare={state.comparePrevious ? compareResult : null} />
+                <ResultChart result={result} type={state.vizType} compare={state.comparePrevious ? compareResult : null} onLimitTopN={onLimitTopN} />
               ))}
             {result && result.meta.notes.length > 0 && (
               <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 4 }}>

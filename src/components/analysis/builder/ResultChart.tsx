@@ -24,19 +24,22 @@ import {
 import type { AnalysisResult, VizType } from '../../../lib/analysis';
 import { toChartModel, mergeCompare, isGhostSeries } from './vizAdapter';
 import { HeatmapGrid } from './HeatmapGrid';
-import { formatValue } from './format';
+import { formatValue, formatAxisTick } from './format';
+import { formatDateShort } from '../../../lib/dateUtils';
 
 interface ResultChartProps {
   result: AnalysisResult;
   type: VizType;
   /** Previous-period result for the ghost overlay (line/bar). */
   compare?: AnalysisResult | null;
+  /** Apply a sensible Top-N to recover from the too-many-series overload. */
+  onLimitTopN?: () => void;
 }
 
 const axisTick = { fontSize: 11, fontFamily: 'var(--font-mono)', fill: 'var(--color-text-tertiary)' };
 const HEIGHT = 440;
 
-export function ResultChart({ result, type, compare }: ResultChartProps) {
+export function ResultChart({ result, type, compare, onLimitTopN }: ResultChartProps) {
   if (type === 'heatmap') return <HeatmapGrid result={result} />;
 
   let model = toChartModel(result);
@@ -59,9 +62,15 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
         seriesCount={model.series.length}
         categoryCount={model.data.length}
         seriesLimit={MAX_SERIES}
+        onLimit={onLimitTopN}
       />
     );
   }
+
+  // X ticks read as DD/MM for week/date axes (European convention).
+  const xDim = result.rowDimensions.filter((a) => a !== 'state')[0];
+  const xTick = xDim === 'week' || xDim === 'date' ? (v: number | string) => formatDateShort(String(v)) : undefined;
+  const ariaLabel = `${type} chart of ${model.series.map((s) => s.label).join(', ')} by ${model.xLabel}`;
 
   const tooltipStyle = {
     background: 'var(--color-bg-primary)',
@@ -126,13 +135,13 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
 
   if (type === 'line') {
     return (
-      <div style={{ height: HEIGHT }}>
+      <div style={{ height: HEIGHT }} role="img" aria-label={ariaLabel}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={model.data} margin={{ top: 12, right: 24, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="var(--color-border-tertiary)" vertical={false} />
-            <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" />
-            <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
-            {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />}
+            <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" tickFormatter={xTick} />
+            <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} tickFormatter={(v) => formatAxisTick(v, units[0] ?? '')} />
+            {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} tickFormatter={(v) => formatAxisTick(v, units[1] ?? '')} />}
             <Tooltip contentStyle={tooltipStyle} formatter={fmt} />
             <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
             {model.series.map((s) => (
@@ -147,13 +156,13 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
   // bar / stackedBar / groupedBar
   const stacked = type === 'stackedBar';
   return (
-    <div style={{ height: HEIGHT }}>
+    <div style={{ height: HEIGHT }} role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={model.data} margin={{ top: 12, right: 24, bottom: 24, left: 8 }}>
           <CartesianGrid stroke="var(--color-border-tertiary)" vertical={false} />
-          <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" />
-          <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
-          {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />}
+          <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" tickFormatter={xTick} />
+          <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} tickFormatter={(v) => formatAxisTick(v, units[0] ?? '')} />
+          {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} tickFormatter={(v) => formatAxisTick(v, units[1] ?? '')} />}
           <Tooltip contentStyle={tooltipStyle} formatter={fmt} cursor={{ fill: 'var(--color-accent-muted)' }} />
           <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
           {model.series.map((s) => (
@@ -173,7 +182,7 @@ function Empty({ label }: { label: string }) {
   );
 }
 
-function Overload({ seriesCount, categoryCount, seriesLimit }: { seriesCount: number; categoryCount: number; seriesLimit: number }) {
+function Overload({ seriesCount, categoryCount, seriesLimit, onLimit }: { seriesCount: number; categoryCount: number; seriesLimit: number; onLimit?: () => void }) {
   return (
     <div style={{ padding: 'var(--space-2xl)', textAlign: 'center', maxWidth: 480, margin: '0 auto' }}>
       <div style={{ fontSize: 'var(--text-section)', fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 'var(--space-sm)' }}>
@@ -183,6 +192,16 @@ function Overload({ seriesCount, categoryCount, seriesLimit }: { seriesCount: nu
         This view would draw <strong>{seriesCount}</strong> series across {categoryCount} categories — past the ~{seriesLimit} a chart can show clearly.
         Narrow it with a <strong>Filter</strong> in the rail, drop a <strong>Column</strong> dimension, or switch to the <strong>Table</strong> view.
       </p>
+      {onLimit && (
+        <button
+          type="button"
+          onClick={onLimit}
+          className="emos-btn emos-btn-secondary"
+          style={{ marginTop: 'var(--space-md)', padding: '6px 14px', fontSize: 'var(--text-label)', borderRadius: 'var(--radius-md)' }}
+        >
+          Keep top 12 only
+        </button>
+      )}
     </div>
   );
 }

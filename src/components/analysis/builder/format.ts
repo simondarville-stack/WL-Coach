@@ -33,3 +33,18 @@ export function formatDelta(value: number | null | undefined, unit: string): str
   const sign = value > 0 ? '+' : '';
   return sign + formatValue(value, unit);
 }
+
+/** Compact, unit-aware axis tick (no decimals on large kg → tonnes). */
+export function formatAxisTick(value: number | string | undefined, unit: string): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return value == null ? '' : String(value);
+  switch (unit) {
+    case 'kg':
+      // On an axis the ticks are round gridlines; keep one consistent unit by
+      // switching to tonnes once they reach the thousands (4 t, 8 t, 12 t).
+      return Math.abs(value) >= 1000 ? `${de(value / 1000, value % 1000 === 0 ? 0 : 1)} t` : de(Math.round(value), 0);
+    case '%':
+      return `${de(Math.round(value), 0)}%`;
+    default:
+      return de(Math.round(value), 0);
+  }
+}
