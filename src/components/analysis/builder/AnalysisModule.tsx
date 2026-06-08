@@ -5,7 +5,7 @@
 // from `runAnalysisQuery`; this component never aggregates (invariant #6).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SlidersHorizontal, Save, Download } from 'lucide-react';
+import { SlidersHorizontal, Save, Download, RotateCcw } from 'lucide-react';
 import { useAthleteStore } from '../../../store/athleteStore';
 import { AthleteCardPicker } from '../../AthleteCardPicker';
 import { Badge, Button, Select, Spinner, ErrorState } from '../../ui';
@@ -31,7 +31,7 @@ const NORM_LABEL: Record<Normalization, string> = {
 };
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
-import { loadSavedViews, saveView, deleteView, type SavedView } from './savedViews';
+import { loadSavedViews, saveView, deleteView, setDefaultView, getDefaultView, touchView, type SavedView } from './savedViews';
 import { resultToCsv, downloadText, downloadXlsx, copyResultToClipboard, exportChartSvg, triggerPrint } from './exportUtils';
 
 const today = toLocalISO(new Date());
@@ -54,6 +54,8 @@ export function AnalysisModule() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState<'build' | 'monitor'>('build');
+  // "Pristine" until the coach touches the builder — drives the quick-start strip.
+  const [touched, setTouched] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
   const exportWrapRef = useRef<HTMLDivElement>(null);
 
@@ -73,13 +75,23 @@ export function AnalysisModule() {
     saveCoachMetricSpecs(next);
   };
 
-  // Seed subjects from the header selector once, when the builder has none.
+  // Seed subjects from the header selector once, when the builder has none —
+  // applying the coach's default-view layout (if any) but keeping the picker's
+  // subjects so the just-selected athlete/group is honoured.
   useEffect(() => {
     setState((s) => {
       if (s.athleteIds.length > 0 || s.groupIds.length > 0) return s;
-      if (selectedGroup) return { ...s, groupIds: [selectedGroup.id] };
-      if (selectedAthlete) return { ...s, athleteIds: [selectedAthlete.id] };
-      return s;
+      const seeded = selectedGroup
+        ? { groupIds: [selectedGroup.id], athleteIds: [] as string[] }
+        : selectedAthlete
+        ? { athleteIds: [selectedAthlete.id], groupIds: [] as string[] }
+        : null;
+      const def = getDefaultView();
+      if (def) {
+        const base = { ...defaultBuilderState(today), ...def.state, metrics: normalizeMetrics(def.state.metrics) };
+        return seeded ? { ...base, ...seeded } : base;
+      }
+      return seeded ? { ...s, ...seeded } : s;
     });
   }, [selectedAthlete, selectedGroup]);
 
@@ -95,7 +107,16 @@ export function AnalysisModule() {
   );
   const { result: compareResult } = useRunQuery(compareQuery, state.comparePrevious && hasSubject && state.vizType !== 'table');
 
-  const set = (patch: Partial<BuilderState>) => setState((s) => ({ ...s, ...patch }));
+  const set = (patch: Partial<BuilderState>) => {
+    setTouched(true);
+    setState((s) => ({ ...s, ...patch }));
+  };
+
+  /** Reset the builder to its defaults, keeping the subjects in scope. */
+  const resetBuilder = () => {
+    setTouched(false);
+    setState((s) => ({ ...defaultBuilderState(today), athleteIds: s.athleteIds, groupIds: s.groupIds }));
+  };
 
   // Recover from the chart "too many series" wall: cap the high-cardinality axis
   // to its top 12 by the first measure (engine-side ranking).
@@ -220,7 +241,11 @@ export function AnalysisModule() {
                       // Merge over defaults so a view saved before a field existed
                       // (e.g. filters) still loads with sane values; coerce legacy
                       // string[] metrics to the {id,agg?} shape.
-                      if (sv) setState({ ...defaultBuilderState(today), ...sv.state, metrics: normalizeMetrics(sv.state.metrics) });
+                      if (sv) {
+                        setTouched(true);
+                        setState({ ...defaultBuilderState(today), ...sv.state, metrics: normalizeMetrics(sv.state.metrics) });
+                        setSavedViews(touchView(sv.id, new Date().toISOString()));
+                      }
                     }
                   }}
                 >
@@ -240,6 +265,7 @@ export function AnalysisModule() {
                 </Select>
               </div>
               <Button variant="ghost" size="md" icon={<Save size={14} />} onClick={() => setSaveOpen(true)}>Save</Button>
+              <Button variant="ghost" size="md" icon={<RotateCcw size={14} />} onClick={resetBuilder} title="Reset to defaults (keeps subjects)">Reset</Button>
               <div style={{ position: 'relative' }} ref={exportWrapRef}>
                 <Button variant="ghost" size="md" icon={<Download size={14} />} onClick={() => setExportOpen((o) => !o)} aria-haspopup="menu" aria-expanded={exportOpen}>Export</Button>
                 {exportOpen && (
@@ -278,6 +304,24 @@ export function AnalysisModule() {
             <MonitoringView baseQuery={query} enabled={hasSubject} />
           ) : (
           <div ref={resultRef} className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
+            {!touched && (
+              <div className="no-print" style={{ marginBottom: 'var(--space-lg)' }}>
+                <div style={{ fontSize: 'var(--text-caption)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-tertiary)', fontWeight: 500, marginBottom: 6 }}>Quick starts</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => set(p.patch)}
+                      style={{ textAlign: 'left', width: 220, padding: '8px 10px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-primary)', cursor: 'pointer', transition: 'border-color var(--transition-base), background var(--transition-base)' }}
+                    >
+                      <div style={{ fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)' }}>{p.name}</div>
+                      <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', lineHeight: 1.4, marginTop: 2 }}>{p.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {error && <ErrorState message={error} />}
             {!result && !error && loading && <ResultSkeleton />}
             {result &&
@@ -316,8 +360,9 @@ export function AnalysisModule() {
         isOpen={saveOpen}
         onClose={() => setSaveOpen(false)}
         views={savedViews}
-        onSave={(name) => setSavedViews(saveView(name, state))}
+        onSave={(name, description) => setSavedViews(saveView(name, state, { description, now: new Date().toISOString() }))}
         onDelete={(id) => setSavedViews(deleteView(id))}
+        onSetDefault={(id) => setSavedViews(setDefaultView(id))}
       />
 
       {/* Print: hide all chrome, print only the result pane. */}
@@ -325,6 +370,7 @@ export function AnalysisModule() {
         body * { visibility: hidden !important; }
         .analysis-print-area, .analysis-print-area * { visibility: visible !important; }
         .analysis-print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; overflow: visible !important; }
+        .no-print, .no-print * { display: none !important; }
       }`}</style>
     </div>
   );
