@@ -402,6 +402,18 @@ export function ExerciseLogCard({
                     .filter(s => s.set_number > plannedMax)
                     .sort((a, b) => a.set_number - b.set_number);
                   const blanks = Math.max(0, extraRows - loggedExtraSets.length);
+                  // Number new blank rows strictly ABOVE the highest existing
+                  // set number (planned or logged). set_number is the upsert
+                  // conflict key (log_exercise_id, set_number), so reusing one
+                  // silently OVERWRITES that set (data loss) and briefly shows
+                  // two rows with the same number. Counting via
+                  // `plannedMax + loggedExtraSets.length` collides after a delete
+                  // leaves a gap or while a save is in flight; max+1 cannot.
+                  // Mirrors OffPlanExerciseCard / CoachSetEditModal.
+                  const maxSetNumber = loggedSets.reduce(
+                    (m, s) => Math.max(m, s.set_number),
+                    plannedMax,
+                  );
                   // Last completed values used as placeholder defaults
                   // for new blank rows, so a one-tap "same as last" works.
                   const lastCompleted = [...loggedSets]
@@ -424,12 +436,22 @@ export function ExerciseLogCard({
                           }}
                           logged={s}
                           onSave={onSaveSet}
-                          onDelete={onDeleteSet ? () => onDeleteSet(s.id) : undefined}
+                          onDelete={
+                            onDeleteSet
+                              ? () => {
+                                  onDeleteSet(s.id);
+                                  // Keep the requested-extra-rows counter in sync
+                                  // so deleting a saved extra doesn't resurrect a
+                                  // phantom blank row.
+                                  setExtraRows(n => Math.max(0, n - 1));
+                                }
+                              : undefined
+                          }
                           readOnly={readOnly}
                         />
                       ))}
                       {!readOnly && Array.from({ length: blanks }).map((_, i) => {
-                        const setNumber = plannedMax + loggedExtraSets.length + 1 + i;
+                        const setNumber = maxSetNumber + 1 + i;
                         return (
                           <SetEntryRow
                             key={`blank-${setNumber}`}
