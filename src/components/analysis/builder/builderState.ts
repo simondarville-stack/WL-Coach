@@ -5,6 +5,7 @@
 import { ANALYSIS_QUERY_VERSION } from '../../../lib/analysis';
 import { isoAddDays } from '../../../lib/dateUtils';
 import type {
+  Agg,
   AnalysisQuery,
   Dimension,
   Filter,
@@ -16,6 +17,18 @@ import type {
   TopNSpec,
   VizType,
 } from '../../../lib/analysis';
+
+/** A selected measure: a metric id plus an optional aggregation override. */
+export interface MeasureSel {
+  id: string;
+  agg?: Agg;
+}
+
+/** Coerce legacy persisted metrics (string[]) to the {id, agg?} shape. */
+export function normalizeMetrics(metrics: unknown): MeasureSel[] {
+  if (!Array.isArray(metrics)) return [{ id: 'volume' }];
+  return metrics.map((m) => (typeof m === 'string' ? { id: m } : (m as MeasureSel)));
+}
 
 export type ScopeMode = 'rolling' | 'custom' | 'ytd';
 
@@ -30,7 +43,7 @@ export interface BuilderState {
   filters: Filter[];
   rows: Dimension[];
   cols: Dimension[];
-  metrics: string[]; // metric ids; agg comes from the registry default
+  metrics: MeasureSel[]; // metric id + optional per-measure aggregation override
   compare: MeasureState;
   vizType: VizType;
   /** Row sort (by a measure value-key or natural row order). */
@@ -53,7 +66,7 @@ export function defaultBuilderState(today: string, seed: { athleteIds?: string[]
     filters: [],
     rows: ['week'],
     cols: [],
-    metrics: ['volume'],
+    metrics: [{ id: 'volume' }],
     compare: 'both',
     vizType: 'table',
     comparePrevious: false,
@@ -87,9 +100,9 @@ function scopeFrom(state: BuilderState, today: string): Scope {
 }
 
 export function buildQuery(state: BuilderState, registry: MetricRegistry, today: string): AnalysisQuery {
-  const measures = state.metrics.map((id) => ({
-    metricId: id,
-    agg: registry.get(id)?.defaultAgg ?? 'sum',
+  const measures = state.metrics.map((m) => ({
+    metricId: m.id,
+    agg: m.agg ?? registry.get(m.id)?.defaultAgg ?? 'sum',
     state: state.compare,
   }));
   const seriesIsState = state.compare === 'both';
@@ -117,7 +130,7 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
       // When comparing athletes, prefer athlete as the series; else the
       // planned/performed split (both) or the first column dimension.
       series: hasAthleteDim ? 'athlete' : seriesIsState ? 'state' : state.cols[0],
-      yAxis: state.metrics[0],
+      yAxis: state.metrics[0]?.id,
       overlay: state.comparePrevious
         ? { mode: 'periodOverPeriod', comparePeriod: previousScope(scope, today) }
         : { mode: 'none' },

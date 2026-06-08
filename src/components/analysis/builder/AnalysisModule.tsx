@@ -20,7 +20,7 @@ import { MetricsModal } from './MetricsModal';
 import { SaveViewModal } from './SaveViewModal';
 import { MonitoringView } from './MonitoringView';
 import { useRunQuery } from './useRunQuery';
-import { buildQuery, defaultBuilderState, isMultiSubject, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
+import { buildQuery, defaultBuilderState, isMultiSubject, normalizeMetrics, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
 import type { Normalization, VizType } from '../../../lib/analysis';
 
 const NORM_LABEL: Record<Normalization, string> = {
@@ -191,8 +191,9 @@ export function AnalysisModule() {
                     } else if (v.startsWith('view:')) {
                       const sv = savedViews.find((x) => x.id === v.slice(5));
                       // Merge over defaults so a view saved before a field existed
-                      // (e.g. filters) still loads with sane values.
-                      if (sv) setState({ ...defaultBuilderState(today), ...sv.state });
+                      // (e.g. filters) still loads with sane values; coerce legacy
+                      // string[] metrics to the {id,agg?} shape.
+                      if (sv) setState({ ...defaultBuilderState(today), ...sv.state, metrics: normalizeMetrics(sv.state.metrics) });
                     }
                   }}
                 >
