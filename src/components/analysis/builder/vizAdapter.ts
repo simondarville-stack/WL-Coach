@@ -78,15 +78,16 @@ export function toChartModel(result: AnalysisResult): ChartModel {
     }
   }
 
-  // Densify a weekly time axis to the scope's full week list so the chart has no
-  // gaps and a period-over-period overlay aligns by position (week i ↔ prev
-  // week i) regardless of which weeks were empty-pruned. Union with the actual
-  // rowKeys so a week just outside the nominal window is never dropped.
+  // Densify a weekly time axis to the scope's canonical Monday list so the chart
+  // has no gaps and a period-over-period overlay aligns by position (week i of
+  // this period ↔ week i of the prior period). Use exactly the window's Mondays
+  // (no union with out-of-window data weeks — those would shift index 0 and
+  // misalign the overlay); the table still shows every actual week. This matches
+  // PivotTable's Δ% week list, so chart and table never diverge.
   let rowKeys = result.rowKeys;
   if (rowDims.length === 1 && rowDims[0] === 'week' && result.meta.window) {
-    const dense = new Set(weekStartsBetween(result.meta.window.from, result.meta.window.to));
-    for (const rk of result.rowKeys) dense.add(rk[0]);
-    if (dense.size) rowKeys = [...dense].sort().map((w) => [w]);
+    const weeks = weekStartsBetween(result.meta.window.from, result.meta.window.to);
+    if (weeks.length) rowKeys = weeks.map((w) => [w]);
   }
 
   // One datum per row key.

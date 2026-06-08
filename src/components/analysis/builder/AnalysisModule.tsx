@@ -244,7 +244,7 @@ export function AnalysisModule() {
                       if (sv) {
                         setTouched(true);
                         setState({ ...defaultBuilderState(today), ...sv.state, metrics: normalizeMetrics(sv.state.metrics) });
-                        setSavedViews(touchView(sv.id, new Date().toISOString()));
+                        setSavedViews(touchView(sv.id, toLocalISO(new Date())));
                       }
                     }
                   }}
@@ -360,7 +360,7 @@ export function AnalysisModule() {
         isOpen={saveOpen}
         onClose={() => setSaveOpen(false)}
         views={savedViews}
-        onSave={(name, description) => setSavedViews(saveView(name, state, { description, now: new Date().toISOString() }))}
+        onSave={(name, description) => setSavedViews(saveView(name, state, { description, now: toLocalISO(new Date()) }))}
         onDelete={(id) => setSavedViews(deleteView(id))}
         onSetDefault={(id) => setSavedViews(setDefaultView(id))}
       />

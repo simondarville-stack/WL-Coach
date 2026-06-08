@@ -3,7 +3,7 @@
 // future saved-view loader all produce queries the same way.
 
 import { ANALYSIS_QUERY_VERSION } from '../../../lib/analysis';
-import { isoAddDays } from '../../../lib/dateUtils';
+import { isoAddDays, isoAddWeeks, weekStartsBetween } from '../../../lib/dateUtils';
 import type {
   Agg,
   AnalysisQuery,
@@ -80,10 +80,19 @@ export function previousScope(scope: Scope, today: string): Scope {
     return { mode: 'rolling', windowDays: scope.windowDays, anchor: isoAddDays(anchor, -scope.windowDays) };
   }
   if (scope.mode === 'dateRange') {
-    const a = new Date(scope.from + 'T00:00:00Z').getTime();
-    const b = new Date(scope.to + 'T00:00:00Z').getTime();
-    const span = Math.max(1, Math.round((b - a) / 86400000) + 1);
-    return { mode: 'dateRange', from: isoAddDays(scope.from, -span), to: isoAddDays(scope.from, -1) };
+    // Align the comparison window to whole Mondays so it densifies to the SAME
+    // number of weeks as the base — otherwise raw day-count maths can leave the
+    // prior period one Monday short and the overlay/Δ% shift by a week.
+    const baseMondays = weekStartsBetween(scope.from, scope.to);
+    if (baseMondays.length === 0) {
+      const a = new Date(scope.from + 'T00:00:00Z').getTime();
+      const b = new Date(scope.to + 'T00:00:00Z').getTime();
+      const span = Math.max(1, Math.round((b - a) / 86400000) + 1);
+      return { mode: 'dateRange', from: isoAddDays(scope.from, -span), to: isoAddDays(scope.from, -1) };
+    }
+    const compLastMon = isoAddDays(baseMondays[0], -7); // Monday before the base's first
+    const compFirstMon = isoAddWeeks(compLastMon, -(baseMondays.length - 1));
+    return { mode: 'dateRange', from: compFirstMon, to: isoAddDays(compLastMon, 6) };
   }
   return scope; // macro: a "previous macro" isn't simply derivable — no overlay
 }
