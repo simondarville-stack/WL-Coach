@@ -54,8 +54,21 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
     fontSize: 12,
     fontFamily: 'var(--font-sans)',
   };
-  const fmt = (v: number | string | undefined): string =>
-    typeof v === 'number' ? formatValue(v, model.series[0]?.unit ?? '') : v == null ? '—' : String(v);
+
+  // Measures with different units (e.g. tonnage in kg vs reps) must not share
+  // one axis — the smaller-magnitude series would flatten to zero. Give the
+  // first unit the left axis and any second unit the right axis.
+  const units = [...new Set(model.series.map((s) => s.unit))];
+  const hasSecondAxis = units.length > 1;
+  const axisIdFor = (unit: string): 'left' | 'right' => (unit === units[0] ? 'left' : 'right');
+  const unitByKey: Record<string, string> = Object.fromEntries(model.series.map((s) => [s.key, s.unit]));
+
+  const fmt = (v: number | string | undefined, _name?: unknown, item?: { dataKey?: unknown }): string =>
+    typeof v === 'number'
+      ? formatValue(v, unitByKey[String(item?.dataKey ?? '')] ?? units[0] ?? '')
+      : v == null
+      ? '—'
+      : String(v);
 
   if (type === 'scatter') {
     if (model.series.length < 2) return <Empty label="Scatter needs at least two measures (X and Y)." />;
@@ -102,11 +115,12 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
           <LineChart data={model.data} margin={{ top: 12, right: 24, bottom: 24, left: 8 }}>
             <CartesianGrid stroke="var(--color-border-tertiary)" vertical={false} />
             <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" />
-            <YAxis tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
+            <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
+            {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />}
             <Tooltip contentStyle={tooltipStyle} formatter={fmt} />
             <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
             {model.series.map((s) => (
-              <Line key={s.key} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} strokeDasharray={s.state === 'planned' ? '5 4' : isGhostSeries(s.key) ? '2 3' : undefined} connectNulls />
+              <Line key={s.key} yAxisId={axisIdFor(s.unit)} type="monotone" dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} dot={false} strokeDasharray={s.state === 'planned' ? '5 4' : isGhostSeries(s.key) ? '2 3' : undefined} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -122,11 +136,12 @@ export function ResultChart({ result, type, compare }: ResultChartProps) {
         <BarChart data={model.data} margin={{ top: 12, right: 24, bottom: 24, left: 8 }}>
           <CartesianGrid stroke="var(--color-border-tertiary)" vertical={false} />
           <XAxis dataKey="x" tick={axisTick} stroke="var(--color-border-secondary)" />
-          <YAxis tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
+          <YAxis yAxisId="left" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />
+          {hasSecondAxis && <YAxis yAxisId="right" orientation="right" tick={axisTick} stroke="var(--color-border-secondary)" width={56} />}
           <Tooltip contentStyle={tooltipStyle} formatter={fmt} cursor={{ fill: 'var(--color-accent-muted)' }} />
           <Legend wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-sans)' }} />
           {model.series.map((s) => (
-            <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} fillOpacity={isGhostSeries(s.key) ? 0.4 : 1} stackId={stacked ? 'a' : undefined} radius={stacked ? 0 : [2, 2, 0, 0]} />
+            <Bar key={s.key} yAxisId={axisIdFor(s.unit)} dataKey={s.key} name={s.label} fill={s.color} fillOpacity={isGhostSeries(s.key) ? 0.4 : 1} stackId={stacked ? `stack-${axisIdFor(s.unit)}` : undefined} radius={stacked ? 0 : [2, 2, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
