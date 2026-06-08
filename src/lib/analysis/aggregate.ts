@@ -125,6 +125,11 @@ function matchesFilter(row: FactRow, f: Filter, opts: AggregateOptions): boolean
   }
 }
 
+/** Apply a query's filters to a fact set (for raw drill-through). */
+export function applyFilters(facts: FactRow[], filters: Filter[], options: AggregateOptions = {}): FactRow[] {
+  return filters.length ? facts.filter((row) => filters.every((f) => matchesFilter(row, f, options))) : facts;
+}
+
 // ── base-metric reduction ─────────────────────────────────────────────────────
 
 function reduceBase(metric: BaseMetricDef, facts: FactRow[], agg: Agg): number | null {

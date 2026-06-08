@@ -10,7 +10,7 @@ import { useAthleteStore } from '../../../store/athleteStore';
 import { AthleteCardPicker } from '../../AthleteCardPicker';
 import { Badge, Button, Select, Spinner, ErrorState } from '../../ui';
 import { createRegistry } from '../../../lib/analysis';
-import type { AnalysisQuery, Filter } from '../../../lib/analysis';
+import type { AnalysisQuery, Dimension, Filter } from '../../../lib/analysis';
 import { toLocalISO } from '../../../lib/dateUtils';
 import { ConfigRail } from './ConfigRail';
 import { PivotTable } from './PivotTable';
@@ -107,14 +107,21 @@ export function AnalysisModule() {
   };
 
   const onDrill = (rowKey: string[], colKey: string[]) => {
-    const filters: Filter[] = [];
-    state.rows.forEach((dim, i) => filters.push({ dimension: dim, op: 'in', values: [rowKey[i]] }));
-    state.cols.forEach((dim, i) => filters.push({ dimension: dim, op: 'in', values: [colKey[i]] }));
+    // Use the QUERY's axes (not state.rows/cols) so the auto-injected athlete
+    // column is included — otherwise an athlete cell would drill across all
+    // athletes. Add the cell's values to the base filters; clear sort/topN.
+    const queryRows = query.rows.filter((a): a is Dimension => a !== 'state');
+    const queryCols = query.cols.filter((a): a is Dimension => a !== 'state');
+    const cellFilters: Filter[] = [];
+    queryRows.forEach((dim, i) => cellFilters.push({ dimension: dim, op: 'in', values: [rowKey[i]] }));
+    queryCols.forEach((dim, i) => cellFilters.push({ dimension: dim, op: 'in', values: [colKey[i]] }));
     const drillQuery: AnalysisQuery = {
       ...query,
       rows: ['exercise'],
       cols: [],
-      filters,
+      filters: [...query.filters, ...cellFilters],
+      sort: undefined,
+      topN: undefined,
       viz: { type: 'table' },
     };
     const title = [...rowKey, ...colKey].filter(Boolean).join(' · ') || 'Breakdown';

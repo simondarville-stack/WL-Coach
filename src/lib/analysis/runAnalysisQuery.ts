@@ -6,7 +6,7 @@
 // aggregates (invariant #6). A future swap to SQL views/RPC stays invisible
 // behind this signature.
 
-import { aggregate } from './aggregate';
+import { aggregate, applyFilters } from './aggregate';
 import { fetchFacts } from './factFetch';
 import { defaultRegistry } from './metricRegistry';
 import { validateAnalysisQuery } from './validate';
@@ -39,6 +39,22 @@ export async function runAnalysisQuery(
     athleteBodyweight: fetched.athleteBodyweight,
     dimensionColors: fetched.dimensionColors,
     window: fetched.window,
+  });
+}
+
+/**
+ * Drill-through: the raw, un-aggregated contributions behind a cell. Applies the
+ * query's filters (the cell's row/col values) and returns the FactRows so the
+ * UI can show the actual planned set-lines and performed sets.
+ */
+export async function runAnalysisFacts(input: AnalysisQuery, options: RunOptions = {}): Promise<FactRow[]> {
+  const registry = options.registry ?? defaultRegistry;
+  const { query } = validateAnalysisQuery(input, registry);
+  const fetched = await fetchFacts(query, options.now);
+  return applyFilters(fetched.facts, query.filters, {
+    intensityZones: fetched.intensityZones,
+    athleteLabels: fetched.athleteLabels,
+    groupLabels: fetched.groupLabels,
   });
 }
 
