@@ -2,6 +2,7 @@
 // grouped/scatter/radar). Heatmap is a CSS grid (no new charting dep). The
 // component reads only the chart model from vizAdapter — never raw facts.
 
+import { memo, useMemo } from 'react';
 import {
   ResponsiveContainer,
   LineChart,
@@ -39,13 +40,16 @@ interface ResultChartProps {
 const axisTick = { fontSize: 11, fontFamily: 'var(--font-mono)', fill: 'var(--color-text-tertiary)' };
 const HEIGHT = 440;
 
-export function ResultChart({ result, type, compare, onLimitTopN }: ResultChartProps) {
-  if (type === 'heatmap') return <HeatmapGrid result={result} />;
+export const ResultChart = memo(function ResultChart({ result, type, compare, onLimitTopN }: ResultChartProps) {
+  const model = useMemo(() => {
+    let m = toChartModel(result);
+    if (compare && (type === 'line' || type === 'bar' || type === 'groupedBar' || type === 'stackedBar')) {
+      m = mergeCompare(m, toChartModel(compare));
+    }
+    return m;
+  }, [result, compare, type]);
 
-  let model = toChartModel(result);
-  if (compare && (type === 'line' || type === 'bar' || type === 'groupedBar' || type === 'stackedBar')) {
-    model = mergeCompare(model, toChartModel(compare));
-  }
+  if (type === 'heatmap') return <HeatmapGrid result={result} />;
   if (model.data.length === 0 || model.series.length === 0) {
     return <Empty label="No data to chart in this scope." />;
   }
@@ -172,7 +176,7 @@ export function ResultChart({ result, type, compare, onLimitTopN }: ResultChartP
       </ResponsiveContainer>
     </div>
   );
-}
+});
 
 function Empty({ label }: { label: string }) {
   return (

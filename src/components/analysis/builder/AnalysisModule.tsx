@@ -32,7 +32,7 @@ const NORM_LABEL: Record<Normalization, string> = {
 import { PRESETS } from './presets';
 import { loadCoachMetricSpecs, saveCoachMetricSpecs, specToMetric, type CoachMetricSpec } from './coachMetrics';
 import { loadSavedViews, saveView, deleteView, type SavedView } from './savedViews';
-import { resultToCsv, downloadText, exportChartSvg, triggerPrint } from './exportUtils';
+import { resultToCsv, downloadText, downloadXlsx, copyResultToClipboard, exportChartSvg, triggerPrint } from './exportUtils';
 
 const today = toLocalISO(new Date());
 
@@ -55,6 +55,17 @@ export function AnalysisModule() {
   const [exportOpen, setExportOpen] = useState(false);
   const [mode, setMode] = useState<'build' | 'monitor'>('build');
   const resultRef = useRef<HTMLDivElement>(null);
+  const exportWrapRef = useRef<HTMLDivElement>(null);
+
+  // Close the export menu on outside-click (Escape is handled on the menu).
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (exportWrapRef.current && !exportWrapRef.current.contains(e.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [exportOpen]);
 
   const registry = useMemo(() => createRegistry(coachSpecs.map(specToMetric)), [coachSpecs]);
   const updateSpecs = (next: CoachMetricSpec[]) => {
@@ -222,10 +233,13 @@ export function AnalysisModule() {
                 </Select>
               </div>
               <Button variant="ghost" size="md" icon={<Save size={14} />} onClick={() => setSaveOpen(true)}>Save</Button>
-              <div style={{ position: 'relative' }}>
-                <Button variant="ghost" size="md" icon={<Download size={14} />} onClick={() => setExportOpen((o) => !o)}>Export</Button>
+              <div style={{ position: 'relative' }} ref={exportWrapRef}>
+                <Button variant="ghost" size="md" icon={<Download size={14} />} onClick={() => setExportOpen((o) => !o)} aria-haspopup="menu" aria-expanded={exportOpen}>Export</Button>
                 {exportOpen && (
                   <div
+                    role="menu"
+                    aria-label="Export"
+                    onKeyDown={(e) => { if (e.key === 'Escape') setExportOpen(false); }}
                     style={{
                       position: 'absolute',
                       right: 0,
@@ -235,11 +249,13 @@ export function AnalysisModule() {
                       border: '0.5px solid var(--color-border-secondary)',
                       borderRadius: 'var(--radius-md)',
                       boxShadow: '0 6px 20px rgba(0,0,0,0.10)',
-                      minWidth: 160,
+                      minWidth: 168,
                       padding: 4,
                     }}
                   >
+                    <ExportItem label="Excel (.xlsx)" onClick={() => { if (result) downloadXlsx(result, 'analysis.xlsx'); setExportOpen(false); }} />
                     <ExportItem label="CSV (table)" onClick={() => { if (result) downloadText('analysis.csv', resultToCsv(result), 'text/csv;charset=utf-8'); setExportOpen(false); }} />
+                    <ExportItem label="Copy table" onClick={() => { if (result) void copyResultToClipboard(result); setExportOpen(false); }} />
                     <ExportItem label="Chart SVG" onClick={() => { exportChartSvg(resultRef.current, 'analysis-chart.svg'); setExportOpen(false); }} />
                     <ExportItem label="Print…" onClick={() => { setExportOpen(false); setTimeout(triggerPrint, 100); }} />
                   </div>
