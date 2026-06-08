@@ -298,26 +298,24 @@ export function ConfigRail({ state, set, metrics, athletes, groups, availableVal
         </Section>
       )}
 
-      {state.vizType !== 'table' && (
-        <Section label="Overlay">
-          <button
-            type="button"
-            aria-pressed={state.comparePrevious}
-            onClick={() => set({ comparePrevious: !state.comparePrevious })}
-            className="emos-btn"
-            style={{
-              ...optionRow,
-              width: '100%',
-              background: state.comparePrevious ? 'var(--color-accent-muted)' : 'transparent',
-              color: state.comparePrevious ? 'var(--color-accent-hover)' : 'var(--color-text-secondary)',
-              border: state.comparePrevious ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-tertiary)',
-              transition: 'background var(--transition-base), color var(--transition-base), border-color var(--transition-base)',
-            }}
-          >
-            {state.comparePrevious ? '✓ ' : ''}Previous period (ghost)
-          </button>
-        </Section>
-      )}
+      <Section label="Overlay">
+        <button
+          type="button"
+          aria-pressed={state.comparePrevious}
+          onClick={() => set({ comparePrevious: !state.comparePrevious })}
+          className="emos-btn"
+          style={{
+            ...optionRow,
+            width: '100%',
+            background: state.comparePrevious ? 'var(--color-accent-muted)' : 'transparent',
+            color: state.comparePrevious ? 'var(--color-accent-hover)' : 'var(--color-text-secondary)',
+            border: state.comparePrevious ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-tertiary)',
+            transition: 'background var(--transition-base), color var(--transition-base), border-color var(--transition-base)',
+          }}
+        >
+          {state.comparePrevious ? '✓ ' : ''}Previous period {state.vizType === 'table' ? '(Δ%)' : '(ghost)'}
+        </button>
+      </Section>
     </div>
   );
 }

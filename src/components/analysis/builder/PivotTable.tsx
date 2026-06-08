@@ -7,6 +7,7 @@ import { memo, useMemo } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { EmptyState } from '../../ui';
 import type { AnalysisResult, ResolvedMeasure, SortSpec } from '../../../lib/analysis';
+import { weekStartsBetween } from '../../../lib/dateUtils';
 import { dimLabel } from './dimensions';
 import { formatValue, formatDelta } from './format';
 
@@ -15,6 +16,8 @@ interface PivotTableProps {
   onDrill?: (rowKey: string[], colKey: string[]) => void;
   sort?: SortSpec;
   onSortChange?: (s: SortSpec) => void;
+  /** Previous-period result — renders an in-cell Δ% vs the prior period. */
+  compare?: AnalysisResult | null;
 }
 
 const FACET_TAG: Record<ResolvedMeasure['state'], string> = {
@@ -57,14 +60,14 @@ const thBase: React.CSSProperties = {
 
 type DisplayRow = { kind: 'detail'; rk: string[] } | { kind: 'subtotal'; first: string } | { kind: 'grand' };
 
-function PivotTableImpl({ result, onDrill, sort, onSortChange }: PivotTableProps) {
+function PivotTableImpl({ result, onDrill, sort, onSortChange, compare }: PivotTableProps) {
   const measures = result.measures;
   const colDims = result.colDimensions.filter((a) => a !== 'state');
   const rowDims = result.rowDimensions.filter((a) => a !== 'state');
   const hasCols = colDims.length > 0;
   const colKeys = hasCols ? result.colKeys : [[]];
 
-  const { lookup, subLookup, grandLookup, colMax } = useMemo(() => {
+  const { lookup, subLookup, grandLookup, colMax, deltaPct } = useMemo(() => {
     const lookup = new Map<string, Record<string, number | null>>();
     for (const rec of result.records) lookup.set(JSON.stringify([rec.row, rec.col]), rec.values);
     const subLookup = new Map<string, Record<string, number | null>>();
@@ -81,8 +84,36 @@ function PivotTableImpl({ result, onDrill, sort, onSortChange }: PivotTableProps
         colMax.set(k, Math.max(colMax.get(k) ?? 0, Math.abs(v)));
       }
     }
-    return { lookup, subLookup, grandLookup, colMax };
-  }, [result]);
+
+    // Previous-period alignment for the in-cell Δ%. Time rows align by ordinal
+    // position (week i ↔ prev week i); other rows align by matching key.
+    const prevLookup = new Map<string, Record<string, number | null>>();
+    let curWeeks: string[] = [];
+    let prevWeeks: string[] = [];
+    const rDims = result.rowDimensions.filter((a) => a !== 'state');
+    const timeRow = rDims.length === 1 && rDims[0] === 'week';
+    if (compare) {
+      for (const rec of compare.records) prevLookup.set(JSON.stringify([rec.row, rec.col]), rec.values);
+      if (timeRow && result.meta.window && compare.meta.window) {
+        curWeeks = weekStartsBetween(result.meta.window.from, result.meta.window.to);
+        prevWeeks = weekStartsBetween(compare.meta.window.from, compare.meta.window.to);
+      }
+    }
+    const deltaPct = (rk: string[], colKey: string[], key: string, cur: number | null): number | null => {
+      if (!compare || cur == null) return null;
+      let prevRow = rk;
+      if (curWeeks.length) {
+        const i = curWeeks.indexOf(rk[0]);
+        if (i < 0 || i >= prevWeeks.length) return null;
+        prevRow = [prevWeeks[i]];
+      }
+      const prev = prevLookup.get(JSON.stringify([prevRow, colKey]))?.[key];
+      if (prev == null || prev === 0) return null;
+      return ((cur - prev) / prev) * 100;
+    };
+
+    return { lookup, subLookup, grandLookup, colMax, deltaPct };
+  }, [result, compare]);
 
   if (measures.length === 0) return <EmptyState message="Add at least one measure to see results." />;
   if (result.rowKeys.length === 0) return <EmptyState message="No data in this scope for the selected subjects." />;
@@ -179,6 +210,7 @@ function PivotTableImpl({ result, onDrill, sort, onSortChange }: PivotTableProps
                   {leaves.map(({ colKey, measure }, i) => {
                     const value = lookup.get(JSON.stringify([dr.rk, colKey]))?.[measure.key] ?? null;
                     const max = colMax.get(JSON.stringify([colKey, measure.key])) ?? 0;
+                    const dpct = compare && (measure.state === 'planned' || measure.state === 'performed') ? deltaPct(dr.rk, colKey, measure.key, value) : null;
                     return (
                       <td
                         key={i}
@@ -187,6 +219,11 @@ function PivotTableImpl({ result, onDrill, sort, onSortChange }: PivotTableProps
                         title={onDrill ? 'Drill into this cell' : undefined}
                       >
                         {cellText(value, measure)}
+                        {dpct != null && (
+                          <div style={{ fontSize: 9, fontWeight: 400, color: deltaColor(dpct) }}>
+                            {dpct > 0 ? '+' : ''}{dpct.toLocaleString('de-DE', { maximumFractionDigits: 0 })}%
+                          </div>
+                        )}
                       </td>
                     );
                   })}

@@ -105,7 +105,7 @@ export function AnalysisModule() {
     () => ({ ...query, scope: previousScope(query.scope, today), viz: { ...query.viz, overlay: { mode: 'none' } } }),
     [query],
   );
-  const { result: compareResult } = useRunQuery(compareQuery, state.comparePrevious && hasSubject && state.vizType !== 'table');
+  const { result: compareResult } = useRunQuery(compareQuery, state.comparePrevious && hasSubject);
 
   const set = (patch: Partial<BuilderState>) => {
     setTouched(true);
@@ -326,7 +326,7 @@ export function AnalysisModule() {
             {!result && !error && loading && <ResultSkeleton />}
             {result &&
               (state.vizType === 'table' ? (
-                <PivotTable result={result} onDrill={onDrill} sort={state.sort} onSortChange={(s) => set({ sort: s })} />
+                <PivotTable result={result} onDrill={onDrill} sort={state.sort} onSortChange={(s) => set({ sort: s })} compare={state.comparePrevious ? compareResult : null} />
               ) : (
                 <ResultChart result={result} type={state.vizType} compare={state.comparePrevious ? compareResult : null} onLimitTopN={onLimitTopN} />
               ))}
