@@ -37,6 +37,7 @@ export async function runAnalysisQuery(
     athleteLabels: fetched.athleteLabels,
     groupLabels: fetched.groupLabels,
     athleteBodyweight: fetched.athleteBodyweight,
+    dimensionColors: fetched.dimensionColors,
   });
 }
 

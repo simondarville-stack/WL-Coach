@@ -140,6 +140,8 @@ export function validateAnalysisQuery(
       rows,
       cols,
       measures,
+      sort: input.sort,
+      topN: input.topN,
       viz,
     },
     warnings,

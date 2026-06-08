@@ -106,7 +106,26 @@ export interface AnalysisQuery {
   rows: PivotAxis[];
   cols: PivotAxis[];
   measures: Measure[];
+  /** Sort rows by a measure value-key (e.g. `volume::performed`) or `'__row__'`
+   *  for natural row-key order. Ranking is computed from facts, not cells. */
+  sort?: SortSpec;
+  /** Keep only the top/bottom N values of a dimension, ranked by a measure. */
+  topN?: TopNSpec;
   viz: Viz;
+}
+
+export interface SortSpec {
+  /** A measure value-key, or `'__row__'` for natural row-label order. */
+  key: string;
+  dir: 'asc' | 'desc';
+}
+
+export interface TopNSpec {
+  dimension: Dimension;
+  /** Measure value-key to rank by. */
+  measureKey: string;
+  n: number;
+  dir: 'asc' | 'desc';
 }
 
 export const ANALYSIS_QUERY_VERSION = 1;
@@ -204,6 +223,9 @@ export interface AnalysisMeta {
   /** Distinct values per filterable dimension (over the unfiltered fact set),
    *  so the builder can offer real filter choices. Capped per dimension. */
   availableValues: Record<string, string[]>;
+  /** Coach-assigned colour per dimension value (label → hex), for chart series
+   *  and in-table dots. Data-driven colour (CLAUDE.md sanctioned). */
+  dimensionColors?: Record<string, Record<string, string>>;
   /** Non-fatal notes for the UI (e.g. "12 % loads excluded from tonnage"). */
   notes: string[];
 }
@@ -218,6 +240,11 @@ export interface AnalysisResult {
   /** Ordered distinct col-axis tuples. */
   colKeys: string[][];
   records: ResultRecord[];
+  /** Subtotal rows (first row-dimension prefix) when ≥2 row dimensions; one per
+   *  prefix × colKey. Recomputed from facts — never sum displayed cells. */
+  subtotals: ResultRecord[];
+  /** Grand-total row(s): one per colKey, recomputed from all facts. */
+  grandTotal: ResultRecord[];
   meta: AnalysisMeta;
 }
 
@@ -298,4 +325,6 @@ export interface AggregateOptions {
   groupLabels?: Record<string, string>;
   /** athlete display-name → bodyweight (kg), for perBodyweight normalization. */
   athleteBodyweight?: Record<string, number>;
+  /** dimension → (value label → hex) coach-assigned colours; flows to meta. */
+  dimensionColors?: Record<string, Record<string, string>>;
 }

@@ -18,6 +18,7 @@ import type { BuildFactsInput, MacroContext, RawExercise } from '../factFetch';
 function ex(over: Partial<RawExercise> & { id: string; name: string }): RawExercise {
   return {
     category: 'Snatch',
+    color: null,
     lift_slot: null,
     is_competition_lift: false,
     counts_towards_totals: true,
@@ -399,6 +400,45 @@ describe('normalization (multi-athlete comparison)', () => {
     q.cols = [];
     const r = analyzeFacts(facts, q);
     expect(r.meta.notes.join(' ')).toMatch(/needs Athlete/i);
+  });
+});
+
+describe('aggregate — totals, sort, Top-N', () => {
+  it('computes a grand total recomputed from facts', () => {
+    const facts = buildFacts(baseInput());
+    const result = analyzeFacts(facts, weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]));
+    expect(result.grandTotal.length).toBe(1);
+    expect(result.grandTotal[0].values['volume::performed']).toBe(2436); // 720 + 1500 + 216
+  });
+
+  it('sorts rows by a measure value (descending)', () => {
+    const facts = buildFacts(baseInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]);
+    q.rows = ['exercise'];
+    q.sort = { key: 'volume::performed', dir: 'desc' };
+    const result = analyzeFacts(facts, q);
+    expect(result.rowKeys[0][0]).toBe('Back Squat'); // 1500, the largest
+  });
+
+  it('keeps only the Top-N rows by a measure', () => {
+    const facts = buildFacts(baseInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]);
+    q.rows = ['exercise'];
+    q.topN = { dimension: 'exercise', measureKey: 'volume::performed', n: 1, dir: 'desc' };
+    const result = analyzeFacts(facts, q);
+    expect(result.rowKeys).toHaveLength(1);
+    expect(result.rowKeys[0][0]).toBe('Back Squat');
+    expect(result.meta.notes.join(' ')).toMatch(/top 1 of/i);
+  });
+
+  it('emits subtotals when there are two row dimensions', () => {
+    const facts = buildFacts(baseInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]);
+    q.rows = ['category', 'exercise'];
+    const result = analyzeFacts(facts, q);
+    // one subtotal per distinct category (prefix length 1)
+    expect(result.subtotals.length).toBeGreaterThan(0);
+    expect(result.subtotals.every((s) => s.row.length === 1)).toBe(true);
   });
 });
 

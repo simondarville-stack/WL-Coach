@@ -110,6 +110,7 @@ function dimNumber(row: FactRow, dim: Dimension): number | null {
 function matchesFilter(row: FactRow, f: Filter, opts: AggregateOptions): boolean {
   switch (f.op) {
     case 'in': {
+      if (f.values.length === 0) return true; // empty = no constraint (defensive)
       const vals = dimValues(row, f.dimension, opts);
       return vals.some((v) => f.values.includes(v));
     }
@@ -351,6 +352,48 @@ interface Bucket {
   performed: FactRow[];
 }
 
+const SEP = ''; // axis-value join (control char — never appears in labels)
+const AXIS_SEP = ' '; // row/col separator
+
+/** Group facts into (row × col) buckets. Reused for the main grid, subtotals,
+ *  grand total, and ranking — always recomputed from facts. */
+function bucketFacts(facts: FactRow[], rowDims: Dimension[], colDims: Dimension[], options: AggregateOptions): Bucket[] {
+  const map = new Map<string, Bucket>();
+  for (const row of facts) {
+    for (const rc of axisCombos(row, rowDims, options)) {
+      for (const cc of axisCombos(row, colDims, options)) {
+        const key = rc.join(SEP) + AXIS_SEP + cc.join(SEP);
+        let b = map.get(key);
+        if (!b) {
+          b = { row: rc, col: cc, planned: [], performed: [] };
+          map.set(key, b);
+        }
+        (row.state === 'planned' ? b.planned : b.performed).push(row);
+      }
+    }
+  }
+  return [...map.values()];
+}
+
+function recordsFrom(buckets: Bucket[], query: AnalysisQuery, registry: MetricRegistry, prune: boolean): ResultRecord[] {
+  const out: ResultRecord[] = [];
+  for (const b of buckets) {
+    const values = computeMeasureValues(query, registry, b.planned, b.performed);
+    if (prune && Object.values(values).every((v) => v == null)) continue;
+    out.push({ row: b.row, col: b.col, values });
+  }
+  return out;
+}
+
+function distinctTuples(records: ResultRecord[], pick: (r: ResultRecord) => string[]): string[][] {
+  const m = new Map<string, string[]>();
+  for (const r of records) {
+    const t = pick(r);
+    m.set(t.join(SEP), t);
+  }
+  return [...m.values()];
+}
+
 export function aggregate(
   facts: FactRow[],
   query: AnalysisQuery,
@@ -362,53 +405,65 @@ export function aggregate(
   const rowDims = query.rows.filter((a): a is Dimension => a !== 'state');
   const colDims = query.cols.filter((a): a is Dimension => a !== 'state');
 
-  const filtered = query.filters.length
+  let filtered = query.filters.length
     ? facts.filter((row) => query.filters.every((f) => matchesFilter(row, f, options)))
     : facts;
 
-  const buckets = new Map<string, Bucket>();
   let unresolvedPct = 0;
   let plannedCount = 0;
   let performedCount = 0;
-
   for (const row of filtered) {
     if (row.state === 'planned') plannedCount += 1;
     else performedCount += 1;
     if (row.loadIsPct && row.countsTowardsTotals) unresolvedPct += 1;
+  }
 
-    const rowCombos = axisCombos(row, rowDims, options);
-    const colCombos = axisCombos(row, colDims, options);
-    for (const rc of rowCombos) {
-      for (const cc of colCombos) {
-        const key = JSON.stringify([rc, cc]);
-        let b = buckets.get(key);
-        if (!b) {
-          b = { row: rc, col: cc, planned: [], performed: [] };
-          buckets.set(key, b);
-        }
-        (row.state === 'planned' ? b.planned : b.performed).push(row);
-      }
+  // Top-N: rank the chosen dimension's values by a measure (from facts) and keep
+  // the top/bottom N, pre-filtering so totals stay consistent with what's shown.
+  let topNNote: string | null = null;
+  if (query.topN && query.topN.n > 0) {
+    const { dimension, measureKey, n, dir } = query.topN;
+    const ranked = recordsFrom(bucketFacts(filtered, [dimension], [], options), query, registry, false);
+    const sgn = dir === 'asc' ? 1 : -1;
+    ranked.sort((a, b) => sgn * ((a.values[measureKey] ?? -Infinity) - (b.values[measureKey] ?? -Infinity)));
+    if (ranked.length > n) {
+      const keep = new Set(ranked.slice(0, n).map((r) => r.row[0]));
+      filtered = filtered.filter((row) => dimValues(row, dimension, options).some((v) => keep.has(v)));
+      topNNote = `Showing ${dir === 'asc' ? 'bottom' : 'top'} ${n} of ${ranked.length} by ${measureKey.split('::')[0]}.`;
     }
   }
 
-  const records: ResultRecord[] = [];
-  const rowKeySet = new Map<string, string[]>();
-  const colKeySet = new Map<string, string[]>();
-  for (const b of buckets.values()) {
-    const values = computeMeasureValues(query, registry, b.planned, b.performed);
-    // Prune fully-empty buckets — e.g. an exercise that counts towards no total
-    // and so contributes to no selected measure (avoids noise rows like an
-    // "Accessory" category in a tonnage pivot).
-    if (Object.values(values).every((v) => v == null)) continue;
-    records.push({ row: b.row, col: b.col, values });
-    rowKeySet.set(JSON.stringify(b.row), b.row);
-    colKeySet.set(JSON.stringify(b.col), b.col);
+  const resolved = resolveMeasures(query, registry);
+  let records = recordsFrom(bucketFacts(filtered, rowDims, colDims, options), query, registry, true);
+  let rowKeys = distinctTuples(records, (r) => r.row);
+  const colKeys = distinctTuples(records, (r) => r.col).sort(naturalCompare);
+
+  // Sort rows: by a measure (ranked from facts via row-only totals) or natural.
+  const sort = query.sort;
+  if (sort && sort.key !== '__row__' && rowDims.length) {
+    const totals = new Map<string, Record<string, number | null>>();
+    for (const r of recordsFrom(bucketFacts(filtered, rowDims, [], options), query, registry, false)) {
+      totals.set(r.row.join(SEP), r.values);
+    }
+    const sgn = sort.dir === 'asc' ? 1 : -1;
+    rowKeys.sort((a, b) => {
+      const va = totals.get(a.join(SEP))?.[sort.key];
+      const vb = totals.get(b.join(SEP))?.[sort.key];
+      if (va == null && vb == null) return naturalCompare(a, b);
+      if (va == null) return 1; // nulls last
+      if (vb == null) return -1;
+      return va !== vb ? sgn * (va - vb) : naturalCompare(a, b);
+    });
+  } else {
+    rowKeys.sort(naturalCompare);
+    if (sort?.key === '__row__' && sort.dir === 'desc') rowKeys.reverse();
   }
 
-  const rowKeys = [...rowKeySet.values()].sort(naturalCompare);
-  const colKeys = [...colKeySet.values()].sort(naturalCompare);
+  // Subtotals (first row-dim prefix when ≥2 row dims) + grand total — recomputed
+  // from facts so non-additive aggregates (max/avg/distinct/adherence) stay correct.
+  const subtotals = rowDims.length >= 2 ? recordsFrom(bucketFacts(filtered, [rowDims[0]], colDims, options), query, registry, false) : [];
+  const grandTotal = records.length ? recordsFrom(bucketFacts(filtered, [], colDims, options), query, registry, false) : [];
 
-  const resolved = resolveMeasures(query, registry);
   const { records: finalRecords, note: normNote } = applyNormalization(
     records,
     rowDims,
@@ -441,6 +496,7 @@ export function aggregate(
     );
   }
   if (normNote) notes.push(normNote);
+  if (topNNote) notes.push(topNNote);
 
   return {
     query,
@@ -450,6 +506,8 @@ export function aggregate(
     rowKeys,
     colKeys,
     records: finalRecords,
+    subtotals,
+    grandTotal,
     meta: {
       factCount: filtered.length,
       plannedFactCount: plannedCount,
@@ -458,6 +516,7 @@ export function aggregate(
       athleteIds,
       normalization: query.subjects.normalization,
       availableValues,
+      dimensionColors: options.dimensionColors,
       notes,
     },
   };

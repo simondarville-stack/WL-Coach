@@ -22,7 +22,7 @@
 
 import { supabase } from '../supabase';
 import { getOwnerId } from '../ownerContext';
-import { isoMonday, snapToMonday } from '../dateUtils';
+import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
 import { parsePrescription, parseComboPrescription } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
 import { resolveScopeWindow, type ResolvedScope } from './scopeResolver';
@@ -34,6 +34,7 @@ export interface RawExercise {
   id: string;
   name: string;
   category: string;
+  color: string | null;
   lift_slot: string | null;
   is_competition_lift: boolean;
   counts_towards_totals: boolean;
@@ -512,6 +513,7 @@ export interface FetchFactsResult {
   groupLabels: Record<string, string>;
   athleteBodyweight: Record<string, number>;
   intensityZones: Array<{ zone: string; min: number; max: number }> | undefined;
+  dimensionColors: Record<string, Record<string, string>>;
 }
 
 export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<FetchFactsResult> {
@@ -560,6 +562,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     groupLabels: {},
     athleteBodyweight: {},
     intensityZones: undefined,
+    dimensionColors: {},
   };
   if (athleteIds.length === 0) return empty;
 
@@ -605,10 +608,24 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   // 5. Exercises (host-owned) + PR bests.
   const { data: exRows } = await supabase
     .from('exercises')
-    .select('id, name, category, lift_slot, is_competition_lift, counts_towards_totals, default_unit, pr_reference_exercise_id')
+    .select('id, name, category, color, lift_slot, is_competition_lift, counts_towards_totals, default_unit, pr_reference_exercise_id')
     .in('owner_id', hostOwners);
   const exercisesById: Record<string, RawExercise> = {};
-  for (const e of (exRows ?? []) as RawExercise[]) exercisesById[e.id] = e;
+  const exerciseColors: Record<string, string> = {}; // name → colour (for chart series)
+  for (const e of (exRows ?? []) as RawExercise[]) {
+    exercisesById[e.id] = e;
+    if (e.color) exerciseColors[e.name] = e.color;
+  }
+
+  // Category colours (per-coach `categories` table).
+  const categoryColors: Record<string, string> = {};
+  const { data: catRows } = await supabase
+    .from('categories')
+    .select('name, color')
+    .in('owner_id', hostOwners);
+  for (const c of (catRows ?? []) as Array<{ name: string; color: string | null }>) {
+    if (c.color) categoryColors[c.name] = c.color;
+  }
 
   const { data: prRows } = await supabase
     .from('athlete_prs')
@@ -637,18 +654,22 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
 
   const macroWeekByCycleStart = new Map<string, { week_number: number; week_type: string; week_type_text: string; phase_id: string | null }>();
   const phaseById = new Map<string, { name: string }>();
+  const phaseColors: Record<string, string> = {}; // phase name → colour
   if (cycleIds.length > 0) {
     const [{ data: mwRows }, { data: phaseRows }] = await Promise.all([
       supabase
         .from('macro_weeks')
         .select('macrocycle_id, week_start, week_number, week_type, week_type_text, phase_id')
         .in('macrocycle_id', cycleIds),
-      supabase.from('macro_phases').select('id, name').in('macrocycle_id', cycleIds),
+      supabase.from('macro_phases').select('id, name, color').in('macrocycle_id', cycleIds),
     ]);
     for (const mw of (mwRows ?? []) as Array<{ macrocycle_id: string; week_start: string; week_number: number; week_type: string; week_type_text: string; phase_id: string | null }>) {
       macroWeekByCycleStart.set(`${mw.macrocycle_id}:${snapToMonday(mw.week_start)}`, mw);
     }
-    for (const p of (phaseRows ?? []) as Array<{ id: string; name: string }>) phaseById.set(p.id, p);
+    for (const p of (phaseRows ?? []) as Array<{ id: string; name: string; color: string | null }>) {
+      phaseById.set(p.id, p);
+      if (p.color && p.name) phaseColors[p.name] = p.color;
+    }
   }
 
   // Per-athlete cycles: individual macro + any group macro for the athlete's groups.
@@ -682,8 +703,10 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     .select('id, week_start, athlete_id, owner_id, day_schedule')
     .in('owner_id', hostOwners)
     .in('athlete_id', athleteIds)
-    .gte('week_start', isoMonday(window.from))
-    .lte('week_start', window.to);
+    // Widen by 3 days each side: a week_start stored off-by-a-few-days (legacy
+    // DST corruption) snaps back into range, and the snap radius is covered.
+    .gte('week_start', isoAddDays(isoMonday(window.from), -3))
+    .lte('week_start', isoAddDays(window.to, 3));
   const weekPlans = (wpRows ?? []) as RawWeekPlan[];
   const weekPlanIds = weekPlans.map((w) => w.id);
 
@@ -742,13 +765,33 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     }
   }
 
-  // 9. Intensity-zone config (host owner's general_settings).
+  // 9. Intensity-zone config + week-type colours (host owner's general_settings).
   const { data: gsRows } = await supabase
     .from('general_settings')
-    .select('owner_id, intensity_zones')
+    .select('owner_id, intensity_zones, week_types')
     .in('owner_id', hostOwners);
-  const gs = (gsRows ?? []) as Array<{ owner_id: string; intensity_zones: Array<{ zone: string; min: number; max: number }> | null }>;
+  const gs = (gsRows ?? []) as Array<{
+    owner_id: string;
+    intensity_zones: Array<{ zone: string; min: number; max: number }> | null;
+    week_types: Array<{ name: string; abbreviation: string; color: string }> | null;
+  }>;
   const intensityZones = gs.find((g) => g.intensity_zones)?.intensity_zones ?? undefined;
+  const weekTypeColors: Record<string, string> = {};
+  for (const wt of gs.find((g) => g.week_types)?.week_types ?? []) {
+    if (wt.color) {
+      // macroContext exposes weekType as week_type_text||abbreviation, so key both.
+      if (wt.name) weekTypeColors[wt.name] = wt.color;
+      if (wt.abbreviation) weekTypeColors[wt.abbreviation] = wt.color;
+    }
+  }
+
+  // Coach-assigned colours per dimension value (data-driven; CLAUDE.md sanctioned).
+  const dimensionColors: Record<string, Record<string, string>> = {
+    exercise: exerciseColors,
+    category: categoryColors,
+    meso: phaseColors,
+    weekType: weekTypeColors,
+  };
 
   const facts = buildFacts({
     athleteIds,
@@ -767,5 +810,5 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     macroContext,
   });
 
-  return { facts, window, athleteLabels: athleteNameById, groupLabels, athleteBodyweight, intensityZones };
+  return { facts, window, athleteLabels: athleteNameById, groupLabels, athleteBodyweight, intensityZones, dimensionColors };
 }
