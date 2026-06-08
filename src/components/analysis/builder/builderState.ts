@@ -106,8 +106,18 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
     state: state.compare,
   }));
   const seriesIsState = state.compare === 'both';
-  const hasAthleteDim = state.rows.includes('athlete') || state.cols.includes('athlete');
   const scope = scopeFrom(state, today);
+
+  // Multiple subjects must be shown SIDE BY SIDE, never summed — adding two
+  // athletes' tonnage into one number is meaningless in a training context.
+  // If the coach hasn't already split by athlete (or aggregated by group),
+  // auto-add `athlete` as a column so each athlete is its own series/column.
+  const multiSubject = state.athleteIds.length > 1 || state.groupIds.length > 0;
+  const athleteAlready = state.rows.includes('athlete') || state.cols.includes('athlete');
+  const groupAlready = state.rows.includes('group') || state.cols.includes('group');
+  const cols: Dimension[] = multiSubject && !athleteAlready && !groupAlready ? [...state.cols, 'athlete'] : state.cols;
+  const hasAthleteDim = state.rows.includes('athlete') || cols.includes('athlete');
+
   return {
     version: ANALYSIS_QUERY_VERSION,
     scope,
@@ -120,7 +130,7 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
     // `?? []` guards a saved view persisted before filters existed.
     filters: (state.filters ?? []).filter((f) => !(f.op === 'in' && f.values.length === 0)),
     rows: state.rows,
-    cols: state.cols,
+    cols,
     measures,
     sort: state.sort,
     topN: state.topN,

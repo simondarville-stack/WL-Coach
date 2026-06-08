@@ -150,7 +150,7 @@ export function ConfigRail({ state, set, metrics, athletes, groups, availableVal
         </Select>
         {multi && (
           <p style={hint}>
-            Comparing multiple athletes — add <strong>Athlete</strong> as a row/column to split them, and normalize below.
+            Athletes are shown <strong>side by side</strong> automatically — their loads are never summed. Use <strong>Normalize</strong> below for a fair cross-athlete comparison.
           </p>
         )}
       </Section>
