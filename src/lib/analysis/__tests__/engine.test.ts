@@ -442,6 +442,47 @@ describe('aggregate — totals, sort, Top-N', () => {
   });
 });
 
+describe('aggregate — filters & availableValues', () => {
+  it('in-filter keeps only matching dimension values', () => {
+    const facts = buildFacts(baseInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]);
+    q.rows = ['exercise'];
+    q.filters = [{ dimension: 'exercise', op: 'in', values: ['Back Squat'] }];
+    const r = analyzeFacts(facts, q);
+    expect(r.rowKeys).toHaveLength(1);
+    expect(r.rowKeys[0][0]).toBe('Back Squat');
+  });
+
+  it('empty in-filter imposes no constraint', () => {
+    const facts = buildFacts(baseInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]);
+    q.rows = ['exercise'];
+    q.filters = [{ dimension: 'exercise', op: 'in', values: [] }];
+    const r = analyzeFacts(facts, q);
+    expect(r.rowKeys.length).toBe(3); // Snatch, Back Squat, C&J performed
+  });
+
+  it('between-filter on a numeric dimension narrows the range', () => {
+    const facts = buildFacts(baseInput());
+    const planTotal = (filters: AnalysisQuery['filters']) => {
+      const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'planned' }]);
+      q.rows = [];
+      q.filters = filters;
+      return analyzeFacts(facts, q).records[0]?.values['volume::planned'];
+    };
+    // Snatch 720 (80%×9 via PR) + Back Squat 1500 + C&J 216 (90%×2 via PR); Accessory excluded (counts_towards_totals=false)
+    expect(planTotal([])).toBe(2436);
+    expect(planTotal([{ dimension: 'day', op: 'between', min: 1, max: 1 }])).toBe(2220); // day 1: Snatch 720 + Back Squat 1500
+  });
+
+  it('exposes availableValues per filterable dimension', () => {
+    const facts = buildFacts(baseInput());
+    const r = analyzeFacts(facts, weekQuery([{ metricId: 'volume', agg: 'sum', state: 'performed' }]));
+    expect(r.meta.availableValues.exercise).toContain('Back Squat');
+    expect(r.meta.availableValues.exercise.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe('monitoring — ACWR & Foster monotony', () => {
   // 28 days at load 100 then 7 days at load 200 (a spike).
   const series = Array.from({ length: 35 }, (_, i) => {

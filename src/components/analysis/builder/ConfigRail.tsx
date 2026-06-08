@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
 import { Select, SegmentedControl } from '../../ui';
 import type { Agg, Dimension, Filter, MeasureState, MetricDef, Normalization, VizType } from '../../../lib/analysis';
 import { DIMENSIONS, dimLabel } from './dimensions';
@@ -324,13 +324,31 @@ export function ConfigRail({ state, set, metrics, athletes, groups, availableVal
 
 // ── building blocks ────────────────────────────────────────────────────────
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({ label, children, defaultOpen = true }: { label: string; children: ReactNode; defaultOpen?: boolean }) {
+  const storeKey = `emos.analysis.section.${label}`;
+  const [open, setOpen] = useState(() => {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(storeKey) : null;
+    return v == null ? defaultOpen : v === '1';
+  });
+  const toggle = () => {
+    setOpen((o) => {
+      const next = !o;
+      try { localStorage.setItem(storeKey, next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  };
   return (
     <div>
-      <div style={{ fontSize: 'var(--text-caption)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-tertiary)', marginBottom: 8, fontWeight: 500 }}>
-        {label}
-      </div>
-      {children}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', background: 'none', border: 'none', padding: 0, marginBottom: open ? 8 : 0, cursor: 'pointer' }}
+      >
+        <span style={{ fontSize: 'var(--text-caption)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>{label}</span>
+        <ChevronDown size={12} style={{ color: 'var(--color-text-tertiary)', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform var(--transition-base)' }} />
+      </button>
+      {open && children}
     </div>
   );
 }

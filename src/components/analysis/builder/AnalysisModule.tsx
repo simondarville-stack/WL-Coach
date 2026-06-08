@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { SlidersHorizontal, Save, Download } from 'lucide-react';
 import { useAthleteStore } from '../../../store/athleteStore';
 import { AthleteCardPicker } from '../../AthleteCardPicker';
-import { Badge, Button, Select, Spinner } from '../../ui';
+import { Badge, Button, Select, Spinner, ErrorState } from '../../ui';
 import { createRegistry } from '../../../lib/analysis';
 import type { AnalysisQuery, Filter } from '../../../lib/analysis';
 import { toLocalISO } from '../../../lib/dateUtils';
@@ -152,8 +152,8 @@ export function AnalysisModule() {
           overflow: 'hidden',
         }}
       >
-        {/* left: config */}
-        <ConfigRail state={state} set={set} metrics={registry.list()} athletes={athletes} groups={groups} availableValues={result?.meta.availableValues ?? {}} vizOptions={VIZ_OPTIONS} />
+        {/* left: config — hide the `stress` placeholder until a model exists (always null today) */}
+        <ConfigRail state={state} set={set} metrics={registry.list().filter((m) => m.id !== 'stress')} athletes={athletes} groups={groups} availableValues={result?.meta.availableValues ?? {}} vizOptions={VIZ_OPTIONS} />
 
         {/* centre: results */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -271,11 +271,8 @@ export function AnalysisModule() {
             <MonitoringView baseQuery={query} enabled={hasSubject} />
           ) : (
           <div ref={resultRef} className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
-            {error && (
-              <div style={{ color: 'var(--color-danger-text)', fontSize: 'var(--text-label)', padding: 'var(--space-md)' }}>
-                {error}
-              </div>
-            )}
+            {error && <ErrorState message={error} />}
+            {!result && !error && loading && <ResultSkeleton />}
             {result &&
               (state.vizType === 'table' ? (
                 <PivotTable result={result} onDrill={onDrill} sort={state.sort} onSortChange={(s) => set({ sort: s })} />
@@ -322,6 +319,18 @@ export function AnalysisModule() {
         .analysis-print-area, .analysis-print-area * { visibility: visible !important; }
         .analysis-print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; overflow: visible !important; }
       }`}</style>
+    </div>
+  );
+}
+
+/** Monochrome shimmer placeholder shown on first load (no layout jump, no spinner-only blank). */
+function ResultSkeleton() {
+  const widths = ['100%', '92%', '96%', '84%', '90%', '78%', '88%'];
+  return (
+    <div aria-hidden style={{ padding: 'var(--space-sm)' }}>
+      {widths.map((w, i) => (
+        <div key={i} className="animate-pulse" style={{ height: 28, width: w, background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)', marginBottom: 8 }} />
+      ))}
     </div>
   );
 }
