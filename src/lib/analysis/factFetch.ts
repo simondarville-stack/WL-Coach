@@ -574,11 +574,21 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   const athletes = (athleteRows ?? []) as Array<{ id: string; name: string; owner_id: string; bodyweight: number | null }>;
   const hostOwnerByAthlete: Record<string, string> = {};
   const athleteNameById: Record<string, string> = {};
-  const athleteBodyweight: Record<string, number> = {}; // keyed by display name (grouping value)
+  const athleteBodyweight: Record<string, number> = {}; // keyed by (unique) display label
+  // Disambiguate identical names so two athletes never merge into one dimension
+  // value, and bodyweight keyed by label stays 1:1 (same-name collision fix).
+  const nameCounts: Record<string, number> = {};
+  for (const a of athletes) nameCounts[a.name] = (nameCounts[a.name] ?? 0) + 1;
+  const dupSeen: Record<string, number> = {};
   for (const a of athletes) {
     hostOwnerByAthlete[a.id] = a.owner_id;
-    athleteNameById[a.id] = a.name;
-    if (a.bodyweight) athleteBodyweight[a.name] = a.bodyweight;
+    let label = a.name;
+    if (nameCounts[a.name] > 1) {
+      dupSeen[a.name] = (dupSeen[a.name] ?? 0) + 1;
+      label = `${a.name} (${dupSeen[a.name]})`;
+    }
+    athleteNameById[a.id] = label;
+    if (a.bodyweight) athleteBodyweight[label] = a.bodyweight;
   }
   const fallbackOwner = getOwnerId();
   for (const id of athleteIds) if (!hostOwnerByAthlete[id]) hostOwnerByAthlete[id] = fallbackOwner;

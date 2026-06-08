@@ -226,6 +226,8 @@ export interface AnalysisMeta {
   /** Coach-assigned colour per dimension value (label → hex), for chart series
    *  and in-table dots. Data-driven colour (CLAUDE.md sanctioned). */
   dimensionColors?: Record<string, Record<string, string>>;
+  /** The resolved date window of this result (for densifying a time axis). */
+  window?: { from: string; to: string };
   /** Non-fatal notes for the UI (e.g. "12 % loads excluded from tonnage"). */
   notes: string[];
 }
@@ -327,4 +329,6 @@ export interface AggregateOptions {
   athleteBodyweight?: Record<string, number>;
   /** dimension → (value label → hex) coach-assigned colours; flows to meta. */
   dimensionColors?: Record<string, Record<string, string>>;
+  /** Resolved date window {from,to} — lets the chart densify a complete time axis. */
+  window?: { from: string; to: string };
 }

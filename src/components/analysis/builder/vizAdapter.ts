@@ -6,6 +6,7 @@
 // neutral chrome only.
 
 import type { AnalysisResult, ResolvedMeasure } from '../../../lib/analysis';
+import { weekStartsBetween } from '../../../lib/dateUtils';
 import { dimLabel } from './dimensions';
 
 export interface ChartSeries {
@@ -77,11 +78,22 @@ export function toChartModel(result: AnalysisResult): ChartModel {
     }
   }
 
+  // Densify a weekly time axis to the scope's full week list so the chart has no
+  // gaps and a period-over-period overlay aligns by position (week i ↔ prev
+  // week i) regardless of which weeks were empty-pruned. Union with the actual
+  // rowKeys so a week just outside the nominal window is never dropped.
+  let rowKeys = result.rowKeys;
+  if (rowDims.length === 1 && rowDims[0] === 'week' && result.meta.window) {
+    const dense = new Set(weekStartsBetween(result.meta.window.from, result.meta.window.to));
+    for (const rk of result.rowKeys) dense.add(rk[0]);
+    if (dense.size) rowKeys = [...dense].sort().map((w) => [w]);
+  }
+
   // One datum per row key.
   const lookup = new Map<string, Record<string, number | null>>();
   for (const rec of result.records) lookup.set(JSON.stringify([rec.row, rec.col]), rec.values);
 
-  const data: ChartDatum[] = result.rowKeys.map((rk) => {
+  const data: ChartDatum[] = rowKeys.map((rk) => {
     const datum: ChartDatum = { x: rk.join(' · ') || 'Total' };
     for (const ck of colKeys) {
       const values = lookup.get(JSON.stringify([rk, ck]));

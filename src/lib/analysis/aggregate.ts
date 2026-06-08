@@ -517,6 +517,7 @@ export function aggregate(
       normalization: query.subjects.normalization,
       availableValues,
       dimensionColors: options.dimensionColors,
+      window: options.window,
       notes,
     },
   };
