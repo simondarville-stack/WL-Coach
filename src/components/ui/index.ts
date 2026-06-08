@@ -15,6 +15,9 @@ export { Modal } from './Modal';
 export { SidePanel } from './SidePanel';
 export { Card } from './Card';
 export { StandardPage } from './StandardPage';
+export { SegmentedControl } from './SegmentedControl';
+export type { SegmentedOption } from './SegmentedControl';
+export { EmptyState, ErrorState } from './States';
 
 // Existing primitives (don't remove)
 export { Spinner } from './Spinner';
