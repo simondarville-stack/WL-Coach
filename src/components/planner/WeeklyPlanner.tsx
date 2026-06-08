@@ -47,6 +47,7 @@ import {
   fetchTemplateFull,
 } from '../../lib/templateService';
 import { SaveAsTemplateModal, type SaveAsTemplateInput } from './SaveAsTemplateModal';
+import { ConfirmModal } from '../log/ConfirmModal';
 
 export interface MacroContext {
   macroId: string;
@@ -108,6 +109,7 @@ export function WeeklyPlanner() {
     fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
+    deleteWeekPrescription,
     updateWeekPlan,
     reorderExercises,
     moveExercise,
@@ -140,6 +142,8 @@ export function WeeklyPlanner() {
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const [pendingWeekPaste, setPendingWeekPaste] = useState<string | null>(null);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
 
@@ -436,6 +440,19 @@ export function WeeklyPlanner() {
     void reorderExercises(currentWeekPlan?.id ?? '', orderedIds).catch(() => { void handleRefresh(); });
   };
 
+  // Delete the whole week's prescription, keeping any logged exercises.
+  const confirmDeleteAll = async () => {
+    if (!currentWeekPlan || deletingAll) { setShowDeleteAllConfirm(false); return; }
+    setDeletingAll(true);
+    try {
+      await deleteWeekPrescription(currentWeekPlan.id);
+      await handleRefresh();
+    } finally {
+      setDeletingAll(false);
+      setShowDeleteAllConfirm(false);
+    }
+  };
+
   // Close any dialog — wait briefly for any in-flight saves, then refresh so day cards reflect changes
   const closeDialog = async () => {
     await new Promise(resolve => setTimeout(resolve, 150));
@@ -623,14 +640,25 @@ export function WeeklyPlanner() {
     if (!found) return null;
     const { ex } = found;
 
-    // Fetch set_lines for this exercise — they aren't in plannedExercises
-    // state, so a parked snapshot would otherwise drop the per-set breakdown
-    // when re-inserted.
-    const { data: setLines } = await supabase
-      .from('planned_set_lines')
-      .select('sets,reps,reps_text,load_value,load_max,position')
-      .eq('planned_exercise_id', ex.id)
-      .order('position');
+    // Fetch set_lines AND the live metadata blob from the DB. set_lines aren't
+    // in plannedExercises state; metadata (especially metadata.gpp) must come
+    // from the persisted row, not a possibly-stale in-memory copy — otherwise
+    // GPP container content silently drops when the day is re-inserted.
+    const [{ data: setLines }, { data: freshRow }] = await Promise.all([
+      supabase
+        .from('planned_set_lines')
+        .select('sets,reps,reps_text,load_value,load_max,position')
+        .eq('planned_exercise_id', ex.id)
+        .order('position'),
+      supabase
+        .from('planned_exercises')
+        .select('metadata')
+        .eq('id', ex.id)
+        .maybeSingle(),
+    ]);
+    const liveMetadata =
+      ((freshRow as { metadata?: Record<string, unknown> | null } | null)?.metadata) ??
+      (ex.metadata ?? null);
 
     const members = ex.is_combo
       ? (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position)
@@ -650,7 +678,7 @@ export function WeeklyPlanner() {
       is_combo: ex.is_combo,
       combo_notation: ex.combo_notation,
       combo_color: ex.combo_color,
-      metadata: (ex.metadata ?? null) as Record<string, unknown> | null,
+      metadata: liveMetadata as Record<string, unknown> | null,
       set_lines: (setLines ?? []).map(l => ({
         sets: l.sets,
         reps: l.reps,
@@ -1369,6 +1397,7 @@ export function WeeklyPlanner() {
                 onNavigateToWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
                 weekTypes={settings?.week_types ?? []}
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
+                onDeleteAll={currentWeekPlan ? () => setShowDeleteAllConfirm(true) : undefined}
               />
 
             {/* ── Load distribution (collapsible band) ── */}
@@ -1621,6 +1650,16 @@ export function WeeklyPlanner() {
         )}
 
         {/* ── Modals ── */}
+        <ConfirmModal
+          open={showDeleteAllConfirm}
+          title="Delete the week's prescription?"
+          description="Removes every planned exercise for this week. Exercises an athlete has already logged are kept (along with their logs). This can't be undone."
+          confirmLabel={deletingAll ? 'Deleting…' : 'Delete all'}
+          cancelLabel="Cancel"
+          variant="danger"
+          onConfirm={() => { void confirmDeleteAll(); }}
+          onCancel={() => { if (!deletingAll) setShowDeleteAllConfirm(false); }}
+        />
         <PlannerModals
           showDayConfig={showSettings}
           dayDisplayOrder={dayDisplayOrder}

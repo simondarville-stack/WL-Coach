@@ -101,6 +101,17 @@ export function useMacroCycles() {
       const { error: weeksError } = await supabase.from('macro_weeks').insert(weeksWithId);
       if (weeksError) throw weeksError;
 
+      // Add to local state so the list and the URL->cycle sync (which looks the
+      // new id up in `macrocycles`) can find it immediately. Without this the
+      // freshly-created cycle isn't in state, navigate('/macrocycles/:id')
+      // resolves to nothing, and the create appears to do nothing even though
+      // the row was inserted. Keep the fetch order (start_date descending).
+      setMacrocycles(prev =>
+        [macrocycle, ...prev].sort((a, b) =>
+          a.start_date < b.start_date ? 1 : a.start_date > b.start_date ? -1 : 0,
+        ),
+      );
+
       return macrocycle;
     } catch (err) {
       setError(errMsg(err, 'Failed to create macrocycle'));

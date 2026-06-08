@@ -17,6 +17,7 @@
 import type { PlannedExercise, GppSection } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { getSentinelType } from '../sentinelUtils';
+import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
 
 export type SummaryTone = 'neutral' | 'amber' | 'red' | 'pending';
 
@@ -109,6 +110,55 @@ function gppSummary(planned: GppSection | null, athlete: GppSection | null): Exe
   };
 }
 
+/**
+ * Planned sets/reps/loads for a row. Mirrors the counting layer's
+ * stale-cache fallback (comboExpansion.expandForCounting): trust the
+ * denormalised summary_* cache, but when it reads empty (0 sets AND 0 reps)
+ * and a prescription exists, recompute live from the prescription. Rows
+ * created via copy / group-sync / template paths — or saved before
+ * combo / free_text_reps counting existed — can carry a stale 0 cache while
+ * their prescription still prescribes work; without this the Log view
+ * reported a planned count of 0 for combos and zone-label exercises even
+ * though the plan clearly shows sets.
+ *
+ * Only the set/rep counts are taken from the recompute. The load axes stay
+ * with the stored value unless the recompute yields a real (> 0) load —
+ * zone / free-text loads parse to 0, which must render as "—", never "0 kg".
+ */
+export function plannedExerciseTotals(planned: PlannedExercise): {
+  sets: number | null;
+  reps: number | null;
+  avg: number | null;
+  max: number | null;
+} {
+  const cachedSets = planned.summary_total_sets ?? 0;
+  const cachedReps = planned.summary_total_reps ?? 0;
+  if (cachedSets === 0 && cachedReps === 0 && planned.prescription_raw) {
+    const s = computePrescriptionSummary(
+      planned.prescription_raw,
+      planned.unit ?? null,
+      !!planned.is_combo,
+    );
+    if (s.total_sets > 0 || s.total_reps > 0) {
+      return {
+        sets: s.total_sets,
+        reps: s.total_reps,
+        avg: s.avg_load && s.avg_load > 0 ? s.avg_load : (planned.summary_avg_load ?? null),
+        max:
+          s.highest_load && s.highest_load > 0
+            ? s.highest_load
+            : (planned.summary_highest_load ?? null),
+      };
+    }
+  }
+  return {
+    sets: planned.summary_total_sets ?? null,
+    reps: planned.summary_total_reps ?? null,
+    avg: planned.summary_avg_load ?? null,
+    max: planned.summary_highest_load ?? null,
+  };
+}
+
 export function computeExerciseSummary(
   planned: PlannedExercise | null,
   logged: LoggedExerciseFull | null,
@@ -123,10 +173,13 @@ export function computeExerciseSummary(
     return gppSummary(plannedGpp, athleteGpp);
   }
 
-  const plannedSets = planned?.summary_total_sets ?? null;
-  const plannedReps = planned?.summary_total_reps ?? null;
-  const plannedAvg = planned?.summary_avg_load ?? null;
-  const plannedMax = planned?.summary_highest_load ?? null;
+  const pt = planned
+    ? plannedExerciseTotals(planned)
+    : { sets: null, reps: null, avg: null, max: null };
+  const plannedSets = pt.sets;
+  const plannedReps = pt.reps;
+  const plannedAvg = pt.avg;
+  const plannedMax = pt.max;
 
   if (!logged) {
     return {

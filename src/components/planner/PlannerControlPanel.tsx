@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Settings2, Copy, Printer, BarChart2,
+  Settings2, Copy, Printer, BarChart2, Trash2,
   Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -43,9 +43,11 @@ interface IconButtonProps {
   title?: string;
   disabled?: boolean;
   highlight?: 'success' | 'info';
+  /** Destructive action — turns red on hover. */
+  danger?: boolean;
 }
 
-function IconButton({ children, onClick, title, disabled, highlight }: IconButtonProps) {
+function IconButton({ children, onClick, title, disabled, highlight, danger }: IconButtonProps) {
   const [hovered, setHovered] = useState(false);
 
   const bg = highlight === 'success'
@@ -53,7 +55,7 @@ function IconButton({ children, onClick, title, disabled, highlight }: IconButto
     : highlight === 'info'
     ? 'var(--color-info-bg)'
     : hovered && !disabled
-    ? 'var(--color-bg-secondary)'
+    ? (danger ? 'var(--color-danger-bg)' : 'var(--color-bg-secondary)')
     : 'transparent';
 
   const color = highlight === 'success'
@@ -63,7 +65,7 @@ function IconButton({ children, onClick, title, disabled, highlight }: IconButto
     : disabled
     ? 'var(--color-text-tertiary)'
     : hovered
-    ? 'var(--color-text-primary)'
+    ? (danger ? 'var(--color-danger-text)' : 'var(--color-text-primary)')
     : 'var(--color-text-secondary)';
 
   return (
@@ -198,6 +200,8 @@ export interface PlannerControlPanelProps {
   onCopy: () => void;
   onPrint: () => void;
   onSaveAsTemplate?: () => void;
+  /** Delete the whole week's prescription (keeps logged exercises). */
+  onDeleteAll?: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: (direction: 'percent-to-kg' | 'kg-to-percent') => void;
   onNavigateToWeek?: (weekStart: string) => void;
@@ -225,6 +229,7 @@ export function PlannerControlPanel({
   onCopy,
   onPrint,
   onSaveAsTemplate,
+  onDeleteAll,
   onToggleLoadDistribution,
   onResolvePercentages,
   weekTypes = [],
@@ -551,6 +556,12 @@ export function PlannerControlPanel({
                 </div>
               )}
             </div>
+          )}
+
+          {onDeleteAll && (
+            <IconButton title="Delete the whole week's prescription (logged exercises are kept)" onClick={onDeleteAll} danger>
+              <Trash2 size={16} />
+            </IconButton>
           )}
         </div>
       </div>

@@ -1,0 +1,32 @@
+# Netlify build & deploy configuration for EMOS.
+# The production branch (main) is selected in the Netlify UI; this file pins
+# the build itself so deploys stay reproducible regardless of dashboard drift.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback: serve index.html for any non-asset path so client-side routing
+# survives hard refreshes and deep links. Single source of truth for the
+# redirect (replaces public/_redirects).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers applied to every response. A Content-Security-Policy is
+# intentionally NOT set here: a correct policy must enumerate the Supabase,
+# Google Fonts, YouTube-thumbnail and QR-code origins and be tested against the
+# live app first, or it silently breaks data loading. Add it as a separate,
+# verified step.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=()"
