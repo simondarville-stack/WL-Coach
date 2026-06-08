@@ -252,7 +252,7 @@ export function AnalysisModule() {
             )}
             {result &&
               (state.vizType === 'table' ? (
-                <PivotTable result={result} onDrill={onDrill} />
+                <PivotTable result={result} onDrill={onDrill} sort={state.sort} onSortChange={(s) => set({ sort: s })} />
               ) : (
                 <ResultChart result={result} type={state.vizType} compare={state.comparePrevious ? compareResult : null} />
               ))}

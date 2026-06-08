@@ -12,6 +12,8 @@ import type {
   MetricRegistry,
   Normalization,
   Scope,
+  SortSpec,
+  TopNSpec,
   VizType,
 } from '../../../lib/analysis';
 
@@ -31,6 +33,10 @@ export interface BuilderState {
   metrics: string[]; // metric ids; agg comes from the registry default
   compare: MeasureState;
   vizType: VizType;
+  /** Row sort (by a measure value-key or natural row order). */
+  sort?: SortSpec;
+  /** Keep only the top/bottom N of a dimension by a measure. */
+  topN?: TopNSpec;
   /** Overlay the immediately-preceding period as a ghost series. */
   comparePrevious: boolean;
 }
@@ -103,6 +109,8 @@ export function buildQuery(state: BuilderState, registry: MetricRegistry, today:
     rows: state.rows,
     cols: state.cols,
     measures,
+    sort: state.sort,
+    topN: state.topN,
     viz: {
       type: state.vizType,
       xAxis: state.rows[0],

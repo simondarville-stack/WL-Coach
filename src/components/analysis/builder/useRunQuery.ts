@@ -25,6 +25,8 @@ export function useRunQuery(query: AnalysisQuery, enabled: boolean, debounceMs =
     rows: query.rows,
     cols: query.cols,
     measures: query.measures,
+    sort: query.sort,
+    topN: query.topN,
   });
 
   useEffect(() => {
