@@ -21,8 +21,9 @@ domain logic where it's testable — in the engine, not in a prompt.
    - a **Supabase Edge Function** triggered by `pg_cron`, or
    - a **Netlify scheduled function** (a `netlify.toml` already exists).
 2. **Gather** — `gatherBriefing(athleteIds, today)` runs two engine queries
-   (28-day athlete×date performed series for ACWR/monotony/deltas; 7-day
-   athlete planned-vs-performed for adherence) and composes the payload. Pure,
+   (28-day athlete×date performed series for ACWR/monotony/deltas; the LAST
+   COMPLETED week's athlete planned-vs-performed for adherence — a graded % is a
+   source of truth only once the week is over) and composes the payload. Pure,
    reuses `runAnalysisQuery` + `monitoring.ts`. No new tables, no migration.
 3. **Summarise** — `briefingPrompt(payload)` → one LLM call (Claude or GPT).
 4. **Deliver** — drop the prose into the coach's **Inbox** (the feature just

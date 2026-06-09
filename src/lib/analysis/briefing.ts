@@ -7,7 +7,7 @@
 // or talks to a scheduler — `gatherBriefing` produces the payload; delivery and
 // the model call are deliberately out of scope (see BRIEFING_PLAN.md).
 
-import { isoAddDays } from '../dateUtils';
+import { isoAddDays, isoMonday } from '../dateUtils';
 import { acwr, latestAcwr, monotonyStrain, type AcwrFlag } from './monitoring';
 import { runAnalysisQuery } from './runAnalysisQuery';
 import { ANALYSIS_QUERY_VERSION, type AnalysisQuery, type MetricRegistry } from './types';
@@ -17,9 +17,9 @@ const METRIC = 'volume'; // tonnage (kg) — the registry's seed volume metric
 /** Per-athlete inputs the engine has already computed. */
 export interface AthleteRaw {
   name: string;
-  perf7d: number; // performed tonnage, last 7 days (kg)
-  plan7d: number; // planned tonnage, last 7 days (kg)
-  perfPrior7d: number; // performed tonnage, the 7 days before that (kg)
+  perf7d: number; // performed tonnage, last COMPLETED week (kg)
+  plan7d: number; // planned tonnage, last COMPLETED week (kg)
+  perfPrior7d: number; // performed tonnage, the week before that (kg)
   acwr: number | null; // latest acute:chronic workload ratio (28d)
   acwrFlag: AcwrFlag;
   monotony: number | null; // latest Foster weekly monotony
@@ -106,10 +106,10 @@ function num(v: number | null | undefined): number {
   return typeof v === 'number' ? v : 0;
 }
 
-function query(athleteIds: string[], windowDays: number, today: string, rows: AnalysisQuery['rows'], state: 'performed' | 'both'): AnalysisQuery {
+function query(athleteIds: string[], scope: AnalysisQuery['scope'], rows: AnalysisQuery['rows'], state: 'performed' | 'both'): AnalysisQuery {
   return {
     version: ANALYSIS_QUERY_VERSION,
-    scope: { mode: 'rolling', windowDays, anchor: today },
+    scope,
     subjects: { athletes: athleteIds, groups: [], normalization: 'none' },
     filters: [],
     rows,
@@ -121,9 +121,12 @@ function query(athleteIds: string[], windowDays: number, today: string, rows: An
 
 /**
  * Fetch the engine numbers for the squad and compose the briefing. Two queries:
- * a 28-day athlete×date performed series (for ACWR / monotony / week deltas) and
- * a 7-day athlete planned-vs-performed total (for adherence). Names come from
- * whoever the engine returns, so it stays in step with owner scoping.
+ * a 28-day athlete×date performed series (for ACWR / monotony — rolling is fine
+ * for those, they read performed only) and the LAST COMPLETED ISO week's
+ * athlete planned-vs-performed total (for adherence — a graded % is only a
+ * source of truth once the week is over; a rolling 7-day window straddles the
+ * in-progress week and understates it). Names come from whoever the engine
+ * returns, so it stays in step with owner scoping.
  */
 export async function gatherBriefing(
   athleteIds: string[],
@@ -131,15 +134,18 @@ export async function gatherBriefing(
   opts: { registry?: MetricRegistry; thresholds?: BriefingThresholds } = {},
 ): Promise<MorningBriefing> {
   const run = opts.registry ? { registry: opts.registry } : {};
+  // The last fully-elapsed week (Monday–Sunday) and the one before it.
+  const lastMon = isoAddDays(isoMonday(today), -7);
+  const lastSun = isoAddDays(lastMon, 6);
+  const priorMon = isoAddDays(lastMon, -7);
+  const priorSun = isoAddDays(lastMon, -1);
   const [loadResult, adhResult] = await Promise.all([
-    runAnalysisQuery(query(athleteIds, 28, today, ['athlete', 'date'], 'performed'), run),
-    runAnalysisQuery(query(athleteIds, 7, today, ['athlete'], 'both'), run),
+    runAnalysisQuery(query(athleteIds, { mode: 'rolling', windowDays: 28, anchor: today }, ['athlete', 'date'], 'performed'), run),
+    runAnalysisQuery(query(athleteIds, { mode: 'dateRange', from: lastMon, to: lastSun }, ['athlete'], 'both'), run),
   ]);
 
   const perfKey = `${METRIC}::performed`;
   const planKey = `${METRIC}::planned`;
-  const priorFrom = isoAddDays(today, -13);
-  const priorTo = isoAddDays(today, -7);
 
   const athletes: AthleteRaw[] = adhResult.rowKeys.map((rk) => {
     const name = rk[0];
@@ -154,7 +160,7 @@ export async function gatherBriefing(
       name,
       perf7d: num(adh[perfKey]),
       plan7d: num(adh[planKey]),
-      perfPrior7d: series.filter((d) => d.date >= priorFrom && d.date <= priorTo).reduce((s, d) => s + d.load, 0),
+      perfPrior7d: series.filter((d) => d.date >= priorMon && d.date <= priorSun).reduce((s, d) => s + d.load, 0),
       acwr: latest?.ratio ?? null,
       acwrFlag: latest?.flag ?? null,
       monotony: mono.length ? mono[mono.length - 1].monotony : null,
@@ -183,10 +189,10 @@ export function briefingPrompt(b: MorningBriefing): string {
   return [
     'You are an Olympic-weightlifting coach\'s assistant. Write a concise MORNING BRIEFING from the squad data below.',
     'Rules: every number is already computed — summarise, never recalculate or invent. Lead with athletes carrying a ⚑ flag (load spikes, poor adherence). 5–8 short bullets max, no preamble or sign-off. Use European units (kg / t, comma decimals) and a calm, professional coaching tone.',
-    `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${t1(b.squad.tonnagePerf7d)} performed in the last 7 days, ${b.squad.avgAdherencePct == null ? '—' : round(b.squad.avgAdherencePct) + '%'} mean adherence, ${b.squad.flagged} flagged.`,
+    `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${t1(b.squad.tonnagePerf7d)} performed in the last completed week, ${b.squad.avgAdherencePct == null ? '—' : round(b.squad.avgAdherencePct) + '%'} mean adherence, ${b.squad.flagged} flagged.`,
     flagged.length ? `Flagged: ${flagged.map((a) => a.name).join(', ')}.` : 'No athletes flagged.',
     '',
-    'Per-athlete (last 7 days):',
+    'Per-athlete (last completed week):',
     ...lines,
   ].join('\n');
 }
