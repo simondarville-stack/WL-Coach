@@ -29,3 +29,13 @@ export {
   type AcwrFlag,
   type WeekMonotony,
 } from './monitoring';
+export {
+  composeBriefing,
+  gatherBriefing,
+  briefingPrompt,
+  DEFAULT_BRIEFING_THRESHOLDS,
+  type MorningBriefing,
+  type AthleteBrief,
+  type AthleteRaw,
+  type BriefingThresholds,
+} from './briefing';
