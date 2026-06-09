@@ -17,7 +17,7 @@ export function ReadinessVsPerformance({ athleteId, startDate, endDate }: Props)
   if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
 
   const scatterData = aggregates
-    .filter(a => a.rawTotal != null && a.complianceReps > 0)
+    .filter(a => a.rawTotal != null && a.complianceReps != null && a.complianceReps > 0)
     .map(a => ({
       raw: a.rawTotal,
       compliance: a.complianceReps,

@@ -20,7 +20,7 @@ export function generateInsights(
   // 1. Compliance dropping below threshold for 2+ consecutive weeks
   let lowComplianceStreak = 0;
   for (const agg of aggregates) {
-    if (agg.plannedReps > 0 && agg.complianceReps < complianceThreshold) {
+    if (agg.plannedReps > 0 && agg.complianceReps != null && agg.complianceReps < complianceThreshold) {
       lowComplianceStreak++;
     } else {
       lowComplianceStreak = 0;

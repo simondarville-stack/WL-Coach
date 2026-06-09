@@ -272,16 +272,19 @@ export function Sparkline({
 
 export function ComplianceSpark({
   values, width = 70, height = 20,
-}: { values: number[]; width?: number; height?: number }) {
-  if (!values.length) return <span className="text-xs text-gray-300">—</span>;
-  const last = values[values.length - 1];
+}: { values: (number | null)[]; width?: number; height?: number }) {
+  // Only completed weeks have a graded compliance; the in-progress week is null
+  // and is simply not plotted (it has no source-of-truth %).
+  const graded = values.filter((v): v is number => v != null);
+  if (!graded.length) return <span className="text-xs text-gray-300">—</span>;
+  const last = graded[graded.length - 1];
   const stroke = last >= 95 ? '#1D9E75'
     : last >= 85 ? '#185FA5'
     : last >= 75 ? '#EF9F27'
     : '#E24B4A';
   return (
     <div className="inline-flex items-center gap-2">
-      <Sparkline points={values} max={100} width={width} height={height} stroke={stroke} dotsLast />
+      <Sparkline points={graded} max={100} width={width} height={height} stroke={stroke} dotsLast />
       <span className="text-xs font-medium tabular-nums" style={{ color: stroke }}>
         {Math.round(last)}%
       </span>

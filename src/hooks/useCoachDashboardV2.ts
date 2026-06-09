@@ -52,7 +52,7 @@ export interface BwSummary {
 export interface AthleteEnrichment {
   rawPillars: RawPillars | null;
   rawTrend: number[];
-  compTrend: number[];
+  compTrend: (number | null)[];
   /** Weekly planned rep totals from the same window as compTrend.
    *  Plotted as the "Planned" baseline in the Reps view. */
   repsPlannedTrend: number[];
@@ -106,7 +106,7 @@ function deriveFlags(args: {
   status: AthleteStatus;
   rawAvg: number | null;
   rawTrend: number[];
-  compTrend: number[];
+  compTrend: (number | null)[];
   lastDays: number | null;
   settings: DashboardFlagSettings;
 }): V2FlagId[] {
@@ -139,8 +139,10 @@ function deriveFlags(args: {
   }
 
   if (en['compliance']) {
-    const lastComp = compTrend.length ? compTrend[compTrend.length - 1] : null;
-    if (lastComp !== null && lastComp < settings.complianceThreshold) {
+    // Flag on the most recent COMPLETED week — compliance is null while the week
+    // is still in progress, so a partial week can never trip a false low-compliance flag.
+    const lastComp = [...compTrend].reverse().find((c) => c != null) ?? null;
+    if (lastComp != null && lastComp < settings.complianceThreshold) {
       flags.push('compliance');
     }
   }
@@ -274,7 +276,7 @@ export function useCoachDashboardV2() {
           ] as const;
         }),
       );
-      const compByAthlete: Record<string, number[]> = {};
+      const compByAthlete: Record<string, (number | null)[]> = {};
       const rawTrendByAthlete: Record<string, number[]> = {};
       const repsPlannedByAthlete: Record<string, number[]> = {};
       const repsActualByAthlete: Record<string, number[]> = {};
@@ -299,7 +301,7 @@ export function useCoachDashboardV2() {
             .filter((id): id is string => !!id),
         ),
       );
-      let phasesByCycle: Record<string, MacroPhase[]> = {};
+      const phasesByCycle: Record<string, MacroPhase[]> = {};
       if (macrocycleIds.length) {
         // No owner_id filter: macrocycle_id is the access boundary, and
         // a shared athlete's macrocycle (and its phases) belong to the

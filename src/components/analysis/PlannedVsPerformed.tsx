@@ -75,8 +75,12 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
   const totalPerformedReps = aggregates.reduce((s, a) => s + a.performedReps, 0);
   const totalPlannedTonnage = aggregates.reduce((s, a) => s + a.plannedTonnage, 0);
   const totalPerformedTonnage = aggregates.reduce((s, a) => s + a.performedTonnage, 0);
-  const avgCompliance = aggregates.filter(a => a.plannedReps > 0).reduce((s, a) => s + a.complianceReps, 0) /
-    (aggregates.filter(a => a.plannedReps > 0).length || 1);
+  // Average only over COMPLETED weeks — an in-progress week has no graded
+  // compliance (null) and must not drag the mean down.
+  const gradedWeeks = aggregates.filter(a => a.complianceReps != null);
+  const avgCompliance = gradedWeeks.length
+    ? gradedWeeks.reduce((s, a) => s + (a.complianceReps ?? 0), 0) / gradedWeeks.length
+    : null;
 
   // Macro phase bar data
   const phases: Array<{ name: string; color: string; start: string; end: string }> = [];
@@ -123,7 +127,7 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
           { label: 'Performed reps', value: totalPerformedReps.toLocaleString() },
           { label: 'Planned tonnage', value: `${Math.round(totalPlannedTonnage).toLocaleString()} kg` },
           { label: 'Performed tonnage', value: `${Math.round(totalPerformedTonnage).toLocaleString()} kg` },
-          { label: 'Avg compliance', value: `${Math.round(avgCompliance)}%`, color: complianceColor(avgCompliance) },
+          { label: 'Avg compliance', value: avgCompliance == null ? '—' : `${Math.round(avgCompliance)}%`, color: avgCompliance == null ? undefined : complianceColor(avgCompliance) },
         ].map((m, i) => (
           <div key={i} className="bg-gray-50 rounded-lg py-2 px-4 border border-gray-100">
             <div className="text-[10px] uppercase text-gray-400 tracking-wider font-medium mb-1">{m.label}</div>
@@ -195,7 +199,7 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
             {aggregates.map((agg, i) => {
               const compliance = agg.complianceReps;
               const tonnageGap = agg.performedTonnage - agg.plannedTonnage;
-              const color = complianceColor(compliance);
+              const color = compliance == null ? undefined : complianceColor(compliance);
               return (
                 <tr key={agg.weekStart} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="py-2 px-3 text-gray-700 font-medium">{formatWeek(agg.weekStart)}</td>
@@ -214,12 +218,16 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
                   <td className="py-2 px-3 text-right text-gray-600">{agg.plannedReps}</td>
                   <td className="py-2 px-3 text-right text-gray-700 font-medium">{agg.performedReps}</td>
                   <td className="py-2 px-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-16 h-1.5 bg-gray-100 rounded overflow-hidden">
-                        <div className="h-full rounded" style={{ width: `${Math.min(compliance, 100)}%`, backgroundColor: color }} />
+                    {compliance != null ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-1.5 bg-gray-100 rounded overflow-hidden">
+                          <div className="h-full rounded" style={{ width: `${Math.min(compliance, 100)}%`, backgroundColor: color }} />
+                        </div>
+                        <span className="font-medium" style={{ color }}>{compliance}%</span>
                       </div>
-                      <span className="font-medium" style={{ color }}>{compliance}%</span>
-                    </div>
+                    ) : (
+                      <span className="text-gray-400 text-[11px]">{agg.weekState === 'current' ? 'in progress' : '—'}</span>
+                    )}
                   </td>
                   <td className={`py-2 px-3 text-right font-medium ${tonnageGap >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                     {tonnageGap >= 0 ? '+' : ''}{Math.round(tonnageGap)} kg

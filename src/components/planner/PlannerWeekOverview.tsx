@@ -102,7 +102,6 @@ export function PlannerWeekOverview({
   const [centerDate, setCenterDate] = useState(() => getTodayMonday());
   const currentWeekRef = useRef<HTMLDivElement>(null);
 
-  const today = getTodayMonday();
   const rangeStart = addWeeks(centerDate, -WEEKS_BACK);
   const rangeEnd = addWeeks(centerDate, WEEKS_FORWARD);
 
@@ -280,7 +279,7 @@ export function PlannerWeekOverview({
       {/* Week rows */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {weeks.map((week, idx) => {
-          const isCurrent = week.weekStart === today;
+          const isCurrent = week.weekState === 'current';
           const endDate = addDays(week.weekStart, 6);
 
           const prevWeek = idx > 0 ? weeks[idx - 1].weekStart : null;
@@ -342,7 +341,8 @@ export function PlannerWeekOverview({
                     }}>
                       {formatDateShort(week.weekStart)}–{formatDateShort(endDate)}
                     </div>
-                    {week.compliance !== null && (
+                    {/* Completed week → graded compliance bar (a source of truth). */}
+                    {week.weekState === 'past' && week.compliance !== null && (
                       <div style={{ marginTop: 6 }}>
                         <div style={{
                           height: 3, background: 'var(--color-bg-tertiary)',
@@ -361,7 +361,25 @@ export function PlannerWeekOverview({
                           />
                         </div>
                         <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2, display: 'block' }}>
-                          Done: {Math.round(week.compliance * 100)}%{isCurrent && week.compliance < 1 ? ' (prog.)' : ''}
+                          Done: {Math.round(week.compliance * 100)}%
+                        </span>
+                      </div>
+                    )}
+                    {/* Current week → progress only (units done), never a graded %. */}
+                    {week.weekState === 'current' && week.plannedDays > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{
+                          height: 3, background: 'var(--color-bg-tertiary)',
+                          borderRadius: '999px', overflow: 'hidden', width: '100%',
+                        }}>
+                          <div style={{
+                            height: '100%', borderRadius: '999px',
+                            width: `${Math.round((week.loggedDays / week.plannedDays) * 100)}%`,
+                            background: 'var(--color-text-tertiary)',
+                          }} />
+                        </div>
+                        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginTop: 2, display: 'block' }}>
+                          {week.loggedDays} of {week.plannedDays} logged
                         </span>
                       </div>
                     )}

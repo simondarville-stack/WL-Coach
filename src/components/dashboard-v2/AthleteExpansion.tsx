@@ -49,7 +49,8 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
   const [bwDialogOpen, setBwDialogOpen] = useState(false);
   const a = status.athlete;
 
-  const compSeries = enrichment.compTrend;
+  // Graded weeks only — the in-progress week has no compliance % (null).
+  const compSeries = enrichment.compTrend.filter((v): v is number => v != null);
   const rawSeries = enrichment.rawTrend;
   const repsPlannedSeries = enrichment.repsPlannedTrend;
   const repsActualSeries = enrichment.repsActualTrend;

@@ -4,6 +4,7 @@ import { getOwnerId } from '../lib/ownerContext';
 import { computeMetrics, type ComputedMetrics } from '../lib/metrics';
 import { expandForCounting } from '../lib/comboExpansion';
 import type { WeekTypeConfig } from '../lib/database.types';
+import { weekState, type WeekState } from '../lib/weekUtils';
 
 // Minimal exercise shape loaded for the overview (subset of Exercise columns).
 interface OverviewExercise {
@@ -68,9 +69,11 @@ export interface WeekSummary {
   totalReps: number;
   totalTonnage: number;
   avgLoad: number | null;
+  /** loggedDays ÷ plannedDays — ONLY for a completed (past) week; null while in progress. */
   compliance: number | null;
   loggedDays: number;
   plannedDays: number;
+  weekState: WeekState;
   weekMetrics: ComputedMetrics;
   exerciseSummaries: ExerciseSummary[];
   macroTargets: MacroTargets | null;
@@ -417,7 +420,10 @@ export function usePlannerWeekOverview() {
         const avgLoad = totalReps > 0 ? Math.round(totalTonnage / totalReps) : null;
         const plannedDays = days.filter(d => !d.isRest && d.exercises.length > 0).length;
         const loggedDays = days.filter(d => d.isLogged).length;
-        const compliance = plannedDays > 0 ? loggedDays / plannedDays : null;
+        // A graded compliance % is a source of truth only once the week is over;
+        // the current/future week reports progress (loggedDays / plannedDays) instead.
+        const state = weekState(ws);
+        const compliance = state === 'past' && plannedDays > 0 ? loggedDays / plannedDays : null;
 
         return {
           weekStart: ws,
@@ -431,6 +437,7 @@ export function usePlannerWeekOverview() {
           compliance,
           loggedDays,
           plannedDays,
+          weekState: state,
           weekMetrics,
           exerciseSummaries,
           macroTargets: macroWeekTargetMap.get(ws) ?? null,

@@ -20,6 +20,28 @@ export function getMondayOfWeekISO(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+export type WeekState = 'past' | 'current' | 'future';
+
+/**
+ * Where a week sits relative to the current week, by Monday-aligned ISO compare
+ * (all `week_start` values are Mondays, so the string compare is DST-safe).
+ */
+export function weekState(weekStart: string, todayMonday: string = getMondayOfWeekISO(new Date())): WeekState {
+  if (weekStart < todayMonday) return 'past';
+  if (weekStart === todayMonday) return 'current';
+  return 'future';
+}
+
+/**
+ * A week is "complete" only once the next Monday has arrived. Its compliance %
+ * is a source of truth ONLY then — athletes choose their own rhythm within the
+ * week (units aren't day-anchored), so a mid-week % understates and must not be
+ * shown as a grade. The current week shows progress, not a percentage.
+ */
+export function isWeekComplete(weekStart: string, todayMonday?: string): boolean {
+  return weekState(weekStart, todayMonday) === 'past';
+}
+
 export function findCurrentMacroWeek<T extends { week_start: string }>(macroWeeks: T[]): T | null {
   const today = new Date();
   return macroWeeks.find(mw => {
@@ -37,7 +59,7 @@ export function generateMacroWeeks(
   const weeks: Array<{ week_start: string; week_number: number }> = [];
   const start = getMondayOfWeek(new Date(startDate));
   const end = new Date(endDate);
-  let current = new Date(start);
+  const current = new Date(start);
   let weekNumber = 1;
 
   while (current <= end) {
