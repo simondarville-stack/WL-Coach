@@ -33,6 +33,7 @@ export {
   composeBriefing,
   gatherBriefing,
   briefingPrompt,
+  briefingPodcastPrompt,
   DEFAULT_BRIEFING_THRESHOLDS,
   type MorningBriefing,
   type AthleteBrief,

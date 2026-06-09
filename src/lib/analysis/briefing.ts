@@ -172,27 +172,61 @@ export async function gatherBriefing(
 
 // ── the LLM hand-off ────────────────────────────────────────────────────────
 
-/**
- * The prompt that turns the payload into prose. The model receives only the
- * pre-computed numbers, so every figure it prints is grounded — it summarises,
- * it never calculates. Provider-agnostic (Claude or GPT).
- */
-export function briefingPrompt(b: MorningBriefing): string {
-  const flagged = b.athletes.filter((a) => a.flagged);
-  const lines = b.athletes.map((a) => {
+/** Per-athlete data lines shared by the text briefing and the podcast script. */
+function athleteLines(b: MorningBriefing): string[] {
+  return b.athletes.map((a) => {
     const adh = a.adherencePct == null ? '—' : `${round(a.adherencePct)}%`;
     const d = a.deltaPct == null ? '' : ` Δ${a.deltaPct > 0 ? '+' : ''}${round(a.deltaPct)}%`;
     const acwr = a.acwr == null ? '' : ` ACWR ${a.acwr.toFixed(2)}`;
     const w = a.watch.length ? `  ⚑ ${a.watch.join('; ')}` : '';
     return `- ${a.name}: ${t1(a.perf7d)} done / ${t1(a.plan7d)} planned (adherence ${adh})${d}${acwr}${w}`;
   });
+}
+
+function squadLine(b: MorningBriefing): string {
+  return `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${t1(b.squad.tonnagePerf7d)} performed in the last completed week, ${b.squad.avgAdherencePct == null ? '—' : round(b.squad.avgAdherencePct) + '%'} mean adherence, ${b.squad.flagged} flagged.`;
+}
+
+function flaggedLine(b: MorningBriefing): string {
+  const flagged = b.athletes.filter((a) => a.flagged);
+  return flagged.length ? `Flagged: ${flagged.map((a) => a.name).join(', ')}.` : 'No athletes flagged.';
+}
+
+/**
+ * The prompt that turns the payload into prose. The model receives only the
+ * pre-computed numbers, so every figure it prints is grounded — it summarises,
+ * it never calculates. Provider-agnostic (Claude or GPT).
+ */
+export function briefingPrompt(b: MorningBriefing): string {
   return [
     'You are an Olympic-weightlifting coach\'s assistant. Write a concise MORNING BRIEFING from the squad data below.',
     'Rules: every number is already computed — summarise, never recalculate or invent. Lead with athletes carrying a ⚑ flag (load spikes, poor adherence). 5–8 short bullets max, no preamble or sign-off. Use European units (kg / t, comma decimals) and a calm, professional coaching tone.',
-    `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${t1(b.squad.tonnagePerf7d)} performed in the last completed week, ${b.squad.avgAdherencePct == null ? '—' : round(b.squad.avgAdherencePct) + '%'} mean adherence, ${b.squad.flagged} flagged.`,
-    flagged.length ? `Flagged: ${flagged.map((a) => a.name).join(', ')}.` : 'No athletes flagged.',
+    squadLine(b),
+    flaggedLine(b),
     '',
     'Per-athlete (last completed week):',
-    ...lines,
+    ...athleteLines(b),
+  ].join('\n');
+}
+
+/**
+ * Prompt that turns the payload into a SHORT NEWS-PODCAST SCRIPT, written to be
+ * read aloud by a text-to-speech voice (so: spoken sentences, spelled-out
+ * numbers, no markup). Same grounding rule — the model narrates the engine's
+ * numbers, it never invents them.
+ */
+export function briefingPodcastPrompt(b: MorningBriefing): string {
+  return [
+    'Write a SHORT NEWS-style audio podcast script from the squad training data below. It will be read aloud by a text-to-speech voice, so follow these rules strictly:',
+    '- About 60–90 seconds when spoken (~150 words). Flowing spoken sentences only — NO bullet points, NO markdown, no headings, no stage directions.',
+    '- Open with a brief branded intro that names the date (e.g. "Good morning. This is your EMOS squad briefing for Tuesday the ninth of June."). End with a one-line sign-off.',
+    '- Structure like a news bulletin: lead with the flagged athletes as the "top stories", then one positive note, then wrap up.',
+    '- Read every number naturally for the ear: "17,0 t" → "seventeen tonnes"; "142%" → "a hundred and forty-two percent"; spell the date in words. Avoid jargon/abbreviations — say "his workload has spiked" or "acute-to-chronic workload ratio", never "ACWR".',
+    '- Calm, professional sports-desk tone. Every figure is pre-computed — summarise it, never recalculate or invent.',
+    squadLine(b),
+    flaggedLine(b),
+    '',
+    'Data (last completed week):',
+    ...athleteLines(b),
   ].join('\n');
 }
