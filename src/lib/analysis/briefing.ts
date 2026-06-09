@@ -1,68 +1,93 @@
-// EMOS Analysis — "Morning Briefing".
+// EMOS Analysis — "Morning Briefing" → per-athlete TRAINING DEBRIEF.
 //
-// A squad briefing focused on WHAT ATHLETES ACTUALLY DID — the numbers they hit
-// in training (performed tonnage + their heaviest lifts) and how their RAW
-// readiness scored — rather than plan-compliance. Pure, deterministic transforms
-// over the weekly aggregates the dashboard already fetches; the card does the
-// fetching, so this module has no Supabase/engine dependency and is unit-testable.
+// A squad briefing focused on what each athlete actually did last week: their
+// work exercise-by-exercise, any MISSES (failed/skipped), any PRs, and their RAW
+// readiness + a trend worth raising — with total tonnage demoted to a footnote.
 //
-// briefingScript() renders a text-to-speech-friendly spoken script with no LLM.
-// briefingPrompt()/briefingPodcastPrompt() build prompts for an LLM upgrade path.
+// Pure, deterministic transforms. The dashboard card fetches (weekly aggregates +
+// PRs + misses) and hands plain data in; this module has no Supabase/engine
+// dependency and is unit-testable. briefingScript() renders a TTS-friendly spoken
+// script with no LLM; briefingPrompt()/briefingPodcastPrompt() are the LLM path.
 
 const RAW_MAX = 12; // RAW readiness is scored out of 12 (four pillars × 3)
 
+// ── inputs ───────────────────────────────────────────────────────────────────
+
 /** The slice of a WeeklyAggregate the briefing reads (structural — a
- *  WeeklyAggregate satisfies this, so callers pass it directly). */
+ *  WeeklyAggregate satisfies this, so the card passes it straight in). */
 export interface WeekStatLike {
   weekStart: string;
   weekState: 'past' | 'current' | 'future';
   performedTonnage: number;
   rawTotal: number | null;
-  sessionRpe: number | null;
-  exerciseBreakdowns: { exerciseName: string; performedMaxLoad: number }[];
+  exerciseBreakdowns: { exerciseName: string; performedSets: number; performedReps: number; performedMaxLoad: number }[];
 }
 
-export interface TopLift {
-  exercise: string;
-  load: number; // heaviest performed kg on that exercise, last completed week
+/** Failed/skipped sets on one exercise in the week (computed by the card's fetch). */
+export interface WeeklyMiss {
+  exerciseName: string;
+  failedSets: number; // attempted and missed the lift
+  skippedSets: number; // chose not to do
+  heaviestFailedLoad: number | null; // how close the missed attempt was
 }
 
-/** Per-athlete numbers, extracted from the last completed week (+ the one before). */
-export interface AthleteRaw {
+/** A personal record achieved in the week (computed by the card's fetch). */
+export interface WeeklyPR {
+  exerciseName: string;
+  repCount: number;
+  valueKg: number;
+  isCompetitionLift: boolean;
+}
+
+/** Per-athlete inputs passed in by the card (keeps this module pure). */
+export interface AthleteInputs {
   name: string;
-  tonnage: number; // performed tonnage (kg) — what they actually moved
-  prevTonnage: number; // the week before, for the trend
-  topLifts: TopLift[]; // heaviest lifts hit that week
-  rawTotal: number | null; // mean RAW readiness (0–12)
-  prevRawTotal: number | null;
-  rpe: number | null; // mean session RPE
+  weeks: WeekStatLike[];
+  misses: WeeklyMiss[];
+  skippedExercises: string[]; // exercise-level skips (names)
+  prs: WeeklyPR[];
 }
 
-export interface AthleteBrief extends AthleteRaw {
-  tonnageDeltaPct: number | null; // vs the prior completed week
-  rawDelta: number | null; // rawTotal − prevRawTotal
-  watch: string[];
-  /** Primary, human-readable reason this athlete needs attention (for the script). */
-  concern: string | null;
+// ── output ───────────────────────────────────────────────────────────────────
+
+export interface ExerciseLine {
+  name: string;
+  sets: number;
+  reps: number;
+  maxLoad: number; // heaviest performed kg
+}
+
+export type RawDirection = 'low' | 'sliding' | 'improving' | 'steady' | 'unknown';
+
+export interface AthleteDebrief {
+  name: string;
+  weekStart: string | null;
+  exercises: ExerciseLine[]; // what they did, heaviest-first
+  misses: WeeklyMiss[];
+  skippedExercises: string[];
+  prs: WeeklyPR[];
+  rawTotal: number | null;
+  rawDelta: number | null; // vs the prior completed week
+  rawTrend: number[]; // recent weekly RAW means, oldest → newest
+  rawDirection: RawDirection;
+  tonnage: number; // footnote
+  prevTonnage: number;
+  tonnageDeltaPct: number | null;
+  concern: string | null; // primary spoken reason for attention
   flagged: boolean;
 }
 
 export interface MorningBriefing {
   date: string;
-  athletes: AthleteBrief[];
-  squad: {
-    athleteCount: number;
-    tonnage: number; // total performed tonnage
-    avgRaw: number | null; // mean RAW readiness across the squad
-    flagged: number;
-  };
+  athletes: AthleteDebrief[];
+  squad: { athleteCount: number; flagged: number; tonnage: number; avgRaw: number | null };
 }
 
-/** Coach-configurable attention thresholds — readiness-first, not compliance. */
+/** Coach-configurable attention thresholds — readiness- and miss-led. */
 export interface BriefingThresholds {
   rawLow: number; // RAW total below this (out of 12) = low readiness
-  rawDropDelta: number; // RAW fall ≥ this vs prior week = sliding readiness
-  tonnageDropPct: number; // training-volume drop worth surfacing
+  rawDropDelta: number; // RAW fall ≥ this vs prior week = sliding
+  tonnageDropPct: number; // training-volume drop worth noting (footnote flag)
 }
 
 export const DEFAULT_BRIEFING_THRESHOLDS: BriefingThresholds = {
@@ -74,114 +99,150 @@ export const DEFAULT_BRIEFING_THRESHOLDS: BriefingThresholds = {
 const round = (n: number) => Math.round(n);
 const t1 = (kg: number) => (Math.abs(kg) >= 1000 ? `${(kg / 1000).toFixed(1)} t` : `${round(kg)} kg`);
 
-/**
- * Pure: extract an athlete's numbers from their weekly aggregates — the last
- * COMPLETED week (and the one before, for trends). Top lifts are the heaviest
- * performed loads that week. Structural over WeekStatLike so a WeeklyAggregate[]
- * passes straight in.
- */
-export function athleteRawFromWeeks(name: string, weeks: WeekStatLike[]): AthleteRaw {
-  const past = weeks.filter((w) => w.weekState === 'past').sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-  const last = past[past.length - 1];
-  const prev = past[past.length - 2];
-  const topLifts: TopLift[] = last
-    ? [...last.exerciseBreakdowns]
-        .filter((e) => e.performedMaxLoad > 0)
-        .sort((a, b) => b.performedMaxLoad - a.performedMaxLoad)
-        .slice(0, 2)
-        .map((e) => ({ exercise: e.exerciseName, load: e.performedMaxLoad }))
-    : [];
-  return {
-    name,
-    tonnage: last?.performedTonnage ?? 0,
-    prevTonnage: prev?.performedTonnage ?? 0,
-    topLifts,
-    rawTotal: last?.rawTotal ?? null,
-    prevRawTotal: prev?.rawTotal ?? null,
-    rpe: last?.sessionRpe ?? null,
-  };
+function rawDirectionOf(trend: number[], rawDelta: number | null, t: BriefingThresholds): RawDirection {
+  const last = trend.length ? trend[trend.length - 1] : null;
+  if (last == null) return 'unknown';
+  if (last < t.rawLow) return 'low';
+  if (rawDelta != null && rawDelta <= -t.rawDropDelta) return 'sliding';
+  if (trend.length >= 3 && trend[trend.length - 1] < trend[trend.length - 2] && trend[trend.length - 2] < trend[trend.length - 3]) return 'sliding';
+  if (rawDelta != null && rawDelta >= t.rawDropDelta) return 'improving';
+  return 'steady';
 }
 
 /**
- * Pure: assemble the briefing (trends, readiness watch flags, squad roll-up).
- * Attention is readiness-led — low or sliding RAW, or a sharp training-volume
- * drop — not plan compliance.
+ * Pure: build an athlete's debrief from their weekly aggregates (last COMPLETED
+ * week + the prior weeks for trends) plus the misses/PRs the card fetched.
  */
-export function composeBriefing(
-  input: { date: string; athletes: AthleteRaw[] },
-  thresholds: BriefingThresholds = DEFAULT_BRIEFING_THRESHOLDS,
-): MorningBriefing {
-  const athletes: AthleteBrief[] = input.athletes.map((a) => {
-    const tonnageDeltaPct = a.prevTonnage > 0 ? ((a.tonnage - a.prevTonnage) / a.prevTonnage) * 100 : null;
-    const rawDelta = a.rawTotal != null && a.prevRawTotal != null ? a.rawTotal - a.prevRawTotal : null;
+export function athleteDebriefFromWeeks(input: AthleteInputs, thresholds: BriefingThresholds = DEFAULT_BRIEFING_THRESHOLDS): AthleteDebrief {
+  const past = input.weeks.filter((w) => w.weekState === 'past').sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const last = past[past.length - 1];
+  const prev = past[past.length - 2];
 
-    const watch: string[] = [];
-    let concern: string | null = null;
-    if (a.rawTotal != null && a.rawTotal < thresholds.rawLow) {
-      watch.push(`RAW ${round(a.rawTotal)} of ${RAW_MAX} — low readiness`);
-      concern = 'readiness is low';
-    }
-    if (rawDelta != null && rawDelta <= -thresholds.rawDropDelta) {
-      watch.push(`RAW down ${round(Math.abs(rawDelta))} on last week`);
-      concern ??= 'readiness is sliding';
-    }
-    if (tonnageDeltaPct != null && tonnageDeltaPct <= -thresholds.tonnageDropPct) {
-      watch.push(`training volume down ${round(Math.abs(tonnageDeltaPct))}%`);
-      concern ??= 'training volume has dropped';
-    }
-    return { ...a, tonnageDeltaPct, rawDelta, watch, concern, flagged: watch.length > 0 };
-  });
+  const exercises: ExerciseLine[] = last
+    ? [...last.exerciseBreakdowns]
+        .filter((e) => e.performedSets > 0 || e.performedReps > 0)
+        .sort((a, b) => b.performedMaxLoad - a.performedMaxLoad)
+        .map((e) => ({ name: e.exerciseName, sets: e.performedSets, reps: e.performedReps, maxLoad: e.performedMaxLoad }))
+    : [];
 
-  const raws = athletes.map((a) => a.rawTotal).filter((x): x is number => x != null);
+  const rawTotal = last?.rawTotal ?? null;
+  const prevRaw = prev?.rawTotal ?? null;
+  const rawDelta = rawTotal != null && prevRaw != null ? rawTotal - prevRaw : null;
+  const rawTrend = past.map((w) => w.rawTotal).filter((x): x is number => x != null).slice(-6);
+  const rawDirection = rawDirectionOf(rawTrend, rawDelta, thresholds);
+
+  const tonnage = last?.performedTonnage ?? 0;
+  const prevTonnage = prev?.performedTonnage ?? 0;
+  const tonnageDeltaPct = prevTonnage > 0 ? ((tonnage - prevTonnage) / prevTonnage) * 100 : null;
+
+  const failedTotal = input.misses.reduce((s, m) => s + m.failedSets, 0);
+  let concern: string | null = null;
+  if (rawDirection === 'low') concern = 'readiness is low';
+  else if (rawDirection === 'sliding') concern = 'readiness is sliding';
+  else if (failedTotal > 0) concern = 'missed attempts in training';
+  else if (input.skippedExercises.length > 0) concern = 'skipped prescribed work';
+  else if (tonnageDeltaPct != null && tonnageDeltaPct <= -thresholds.tonnageDropPct) concern = 'training volume dropped';
+  const flagged = concern != null;
+
+  return {
+    name: input.name,
+    weekStart: last?.weekStart ?? null,
+    exercises,
+    misses: input.misses,
+    skippedExercises: input.skippedExercises,
+    prs: input.prs,
+    rawTotal,
+    rawDelta,
+    rawTrend,
+    rawDirection,
+    tonnage,
+    prevTonnage,
+    tonnageDeltaPct,
+    concern,
+    flagged,
+  };
+}
+
+/** Pure: assemble the squad briefing from per-athlete debriefs. */
+export function composeBriefing(input: { date: string; athletes: AthleteDebrief[] }): MorningBriefing {
+  const raws = input.athletes.map((a) => a.rawTotal).filter((x): x is number => x != null);
   return {
     date: input.date,
-    athletes,
+    athletes: input.athletes,
     squad: {
-      athleteCount: athletes.length,
-      tonnage: athletes.reduce((s, a) => s + a.tonnage, 0),
+      athleteCount: input.athletes.length,
+      flagged: input.athletes.filter((a) => a.flagged).length,
+      tonnage: input.athletes.reduce((s, a) => s + a.tonnage, 0),
       avgRaw: raws.length ? raws.reduce((s, x) => s + x, 0) / raws.length : null,
-      flagged: athletes.filter((a) => a.flagged).length,
     },
   };
 }
 
 // ── spoken script (deterministic, no LLM) ───────────────────────────────────
 
-/**
- * Text-to-speech-friendly spoken briefing — leads with what each athlete lifted
- * and their readiness, flags low/sliding RAW. Numbers are read for the ear.
- */
-export function briefingScript(b: MorningBriefing, thresholds: BriefingThresholds = DEFAULT_BRIEFING_THRESHOLDS): string {
-  void thresholds; // reasons are precomputed in `concern`
+function missPhrase(a: AthleteDebrief): string | null {
+  const failed = a.misses.filter((m) => m.failedSets > 0);
+  const bits: string[] = [];
+  for (const m of failed) {
+    const close = m.heaviestFailedLoad != null ? `, heaviest ${round(m.heaviestFailedLoad)} kilos` : '';
+    bits.push(`missed ${m.failedSets} ${m.failedSets === 1 ? 'attempt' : 'attempts'} on ${m.exerciseName}${close}`);
+  }
+  if (a.skippedExercises.length) bits.push(`skipped ${a.skippedExercises.join(' and ')}`);
+  return bits.length ? bits.join('; ') : null;
+}
+
+function prPhrase(a: AthleteDebrief): string | null {
+  if (!a.prs.length) return null;
+  const ordered = [...a.prs].sort((x, y) => Number(y.isCompetitionLift) - Number(x.isCompetitionLift) || y.valueKg - x.valueKg).slice(0, 2);
+  return ordered.map((p) => `a ${p.repCount === 1 ? 'single' : `${p.repCount}-rep`} ${p.exerciseName} at ${round(p.valueKg)} kilos`).join(', and ');
+}
+
+function workPhrase(a: AthleteDebrief): string | null {
+  if (!a.exercises.length) return null;
+  const top = a.exercises.slice(0, 3);
+  return top.map((e) => `${e.name} top ${round(e.maxLoad)} kilos`).join(', ');
+}
+
+/** TTS-friendly spoken debrief — leads with the exception (readiness, misses,
+ *  PRs), then the work, with tonnage as a closing footnote. */
+export function briefingScript(b: MorningBriefing): string {
   const tonnes = (kg: number) => `${(kg / 1000).toLocaleString('en-GB', { maximumFractionDigits: 1 })} tonnes`;
   const d = new Date(b.date + 'T00:00:00');
   const dateLabel = Number.isNaN(d.getTime()) ? b.date : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const parts: string[] = [`Good morning. Here is your squad training briefing for ${dateLabel}.`];
+  const parts: string[] = [`Good morning. Here is your squad training debrief for ${dateLabel}.`];
   if (b.athletes.length === 0) {
     parts.push('No athletes in scope yet.');
     return parts.join(' ');
   }
 
-  // Flagged athletes (readiness concerns) lead the bulletin.
   const ordered = [...b.athletes].sort((a, x) => Number(x.flagged) - Number(a.flagged));
   for (const a of ordered) {
-    let s = `${a.name} lifted ${tonnes(a.tonnage)}`;
-    if (a.topLifts.length) {
-      s += `, topped by ${a.topLifts.map((l) => `${round(l.load)} kilo ${l.exercise}`).join(' and ')}`;
-    }
-    s += '.';
+    const seg: string[] = [a.name + '.'];
+
     if (a.rawTotal != null) {
-      s += ` Readiness ${round(a.rawTotal)} out of ${RAW_MAX}`;
-      if (a.rawDelta != null && Math.abs(a.rawDelta) >= 1) s += `, ${a.rawDelta > 0 ? 'up' : 'down'} ${round(Math.abs(a.rawDelta))}`;
-      s += '.';
+      let r = `Readiness ${round(a.rawTotal)} out of ${RAW_MAX}`;
+      if (a.rawDelta != null && Math.abs(a.rawDelta) >= 1) r += `, ${a.rawDelta > 0 ? 'up' : 'down'} ${round(Math.abs(a.rawDelta))}`;
+      else if (a.rawDirection === 'sliding') r += ', sliding';
+      seg.push(r + '.');
     }
-    if (a.concern) s += ` Worth a check-in — ${a.concern}.`;
-    parts.push(s);
+    const miss = missPhrase(a);
+    if (miss) seg.push(`They ${miss}.`);
+    const pr = prPhrase(a);
+    if (pr) seg.push(`New PR — ${pr}.`);
+    const work = workPhrase(a);
+    if (work) seg.push(`Main work: ${work}.`);
+    if (a.concern) seg.push(`Worth a check-in — ${a.concern}.`);
+    // Tonnage footnote.
+    let vol = `Volume ${tonnes(a.tonnage)}`;
+    if (a.tonnageDeltaPct != null && Math.abs(a.tonnageDeltaPct) >= 10) vol += `, ${a.tonnageDeltaPct > 0 ? 'up' : 'down'} ${round(Math.abs(a.tonnageDeltaPct))} percent`;
+    else vol += ', in line with last week';
+    seg.push(vol + '.');
+
+    parts.push(seg.join(' '));
   }
 
-  const avgRaw = b.squad.avgRaw == null ? '' : `, average readiness ${round(b.squad.avgRaw)} out of ${RAW_MAX}`;
-  parts.push(`Across the squad, ${tonnes(b.squad.tonnage)} lifted${avgRaw}. That is your briefing.`);
+  parts.push(`That is ${b.squad.athleteCount} ${b.squad.athleteCount === 1 ? 'athlete' : 'athletes'}, ${b.squad.flagged} flagged. End of debrief.`);
   return parts.join(' ');
 }
 
@@ -189,29 +250,24 @@ export function briefingScript(b: MorningBriefing, thresholds: BriefingThreshold
 
 function athleteLines(b: MorningBriefing): string[] {
   return b.athletes.map((a) => {
-    const lifts = a.topLifts.length ? `; top lifts ${a.topLifts.map((l) => `${round(l.load)} kg ${l.exercise}`).join(', ')}` : '';
-    const raw = a.rawTotal == null ? '; RAW —' : `; RAW ${round(a.rawTotal)}/${RAW_MAX}${a.rawDelta != null ? ` (${a.rawDelta > 0 ? '+' : ''}${round(a.rawDelta)})` : ''}`;
-    const w = a.watch.length ? `  ⚑ ${a.watch.join('; ')}` : '';
-    return `- ${a.name}: lifted ${t1(a.tonnage)}${lifts}${raw}${w}`;
+    const work = a.exercises.slice(0, 4).map((e) => `${e.name} ${e.sets}×${e.reps} top ${round(e.maxLoad)}kg`).join(', ') || '—';
+    const miss = a.misses.filter((m) => m.failedSets > 0).map((m) => `${m.failedSets} failed on ${m.exerciseName}`).concat(a.skippedExercises.map((s) => `skipped ${s}`)).join('; ') || 'none';
+    const pr = a.prs.length ? a.prs.map((p) => `${p.repCount}r ${p.exerciseName} ${round(p.valueKg)}kg`).join(', ') : 'none';
+    const raw = a.rawTotal == null ? 'RAW —' : `RAW ${round(a.rawTotal)}/${RAW_MAX}${a.rawDelta != null ? ` (${a.rawDelta > 0 ? '+' : ''}${round(a.rawDelta)})` : ''} ${a.rawDirection}`;
+    return `- ${a.name}: ${raw}; misses: ${miss}; PRs: ${pr}; work: ${work}; volume ${t1(a.tonnage)}${a.flagged ? `  ⚑ ${a.concern}` : ''}`;
   });
 }
 
 function squadLine(b: MorningBriefing): string {
-  return `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${t1(b.squad.tonnage)} performed in the last completed week, ${b.squad.avgRaw == null ? '—' : round(b.squad.avgRaw) + '/' + RAW_MAX} average RAW readiness, ${b.squad.flagged} flagged.`;
+  return `Date: ${b.date}. Squad: ${b.squad.athleteCount} athletes, ${b.squad.flagged} flagged, ${b.squad.avgRaw == null ? '—' : round(b.squad.avgRaw) + '/' + RAW_MAX} average RAW readiness (volume footnote ${t1(b.squad.tonnage)}).`;
 }
 
-function flaggedLine(b: MorningBriefing): string {
-  const flagged = b.athletes.filter((a) => a.flagged);
-  return flagged.length ? `Flagged (readiness): ${flagged.map((a) => a.name).join(', ')}.` : 'No readiness flags.';
-}
-
-/** Prompt for a longer text briefing — the model narrates the pre-computed numbers. */
+/** Prompt for a longer text debrief — the model narrates the pre-computed numbers. */
 export function briefingPrompt(b: MorningBriefing): string {
   return [
-    "You are an Olympic-weightlifting coach's assistant. Write a concise MORNING BRIEFING from the squad data below.",
-    'Focus on what athletes ACTUALLY DID — the numbers they hit (tonnage and their heaviest lifts) and how their RAW readiness scored (out of 12). Lead with anyone carrying a ⚑ readiness flag. Every number is pre-computed — summarise, never recalculate or invent. 5–8 short bullets, no preamble, European units (kg / t), calm coaching tone.',
+    "You are an Olympic-weightlifting coach's assistant. Write a concise per-athlete TRAINING DEBRIEF from the data below.",
+    'For each athlete cover, in this order: their RAW readiness (and any concerning trend), any MISSES (failed attempts vs skipped work), any PRs, then what they did in the key exercises. Total tonnage is only a closing footnote — do NOT lead with it. Lead the bulletin with flagged athletes. Every number is pre-computed — summarise, never recalculate or invent. European units (kg / t), calm coaching tone, no preamble.',
     squadLine(b),
-    flaggedLine(b),
     '',
     'Per-athlete (last completed week):',
     ...athleteLines(b),
@@ -221,14 +277,12 @@ export function briefingPrompt(b: MorningBriefing): string {
 /** Prompt for a short spoken news-podcast script (TTS-ready). */
 export function briefingPodcastPrompt(b: MorningBriefing): string {
   return [
-    'Write a SHORT NEWS-style audio podcast script from the squad training data below, to be read aloud by a text-to-speech voice:',
-    '- ~60–90 seconds (~150 words). Flowing spoken sentences only — NO bullets, markdown, or headings.',
-    '- Open with a branded intro naming the date; end with a one-line sign-off.',
-    '- Lead with what they LIFTED (tonnage + heaviest lifts) and their RAW readiness; flag anyone with low or sliding readiness as the "top story".',
-    '- Read numbers for the ear: "17,0 t" → "seventeen tonnes"; "180 kg" → "a hundred and eighty kilos"; "RAW 6/12" → "readiness of six out of twelve". Spell the date in words.',
+    'Write a SHORT spoken audio debrief from the squad training data below, read aloud by a text-to-speech voice:',
+    '- Flowing spoken sentences only — NO bullets, markdown, or headings. Open with a branded intro naming the date; end with a one-line sign-off.',
+    '- Per athlete, lead with readiness and any misses or PRs (the talking points), then the key work; mention total tonnage only as a brief footnote.',
+    '- Read numbers for the ear: "180 kg" → "a hundred and eighty kilos"; "RAW 6/12" → "readiness six out of twelve". Spell the date in words.',
     '- Calm sports-desk tone. Every figure is pre-computed — summarise, never invent.',
     squadLine(b),
-    flaggedLine(b),
     '',
     'Data (last completed week):',
     ...athleteLines(b),

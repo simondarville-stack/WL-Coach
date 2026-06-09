@@ -1,13 +1,14 @@
-// Dashboard "Morning briefing" card. Builds the squad briefing from the weekly
-// aggregates (performed tonnage, heaviest lifts, RAW readiness) — focused on what
-// athletes actually did, not plan compliance — and renders a deterministic spoken
-// script (no LLM/API), with a play-aloud control via the browser's SpeechSynthesis
-// (Web Speech API) and a voice picker. Everything is on-device.
+// Dashboard "Morning briefing" card — a per-athlete training debrief: what each
+// athlete did exercise-by-exercise last week, any misses (failed/skipped), any
+// PRs, and their RAW readiness + trend (tonnage demoted to a footnote). Reads the
+// weekly aggregates plus two small PR/miss queries, composes a deterministic
+// spoken script (no LLM/API), and plays it via the browser's SpeechSynthesis
+// (Web Speech API) with a voice picker. Everything is on-device.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, Volume2, RefreshCw } from 'lucide-react';
-import { composeBriefing, athleteRawFromWeeks, briefingScript, type AthleteRaw, type MorningBriefing } from '../../lib/analysis';
-import { fetchWeeklyAggregates } from '../../hooks/useAnalysis';
+import { composeBriefing, athleteDebriefFromWeeks, briefingScript, type AthleteDebrief, type MorningBriefing } from '../../lib/analysis';
+import { fetchWeeklyAggregates, fetchWeeklyPRs, fetchWeeklyMisses } from '../../hooks/useAnalysis';
 import { toLocalISO, addDaysToISO } from '../../lib/dateUtils';
 
 const VOICE_KEY = 'emos_briefing_voice';
@@ -22,8 +23,8 @@ export function MorningBriefingCard({ athletes }: { athletes: { id: string; name
   const [voiceURI, setVoiceURI] = useState<string>(() => localStorage.getItem(VOICE_KEY) ?? '');
   const [playing, setPlaying] = useState(false);
 
-  // Fetch each athlete's last ~3 weeks of aggregates, extract their numbers
-  // (tonnage, heaviest lifts, RAW readiness) and compose the squad briefing.
+  // Per athlete: pull ~8 weeks of aggregates (for the RAW trend), resolve the
+  // last COMPLETED week, fetch that week's PRs + misses, and build the debrief.
   useEffect(() => {
     if (!squadKey) {
       setBriefing(null);
@@ -33,14 +34,25 @@ export function MorningBriefingCard({ athletes }: { athletes: { id: string; name
     setLoading(true);
     setError(null);
     const today = toLocalISO(new Date());
-    const startDate = addDaysToISO(today, -21);
+    const startDate = addDaysToISO(today, -56);
     Promise.all(
-      athletes.map(async (a): Promise<AthleteRaw> => {
+      athletes.map(async (a): Promise<AthleteDebrief> => {
         const weeks = await fetchWeeklyAggregates({ athleteId: a.id, startDate, endDate: today });
-        return athleteRawFromWeeks(a.name, weeks);
+        const past = weeks.filter((w) => w.weekState === 'past').sort((x, y) => x.weekStart.localeCompare(y.weekStart));
+        const lastWeek = past[past.length - 1];
+        let prs: Awaited<ReturnType<typeof fetchWeeklyPRs>> = [];
+        let missData: Awaited<ReturnType<typeof fetchWeeklyMisses>> = { misses: [], skippedExercises: [] };
+        if (lastWeek) {
+          const weekEnd = addDaysToISO(lastWeek.weekStart, 6);
+          [prs, missData] = await Promise.all([
+            fetchWeeklyPRs(a.id, lastWeek.weekStart, weekEnd),
+            fetchWeeklyMisses(a.id, lastWeek.weekStart, weekEnd),
+          ]);
+        }
+        return athleteDebriefFromWeeks({ name: a.name, weeks, misses: missData.misses, skippedExercises: missData.skippedExercises, prs });
       }),
     )
-      .then((raw) => { if (active) { setBriefing(composeBriefing({ date: today, athletes: raw })); setLoading(false); } })
+      .then((debriefs) => { if (active) { setBriefing(composeBriefing({ date: today, athletes: debriefs })); setLoading(false); } })
       .catch((e) => { if (active) { setError(e instanceof Error ? e.message : String(e)); setLoading(false); } });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

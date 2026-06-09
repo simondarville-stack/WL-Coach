@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { weekState, type WeekState } from '../lib/weekUtils';
+import type { WeeklyMiss, WeeklyPR } from '../lib/analysis/briefing';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -712,4 +713,99 @@ export async function fetchPRTimeline(
         isCompetition: ex?.is_competition_lift ?? false,
       };
     });
+}
+
+/**
+ * PRs an athlete achieved within a week (matched on achieved_date), for the
+ * briefing. Reads athlete_pr_history (real rep-count + date), keeps only
+ * PR-tracked exercises, and ranks competition lifts first.
+ */
+export async function fetchWeeklyPRs(athleteId: string, weekStart: string, weekEnd: string): Promise<WeeklyPR[]> {
+  const { data: rows } = await supabase
+    .from('athlete_pr_history')
+    .select('exercise_id, rep_count, value_kg, achieved_date')
+    .eq('athlete_id', athleteId)
+    .gte('achieved_date', weekStart)
+    .lte('achieved_date', weekEnd);
+  const prs = rows ?? [];
+  if (prs.length === 0) return [];
+
+  const exIds = [...new Set(prs.map(p => p.exercise_id))];
+  const { data: exs } = await supabase
+    .from('exercises')
+    .select('id, name, is_competition_lift, track_pr')
+    .in('id', exIds);
+  const exMap = new Map(
+    ((exs ?? []) as Array<{ id: string; name: string; is_competition_lift: boolean; track_pr: boolean }>).map(e => [e.id, e]),
+  );
+
+  return prs
+    .filter(p => p.value_kg != null && exMap.get(p.exercise_id)?.track_pr !== false)
+    .map(p => {
+      const ex = exMap.get(p.exercise_id);
+      return {
+        exerciseName: ex?.name ?? 'Unknown',
+        repCount: p.rep_count ?? 1,
+        valueKg: p.value_kg!,
+        isCompetitionLift: ex?.is_competition_lift ?? false,
+      };
+    })
+    .sort((a, b) => Number(b.isCompetitionLift) - Number(a.isCompetitionLift) || b.valueKg - a.valueKg);
+}
+
+/**
+ * Failed/skipped sets per exercise + exercise-level skips for an athlete's week,
+ * for the briefing's "misses". Mirrors the sessions → log_exercises → log_sets
+ * joins used by fetchWeeklyAggregates. Performed aggregation drops these, so they
+ * are queried separately here.
+ */
+export async function fetchWeeklyMisses(
+  athleteId: string,
+  weekStart: string,
+  weekEnd: string,
+): Promise<{ misses: WeeklyMiss[]; skippedExercises: string[] }> {
+  const { data: sessions } = await supabase
+    .from('training_log_sessions')
+    .select('id')
+    .eq('athlete_id', athleteId)
+    .neq('status', 'planned')
+    .gte('date', weekStart)
+    .lte('date', weekEnd);
+  const sessionIds = (sessions ?? []).map(s => s.id);
+  if (sessionIds.length === 0) return { misses: [], skippedExercises: [] };
+
+  const { data: les } = await supabase
+    .from('training_log_exercises')
+    .select('id, exercise_id, status')
+    .in('session_id', sessionIds);
+  const leRows = (les ?? []) as Array<{ id: string; exercise_id: string; status: string }>;
+  if (leRows.length === 0) return { misses: [], skippedExercises: [] };
+
+  const leIds = leRows.map(le => le.id);
+  const exIds = [...new Set(leRows.map(le => le.exercise_id))];
+  const [setsRes, exsRes] = await Promise.all([
+    supabase.from('training_log_sets').select('log_exercise_id, performed_load, status').in('log_exercise_id', leIds),
+    supabase.from('exercises').select('id, name').in('id', exIds),
+  ]);
+  const sets = (setsRes.data ?? []) as Array<{ log_exercise_id: string; performed_load: number | null; status: string }>;
+  const exName = new Map(((exsRes.data ?? []) as Array<{ id: string; name: string }>).map(e => [e.id, e.name]));
+  const leToEx = new Map(leRows.map(le => [le.id, le.exercise_id]));
+
+  const byEx = new Map<string, WeeklyMiss>();
+  for (const s of sets) {
+    if (s.status !== 'failed' && s.status !== 'skipped') continue;
+    const exId = leToEx.get(s.log_exercise_id);
+    if (!exId) continue;
+    const m = byEx.get(exId) ?? { exerciseName: exName.get(exId) ?? 'Unknown', failedSets: 0, skippedSets: 0, heaviestFailedLoad: null };
+    if (s.status === 'failed') {
+      m.failedSets += 1;
+      if (s.performed_load != null) m.heaviestFailedLoad = Math.max(m.heaviestFailedLoad ?? 0, s.performed_load);
+    } else {
+      m.skippedSets += 1;
+    }
+    byEx.set(exId, m);
+  }
+
+  const skippedExercises = leRows.filter(le => le.status === 'skipped').map(le => exName.get(le.exercise_id) ?? 'Unknown');
+  return { misses: [...byEx.values()], skippedExercises };
 }

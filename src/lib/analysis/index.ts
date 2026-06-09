@@ -31,15 +31,18 @@ export {
 } from './monitoring';
 export {
   composeBriefing,
-  athleteRawFromWeeks,
+  athleteDebriefFromWeeks,
   briefingPrompt,
   briefingPodcastPrompt,
   briefingScript,
   DEFAULT_BRIEFING_THRESHOLDS,
   type MorningBriefing,
-  type AthleteBrief,
-  type AthleteRaw,
-  type TopLift,
+  type AthleteDebrief,
+  type AthleteInputs,
+  type ExerciseLine,
   type WeekStatLike,
+  type WeeklyPR,
+  type WeeklyMiss,
+  type RawDirection,
   type BriefingThresholds,
 } from './briefing';
