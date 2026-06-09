@@ -230,3 +230,42 @@ export function briefingPodcastPrompt(b: MorningBriefing): string {
     ...athleteLines(b),
   ].join('\n');
 }
+
+/**
+ * Deterministic, text-to-speech-friendly spoken script straight from the
+ * payload — NO LLM. Used by the dashboard's play-aloud briefing so it works
+ * in-app with no external API. Numbers are read for the ear ("seventeen
+ * tonnes", "percent"), so this deliberately uses spoken formatting rather than
+ * the comma-decimal table convention.
+ */
+export function briefingScript(b: MorningBriefing): string {
+  const tonnes = (kg: number) => `${(kg / 1000).toLocaleString('en-GB', { maximumFractionDigits: 1 })} tonnes`;
+  const pct = (n: number | null) => (n == null ? '' : `${round(n)} percent`);
+  const d = new Date(b.date + 'T00:00:00');
+  const dateLabel = Number.isNaN(d.getTime()) ? b.date : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const flagged = b.athletes.filter((a) => a.flagged);
+  const parts: string[] = [`Good morning. Here is your squad briefing for ${dateLabel}.`];
+
+  if (b.athletes.length === 0) {
+    parts.push('No athletes in scope yet.');
+    return parts.join(' ');
+  }
+  if (flagged.length === 0) {
+    parts.push(`All ${b.squad.athleteCount} athletes are on track this week. No flags.`);
+  } else {
+    parts.push(`${flagged.length} of ${b.squad.athleteCount} ${b.squad.athleteCount === 1 ? 'athlete is' : 'athletes are'} flagged.`);
+    for (const a of flagged) {
+      // Use the human half of each watch note (the part after "— "), dropping
+      // the technical prefix, so it reads cleanly aloud.
+      const reasons = a.watch.map((w) => (w.includes('— ') ? w.split('— ')[1] : w)).join('; ');
+      const adh = a.adherencePct == null ? '' : `, ${pct(a.adherencePct)} adherence`;
+      parts.push(`${a.name}: ${reasons}. ${tonnes(a.perf7d)} done of ${tonnes(a.plan7d)} planned${adh}.`);
+    }
+  }
+  const bright = b.athletes.find((a) => !a.flagged && a.adherencePct != null);
+  if (bright) parts.push(`On the bright side, ${bright.name} is on plan at ${pct(bright.adherencePct)}.`);
+  const mean = b.squad.avgAdherencePct == null ? '' : `, ${pct(b.squad.avgAdherencePct)} mean adherence`;
+  parts.push(`Across the squad, ${tonnes(b.squad.tonnagePerf7d)} performed${mean}. That is your briefing.`);
+  return parts.join(' ');
+}

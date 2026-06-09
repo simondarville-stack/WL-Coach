@@ -25,6 +25,7 @@ import { GroupBoard } from './GroupBoard';
 import { ActivityFeedPanel } from './ActivityFeedPanel';
 import { UpcomingEventsPanel } from './UpcomingEventsPanel';
 import { AthleteInfoDialog } from './AthleteInfoDialog';
+import { MorningBriefingCard } from './MorningBriefingCard';
 
 type BoardView = 'athletes' | 'groups';
 
@@ -181,6 +182,9 @@ export function CoachDashboardV2({
           Configure flags
         </button>
       </div>
+
+      {/* Morning briefing — spoken squad summary (play-aloud) */}
+      <MorningBriefingCard athleteIds={orderedAthletes.map((s) => s.athlete.id)} />
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

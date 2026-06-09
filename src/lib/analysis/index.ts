@@ -34,6 +34,7 @@ export {
   gatherBriefing,
   briefingPrompt,
   briefingPodcastPrompt,
+  briefingScript,
   DEFAULT_BRIEFING_THRESHOLDS,
   type MorningBriefing,
   type AthleteBrief,
