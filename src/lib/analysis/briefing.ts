@@ -39,6 +39,27 @@ export interface WeeklyPR {
   isCompetitionLift: boolean;
 }
 
+export type PillarKey = 'sleep' | 'physical' | 'mood' | 'nutrition';
+
+/** Weekly per-pillar RAW means (each pillar scored 1–3), one row per week. */
+export interface WeeklyPillars {
+  weekStart: string;
+  sleep: number | null;
+  physical: number | null;
+  mood: number | null;
+  nutrition: number | null;
+}
+
+export type PillarSnapshot = Record<PillarKey, number | null>;
+
+/** A notable per-pillar trend — the "consistently low on sleep" kind of signal. */
+export interface PillarNote {
+  pillar: PillarKey;
+  kind: 'consistently-low' | 'sliding';
+  avg: number; // recent mean for that pillar (out of 3)
+  weeks: number; // how many recent weeks the signal spans
+}
+
 /** Per-athlete inputs passed in by the card (keeps this module pure). */
 export interface AthleteInputs {
   name: string;
@@ -46,6 +67,7 @@ export interface AthleteInputs {
   misses: WeeklyMiss[];
   skippedExercises: string[]; // exercise-level skips (names)
   prs: WeeklyPR[];
+  pillars: WeeklyPillars[]; // weekly per-pillar RAW means, for trend detection
 }
 
 // ── output ───────────────────────────────────────────────────────────────────
@@ -70,6 +92,8 @@ export interface AthleteDebrief {
   rawDelta: number | null; // vs the prior completed week
   rawTrend: number[]; // recent weekly RAW means, oldest → newest
   rawDirection: RawDirection;
+  pillars: PillarSnapshot | null; // last completed week's per-pillar means (1–3)
+  pillarNotes: PillarNote[]; // notable per-pillar trends (e.g. consistently low sleep)
   tonnage: number; // footnote
   prevTonnage: number;
   tonnageDeltaPct: number | null;
@@ -88,16 +112,25 @@ export interface BriefingThresholds {
   rawLow: number; // RAW total below this (out of 12) = low readiness
   rawDropDelta: number; // RAW fall ≥ this vs prior week = sliding
   tonnageDropPct: number; // training-volume drop worth noting (footnote flag)
+  pillarLow: number; // pillar mean below this (out of 3) → a talking point ("on the low side")
+  pillarConcern: number; // pillar mean below this → escalates to a flagged check-in
+  pillarLowWeeks: number; // weeks a pillar must stay low to read as "consistently"
 }
 
 export const DEFAULT_BRIEFING_THRESHOLDS: BriefingThresholds = {
   rawLow: 7,
   rawDropDelta: 2,
   tonnageDropPct: 40,
+  pillarLow: 2.5,
+  pillarConcern: 2,
+  pillarLowWeeks: 3,
 };
 
 const round = (n: number) => Math.round(n);
+const round1 = (n: number) => Math.round(n * 10) / 10;
 const t1 = (kg: number) => (Math.abs(kg) >= 1000 ? `${(kg / 1000).toFixed(1)} t` : `${round(kg)} kg`);
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const PILLAR_KEYS: PillarKey[] = ['sleep', 'physical', 'mood', 'nutrition'];
 
 function rawDirectionOf(trend: number[], rawDelta: number | null, t: BriefingThresholds): RawDirection {
   const last = trend.length ? trend[trend.length - 1] : null;
@@ -107,6 +140,45 @@ function rawDirectionOf(trend: number[], rawDelta: number | null, t: BriefingThr
   if (trend.length >= 3 && trend[trend.length - 1] < trend[trend.length - 2] && trend[trend.length - 2] < trend[trend.length - 3]) return 'sliding';
   if (rawDelta != null && rawDelta >= t.rawDropDelta) return 'improving';
   return 'steady';
+}
+
+/**
+ * Pure: per-pillar RAW analysis. Returns the last completed week's pillar means
+ * and any notable trends — chiefly a pillar that has stayed **consistently low**
+ * (the "Emilia has consistently been scoring low on sleep" signal), or one that
+ * is sliding. Worst pillar first; at most two notes to keep the briefing terse.
+ */
+export function analysePillars(
+  pillars: WeeklyPillars[],
+  upToWeekStart: string | null,
+  thresholds: BriefingThresholds = DEFAULT_BRIEFING_THRESHOLDS,
+): { latest: PillarSnapshot | null; notes: PillarNote[] } {
+  const weeks = pillars
+    .filter((p) => upToWeekStart == null || p.weekStart <= upToWeekStart)
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  if (weeks.length === 0) return { latest: null, notes: [] };
+
+  const lastRow = weeks[weeks.length - 1];
+  const latest: PillarSnapshot = { sleep: lastRow.sleep, physical: lastRow.physical, mood: lastRow.mood, nutrition: lastRow.nutrition };
+
+  const notes: PillarNote[] = [];
+  for (const key of PILLAR_KEYS) {
+    const series = weeks.map((w) => w[key]).filter((x): x is number => x != null);
+    if (series.length < 2) continue;
+    // Consistently low: the last few weeks of data all sit below the threshold.
+    const recent = series.slice(-thresholds.pillarLowWeeks);
+    if (recent.length >= 2 && recent.every((v) => v < thresholds.pillarLow)) {
+      notes.push({ pillar: key, kind: 'consistently-low', avg: recent.reduce((s, v) => s + v, 0) / recent.length, weeks: recent.length });
+      continue;
+    }
+    // Sliding: three weeks strictly down, ending below the mid-point.
+    const last3 = series.slice(-3);
+    if (last3.length === 3 && last3[0] > last3[1] && last3[1] > last3[2] && last3[2] < 2) {
+      notes.push({ pillar: key, kind: 'sliding', avg: last3[2], weeks: 3 });
+    }
+  }
+  notes.sort((a, b) => a.avg - b.avg); // worst first
+  return { latest, notes: notes.slice(0, 2) };
 }
 
 /**
@@ -131,14 +203,24 @@ export function athleteDebriefFromWeeks(input: AthleteInputs, thresholds: Briefi
   const rawTrend = past.map((w) => w.rawTotal).filter((x): x is number => x != null).slice(-6);
   const rawDirection = rawDirectionOf(rawTrend, rawDelta, thresholds);
 
+  const { latest: pillars, notes: pillarNotes } = analysePillars(input.pillars, last?.weekStart ?? null, thresholds);
+
   const tonnage = last?.performedTonnage ?? 0;
   const prevTonnage = prev?.performedTonnage ?? 0;
   const tonnageDeltaPct = prevTonnage > 0 ? ((tonnage - prevTonnage) / prevTonnage) * 100 : null;
 
   const failedTotal = input.misses.reduce((s, m) => s + m.failedSets, 0);
+  // A genuinely low pillar (e.g. sleep) is the most actionable signal — it can
+  // hide behind a fine total, so it leads even when overall RAW looks healthy.
+  // A merely "on the low side" pillar stays a talking point (narrated) without
+  // escalating to a flagged check-in.
+  const lowPillar = pillarNotes.find((n) => n.kind === 'consistently-low' && n.avg < thresholds.pillarConcern);
+  const slidingPillar = pillarNotes.find((n) => n.kind === 'sliding');
   let concern: string | null = null;
-  if (rawDirection === 'low') concern = 'readiness is low';
+  if (lowPillar) concern = `${lowPillar.pillar} has been consistently low`;
+  else if (rawDirection === 'low') concern = 'readiness is low';
   else if (rawDirection === 'sliding') concern = 'readiness is sliding';
+  else if (slidingPillar) concern = `${slidingPillar.pillar} is sliding`;
   else if (failedTotal > 0) concern = 'missed attempts in training';
   else if (input.skippedExercises.length > 0) concern = 'skipped prescribed work';
   else if (tonnageDeltaPct != null && tonnageDeltaPct <= -thresholds.tonnageDropPct) concern = 'training volume dropped';
@@ -155,6 +237,8 @@ export function athleteDebriefFromWeeks(input: AthleteInputs, thresholds: Briefi
     rawDelta,
     rawTrend,
     rawDirection,
+    pillars,
+    pillarNotes,
     tonnage,
     prevTonnage,
     tonnageDeltaPct,
@@ -203,6 +287,17 @@ function workPhrase(a: AthleteDebrief): string | null {
   return top.map((e) => `${e.name} top ${round(e.maxLoad)} kilos`).join(', ');
 }
 
+function pillarPhrase(a: AthleteDebrief): string | null {
+  if (!a.pillarNotes.length) return null;
+  return a.pillarNotes
+    .map((n) =>
+      n.kind === 'consistently-low'
+        ? `${cap(n.pillar)} has consistently been ${n.avg < 2 ? 'low' : 'on the low side'}, around ${round1(n.avg)} out of 3`
+        : `${cap(n.pillar)} is trending down`,
+    )
+    .join('. ');
+}
+
 /** TTS-friendly spoken debrief — leads with the exception (readiness, misses,
  *  PRs), then the work, with tonnage as a closing footnote. */
 export function briefingScript(b: MorningBriefing): string {
@@ -226,6 +321,8 @@ export function briefingScript(b: MorningBriefing): string {
       else if (a.rawDirection === 'sliding') r += ', sliding';
       seg.push(r + '.');
     }
+    const pillar = pillarPhrase(a);
+    if (pillar) seg.push(pillar + '.');
     const miss = missPhrase(a);
     if (miss) seg.push(`They ${miss}.`);
     const pr = prPhrase(a);
@@ -254,7 +351,9 @@ function athleteLines(b: MorningBriefing): string[] {
     const miss = a.misses.filter((m) => m.failedSets > 0).map((m) => `${m.failedSets} failed on ${m.exerciseName}`).concat(a.skippedExercises.map((s) => `skipped ${s}`)).join('; ') || 'none';
     const pr = a.prs.length ? a.prs.map((p) => `${p.repCount}r ${p.exerciseName} ${round(p.valueKg)}kg`).join(', ') : 'none';
     const raw = a.rawTotal == null ? 'RAW —' : `RAW ${round(a.rawTotal)}/${RAW_MAX}${a.rawDelta != null ? ` (${a.rawDelta > 0 ? '+' : ''}${round(a.rawDelta)})` : ''} ${a.rawDirection}`;
-    return `- ${a.name}: ${raw}; misses: ${miss}; PRs: ${pr}; work: ${work}; volume ${t1(a.tonnage)}${a.flagged ? `  ⚑ ${a.concern}` : ''}`;
+    const pillars = a.pillars ? `; pillars sleep ${a.pillars.sleep ?? '—'}/phys ${a.pillars.physical ?? '—'}/mood ${a.pillars.mood ?? '—'}/nutr ${a.pillars.nutrition ?? '—'}` : '';
+    const pillarTrend = a.pillarNotes.length ? ` [${a.pillarNotes.map((n) => `${n.pillar} ${n.kind}`).join(', ')}]` : '';
+    return `- ${a.name}: ${raw}${pillars}${pillarTrend}; misses: ${miss}; PRs: ${pr}; work: ${work}; volume ${t1(a.tonnage)}${a.flagged ? `  ⚑ ${a.concern}` : ''}`;
   });
 }
 

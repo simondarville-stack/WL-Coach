@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { athleteDebriefFromWeeks, composeBriefing, type WeekStatLike, type WeeklyMiss, type WeeklyPR, type AthleteInputs } from '../briefing';
+import { athleteDebriefFromWeeks, composeBriefing, analysePillars, type WeekStatLike, type WeeklyMiss, type WeeklyPR, type WeeklyPillars, type AthleteInputs } from '../briefing';
 
 function week(
   weekStart: string,
@@ -21,8 +21,10 @@ const weeks: WeekStatLike[] = [
 ];
 
 const inputs = (name: string, w: WeekStatLike[], extra: Partial<AthleteInputs> = {}): AthleteInputs => ({
-  name, weeks: w, misses: [], skippedExercises: [], prs: [], ...extra,
+  name, weeks: w, misses: [], skippedExercises: [], prs: [], pillars: [], ...extra,
 });
+
+const pillarWeek = (weekStart: string, sleep: number, physical: number, mood: number, nutrition: number): WeeklyPillars => ({ weekStart, sleep, physical, mood, nutrition });
 
 describe('athleteDebriefFromWeeks', () => {
   it('reads the last completed week: exercises heaviest-first, tonnage, RAW + trend', () => {
@@ -62,6 +64,46 @@ describe('athleteDebriefFromWeeks', () => {
     expect(d.skippedExercises).toEqual(['Front Squat']);
     expect(d.concern).toBe('missed attempts in training');
     expect(d.flagged).toBe(true);
+  });
+});
+
+describe('analysePillars', () => {
+  it('flags a pillar that is consistently low (e.g. sleep)', () => {
+    const pillars: WeeklyPillars[] = [
+      pillarWeek('2026-05-18', 1.5, 3, 3, 3),
+      pillarWeek('2026-05-25', 1.0, 3, 3, 2.5),
+      pillarWeek('2026-06-01', 1.5, 2.5, 3, 3),
+    ];
+    const { latest, notes } = analysePillars(pillars, '2026-06-01');
+    expect(latest).toMatchObject({ sleep: 1.5, physical: 2.5, mood: 3, nutrition: 3 });
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ pillar: 'sleep', kind: 'consistently-low' });
+    expect(notes[0].avg).toBeCloseTo((1.5 + 1.0 + 1.5) / 3, 5);
+  });
+
+  it('does not flag a healthy pillar set', () => {
+    const pillars: WeeklyPillars[] = [pillarWeek('2026-05-25', 3, 3, 2.5, 3), pillarWeek('2026-06-01', 2.5, 3, 3, 3)];
+    expect(analysePillars(pillars, '2026-06-01').notes).toHaveLength(0);
+  });
+
+  it('ignores the in-progress week (filters to upToWeekStart)', () => {
+    const pillars: WeeklyPillars[] = [
+      pillarWeek('2026-05-25', 3, 3, 3, 3),
+      pillarWeek('2026-06-01', 3, 3, 3, 3),
+      pillarWeek('2026-06-08', 1, 1, 1, 1), // current week — must be excluded
+    ];
+    expect(analysePillars(pillars, '2026-06-01').notes).toHaveLength(0);
+  });
+
+  it('a consistently-low pillar becomes the athlete concern even when total RAW looks fine', () => {
+    const lowSleep: WeeklyPillars[] = [
+      pillarWeek('2026-05-25', 1, 3, 3, 3),
+      pillarWeek('2026-06-01', 1.5, 3, 3, 3),
+    ];
+    const d = athleteDebriefFromWeeks(inputs('Emilia', weeks, { pillars: lowSleep }));
+    expect(d.flagged).toBe(true);
+    expect(d.concern).toBe('sleep has been consistently low');
+    expect(d.pillarNotes[0]).toMatchObject({ pillar: 'sleep', kind: 'consistently-low' });
   });
 });
 

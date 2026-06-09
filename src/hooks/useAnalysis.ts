@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { weekState, type WeekState } from '../lib/weekUtils';
-import type { WeeklyMiss, WeeklyPR } from '../lib/analysis/briefing';
+import type { WeeklyMiss, WeeklyPR, WeeklyPillars } from '../lib/analysis/briefing';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -808,4 +808,35 @@ export async function fetchWeeklyMisses(
 
   const skippedExercises = leRows.filter(le => le.status === 'skipped').map(le => exName.get(le.exercise_id) ?? 'Unknown');
   return { misses: [...byEx.values()], skippedExercises };
+}
+
+/**
+ * Per-pillar weekly RAW means (sleep / physical / mood / nutrition, each 1–3) for
+ * an athlete, one row per ISO week, for the briefing's per-pillar trend detection
+ * ("consistently low on sleep"). Reads training_log_sessions raw_* columns.
+ */
+export async function fetchWeeklyPillars(athleteId: string, startDate: string, endDate: string): Promise<WeeklyPillars[]> {
+  const { data } = await supabase
+    .from('training_log_sessions')
+    .select('week_start, raw_sleep, raw_physical, raw_mood, raw_nutrition, status')
+    .eq('athlete_id', athleteId)
+    .neq('status', 'planned')
+    .gte('date', startDate)
+    .lte('date', endDate);
+  const rows = (data ?? []) as Array<{ week_start: string | null; raw_sleep: number | null; raw_physical: number | null; raw_mood: number | null; raw_nutrition: number | null }>;
+
+  const byWeek = new Map<string, { sleep: number[]; physical: number[]; mood: number[]; nutrition: number[] }>();
+  for (const s of rows) {
+    if (!s.week_start) continue;
+    const agg = byWeek.get(s.week_start) ?? { sleep: [], physical: [], mood: [], nutrition: [] };
+    if (s.raw_sleep != null) agg.sleep.push(s.raw_sleep);
+    if (s.raw_physical != null) agg.physical.push(s.raw_physical);
+    if (s.raw_mood != null) agg.mood.push(s.raw_mood);
+    if (s.raw_nutrition != null) agg.nutrition.push(s.raw_nutrition);
+    byWeek.set(s.week_start, agg);
+  }
+  const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+  return [...byWeek.entries()]
+    .map(([weekStart, a]) => ({ weekStart, sleep: mean(a.sleep), physical: mean(a.physical), mood: mean(a.mood), nutrition: mean(a.nutrition) }))
+    .sort((x, y) => x.weekStart.localeCompare(y.weekStart));
 }

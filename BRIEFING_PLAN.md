@@ -2,10 +2,12 @@
 
 A per-coach squad briefing that reads like a **per-athlete training debrief**:
 what each athlete did exercise-by-exercise last week, any **misses** (failed /
-skipped), any **PRs**, and their **RAW readiness + a trend** worth raising — with
-total tonnage demoted to a closing footnote. *Not* plan compliance.
+skipped), any **PRs**, and their **RAW readiness broken into its four pillars
+(sleep / physical / mood / nutrition) with per-pillar trends** worth raising
+(e.g. "sleep has consistently been on the low side") — with total tonnage
+demoted to a closing footnote. *Not* plan compliance.
 
-**Status: shipped (v0.9.0).** It's live as a card at the top of the coach
+**Status: shipped (v0.10.0).** It's live as a card at the top of the coach
 dashboard, generating its text in-app (no LLM, no external call) and reading it
 aloud via the browser. An LLM/TTS upgrade path for richer prose and broadcast
 audio is designed but not built (see "Future").
@@ -35,10 +37,15 @@ runs all of this client-side:
      per exercise (+ heaviest failed load) and exercise-level skips, from
      `training_log_sets`/`_exercises` status. (The performed aggregation drops
      non-`completed` sets, so misses are queried separately.)
+   - `fetchWeeklyPillars(athleteId, startDate, endDate)` — weekly means of the
+     four RAW pillars (sleep / physical / mood / nutrition, each 1–3) over the
+     window, for per-pillar trend detection.
    No new tables, no migration — all read-only over existing columns.
 2. **Build + compose** — `athleteDebriefFromWeeks(inputs)` extracts the
-   per-exercise work (heaviest-first), RAW + delta + trend + direction, tonnage
-   trend, and the primary `concern`; `composeBriefing(athletes)` does the squad
+   per-exercise work (heaviest-first), RAW + delta + trend + direction, the
+   per-pillar analysis (`analysePillars` — last week's pillar means + any
+   "consistently low / on the low side / sliding" pillar notes), tonnage trend,
+   and the primary `concern`; `composeBriefing(athletes)` does the squad
    roll-up. Pure + unit-tested.
 3. **Render** — `briefingScript(briefing)`: a deterministic, TTS-friendly spoken
    script (numbers read for the ear), ordered **readiness → misses → PRs → work
@@ -56,15 +63,20 @@ runs all of this client-side:
                misses:[{exerciseName, failedSets, skippedSets, heaviestFailedLoad}],
                skippedExercises:[name], prs:[{exerciseName, repCount, valueKg, isCompetitionLift}],
                rawTotal, rawDelta, rawTrend:[], rawDirection,
+               pillars:{sleep,physical,mood,nutrition},      // last week's per-pillar means (1–3)
+               pillarNotes:[{pillar, kind, avg, weeks}],     // consistently-low / sliding pillars
                tonnage, prevTonnage, tonnageDeltaPct,        // footnote
                concern, flagged }],
   squad: { athleteCount, flagged, tonnage, avgRaw } }
 ```
 
 `concern`/`flagged` are the "needs attention" signal, derived from
-coach-configurable thresholds (`BriefingThresholds`, never hardcoded): **low RAW
-readiness, sliding RAW (drop vs prior week), missed attempts, skipped work, or a
-sharp training-volume drop** — readiness/quality-first, not compliance.
+coach-configurable thresholds (`BriefingThresholds`, never hardcoded): a **pillar
+that's consistently low** (e.g. sleep), **low / sliding RAW**, missed attempts,
+skipped work, or a sharp training-volume drop — readiness/quality-first, not
+compliance. A pillar that's merely *on the low side* (below `pillarLow` = 2.5/3
+but at/above `pillarConcern` = 2.0) is narrated as a talking point without
+escalating to a flagged check-in.
 
 ## Future (designed, not built)
 
@@ -79,7 +91,6 @@ sharp training-volume drop** — readiness/quality-first, not compliance.
   generates the briefing each morning and drops it into the coach's **Inbox**
   and/or emails it. Must resolve "this coach's athletes" by `owner_id`
   (auth/RLS are a future phase).
-- **Per-pillar RAW trend.** "Sleep trending down 4 weeks" needs a per-pillar
-  weekly query (only `raw_total` is aggregated weekly today). Lowest priority.
 - **More content.** Per-coach threshold settings UI, opt-out / cadence,
-  by-session (not just weekly) granularity.
+  by-session (not just weekly) granularity, longer per-pillar trend windows
+  ("sleep trending down 4 weeks").

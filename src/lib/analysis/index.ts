@@ -32,6 +32,7 @@ export {
 export {
   composeBriefing,
   athleteDebriefFromWeeks,
+  analysePillars,
   briefingPrompt,
   briefingPodcastPrompt,
   briefingScript,
@@ -43,6 +44,10 @@ export {
   type WeekStatLike,
   type WeeklyPR,
   type WeeklyMiss,
+  type WeeklyPillars,
+  type PillarKey,
+  type PillarNote,
+  type PillarSnapshot,
   type RawDirection,
   type BriefingThresholds,
 } from './briefing';

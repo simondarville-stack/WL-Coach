@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, Volume2, RefreshCw } from 'lucide-react';
 import { composeBriefing, athleteDebriefFromWeeks, briefingScript, type AthleteDebrief, type MorningBriefing } from '../../lib/analysis';
-import { fetchWeeklyAggregates, fetchWeeklyPRs, fetchWeeklyMisses } from '../../hooks/useAnalysis';
+import { fetchWeeklyAggregates, fetchWeeklyPRs, fetchWeeklyMisses, fetchWeeklyPillars } from '../../hooks/useAnalysis';
 import { toLocalISO, addDaysToISO } from '../../lib/dateUtils';
 
 const VOICE_KEY = 'emos_briefing_voice';
@@ -37,7 +37,10 @@ export function MorningBriefingCard({ athletes }: { athletes: { id: string; name
     const startDate = addDaysToISO(today, -56);
     Promise.all(
       athletes.map(async (a): Promise<AthleteDebrief> => {
-        const weeks = await fetchWeeklyAggregates({ athleteId: a.id, startDate, endDate: today });
+        const [weeks, pillars] = await Promise.all([
+          fetchWeeklyAggregates({ athleteId: a.id, startDate, endDate: today }),
+          fetchWeeklyPillars(a.id, startDate, today),
+        ]);
         const past = weeks.filter((w) => w.weekState === 'past').sort((x, y) => x.weekStart.localeCompare(y.weekStart));
         const lastWeek = past[past.length - 1];
         let prs: Awaited<ReturnType<typeof fetchWeeklyPRs>> = [];
@@ -49,7 +52,7 @@ export function MorningBriefingCard({ athletes }: { athletes: { id: string; name
             fetchWeeklyMisses(a.id, lastWeek.weekStart, weekEnd),
           ]);
         }
-        return athleteDebriefFromWeeks({ name: a.name, weeks, misses: missData.misses, skippedExercises: missData.skippedExercises, prs });
+        return athleteDebriefFromWeeks({ name: a.name, weeks, misses: missData.misses, skippedExercises: missData.skippedExercises, prs, pillars });
       }),
     )
       .then((debriefs) => { if (active) { setBriefing(composeBriefing({ date: today, athletes: debriefs })); setLoading(false); } })
