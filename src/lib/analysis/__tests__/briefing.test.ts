@@ -1,47 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { composeBriefing, type AthleteRaw } from '../briefing';
+import { composeBriefing, athleteRawFromWeeks, type AthleteRaw, type WeekStatLike } from '../briefing';
 
-const clean: AthleteRaw = { name: 'Clean', perf7d: 9500, plan7d: 10000, perfPrior7d: 9000, acwr: 1.1, acwrFlag: 'ok', monotony: 1.4 };
-const spiking: AthleteRaw = { name: 'Spike', perf7d: 16000, plan7d: 12000, perfPrior7d: 8000, acwr: 1.7, acwrFlag: 'high', monotony: 1.6 };
-const slacking: AthleteRaw = { name: 'Slack', perf7d: 3000, plan7d: 10000, perfPrior7d: 9000, acwr: 0.7, acwrFlag: 'low', monotony: 1.2 };
+const clean: AthleteRaw = { name: 'Clean', tonnage: 12000, prevTonnage: 11000, topLifts: [{ exercise: 'Back Squat', load: 180 }], rawTotal: 10, prevRawTotal: 9, rpe: 7 };
+const lowRaw: AthleteRaw = { name: 'Tired', tonnage: 9000, prevTonnage: 9500, topLifts: [], rawTotal: 5, prevRawTotal: 8, rpe: 8 };
+const volDrop: AthleteRaw = { name: 'Quiet', tonnage: 3000, prevTonnage: 10000, topLifts: [{ exercise: 'Snatch', load: 90 }], rawTotal: 9, prevRawTotal: 9, rpe: 6 };
 
-describe('composeBriefing', () => {
-  it('computes adherence and week-over-week delta', () => {
-    const b = composeBriefing({ date: '2026-06-09', athletes: [clean] });
-    const a = b.athletes[0];
-    expect(a.adherencePct).toBeCloseTo(95, 0);
-    expect(a.deltaPct).toBeCloseTo(((9500 - 9000) / 9000) * 100, 1);
+describe('composeBriefing — readiness + numbers', () => {
+  it('does not flag a healthy athlete; computes the tonnage trend', () => {
+    const a = composeBriefing({ date: '2026-06-09', athletes: [clean] }).athletes[0];
     expect(a.flagged).toBe(false);
-    expect(a.watch).toHaveLength(0);
+    expect(a.tonnageDeltaPct).toBeCloseTo(((12000 - 11000) / 11000) * 100, 0);
   });
 
-  it('flags an ACWR spike and a big volume jump', () => {
-    const b = composeBriefing({ date: '2026-06-09', athletes: [spiking] });
-    const a = b.athletes[0];
+  it('flags low and sliding RAW readiness', () => {
+    const a = composeBriefing({ date: '2026-06-09', athletes: [lowRaw] }).athletes[0];
     expect(a.flagged).toBe(true);
-    expect(a.watch.join(' ')).toMatch(/ACWR 1\.70 — load spike/);
-    expect(a.watch.join(' ')).toMatch(/volume \+100% vs prior week/);
+    expect(a.concern).toBe('readiness is low');
+    expect(a.watch.join(' ')).toMatch(/RAW 5 of 12 — low readiness/);
+    expect(a.watch.join(' ')).toMatch(/RAW down 3 on last week/);
   });
 
-  it('flags low adherence and an ACWR low', () => {
-    const b = composeBriefing({ date: '2026-06-09', athletes: [slacking] });
-    const a = b.athletes[0];
+  it('flags a sharp training-volume drop', () => {
+    const a = composeBriefing({ date: '2026-06-09', athletes: [volDrop] }).athletes[0];
     expect(a.flagged).toBe(true);
-    expect(a.watch.join(' ')).toMatch(/adherence 30% — well below plan/);
-    expect(a.watch.join(' ')).toMatch(/detraining/);
+    expect(a.watch.join(' ')).toMatch(/training volume down 70%/);
   });
 
-  it('rolls up the squad', () => {
-    const b = composeBriefing({ date: '2026-06-09', athletes: [clean, spiking, slacking] });
+  it('rolls up the squad — total tonnage, mean RAW, flagged count', () => {
+    const b = composeBriefing({ date: '2026-06-09', athletes: [clean, lowRaw, volDrop] });
     expect(b.squad.athleteCount).toBe(3);
+    expect(b.squad.tonnage).toBe(12000 + 9000 + 3000);
     expect(b.squad.flagged).toBe(2);
-    expect(b.squad.tonnagePerf7d).toBe(9500 + 16000 + 3000);
-    expect(b.squad.avgAdherencePct).toBeGreaterThan(0);
+    expect(b.squad.avgRaw).toBeCloseTo((10 + 5 + 9) / 3, 5);
   });
+});
 
-  it('handles a missing plan (no adherence, no false flag)', () => {
-    const b = composeBriefing({ date: '2026-06-09', athletes: [{ ...clean, plan7d: 0 }] });
-    expect(b.athletes[0].adherencePct).toBeNull();
-    expect(b.athletes[0].flagged).toBe(false);
+describe('athleteRawFromWeeks', () => {
+  it('reads the last COMPLETED week (not the in-progress one) + heaviest lifts', () => {
+    const weeks: WeekStatLike[] = [
+      { weekStart: '2026-05-25', weekState: 'past', performedTonnage: 9000, rawTotal: 8, sessionRpe: 7, exerciseBreakdowns: [{ exerciseName: 'Squat', performedMaxLoad: 150 }] },
+      { weekStart: '2026-06-01', weekState: 'past', performedTonnage: 12000, rawTotal: 9, sessionRpe: 7, exerciseBreakdowns: [{ exerciseName: 'Back Squat', performedMaxLoad: 180 }, { exerciseName: 'Snatch', performedMaxLoad: 110 }, { exerciseName: 'Pull', performedMaxLoad: 60 }] },
+      { weekStart: '2026-06-08', weekState: 'current', performedTonnage: 3000, rawTotal: 9, sessionRpe: 7, exerciseBreakdowns: [] },
+    ];
+    const raw = athleteRawFromWeeks('A', weeks);
+    expect(raw.tonnage).toBe(12000); // last completed (06-01), not the in-progress 06-08
+    expect(raw.prevTonnage).toBe(9000); // the week before (05-25)
+    expect(raw.rawTotal).toBe(9);
+    expect(raw.topLifts.map((l) => l.exercise)).toEqual(['Back Squat', 'Snatch']); // top 2 by load
   });
 });

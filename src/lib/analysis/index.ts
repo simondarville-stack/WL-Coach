@@ -31,7 +31,7 @@ export {
 } from './monitoring';
 export {
   composeBriefing,
-  gatherBriefing,
+  athleteRawFromWeeks,
   briefingPrompt,
   briefingPodcastPrompt,
   briefingScript,
@@ -39,5 +39,7 @@ export {
   type MorningBriefing,
   type AthleteBrief,
   type AthleteRaw,
+  type TopLift,
+  type WeekStatLike,
   type BriefingThresholds,
 } from './briefing';

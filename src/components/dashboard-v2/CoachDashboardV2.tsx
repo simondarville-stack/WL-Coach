@@ -184,7 +184,7 @@ export function CoachDashboardV2({
       </div>
 
       {/* Morning briefing — spoken squad summary (play-aloud) */}
-      <MorningBriefingCard athleteIds={orderedAthletes.map((s) => s.athlete.id)} />
+      <MorningBriefingCard athletes={orderedAthletes.map((s) => ({ id: s.athlete.id, name: s.athlete.name }))} />
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

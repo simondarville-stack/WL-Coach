@@ -1,18 +1,20 @@
-// Dashboard "Morning briefing" card. Builds the squad briefing from the live
-// analysis engine (gatherBriefing → composeBriefing) and renders a deterministic
-// spoken script (no LLM/API), with a play-aloud control via the browser's
-// SpeechSynthesis (Web Speech API) and a voice picker. Everything is on-device.
+// Dashboard "Morning briefing" card. Builds the squad briefing from the weekly
+// aggregates (performed tonnage, heaviest lifts, RAW readiness) — focused on what
+// athletes actually did, not plan compliance — and renders a deterministic spoken
+// script (no LLM/API), with a play-aloud control via the browser's SpeechSynthesis
+// (Web Speech API) and a voice picker. Everything is on-device.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, Volume2, RefreshCw } from 'lucide-react';
-import { gatherBriefing, briefingScript, type MorningBriefing } from '../../lib/analysis';
-import { toLocalISO } from '../../lib/dateUtils';
+import { composeBriefing, athleteRawFromWeeks, briefingScript, type AthleteRaw, type MorningBriefing } from '../../lib/analysis';
+import { fetchWeeklyAggregates } from '../../hooks/useAnalysis';
+import { toLocalISO, addDaysToISO } from '../../lib/dateUtils';
 
 const VOICE_KEY = 'emos_briefing_voice';
 const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
-export function MorningBriefingCard({ athleteIds }: { athleteIds: string[] }) {
-  const idsKey = athleteIds.join(',');
+export function MorningBriefingCard({ athletes }: { athletes: { id: string; name: string }[] }) {
+  const squadKey = athletes.map((a) => `${a.id}:${a.name}`).join('|');
   const [briefing, setBriefing] = useState<MorningBriefing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,20 +22,29 @@ export function MorningBriefingCard({ athleteIds }: { athleteIds: string[] }) {
   const [voiceURI, setVoiceURI] = useState<string>(() => localStorage.getItem(VOICE_KEY) ?? '');
   const [playing, setPlaying] = useState(false);
 
-  // Fetch + compose the briefing for the coach's squad.
+  // Fetch each athlete's last ~3 weeks of aggregates, extract their numbers
+  // (tonnage, heaviest lifts, RAW readiness) and compose the squad briefing.
   useEffect(() => {
-    if (!idsKey) {
+    if (!squadKey) {
       setBriefing(null);
       return;
     }
     let active = true;
     setLoading(true);
     setError(null);
-    gatherBriefing(idsKey.split(','), toLocalISO(new Date()))
-      .then((b) => { if (active) { setBriefing(b); setLoading(false); } })
+    const today = toLocalISO(new Date());
+    const startDate = addDaysToISO(today, -21);
+    Promise.all(
+      athletes.map(async (a): Promise<AthleteRaw> => {
+        const weeks = await fetchWeeklyAggregates({ athleteId: a.id, startDate, endDate: today });
+        return athleteRawFromWeeks(a.name, weeks);
+      }),
+    )
+      .then((raw) => { if (active) { setBriefing(composeBriefing({ date: today, athletes: raw })); setLoading(false); } })
       .catch((e) => { if (active) { setError(e instanceof Error ? e.message : String(e)); setLoading(false); } });
     return () => { active = false; };
-  }, [idsKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [squadKey]);
 
   // Load TTS voices (they populate asynchronously) and pick a sensible default.
   useEffect(() => {
@@ -81,7 +92,7 @@ export function MorningBriefingCard({ athleteIds }: { athleteIds: string[] }) {
     if (playing) stop();
   };
 
-  if (!idsKey) return null;
+  if (!squadKey) return null;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5">
