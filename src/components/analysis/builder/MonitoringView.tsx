@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import type { AnalysisQuery, AnalysisResult } from '../../../lib/analysis';
 import { dailyLoadSeries, acwr, monotonyStrain, latestAcwr, DEFAULT_ACWR } from '../../../lib/analysis';
+import { weekState } from '../../../lib/weekUtils';
 import { useRunQuery } from './useRunQuery';
 import { ResultChart } from './ResultChart';
 import { formatValue } from './format';
@@ -123,9 +124,13 @@ export function MonitoringView({ baseQuery, enabled }: { baseQuery: AnalysisQuer
 
 function overallAdherence(result: AnalysisResult | null): number | null {
   if (!result) return null;
+  const wkIdx = result.rowDimensions.filter((a) => a !== 'state').indexOf('week');
   let plan = 0;
   let perf = 0;
   for (const rec of result.records) {
+    // Exclude the in-progress week from the graded squad-adherence tile — its
+    // partial plan would understate the number (athletes set their own rhythm).
+    if (wkIdx >= 0 && weekState(rec.row[wkIdx]) !== 'past') continue;
     plan += rec.values['volume::planned'] ?? 0;
     perf += rec.values['volume::performed'] ?? 0;
   }

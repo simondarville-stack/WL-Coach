@@ -2,6 +2,7 @@
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
+import { weekState, type WeekState } from '../lib/weekUtils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,8 +46,10 @@ export interface WeeklyAggregate {
   performedTonnage: number;
   performedExerciseCount: number;
   skippedExercises: number;
-  complianceReps: number;
-  complianceTonnage: number;
+  /** Graded % — non-null ONLY for a completed (past) week; null while in progress. */
+  complianceReps: number | null;
+  complianceTonnage: number | null;
+  weekState: WeekState;
   exerciseBreakdowns: ExerciseBreakdown[];
   rawTotal: number | null;
   sessionRpe: number | null;
@@ -438,6 +441,7 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     const avgBodyweight = bwValues.length > 0 ? bwValues.reduce((a, b) => a + b, 0) / bwValues.length : null;
     const rawTotal = rawTotals.length > 0 ? rawTotals.reduce((a, b) => a + b, 0) / rawTotals.length : null;
     const sessionRpe = rpeValues.length > 0 ? rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length : null;
+    const wkState = weekState(weekStart);
 
     return {
       weekStart,
@@ -455,8 +459,11 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       performedTonnage,
       performedExerciseCount,
       skippedExercises,
-      complianceReps: plannedReps > 0 ? Math.round((performedReps / plannedReps) * 100) : 0,
-      complianceTonnage: plannedTonnage > 0 ? Math.round((performedTonnage / plannedTonnage) * 100) : 0,
+      // Graded compliance is a source of truth only once the week has elapsed;
+      // the current/future week is reported via raw performed/planned, not a %.
+      complianceReps: wkState === 'past' && plannedReps > 0 ? Math.round((performedReps / plannedReps) * 100) : null,
+      complianceTonnage: wkState === 'past' && plannedTonnage > 0 ? Math.round((performedTonnage / plannedTonnage) * 100) : null,
+      weekState: wkState,
       exerciseBreakdowns: Array.from(exBreakdownMap.values()),
       rawTotal,
       sessionRpe,

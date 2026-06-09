@@ -62,6 +62,7 @@ function getValue(agg: WeeklyAggregate, metric: PrimaryMetric | OverlayMetric): 
 function getBarColor(agg: WeeklyAggregate, primary: PrimaryMetric): string {
   if (primary === 'complianceReps') {
     const v = agg.complianceReps;
+    if (v == null) return '#9ca3af'; // in-progress week — no graded compliance
     if (v >= 95) return '#1D9E75';
     if (v >= 85) return '#378ADD';
     if (v >= 75) return '#EF9F27';
