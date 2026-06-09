@@ -47,15 +47,26 @@ conventions.
 - Macro cycle planning
 - Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`)
 - Printing weekly programmes
-- Training Log (rebuild in progress — see `TRAINING_LOG_PLAN.md`)
+- Training Log — **shipped and live**: coach **Log mode** toggle on the Weekly
+  Planner (`src/components/planner/log/*`) plus the mobile athlete app
+  (`src/athlete/v2/*`). The old standalone `/training-log` and `/athlete-log`
+  routes now redirect to the dashboard. (`TRAINING_LOG_PLAN.md` was the build
+  plan; the rebuild is done, so it can be removed.)
+- Analysis module (`src/components/analysis/*`, `src/lib/analysis/*`) —
+  **re-enabled and actively developed**, reachable at `/analysis` with a
+  Sidebar entry.
+- Coach/athlete **Inbox & messaging** (`/inbox`, coach + athlete inboxes) —
+  added in 0.6.0.
 
-**OUT OF SCOPE — disable in UI, keep code intact, do not delete:**
+**OUT OF SCOPE / disabled:**
 
-- Analysis module
+- Nothing is currently disabled — all modules are active. Analysis was
+  previously hidden, but it has since been rebuilt and re-enabled, so the
+  earlier "hide every Analysis nav entry/route" rule **no longer applies**.
+  Do not re-disable Analysis or the Training Log; that would be a regression.
+  Existing code and database tables for any feature must still never be
+  deleted without explicit instruction.
 
-Agents must hide every nav entry, route, and reachable entry point for the
-out-of-scope modules. The underlying code and database tables remain for
-future reactivation. Deleting them is a SCOPE VIOLATION.
 
 ## Non-negotiable principles
 
@@ -248,4 +259,5 @@ committed for traceability or gitignored — user's preference.
 - Do not modify branding assets (logos, SVGs in `Branding/`).
 - Do not introduce i18n infrastructure.
 - Do not enforce RLS or add auth gating (future phase).
-- Do not touch Analysis or Training Log beyond hiding their UI entry points.
+- Do not re-disable or hide Analysis, the Training Log, or the Inbox — these
+  modules are now active and in scope.
