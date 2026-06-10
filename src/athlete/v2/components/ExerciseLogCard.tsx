@@ -16,6 +16,7 @@ import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
+import { useAutoCommit } from '../lib/useAutoCommit';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -86,52 +87,72 @@ export function ExerciseLogCard({
     setNotes(loggedExercise?.performed_notes ?? '');
   }, [loggedExercise?.performed_notes]);
 
+  // Commit notes on blur AND on debounce / app-background / unmount, so a
+  // note typed right before locking the phone or switching days isn't lost.
+  // Self-guards on a real change; shared by the sentinel and standard cards.
+  const commitNotes = () => {
+    if ((loggedExercise?.performed_notes ?? '') !== notes) void onUpdateNotes(notes);
+  };
+  useAutoCommit(notes, commitNotes);
+
   const removedSetNumbers = useMemo(
     () => loggedExercise?.metadata?.removed_set_numbers ?? [],
     [loggedExercise?.metadata?.removed_set_numbers],
   );
 
   const rows = useMemo<SetRowInput[]>(() => {
-    // Structured set lines win. Free-text-reps prescriptions don't get
-    // stored as planned_set_lines (load_value is numeric), so when the
-    // unit is free_text_reps and setLines is empty we fall back to the
-    // free-text parser and synthesise rows. The loadText carries the
-    // coach's prose ("moderate work"), reps stay numeric, and load
-    // saves as null until the athlete types a kg figure.
-    //
-    // Pure free_text (and "other") units carry no rep/load structure at
-    // all — the coach's prose lives in prescription_raw and is already
-    // rendered in the card header. We still synthesise a single ✓/✗ row
-    // so the athlete can mark the whole exercise done or skip it.
+    // A single read-only ✓/✗ "accept or didn't-do-it" row carrying the
+    // coach's prose. The only sensible affordance when there is nothing
+    // numeric to log.
+    const acceptRow = (): SetRowInput => ({
+      setNumber: 1,
+      plannedRepsText: '—',
+      plannedLoadText: '—',
+      plannedRepsValue: null,
+      plannedLoadValue: null,
+      loadIsKg: false,
+      freeTextMode: true,
+      freeTextPlanned: planned.exercise.prescription_raw ?? '',
+    });
+
+    // Structured set lines win (absolute_kg / percentage / rpe). expandSetLines
+    // is unit-aware so percentage shows "80%" and the ✓ back-fill is gated.
+    const unit = planned.exercise.unit;
     let base: SetRowInput[] = [];
     if (planned.setLines.length > 0) {
-      base = expandSetLines(planned.setLines);
-    } else if (planned.exercise.unit === 'free_text_reps' && planned.exercise.prescription_raw) {
-      const lines = parseFreeTextPrescription(planned.exercise.prescription_raw);
-      let setNumber = 1;
-      for (const line of lines) {
-        const count = Math.max(1, line.sets ?? 1);
-        for (let i = 0; i < count; i += 1) {
-          base.push({
-            setNumber,
-            plannedRepsText: String(line.reps ?? '—'),
-            plannedLoadText: line.loadText || '—',
-            plannedRepsValue: line.reps ?? null,
-            plannedLoadValue: null,
-          });
-          setNumber += 1;
+      base = expandSetLines(planned.setLines, unit);
+    } else if (unit === 'free_text_reps') {
+      // free_text_reps isn't stored as planned_set_lines. When the prose
+      // carries "× reps" ("moderate × 5 × 3") synthesise one row per set
+      // (numeric reps, prose load placeholder, no kg back-fill). When it
+      // does NOT ("Technique work", "Mobility"), parseFreeTextPrescription
+      // returns nothing — fall through to the SAME single ✓/✗ accept row as
+      // free_text, otherwise the card has zero rows and the athlete can
+      // neither mark it done nor skip it (a dead, un-loggable card). (TYPE-TRANSLATION-2)
+      const lines = planned.exercise.prescription_raw
+        ? parseFreeTextPrescription(planned.exercise.prescription_raw)
+        : [];
+      if (lines.length > 0) {
+        let setNumber = 1;
+        for (const line of lines) {
+          const count = Math.max(1, line.sets ?? 1);
+          for (let i = 0; i < count; i += 1) {
+            base.push({
+              setNumber,
+              plannedRepsText: String(line.reps ?? '—'),
+              plannedLoadText: line.loadText || '—',
+              plannedRepsValue: line.reps ?? null,
+              plannedLoadValue: null,
+              loadIsKg: false,
+            });
+            setNumber += 1;
+          }
         }
+      } else {
+        base.push(acceptRow());
       }
-    } else if (planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other') {
-      base.push({
-        setNumber: 1,
-        plannedRepsText: '—',
-        plannedLoadText: '—',
-        plannedRepsValue: null,
-        plannedLoadValue: null,
-        freeTextMode: true,
-        freeTextPlanned: planned.exercise.prescription_raw ?? '',
-      });
+    } else if (unit === 'free_text' || unit === 'other') {
+      base.push(acceptRow());
     }
     // Drop planned rows the athlete actively removed. The trash on a
     // planned-but-untouched row writes to metadata.removed_set_numbers;
@@ -148,13 +169,13 @@ export function ExerciseLogCard({
   const allCompleted = rows.length > 0 && completedCount >= rows.length;
   const accent = planned.exerciseDef?.color ?? '#3B82F6';
 
-  /** Free-text / "other" prescriptions don't quantify training. The
-   *  planned row reuses the standard SetEntryRow chrome but with the
-   *  kg + reps cells merged into one read-only cell carrying the coach's
-   *  prose; ✓ / ✗ still drive status. Add-set spawns extra rows in the
-   *  same merged-cell shape, but with an editable text input so the
-   *  athlete can record what they actually did. */
-  const isFreeTextUnit = planned.exercise.unit === 'free_text' || planned.exercise.unit === 'other';
+  /** True when the exercise is an accept-only block: one merged ✓/✗ row
+   *  carrying the coach's prose, nothing numeric to quantify. Covers
+   *  free_text, "other", AND free_text_reps whose prose had no parseable
+   *  "× reps". Derived from the synthesised rows so all three share the
+   *  same chrome: the button row is suppressed and Add-set spawns an
+   *  editable text cell rather than kg/reps. (TYPE-TRANSLATION-2) */
+  const isFreeTextUnit = rows.length > 0 && rows.every(r => r.freeTextMode === true);
 
   /** Resolve the display name. For combos we prefer the coach's
    *  combo_notation (e.g. "Snatch Complex"), then fall back to
@@ -189,11 +210,7 @@ export function ExerciseLogCard({
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            onBlur={() => {
-              if ((loggedExercise?.performed_notes ?? '') !== notes) {
-                void onUpdateNotes(notes);
-              }
-            }}
+            onBlur={commitNotes}
             placeholder="Notes on this exercise…"
             rows={2}
             className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"

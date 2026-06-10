@@ -22,6 +22,12 @@ export interface SetRowInput {
   plannedRepsValue: number | null;
   /** Raw numeric used to compute planned_load when saving. */
   plannedLoadValue: number | null;
+  /** Whether plannedLoadValue is a real kilogram (absolute_kg). For
+   *  percentage / rpe the planned "load" is a percent or RPE number — it
+   *  must NOT be back-filled into performed_load as kg on a one-tap ✓.
+   *  Defaults to true (treated as kg) when omitted, preserving the
+   *  behaviour for off-plan / extra rows that carry real kg. (TYPE-TRANSLATION-3) */
+  loadIsKg?: boolean;
   /** When true, the kg + reps cells collapse into ONE merged cell. Used
    *  for free_text / "other" units where there's nothing to quantify. */
   freeTextMode?: boolean;
@@ -131,8 +137,13 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
       // executed the set as prescribed — tapping the checkmark on a planned set
       // is enough if everything went as written.
       const completing = nextStat === 'completed';
+      // Only back-fill the planned load on a value-less ✓ when it is a real
+      // kilogram. For percentage / rpe the planned "load" is a % or RPE
+      // number; copying it into performed_load would silently log e.g. 80%
+      // as 80 kg — corrupting deltas, tonnage and PR detection. The athlete
+      // can still type the actual kg they lifted. (TYPE-TRANSLATION-3)
       const performedLoad =
-        parsedLoad ?? (completing ? input.plannedLoadValue : null);
+        parsedLoad ?? (completing && input.loadIsKg !== false ? input.plannedLoadValue : null);
       const performedReps =
         parsedReps != null
           ? Math.round(parsedReps)
@@ -326,17 +337,32 @@ function NumericCell({
 /**
  * Expand planned set lines into one row per planned set.
  * A line "3 sets × 5 reps at 80kg" becomes three rows numbered 1,2,3.
+ *
+ * `unit` decides how the planned load is presented and whether it's a real
+ * kilogram: percentage shows "80%", rpe shows "RPE 8", and both flag
+ * loadIsKg=false so a value-less ✓ doesn't log the %/RPE number as kg.
+ * Omitting unit (or absolute_kg / legacy null) keeps the kg behaviour.
  */
-export function expandSetLines(setLines: PlannedSetLine[]): SetRowInput[] {
+export function expandSetLines(setLines: PlannedSetLine[], unit?: string | null): SetRowInput[] {
+  const loadIsKg = unit == null || unit === 'absolute_kg';
   const out: SetRowInput[] = [];
   let setNumber = 1;
   for (const line of setLines) {
     const count = Math.max(1, line.sets ?? 1);
     const repsText = line.reps_text ?? String(line.reps ?? '');
-    const loadText =
+    const baseLoad =
       line.load_max != null && line.load_max !== line.load_value
         ? `${line.load_value}-${line.load_max}`
-        : String(line.load_value ?? '');
+        : line.load_value != null
+        ? String(line.load_value)
+        : '';
+    const loadText = !baseLoad
+      ? ''
+      : unit === 'percentage'
+      ? `${baseLoad}%`
+      : unit === 'rpe'
+      ? `RPE ${baseLoad}`
+      : baseLoad;
     for (let i = 0; i < count; i += 1) {
       out.push({
         setNumber,
@@ -344,6 +370,7 @@ export function expandSetLines(setLines: PlannedSetLine[]): SetRowInput[] {
         plannedLoadText: loadText || '—',
         plannedRepsValue: line.reps ?? null,
         plannedLoadValue: line.load_value ?? null,
+        loadIsKg,
       });
       setNumber += 1;
     }
