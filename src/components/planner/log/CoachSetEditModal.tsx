@@ -110,8 +110,16 @@ export function CoachSetEditModal({
           plannedReps: row.planned_reps ?? null,
           performedLoad: merged.performed_load ?? null,
           performedReps: merged.performed_reps ?? null,
-          rpe: null,
+          // upsertLoggedSet does a whole-row upsert: any field we omit is
+          // written back as null. The coach modal only edits load/reps/status,
+          // so we MUST carry the athlete's free-text / combo-tuple value
+          // (performed_text, e.g. "2+2+2") and legacy notes through, or a
+          // routine kg correction — or even a ✓/✗ status toggle — silently
+          // destroys logged athlete data. (COACH-REVIEW-1)
+          performedText: merged.performed_text ?? null,
+          rpe: merged.rpe ?? null,
           status: merged.status ?? 'completed',
+          notes: merged.notes ?? null,
         });
         // Replace local id with the real id so subsequent edits work.
         setRows(prev =>
