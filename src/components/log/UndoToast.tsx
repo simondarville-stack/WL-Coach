@@ -32,6 +32,13 @@ interface UndoToastProps {
   onDismiss: () => void;
   /** Auto-dismiss timeout in milliseconds. Default 4000. */
   timeoutMs?: number;
+  /** Identity of the thing being undone. The auto-dismiss timer re-arms
+   *  only when this changes (or visibility flips) — NOT on every parent
+   *  re-render. Without it, `onDismiss` being a fresh closure each render
+   *  silently re-started the 4 s window, so the commit could be deferred
+   *  indefinitely. Pass the pending item's id when the buffer can be
+   *  overwritten by a second action. (ATHLETE-ROBUSTNESS-13) */
+  resetKey?: string | number | null;
 }
 
 export function UndoToast({
@@ -40,18 +47,25 @@ export function UndoToast({
   onUndo,
   onDismiss,
   timeoutMs = 4000,
+  resetKey,
 }: UndoToastProps) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep the latest onDismiss without making it a timer dependency, so a
+  // parent re-render that re-creates the closure does not reset the window.
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  });
 
   useEffect(() => {
     if (!visible) return;
     timerRef.current = setTimeout(() => {
-      onDismiss();
+      onDismissRef.current();
     }, timeoutMs);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [visible, onDismiss, timeoutMs]);
+  }, [visible, timeoutMs, resetKey]);
 
   if (!visible) return null;
 

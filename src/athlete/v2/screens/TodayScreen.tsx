@@ -681,6 +681,16 @@ export function TodayScreen() {
       .flatMap(le => le.sets)
       .find(s => s.id === setId);
     if (!setRow) return;
+    // The pending-delete buffer holds ONE set. If a previous delete is
+    // still inside its undo window, commit it now before we overwrite the
+    // buffer — otherwise that earlier set vanishes from the UI but its DB
+    // row is never deleted and resurrects on the next reload. (ATHLETE-ROBUSTNESS-1)
+    if (pendingSetDelete && pendingSetDelete.setId !== setId) {
+      const prevId = pendingSetDelete.setId;
+      void runSave(async () => {
+        await deleteLoggedSet(prevId);
+      });
+    }
     // Optimistically remove from UI immediately.
     setData(prev => {
       if (!prev?.log) return prev;
@@ -1125,6 +1135,7 @@ export function TodayScreen() {
         <UndoToast
           message="Set removed"
           visible={pendingSetDelete != null}
+          resetKey={pendingSetDelete?.setId ?? null}
           onUndo={() => {
             if (!pendingSetDelete) return;
             // Restore the set optimistically.
