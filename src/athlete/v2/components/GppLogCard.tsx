@@ -14,6 +14,7 @@ import type {
   GppSection,
   GppRow,
 } from '../../../lib/database.types';
+import { useAutoCommit } from '../lib/useAutoCommit';
 
 interface GppLogCardProps {
   /** Planned section the coach wrote, or null if the coach left it blank. */
@@ -55,6 +56,14 @@ export function GppLogCard({
   useEffect(() => {
     setNotes(loggedExercise?.performed_notes ?? '');
   }, [loggedExercise?.performed_notes]);
+
+  // Persist notes on blur AND on debounce / app-background / unmount (mobile
+  // lock doesn't fire blur). GPP rows already persist immediately via the
+  // save queue; this only covers the free-text note. Self-guards.
+  const commitNotes = () => {
+    if ((loggedExercise?.performed_notes ?? '') !== notes) void onUpdateNotes(notes);
+  };
+  useAutoCommit(notes, commitNotes);
 
   // Re-seed when the planned rows content changes — e.g. coach added,
   // removed, or reordered a row from the planner. A stable JSON hash
@@ -215,11 +224,7 @@ export function GppLogCard({
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            onBlur={() => {
-              if ((loggedExercise?.performed_notes ?? '') !== notes) {
-                void onUpdateNotes(notes);
-              }
-            }}
+            onBlur={commitNotes}
             placeholder="Notes on this exercise…"
             rows={2}
             className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"

@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Calendar } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
+import { useAutoCommit } from '../lib/useAutoCommit';
 import { BodyweightField } from './BodyweightField';
 import { RawScoreDial, type RawScores } from './RawScoreDial';
 import { VasField } from './VasField';
@@ -70,6 +71,13 @@ export function SessionHeader({
   const [notes, setNotes] = useState(session?.session_notes ?? '');
 
   useEffect(() => setNotes(session?.session_notes ?? ''), [session?.session_notes]);
+
+  // Persist on blur AND on debounce / app-background, so a note typed right
+  // before the phone is locked isn't lost. Self-guards on a real change.
+  const commitNotes = () => {
+    if ((session?.session_notes ?? '') !== notes) void onPatchNotes(notes);
+  };
+  useAutoCommit(notes, commitNotes);
 
   const raw: RawScores = {
     sleep: session?.raw_sleep ?? null,
@@ -151,11 +159,7 @@ export function SessionHeader({
         <textarea
           value={notes}
           onChange={e => setNotes(e.target.value)}
-          onBlur={() => {
-            if ((session?.session_notes ?? '') !== notes) {
-              void onPatchNotes(notes);
-            }
-          }}
+          onBlur={commitNotes}
           placeholder="How did it feel? Anything to flag to the coach?"
           rows={2}
           className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
