@@ -380,7 +380,16 @@ export interface WeekOverview {
   planSource: 'individual' | 'group' | null;
 }
 
-const DEFAULT_LABEL = (i: number) => `Day ${i}`;
+/**
+ * Fallback slot label when the coach hasn't named a day. (UX-BESTPRACTICE-12)
+ *
+ * Single source of truth for the unlabeled day name — keyed on the same
+ * day_index base as active_days / day_labels — so the week-overview picker,
+ * TodayScreen and GroupViewerScreen all agree (they previously diverged
+ * between "Day {dayIndex}" and "Day {idx + 1}").
+ */
+export const defaultSlotLabel = (i: number) => `Day ${i}`;
+const DEFAULT_LABEL = defaultSlotLabel;
 
 /**
  * Single-shot load for the athlete day picker: which planned slots exist

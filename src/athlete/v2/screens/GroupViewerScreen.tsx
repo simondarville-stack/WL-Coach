@@ -12,7 +12,7 @@ import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import { WeekNavigator, getMondayOf } from '../components/WeekNavigator';
 import { SessionPreview } from '../components/SessionPreview';
-import { fetchPlannedDay } from '../../../lib/trainingLogService';
+import { fetchPlannedDay, defaultSlotLabel } from '../../../lib/trainingLogService';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { WeekPlan } from '../../../lib/database.types';
 
@@ -78,7 +78,7 @@ export function GroupViewerScreen() {
         if (cancelled) return;
         const blocks: DayBlock[] = active.map((idx, i) => ({
           dayIndex: idx,
-          label: labels[idx] || `Day ${idx + 1}`,
+          label: labels[idx] || defaultSlotLabel(idx),
           weekdayLabel: schedule[idx]?.weekday != null ? WEEKDAY_SHORT[schedule[idx].weekday] ?? null : null,
           planned: perDay[i],
         }));

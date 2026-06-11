@@ -31,6 +31,7 @@ import {
   setSessionCustomMetric,
   setSubstitutedExercise,
   markMessagesRead,
+  defaultSlotLabel,
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
@@ -948,7 +949,7 @@ export function TodayScreen() {
           </div>
         ) : data && dayIndex != null && mode === 'preview' ? (
           <SessionPreview
-            slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
+            slotLabel={selectedOverviewDay?.label ?? defaultSlotLabel(dayIndex)}
             weekdayLabel={
               selectedOverviewDay?.weekday != null
                 ? formatWeekday(performedOnDate, 'short')
@@ -975,7 +976,7 @@ export function TodayScreen() {
 
             <SessionHeader
               date={performedOnDate}
-              slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
+              slotLabel={selectedOverviewDay?.label ?? defaultSlotLabel(dayIndex)}
               session={data.log?.session ?? null}
               metricsConfig={data.metricsConfig}
               enabledMetricDefs={
