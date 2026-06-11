@@ -300,11 +300,11 @@ export function ExerciseLogCard({
                   e.stopPropagation();
                   onRequestSubstitute();
                 }}
-                className="p-1 text-gray-500 hover:text-purple-300"
+                className="w-9 h-9 flex items-center justify-center -m-1 text-gray-500 hover:text-purple-300"
                 title="Substitute this exercise"
                 aria-label="Substitute exercise"
               >
-                <Replace size={12} />
+                <Replace size={14} />
               </button>
             )}
           </div>

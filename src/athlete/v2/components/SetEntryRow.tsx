@@ -289,11 +289,11 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         <button
           onClick={() => void onDelete()}
           disabled={busy}
-          className="p-1.5 text-gray-500 hover:text-red-400 flex-shrink-0"
+          className="w-9 h-9 flex items-center justify-center text-gray-500 hover:text-red-400 flex-shrink-0"
           title="Delete this set"
           aria-label="Delete set"
         >
-          <Trash2 size={13} />
+          <Trash2 size={14} />
         </button>
       )}
     </div>

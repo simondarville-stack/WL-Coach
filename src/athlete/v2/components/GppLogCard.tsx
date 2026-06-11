@@ -172,7 +172,7 @@ export function GppLogCard({
                     <td className="px-1 py-1 text-center">
                       <button
                         onClick={() => updateRow(i, { done: !row.done })}
-                        className={`w-6 h-6 rounded-md flex items-center justify-center border transition-colors ${
+                        className={`w-9 h-9 rounded-md flex items-center justify-center border transition-colors ${
                           row.done
                             ? 'bg-emerald-500 border-emerald-400 text-white'
                             : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-emerald-300'
@@ -193,7 +193,7 @@ export function GppLogCard({
                       <input
                         value={row.reps}
                         onChange={e => updateRow(i, { reps: e.target.value })}
-                        className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-center tabular-nums text-[12px]"
+                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
                       />
                     </td>
                     <td className="px-1 py-1">
@@ -202,7 +202,7 @@ export function GppLogCard({
                         min={1}
                         value={row.sets || ''}
                         onChange={e => updateRow(i, { sets: parseInt(e.target.value, 10) || 1 })}
-                        className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-center tabular-nums text-[12px]"
+                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
                       />
                     </td>
                     <td className="px-1 py-1">
@@ -210,7 +210,7 @@ export function GppLogCard({
                         value={row.load}
                         onChange={e => updateRow(i, { load: e.target.value })}
                         placeholder="—"
-                        className="w-full bg-transparent text-gray-100 placeholder-gray-600 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-center text-[12px]"
+                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center text-[12px]"
                       />
                     </td>
                   </tr>

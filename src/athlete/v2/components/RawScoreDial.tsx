@@ -178,7 +178,7 @@ export function RawScoreDial({ value, onChange, disabled }: RawScoreDialProps) {
                       onClick={() => setAxis(axis.key, rating.score)}
                       disabled={disabled}
                       className={`
-                        h-8 rounded-md text-xs font-semibold transition-all
+                        h-10 rounded-md text-xs font-semibold transition-all
                         ${selected
                           ? `${SCORE_COLOR[rating.score]} text-white shadow ring-2 ${SCORE_RING[rating.score]}`
                           : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-gray-300'}
