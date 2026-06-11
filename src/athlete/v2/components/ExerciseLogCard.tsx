@@ -287,7 +287,9 @@ export function ExerciseLogCard({
             {globalSaving && (
               <span className="text-[9px] text-blue-400 italic">saving…</span>
             )}
-            {planned.exercise.is_combo && (
+            {/* The member-dot list below already signals a combo; only show the
+                chip as a fallback when there are no members to list. */}
+            {planned.exercise.is_combo && planned.comboMembers.length === 0 && (
               <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
                 Combo
               </span>

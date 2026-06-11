@@ -88,7 +88,9 @@ export function SessionPreview({
               <span><span className="text-gray-500">BW</span> {session.bodyweight_kg.toFixed(1)} kg</span>
             )}
             {session.raw_total != null && (
-              <span><span className="text-gray-500">RAW</span> {session.raw_total}/12</span>
+              <span title="RAW readiness (Eleiko): sum of 4 pillars rated 1–3, range 4–12">
+                <span className="text-gray-500">RAW</span> {session.raw_total}/12
+              </span>
             )}
             {session.duration_minutes != null && (
               <span><span className="text-gray-500">⏱</span> {session.duration_minutes}m</span>
@@ -250,7 +252,9 @@ function PreviewExerciseRow({
               {planned.exercise.variation_note}
             </span>
           )}
-          {planned.exercise.is_combo && (
+          {/* Redundant with the member-dot list below; keep only as a fallback
+              when there are no members to list. */}
+          {planned.exercise.is_combo && planned.comboMembers.length === 0 && (
             <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
               Combo
             </span>

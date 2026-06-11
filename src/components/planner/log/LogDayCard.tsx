@@ -126,7 +126,9 @@ export function LogDayCard({
               <span><span className="text-gray-400">BW</span> {session.bodyweight_kg.toFixed(1)} kg</span>
             )}
             {session.raw_total != null && (
-              <span><span className="text-gray-400">RAW</span> {session.raw_total}/12</span>
+              <span title="RAW readiness (Eleiko): sum of 4 pillars rated 1–3, range 4–12">
+                <span className="text-gray-400">RAW</span> {session.raw_total}/12
+              </span>
             )}
             {/* sRPE hidden until athlete input is added (Q-10 / UF-20) */}
             {session.duration_minutes != null && (
