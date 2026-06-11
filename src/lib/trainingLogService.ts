@@ -218,6 +218,35 @@ export async function resolveAthleteWeekPlanId(
 }
 
 /**
+ * Athletes a group plan has been synced to for a given week. (COACH-REVIEW-8)
+ *
+ * When a coach syncs a group week to its athletes, each athlete gets an
+ * individual week_plans row whose source_group_plan_id points back at the
+ * group plan. GroupLogView uses this to show per-athlete sync state, so the
+ * query belongs in the service layer rather than inline in the component.
+ *
+ * Returns the set of synced athlete ids; empty when no group plan exists.
+ */
+export async function fetchGroupSyncStatus(
+  groupPlanId: string | null | undefined,
+  weekStart: string,
+): Promise<Set<string>> {
+  if (!groupPlanId) return new Set();
+  const { data, error } = await supabase
+    .from('week_plans')
+    .select('athlete_id')
+    .eq('source_group_plan_id', groupPlanId)
+    .eq('week_start', weekStart)
+    .not('athlete_id', 'is', null);
+  if (error) throw error;
+  return new Set(
+    ((data ?? []) as Array<{ athlete_id: string | null }>)
+      .map(r => r.athlete_id)
+      .filter((id): id is string => id != null),
+  );
+}
+
+/**
  * The athlete-app's primary data load for a chosen training slot.
  *
  * Returns the planned exercises + set lines for (weekStart, dayIndex) and

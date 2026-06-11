@@ -14,9 +14,9 @@
  */
 import { useEffect, useState } from 'react';
 import { ChevronRight, UserCheck, UserX } from 'lucide-react';
-import { supabase } from '../../../lib/supabase';
 import type { Athlete, GroupMemberWithAthlete, TrainingGroup, WeekPlan } from '../../../lib/database.types';
 import { useTrainingGroups } from '../../../hooks/useTrainingGroups';
+import { fetchGroupSyncStatus } from '../../../lib/trainingLogService';
 
 interface GroupLogViewProps {
   group: TrainingGroup;
@@ -50,21 +50,18 @@ export function GroupLogView({ group, weekPlan, weekStart, onSelectAthlete }: Gr
         return;
       }
       setLoading(true);
-      const { data, error } = await supabase
-        .from('week_plans')
-        .select('athlete_id')
-        .eq('source_group_plan_id', weekPlan.id)
-        .eq('week_start', weekStart)
-        .not('athlete_id', 'is', null);
-      if (cancelled) return;
-      if (error) {
+      try {
+        const synced = await fetchGroupSyncStatus(weekPlan.id, weekStart);
+        if (cancelled) return;
+        setSyncedAthleteIds(synced);
+      } catch (error) {
+        if (cancelled) return;
         // eslint-disable-next-line no-console
         console.error('[GroupLogView] failed to load sync status', error);
         setSyncedAthleteIds(new Set());
-      } else {
-        setSyncedAthleteIds(new Set((data ?? []).map(r => r.athlete_id as string)));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
     void loadSyncStatus();
     return () => { cancelled = true; };
