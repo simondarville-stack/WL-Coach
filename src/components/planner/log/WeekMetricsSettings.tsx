@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Settings, Plus, Trash2, X, Pencil, Check } from 'lucide-react';
+import { Button } from '../../ui';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
@@ -323,7 +324,7 @@ export function WeekMetricsSettings({
                     </span>
                     <button
                       onClick={() => setShowAddForm(s => !s)}
-                      className="text-[10px] text-blue-600 hover:text-blue-700 inline-flex items-center gap-0.5"
+                      className="text-[10px] text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] inline-flex items-center gap-0.5"
                     >
                       <Plus size={10} />
                       Add metric
@@ -385,14 +386,14 @@ export function WeekMetricsSettings({
                             </label>
                             <button
                               onClick={() => beginEdit(def)}
-                              className="text-gray-400 hover:text-blue-600 p-0.5"
+                              className="text-gray-400 hover:text-[color:var(--color-accent)] p-0.5"
                               aria-label="Edit"
                             >
                               <Pencil size={11} />
                             </button>
                             <button
                               onClick={() => handleArchive(def)}
-                              className="text-gray-400 hover:text-red-600 p-0.5"
+                              className="text-gray-400 hover:text-[color:var(--color-danger-text)] p-0.5"
                               aria-label="Archive"
                             >
                               <Trash2 size={11} />
@@ -429,19 +430,21 @@ export function WeekMetricsSettings({
                         />
                       </div>
                       <div className="flex gap-1.5 justify-end">
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => { setShowAddForm(false); setNewLabel(''); setNewUnit(''); }}
-                          className="text-[11px] text-gray-600 hover:text-gray-900 px-2 py-1"
                         >
                           Cancel
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
                           onClick={handleAdd}
                           disabled={saving || !newLabel.trim()}
-                          className="text-[11px] bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold px-2 py-1 rounded"
                         >
                           Add
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}

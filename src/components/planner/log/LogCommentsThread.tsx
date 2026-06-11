@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Send } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 import { formatTimestamp } from '../../../lib/logFormatUtils';
+import { Button } from '../../ui';
 
 interface LogCommentsThreadProps {
   messages: TrainingLogMessage[];
@@ -87,17 +88,20 @@ export function LogCommentsThread({ messages, compact, onPost }: LogCommentsThre
           }}
           placeholder="Comment as coach…"
           rows={compact ? 1 : 2}
-          className={`flex-1 ${textSize} bg-white border border-gray-300 rounded px-2 py-1 text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-none`}
+          className={`flex-1 ${textSize} bg-white border rounded px-2 py-1 text-gray-900 placeholder-gray-400 focus:outline-none border-[color:var(--color-border-tertiary)] focus:border-[color:var(--color-accent)] resize-none`}
           disabled={posting}
         />
-        <button
+        <Button
+          variant="primary"
+          size="sm"
+          iconOnly
+          icon={<Send size={12} />}
           onClick={submit}
           disabled={posting || draft.trim() === ''}
-          className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white hover:bg-blue-500 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="flex-shrink-0"
           title="Post comment"
-        >
-          <Send size={12} />
-        </button>
+          aria-label="Post comment"
+        />
       </div>
     </div>
   );

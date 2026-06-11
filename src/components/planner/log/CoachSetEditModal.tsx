@@ -198,8 +198,8 @@ export function CoachSetEditModal({
 
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
           {plannedExercise && (
-            <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 mb-1">
-              <div className="text-[9px] uppercase tracking-wide font-semibold text-blue-500 mb-0.5">
+            <div className="rounded-md bg-[var(--color-accent-muted)] border border-[color:var(--color-accent-border)] px-3 py-2 mb-1">
+              <div className="text-[9px] uppercase tracking-wide font-semibold text-[color:var(--color-accent)] mb-0.5">
                 Prescription
               </div>
               <StackedNotation
@@ -343,7 +343,7 @@ function EditableRow({
           }
         }}
         placeholder={row.planned_load != null ? String(row.planned_load) : 'kg'}
-        className="flex-1 min-w-0 bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+        className="flex-1 min-w-0 bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-[color:var(--color-accent)]"
       />
       <span className="text-[9px] text-gray-500">kg</span>
       <input
@@ -359,7 +359,7 @@ function EditableRow({
           }
         }}
         placeholder={row.planned_reps != null ? String(row.planned_reps) : 'r'}
-        className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-blue-500"
+        className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 focus:outline-none focus:border-[color:var(--color-accent)]"
       />
       <span className="text-[9px] text-gray-500">r</span>
       <button

@@ -16,6 +16,7 @@ import type {
 } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { Trash2, Pencil, MessageSquare } from 'lucide-react';
+import { Button } from '../../ui';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
@@ -138,24 +139,26 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
             </div>
             <div className="flex items-center gap-1">
               {onEditGpp && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  icon={<Pencil size={11} />}
                   onClick={onEditGpp}
-                  className="p-1 text-gray-400 hover:text-blue-600"
                   title="Edit GPP rows (toggle done, change reps/load)"
                   aria-label="Edit GPP block"
-                >
-                  <Pencil size={11} />
-                </button>
+                />
               )}
               {onDelete && logged && (
-                <button
+                <Button
+                  variant="danger"
+                  size="sm"
+                  iconOnly
+                  icon={<Trash2 size={11} />}
                   onClick={onDelete}
-                  className="p-1 text-gray-400 hover:text-red-600"
                   title="Remove this logged GPP block"
                   aria-label="Delete logged GPP block"
-                >
-                  <Trash2 size={11} />
-                </button>
+                />
               )}
             </div>
           </div>
@@ -264,24 +267,26 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
               </span>
             )}
             {logged && onEdit && (
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                icon={<Pencil size={11} />}
                 onClick={onEdit}
-                className="p-1 text-gray-400 hover:text-blue-600"
                 title="Edit the athlete's log for this exercise"
                 aria-label="Edit log"
-              >
-                <Pencil size={11} />
-              </button>
+              />
             )}
             {onDelete && (
-              <button
+              <Button
+                variant="danger"
+                size="sm"
+                iconOnly
+                icon={<Trash2 size={11} />}
                 onClick={onDelete}
-                className="p-1 text-gray-400 hover:text-red-600"
                 title="Remove this logged exercise"
                 aria-label="Delete logged exercise"
-              >
-                <Trash2 size={11} />
-              </button>
+              />
             )}
           </div>
         </div>
