@@ -108,4 +108,27 @@ describe('CoachSetEditModal — athlete data preservation (COACH-REVIEW-1)', () 
       }),
     );
   });
+
+  it('refreshes the parent once on close, not on every edit', async () => {
+    const onChanged = vi.fn();
+    render(
+      <CoachSetEditModal
+        open
+        exerciseName="Snatch"
+        logExerciseId="le1"
+        loggedSets={[makeSet()]}
+        onClose={() => {}}
+        onChanged={onChanged}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Didn't do this set"));
+    await waitFor(() => expect(upsertLoggedSet).toHaveBeenCalledTimes(1));
+    // The edit is persisted, but the page must NOT reload mid-edit.
+    expect(onChanged).not.toHaveBeenCalled();
+
+    // Closing flushes a single refresh.
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  });
 });

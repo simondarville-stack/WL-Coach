@@ -47,6 +47,10 @@ export function CoachSetEditModal({
   // Serial save queue: only one upsertLoggedSet at a time. (UF-31 / G3)
   const savingRef = useRef(false);
   const queueRef = useRef<Array<() => Promise<void>>>([]);
+  // Whether any edit has been persisted this session. We refresh the parent
+  // Log view ONCE on close instead of after every keystroke/toggle, so the
+  // page doesn't churn in the background while the coach is still editing.
+  const dirtyRef = useRef(false);
 
   const drainSaveQueue = async () => {
     if (savingRef.current) return;
@@ -127,7 +131,8 @@ export function CoachSetEditModal({
             r.localId === localId ? { ...saved, setNumber: saved.set_number, localId: saved.id } : r,
           ),
         );
-        onChanged();
+        // Defer the parent refresh to modal close (see dirtyRef / handleClose).
+        dirtyRef.current = true;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -154,7 +159,24 @@ export function CoachSetEditModal({
       }
     }
     setRows(prev => prev.filter(r => r.localId !== localId));
-    onChanged();
+    dirtyRef.current = true;
+  };
+
+  /**
+   * Close the modal, refreshing the parent Log view exactly once — and only
+   * if something changed. The refresh is enqueued as the LAST item on the
+   * save queue so it runs after any in-flight upsert settles (never reading
+   * stale data), instead of firing on every individual edit.
+   */
+  const handleClose = () => {
+    if (dirtyRef.current) {
+      dirtyRef.current = false;
+      queueRef.current.push(async () => {
+        onChanged();
+      });
+      void drainSaveQueue();
+    }
+    onClose();
   };
 
   return (
@@ -166,7 +188,7 @@ export function CoachSetEditModal({
             <p className="text-[11px] text-gray-500 truncate">{exerciseName}</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 text-gray-500 hover:text-gray-900"
             aria-label="Close"
           >
@@ -214,7 +236,7 @@ export function CoachSetEditModal({
 
         <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-gray-200">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-xs font-semibold text-gray-700 hover:text-gray-900 px-3 py-1.5 rounded"
           >
             Done
