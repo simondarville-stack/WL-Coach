@@ -23,7 +23,7 @@ import type {
   CustomMetricEntry,
 } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
-import { plannedExerciseTotals } from './logSummary';
+import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
 
 interface LogWeekOverviewProps {
   visibleDays: Array<{ index: number; name: string }>;
@@ -49,6 +49,9 @@ function plannedTotals(rows: (PlannedExercise & { exercise: Exercise })[]): Tota
   let reps = 0;
   let tonnage = 0;
   rows.forEach(ex => {
+    // Exclude exercises flagged out of totals (accessories / sentinels /
+    // GPP) so this matches the Plan-mode summary, which already skips them.
+    if (!countsTowardsTotals(ex.exercise)) return;
     // Use the shared planned-totals helper so a stale-zero summary cache
     // (combos, free_text_reps zone labels) is recomputed from the
     // prescription instead of counting as 0 — matching the day/exercise rows.
@@ -70,6 +73,9 @@ function performedTotals(log: DayLog): Totals {
   let reps = 0;
   let tonnage = 0;
   log.exercises.forEach(le => {
+    // Skip performed work for exercises flagged out of totals, so the
+    // performed side stays symmetric with the planned side above.
+    if (!countsTowardsTotals(le.exercise)) return;
     le.sets.forEach(s => {
       if (s.status !== 'completed') return;
       sets += 1;

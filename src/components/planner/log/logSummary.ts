@@ -14,12 +14,31 @@
  * "Going over plan" is treated as neutral — matches OWL coaching intent
  * (under-delivery is the worry, over-delivery rarely needs flagging).
  */
-import type { PlannedExercise, GppSection } from '../../../lib/database.types';
+import type { PlannedExercise, GppSection, Exercise, ExerciseStub } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { getSentinelType } from '../sentinelUtils';
 import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
 
 export type SummaryTone = 'neutral' | 'amber' | 'red' | 'pending';
+
+/**
+ * Whether an exercise contributes to the coach's planned/performed TOTALS.
+ * Anything flagged out of totals (accessories, plus the TEXT/IMAGE/VIDEO/GPP
+ * sentinels, which are created with counts_towards_totals=false) is excluded.
+ *
+ * Single source of truth for the Log-mode rollups (day total + week
+ * overview) so they agree with the Plan-mode summary, which already skips
+ * these via the same flag (see WeekSummaryBox / computeMetrics). Per-row
+ * Plan/Did strips still render for every exercise — this gates totals only.
+ */
+export function countsTowardsTotals(
+  exercise: Exercise | ExerciseStub | null | undefined,
+): boolean {
+  // ExerciseStub (optimistic off-plan add) carries no flag → defaults to
+  // counting, matching the DB default for a real exercise.
+  if (exercise == null || !('counts_towards_totals' in exercise)) return true;
+  return exercise.counts_towards_totals !== false;
+}
 
 export interface MetricPair {
   planned: number | null;

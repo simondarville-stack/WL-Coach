@@ -13,7 +13,7 @@ import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
-import { computeDaySummary, computeExerciseSummary } from './logSummary';
+import { computeDaySummary, computeExerciseSummary, countsTowardsTotals } from './logSummary';
 import { PlanActual } from './PlanActual';
 
 interface LogDayCardProps {
@@ -143,9 +143,16 @@ export function LogDayCard({
       {!collapsed && (
       <>
       {(() => {
+        // Day TOTAL excludes exercises flagged out of totals (accessories /
+        // sentinels / GPP), matching the week overview and Plan-mode summary.
+        // Per-row strips below still render for every exercise.
         const exerciseSummaries = [
-          ...sortedPlanned.map(ex => computeExerciseSummary(ex, loggedByPlannedId.get(ex.id) ?? null)),
-          ...offPlan.map(le => computeExerciseSummary(null, le)),
+          ...sortedPlanned
+            .filter(ex => countsTowardsTotals(ex.exercise))
+            .map(ex => computeExerciseSummary(ex, loggedByPlannedId.get(ex.id) ?? null)),
+          ...offPlan
+            .filter(le => countsTowardsTotals(le.exercise))
+            .map(le => computeExerciseSummary(null, le)),
         ];
         if (exerciseSummaries.length === 0) return null;
         const day = computeDaySummary(exerciseSummaries);
