@@ -25,6 +25,7 @@ import type {
 import type { DayLog } from '../../../lib/trainingLogModel';
 import { hasLoggedWork } from '../../../lib/trainingLogModel';
 import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
+import { formatDecimalComma } from '../../../lib/logFormatUtils';
 
 /**
  * Day-strip dot status. Surfaces a distinct "logged but not finished" state
@@ -594,12 +595,14 @@ function OtherMetricsTable({
                 {row.values.map((v, i) => (
                   <td
                     key={i}
-                    className={`px-1 py-1 text-center ${
+                    className={`px-1 py-1 ${
                       v == null
-                        ? 'bg-gray-50 text-gray-300'
+                        ? 'bg-gray-50 text-gray-300 text-center'
                         : row.numeric
-                        ? 'bg-blue-50 text-blue-900 tabular-nums'
-                        : 'bg-amber-50 text-amber-900 text-left text-[10px]'
+                        ? 'bg-blue-50 text-blue-900 tabular-nums text-center'
+                        // Text metrics wrap instead of a lossy 14-char slice;
+                        // the table scrolls-x and the cell caps its width.
+                        : 'bg-amber-50 text-amber-900 text-left text-[10px] whitespace-normal break-words align-top max-w-[160px]'
                     }`}
                     title={v == null ? '—' : `${row.label}: ${v}`}
                   >
@@ -607,15 +610,13 @@ function OtherMetricsTable({
                       ? '—'
                       : row.numeric
                       ? typeof v === 'number'
-                        ? Number.isInteger(v)
-                          ? v
-                          : v.toFixed(1)
+                        ? formatDecimalComma(v)
                         : v
-                      : String(v).slice(0, 14)}
+                      : String(v)}
                   </td>
                 ))}
                 <td className="px-2 py-1 text-center tabular-nums text-gray-700">
-                  {a != null ? (Number.isInteger(a) ? a : a.toFixed(1)) : '—'}
+                  {a != null ? formatDecimalComma(a) : '—'}
                 </td>
               </tr>
             );
