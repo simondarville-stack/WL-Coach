@@ -32,6 +32,7 @@ import { CoachSetEditModal } from './CoachSetEditModal';
 import { WeekMetricsSettings } from './WeekMetricsSettings';
 import { ConfirmModal } from '../../log/ConfirmModal';
 import { GppBlockEditor } from '../GppBlockEditor';
+import { formatTime24 } from '../../../lib/dateUtils';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -229,7 +230,7 @@ export function LogModeView({
                 {totalLogged} exercise{totalLogged === 1 ? '' : 's'}
                 {loadedAt && (
                   <span className="text-gray-400 ml-2">
-                    · loaded {loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    · loaded {formatTime24(loadedAt, true)}
                   </span>
                 )}
               </>

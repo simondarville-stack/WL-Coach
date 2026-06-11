@@ -26,6 +26,7 @@ import {
   addComment,
   type InboxThread,
 } from '../../../lib/trainingLogService';
+import { formatWeekdayDateShort, formatTime24, formatDateTimeShort } from '../../../lib/dateUtils';
 import { describeError } from '../../../lib/errorMessage';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 
@@ -468,7 +469,7 @@ function syntheticGeneralThread(athleteId: string | null): InboxThread {
 function formatSessionDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatWeekdayDateShort(iso);
 }
 
 function formatStamp(iso: string): string {
@@ -479,6 +480,6 @@ function formatStamp(iso: string): string {
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
-  if (sameDay) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // Same-day: just the 24h time; otherwise day-first date + 24h time.
+  return sameDay ? formatTime24(d) : formatDateTimeShort(d);
 }

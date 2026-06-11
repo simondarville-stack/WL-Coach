@@ -29,6 +29,53 @@ export function formatDateShort(dateString: string): string {
   return `${day}/${month}`;
 }
 
+// Deterministic English weekday names — avoids locale-dependent ordering
+// (toLocaleDateString flips numeric dates to US month-first on en-US machines).
+// UI labels stay English per CLAUDE.md; only numeric formatting is localised.
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEKDAY_LONG = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+];
+
+/** Short ("Mon") or long ("Monday") English weekday for a YYYY-MM-DD / ISO date. */
+export function formatWeekday(dateStr: string, style: 'short' | 'long' = 'short'): string {
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  return (style === 'long' ? WEEKDAY_LONG : WEEKDAY_SHORT)[d.getDay()];
+}
+
+/** "Mon 10/06" — short weekday + day-first date. */
+export function formatWeekdayDateShort(dateStr: string): string {
+  const date = formatDateShort(dateStr);
+  return date ? `${formatWeekday(dateStr, 'short')} ${date}` : '';
+}
+
+/** "Monday 10/06" — long weekday + day-first date. */
+export function formatWeekdayDateLong(dateStr: string): string {
+  const date = formatDateShort(dateStr);
+  return date ? `${formatWeekday(dateStr, 'long')} ${date}` : '';
+}
+
+/** "16:00" (or "16:00:01") — 24-hour local time from an ISO timestamp / Date. */
+export function formatTime24(value: string | Date, withSeconds = false): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (withSeconds) {
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+  return `${hh}:${mm}`;
+}
+
+/** "10/06 16:00" — day-first date + 24h time, for comment-thread stamps. */
+export function formatDateTimeShort(value: string | Date): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${formatDateShort(d.toISOString())} ${formatTime24(d)}`;
+}
+
 export function parseDDMMYYYYToISO(ddmmyyyy: string): string {
   const parts = ddmmyyyy.split('/');
   if (parts.length !== 3) return '';

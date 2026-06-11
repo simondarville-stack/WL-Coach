@@ -21,6 +21,7 @@ import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
+import { formatWeekdayDateLong } from '../../../lib/dateUtils';
 
 interface SessionPreviewProps {
   slotLabel: string;
@@ -48,11 +49,7 @@ export function SessionPreview({
   isBonus,
   readOnly = false,
 }: SessionPreviewProps) {
-  const prettyDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  });
+  const prettyDate = formatWeekdayDateLong(date);
   const session = log?.session ?? null;
   const status = session?.status ?? 'pending';
 

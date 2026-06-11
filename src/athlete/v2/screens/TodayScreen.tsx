@@ -44,6 +44,7 @@ import type {
   TrainingLogSet,
 } from '../../../lib/database.types';
 import { isExerciseDone } from '../../../lib/trainingLogModel';
+import { formatWeekday } from '../../../lib/dateUtils';
 import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
 import { fetchPRHistory, insertPRHistory, syncAthletePRs } from '../../../lib/prTable';
 import { estimateAtRepsFromAnchors, roundToHalf } from '../../../lib/xrmUtils';
@@ -950,7 +951,7 @@ export function TodayScreen() {
             slotLabel={selectedOverviewDay?.label ?? `Day ${dayIndex}`}
             weekdayLabel={
               selectedOverviewDay?.weekday != null
-                ? new Date(performedOnDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' })
+                ? formatWeekday(performedOnDate, 'short')
                 : null
             }
             date={performedOnDate}

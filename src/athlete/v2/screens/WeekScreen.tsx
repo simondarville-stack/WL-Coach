@@ -28,6 +28,7 @@ import { WeekNavigator, Weekday } from '../components/WeekNavigator';
 import { SessionPreview } from '../components/SessionPreview';
 import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
+import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 import { Loader2, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 
 function todayISO(): string {
@@ -195,9 +196,7 @@ export function WeekScreen() {
           {overview.days.map(day => {
             const weekdayLabel = day.weekday != null ? Weekday[day.weekday] : null;
             const performed = day.sessionDate
-              ? new Date(day.sessionDate + 'T00:00:00').toLocaleDateString(undefined, {
-                  weekday: 'short', month: 'short', day: 'numeric',
-                })
+              ? formatWeekdayDateShort(day.sessionDate)
               : null;
             const isExpanded = expandedDays.has(day.dayIndex);
             const dayData = dayCache[day.dayIndex];

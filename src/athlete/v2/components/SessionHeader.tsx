@@ -21,6 +21,7 @@ import { BodyweightField } from './BodyweightField';
 import { RawScoreDial, type RawScores } from './RawScoreDial';
 import { VasField } from './VasField';
 import { CustomMetricField } from './CustomMetricField';
+import { formatWeekdayDateLong } from '../../../lib/dateUtils';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
@@ -87,11 +88,7 @@ export function SessionHeader({
   };
 
   const status = session?.status ?? 'pending';
-  const prettyDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  });
+  const prettyDate = formatWeekdayDateLong(date);
 
   // No config row yet → fall back to the pre-feature defaults so the
   // UI doesn't suddenly hide RAW/BW for athletes whose coach hasn't

@@ -6,6 +6,11 @@ import {
   formatISOToDateInput,
   getMondayOfWeek,
   formatDateRange,
+  formatWeekday,
+  formatWeekdayDateShort,
+  formatWeekdayDateLong,
+  formatTime24,
+  formatDateTimeShort,
 } from '../dateUtils';
 
 describe('formatDateToDDMMYYYY', () => {
@@ -89,5 +94,52 @@ describe('formatDateRange', () => {
   it('formats a single day range', () => {
     const result = formatDateRange('2026-04-01', 1);
     expect(result).toBe('01-01/04/2026');
+  });
+});
+
+describe('formatWeekday (European, deterministic English)', () => {
+  it('returns short English weekday names', () => {
+    // 2026-06-08 is a Monday.
+    expect(formatWeekday('2026-06-08')).toBe('Mon');
+    expect(formatWeekday('2026-06-14')).toBe('Sun');
+  });
+  it('returns long names when asked', () => {
+    expect(formatWeekday('2026-06-08', 'long')).toBe('Monday');
+  });
+  it('tolerates a full ISO timestamp', () => {
+    expect(formatWeekday('2026-06-08T09:30:00Z')).toBe('Mon');
+  });
+  it('returns empty string for an unparseable date', () => {
+    expect(formatWeekday('not-a-date')).toBe('');
+  });
+});
+
+describe('formatWeekdayDateShort / Long (day-first)', () => {
+  it('combines weekday with DD/MM', () => {
+    expect(formatWeekdayDateShort('2026-06-10')).toBe('Wed 10/06');
+    expect(formatWeekdayDateLong('2026-06-10')).toBe('Wednesday 10/06');
+  });
+});
+
+describe('formatTime24 (24-hour, no AM/PM)', () => {
+  it('formats local hours and minutes zero-padded', () => {
+    const d = new Date(2026, 5, 10, 16, 5);
+    expect(formatTime24(d)).toBe('16:05');
+  });
+  it('can include seconds', () => {
+    const d = new Date(2026, 5, 10, 16, 5, 9);
+    expect(formatTime24(d, true)).toBe('16:05:09');
+  });
+  it('never emits AM/PM', () => {
+    const d = new Date(2026, 5, 10, 0, 0);
+    expect(formatTime24(d)).toBe('00:00');
+    expect(formatTime24(d)).not.toMatch(/[AP]M/i);
+  });
+});
+
+describe('formatDateTimeShort (DD/MM HH:mm)', () => {
+  it('formats a Date as day-first date + 24h time', () => {
+    const d = new Date(2026, 5, 10, 14, 30);
+    expect(formatDateTimeShort(d)).toBe('10/06 14:30');
   });
 });

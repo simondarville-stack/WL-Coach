@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Home } from 'lucide-react';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
+import { formatDateRange } from '../../../lib/dateUtils';
 
 // Q-13 investigation result: day_schedule stores 0=Mon, 1=Tue, ..., 6=Sun
 // (confirmed by migration 20260405_day_schedule.sql and PlannerControlPanel.tsx
@@ -33,12 +34,8 @@ function getMondayOf(date: Date): string {
 }
 
 function formatWeekRange(weekStart: string): string {
-  const start = parseISO(weekStart);
-  const end = parseISO(weekStart);
-  end.setDate(end.getDate() + 6);
-  const startStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const endStr = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  return `${startStr} – ${endStr}`;
+  // European day-first range, e.g. "10-16/06/2026" (see CLAUDE.md / dateUtils).
+  return formatDateRange(weekStart, 7);
 }
 
 interface WeekNavigatorProps {

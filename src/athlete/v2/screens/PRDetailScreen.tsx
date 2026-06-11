@@ -31,17 +31,16 @@ import { estimate1RM } from '../../../lib/xrmUtils';
 import type { AthletePRHistory, Exercise } from '../../../lib/database.types';
 import { useAuth } from '../lib/AuthContext';
 import { PRFormModal } from '../components/PRFormModal';
+import { formatDateToDDMMYYYY, formatDateShort } from '../../../lib/dateUtils';
 
 function formatRowDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' });
+  if (Number.isNaN(new Date(iso + 'T00:00:00').getTime())) return iso;
+  return formatDateToDDMMYYYY(iso);
 }
 
 function formatChartDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (Number.isNaN(new Date(iso + 'T00:00:00').getTime())) return iso;
+  return formatDateShort(iso);
 }
 
 interface FormState {

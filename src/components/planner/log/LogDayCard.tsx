@@ -15,6 +15,7 @@ import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
 import { computeDaySummary, computeExerciseSummary, countsTowardsTotals } from './logSummary';
 import { PlanActual } from './PlanActual';
+import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 
 interface LogDayCardProps {
   dayName: string;
@@ -88,9 +89,7 @@ export function LogDayCard({
 
   const performedDate = session?.date ?? null;
   const performedLabel = performedDate
-    ? new Date(performedDate + 'T00:00:00').toLocaleDateString(undefined, {
-        weekday: 'short', month: 'short', day: 'numeric',
-      })
+    ? formatWeekdayDateShort(performedDate)
     : null;
 
   const canComment = !!session && !!onPostSessionComment;
