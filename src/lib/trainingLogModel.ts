@@ -89,6 +89,26 @@ export function isExerciseDone(
   return count > 0 && terminal.length >= count;
 }
 
+/**
+ * Whether a day's session represents real training, independent of the
+ * explicit "Finish session" action. (COACH-REVIEW-5)
+ *
+ * Sessions are created `pending` and only promoted to `completed` when the
+ * athlete taps "Finish session" — but exercises auto-promote as they're
+ * logged. So an athlete can complete every exercise and close the app without
+ * the session ever reaching `completed`, making the coach's Sessions stat and
+ * Days-trained dots under-report a fully-trained day.
+ *
+ * A day counts as trained when the session is explicitly completed OR at
+ * least one exercise is done. Keeps the explicit `completed` state meaningful
+ * while not letting it be the sole truth for compliance.
+ */
+export function hasLoggedWork(log: DayLog | null | undefined): boolean {
+  if (!log) return false;
+  if (log.session?.status === 'completed') return true;
+  return log.exercises.some(le => isExerciseDone(le));
+}
+
 // ─── Aggregation helpers ──────────────────────────────────────────────────
 
 export function sumPerformedReps(sets: TrainingLogSet[]): number {

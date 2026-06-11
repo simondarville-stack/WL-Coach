@@ -23,7 +23,20 @@ import type {
   CustomMetricEntry,
 } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
+import { hasLoggedWork } from '../../../lib/trainingLogModel';
 import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
+
+/**
+ * Day-strip dot status. Surfaces a distinct "logged but not finished" state
+ * so a fully-trained day the athlete never tapped "Finish session" on isn't
+ * shown as untrained. (COACH-REVIEW-5)
+ */
+function deriveDayStatus(log: DayLog | undefined): string {
+  const raw = log?.session?.status ?? 'pending';
+  if (raw === 'completed') return 'completed';
+  if (hasLoggedWork(log)) return 'logged';
+  return raw;
+}
 
 interface LogWeekOverviewProps {
   visibleDays: Array<{ index: number; name: string }>;
@@ -143,9 +156,9 @@ export function LogWeekOverview({
   );
 
   const plannedSessions = visibleDays.length;
-  const completedSessions = Object.values(weekLog).filter(
-    d => d.session?.status === 'completed',
-  ).length;
+  // Count any day with real training — not only those formally finished —
+  // so a fully-logged-but-not-finished session isn't under-reported.
+  const completedSessions = Object.values(weekLog).filter(hasLoggedWork).length;
 
   const performedAvg = performedAgg.reps > 0 ? performedAgg.tonnage / performedAgg.reps : 0;
   const plannedAvg = plannedAgg.reps > 0 ? plannedAgg.tonnage / plannedAgg.reps : 0;
@@ -160,13 +173,13 @@ export function LogWeekOverview({
     ...visibleDays.map(d => ({
       key: `v${d.index}`,
       label: d.name,
-      status: weekLog[d.index]?.session?.status ?? 'pending',
+      status: deriveDayStatus(weekLog[d.index]),
       isBonus: false,
     })),
     ...bonusIndices.map(idx => ({
       key: `b${idx}`,
       label: 'Bonus',
-      status: weekLog[idx]?.session?.status ?? 'pending',
+      status: deriveDayStatus(weekLog[idx]),
       isBonus: true,
     })),
   ];
@@ -302,13 +315,20 @@ function StatCell({
 const STATUS_DOT: Record<string, string> = {
   pending: 'bg-gray-200 border-gray-300',
   in_progress: 'bg-amber-300 border-amber-400',
+  // Trained but not formally finished — lighter than the explicit completed
+  // dot so the coach can tell the two apart at a glance. (COACH-REVIEW-5)
+  logged: 'bg-emerald-300 border-emerald-400',
   completed: 'bg-emerald-500 border-emerald-600',
   skipped: 'bg-red-400 border-red-500',
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  logged: 'logged (not finished)',
+};
+
 function DayDot({ label, status, isBonus }: { label: string; status: string; isBonus: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-0.5 min-w-[28px]" title={`${label}: ${status}`}>
+    <div className="flex flex-col items-center gap-0.5 min-w-[28px]" title={`${label}: ${STATUS_LABEL[status] ?? status}`}>
       <div
         className={`w-3 h-3 rounded-full border ${STATUS_DOT[status] ?? STATUS_DOT.pending} ${isBonus ? 'ring-2 ring-amber-300/40' : ''}`}
         aria-hidden
