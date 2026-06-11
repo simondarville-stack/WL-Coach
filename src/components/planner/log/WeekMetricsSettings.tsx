@@ -28,6 +28,7 @@ import {
   upsertWeekMetricsConfig,
 } from '../../../lib/trainingLogService';
 import { getOwnerId } from '../../../lib/ownerContext';
+import { METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 
 /** Supabase errors are plain objects, not Error instances, so the usual
  *  `e instanceof Error` branch falls through to String(e) = "[object
@@ -74,9 +75,9 @@ interface PanelState {
 }
 
 const DEFAULT_PANEL: PanelState['config'] = {
-  trackRaw: true,
-  trackBodyweight: true,
-  trackVas: false,
+  trackRaw: METRIC_TRACKING_DEFAULTS.track_raw,
+  trackBodyweight: METRIC_TRACKING_DEFAULTS.track_bodyweight,
+  trackVas: METRIC_TRACKING_DEFAULTS.track_vas,
   enabledIds: new Set(),
 };
 

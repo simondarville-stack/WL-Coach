@@ -22,6 +22,7 @@ import { RawScoreDial, type RawScores } from './RawScoreDial';
 import { VasField } from './VasField';
 import { CustomMetricField } from './CustomMetricField';
 import { formatWeekdayDateLong } from '../../../lib/dateUtils';
+import { METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
@@ -93,9 +94,9 @@ export function SessionHeader({
   // No config row yet → fall back to the pre-feature defaults so the
   // UI doesn't suddenly hide RAW/BW for athletes whose coach hasn't
   // opened the metrics popover.
-  const showRaw = metricsConfig ? metricsConfig.track_raw : true;
-  const showBw = metricsConfig ? metricsConfig.track_bodyweight : true;
-  const showVas = metricsConfig ? metricsConfig.track_vas : false;
+  const showRaw = metricsConfig ? metricsConfig.track_raw : METRIC_TRACKING_DEFAULTS.track_raw;
+  const showBw = metricsConfig ? metricsConfig.track_bodyweight : METRIC_TRACKING_DEFAULTS.track_bodyweight;
+  const showVas = metricsConfig ? metricsConfig.track_vas : METRIC_TRACKING_DEFAULTS.track_vas;
   const customValues = session?.custom_metrics ?? {};
 
   return (

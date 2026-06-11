@@ -23,7 +23,7 @@ import type {
   CustomMetricEntry,
 } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
-import { hasLoggedWork } from '../../../lib/trainingLogModel';
+import { hasLoggedWork, METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
 import { formatDecimalComma } from '../../../lib/logFormatUtils';
 
@@ -203,9 +203,9 @@ export function LogWeekOverview({
 
   // Default to pre-feature behaviour (RAW + BW shown) when no config row
   // exists yet. VAS / custom stay off until the coach opts in.
-  const trackRaw = metricsConfig ? metricsConfig.track_raw : true;
-  const trackBw = metricsConfig ? metricsConfig.track_bodyweight : true;
-  const trackVas = metricsConfig ? metricsConfig.track_vas : false;
+  const trackRaw = metricsConfig ? metricsConfig.track_raw : METRIC_TRACKING_DEFAULTS.track_raw;
+  const trackBw = metricsConfig ? metricsConfig.track_bodyweight : METRIC_TRACKING_DEFAULTS.track_bodyweight;
+  const trackVas = metricsConfig ? metricsConfig.track_vas : METRIC_TRACKING_DEFAULTS.track_vas;
   const showOtherMetrics = trackBw || trackVas || enabledMetricDefs.length > 0;
 
   return (

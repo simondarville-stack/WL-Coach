@@ -25,6 +25,26 @@ export type ExerciseStatus = (typeof EXERCISE_STATUSES)[number];
 export const SET_STATUSES = ['pending', 'completed', 'skipped', 'failed'] as const;
 export type SetStatus = (typeof SET_STATUSES)[number];
 
+// ─── Metric tracking defaults ──────────────────────────────────────────────
+
+/**
+ * Product default for per-week metric tracking when no config row exists yet:
+ * RAW + bodyweight on, VAS off. Single source of truth (CLAUDE.md principle 3)
+ * consumed by SessionHeader, LogWeekOverview and WeekMetricsSettings so the
+ * athlete and coach can never disagree on what's tracked.
+ *
+ * NOTE: the DB column defaults (track_raw / track_bodyweight) still read
+ * `false`, contradicting this product intent. Aligning them needs a migration
+ * (gated — out of scope here), so until then every insert path must seed the
+ * config from this constant rather than relying on the column default.
+ * (METRICS-TRANSLATION-1)
+ */
+export const METRIC_TRACKING_DEFAULTS = {
+  track_raw: true,
+  track_bodyweight: true,
+  track_vas: false,
+} as const;
+
 // ─── Delta thresholds (coach-configurable in P7) ──────────────────────────
 
 export type DeltaState = 'matched' | 'amber' | 'red' | 'pending';
