@@ -56,6 +56,26 @@ export interface ExerciseSummary {
   maxLoad: MetricPair;
 }
 
+/**
+ * Units where the Sets/Reps compliance pair is meaningful. free_text,
+ * 'other' and rpe carry no quantified set/rep plan, so the coach Plan/Did
+ * strip renders pure noise ("Sets —/1  Reps —/0") for them — callers should
+ * suppress the whole strip for these units and rely on the ✓/✗/prose Did row.
+ */
+export function isQuantifiedUnit(unit: string | null | undefined): boolean {
+  return unit !== 'free_text' && unit !== 'other' && unit !== 'rpe';
+}
+
+/**
+ * Only absolute_kg loads are real kilograms. percentage stores the bare
+ * percent number in load_value (so summary_avg_load is e.g. 80, not 80 kg),
+ * and text-based units carry no load at all — so the Avg/Max kg axes must be
+ * suppressed for anything other than absolute_kg.
+ */
+export function isAbsoluteLoadUnit(unit: string | null | undefined): boolean {
+  return unit === 'absolute_kg';
+}
+
 export function toneFor(p: MetricPair): SummaryTone {
   if (!p.hasLog) return 'pending';
   const planned = p.planned ?? 0;
@@ -179,13 +199,16 @@ export function plannedExerciseTotals(planned: PlannedExercise): {
 }
 
 export function computeExerciseSummary(
-  planned: PlannedExercise | null,
+  planned: (PlannedExercise & { exercise?: Exercise | null }) | null,
   logged: LoggedExerciseFull | null,
 ): ExerciseSummary {
   const hasLog = logged != null;
 
   // GPP gets its own path because the data lives in metadata, not sets.
-  const sentinel = planned ? getSentinelType((planned as PlannedExercise & { exercise_code?: string | null }).exercise_code ?? null) : null;
+  // The exercise_code lives on the joined Exercise, not on PlannedExercise —
+  // reading it off `planned` directly always resolved to undefined, so the GPP
+  // branch never fired and GPP work counted as 0/0 in the Day-total rollup.
+  const sentinel = getSentinelType(planned?.exercise?.exercise_code ?? null);
   if (sentinel === 'gpp') {
     const plannedGpp = planned?.metadata?.gpp ?? null;
     const athleteGpp = logged?.log.metadata?.gpp ?? null;
@@ -197,8 +220,13 @@ export function computeExerciseSummary(
     : { sets: null, reps: null, avg: null, max: null };
   const plannedSets = pt.sets;
   const plannedReps = pt.reps;
-  const plannedAvg = pt.avg;
-  const plannedMax = pt.max;
+  // percentage / text units don't prescribe kilograms — never surface their
+  // load number under a "kg" axis (it pollutes the Day-total weighted mean and
+  // gets toneFor'd against the athlete's real performed kg). Off-plan rows
+  // (planned == null) keep their loads — they're athlete-added kg sets.
+  const absoluteLoad = planned ? isAbsoluteLoadUnit(planned.unit) : true;
+  const plannedAvg = absoluteLoad ? pt.avg : null;
+  const plannedMax = absoluteLoad ? pt.max : null;
 
   if (!logged) {
     return {

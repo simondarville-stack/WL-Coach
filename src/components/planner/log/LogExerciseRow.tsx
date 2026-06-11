@@ -19,7 +19,7 @@ import { Trash2, Pencil, MessageSquare } from 'lucide-react';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
-import { computeExerciseSummary } from './logSummary';
+import { computeExerciseSummary, isQuantifiedUnit, isAbsoluteLoadUnit } from './logSummary';
 import { PlanActual } from './PlanActual';
 
 interface LogExerciseRowProps {
@@ -217,6 +217,15 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
 
   const summary = computeExerciseSummary(planned, logged);
 
+  // free_text / 'other' / rpe prescriptions carry no quantified set/rep plan,
+  // so the Plan/Did compliance strip is pure noise ("Sets —/1  Reps —/0"); the
+  // ✓/✗/prose Did row is the complete signal. Off-plan rows have no unit and
+  // keep the strip (they're athlete-added kg sets). Only absolute_kg loads are
+  // real kilograms, so the Avg/Max kg axes are gated on that.
+  const plannedUnit = planned?.unit ?? null;
+  const showComplianceStrip = planned ? isQuantifiedUnit(plannedUnit) : true;
+  const showLoadAxes = planned ? isAbsoluteLoadUnit(plannedUnit) : true;
+
   return (
     <div className="flex">
       {accentColor && (
@@ -312,13 +321,19 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
           <div className="text-[11px] text-gray-400 italic mt-0.5">Not logged</div>
         ) : null}
 
-        {/* Plan vs Did summary — replaces the previous DoneChip + delta-% chip. */}
-        {(logged || planned) && (
+        {/* Plan vs Did summary — replaces the previous DoneChip + delta-% chip.
+            Suppressed entirely for non-quantified units; load axes hidden for
+            non-kg units (see showComplianceStrip / showLoadAxes above). */}
+        {(logged || planned) && showComplianceStrip && (
           <div className="mt-1.5 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
             <PlanActual label="Sets" metric={summary.sets} />
             <PlanActual label="Reps" metric={summary.reps} />
-            <PlanActual label="Avg" metric={summary.avgLoad} unit="kg" decimals={0} />
-            <PlanActual label="Max" metric={summary.maxLoad} unit="kg" decimals={0} />
+            {showLoadAxes && (
+              <>
+                <PlanActual label="Avg" metric={summary.avgLoad} unit="kg" decimals={0} />
+                <PlanActual label="Max" metric={summary.maxLoad} unit="kg" decimals={0} />
+              </>
+            )}
           </div>
         )}
 
