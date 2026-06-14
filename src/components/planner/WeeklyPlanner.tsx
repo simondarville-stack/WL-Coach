@@ -474,6 +474,21 @@ export function WeeklyPlanner() {
     }
   };
 
+  /** Delete-held + click on a unit header: clear every exercise in that
+   *  training unit in one bulk delete. Mirrors the per-exercise delete-held
+   *  gesture (handleDeleteExercise) but for the whole day. */
+  const handleClearDay = async (dayIndex: number) => {
+    if (!currentWeekPlan) return;
+    const ids = (plannedExercises[dayIndex] || []).map(ex => ex.id);
+    if (ids.length === 0) return;
+    try {
+      await deleteDayExercises(ids);
+      await handleRefresh();
+    } catch {
+      // error already set in hook
+    }
+  };
+
   const handleExerciseDrop = async (
     fromDay: number,
     plannedExId: string,
@@ -1529,6 +1544,7 @@ export function WeeklyPlanner() {
                 onRefresh={handleRefresh}
                 onReorderInDay={handleReorderInDay}
                 onDeleteExercise={handleDeleteExercise}
+                onClearDay={handleClearDay}
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
                 onDockExerciseDrop={handleDockExerciseDrop}

@@ -46,6 +46,8 @@ interface DayCardProps {
    *  persists positions in the background (no full refetch / remount). */
   onReorderInDay: (dayIndex: number, orderedIds: string[]) => void;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
+  /** Clear the whole training unit (delete-held + click on the unit header). */
+  onClearDay: (dayIndex: number) => void | Promise<void>;
   onExerciseDrop: (
     fromDay: number,
     plannedExId: string,
@@ -87,6 +89,7 @@ export function DayCard({
   onRefresh,
   onReorderInDay,
   onDeleteExercise,
+  onClearDay,
   onExerciseDrop,
   onDayDrop,
   onDockExerciseDrop,
@@ -290,13 +293,26 @@ export function DayCard({
             padding: '8px 12px',
             borderBottom: '0.5px solid var(--color-border-tertiary)',
             cursor: 'pointer',
-            background: headerHovered ? 'var(--color-bg-secondary)' : 'transparent',
+            background: deleteHeld && !isEmpty && headerHovered
+              ? 'var(--color-danger-bg)'
+              : headerHovered ? 'var(--color-bg-secondary)' : 'transparent',
             borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
             transition: 'background 0.1s',
           }}
           onMouseEnter={() => setHeaderHovered(true)}
           onMouseLeave={() => setHeaderHovered(false)}
-          onClick={onNavigateToDay}
+          title={deleteHeld && !isEmpty ? 'Delete all exercises in this unit' : undefined}
+          onClick={e => {
+            // Delete-held (or its Shift alias) + click on the unit header
+            // clears the entire training unit — mirrors the per-exercise
+            // delete-held gesture, with the red header tint as the affordance.
+            if ((deleteHeld || e.shiftKey) && !isEmpty) {
+              e.stopPropagation();
+              void onClearDay(dayIndex);
+              return;
+            }
+            onNavigateToDay();
+          }}
         >
           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>{dayName}</span>
           {restInfo && restInfo.hoursFromPrevious !== null && (

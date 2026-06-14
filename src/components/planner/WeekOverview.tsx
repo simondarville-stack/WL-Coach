@@ -35,6 +35,8 @@ interface WeekOverviewProps {
   onRefresh: () => Promise<void>;
   onReorderInDay: (dayIndex: number, orderedIds: string[]) => void;
   onDeleteExercise: (plannedExId: string) => Promise<void>;
+  /** Clear every exercise in a training unit (delete-held + click on header). */
+  onClearDay: (dayIndex: number) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
@@ -66,6 +68,7 @@ export function WeekOverview({
   onRefresh,
   onReorderInDay,
   onDeleteExercise,
+  onClearDay,
   onExerciseDrop,
   onDayDrop,
   onDockExerciseDrop,
@@ -154,6 +157,7 @@ export function WeekOverview({
                         onRefresh={onRefresh}
                         onReorderInDay={onReorderInDay}
                         onDeleteExercise={onDeleteExercise}
+                        onClearDay={onClearDay}
                         onExerciseDrop={onExerciseDrop}
                         onDayDrop={onDayDrop}
                         onDockExerciseDrop={onDockExerciseDrop}
@@ -202,6 +206,7 @@ export function WeekOverview({
                   onRefresh={onRefresh}
                   onReorderInDay={onReorderInDay}
                   onDeleteExercise={onDeleteExercise}
+                  onClearDay={onClearDay}
                   onExerciseDrop={onExerciseDrop}
                   onDayDrop={onDayDrop}
                   onDockExerciseDrop={onDockExerciseDrop}
@@ -246,6 +251,7 @@ export function WeekOverview({
             onRefresh={onRefresh}
             onReorderInDay={onReorderInDay}
             onDeleteExercise={onDeleteExercise}
+            onClearDay={onClearDay}
             onExerciseDrop={onExerciseDrop}
             onDayDrop={onDayDrop}
             onDockExerciseDrop={onDockExerciseDrop}
