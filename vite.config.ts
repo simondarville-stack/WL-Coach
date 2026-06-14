@@ -27,6 +27,14 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(gitSha()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  build: {
+    // 'hidden' emits .map files but omits the //# sourceMappingURL comment,
+    // so browsers/devtools don't auto-load them (source isn't surfaced in the
+    // UI) — yet the maps are deployed, letting a captured production stack
+    // (e.g. the in-app error log's "index-*.js:634:101479") be mapped back to
+    // a real file/line. Without these, iOS "Script error." stacks are opaque.
+    sourcemap: 'hidden',
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
