@@ -24,8 +24,6 @@ Audit only the in-scope modules as defined in `CLAUDE.md`:
 - Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`)
 - Printing weekly programmes
 
-Ignore Analysis and Training Log. The engineering reviewer owns their UI
-disablement.
 
 ## Your lens — what to evaluate
 

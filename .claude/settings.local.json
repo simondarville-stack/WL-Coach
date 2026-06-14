@@ -25,7 +25,21 @@
       "Bash(npx skills *)",
       "Bash(git check-ignore *)",
       "Bash(echo \"exit=$?\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git stash *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git commit -m ' *)",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__get_project_url",
+      "Read(//c/Users/SimonDarville-GodEne/**)",
+      "Read(//c/Users/SimonDarville-GodEne/AppData/Roaming/**)",
+      "mcp__supabase__list_migrations",
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__get_advisors",
+      "mcp__supabase__execute_sql",
+      "Bash(python -c \"import json,re; t=open\\(r'C:\\\\Users\\\\SimonDarville-GodEne\\\\.claude\\\\projects\\\\C--Users-SimonDarville-GodEne-wl-coach\\\\0f556b4a-3858-42a7-9363-bff498b89bf8\\\\tool-results\\\\mcp-supabase-get_advisors-1780214847317.txt'\\).read\\(\\); d=json.loads\\(t\\); print\\('lints:', len\\(d.get\\('lints',[]\\)\\)\\); [print\\(l.get\\('level'\\), '-', l.get\\('name'\\), '-', l.get\\('title'\\), '-', \\(l.get\\('metadata'\\) or {}\\).get\\('table'\\)\\) for l in d.get\\('lints',[]\\) if 'collaborator' in str\\(l\\).lower\\(\\) or 'coach' in \\(str\\(\\(l.get\\('metadata'\\) or {}\\).get\\('table'\\)\\)\\).lower\\(\\)]\")",
+      "Bash(python *)"
     ]
   }
 }
