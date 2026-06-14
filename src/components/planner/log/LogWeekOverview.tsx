@@ -21,11 +21,13 @@ import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
   CustomMetricEntry,
+  TrainingLogSession,
 } from '../../../lib/database.types';
 import type { DayLog } from '../../../lib/trainingLogModel';
 import { hasLoggedWork, METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
 import { formatDecimalComma } from '../../../lib/logFormatUtils';
+import { weekdayIndexMonday, weekdayShortFromMonday } from '../../../lib/dateUtils';
 
 /**
  * Day-strip dot status. Surfaces a distinct "logged but not finished" state
@@ -47,6 +49,9 @@ interface LogWeekOverviewProps {
   metricsConfig: AthleteWeekMetricsConfig | null;
   /** Custom metric definitions enabled this week, in render order. */
   enabledMetricDefs: AthleteMetricDefinition[];
+  /** When true, the daily-metric tables show all seven weekdays (Mon–Sun);
+   *  otherwise only weekdays that have a logged session. (View preference.) */
+  showAllWeekdays: boolean;
 }
 
 interface Totals {
@@ -115,12 +120,68 @@ function deltaClass(p: number | null): string {
   return 'text-red-700';
 }
 
-interface DayColumn {
+/**
+ * One column in the daily-metric tables, keyed to a calendar weekday
+ * (0=Mon … 6=Sun) rather than a planned training-unit slot — RAW and the
+ * other session metrics are once-daily readings, so they belong under the
+ * weekday the athlete actually submitted them, even when units are trained
+ * out of the planned order.
+ */
+interface WeekdayColumn {
   key: string;
+  weekday: number;
   label: string;
-  /** Index into weekLog to read this column's session data. */
-  dayIndex: number;
-  isBonus: boolean;
+  /** Sessions performed on this weekday (usually exactly one). */
+  sessions: TrainingLogSession[];
+}
+
+/**
+ * Bucket the week's logged sessions onto the weekday their `date` falls on.
+ *
+ * showAll=false → one column per weekday that has a session (compact, the
+ *   density-first default). showAll=true → all seven weekdays Mon–Sun, for
+ *   consistent cross-week scanning (e.g. "always bombs Monday nutrition").
+ */
+export function buildWeekdayColumns(
+  weekLog: Record<number, DayLog>,
+  showAll: boolean,
+): WeekdayColumn[] {
+  const byWeekday = new Map<number, TrainingLogSession[]>();
+  Object.values(weekLog).forEach(day => {
+    const s = day.session;
+    if (!s) return;
+    const wd = weekdayIndexMonday(s.date);
+    if (wd == null) return;
+    const arr = byWeekday.get(wd) ?? [];
+    arr.push(s);
+    byWeekday.set(wd, arr);
+  });
+  const weekdays = showAll
+    ? [0, 1, 2, 3, 4, 5, 6]
+    : Array.from(byWeekday.keys()).sort((a, b) => a - b);
+  return weekdays.map(wd => ({
+    key: `wd${wd}`,
+    weekday: wd,
+    label: weekdayShortFromMonday(wd),
+    sessions: byWeekday.get(wd) ?? [],
+  }));
+}
+
+/**
+ * First non-null numeric value for `field` among a weekday's sessions.
+ * Days almost always have a single session; when an athlete logs two units
+ * on the same calendar day this surfaces the first that carries a value so
+ * a once-daily reading (RAW, bodyweight) isn't dropped.
+ */
+function pickSessionNumber(
+  sessions: TrainingLogSession[],
+  field: keyof TrainingLogSession,
+): number | null {
+  for (const s of sessions) {
+    const v = s[field];
+    if (typeof v === 'number') return v;
+  }
+  return null;
 }
 
 export function LogWeekOverview({
@@ -129,6 +190,7 @@ export function LogWeekOverview({
   weekLog,
   metricsConfig,
   enabledMetricDefs,
+  showAllWeekdays,
 }: LogWeekOverviewProps) {
   // Planned aggregate across all visible days.
   const plannedAgg = visibleDays.reduce<Totals>(
@@ -185,21 +247,10 @@ export function LogWeekOverview({
     })),
   ];
 
-  // Columns for the per-metric tables, in same order as the day strip.
-  const columns: DayColumn[] = [
-    ...visibleDays.map(d => ({
-      key: `v${d.index}`,
-      label: d.name.slice(0, 3),
-      dayIndex: d.index,
-      isBonus: false,
-    })),
-    ...bonusIndices.map(idx => ({
-      key: `b${idx}`,
-      label: '+',
-      dayIndex: idx,
-      isBonus: true,
-    })),
-  ];
+  // Columns for the per-metric tables are keyed to the calendar weekday each
+  // session was submitted on (not the planned slot), so daily readings line
+  // up with the day the athlete actually filled them in. (COACH-RAW-WEEKDAY)
+  const columns = buildWeekdayColumns(weekLog, showAllWeekdays);
 
   // Default to pre-feature behaviour (RAW + BW shown) when no config row
   // exists yet. VAS / custom stay off until the coach opts in.
@@ -270,7 +321,7 @@ export function LogWeekOverview({
           <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
             RAW readiness
           </div>
-          <RawTable columns={columns} weekLog={weekLog} />
+          <RawTable columns={columns} />
         </div>
       )}
 
@@ -281,7 +332,6 @@ export function LogWeekOverview({
           </div>
           <OtherMetricsTable
             columns={columns}
-            weekLog={weekLog}
             trackBw={trackBw}
             trackVas={trackVas}
             customDefs={enabledMetricDefs}
@@ -378,13 +428,17 @@ function avg(nums: number[]): number | null {
   return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-function RawTable({
-  columns,
-  weekLog,
-}: {
-  columns: DayColumn[];
-  weekLog: Record<number, DayLog>;
-}) {
+/** Shown in place of a metric table when no weekday has a logged session
+ *  (default compact layout) so an empty table doesn't read as a bug. */
+function NoLoggedDaysHint() {
+  return (
+    <div className="text-[11px] text-gray-400 italic px-2 py-1">
+      No sessions logged this week.
+    </div>
+  );
+}
+
+function RawTable({ columns }: { columns: WeekdayColumn[] }) {
   // 'nr' = session exists but pillar not entered; null = no session at all.
   const pillarValues: Record<typeof PILLARS[number], Array<number | null | 'nr'>> = {
     sleep: [],
@@ -395,11 +449,11 @@ function RawTable({
   const totals: Array<number | null | 'nr'> = [];
 
   columns.forEach(col => {
-    const s = weekLog[col.dayIndex]?.session;
+    const hasSession = col.sessions.length > 0;
     PILLARS.forEach(key => {
       const field = ('raw_' + key) as 'raw_sleep' | 'raw_physical' | 'raw_mood' | 'raw_nutrition';
-      const v = s?.[field];
-      if (s == null) {
+      const v = pickSessionNumber(col.sessions, field);
+      if (!hasSession) {
         pillarValues[key].push(null);
       } else if (v == null || v === 0) {
         pillarValues[key].push('nr');
@@ -407,14 +461,19 @@ function RawTable({
         pillarValues[key].push(v);
       }
     });
-    if (s == null) {
+    const total = pickSessionNumber(col.sessions, 'raw_total');
+    if (!hasSession) {
       totals.push(null);
-    } else if (s.raw_total == null || s.raw_total === 0) {
+    } else if (total == null || total === 0) {
       totals.push('nr');
     } else {
-      totals.push(s.raw_total);
+      totals.push(total);
     }
   });
+
+  if (columns.length === 0) {
+    return <NoLoggedDaysHint />;
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -430,7 +489,7 @@ function RawTable({
                 className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
                 title={col.label}
               >
-                {col.isBonus ? '+' : col.label}
+                {col.label}
               </th>
             ))}
             <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
@@ -506,13 +565,11 @@ interface OtherMetricsRow {
 
 function OtherMetricsTable({
   columns,
-  weekLog,
   trackBw,
   trackVas,
   customDefs,
 }: {
-  columns: DayColumn[];
-  weekLog: Record<number, DayLog>;
+  columns: WeekdayColumn[];
   trackBw: boolean;
   trackVas: boolean;
   customDefs: AthleteMetricDefinition[];
@@ -524,7 +581,7 @@ function OtherMetricsTable({
       key: 'bw',
       label: 'Bodyweight',
       unit: 'kg',
-      values: columns.map(c => weekLog[c.dayIndex]?.session?.bodyweight_kg ?? null),
+      values: columns.map(c => pickSessionNumber(c.sessions, 'bodyweight_kg')),
       numeric: true,
     });
   }
@@ -533,19 +590,21 @@ function OtherMetricsTable({
       key: 'vas',
       label: 'VAS pain',
       unit: '0–10',
-      values: columns.map(c => weekLog[c.dayIndex]?.session?.vas_score ?? null),
+      values: columns.map(c => pickSessionNumber(c.sessions, 'vas_score')),
       numeric: true,
     });
   }
   customDefs.forEach(def => {
     const numeric = def.value_type === 'number';
     const values: Array<number | string | null> = columns.map(c => {
-      const entry = weekLog[c.dayIndex]?.session?.custom_metrics?.[def.id] as
-        | CustomMetricEntry
-        | undefined;
-      if (!entry) return null;
-      if ('value_number' in entry && entry.value_number != null) return entry.value_number;
-      if ('value_text' in entry && entry.value_text != null) return entry.value_text;
+      // First session on this weekday that carries this metric (days
+      // usually have exactly one session anyway).
+      for (const s of c.sessions) {
+        const entry = s.custom_metrics?.[def.id] as CustomMetricEntry | undefined;
+        if (!entry) continue;
+        if ('value_number' in entry && entry.value_number != null) return entry.value_number;
+        if ('value_text' in entry && entry.value_text != null) return entry.value_text;
+      }
       return null;
     });
     rows.push({
@@ -556,6 +615,10 @@ function OtherMetricsTable({
       numeric,
     });
   });
+
+  if (columns.length === 0) {
+    return <NoLoggedDaysHint />;
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -570,7 +633,7 @@ function OtherMetricsTable({
                 key={col.key}
                 className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
               >
-                {col.isBonus ? '+' : col.label}
+                {col.label}
               </th>
             ))}
             <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">

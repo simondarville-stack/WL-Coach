@@ -44,6 +44,26 @@ export function formatWeekday(dateStr: string, style: 'short' | 'long' = 'short'
   return (style === 'long' ? WEEKDAY_LONG : WEEKDAY_SHORT)[d.getDay()];
 }
 
+// Monday-first short labels, indexed 0=Mon … 6=Sun, matching the European
+// week convention used across EMOS (weeks start Monday — see Stack/CLAUDE.md).
+const WEEKDAY_SHORT_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Monday-based weekday index (0=Mon … 6=Sun) for a YYYY-MM-DD / ISO date,
+ * or null when the date can't be parsed. Use this to bucket session dates
+ * onto the actual weekday they fall on, independent of the planned slot.
+ */
+export function weekdayIndexMonday(dateStr: string): number | null {
+  const d = new Date(dateStr.slice(0, 10) + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return null;
+  return (d.getDay() + 6) % 7;
+}
+
+/** Short English weekday ("Mon") for a Monday-based index (0=Mon … 6=Sun). */
+export function weekdayShortFromMonday(i: number): string {
+  return WEEKDAY_SHORT_MON[((i % 7) + 7) % 7] ?? '';
+}
+
 /** "Mon 10/06" — short weekday + day-first date. */
 export function formatWeekdayDateShort(dateStr: string): string {
   const date = formatDateShort(dateStr);

@@ -62,6 +62,11 @@ interface WeekMetricsSettingsProps {
   /** Optional callback so the caller can react to config saves
    *  (e.g. close a dialog, surface a toast). */
   onChange?: (config: AthleteWeekMetricsConfig) => void;
+  /** Overview layout view-preference (device-local, not athlete data):
+   *  whether the daily-metric tables show all 7 weekdays vs only days with
+   *  a logged session. Owned by the parent so the overview re-renders. */
+  showAllWeekdays?: boolean;
+  onShowAllWeekdaysChange?: (value: boolean) => void;
 }
 
 interface PanelState {
@@ -86,6 +91,8 @@ export function WeekMetricsSettings({
   athleteId,
   weekStart,
   onChange,
+  showAllWeekdays,
+  onShowAllWeekdaysChange,
 }: WeekMetricsSettingsProps) {
   const ownerId = getOwnerId();
   const [open, setOpen] = useState(false);
@@ -449,6 +456,23 @@ export function WeekMetricsSettings({
                     </div>
                   )}
                 </div>
+
+                {onShowAllWeekdaysChange && (
+                  <div className="border-t border-gray-100 pt-2">
+                    <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500 mb-1">
+                      Overview layout
+                    </div>
+                    <ToggleRow
+                      label="Show all weekdays (Mon–Sun)"
+                      checked={!!showAllWeekdays}
+                      onChange={() => onShowAllWeekdaysChange(!showAllWeekdays)}
+                    />
+                    <div className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                      Off: only days with a logged session. Metrics always sit
+                      under the weekday they were submitted on. Applies to all athletes.
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

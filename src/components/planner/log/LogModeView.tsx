@@ -33,6 +33,7 @@ import { WeekMetricsSettings } from './WeekMetricsSettings';
 import { ConfirmModal } from '../../log/ConfirmModal';
 import { GppBlockEditor } from '../GppBlockEditor';
 import { formatTime24 } from '../../../lib/dateUtils';
+import { getShowAllWeekdays, setShowAllWeekdays } from '../../../lib/logViewPrefs';
 
 interface LogModeViewProps {
   athleteId: string;
@@ -54,6 +55,13 @@ export function LogModeView({
   highlightDayIndex,
 }: LogModeViewProps) {
   const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
+  // Coach view preference (device-local): show all 7 weekdays vs only days
+  // with a logged session in the overview's daily-metric tables.
+  const [showAllWeekdays, setShowAllWeekdaysState] = useState<boolean>(() => getShowAllWeekdays());
+  const onToggleAllWeekdays = useCallback((value: boolean) => {
+    setShowAllWeekdaysState(value);
+    setShowAllWeekdays(value);
+  }, []);
   const [metricsConfig, setMetricsConfig] = useState<AthleteWeekMetricsConfig | null>(null);
   const [metricDefs, setMetricDefs] = useState<AthleteMetricDefinition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,6 +249,8 @@ export function LogModeView({
             athleteId={athleteId}
             weekStart={weekStart}
             onChange={reload}
+            showAllWeekdays={showAllWeekdays}
+            onShowAllWeekdaysChange={onToggleAllWeekdays}
           />
           <button
             onClick={reload}
@@ -281,6 +291,7 @@ export function LogModeView({
               ? metricDefs.filter(d => metricsConfig.enabled_custom_metric_ids.includes(d.id))
               : []
           }
+          showAllWeekdays={showAllWeekdays}
         />
       )}
 

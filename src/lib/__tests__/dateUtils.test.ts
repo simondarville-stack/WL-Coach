@@ -11,6 +11,8 @@ import {
   formatWeekdayDateLong,
   formatTime24,
   formatDateTimeShort,
+  weekdayIndexMonday,
+  weekdayShortFromMonday,
 } from '../dateUtils';
 
 describe('formatDateToDDMMYYYY', () => {
@@ -141,5 +143,32 @@ describe('formatDateTimeShort (DD/MM HH:mm)', () => {
   it('formats a Date as day-first date + 24h time', () => {
     const d = new Date(2026, 5, 10, 14, 30);
     expect(formatDateTimeShort(d)).toBe('10/06 14:30');
+  });
+});
+
+describe('weekdayIndexMonday (Monday-first, 0=Mon … 6=Sun)', () => {
+  it('maps Monday to 0 and Sunday to 6', () => {
+    expect(weekdayIndexMonday('2026-06-08')).toBe(0); // Monday
+    expect(weekdayIndexMonday('2026-06-14')).toBe(6); // Sunday
+  });
+  it('maps a midweek day', () => {
+    expect(weekdayIndexMonday('2026-06-10')).toBe(2); // Wednesday
+  });
+  it('tolerates a full ISO timestamp', () => {
+    expect(weekdayIndexMonday('2026-06-10T09:30:00Z')).toBe(2);
+  });
+  it('returns null for an unparseable date', () => {
+    expect(weekdayIndexMonday('not-a-date')).toBeNull();
+  });
+});
+
+describe('weekdayShortFromMonday', () => {
+  it('labels Monday-based indices', () => {
+    expect(weekdayShortFromMonday(0)).toBe('Mon');
+    expect(weekdayShortFromMonday(2)).toBe('Wed');
+    expect(weekdayShortFromMonday(6)).toBe('Sun');
+  });
+  it('wraps out-of-range indices', () => {
+    expect(weekdayShortFromMonday(7)).toBe('Mon');
   });
 });
