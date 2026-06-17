@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { TrainingGroup } from '../lib/database.types';
-import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share2 } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share2, Link2, Check } from 'lucide-react';
 import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { useAthletes } from '../hooks/useAthletes';
 import { useCoachStore } from '../store/coachStore';
@@ -25,6 +25,7 @@ export function TrainingGroups() {
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     fetchGroups();
@@ -34,6 +35,7 @@ export function TrainingGroups() {
   useEffect(() => {
     if (selectedGroup) {
       fetchGroupMembers(selectedGroup.id);
+      setLinkCopied(false);
     }
   }, [selectedGroup]);
 
@@ -98,6 +100,22 @@ export function TrainingGroups() {
     setFormName(selectedGroup.name);
     setFormDescription(selectedGroup.description || '');
     setShowEditModal(true);
+  };
+
+  // Soft capability link: the token is the group id (an unguessable UUID).
+  // Athletes open it to view the group's read-only plan without a login;
+  // see the share-link/kiosk handling in athlete/v2/lib/AuthContext.tsx.
+  const handleCopyAthleteLink = async (group: TrainingGroup) => {
+    const url = `${window.location.origin}/athlete/g/${group.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard API needs a secure context / permission; fall back to a
+      // prompt the coach can copy from manually.
+      window.prompt('Copy this athlete link:', url);
+    }
   };
 
   const availableAthletes = allAthletes.filter(
@@ -212,13 +230,23 @@ export function TrainingGroups() {
                       <p className="text-sm text-gray-600 mt-1">{selectedGroup.description}</p>
                     )}
                   </div>
-                  <button
-                    onClick={() => setShowAddMemberModal(true)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-                  >
-                    <UserPlus size={18} />
-                    Add Member
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleCopyAthleteLink(selectedGroup)}
+                      icon={linkCopied ? <Check size={16} /> : <Link2 size={16} />}
+                      title="Copy a view-only link to share this group's plan with athletes (no login required)"
+                    >
+                      {linkCopied ? 'Link copied' : 'Copy athlete link'}
+                    </Button>
+                    <button
+                      onClick={() => setShowAddMemberModal(true)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                    >
+                      <UserPlus size={18} />
+                      Add Member
+                    </button>
+                  </div>
                 </div>
 
                 {groupMembers.length === 0 ? (
