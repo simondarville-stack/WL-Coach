@@ -46,7 +46,7 @@ interface DayBlock {
 }
 
 export function GroupViewerScreen() {
-  const { group, signOut } = useAuth();
+  const { group, signOut, locked } = useAuth();
 
   const [weekStart, setWeekStart] = useState<string>(() => getMondayOf(new Date()));
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
@@ -119,14 +119,20 @@ export function GroupViewerScreen() {
           <h1 className="text-sm font-bold text-white truncate">{group.name}</h1>
           <p className="text-[10px] text-gray-500">Group plan · view only</p>
         </div>
-        <button
-          onClick={signOut}
-          className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-800"
-          title="Switch profile"
-        >
-          <LogOut size={12} />
-          Switch
-        </button>
+        {/* In a share-link (locked) session there is no path back to the
+            picker — a group member must not be able to browse into other
+            athletes' data. The button only shows for unlocked sessions
+            (i.e. a group chosen from the picker, e.g. during local testing). */}
+        {!locked && (
+          <button
+            onClick={signOut}
+            className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-800"
+            title="Switch profile"
+          >
+            <LogOut size={12} />
+            Switch
+          </button>
+        )}
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">

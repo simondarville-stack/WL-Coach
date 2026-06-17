@@ -5,6 +5,7 @@
  * with bottom-tab nav between Today / Week / Profile.
  */
 import { useEffect } from 'react';
+import { Dumbbell } from 'lucide-react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ProfilePicker } from './components/ProfilePicker';
@@ -20,8 +21,21 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { setActorResolver } from '../../lib/errorLogger';
 import { useRouteBreadcrumbs } from '../../hooks/useRouteBreadcrumbs';
 
+function ShareLinkError({ message }: { message: string }) {
+  return (
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6 text-center">
+      <Dumbbell size={32} className="text-gray-700 mb-4" />
+      <h1 className="text-base font-bold text-white">Group link unavailable</h1>
+      <p className="text-sm text-gray-500 mt-2 max-w-xs">{message}</p>
+      <p className="text-[11px] text-gray-600 mt-4 max-w-xs">
+        Ask your coach for an up-to-date link.
+      </p>
+    </div>
+  );
+}
+
 function AthleteRoutes() {
-  const { loading, mode, athlete, group } = useAuth();
+  const { loading, mode, athlete, group, tokenError } = useAuth();
   useRouteBreadcrumbs();
   useEffect(() => {
     setActorResolver(() => {
@@ -39,6 +53,7 @@ function AthleteRoutes() {
     );
   }
 
+  if (tokenError) return <ShareLinkError message={tokenError} />;
   if (mode === null) return <ProfilePicker />;
   if (mode === 'group') return <GroupViewerScreen />;
 
