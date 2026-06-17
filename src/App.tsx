@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode, type FormEvent } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import { AthleteApp } from './athlete/v2/AthleteApp';
+import { Button, Input } from './components/ui';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
@@ -59,6 +61,71 @@ function PageTitle() {
   return <h1 className="font-medium text-gray-900">{pageTitles[location.pathname] ?? ''}</h1>;
 }
 
+// Soft access gate for the coach app (the root, non-/athlete area). Inert
+// unless VITE_COACH_GATE is set at build time, so local dev never prompts.
+// Deterrence only — see the note in src/vite-env.d.ts.
+const COACH_GATE = String(import.meta.env.VITE_COACH_GATE ?? '').trim();
+const COACH_UNLOCK_KEY = 'emos_coach_unlocked';
+
+function CoachGate({ children }: { children: ReactNode }) {
+  // Unlocked by default when no passphrase is configured; otherwise honour a
+  // previously-stored unlock so a coach enters the code once per browser.
+  const [unlocked, setUnlocked] = useState(
+    () => !COACH_GATE || localStorage.getItem(COACH_UNLOCK_KEY) === '1',
+  );
+  const [entry, setEntry] = useState('');
+  const [error, setError] = useState(false);
+
+  if (unlocked) return <>{children}</>;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (entry === COACH_GATE) {
+      localStorage.setItem(COACH_UNLOCK_KEY, '1');
+      setUnlocked(true);
+    } else {
+      setError(true);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6" style={{ backgroundColor: 'var(--color-bg-page)' }}>
+      <form onSubmit={submit} className="w-full max-w-xs">
+        <div className="text-center mb-6">
+          <div
+            className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"
+            style={{ backgroundColor: 'var(--color-accent-muted)' }}
+          >
+            <Lock size={20} style={{ color: 'var(--color-accent)' }} />
+          </div>
+          <h1 className="text-lg font-bold" style={{ color: 'var(--color-text-primary)' }}>EMOS</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+            Enter the access code to continue.
+          </p>
+        </div>
+        <Input
+          type="password"
+          size="lg"
+          value={entry}
+          onChange={(e) => { setEntry(e.target.value); setError(false); }}
+          placeholder="Access code"
+          autoFocus
+          autoComplete="off"
+          aria-label="Access code"
+        />
+        {error && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--color-danger-text)' }}>
+            Incorrect code. Try again.
+          </p>
+        )}
+        <Button type="submit" variant="primary" size="lg" className="w-full mt-4">
+          Unlock
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 function AppRouter() {
   const location = useLocation();
   if (location.pathname === '/athlete' || location.pathname.startsWith('/athlete/')) {
@@ -68,7 +135,11 @@ function AppRouter() {
       </Routes>
     );
   }
-  return <CoachApp />;
+  return (
+    <CoachGate>
+      <CoachApp />
+    </CoachGate>
+  );
 }
 
 function CoachApp() {
