@@ -117,6 +117,14 @@ export interface ExerciseStub {
   id: string;
   name: string;
   color: string | null;
+  /** Sentinel discriminator (TEXT / GPP / …) when known at optimistic-add
+   *  time, so an off-plan note/GPP card renders the right branch before the
+   *  next full reload hydrates the real Exercise. Absent for plain picks. */
+  exercise_code?: string | null;
+  /** Carried from the picker so the totals gate is correct optimistically
+   *  (a non-counting exercise must not briefly inflate the week's numbers).
+   *  Absent ⇒ countsTowardsTotals defaults to true, as before. */
+  counts_towards_totals?: boolean;
 }
 
 export interface TrainingGroup {
@@ -422,6 +430,24 @@ export interface AthleteWeekMetricsConfig {
   updated_at: string;
 }
 
+/**
+ * Descriptor for an athlete-authored off-plan combination. Lives on the log
+ * row (training_log_exercises.metadata.combo) because the log schema has no
+ * is_combo / combo-members table — combos are otherwise a planned-only
+ * construct. Member name/color are denormalised so the off-plan cards render
+ * member dots without an extra exercises join (logs are point-in-time, so a
+ * later rename of the underlying exercise intentionally does not propagate).
+ * The lead member's exerciseId is also stored as the row's exercise_id, so
+ * code that reads a single exercise off the row still gets a sensible value.
+ */
+export interface LogComboDescriptor {
+  /** Athlete-given name; null ⇒ derive "A + B + …" from members. */
+  name: string | null;
+  /** Ribbon/accent colour; null ⇒ fall back to the lead member's colour. */
+  color: string | null;
+  members: { exerciseId: string; name: string; color: string | null; position: number }[];
+}
+
 export interface TrainingLogExerciseMetadata {
   /** Set numbers from the planned prescription the athlete chose to
    *  drop. The set wasn't skipped (no ✗ press) — it was actively
@@ -431,6 +457,12 @@ export interface TrainingLogExerciseMetadata {
    *  off, plus any edits they made (e.g. they did 12 reps not 10).
    *  When absent, the athlete view falls back to planned rows. */
   gpp?: GppSection;
+  /** Body text for an athlete-authored off-plan note (TEXT sentinel row).
+   *  Coach TEXT lines read planned_exercises.notes; an off-plan row has no
+   *  planned row, so the note body lives here instead. */
+  text?: string;
+  /** Combo descriptor for an athlete-authored off-plan combination. */
+  combo?: LogComboDescriptor;
 }
 
 export interface TrainingLogExercise {

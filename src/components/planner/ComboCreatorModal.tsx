@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Plus, ArrowUp, ArrowDown, Trash2, GripVertical } from 'lucide-react';
 import type { Exercise, DefaultUnit } from '../../lib/database.types';
+import { rankExercises } from '../../lib/exerciseRanker';
 
 interface ComboCreatorModalProps {
   allExercises: Exercise[];
@@ -50,30 +51,9 @@ export function ComboCreatorModal({
   // Mirror ExerciseSearch's ranking so typing an exercise code prioritises
   // the exact match (e.g. typing "BSQ" floats Back Squat to the top even if
   // a longer name like "Back Squat Pause" alphabetically would have come
-  // first). Order: exact code > code prefix > name prefix > code contains >
-  // name contains.
-  const searchResults = searchQuery
-    ? (() => {
-        const q = searchQuery.trim().toLowerCase();
-        if (!q) return [] as Exercise[];
-        return allExercises
-          .map(ex => {
-            const code = ex.exercise_code?.toLowerCase() ?? '';
-            const name = ex.name.toLowerCase();
-            let score = Infinity;
-            if (code && code === q) score = 0;
-            else if (code && code.startsWith(q)) score = 1;
-            else if (name.startsWith(q)) score = 2;
-            else if (code && code.includes(q)) score = 3;
-            else if (name.includes(q)) score = 4;
-            return { ex, score };
-          })
-          .filter(s => s.score !== Infinity)
-          .sort((a, b) => a.score - b.score)
-          .slice(0, 15)
-          .map(s => s.ex);
-      })()
-    : [];
+  // first). Shared via exerciseRanker (exact code > code prefix > name prefix
+  // > code contains > name contains).
+  const searchResults = rankExercises(allExercises, searchQuery, 15);
 
   const addExercise = (exercise: Exercise) => {
     setSelectedExercises(prev => [...prev, { exercise, position: prev.length + 1 }]);
