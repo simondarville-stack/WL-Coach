@@ -86,8 +86,17 @@ export function OffPlanExerciseCard({
     prevSetCountRef.current = curr;
   }, [sortedSets.length]);
 
-  const accent = exercise?.color ?? '#6b7280';
-  const name = exercise?.name ?? '(unknown exercise)';
+  // Athlete-authored combination: members + name + ribbon colour live on
+  // the log row's metadata (the log schema has no is_combo column). When
+  // present, the card renders the combo identity and lets the reps cells
+  // accept tuple notation ("2+1").
+  const combo = logExercise.metadata?.combo ?? null;
+  const accent = combo?.color ?? exercise?.color ?? '#6b7280';
+  const name = combo
+    ? combo.name?.trim() ||
+      combo.members.map(m => m.name).filter(Boolean).join(' + ') ||
+      '(combination)'
+    : exercise?.name ?? '(unknown exercise)';
 
   const lastCompleted = [...sortedSets].reverse().find(s => s.status === 'completed');
   const defaultLoad = lastCompleted?.performed_load ?? null;
@@ -110,7 +119,23 @@ export function OffPlanExerciseCard({
               Added by you
             </span>
           </div>
-          <p className="text-[10px] text-gray-500 mt-0.5">No plan · log what you did</p>
+          {combo && combo.members.length > 0 ? (
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              {combo.members.map((m, idx) => (
+                <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
+                  {idx > 0 && <span className="text-gray-600">+</span>}
+                  <span
+                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: m.color ?? '#6b7280' }}
+                    aria-hidden
+                  />
+                  <span>{m.name}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-gray-500 mt-0.5">No plan · log what you did</p>
+          )}
         </div>
         {onDelete && (
           <button
@@ -134,6 +159,7 @@ export function OffPlanExerciseCard({
               plannedLoadText: '—',
               plannedRepsValue: null,
               plannedLoadValue: null,
+              comboReps: !!combo,
             }}
             logged={s}
             onSave={onSaveSet}
@@ -149,6 +175,7 @@ export function OffPlanExerciseCard({
               plannedLoadText: defaultLoad != null ? String(defaultLoad) : '—',
               plannedRepsValue: defaultReps,
               plannedLoadValue: defaultLoad,
+              comboReps: !!combo,
             }}
             logged={null}
             onSave={onSaveSet}

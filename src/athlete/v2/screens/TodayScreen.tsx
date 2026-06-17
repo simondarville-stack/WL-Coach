@@ -28,6 +28,7 @@ import {
   deleteLoggedSet,
   removePlannedSet,
   setLogExerciseGppSection,
+  setLogExerciseText,
   setSessionCustomMetric,
   setSubstitutedExercise,
   markMessagesRead,
@@ -35,7 +36,10 @@ import {
   type AthleteDayData,
   type PlannedExerciseFull,
   type WeekOverview,
+  type ExerciseSearchResult,
 } from '../../../lib/trainingLogService';
+import { getOrCreateSentinel } from '../../../components/planner/sentinelService';
+import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import type {
   AthletePRHistory,
   CustomMetricEntry,
@@ -53,7 +57,10 @@ import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
 import { ExerciseLogCard } from '../components/ExerciseLogCard';
 import { OffPlanExerciseCard } from '../components/OffPlanExerciseCard';
+import { OffPlanNoteCard } from '../components/OffPlanNoteCard';
+import { GppLogCard } from '../components/GppLogCard';
 import { ExercisePicker } from '../components/ExercisePicker';
+import { AddTrainingSheet } from '../components/AddTrainingSheet';
 import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
 import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
@@ -823,7 +830,7 @@ export function TodayScreen() {
     });
   };
 
-  const handleAddOffPlanExercise = async (ex: { id: string; name: string; color: string | null }) => {
+  const handleAddOffPlanExercise = async (ex: ExerciseSearchResult) => {
     await runSave(async () => {
       const session = await getOrCreateSession();
       mergeSession(session);
@@ -831,10 +838,144 @@ export function TodayScreen() {
         sessionId: session.id,
         exerciseId: ex.id,
       });
-      // The picker only carries id/name/color; ExerciseStub is the
-      // proper type for this partial object until a full reload.
-      const partial: ExerciseStub = { id: ex.id, name: ex.name, color: ex.color };
+      // Carry exercise_code + counts_towards_totals on the stub so the card
+      // routes correctly and the week totals gate is right before reload.
+      const partial: ExerciseStub = {
+        id: ex.id,
+        name: ex.name,
+        color: ex.color,
+        exercise_code: ex.exercise_code,
+        counts_towards_totals: ex.counts_towards_totals,
+      };
       mergeLogExercise(newLogEx, partial);
+    });
+  };
+
+  /** Athlete-authored combination: one off-plan log row whose lead
+   *  exercise_id is the first member; the full member list, name and ribbon
+   *  colour live on metadata.combo (the log schema has no combo table). */
+  const handleAddOffPlanCombo = async (payload: {
+    members: ExerciseSearchResult[];
+    name: string | null;
+  }) => {
+    await runSave(async () => {
+      if (payload.members.length < 2) return;
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const lead = payload.members[0];
+      const comboColor = '#8B5CF6';
+      const metadata = {
+        combo: {
+          name: payload.name,
+          color: comboColor,
+          members: payload.members.map((m, i) => ({
+            exerciseId: m.id,
+            name: m.name,
+            color: m.color,
+            position: i + 1,
+          })),
+        },
+      };
+      const newLogEx = await addOffPlanLogExercise({
+        sessionId: session.id,
+        exerciseId: lead.id,
+        metadata,
+      });
+      const stub: ExerciseStub = {
+        id: lead.id,
+        name: payload.name?.trim() || payload.members.map(m => m.name).join(' + '),
+        color: comboColor,
+        exercise_code: null,
+        // Performed tonnage attributes the combo to its lead exercise, so the
+        // lead's flag decides whether it counts (same as planned combos).
+        counts_towards_totals: lead.counts_towards_totals,
+      };
+      mergeLogExercise(newLogEx, stub);
+    });
+  };
+
+  /** Athlete-authored free-text note (TEXT sentinel). Body persists into
+   *  metadata.text at creation so the card shows it immediately. */
+  const handleAddOffPlanNote = async (text: string) => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const sentinel = await getOrCreateSentinel('TEXT', athlete.owner_id);
+      if (!sentinel) throw new Error('Could not create note');
+      const newLogEx = await addOffPlanLogExercise({
+        sessionId: session.id,
+        exerciseId: sentinel.id,
+        ...(text ? { metadata: { text } } : {}),
+      });
+      const stub: ExerciseStub = {
+        id: sentinel.id,
+        name: 'Note',
+        color: '#9CA3AF',
+        exercise_code: 'TEXT',
+        counts_towards_totals: false,
+      };
+      mergeLogExercise(newLogEx, stub);
+    });
+  };
+
+  /** Athlete-authored GPP block (GPP sentinel). Created empty; the athlete
+   *  fills rows in the card, persisted via metadata.gpp. */
+  const handleAddOffPlanGpp = async () => {
+    await runSave(async () => {
+      const session = await getOrCreateSession();
+      mergeSession(session);
+      const sentinel = await getOrCreateSentinel('GPP', athlete.owner_id);
+      if (!sentinel) throw new Error('Could not create GPP block');
+      const newLogEx = await addOffPlanLogExercise({
+        sessionId: session.id,
+        exerciseId: sentinel.id,
+      });
+      const stub: ExerciseStub = {
+        id: sentinel.id,
+        name: 'GPP',
+        color: '#10B981',
+        exercise_code: 'GPP',
+        counts_towards_totals: false,
+      };
+      mergeLogExercise(newLogEx, stub);
+    });
+  };
+
+  /** Persist a note body on an off-plan TEXT row (metadata.text). */
+  const handleUpdateOffPlanText = (logExerciseId: string) => (text: string) =>
+    runSave(async () => {
+      const updated = await setLogExerciseText(logExerciseId, text);
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(e =>
+              e.log.id === updated.id ? { ...e, log: updated } : e,
+            ),
+          },
+        };
+      });
+    });
+
+  /** Persist GPP rows on an off-plan GPP row (metadata.gpp). The log row
+   *  already exists, so no ensureLogExercise is needed. */
+  const handleSaveOffPlanGppSection = (logExerciseId: string) => async (section: GppSection) => {
+    await runSave(async () => {
+      const updated = await setLogExerciseGppSection(logExerciseId, section);
+      setData(prev => {
+        if (!prev?.log) return prev;
+        return {
+          ...prev,
+          log: {
+            ...prev.log,
+            exercises: prev.log.exercises.map(e =>
+              e.log.id === updated.id ? { ...e, log: updated } : e,
+            ),
+          },
+        };
+      });
     });
   };
 
@@ -1001,7 +1142,7 @@ export function TodayScreen() {
               {data.planned.length === 0 && offPlanLogged.length === 0 ? (
                 <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
                   <p className="text-sm text-gray-400">No exercises yet.</p>
-                  <p className="text-xs text-gray-500 mt-1">Tap "Add exercise" to log what you did.</p>
+                  <p className="text-xs text-gray-500 mt-1">Tap "Add training" to log what you did.</p>
                 </div>
               ) : (
                 data.planned.map(p => {
@@ -1029,25 +1170,55 @@ export function TodayScreen() {
                 })
               )}
 
-              {offPlanLogged.map(le => (
-                <OffPlanExerciseCard
-                  key={le.log.id}
-                  logExercise={le.log}
-                  exercise={le.exercise}
-                  loggedSets={le.sets}
-                  onSaveSet={handleSaveOffPlanSet(le.log.id)}
-                  onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
-                  onDeleteSet={handleDeleteSet}
-                  onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
-                />
-              ))}
+              {offPlanLogged.map(le => {
+                // Route athlete-authored off-plan entries by kind. Sentinel
+                // rows (TEXT / GPP) render their dedicated cards; everything
+                // else (plain exercise or combo) uses OffPlanExerciseCard,
+                // which reads metadata.combo to show a combination.
+                const sentinel = getSentinelType(le.exercise?.exercise_code ?? null);
+                if (sentinel === 'text') {
+                  return (
+                    <OffPlanNoteCard
+                      key={le.log.id}
+                      logExercise={le.log}
+                      onUpdateText={handleUpdateOffPlanText(le.log.id)}
+                      onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                    />
+                  );
+                }
+                if (sentinel === 'gpp') {
+                  return (
+                    <GppLogCard
+                      key={le.log.id}
+                      planned={null}
+                      authored
+                      loggedExercise={le.log}
+                      onSave={handleSaveOffPlanGppSection(le.log.id)}
+                      onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
+                      onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                    />
+                  );
+                }
+                return (
+                  <OffPlanExerciseCard
+                    key={le.log.id}
+                    logExercise={le.log}
+                    exercise={le.exercise}
+                    loggedSets={le.sets}
+                    onSaveSet={handleSaveOffPlanSet(le.log.id)}
+                    onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
+                    onDeleteSet={handleDeleteSet}
+                    onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
+                  />
+                );
+              })}
 
               <button
                 onClick={() => setShowPicker(true)}
                 className="w-full inline-flex items-center justify-center gap-2 text-xs text-gray-400 hover:text-white py-2.5 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl"
               >
                 <Plus size={14} />
-                Add exercise
+                Add training
               </button>
 
               {data.log?.session && data.log.session.status !== 'completed' && (
@@ -1093,10 +1264,13 @@ export function TodayScreen() {
           </>
         ) : null}
 
-        <ExercisePicker
+        <AddTrainingSheet
           open={showPicker}
           onClose={() => setShowPicker(false)}
-          onPick={handleAddOffPlanExercise}
+          onAddExercise={handleAddOffPlanExercise}
+          onAddCombo={handleAddOffPlanCombo}
+          onAddNote={handleAddOffPlanNote}
+          onAddGpp={handleAddOffPlanGpp}
         />
         <ExercisePicker
           open={substituting != null}
