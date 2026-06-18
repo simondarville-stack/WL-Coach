@@ -402,57 +402,56 @@ export async function fetchWeekOverview(
   weekStart: string,
 ): Promise<WeekOverview> {
   const { weekPlanId, source } = await resolveAthleteWeekPlanId(athleteId, weekStart);
-  if (!weekPlanId) {
-    return {
-      weekStart,
-      weekPlanId: null,
-      activeDays: [],
-      dayLabels: {},
-      days: [],
-      planSource: null,
-    };
-  }
 
-  const { data: wpRow, error: wpErr } = await supabase
-    .from('week_plans')
-    .select('id, active_days, day_labels, day_schedule')
-    .eq('id', weekPlanId)
-    .maybeSingle();
-  if (wpErr) throw wpErr;
-
-  if (!wpRow) {
-    return {
-      weekStart,
-      weekPlanId: null,
-      activeDays: [],
-      dayLabels: {},
-      days: [],
-      planSource: null,
-    };
-  }
-
-  const wp = wpRow as {
-    id: string;
-    active_days: number[];
-    day_labels: Record<number, string> | null;
-    day_schedule: Record<number, { weekday: number; time: string | null }> | null;
-  };
-  const activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
-  const labels = wp.day_labels ?? {};
-  const schedule = wp.day_schedule ?? {};
-
-  // Planned counts per day
-  const { data: peRows, error: peErr } = await supabase
-    .from('planned_exercises')
-    .select('day_index')
-    .eq('weekplan_id', wp.id);
-  if (peErr) throw peErr;
+  // Plan-derived shape. These stay empty when no coach week_plan exists for
+  // the week. An athlete with no plan can still have self-authored bonus
+  // sessions (via "Add Training Day"); those are surfaced below regardless of
+  // whether a plan is present. Previously this function returned early with
+  // `days: []` whenever weekPlanId was null, so a bonus session created in a
+  // plan-less week was written to the DB but never shown (the UI fell through
+  // to "No plan for this week").
+  let resolvedWeekPlanId: string | null = null;
+  let planSource: 'individual' | 'group' | null = null;
+  let activeDays: number[] = [];
+  let labels: Record<number, string> = {};
+  let schedule: Record<number, { weekday: number; time: string | null }> = {};
   const plannedCounts = new Map<number, number>();
-  ((peRows ?? []) as Array<{ day_index: number }>).forEach(r => {
-    plannedCounts.set(r.day_index, (plannedCounts.get(r.day_index) ?? 0) + 1);
-  });
 
-  // Existing log sessions for the week
+  if (weekPlanId) {
+    const { data: wpRow, error: wpErr } = await supabase
+      .from('week_plans')
+      .select('id, active_days, day_labels, day_schedule')
+      .eq('id', weekPlanId)
+      .maybeSingle();
+    if (wpErr) throw wpErr;
+
+    if (wpRow) {
+      const wp = wpRow as {
+        id: string;
+        active_days: number[];
+        day_labels: Record<number, string> | null;
+        day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+      };
+      resolvedWeekPlanId = wp.id;
+      planSource = source;
+      activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
+      labels = wp.day_labels ?? {};
+      schedule = wp.day_schedule ?? {};
+
+      // Planned counts per day
+      const { data: peRows, error: peErr } = await supabase
+        .from('planned_exercises')
+        .select('day_index')
+        .eq('weekplan_id', wp.id);
+      if (peErr) throw peErr;
+      ((peRows ?? []) as Array<{ day_index: number }>).forEach(r => {
+        plannedCounts.set(r.day_index, (plannedCounts.get(r.day_index) ?? 0) + 1);
+      });
+    }
+  }
+
+  // Existing log sessions for the week. Fetched whether or not a week_plan
+  // exists so athlete-created bonus sessions surface even with no coach plan.
   const { data: sessionRows, error: sErr } = await supabase
     .from('training_log_sessions')
     .select('day_index, status, date')
@@ -464,8 +463,9 @@ export async function fetchWeekOverview(
     r => sessionByDay.set(r.day_index, { status: r.status, date: r.date }),
   );
 
-  // Bonus days: log sessions whose day_index isn't in active_days
-  // (athlete added an extra training unit).
+  // Bonus days: log sessions whose day_index isn't in active_days (athlete
+  // added an extra training unit). With no plan, activeDays is empty so every
+  // session is a bonus day.
   const bonusDays = Array.from(sessionByDay.keys())
     .filter(d => !activeDays.includes(d))
     .sort((a, b) => a - b);
@@ -488,13 +488,13 @@ export async function fetchWeekOverview(
 
   return {
     weekStart,
-    weekPlanId: wp.id,
+    weekPlanId: resolvedWeekPlanId,
     activeDays,
     dayLabels: Object.fromEntries(
       activeDays.map(d => [d, labels[d]?.trim() || DEFAULT_LABEL(d)]),
     ),
     days,
-    planSource: source,
+    planSource,
   };
 }
 
