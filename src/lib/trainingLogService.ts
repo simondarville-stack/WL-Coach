@@ -5,9 +5,11 @@
  * Components MUST NOT call supabase directly.
  */
 import { supabase } from './supabase';
+import { rankExercises } from './exerciseRanker';
 import type {
   TrainingLogSession,
   TrainingLogExercise,
+  TrainingLogExerciseMetadata,
   TrainingLogSet,
   TrainingLogMessage,
   Exercise,
@@ -713,6 +715,34 @@ export async function setLogExerciseGppSection(
 }
 
 /**
+ * Persist the body text of an athlete-authored off-plan note (TEXT sentinel)
+ * on the log_exercise's metadata. Coach TEXT lines read planned_exercises.notes;
+ * an off-plan note has no planned row, so the body lives in metadata.text.
+ * Mirrors setLogExerciseGppSection; idempotent.
+ */
+export async function setLogExerciseText(
+  logExerciseId: string,
+  text: string,
+): Promise<TrainingLogExercise> {
+  const { data: row, error: rErr } = await supabase
+    .from('training_log_exercises')
+    .select('metadata')
+    .eq('id', logExerciseId)
+    .single();
+  if (rErr) throw rErr;
+  const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+  const next = { ...current, text };
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .update({ metadata: next } as never)
+    .eq('id', logExerciseId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogExercise;
+}
+
+/**
  * Inverse of removePlannedSet — re-introduces a previously dropped
  * planned set (currently unused, but useful for future "undo remove").
  */
@@ -871,6 +901,10 @@ interface AddOffPlanExerciseArgs {
   exerciseId: string;
   /** Position to assign in the session. Defaults to last+1 if omitted. */
   position?: number;
+  /** Optional metadata to persist atomically with the insert — e.g. a combo
+   *  descriptor for an athlete-authored combination, so the row carries its
+   *  members from creation (no second write, no optimistic flicker). */
+  metadata?: TrainingLogExerciseMetadata;
 }
 
 /**
@@ -905,6 +939,7 @@ export async function addOffPlanLogExercise(
     performed_notes: '',
     status: 'pending',
     started_at: new Date().toISOString(),
+    ...(args.metadata ? { metadata: args.metadata } : {}),
   };
   const { data, error } = await supabase
     .from('training_log_exercises')
@@ -986,26 +1021,48 @@ export async function setAthleteDayLabel(args: {
   if (error) throw error;
 }
 
+export interface ExerciseSearchResult {
+  id: string;
+  name: string;
+  color: string | null;
+  category: string | null;
+  exercise_code: string | null;
+  counts_towards_totals: boolean;
+}
+
 /**
- * Lightweight exercise-search for the athlete picker.
- * Filters by name (case-insensitive contains).
+ * Exercise search for the athlete add-training sheet.
+ *
+ * Matches on name OR exercise code, excludes '— System' sentinels (the athlete
+ * adds notes/GPP via dedicated buttons, not by picking the sentinel as an
+ * exercise), and ranks results code-aware via the shared exerciseRanker so
+ * typing a code floats the exact lift — mirroring the coach planner search.
+ * Carries counts_towards_totals + exercise_code so the optimistic add can gate
+ * the week totals correctly and pick the right render branch before reload.
  */
 export async function searchExercisesByName(
   query: string,
   limit = 20,
-): Promise<Array<{ id: string; name: string; color: string | null; category: string | null }>> {
+): Promise<ExerciseSearchResult[]> {
   const q = query.trim();
-  let qb = supabase.from('exercises').select('id, name, color, category').limit(limit);
-  if (q !== '') qb = qb.ilike('name', `%${q}%`);
-  qb = qb.order('name');
+  let qb = supabase
+    .from('exercises')
+    .select('id, name, color, category, exercise_code, counts_towards_totals')
+    .neq('category', '— System');
+  if (q !== '') {
+    // Substring-match name OR code. Strip PostgREST or() separators so a stray
+    // comma/paren in the query can't break the filter expression.
+    const safe = q.replace(/[,()]/g, ' ');
+    qb = qb.or(`name.ilike.%${safe}%,exercise_code.ilike.%${safe}%`);
+  }
+  // Over-fetch a candidate set when searching, then rank client-side; return
+  // the alphabetical head when the box is empty.
+  qb = qb.order('name').limit(q !== '' ? 60 : limit);
   const { data, error } = await qb;
   if (error) throw error;
-  return (data ?? []) as Array<{
-    id: string;
-    name: string;
-    color: string | null;
-    category: string | null;
-  }>;
+  const rows = (data ?? []) as ExerciseSearchResult[];
+  if (q === '') return rows.slice(0, limit);
+  return rankExercises(rows, q, limit);
 }
 
 export interface AddCommentArgs {

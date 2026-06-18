@@ -8,13 +8,19 @@ import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 
 /**
- * Look up or create a sentinel exercise (TEXT / VIDEO / IMAGE) for the current owner.
- * Always includes owner_id on insert so the exercise is owned by the current coach.
+ * Look up or create a sentinel exercise (TEXT / VIDEO / IMAGE / GPP) for an owner.
+ * Always includes owner_id on insert so the exercise is owned by the coach.
+ *
+ * `ownerId` defaults to the coach store's active owner (getOwnerId). The athlete
+ * app must pass its coach's id explicitly (athlete.owner_id), because the coach
+ * store is empty there and would otherwise fall back to the default owner and
+ * create a mis-owned sentinel the coach never sees.
  */
 export async function getOrCreateSentinel(
   code: string,
+  ownerIdOverride?: string,
 ): Promise<{ id: string; default_unit: string } | null> {
-  const ownerId = getOwnerId();
+  const ownerId = ownerIdOverride ?? getOwnerId();
   const { data: existing } = await supabase
     .from('exercises')
     .select('id, default_unit')

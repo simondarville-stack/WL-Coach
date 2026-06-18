@@ -340,7 +340,32 @@ function PreviewOffPlanRow({ logged }: { logged: LoggedExerciseFull }) {
   // only) right after an off-plan insert. The downstream display fields read
   // name + color, both of which are on the stub, so widen the receiver.
   const ex: Exercise | ExerciseStub | null = logged.exercise;
-  const accent = ex?.color ?? '#6b7280';
+
+  // Athlete-authored note / GPP block: render read-only via SentinelDisplay,
+  // sourcing the body from the log row's metadata (no planned row exists).
+  const sentinel = getSentinelType(ex?.exercise_code ?? null);
+  if (sentinel === 'text' || sentinel === 'gpp') {
+    return (
+      <li className="px-4 py-3">
+        <SentinelDisplay
+          exerciseCode={ex?.exercise_code}
+          notes={logged.log.metadata?.text ?? null}
+          metadata={logged.log.metadata as Record<string, unknown> | undefined}
+          athleteGpp={sentinel === 'gpp' ? (logged.log.metadata?.gpp ?? null) : undefined}
+          theme="dark"
+        />
+      </li>
+    );
+  }
+
+  // Athlete-authored combination: name + member dots from metadata.combo.
+  const combo = logged.log.metadata?.combo ?? null;
+  const accent = combo?.color ?? ex?.color ?? '#6b7280';
+  const name = combo
+    ? combo.name?.trim() ||
+      combo.members.map(m => m.name).filter(Boolean).join(' + ') ||
+      '(combination)'
+    : ex?.name ?? '(unknown exercise)';
   const completedSets = logged.sets.filter((s: TrainingLogSet) => s.status === 'completed');
   return (
     <li className="flex gap-3 px-4 py-3">
@@ -350,7 +375,29 @@ function PreviewOffPlanRow({ logged }: { logged: LoggedExerciseFull }) {
         aria-hidden
       />
       <div className="flex-1 min-w-0 space-y-1">
-        <h3 className="text-sm font-bold text-white">{ex?.name ?? '(unknown exercise)'}</h3>
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <h3 className="text-sm font-bold text-white">{name}</h3>
+          {combo && (
+            <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
+              Combo
+            </span>
+          )}
+        </div>
+        {combo && combo.members.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {combo.members.map((m, idx) => (
+              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
+                {idx > 0 && <span className="text-gray-600">+</span>}
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: m.color ?? '#6b7280' }}
+                  aria-hidden
+                />
+                <span>{m.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
             Did

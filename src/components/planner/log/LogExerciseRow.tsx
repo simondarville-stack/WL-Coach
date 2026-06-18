@@ -47,6 +47,15 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
     ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
     : [];
 
+  // Athlete-authored off-plan combination: members + name + colour live on
+  // the logged row's metadata.combo (the log schema has no combo columns).
+  const offPlanCombo = !planned ? logged?.log.metadata?.combo ?? null : null;
+  const comboName = offPlanCombo
+    ? offPlanCombo.name?.trim() ||
+      offPlanCombo.members.map(m => m.name).filter(Boolean).join(' + ') ||
+      '(combination)'
+    : null;
+
   // Detect substitution: planned slot exists, athlete logged a
   // different exercise_id. We show the substituted name primarily and
   // a small "↔ for <planned>" chip so the coach immediately sees what
@@ -55,28 +64,46 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
     !!planned &&
     !!logged?.exercise &&
     logged.exercise.id !== planned.exercise.id;
-  const exerciseName = isSubstituted
+  const exerciseName = comboName
+    ? comboName
+    : isSubstituted
     ? logged!.exercise!.name
     : planned?.exercise?.name ?? logged?.exercise?.name ?? '(unknown exercise)';
   const variationNote = planned?.variation_note ?? null;
-  const accentColor = isSubstituted
-    ? logged!.exercise!.color
-    : planned?.exercise?.color ?? logged?.exercise?.color ?? null;
+  const accentColor =
+    offPlanCombo?.color ??
+    (isSubstituted
+      ? logged!.exercise!.color
+      : planned?.exercise?.color ?? logged?.exercise?.color ?? null);
 
   // Sentinel exercises (free-text blocks, video links, image references)
   // are informational. Their content lives in `notes`, not in
-  // `prescription_raw`. Render the notes verbatim as the body.
+  // `prescription_raw`. For an off-plan (athlete-authored) sentinel there is
+  // no planned row, so derive the type and content from the LOGGED row: the
+  // note body lives in metadata.text and the GPP section in metadata.gpp.
   const sentinelType = planned
     ? getSentinelType(planned.exercise.exercise_code)
-    : null;
+    : getSentinelType(logged?.exercise?.exercise_code ?? null);
+  const sentinelExerciseCode = planned
+    ? planned.exercise.exercise_code
+    : logged?.exercise?.exercise_code ?? null;
+  const sentinelNotes = planned ? planned.notes : logged?.log.metadata?.text ?? null;
+  const sentinelMetadata = planned
+    ? (planned.metadata as Record<string, unknown> | undefined)
+    : (logged?.log.metadata as Record<string, unknown> | undefined);
   if (sentinelType === 'text') {
     return (
       <div className="flex border-l-4 border-l-gray-300">
         <div className="flex-1 px-3 py-2 min-w-0">
+          {!planned && (
+            <span className="text-[9px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.5 rounded mb-1 inline-block">
+              Added by athlete
+            </span>
+          )}
           <SentinelDisplay
-            exerciseCode={planned?.exercise.exercise_code ?? null}
-            notes={planned?.notes ?? null}
-            metadata={planned?.metadata as Record<string, unknown> | undefined}
+            exerciseCode={sentinelExerciseCode}
+            notes={sentinelNotes}
+            metadata={sentinelMetadata}
             theme="light"
           />
         </div>
@@ -88,9 +115,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
       <div className="flex border-l-4 border-l-pink-400">
         <div className="flex-1 px-3 py-2 min-w-0">
           <SentinelDisplay
-            exerciseCode={planned?.exercise.exercise_code ?? null}
-            notes={planned?.notes ?? null}
-            metadata={planned?.metadata as Record<string, unknown> | undefined}
+            exerciseCode={sentinelExerciseCode}
+            notes={sentinelNotes}
+            metadata={sentinelMetadata}
             theme="light"
           />
         </div>
@@ -102,9 +129,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
       <div className="flex border-l-4 border-l-indigo-400">
         <div className="flex-1 px-3 py-2 min-w-0">
           <SentinelDisplay
-            exerciseCode={planned?.exercise.exercise_code ?? null}
-            notes={planned?.notes ?? null}
-            metadata={planned?.metadata as Record<string, unknown> | undefined}
+            exerciseCode={sentinelExerciseCode}
+            notes={sentinelNotes}
+            metadata={sentinelMetadata}
             theme="light"
           />
         </div>
@@ -117,6 +144,10 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
     // When the athlete has logged GPP data, show both planned and performed
     // side-by-side so the coach can see what was changed. (UF-05)
     const hasAthleteData = athleteGpp != null;
+    // Title/description come from the coach's planned section when one exists,
+    // otherwise (off-plan, athlete-authored) from the athlete's own section.
+    const isOffPlan = !planned;
+    const headerGpp = plannedGpp ?? athleteGpp;
     const displayRows = (athleteGpp ?? plannedGpp)?.rows ?? [];
     const plannedRows = plannedGpp?.rows ?? [];
     const doneCount = displayRows.filter(r => r.done).length;
@@ -126,14 +157,16 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
           <div className="flex items-baseline justify-between gap-2 mb-0.5">
             <div className="flex items-baseline gap-2 min-w-0">
               <span className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700">
-                {plannedGpp?.title || 'GPP'}
+                {headerGpp?.title || 'GPP'}
               </span>
               {displayRows.length > 0 && (
                 <span className="text-[10px] text-gray-500">
                   {doneCount}/{displayRows.length} done
                 </span>
               )}
-              {hasAthleteData && (
+              {isOffPlan ? (
+                <span className="text-[9px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.5 rounded ml-1">Added by athlete</span>
+              ) : hasAthleteData && (
                 <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
               )}
             </div>
@@ -162,9 +195,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
               )}
             </div>
           </div>
-          {plannedGpp?.description && (
+          {headerGpp?.description && (
             <p className="text-[11px] text-gray-600 italic mb-1 whitespace-pre-wrap leading-snug">
-              {plannedGpp.description}
+              {headerGpp.description}
             </p>
           )}
           {displayRows.length === 0 ? (
@@ -253,7 +286,7 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
             {variationNote && (
               <span className="text-[10px] text-gray-500 italic">{variationNote}</span>
             )}
-            {planned?.is_combo && (
+            {(planned?.is_combo || offPlanCombo) && (
               <span className="text-[9px] bg-blue-50 text-blue-700 font-medium px-1.5 py-0.5 rounded">
                 Combo
               </span>
@@ -290,6 +323,24 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
             )}
           </div>
         </div>
+
+        {/* Off-plan combo member dots (the log has no combo join, so read
+            them from metadata.combo). */}
+        {offPlanCombo && offPlanCombo.members.length > 0 && (
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+            {offPlanCombo.members.map((m, idx) => (
+              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-600">
+                {idx > 0 && <span className="text-gray-400">+</span>}
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: m.color ?? '#9ca3af' }}
+                  aria-hidden
+                />
+                <span>{m.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Planned row */}
         {planned ? (

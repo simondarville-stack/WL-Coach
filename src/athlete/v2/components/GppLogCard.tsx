@@ -1,14 +1,18 @@
 /**
  * GppLogCard — athlete-side editable GPP block.
  *
- * Shows the coach's planned section (title + description) and a table
- * of rows. Each row is editable (reps / sets / load), with a checkbox
- * to mark it done. Athlete edits are stored on
- * training_log_exercises.metadata.gpp; the coach's planned section
- * stays untouched as the fallback / "what was prescribed".
+ * Two modes:
+ *  - Coach-seeded (default): shows the coach's planned section (title +
+ *    description) and a table of rows. Each row is editable (reps / sets /
+ *    load) with a done checkbox. Athlete edits are stored on
+ *    training_log_exercises.metadata.gpp; the coach's planned section stays
+ *    untouched as the fallback / "what was prescribed".
+ *  - Authored (`authored`): the athlete built this block themselves off-plan,
+ *    so there is no planned section. The title is editable and the athlete can
+ *    add / delete rows. State still lives in metadata.gpp via the same onSave.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Plus, Trash2 } from 'lucide-react';
 import type {
   TrainingLogExercise,
   GppSection,
@@ -17,7 +21,7 @@ import type {
 import { useAutoCommit } from '../lib/useAutoCommit';
 
 interface GppLogCardProps {
-  /** Planned section the coach wrote, or null if the coach left it blank. */
+  /** Planned section the coach wrote, or null if blank / athlete-authored. */
   planned: GppSection | null;
   /** Athlete's log row, used to read existing edits via metadata.gpp. */
   loggedExercise: TrainingLogExercise | null;
@@ -25,6 +29,11 @@ interface GppLogCardProps {
   onSave: (section: GppSection) => Promise<void>;
   /** Persists athlete-written notes on this exercise. */
   onUpdateNotes: (notes: string) => Promise<void>;
+  /** Athlete-authored (off-plan) block: enables title editing + add/remove
+   *  rows and shows an authoring-friendly empty state. */
+  authored?: boolean;
+  /** Remove the whole block (off-plan only). Parent shows a confirm modal. */
+  onDelete?: () => void;
 }
 
 /** Merge planned rows with athlete-edited rows by position. Athlete
@@ -44,6 +53,8 @@ export function GppLogCard({
   loggedExercise,
   onSave,
   onUpdateNotes,
+  authored = false,
+  onDelete,
 }: GppLogCardProps) {
   const athleteSection = loggedExercise?.metadata?.gpp;
   const initialRows = planned
@@ -52,6 +63,9 @@ export function GppLogCard({
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
   const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
+  // Authored blocks own their title/description (no planned section to read).
+  const [authoredTitle, setAuthoredTitle] = useState(athleteSection?.title ?? '');
+  const [authoredDescription, setAuthoredDescription] = useState(athleteSection?.description ?? '');
 
   useEffect(() => {
     setNotes(loggedExercise?.performed_notes ?? '');
@@ -70,7 +84,8 @@ export function GppLogCard({
   // detects structural changes regardless of row count, so a reorder
   // without a count change is correctly caught. We deliberately do NOT
   // re-sync from athleteSection on every save round-trip: doing so
-  // would stomp characters the athlete was still typing.
+  // would stomp characters the athlete was still typing. Authored blocks
+  // have no planned section, so this never runs for them.
   const plannedRowsHash = JSON.stringify(planned?.rows ?? null);
   useEffect(() => {
     if (!planned) return;
@@ -78,8 +93,8 @@ export function GppLogCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plannedRowsHash]);
 
-  const title = planned?.title || 'GPP';
-  const description = planned?.description || '';
+  const title = authored ? authoredTitle : planned?.title || 'GPP';
+  const description = authored ? authoredDescription : planned?.description || '';
 
   /**
    * Serial save queue. Every edit (typing, ticking done) calls
@@ -127,6 +142,28 @@ export function GppLogCard({
     enqueueSave(next, title, description);
   };
 
+  const addRow = () => {
+    const next: GppRow[] = [...rows, { exercise: '', reps: '', sets: 1, load: '', done: false }];
+    setRows(next);
+    enqueueSave(next, title, description);
+  };
+
+  const deleteRow = (i: number) => {
+    const next = rows.filter((_, idx) => idx !== i);
+    setRows(next);
+    enqueueSave(next, title, description);
+  };
+
+  const changeTitle = (next: string) => {
+    setAuthoredTitle(next);
+    enqueueSave(rows, next, description);
+  };
+
+  const changeDescription = (next: string) => {
+    setAuthoredDescription(next);
+    enqueueSave(rows, title, next);
+  };
+
   const allDone = rows.length > 0 && rows.every(r => r.done);
 
   return (
@@ -135,24 +172,50 @@ export function GppLogCard({
         <div className="w-1 self-stretch rounded-full flex-shrink-0 bg-emerald-500" aria-hidden />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-bold text-white break-words min-w-0">{title}</h3>
+            {authored ? (
+              <input
+                value={authoredTitle}
+                onChange={e => changeTitle(e.target.value)}
+                placeholder="Block name (e.g. Core circuit)"
+                className="text-sm font-bold text-white bg-transparent border-b border-gray-700 focus:border-emerald-500 focus:outline-none min-w-0 flex-1 placeholder-gray-600 pb-0.5"
+              />
+            ) : (
+              <h3 className="text-sm font-bold text-white break-words min-w-0">{title}</h3>
+            )}
             <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
               GPP
             </span>
+            {authored && (
+              <span className="text-[9px] bg-amber-900/40 text-amber-300 font-medium px-1.5 py-0.5 rounded flex-shrink-0">
+                Added by you
+              </span>
+            )}
             {allDone && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
           </div>
-          {description && (
+          {!authored && description && (
             <p className="text-[11px] text-gray-300 italic mt-0.5 whitespace-pre-wrap leading-snug">
               {description}
             </p>
           )}
         </div>
+        {authored && onDelete && (
+          <button
+            onClick={() => void onDelete()}
+            className="p-1 text-gray-500 hover:text-red-400 flex-shrink-0"
+            title="Remove this block"
+            aria-label="Remove GPP block"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
 
       <div className="px-3 pb-3 space-y-2">
         {rows.length === 0 ? (
           <p className="text-[11px] text-gray-500 italic text-center py-3">
-            No rows yet — your coach hasn't filled this in.
+            {authored
+              ? 'No exercises yet — add your first row below.'
+              : "No rows yet — your coach hasn't filled this in."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -164,6 +227,7 @@ export function GppLogCard({
                   <th className="text-center px-1 py-1 w-12">Reps</th>
                   <th className="text-center px-1 py-1 w-10">Sets</th>
                   <th className="text-center px-1 py-1 w-14">Load</th>
+                  {authored && <th className="px-1 py-1 w-8" aria-label="Remove" />}
                 </tr>
               </thead>
               <tbody>
@@ -213,11 +277,42 @@ export function GppLogCard({
                         className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center text-[12px]"
                       />
                     </td>
+                    {authored && (
+                      <td className="px-1 py-1 text-center">
+                        <button
+                          onClick={() => deleteRow(i)}
+                          className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-red-400"
+                          title="Remove row"
+                          aria-label="Remove row"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+
+        {authored && (
+          <button
+            onClick={addRow}
+            className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
+          >
+            <Plus size={12} />
+            Add row
+          </button>
+        )}
+
+        {authored && (
+          <input
+            value={authoredDescription}
+            onChange={e => changeDescription(e.target.value)}
+            placeholder="Optional note for this block…"
+            className="w-full text-[11px] bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"
+          />
         )}
 
         <div className="pt-1">
@@ -265,7 +360,8 @@ function AutoGrowExerciseInput({
       rows={1}
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px] leading-snug"
+      placeholder="Exercise"
+      className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px] leading-snug placeholder-gray-600"
       style={{ resize: 'none', overflow: 'hidden' }}
     />
   );

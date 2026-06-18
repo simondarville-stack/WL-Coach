@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Layers, Type, Video, Image as ImageIcon, Plus, PlusCircle, Dumbbell } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
+import { rankExercises } from '../../lib/exerciseRanker';
 
 interface SlashCommand {
   key: string;
@@ -47,28 +48,10 @@ export function ExerciseSearch({
     ? SLASH_COMMANDS.filter(c => c.key.startsWith(query.toLowerCase()))
     : [];
 
+  // Rank: exact code > code prefix > name prefix > code contains > name contains
+  // (shared with the combo builder and athlete add sheet via exerciseRanker).
   const filteredExercises = !isSlash && query.trim().length > 0
-    ? (() => {
-        const q = query.trim().toLowerCase();
-        // Rank: exact code > code prefix > name prefix > code contains > name contains.
-        // Lower scores rank higher; ties preserve incoming order.
-        const scored = exercises
-          .filter(ex => ex.category !== '— System')
-          .map(ex => {
-            const code = ex.exercise_code?.toLowerCase() ?? '';
-            const name = ex.name.toLowerCase();
-            let score = Infinity;
-            if (code && code === q) score = 0;
-            else if (code && code.startsWith(q)) score = 1;
-            else if (name.startsWith(q)) score = 2;
-            else if (code && code.includes(q)) score = 3;
-            else if (name.includes(q)) score = 4;
-            return { ex, score };
-          })
-          .filter(s => s.score !== Infinity);
-        scored.sort((a, b) => a.score - b.score);
-        return scored.slice(0, 12).map(s => s.ex);
-      })()
+    ? rankExercises(exercises.filter(ex => ex.category !== '— System'), query, 12)
     : [];
 
   const results: { type: 'exercise' | 'command'; exercise?: Exercise; command?: SlashCommand }[] =

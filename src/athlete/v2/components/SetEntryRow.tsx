@@ -35,6 +35,12 @@ export interface SetRowInput {
    *  ⇒ the merged cell becomes an editable text input bound to the
    *  set's notes column (athlete-added extra rows). */
   freeTextPlanned?: string;
+  /** Athlete-authored combo rows have no planned prescription, so
+   *  plannedRepsText is "—" and the reps pad would stay numeric. Set this
+   *  to give the reps cell a "+"-capable keyboard so tuple reps ("2+1")
+   *  can be typed. (Combo tuple notation already round-trips via
+   *  performed_text in commit().) */
+  comboReps?: boolean;
 }
 
 interface SetEntryRowProps {
@@ -280,8 +286,9 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
             // Combo prescriptions ("1+1") need a keyboard that can type "+".
             // inputMode="decimal" gives a numeric pad with no plus key on
             // mobile, trapping athletes once they clear the carried-over
-            // sum and try to enter combo notation.
-            inputMode={input.plannedRepsText.includes('+') ? 'text' : 'decimal'}
+            // sum and try to enter combo notation. comboReps forces the
+            // text pad for athlete-authored combos whose planned text is "—".
+            inputMode={input.plannedRepsText.includes('+') || input.comboReps ? 'text' : 'decimal'}
           />
         </div>
       )}
