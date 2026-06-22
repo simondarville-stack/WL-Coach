@@ -34,6 +34,7 @@ import {
   useClipboardState,
   type ClipboardExerciseSnapshot,
   type ClipboardExerciseDisplay,
+  type ClipboardWeekItem,
 } from './dock/useClipboardState';
 import { getSentinelType } from './sentinelUtils';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
@@ -145,6 +146,10 @@ export function WeeklyPlanner() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [pendingWeekPaste, setPendingWeekPaste] = useState<string | null>(null);
+  // When a parked week carries training units that don't exist in the
+  // destination, the coach decides per-paste whether to add those days or
+  // skip them. Defaults to adding (no silent data loss). Reset on each open.
+  const [pasteIncludeExtra, setPasteIncludeExtra] = useState(true);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
 
   // Press "L" toggles the load-distribution band (D stays bound to the dock).
@@ -733,13 +738,25 @@ export function WeeklyPlanner() {
     }
   };
 
-  const applyWeekFromClipboard = async (weekId: string, overwrite: boolean) => {
+  const applyWeekFromClipboard = async (
+    weekId: string,
+    opts: { overwrite: boolean; includeExtra: boolean },
+  ) => {
     if (!currentWeekPlan) return;
     const week = clipboard.findById(weekId);
     if (!week || week.kind !== 'week') return;
+    const { overwrite, includeExtra } = opts;
     const src = planSelection.type === 'individual' ? 'individual' : null;
+    // Days the paste introduces that aren't yet active training units in the
+    // destination — these get activated after insert so their rows render
+    // instead of becoming orphaned day_index entries.
+    const materializedDays: number[] = [];
     for (const day of week.days) {
       const di = day.dayIndex;
+      const isExtra = !activeDays.includes(di);
+      // Overflow day the coach chose to skip — writing it would orphan the
+      // rows on an inactive index, so don't insert it at all.
+      if (isExtra && (!includeExtra || day.exercises.length === 0)) continue;
       if (overwrite) {
         const existing = (plannedExercises[di] || []).map(ex => ex.id);
         if (existing.length > 0) await deleteDayExercises(existing);
@@ -748,16 +765,54 @@ export function WeeklyPlanner() {
       for (let i = 0; i < day.exercises.length; i++) {
         await insertExerciseSnapshot(day.exercises[i].snapshot, currentWeekPlan.id, di, base + i + 1, { source: src });
       }
+      if (isExtra && day.exercises.length > 0) materializedDays.push(di);
     }
+
+    // Activate (and persist) any newly introduced training units so the
+    // overview renders them; adopt the parked day's label without clobbering
+    // an existing one. Without this, the inserted rows would be invisible.
+    if (materializedDays.length > 0) {
+      const nextActive = [...activeDays, ...materializedDays].sort((a, b) => a - b);
+      const nextOrder = [...dayDisplayOrder, ...materializedDays.filter(d => !dayDisplayOrder.includes(d))];
+      const nextLabels: Record<number, string> = { ...(currentWeekPlan.day_labels ?? {}) };
+      for (const d of materializedDays) {
+        const parkedLabel = week.days.find(x => x.dayIndex === d)?.label;
+        if (parkedLabel && !nextLabels[d]) nextLabels[d] = parkedLabel;
+      }
+      setActiveDays(nextActive);
+      setDayDisplayOrder(nextOrder);
+      await updateWeekPlan(currentWeekPlan.id, {
+        active_days: nextActive,
+        day_display_order: nextOrder,
+        day_labels: nextLabels,
+      });
+    }
+
     await handleRefresh();
   };
+
+  // Training units the parked week would introduce into the destination —
+  // i.e. days that carry exercises but aren't currently active here. These are
+  // the rows that would otherwise be silently orphaned, so the coach confirms.
+  const extraDaysForWeek = (week: ClipboardWeekItem): number[] =>
+    week.days
+      .filter(d => d.exercises.length > 0 && !activeDays.includes(d.dayIndex))
+      .map(d => d.dayIndex)
+      .sort((a, b) => a - b);
 
   const handleApplyWeekFromClipboard = (weekId: string) => {
     const week = clipboard.findById(weekId);
     if (!week || week.kind !== 'week') return;
     const anyData = week.days.some(d => (plannedExercises[d.dayIndex] || []).length > 0);
-    if (anyData) setPendingWeekPaste(weekId);
-    else void applyWeekFromClipboard(weekId, false);
+    const hasExtra = extraDaysForWeek(week).length > 0;
+    // Confirm when applying would either collide with existing content or
+    // introduce new training units; otherwise apply straight away.
+    if (anyData || hasExtra) {
+      setPasteIncludeExtra(true);
+      setPendingWeekPaste(weekId);
+    } else {
+      void applyWeekFromClipboard(weekId, { overwrite: false, includeExtra: true });
+    }
   };
 
   const handleClipboardItemDrop = async (clipboardItemId: string, dayIndex: number, isReplace: boolean) => {
@@ -1722,25 +1777,59 @@ export function WeeklyPlanner() {
           />
         )}
 
-        {/* Append vs overwrite prompt when applying a parked week onto a week that already has content */}
+        {/* Apply-week prompt: confirms collision handling (append vs overwrite)
+            and/or whether to add training units the parked week introduces. */}
         {pendingWeekPaste && (() => {
           const w = clipboard.findById(pendingWeekPaste);
-          const wkLabel = w && w.kind === 'week' ? w.label : '';
-          const dayCount = w && w.kind === 'week' ? w.days.length : 0;
+          if (!w || w.kind !== 'week') return null;
+          const wkLabel = w.label;
+          const dayCount = w.days.length;
+          const hasContent = w.days.some(d => (plannedExercises[d.dayIndex] || []).length > 0);
+          const extraDays = extraDaysForWeek(w);
+          const extraNames = extraDays
+            .map(d => w.days.find(x => x.dayIndex === d)?.label || `Day ${d}`)
+            .join(', ');
           const close = () => setPendingWeekPaste(null);
-          const apply = (overwrite: boolean) => { const id = pendingWeekPaste; close(); void applyWeekFromClipboard(id, overwrite); };
+          const apply = (overwrite: boolean) => {
+            const id = pendingWeekPaste;
+            const includeExtra = pasteIncludeExtra;
+            close();
+            void applyWeekFromClipboard(id, { overwrite, includeExtra });
+          };
           const btn: React.CSSProperties = { padding: '6px 14px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-label)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)' };
           return (
             <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 28px rgba(0,0,0,0.18)', padding: 18, maxWidth: 400, width: '90%' }}>
                 <div style={{ fontSize: 'var(--text-section)', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Apply week</div>
-                <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: '0 0 16px' }}>
-                  This week already has planned content. Apply <b style={{ color: 'var(--color-text-primary)' }}>{wkLabel}</b> ({dayCount} day{dayCount === 1 ? '' : 's'}) by appending to the existing plan, or overwriting it?
+                <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: '0 0 12px' }}>
+                  {hasContent
+                    ? <>This week already has planned content. Apply <b style={{ color: 'var(--color-text-primary)' }}>{wkLabel}</b> ({dayCount} day{dayCount === 1 ? '' : 's'}) by appending to the existing plan, or overwriting it?</>
+                    : <>Apply <b style={{ color: 'var(--color-text-primary)' }}>{wkLabel}</b> ({dayCount} day{dayCount === 1 ? '' : 's'}) to this week?</>}
                 </p>
+                {extraDays.length > 0 && (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16, fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', lineHeight: 1.5, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={pasteIncludeExtra}
+                      onChange={e => setPasteIncludeExtra(e.target.checked)}
+                      style={{ marginTop: 2, accentColor: 'var(--color-accent)' }}
+                    />
+                    <span>
+                      Add {extraDays.length} new training unit{extraDays.length === 1 ? '' : 's'} this week introduces
+                      {' '}(<b style={{ color: 'var(--color-text-primary)' }}>{extraNames}</b>). Unchecked, {extraDays.length === 1 ? 'it is' : 'they are'} skipped.
+                    </span>
+                  </label>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                   <button onClick={close} style={{ ...btn, background: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}>Cancel</button>
-                  <button onClick={() => apply(false)} style={{ ...btn, background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', color: 'var(--color-text-primary)' }}>Append</button>
-                  <button onClick={() => apply(true)} style={{ ...btn, background: 'var(--color-accent)', border: '0.5px solid var(--color-accent)', color: 'var(--color-text-on-accent)' }}>Overwrite</button>
+                  {hasContent ? (
+                    <>
+                      <button onClick={() => apply(false)} style={{ ...btn, background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', color: 'var(--color-text-primary)' }}>Append</button>
+                      <button onClick={() => apply(true)} style={{ ...btn, background: 'var(--color-accent)', border: '0.5px solid var(--color-accent)', color: 'var(--color-text-on-accent)' }}>Overwrite</button>
+                    </>
+                  ) : (
+                    <button onClick={() => apply(false)} style={{ ...btn, background: 'var(--color-accent)', border: '0.5px solid var(--color-accent)', color: 'var(--color-text-on-accent)' }}>Apply</button>
+                  )}
                 </div>
               </div>
             </div>
