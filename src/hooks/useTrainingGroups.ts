@@ -42,11 +42,11 @@ export function useTrainingGroups() {
     }
   };
 
-  const createGroup = async (name: string, description: string | null): Promise<TrainingGroup> => {
+  const createGroup = async (name: string, description: string | null, accessCode: string | null = null): Promise<TrainingGroup> => {
     try {
       const { data, error } = await supabase
         .from('training_groups')
-        .insert([{ name, description, owner_id: getOwnerId() }])
+        .insert([{ name, description, access_code: accessCode, owner_id: getOwnerId() }])
         .select()
         .single();
       if (error) throw error;
@@ -58,14 +58,14 @@ export function useTrainingGroups() {
     }
   };
 
-  const updateGroup = async (id: string, name: string, description: string | null) => {
+  const updateGroup = async (id: string, name: string, description: string | null, accessCode: string | null = null) => {
     try {
       const { error } = await supabase
         .from('training_groups')
-        .update({ name, description })
+        .update({ name, description, access_code: accessCode })
         .eq('id', id);
       if (error) throw error;
-      setGroups(prev => prev.map(g => g.id === id ? { ...g, name, description } : g));
+      setGroups(prev => prev.map(g => g.id === id ? { ...g, name, description, access_code: accessCode } : g));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update group');
       throw err;

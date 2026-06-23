@@ -1,11 +1,40 @@
 import { useState, useEffect } from 'react';
 import type { TrainingGroup } from '../lib/database.types';
-import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share2, Link2, Check } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit2, Trash2, X, UserPlus, UserMinus, Share2, Link2, Check, Lock } from 'lucide-react';
 import { useTrainingGroups } from '../hooks/useTrainingGroups';
 import { useAthletes } from '../hooks/useAthletes';
 import { useCoachStore } from '../store/coachStore';
 import { ShareGroupModal } from './ShareGroupModal';
 import { Button } from './ui';
+
+/**
+ * Access-code field shared by the create/edit group modals. A non-empty code
+ * makes athletes type it before the group's read-only plan opens at
+ * /athlete/g/<id>; blank = open (current behaviour).
+ */
+function GroupAccessCodeField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1">
+        <Lock size={12} className="text-gray-400" />
+        Access code
+        <span className="font-normal text-gray-400 text-xs">— athlete-link gate (optional)</span>
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="e.g. squad24 — leave blank for no code"
+        autoComplete="off"
+        className="w-full px-3 py-2 font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <p className="mt-1 text-xs text-gray-400">
+        Athletes opening this group's link must type the code first. Changing it
+        re-locks everyone who had unlocked it. Leave blank to keep it open.
+      </p>
+    </div>
+  );
+}
 
 export function TrainingGroups() {
   const {
@@ -25,6 +54,7 @@ export function TrainingGroups() {
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [formAccessCode, setFormAccessCode] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
@@ -42,11 +72,12 @@ export function TrainingGroups() {
   const handleCreateGroup = async () => {
     if (!formName.trim()) return;
     try {
-      const newGroup = await createGroup(formName.trim(), formDescription.trim() || null);
+      const newGroup = await createGroup(formName.trim(), formDescription.trim() || null, formAccessCode.trim() || null);
       setSelectedGroup(newGroup);
       setShowCreateModal(false);
       setFormName('');
       setFormDescription('');
+      setFormAccessCode('');
     } catch {
       // error already set in hook
     }
@@ -54,12 +85,14 @@ export function TrainingGroups() {
 
   const handleUpdateGroup = async () => {
     if (!selectedGroup || !formName.trim()) return;
+    const accessCode = formAccessCode.trim() || null;
     try {
-      await updateGroup(selectedGroup.id, formName.trim(), formDescription.trim() || null);
-      setSelectedGroup({ ...selectedGroup, name: formName.trim(), description: formDescription.trim() || null });
+      await updateGroup(selectedGroup.id, formName.trim(), formDescription.trim() || null, accessCode);
+      setSelectedGroup({ ...selectedGroup, name: formName.trim(), description: formDescription.trim() || null, access_code: accessCode });
       setShowEditModal(false);
       setFormName('');
       setFormDescription('');
+      setFormAccessCode('');
     } catch {
       // error already set in hook
     }
@@ -99,6 +132,7 @@ export function TrainingGroups() {
     if (!selectedGroup) return;
     setFormName(selectedGroup.name);
     setFormDescription(selectedGroup.description || '');
+    setFormAccessCode(selectedGroup.access_code || '');
     setShowEditModal(true);
   };
 
@@ -129,7 +163,7 @@ export function TrainingGroups() {
           <h1 className="text-xl font-medium text-gray-900">Training Groups</h1>
           <Button
             variant="primary"
-            onClick={() => { setFormName(''); setFormDescription(''); setShowCreateModal(true); }}
+            onClick={() => { setFormName(''); setFormDescription(''); setFormAccessCode(''); setShowCreateModal(true); }}
             icon={<Plus size={20} />}
           >
             Create Group
@@ -172,6 +206,11 @@ export function TrainingGroups() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
                           <h3 className="font-medium text-gray-900 truncate">{group.name}</h3>
+                          {group.access_code && (
+                            <span className="flex-shrink-0 text-gray-400" title="Code-protected on the athlete app">
+                              <Lock size={11} aria-label="Code-protected" />
+                            </span>
+                          )}
                           {activeCoachId && group.owner_id !== activeCoachId && (
                             <span
                               className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
@@ -321,6 +360,7 @@ export function TrainingGroups() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
                   />
                 </div>
+                <GroupAccessCodeField value={formAccessCode} onChange={setFormAccessCode} />
                 <div className="flex justify-end gap-2 pt-4">
                   <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
                     Cancel
@@ -366,6 +406,7 @@ export function TrainingGroups() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
                   />
                 </div>
+                <GroupAccessCodeField value={formAccessCode} onChange={setFormAccessCode} />
                 <div className="flex justify-end gap-2 pt-4">
                   <Button variant="secondary" onClick={() => setShowEditModal(false)}>
                     Cancel

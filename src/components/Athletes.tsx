@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Athlete } from '../lib/database.types';
 import {
   User, Edit2, Trash2, Award, Plus, Search, X as XIcon,
-  MapPin, Trophy, Share2,
+  MapPin, Trophy, Share2, Lock, Link2, Check,
 } from 'lucide-react';
 import { PRTrackingPanel } from './planner/PRTrackingPanel';
 import { ShareAthleteModal } from './ShareAthleteModal';
@@ -33,6 +33,8 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
   const [isActive, setIsActive] = useState(editingAthlete?.is_active ?? true);
   const [trackBodyweight, setTrackBodyweight] = useState(editingAthlete?.track_bodyweight ?? true);
   const [competitionTotal, setCompetitionTotal] = useState(editingAthlete?.competition_total?.toString() ?? '');
+  const [accessCode, setAccessCode] = useState(editingAthlete?.access_code ?? '');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +50,24 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
       is_active: isActive,
       track_bodyweight: trackBodyweight,
       competition_total: competitionTotal ? parseFloat(competitionTotal) : null,
+      access_code: accessCode.trim() || null,
     });
+  };
+
+  // Soft capability link: the token is the athlete id (an unguessable UUID).
+  // The athlete opens it to land on their own programme without picking from
+  // the list; pair it with the access code below. Only meaningful once the
+  // athlete row exists (i.e. when editing).
+  const handleCopyLink = async () => {
+    if (!editingAthlete) return;
+    const url = `${window.location.origin}/athlete/a/${editingAthlete.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      window.prompt('Copy this athlete link:', url);
+    }
   };
 
   const inputCls = 'w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400';
@@ -201,6 +220,42 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
               />
             </div>
 
+            {/* Athlete-app access gate. A non-empty code makes the athlete
+                type it before their programme opens at /athlete; blank = open. */}
+            <div className="pt-1 border-t border-gray-100">
+              <label className={`${labelCls} flex items-center gap-1.5 mt-3`}>
+                <Lock size={11} className="text-gray-400" />
+                Access code
+                <span className="font-normal text-gray-400">— athlete-app gate (optional)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={accessCode}
+                  onChange={e => setAccessCode(e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  placeholder="e.g. squat73 — leave blank for no code"
+                  autoComplete="off"
+                />
+                {editingAthlete && (
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+                    title="Copy this athlete's personal link to /athlete"
+                  >
+                    {linkCopied ? <Check size={13} className="text-green-600" /> : <Link2 size={13} />}
+                    {linkCopied ? 'Copied' : 'Copy link'}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">
+                Set a code so only this athlete can open their programme. Share the
+                code together with their personal link. Changing it re-locks everyone
+                who had unlocked it. Leave blank to keep the programme open.
+              </p>
+            </div>
+
             <div className="flex gap-6 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -313,6 +368,11 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
       {/* Name */}
       <div className="flex-1 min-w-0 pr-3 flex items-center gap-1.5">
         <span className="text-[12px] text-gray-800 font-medium truncate">{athlete.name}</span>
+        {athlete.access_code && (
+          <span className="flex-shrink-0 text-gray-400" title="Code-protected on the athlete app">
+            <Lock size={11} aria-label="Code-protected" />
+          </span>
+        )}
         {!athlete.is_active && (
           <span className="text-[11px] font-medium bg-gray-200 text-gray-500 px-1.5 py-px rounded flex-shrink-0">
             Inactive

@@ -33,7 +33,7 @@ function shortDate(iso: string): string {
 
 export function ProfileScreen() {
   const navigate = useNavigate();
-  const { athlete, signOut } = useAuth();
+  const { athlete, signOut, locked } = useAuth();
   const [bw, setBw] = useState<BodyweightPoint[]>([]);
   const [prs, setPrs] = useState<AthletePRRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,13 +83,17 @@ export function ProfileScreen() {
             {athlete.club && <span>· {athlete.club}</span>}
           </div>
         </div>
-        <button
-          onClick={signOut}
-          className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-3 py-2 rounded-md border border-gray-800 hover:border-gray-600"
-        >
-          <LogOut size={12} />
-          Switch
-        </button>
+        {/* A locked session (reached via a personal link) hides the Switch
+            path so the viewer can't browse into other athletes' data. */}
+        {!locked && (
+          <button
+            onClick={signOut}
+            className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-3 py-2 rounded-md border border-gray-800 hover:border-gray-600"
+          >
+            <LogOut size={12} />
+            Switch
+          </button>
+        )}
       </div>
 
       {loading && (
