@@ -9,6 +9,7 @@ import { Dumbbell } from 'lucide-react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ProfilePicker } from './components/ProfilePicker';
+import { ProgrammeGate } from './components/ProgrammeGate';
 import { AthleteLayout } from './components/AthleteLayout';
 import { TodayScreen } from './screens/TodayScreen';
 import { WeekScreen } from './screens/WeekScreen';
@@ -35,7 +36,7 @@ function ShareLinkError({ message }: { message: string }) {
 }
 
 function AthleteRoutes() {
-  const { loading, mode, athlete, group, tokenError } = useAuth();
+  const { loading, mode, athlete, group, tokenError, pending } = useAuth();
   useRouteBreadcrumbs();
   useEffect(() => {
     setActorResolver(() => {
@@ -54,6 +55,7 @@ function AthleteRoutes() {
   }
 
   if (tokenError) return <ShareLinkError message={tokenError} />;
+  if (pending) return <ProgrammeGate />;
   if (mode === null) return <ProfilePicker />;
   if (mode === 'group') return <GroupViewerScreen />;
 

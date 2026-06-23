@@ -52,6 +52,8 @@ export interface Athlete {
   is_active: boolean;
   track_bodyweight: boolean;
   competition_total: number | null;
+  /** Optional soft-gate passphrase for the athlete app; null/empty = open. Deterrence only, not auth. */
+  access_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -132,6 +134,8 @@ export interface TrainingGroup {
   owner_id: string;
   name: string;
   description: string | null;
+  /** Optional soft-gate passphrase for the group plan viewer; null/empty = open. Deterrence only, not auth. */
+  access_code: string | null;
   created_at: string;
   updated_at: string;
 }
