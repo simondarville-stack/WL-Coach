@@ -88,6 +88,11 @@ export function computeMetrics(
 ): ComputedMetrics {
   let reps = 0, sets = 0, max = 0, tonnage = 0;
   let weightedLoadSum = 0;
+  // Reps that actually carry a load — the denominator for the average
+  // intensity (AAI). Counting a loadless exercise's reps here would dilute
+  // the average (and the derived K) downward; e.g. a bodyweight accessory
+  // flagged into totals would drag AAI toward zero. (Matches WeekSummaryBox.)
+  let loadedReps = 0;
 
   for (const ex of exercises) {
     if (ex.counts_towards_totals === false) continue;
@@ -99,11 +104,14 @@ export function computeMetrics(
     sets += s;
     reps += r;
     if (hi > max) max = hi;
-    tonnage += avg * r;  // tonnage = sum of (avg_load × reps) per exercise
-    weightedLoadSum += avg * r;
+    if (avg > 0) {
+      tonnage += avg * r;  // tonnage = sum of (avg_load × reps) per exercise
+      weightedLoadSum += avg * r;
+      loadedReps += r;
+    }
   }
 
-  const avg = reps > 0 ? Math.round(weightedLoadSum / reps) : 0;
+  const avg = loadedReps > 0 ? Math.round(weightedLoadSum / loadedReps) : 0;
   const k = (competitionTotal && competitionTotal > 0 && avg > 0)
     ? Math.round((avg / competitionTotal) * 100) / 100
     : null;

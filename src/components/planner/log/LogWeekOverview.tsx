@@ -27,7 +27,7 @@ import type { DayLog } from '../../../lib/trainingLogModel';
 import { hasLoggedWork, METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
 import { plannedExerciseTotals, countsTowardsTotals } from './logSummary';
 import { formatDecimalComma } from '../../../lib/logFormatUtils';
-import { weekdayIndexMonday, weekdayShortFromMonday } from '../../../lib/dateUtils';
+import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 
 /**
  * Day-strip dot status. Surfaces a distinct "logged but not finished" state
@@ -58,6 +58,9 @@ interface Totals {
   sets: number;
   reps: number;
   tonnage: number;
+  /** Reps that actually carry a load — the denominator for Avg kg/rep, so
+   *  loadless work (bodyweight accessories) never drags the mean down. */
+  loadReps: number;
 }
 
 const fmtKg = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)} t` : `${Math.round(n)} kg`);
@@ -67,6 +70,7 @@ function plannedTotals(rows: (PlannedExercise & { exercise: Exercise })[]): Tota
   let sets = 0;
   let reps = 0;
   let tonnage = 0;
+  let loadReps = 0;
   rows.forEach(ex => {
     // Exclude exercises flagged out of totals (accessories / sentinels /
     // GPP) so this matches the Plan-mode summary, which already skips them.
@@ -82,15 +86,17 @@ function plannedTotals(rows: (PlannedExercise & { exercise: Exercise })[]): Tota
     reps += r;
     if (ex.unit === 'absolute_kg' && avg > 0 && r > 0) {
       tonnage += avg * r;
+      loadReps += r;
     }
   });
-  return { sets, reps, tonnage };
+  return { sets, reps, tonnage, loadReps };
 }
 
 function performedTotals(log: DayLog): Totals {
   let sets = 0;
   let reps = 0;
   let tonnage = 0;
+  let loadReps = 0;
   log.exercises.forEach(le => {
     // Skip performed work for exercises flagged out of totals, so the
     // performed side stays symmetric with the planned side above.
@@ -102,10 +108,11 @@ function performedTotals(log: DayLog): Totals {
       reps += r;
       if (s.performed_load != null && r > 0) {
         tonnage += s.performed_load * r;
+        loadReps += r;
       }
     });
   });
-  return { sets, reps, tonnage };
+  return { sets, reps, tonnage, loadReps };
 }
 
 function pct(performed: number, planned: number): number | null {
@@ -121,57 +128,63 @@ function deltaClass(p: number | null): string {
 }
 
 /**
- * One column in the daily-metric tables, keyed to a calendar weekday
- * (0=Mon … 6=Sun) rather than a planned training-unit slot — RAW and the
- * other session metrics are once-daily readings, so they belong under the
- * weekday the athlete actually submitted them, even when units are trained
- * out of the planned order.
+ * One column in the daily-metric tables, keyed to a planned training-unit
+ * slot (day_index) rather than a calendar weekday. RAW, bodyweight and the
+ * other session metrics are logged per training unit, so each unit gets its
+ * own column — otherwise two units performed on the same calendar date
+ * (e.g. an AM/PM split, or a whole week caught up in one day) collapse into
+ * a single column and all but the first unit's readings are lost.
  */
-interface WeekdayColumn {
+interface UnitColumn {
   key: string;
-  weekday: number;
+  /** Training-unit slot (day_index). */
+  dayIndex: number;
+  /** Primary header: the unit / day name. */
   label: string;
-  /** Sessions performed on this weekday (usually exactly one). */
+  /** Secondary header: weekday + date this unit was performed ("Sat 27/06"),
+   *  or null when the unit has no logged session. */
+  dateLabel: string | null;
+  /** The session for this unit (0 or 1). Kept as an array so the table
+   *  helpers can stay tolerant of an unlogged slot. */
   sessions: TrainingLogSession[];
 }
 
 /**
- * Bucket the week's logged sessions onto the weekday their `date` falls on.
+ * Build one column per training unit (day_index).
  *
- * showAll=false → one column per weekday that has a session (compact, the
- *   density-first default). showAll=true → all seven weekdays Mon–Sun, for
- *   consistent cross-week scanning (e.g. "always bombs Monday nutrition").
+ * showAll=false → one column per unit that has a logged session (compact,
+ *   the density-first default). showAll=true → every planned unit, so an
+ *   unlogged slot still shows as an empty column for consistent scanning.
  */
-export function buildWeekdayColumns(
+export function buildUnitColumns(
   weekLog: Record<number, DayLog>,
+  dayNames: Record<number, string>,
+  plannedDayIndices: number[],
   showAll: boolean,
-): WeekdayColumn[] {
-  const byWeekday = new Map<number, TrainingLogSession[]>();
-  Object.values(weekLog).forEach(day => {
-    const s = day.session;
-    if (!s) return;
-    const wd = weekdayIndexMonday(s.date);
-    if (wd == null) return;
-    const arr = byWeekday.get(wd) ?? [];
-    arr.push(s);
-    byWeekday.set(wd, arr);
+): UnitColumn[] {
+  const loggedIndices = Object.keys(weekLog)
+    .map(Number)
+    .filter(i => weekLog[i]?.session != null);
+  const indices = (
+    showAll
+      ? Array.from(new Set([...plannedDayIndices, ...loggedIndices]))
+      : loggedIndices
+  ).sort((a, b) => a - b);
+  return indices.map(i => {
+    const session = weekLog[i]?.session ?? null;
+    return {
+      key: `u${i}`,
+      dayIndex: i,
+      label: dayNames[i] || `Day ${i}`,
+      dateLabel: session ? formatWeekdayDateShort(session.date) : null,
+      sessions: session ? [session] : [],
+    };
   });
-  const weekdays = showAll
-    ? [0, 1, 2, 3, 4, 5, 6]
-    : Array.from(byWeekday.keys()).sort((a, b) => a - b);
-  return weekdays.map(wd => ({
-    key: `wd${wd}`,
-    weekday: wd,
-    label: weekdayShortFromMonday(wd),
-    sessions: byWeekday.get(wd) ?? [],
-  }));
 }
 
 /**
- * First non-null numeric value for `field` among a weekday's sessions.
- * Days almost always have a single session; when an athlete logs two units
- * on the same calendar day this surfaces the first that carries a value so
- * a once-daily reading (RAW, bodyweight) isn't dropped.
+ * First non-null numeric value for `field` among a unit's sessions. A unit
+ * has at most one session; the loop just tolerates the empty (unlogged) case.
  */
 function pickSessionNumber(
   sessions: TrainingLogSession[],
@@ -200,9 +213,10 @@ export function LogWeekOverview({
         sets: acc.sets + t.sets,
         reps: acc.reps + t.reps,
         tonnage: acc.tonnage + t.tonnage,
+        loadReps: acc.loadReps + t.loadReps,
       };
     },
-    { sets: 0, reps: 0, tonnage: 0 },
+    { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
   );
 
   // Performed aggregate across every day with a log (incl. bonus days).
@@ -213,9 +227,10 @@ export function LogWeekOverview({
         sets: acc.sets + t.sets,
         reps: acc.reps + t.reps,
         tonnage: acc.tonnage + t.tonnage,
+        loadReps: acc.loadReps + t.loadReps,
       };
     },
-    { sets: 0, reps: 0, tonnage: 0 },
+    { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
   );
 
   const plannedSessions = visibleDays.length;
@@ -223,8 +238,10 @@ export function LogWeekOverview({
   // so a fully-logged-but-not-finished session isn't under-reported.
   const completedSessions = Object.values(weekLog).filter(hasLoggedWork).length;
 
-  const performedAvg = performedAgg.reps > 0 ? performedAgg.tonnage / performedAgg.reps : 0;
-  const plannedAvg = plannedAgg.reps > 0 ? plannedAgg.tonnage / plannedAgg.reps : 0;
+  // Avg kg/rep divides tonnage by load-bearing reps only, so loadless work
+  // (bodyweight accessories logged with no kg) never dilutes the mean.
+  const performedAvg = performedAgg.loadReps > 0 ? performedAgg.tonnage / performedAgg.loadReps : 0;
+  const plannedAvg = plannedAgg.loadReps > 0 ? plannedAgg.tonnage / plannedAgg.loadReps : 0;
 
   // Day strip data: one entry per visible day + each bonus day after.
   const visibleIndices = new Set(visibleDays.map(d => d.index));
@@ -247,10 +264,12 @@ export function LogWeekOverview({
     })),
   ];
 
-  // Columns for the per-metric tables are keyed to the calendar weekday each
-  // session was submitted on (not the planned slot), so daily readings line
-  // up with the day the athlete actually filled them in. (COACH-RAW-WEEKDAY)
-  const columns = buildWeekdayColumns(weekLog, showAllWeekdays);
+  // Columns for the per-metric tables are keyed to the training UNIT
+  // (day_index), so two units performed on the same calendar date don't
+  // collapse into one column and lose all but the first unit's readings.
+  const dayNames = Object.fromEntries(visibleDays.map(d => [d.index, d.name]));
+  const plannedDayIndices = visibleDays.map(d => d.index);
+  const columns = buildUnitColumns(weekLog, dayNames, plannedDayIndices, showAllWeekdays);
 
   // Default to pre-feature behaviour (RAW + BW shown) when no config row
   // exists yet. VAS / custom stay off until the coach opts in.
@@ -283,8 +302,8 @@ export function LogWeekOverview({
         />
         <StatCell
           label="Tonnage"
-          performed={fmtKg(performedAgg.tonnage)}
-          planned={fmtKg(plannedAgg.tonnage)}
+          performed={performedAgg.tonnage > 0 ? fmtKg(performedAgg.tonnage) : '—'}
+          planned={plannedAgg.tonnage > 0 ? fmtKg(plannedAgg.tonnage) : '—'}
           ratio={pct(performedAgg.tonnage, plannedAgg.tonnage)}
         />
         <StatCell
@@ -438,7 +457,7 @@ function NoLoggedDaysHint() {
   );
 }
 
-function RawTable({ columns }: { columns: WeekdayColumn[] }) {
+function RawTable({ columns }: { columns: UnitColumn[] }) {
   // 'nr' = session exists but pillar not entered; null = no session at all.
   const pillarValues: Record<typeof PILLARS[number], Array<number | null | 'nr'>> = {
     sleep: [],
@@ -487,9 +506,14 @@ function RawTable({ columns }: { columns: WeekdayColumn[] }) {
               <th
                 key={col.key}
                 className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
-                title={col.label}
+                title={col.dateLabel ? `${col.label} · ${col.dateLabel}` : col.label}
               >
-                {col.label}
+                <div>{col.label}</div>
+                {col.dateLabel && (
+                  <div className="text-[8px] text-gray-400 font-normal normal-case tracking-normal">
+                    {col.dateLabel}
+                  </div>
+                )}
               </th>
             ))}
             <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
@@ -569,7 +593,7 @@ function OtherMetricsTable({
   trackVas,
   customDefs,
 }: {
-  columns: WeekdayColumn[];
+  columns: UnitColumn[];
   trackBw: boolean;
   trackVas: boolean;
   customDefs: AthleteMetricDefinition[];
@@ -632,8 +656,14 @@ function OtherMetricsTable({
               <th
                 key={col.key}
                 className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-1.5 py-1"
+                title={col.dateLabel ? `${col.label} · ${col.dateLabel}` : col.label}
               >
-                {col.label}
+                <div>{col.label}</div>
+                {col.dateLabel && (
+                  <div className="text-[8px] text-gray-400 font-normal normal-case tracking-normal">
+                    {col.dateLabel}
+                  </div>
+                )}
               </th>
             ))}
             <th className="text-center text-[9px] uppercase tracking-wide font-semibold text-gray-500 px-2 py-1">
