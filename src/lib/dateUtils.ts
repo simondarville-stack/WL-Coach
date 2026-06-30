@@ -89,6 +89,27 @@ export function formatTime24(value: string | Date, withSeconds = false): string 
   return `${hh}:${mm}`;
 }
 
+/**
+ * Combine a 'YYYY-MM-DD' date and a 'HH:mm' 24h time into an ISO instant,
+ * interpreting both as local wall-clock (browser timezone) — the same
+ * local-Date → toISOString() convention ensureSession uses to stamp
+ * started_at. Round-trips with formatTime24 (which reads back in local time).
+ * Missing/blank parts fall back to 0 so a partial input never throws.
+ */
+export function combineDateTimeToISO(dateYMD: string, timeHHmm: string): string {
+  const [y, m, d] = (dateYMD || '').split('-').map(Number);
+  const [hh, mm] = (timeHHmm || '').split(':').map(Number);
+  return new Date(
+    y || 1970,
+    (m || 1) - 1,
+    d || 1,
+    hh || 0,
+    mm || 0,
+    0,
+    0,
+  ).toISOString();
+}
+
 /** "10/06 16:00" — day-first date + 24h time, for comment-thread stamps. */
 export function formatDateTimeShort(value: string | Date): string {
   const d = value instanceof Date ? value : new Date(value);

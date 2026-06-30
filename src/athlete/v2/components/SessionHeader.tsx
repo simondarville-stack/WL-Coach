@@ -14,7 +14,7 @@
  * matches the pre-feature UX.
  */
 import { useEffect, useState } from 'react';
-import { Calendar } from 'lucide-react';
+import { Calendar, Ban } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import { useAutoCommit } from '../lib/useAutoCommit';
 import { BodyweightField } from './BodyweightField';
@@ -46,10 +46,15 @@ interface SessionHeaderProps {
   saving?: boolean;
   /** Actual performed-on date (may differ from plan date). Editable inline. */
   performedOnDate?: string;
+  /** Actual performed-at time of day ('HH:mm', 24h). Defaults to the time
+   *  logging started; editable inline. */
+  performedAtTime?: string;
   /** Whether a session row exists in the DB (affects helper text). */
   sessionExists?: boolean;
   /** Persist a change to the performed-on date. */
   onPatchPerformedOn?: (next: string) => void;
+  /** Persist a change to the performed-at time of day ('HH:mm'). */
+  onPatchPerformedAt?: (next: string) => void;
 }
 
 // Binary states: only "Done" surfaces.
@@ -67,8 +72,10 @@ export function SessionHeader({
   onPatchNotes,
   saving,
   performedOnDate,
+  performedAtTime,
   sessionExists,
   onPatchPerformedOn,
+  onPatchPerformedAt,
 }: SessionHeaderProps) {
   const [notes, setNotes] = useState(session?.session_notes ?? '');
 
@@ -109,7 +116,7 @@ export function SessionHeader({
             <span>{prettyDate}</span>
           </div>
           {performedOnDate != null && onPatchPerformedOn != null && (
-            <div className="flex items-center gap-1.5 mt-1.5">
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">
                 Performed on
               </span>
@@ -120,11 +127,26 @@ export function SessionHeader({
                 className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
                 title={sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
               />
+              {performedAtTime != null && onPatchPerformedAt != null && (
+                <input
+                  type="time"
+                  value={performedAtTime}
+                  onChange={e => onPatchPerformedAt(e.target.value)}
+                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 tabular-nums"
+                  title={sessionExists ? 'Stored time' : 'Defaults to now; saved when you log anything'}
+                />
+              )}
             </div>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {status === 'completed' && <DoneChip variant="dark" />}
+          {status === 'skipped' && (
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+              <Ban size={11} />
+              Not done
+            </span>
+          )}
           {saving && <span className="text-[10px] text-gray-500">Saving…</span>}
         </div>
       </div>

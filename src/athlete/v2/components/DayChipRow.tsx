@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleDashed } from 'lucide-react';
+import { CheckCircle2, CircleDashed, Ban } from 'lucide-react';
 import type { WeekDayOverview } from '../../../lib/trainingLogService';
 import { Weekday } from './WeekNavigator';
 
@@ -24,8 +24,9 @@ export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false 
       {days.map(d => {
         const selected = d.dayIndex === selectedDayIndex;
         const done = d.status === 'completed';
-        const Icon = done ? CheckCircle2 : CircleDashed;
-        const iconClass = done ? 'text-emerald-400' : 'text-gray-500';
+        const skipped = d.status === 'skipped';
+        const Icon = done ? CheckCircle2 : skipped ? Ban : CircleDashed;
+        const iconClass = done ? 'text-emerald-400' : skipped ? 'text-red-400' : 'text-gray-500';
         // Weekday source preference:
         //   1. Coach-set day_schedule weekday (Plan-side scheduling).
         //   2. Calendar weekday of an existing logged session date
@@ -45,6 +46,7 @@ export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false 
             key={d.dayIndex}
             onClick={() => !disabled && onSelect(d.dayIndex)}
             disabled={disabled}
+            title={skipped ? (d.skippedReason ? `Not done: ${d.skippedReason}` : 'Not done') : undefined}
             className={`
               flex-1 min-w-[88px] snap-start rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60
               ${selected

@@ -26,6 +26,7 @@ import {
 } from '../../../lib/trainingLogService';
 import { WeekNavigator, Weekday } from '../components/WeekNavigator';
 import { SessionPreview } from '../components/SessionPreview';
+import { WeekBriefCard } from '../components/WeekBriefCard';
 import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
 import { formatWeekdayDateShort } from '../../../lib/dateUtils';
@@ -167,6 +168,8 @@ export function WeekScreen() {
         </div>
       )}
 
+      {!loading && !error && <WeekBriefCard brief={overview?.weekBrief} />}
+
       {loading && (
         <div className="flex items-center justify-center py-16 text-gray-500">
           <Loader2 size={18} className="animate-spin mr-2" />
@@ -237,6 +240,14 @@ export function WeekScreen() {
                       {day.status === 'completed' && (
                         <span className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
                           Done
+                        </span>
+                      )}
+                      {day.status === 'skipped' && (
+                        <span
+                          className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300"
+                          title={day.skippedReason ? `Not done: ${day.skippedReason}` : 'Not done'}
+                        >
+                          Not done
                         </span>
                       )}
                       <span className="text-[10px] text-gray-500">

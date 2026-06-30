@@ -363,6 +363,9 @@ export interface WeekDayOverview {
   status: 'pending' | 'in_progress' | 'completed' | 'skipped';
   /** Calendar date on the log row, if any. */
   sessionDate: string | null;
+  /** Reason the athlete gave when marking the day "not done" (status
+   *  'skipped'); null otherwise. */
+  skippedReason: string | null;
   /** Whether a log session exists for this slot. */
   hasLog: boolean;
   /** True if the slot is outside the coach's active_days (athlete-added). */
@@ -380,6 +383,9 @@ export interface WeekOverview {
   days: WeekDayOverview[];
   /** Where the plan came from. 'group' means coach hasn't synced individually yet. */
   planSource: 'individual' | 'group' | null;
+  /** Coach-authored week-level brief (week_plans.week_description). Read-only
+   *  for athletes; null when absent or when there is no plan for the week. */
+  weekBrief: string | null;
 }
 
 /**
@@ -415,12 +421,13 @@ export async function fetchWeekOverview(
   let activeDays: number[] = [];
   let labels: Record<number, string> = {};
   let schedule: Record<number, { weekday: number; time: string | null }> = {};
+  let weekBrief: string | null = null;
   const plannedCounts = new Map<number, number>();
 
   if (weekPlanId) {
     const { data: wpRow, error: wpErr } = await supabase
       .from('week_plans')
-      .select('id, active_days, day_labels, day_schedule')
+      .select('id, active_days, day_labels, day_schedule, week_description')
       .eq('id', weekPlanId)
       .maybeSingle();
     if (wpErr) throw wpErr;
@@ -431,12 +438,14 @@ export async function fetchWeekOverview(
         active_days: number[];
         day_labels: Record<number, string> | null;
         day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+        week_description: string | null;
       };
       resolvedWeekPlanId = wp.id;
       planSource = source;
       activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
       labels = wp.day_labels ?? {};
       schedule = wp.day_schedule ?? {};
+      weekBrief = wp.week_description ?? null;
 
       // Planned counts per day
       const { data: peRows, error: peErr } = await supabase
@@ -454,13 +463,13 @@ export async function fetchWeekOverview(
   // exists so athlete-created bonus sessions surface even with no coach plan.
   const { data: sessionRows, error: sErr } = await supabase
     .from('training_log_sessions')
-    .select('day_index, status, date')
+    .select('day_index, status, date, skipped_reason')
     .eq('athlete_id', athleteId)
     .eq('week_start', weekStart);
   if (sErr) throw sErr;
-  const sessionByDay = new Map<number, { status: string; date: string }>();
-  ((sessionRows ?? []) as Array<{ day_index: number; status: string; date: string }>).forEach(
-    r => sessionByDay.set(r.day_index, { status: r.status, date: r.date }),
+  const sessionByDay = new Map<number, { status: string; date: string; skipped_reason: string | null }>();
+  ((sessionRows ?? []) as Array<{ day_index: number; status: string; date: string; skipped_reason: string | null }>).forEach(
+    r => sessionByDay.set(r.day_index, { status: r.status, date: r.date, skipped_reason: r.skipped_reason }),
   );
 
   // Bonus days: log sessions whose day_index isn't in active_days (athlete
@@ -481,6 +490,7 @@ export async function fetchWeekOverview(
       plannedCount: plannedCounts.get(d) ?? 0,
       status: (sess?.status as WeekDayOverview['status']) ?? 'pending',
       sessionDate: sess?.date ?? null,
+      skippedReason: sess?.skipped_reason ?? null,
       hasLog: !!sess,
       isBonus,
     };
@@ -495,6 +505,7 @@ export async function fetchWeekOverview(
     ),
     days,
     planSource,
+    weekBrief,
   };
 }
 
@@ -553,6 +564,7 @@ export type SessionPatch = Partial<
     | 'date'
     | 'session_notes'
     | 'status'
+    | 'skipped_reason'
     | 'raw_sleep'
     | 'raw_physical'
     | 'raw_mood'

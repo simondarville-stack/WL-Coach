@@ -8,7 +8,7 @@
  * the bottom.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, MessageSquare, Trash2, Ban } from 'lucide-react';
 import type { PlannedExercise, Exercise } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
@@ -109,6 +109,15 @@ export function LogDayCard({
             <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
           )}
           <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">{dayName}</h3>
+          {session?.status === 'skipped' && (
+            <span
+              className="inline-flex items-center gap-1 text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200"
+              title={session.skipped_reason ? `Not done: ${session.skipped_reason}` : 'Not done'}
+            >
+              <Ban size={10} />
+              Not done
+            </span>
+          )}
           {performedLabel && (
             <span className="text-[10px] text-gray-500">
               logged <span className="text-gray-700">{performedLabel}</span>
@@ -219,6 +228,18 @@ export function LogDayCard({
           </>
         )}
       </div>
+
+      {session?.status === 'skipped' && (
+        <div className="border-t border-red-100 px-3 py-2 bg-red-50/70">
+          <p className="text-[11px] text-red-700 whitespace-pre-wrap leading-relaxed flex items-start gap-1.5">
+            <Ban size={12} className="flex-shrink-0 mt-0.5" />
+            <span>
+              <span className="uppercase text-[9px] font-semibold tracking-wide mr-1.5">Not done</span>
+              {session.skipped_reason?.trim() || 'No reason given'}
+            </span>
+          </p>
+        </div>
+      )}
 
       {session?.session_notes?.trim() && (
         <div className="border-t border-gray-100 px-3 py-2 bg-amber-50/50">

@@ -393,6 +393,10 @@ export interface TrainingLogSession {
   session_label: string | null;
   session_notes: string;
   status: string;
+  /** Athlete's reason when the whole session is marked "not done"
+   *  (status = 'skipped') — e.g. sick, injured. Null otherwise. Kept
+   *  separate from session_notes so neither overwrites the other. */
+  skipped_reason: string | null;
   raw_sleep: number | null;
   raw_physical: number | null;
   raw_mood: number | null;
