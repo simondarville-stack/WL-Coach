@@ -68,8 +68,16 @@ function AthleteRoutes() {
         <Route path="profile" element={<ProfileScreen />} />
         <Route path="prs" element={<PRsScreen />} />
         <Route path="prs/:exerciseId" element={<PRDetailScreen />} />
-        <Route index element={<Navigate to="today" replace />} />
-        <Route path="*" element={<Navigate to="today" replace />} />
+        {/* Absolute redirects — NOT relative `to="today"`. A personal link
+         *  (/athlete/a/<id>) leaves the `a/<id>` segment in the path, which the
+         *  inner routes don't match, so the catch-all fires. A relative "today"
+         *  resolves against the splat and APPENDS, producing
+         *  /athlete/a/<id>/today/today/today/… on every render until
+         *  history.replaceState() rate-limits (SecurityError #18). The athlete
+         *  is already committed to state + localStorage by AuthContext, so an
+         *  absolute /athlete/today keeps the session and lands on a real route. */}
+        <Route index element={<Navigate to="/athlete/today" replace />} />
+        <Route path="*" element={<Navigate to="/athlete/today" replace />} />
       </Route>
     </Routes>
   );
