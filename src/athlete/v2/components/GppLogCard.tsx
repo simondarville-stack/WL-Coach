@@ -261,13 +261,7 @@ export function GppLogCard({
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min={1}
-                        value={row.sets || ''}
-                        onChange={e => updateRow(i, { sets: parseInt(e.target.value, 10) || 1 })}
-                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
-                      />
+                      <SetsInput value={row.sets} onCommit={sets => updateRow(i, { sets })} />
                     </td>
                     <td className="px-1 py-1">
                       <input
@@ -363,6 +357,64 @@ function AutoGrowExerciseInput({
       placeholder="Exercise"
       className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px] leading-snug placeholder-gray-600"
       style={{ resize: 'none', overflow: 'hidden' }}
+    />
+  );
+}
+
+/**
+ * Numeric "sets" cell that the athlete can freely edit — including clearing
+ * the box mid-edit. The committed value lives on GppRow.sets as a number, so
+ * the intermediate (possibly empty) text is held in a LOCAL string buffer:
+ * the previous implementation bound the input straight to row.sets with a
+ * `parseInt(...) || 1` fallback, which snapped an emptied field back to "1"
+ * on every keystroke and made it impossible to retype the count.
+ *
+ * Persistence cadence matches the sibling reps/load fields: each VALID
+ * keystroke (a whole number >= 1) commits immediately via the same save
+ * queue, so a value isn't lost if the card unmounts before blur. An empty or
+ * invalid intermediate state is held only in the local buffer and never
+ * persisted; on blur, an empty/invalid box snaps back to the last committed
+ * value (sets must be >= 1).
+ */
+function SetsInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (sets: number) => void;
+}) {
+  const [draft, setDraft] = useState<string>(String(value));
+
+  // Re-sync only when the committed value changes from outside (e.g. a coach
+  // re-seed via mergeRows). The parsed-draft guard avoids stomping a value the
+  // athlete is mid-editing when our own onCommit round-trips back as `value`.
+  useEffect(() => {
+    if (parseInt(draft, 10) !== value) setDraft(String(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const handleChange = (raw: string) => {
+    setDraft(raw);
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed !== value) onCommit(parsed);
+  };
+
+  const handleBlur = () => {
+    const parsed = parseInt(draft, 10);
+    // Empty / invalid on blur → restore the last committed value rather than
+    // leaving a blank box.
+    if (!(Number.isFinite(parsed) && parsed >= 1)) setDraft(String(value));
+  };
+
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={1}
+      value={draft}
+      onChange={e => handleChange(e.target.value)}
+      onBlur={handleBlur}
+      className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
     />
   );
 }

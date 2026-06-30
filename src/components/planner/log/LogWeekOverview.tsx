@@ -37,6 +37,10 @@ import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 function deriveDayStatus(log: DayLog | undefined): string {
   const raw = log?.session?.status ?? 'pending';
   if (raw === 'completed') return 'completed';
+  // An explicit "not done" mark wins over any partial logged work, so a day
+  // the athlete deliberately skipped (even after logging a set or two) shows
+  // as not done to the coach rather than masquerading as 'logged'.
+  if (raw === 'skipped') return 'skipped';
   if (hasLoggedWork(log)) return 'logged';
   return raw;
 }
@@ -394,6 +398,7 @@ const STATUS_DOT: Record<string, string> = {
 
 const STATUS_LABEL: Record<string, string> = {
   logged: 'logged (not finished)',
+  skipped: 'not done',
 };
 
 function DayDot({ label, status, isBonus }: { label: string; status: string; isBonus: boolean }) {

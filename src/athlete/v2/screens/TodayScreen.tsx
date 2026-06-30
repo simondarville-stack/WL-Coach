@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, Plus, CheckCircle, Eye, Trash2 } from 'lucide-react';
+import { Loader2, Plus, CheckCircle, Eye, Trash2, Ban, RotateCcw } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchAthleteDay,
@@ -49,7 +49,7 @@ import type {
   TrainingLogSet,
 } from '../../../lib/database.types';
 import { isExerciseDone } from '../../../lib/trainingLogModel';
-import { formatWeekday } from '../../../lib/dateUtils';
+import { formatWeekday, formatTime24, combineDateTimeToISO } from '../../../lib/dateUtils';
 import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
 import { fetchPRHistory, insertPRHistory, syncAthletePRs } from '../../../lib/prTable';
 import { estimateAtRepsFromAnchors, roundToHalf } from '../../../lib/xrmUtils';
@@ -61,11 +61,13 @@ import { OffPlanNoteCard } from '../components/OffPlanNoteCard';
 import { GppLogCard } from '../components/GppLogCard';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { AddTrainingSheet } from '../components/AddTrainingSheet';
+import { NotDoneSheet } from '../components/NotDoneSheet';
 import { AthleteCommentsThread } from '../components/AthleteCommentsThread';
 import type { RawScores } from '../components/RawScoreDial';
 import type { SetRowInput } from '../components/SetEntryRow';
 import { WeekNavigator, getMondayOf, toISO } from '../components/WeekNavigator';
 import { DayChipRow } from '../components/DayChipRow';
+import { WeekBriefCard } from '../components/WeekBriefCard';
 import { ConfirmModal } from '../../../components/log/ConfirmModal';
 import { UndoToast } from '../../../components/log/UndoToast';
 
@@ -91,7 +93,11 @@ function pickDefaultDay(overview: WeekOverview): number | null {
   const today = todayDayIndex();
   const matchingToday = overview.days.find(d => d.weekday === today);
   if (matchingToday) return matchingToday.dayIndex;
-  const firstUnfinished = overview.days.find(d => d.status !== 'completed');
+  // A deliberately not-done (skipped) day is "resolved", not unfinished, so
+  // don't auto-open it — prefer the earliest day still awaiting work.
+  const firstUnfinished = overview.days.find(
+    d => d.status !== 'completed' && d.status !== 'skipped',
+  );
   if (firstUnfinished) return firstUnfinished.dayIndex;
   return overview.days[0].dayIndex;
 }
@@ -117,6 +123,8 @@ export function TodayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  /** When true, the "mark session not done" reason sheet is open. */
+  const [showNotDone, setShowNotDone] = useState(false);
   /** When set, the exercise picker opens in substitution mode for a
    *  specific planned exercise. */
   const [substituting, setSubstituting] = useState<PlannedExerciseFull | null>(null);
@@ -263,6 +271,14 @@ export function TodayScreen() {
   const performedOnDate =
     data?.log?.session?.date ?? todayISO();
 
+  // Time of day the training was performed. Reuses session.started_at (stamped
+  // to now() when the session is first created on the first set edit). Until a
+  // session exists, default to the current time so the input shows a sensible
+  // value; nothing is persisted until the athlete logs something.
+  const performedAtTime = data?.log?.session?.started_at
+    ? formatTime24(data.log.session.started_at)
+    : formatTime24(new Date());
+
   const getOrCreateSession = async (): Promise<TrainingLogSession> => {
     if (data?.log?.session) return data.log.session;
     if (dayIndex == null) throw new Error('No day selected');
@@ -318,7 +334,18 @@ export function TodayScreen() {
 
   const handlePatchPerformedOn = async (next: string) => {
     if (next === performedOnDate) return;
-    await patchSession({ date: next });
+    // Keep `date` (the calendar day, used for week grouping) and `started_at`
+    // (the precise performed-at instant) coherent: shift the timestamp to the
+    // new day while preserving the time of day.
+    await patchSession({
+      date: next,
+      started_at: combineDateTimeToISO(next, performedAtTime),
+    });
+  };
+
+  const handlePatchPerformedAt = async (next: string) => {
+    if (next === performedAtTime) return;
+    await patchSession({ started_at: combineDateTimeToISO(performedOnDate, next) });
   };
 
   // ─── In-place data merges (avoid full reloads on every save) ────────────
@@ -992,6 +1019,25 @@ export function TodayScreen() {
     await loadWeek();
   };
 
+  /**
+   * Mark the whole session "not done" with a reason (sick, injured, …).
+   * patchSession creates the session first if none exists yet, so a day the
+   * athlete never started can still be marked. The planned exercises stay in
+   * the log — this only sets the session status + reason, never deletes work.
+   */
+  const handleMarkNotDone = async (reason: string) => {
+    await patchSession({ status: 'skipped', skipped_reason: reason });
+    setMode('preview');
+    await loadWeek();
+  };
+
+  /** Undo a "not done" mark: return the session to a normal pending state and
+   *  clear the reason so the athlete can log it after all. */
+  const handleReopenSession = async () => {
+    await patchSession({ status: 'pending', skipped_reason: null, completed_at: null });
+    await loadWeek();
+  };
+
   const handleSaveOffPlanSet = (logExerciseId: string) => (patch: {
     setNumber: number;
     performedLoad: number | null;
@@ -1059,6 +1105,7 @@ export function TodayScreen() {
             {overview.planSource === 'group' && (
               <p className="text-[10px] text-gray-500 italic px-1">Showing your group's plan.</p>
             )}
+            <WeekBriefCard brief={overview.weekBrief} />
           </>
         ) : null}
 
@@ -1134,8 +1181,10 @@ export function TodayScreen() {
               onPatchNotes={handlePatchNotes}
               saving={saving}
               performedOnDate={performedOnDate}
+              performedAtTime={performedAtTime}
               sessionExists={!!data.log?.session}
               onPatchPerformedOn={handlePatchPerformedOn}
+              onPatchPerformedAt={handlePatchPerformedAt}
             />
 
             <div className="space-y-2">
@@ -1221,19 +1270,52 @@ export function TodayScreen() {
                 Add training
               </button>
 
-              {data.log?.session && data.log.session.status !== 'completed' && (
-                <button
-                  onClick={handleFinishSession}
-                  disabled={saving}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white font-semibold text-sm py-3 rounded-xl mt-2 transition-colors"
-                >
-                  <CheckCircle size={16} />
-                  Finish session
-                </button>
-              )}
-              {data.log?.session?.status === 'completed' && (
+              {data.log?.session?.status === 'skipped' ? (
+                <div className="rounded-xl bg-red-950/40 border border-red-900/60 px-3 py-3 mt-2">
+                  <div className="flex items-start gap-2">
+                    <Ban size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold text-red-200">Marked not done</div>
+                      {data.log.session.skipped_reason?.trim() && (
+                        <div className="text-[11px] text-red-300/90 mt-0.5 whitespace-pre-wrap break-words">
+                          {data.log.session.skipped_reason}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void handleReopenSession()}
+                    disabled={saving}
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-gray-300 hover:text-white py-2 mt-2 rounded-lg border border-gray-700 hover:border-gray-500 disabled:opacity-50 transition-colors"
+                  >
+                    <RotateCcw size={12} />
+                    Reopen &amp; log it
+                  </button>
+                </div>
+              ) : data.log?.session?.status === 'completed' ? (
                 <div className="text-center text-[11px] text-emerald-400 italic mt-1">
                   Session marked complete · you can keep editing if you missed something
+                </div>
+              ) : (
+                <div className="space-y-2 mt-2">
+                  {data.log?.session && (
+                    <button
+                      onClick={handleFinishSession}
+                      disabled={saving}
+                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
+                    >
+                      <CheckCircle size={16} />
+                      Finish session
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNotDone(true)}
+                    disabled={saving}
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-gray-400 hover:text-red-300 py-2 rounded-xl border border-gray-800 hover:border-red-900/60 disabled:opacity-50 transition-colors"
+                  >
+                    <Ban size={12} />
+                    Couldn't train? Mark not done
+                  </button>
                 </div>
               )}
 
@@ -1271,6 +1353,12 @@ export function TodayScreen() {
           onAddCombo={handleAddOffPlanCombo}
           onAddNote={handleAddOffPlanNote}
           onAddGpp={handleAddOffPlanGpp}
+        />
+        <NotDoneSheet
+          open={showNotDone}
+          defaultReason={data?.log?.session?.skipped_reason ?? ''}
+          onClose={() => setShowNotDone(false)}
+          onConfirm={handleMarkNotDone}
         />
         <ExercisePicker
           open={substituting != null}

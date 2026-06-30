@@ -11,7 +11,7 @@
  * so the visual is identical to the coach side (different theme tokens).
  * "Start logging" enters edit mode.
  */
-import { PlayCircle, MessageSquare } from 'lucide-react';
+import { PlayCircle, MessageSquare, Ban } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet } from '../../../lib/database.types';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
@@ -80,7 +80,22 @@ export function SessionPreview({
             )}
           </div>
           {status === 'completed' && <DoneChip variant="dark" />}
+          {status === 'skipped' && (
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+              <Ban size={11} />
+              Not done
+            </span>
+          )}
         </div>
+
+        {status === 'skipped' && session?.skipped_reason?.trim() && (
+          <p className="text-[11px] text-red-300/90 mt-2 pt-2 border-t border-gray-800/60 whitespace-pre-wrap">
+            <span className="text-red-400/80 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">
+              Reason
+            </span>
+            {session.skipped_reason}
+          </p>
+        )}
 
         {session && (
           <div className="flex items-center gap-3 text-[11px] text-gray-400 flex-wrap mt-2 pt-2 border-t border-gray-800/60">
@@ -177,6 +192,8 @@ export function SessionPreview({
           <PlayCircle size={18} />
           {status === 'completed'
             ? 'View in log'
+            : status === 'skipped'
+            ? 'Reopen & log'
             : log?.session
             ? 'Continue logging'
             : 'Start logging'}

@@ -228,11 +228,16 @@ export function useCoachDashboard() {
             dayIndex: session.day_index,
           });
         } else if (session.status === 'skipped') {
+          // Surface the athlete's reason (sick / injured / …) inline so the
+          // coach sees WHY at a glance, not just that a day was missed.
+          const reason = (session.skipped_reason ?? '').trim();
           events.push({
             type: 'session_skipped',
             timestamp: new Date(session.date),
             athleteName: athlete.name,
-            details: formatDateToDDMMYYYY(session.date),
+            details: reason
+              ? `${formatDateToDDMMYYYY(session.date)} · ${reason}`
+              : formatDateToDDMMYYYY(session.date),
             weekStart: session.week_start,
             dayIndex: session.day_index,
           });
