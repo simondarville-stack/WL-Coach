@@ -70,7 +70,7 @@ function baseInput(partial: Partial<BuildFactsInput> = {}): BuildFactsInput {
     comboMembers: [],
     // Sunday week_start (the legacy DST corruption) — must snap to 2026-06-01.
     sessions: [
-      { id: 'S1', athlete_id: 'A1', owner_id: 'O1', date: '2026-06-03', week_start: '2026-05-31', day_index: 1, status: 'completed' },
+      { id: 'S1', athlete_id: 'A1', owner_id: 'O1', date: '2026-06-03', week_start: '2026-05-31', day_index: 1, status: 'completed', bodyweight_kg: null },
     ],
     logExercises: [
       { id: 'LE1', session_id: 'S1', exercise_id: 'EX_SN', planned_exercise_id: 'PE1', performed_raw: '', status: 'completed' },
@@ -400,6 +400,29 @@ describe('normalization (multi-athlete comparison)', () => {
     q.cols = [];
     const r = analyzeFacts(facts, q);
     expect(r.meta.notes.join(' ')).toMatch(/needs Athlete/i);
+  });
+
+  it('bodyweight metric averages the per-session weigh-in across a cell', () => {
+    const bwFacts = [
+      fact({ athleteId: 'A1', athleteName: 'Anna', weekStart: '2026-06-01', tonnage: 100, bodyweight: 100 }),
+      fact({ athleteId: 'A1', athleteName: 'Anna', weekStart: '2026-06-01', tonnage: 100, bodyweight: 102 }),
+      fact({ athleteId: 'A1', athleteName: 'Anna', weekStart: '2026-06-08', tonnage: 100, bodyweight: 98 }),
+    ];
+    const q: AnalysisQuery = {
+      version: 1,
+      scope: { mode: 'dateRange', from: '2026-06-01', to: '2026-06-14' },
+      subjects: { athletes: ['A1'], groups: [], normalization: 'none' },
+      filters: [],
+      rows: ['week'],
+      cols: [],
+      measures: [{ metricId: 'bodyweight', agg: 'avg', state: 'performed' }],
+      viz: { type: 'line' },
+    };
+    const r = analyzeFacts(bwFacts, q);
+    const bwCell = (week: string) =>
+      r.records.find((rec) => rec.row[0] === week)?.values['bodyweight::performed'];
+    expect(bwCell('2026-06-01')).toBeCloseTo(101, 4); // mean(100, 102)
+    expect(bwCell('2026-06-08')).toBeCloseTo(98, 4);
   });
 });
 

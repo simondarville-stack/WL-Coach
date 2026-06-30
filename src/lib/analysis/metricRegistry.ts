@@ -142,6 +142,28 @@ export const BASE_METRICS: BaseMetricDef[] = [
         : null,
   },
   {
+    id: 'bodyweight',
+    label: 'Bodyweight',
+    shortLabel: 'BW',
+    // Distinct unit (not the shared 'kg', which rounds to whole numbers for
+    // loads) so bodyweight formats to 0.1 kg — weekly drift is often sub-kg —
+    // and, as a bonus, gets its own chart axis instead of sharing the kg axis.
+    unit: 'bwkg',
+    kind: 'base',
+    // Performed only — bodyweight is a logged measurement, not a prescription.
+    // computeMeasureValues yields null for the planned facet, so selecting it
+    // with state 'both'/'planned' is harmless (no crash, just no value).
+    appliesToState: ['performed'],
+    defaultAgg: 'avg',
+    combine: 'weightedAvg',
+    isBuiltin: true,
+    description: 'Average logged bodyweight (kg) over the period — performed sessions only.',
+    // weight 0 ⇒ reduceBase('avg') falls back to a plain mean of the per-fact
+    // (i.e. per-session, repeated across its sets) bodyweight. Exact for a single
+    // day; a set-weighted mean of the daily weigh-ins for a multi-day week.
+    extract: (r) => (r.bodyweight != null && r.bodyweight > 0 ? { value: r.bodyweight, weight: 0 } : null),
+  },
+  {
     id: 'stress',
     label: 'Stress (AU)',
     shortLabel: 'AU',
