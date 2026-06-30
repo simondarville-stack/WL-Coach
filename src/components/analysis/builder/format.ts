@@ -13,6 +13,9 @@ export function formatValue(value: number | null | undefined, unit: string): str
       // carry the unit so a kg row and a t row in the same column don't read as
       // the same magnitude.
       return Math.abs(value) >= 10000 ? `${de(value / 1000, 1)} t` : `${de(Math.round(value), 0)} kg`;
+    case 'bwkg':
+      // Bodyweight — keep one decimal so a sub-kg weekly change is visible.
+      return `${de(value, 1)} kg`;
     case '%':
       return `${de(value, 1)}%`;
     case 'reps':
@@ -42,6 +45,8 @@ export function formatAxisTick(value: number | string | undefined, unit: string)
       // On an axis the ticks are round gridlines; keep one consistent unit by
       // switching to tonnes once they reach the thousands (4 t, 8 t, 12 t).
       return Math.abs(value) >= 1000 ? `${de(value / 1000, value % 1000 === 0 ? 0 : 1)} t` : de(Math.round(value), 0);
+    case 'bwkg':
+      return de(value, 1);
     case '%':
       return `${de(Math.round(value), 0)}%`;
     default:

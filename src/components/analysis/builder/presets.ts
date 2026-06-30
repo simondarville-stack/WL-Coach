@@ -42,4 +42,18 @@ export const PRESETS: Preset[] = [
     description: 'Planned vs performed volume across your categories.',
     patch: { rows: ['category'], cols: [], metrics: [{ id: 'volume' }], compare: 'both', vizType: 'bar' },
   },
+  {
+    id: 'bodyweight-vs-performance',
+    name: 'Bodyweight vs performance',
+    description: 'Weekly bodyweight beside tonnage, reps and intensity — read off how output tracks a cut or bulk.',
+    // A table keeps each metric on its own scale (bodyweight ~kg vs tonnage
+    // ~tonnes); switch to a line chart for a single metric's trend.
+    patch: {
+      rows: ['week'],
+      cols: [],
+      metrics: [{ id: 'bodyweight' }, { id: 'volume' }, { id: 'reps' }, { id: 'avgPct1RM' }],
+      compare: 'performed',
+      vizType: 'table',
+    },
+  },
 ];

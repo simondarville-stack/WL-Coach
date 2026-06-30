@@ -86,6 +86,7 @@ export interface RawSession {
   week_start: string | null;
   day_index: number;
   status: string;
+  bodyweight_kg: number | null;
 }
 
 export interface RawLogExercise {
@@ -431,6 +432,9 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       isCompetitionLift: ex?.is_competition_lift ?? false,
       countsTowardsTotals: ex?.counts_towards_totals ?? true,
       unit: 'absolute_kg' as string | null, // performed loads are always kg
+      // Denormalise the session's weigh-in onto every contribution so the
+      // `bodyweight` metric can average it per (athlete, week/date) cell.
+      bodyweight: session.bodyweight_kg ?? null,
     };
 
     const sets = (setsByLogEx.get(le.id) ?? []).filter(
@@ -749,7 +753,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   // 8. Performed stream rows.
   const { data: sessionRows } = await supabase
     .from('training_log_sessions')
-    .select('id, athlete_id, owner_id, date, week_start, day_index, status')
+    .select('id, athlete_id, owner_id, date, week_start, day_index, status, bodyweight_kg')
     .in('athlete_id', athleteIds)
     .neq('status', 'planned')
     .gte('date', window.from)

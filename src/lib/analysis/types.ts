@@ -183,6 +183,12 @@ export interface FactRow {
   /** performed → the planned_exercise it executed (FK); planned → its own planned_exercise id. */
   pairKey: string | null;
 
+  // ── session-level measurements (denormalised onto each contribution) ──
+  /** The athlete's logged bodyweight (kg) for the session this contribution
+   *  belongs to. Performed facts only; null/absent for planned slots and
+   *  sessions with no weigh-in. Drives the `bodyweight` metric. */
+  bodyweight?: number | null;
+
   // ── athlete day-card custom metrics (custom:<defId> dimensions/measures) ──
   custom?: Record<string, number>;
 }
