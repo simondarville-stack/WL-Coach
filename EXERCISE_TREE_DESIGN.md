@@ -1,12 +1,16 @@
 # Exercise Hierarchy (Parent–Child Trees) — Design
 
-> Status: **BUILT (Phases 1–4 shipped on `feature/exercise-hierarchy`, v0.18.0).**
-> Migration applied. Analysis `family` dimension, planner "By family" breakdown,
-> and the drag-to-reparent catalogue tree (react-arborist) are live and verified
-> (typecheck + build + 181 tests + browser end-to-end). **Deferred:** the bulk
-> import/export parent-column round-trip (Phase 4 item) — the tree is UI/form/
-> drag-driven for now; bulk import still flattens. Manual sibling ordering
-> (needs an `exercises.display_order` column) is also deferred.
+> Status: **BUILT (Phases 1–4 + all follow-ups shipped on
+> `feature/exercise-hierarchy`, v0.18.0).** Migrations applied
+> (`parent_exercise_id`, `display_order`). Live + verified (typecheck + build +
+> 184 tests + browser end-to-end): analysis `family` dimension, planner "By
+> family" breakdown, drag-to-reparent **and drag-to-reorder** catalogue tree
+> (react-arborist), parent picker w/ PR auto-suggest, detail-panel Family
+> section, **bulk import/export parent round-trip** (two-pass, cycle-guarded,
+> set-only), and **off-plan combo family rollup** (performed stream expands
+> metadata.combo members by their tuple reps). Remaining known limitation: the
+> list/grid views don't yet reflect manual display_order (tree-only); intermediate-
+> level (non-root) rollup is still a possible v2 refinement.
 > Feature: coaches can nest exercises into arbitrary-depth trees (e.g.
 > `Snatch › Snatch from hang › Snatch from low hang`). A child's
 > reps/tonnage/metrics **roll up into its parent** for analysis and planner
