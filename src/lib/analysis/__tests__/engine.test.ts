@@ -358,6 +358,60 @@ describe('aggregate — family (parent-child rollup)', () => {
   });
 });
 
+describe('performed — off-plan combo expansion', () => {
+  const comboInput = (over: Partial<BuildFactsInput> = {}): BuildFactsInput => baseInput({
+    exercisesById: { EX_SN: EX.SN, EX_CJ: EX.CJ },
+    prBest: { A1: {} },
+    weekPlans: [], plannedExercises: [], setLines: [], comboMembers: [],
+    sessions: [{ id: 'S1', athlete_id: 'A1', owner_id: 'O1', date: '2026-06-03', week_start: '2026-06-01', day_index: 1, status: 'completed', bodyweight_kg: null }],
+    logExercises: [{
+      id: 'LEC', session_id: 'S1', exercise_id: 'EX_SN', planned_exercise_id: null, performed_raw: '', status: 'completed',
+      metadata: { combo: { members: [
+        { exerciseId: 'EX_SN', name: 'Snatch', position: 1 },
+        { exerciseId: 'EX_CJ', name: 'Clean & Jerk', position: 2 },
+      ] } },
+    }],
+    logSets: [
+      { log_exercise_id: 'LEC', performed_load: 60, performed_reps: 3, status: 'completed', performed_text: '2+1' },
+      { log_exercise_id: 'LEC', performed_load: 60, performed_reps: 3, status: 'completed', performed_text: '2+1' },
+    ],
+    ...over,
+  });
+
+  it('splits an off-plan combo set across members by the tuple ("a set is a set")', () => {
+    const facts = buildFacts(comboInput()).filter(f => f.state === 'performed');
+    const sn = facts.filter(f => f.exerciseId === 'EX_SN');
+    const cj = facts.filter(f => f.exerciseId === 'EX_CJ');
+    expect(sn).toHaveLength(2); // one contribution per performed round
+    expect(cj).toHaveLength(2);
+    expect(sn.reduce((a, f) => a + f.reps, 0)).toBe(4); // 2 reps × 2 rounds
+    expect(cj.reduce((a, f) => a + f.reps, 0)).toBe(2); // 1 rep × 2 rounds
+    expect(sn.reduce((a, f) => a + f.sets, 0)).toBe(2); // the round counts on the holder
+    expect(cj.reduce((a, f) => a + f.sets, 0)).toBe(0); // non-holder member: 0 sets
+    expect(sn.reduce((a, f) => a + f.tonnage, 0)).toBe(60 * 4);
+    expect(cj.reduce((a, f) => a + f.tonnage, 0)).toBe(60 * 2);
+  });
+
+  it('attributes the whole round to the lead when a combo set has no tuple', () => {
+    const facts = buildFacts(comboInput({
+      logSets: [{ log_exercise_id: 'LEC', performed_load: 60, performed_reps: 3, status: 'completed', performed_text: null }],
+    })).filter(f => f.state === 'performed');
+    expect(facts.filter(f => f.exerciseId === 'EX_SN').reduce((a, f) => a + f.reps, 0)).toBe(3);
+    expect(facts.filter(f => f.exerciseId === 'EX_CJ')).toHaveLength(0);
+  });
+
+  it('rolls combo members up to their families', () => {
+    const JERK = ex({ id: 'EX_JERK', name: 'Jerk', category: 'Clean & Jerk', lift_slot: 'clean_and_jerk' });
+    const CJchild = ex({ id: 'EX_CJ', name: 'Clean & Jerk', category: 'Clean & Jerk', lift_slot: 'clean_and_jerk', parent_exercise_id: 'EX_JERK' });
+    const q = weekQuery([{ metricId: 'reps', agg: 'sum', state: 'performed' }]);
+    q.rows = ['family'];
+    const result = analyzeFacts(buildFacts(comboInput({ exercisesById: { EX_SN: EX.SN, EX_CJ: CJchild, EX_JERK: JERK } })), q);
+    const byFam = Object.fromEntries(result.records.map(r => [r.row[0], r.values['reps::performed']]));
+    expect(byFam['Snatch']).toBe(4);
+    expect(byFam['Jerk']).toBe(2); // the Clean & Jerk member rolls up to its Jerk family
+  });
+});
+
 describe('aggregate — unresolved percentages', () => {
   it('excludes % loads with no reference max from tonnage and flags them', () => {
     const input = baseInput();

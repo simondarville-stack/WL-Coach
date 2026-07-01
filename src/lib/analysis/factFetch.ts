@@ -91,6 +91,15 @@ export interface RawSession {
   bodyweight_kg: number | null;
 }
 
+/** Off-plan combo descriptor stored on training_log_exercises.metadata.combo.
+ *  Members carry a name snapshot; the live exercise (for category/lift_slot/
+ *  family) is looked up by exerciseId when it still exists. */
+export interface RawLogComboMeta {
+  combo?: {
+    members?: { exerciseId: string; name: string; color?: string | null; position: number }[];
+  } | null;
+}
+
 export interface RawLogExercise {
   id: string;
   session_id: string;
@@ -98,6 +107,9 @@ export interface RawLogExercise {
   planned_exercise_id: string | null;
   performed_raw: string;
   status: string;
+  /** Present for athlete-authored off-plan combos (members live here, not in a
+   *  join table). Optional so existing fixtures/rows without it still type. */
+  metadata?: RawLogComboMeta | null;
 }
 
 export interface RawLogSet {
@@ -105,6 +117,8 @@ export interface RawLogSet {
   performed_load: number | null;
   performed_reps: number | null;
   status: string;
+  /** Combo/tuple reps ("2+1") round-trip here; per-member split for rollup. */
+  performed_text?: string | null;
 }
 
 export interface MacroContext {
@@ -219,6 +233,14 @@ function weekdayOf(dateStr: string): number {
 }
 
 // ── pure fact construction ─────────────────────────────────────────────────────
+
+/** Drop the transient `refMax` helper field so the object is a clean FactRow
+ *  contribution (refMax is only used to derive pct1rm). */
+function stripRefMax<T extends { refMax: number }>(ef: T): Omit<T, 'refMax'> {
+  const rest = { ...ef };
+  delete (rest as { refMax?: number }).refMax;
+  return rest;
+}
 
 export function buildFacts(input: BuildFactsInput): FactRow[] {
   const facts: FactRow[] = [];
@@ -434,45 +456,102 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
     if (!session) continue;
     const athleteId = session.athlete_id;
     const weekStart = snapToMonday(session.week_start ?? isoMonday(session.date));
-    const ex = le.exercise_id ? input.exercisesById[le.exercise_id] : undefined;
-    const refMax = ex ? refMaxFor(input.prBest, athleteId, ex) : 0;
-    const common = {
+
+    // Session-level fields shared by every contribution of this log exercise.
+    const sessionCommon = {
       ...baseRow(athleteId, weekStart),
       state: 'performed' as const,
       date: session.date,
       dayIndex: session.day_index,
       dayOfWeek: weekdayOf(session.date),
       pairKey: le.planned_exercise_id,
-      exerciseId: ex?.id ?? null,
-      exerciseName: ex?.name ?? '(deleted exercise)',
-      ...familyOf(ex?.id ?? null),
-      category: ex?.category ?? '(uncategorised)',
-      movement: ex?.lift_slot ?? null,
-      isCompetitionLift: ex?.is_competition_lift ?? false,
-      countsTowardsTotals: ex?.counts_towards_totals ?? true,
       unit: 'absolute_kg' as string | null, // performed loads are always kg
       // Denormalise the session's weigh-in onto every contribution so the
       // `bodyweight` metric can average it per (athlete, week/date) cell.
       bodyweight: session.bodyweight_kg ?? null,
     };
 
-    const sets = (setsByLogEx.get(le.id) ?? []).filter(
-      (s) => s.status === 'completed' && (s.performed_reps ?? 0) > 0,
-    );
-    if (sets.length > 0) {
-      for (const s of sets) {
+    // Exercise-identity fields for a given exercise id (live catalogue lookup),
+    // falling back to a name snapshot for a deleted/renamed off-plan member.
+    const exFieldsFor = (exId: string | null, snapshotName?: string) => {
+      const e = exId ? input.exercisesById[exId] : undefined;
+      const fam = e ? familyOf(e.id) : { familyRootId: null, familyRootName: snapshotName ?? '(deleted exercise)' };
+      return {
+        exerciseId: e?.id ?? exId ?? null,
+        exerciseName: e?.name ?? snapshotName ?? '(deleted exercise)',
+        familyRootId: fam.familyRootId,
+        familyRootName: fam.familyRootName,
+        category: e?.category ?? '(uncategorised)',
+        movement: e?.lift_slot ?? null,
+        isCompetitionLift: e?.is_competition_lift ?? false,
+        countsTowardsTotals: e?.counts_towards_totals ?? true,
+        refMax: e ? refMaxFor(input.prBest, athleteId, e) : 0,
+      };
+    };
+
+    const completedSets = (setsByLogEx.get(le.id) ?? []).filter((s) => s.status === 'completed');
+
+    // ── Off-plan combo: one log row whose members live in metadata.combo. Each
+    // completed set's tuple reps ("2+1") split positionally across members, so
+    // each member's work rolls up to its OWN exercise/category/family — mirrors
+    // the planned combo expansion (comboExpansion.ts), "a set is a set". ──
+    const members = le.metadata?.combo?.members;
+    if (members && members.length >= 2) {
+      const ordered = members.slice().sort((a, b) => a.position - b.position);
+      for (const s of completedSets) {
+        const load = s.performed_load ?? 0;
+        const raw = (s.performed_text ?? '').trim();
+        const parts = raw.includes('+') ? raw.split('+').map((p) => parseInt(p, 10) || 0) : null;
+
+        if (!parts) {
+          // No per-member tuple (numeric-only entry) — attribute the round to
+          // the lead member, as before, rather than fabricating a split.
+          const reps = s.performed_reps ?? 0;
+          if (reps <= 0) continue;
+          const ef = exFieldsFor(ordered[0].exerciseId, ordered[0].name);
+          facts.push({
+            ...sessionCommon, ...stripRefMax(ef),
+            sets: 1, reps,
+            tonnage: load > 0 ? load * reps : 0, maxLoad: load, load,
+            loadIsKg: load > 0, loadIsPct: false,
+            pct1rm: ef.refMax > 0 && load > 0 ? (load / ef.refMax) * 100 : null,
+          });
+          continue;
+        }
+
+        const active = ordered
+          .map((m, i) => ({ m, reps: parts[i] ?? 0, ef: exFieldsFor(m.exerciseId, m.name) }))
+          .filter((x) => x.reps > 0);
+        if (active.length === 0) continue;
+        // "A set is a set": the round counts once, on the first counting member.
+        const holder = active.find((x) => x.ef.countsTowardsTotals !== false) ?? active[0];
+        for (const x of active) {
+          facts.push({
+            ...sessionCommon, ...stripRefMax(x.ef),
+            sets: x === holder ? 1 : 0,
+            reps: x.reps,
+            tonnage: load > 0 ? load * x.reps : 0, maxLoad: load, load,
+            loadIsKg: load > 0, loadIsPct: false,
+            pct1rm: x.ef.refMax > 0 && load > 0 ? (load / x.ef.refMax) * 100 : null,
+          });
+        }
+      }
+      continue;
+    }
+
+    // ── Normal (non-combo) exercise ──
+    const ef = exFieldsFor(le.exercise_id, undefined);
+    const usableSets = completedSets.filter((s) => (s.performed_reps ?? 0) > 0);
+    if (usableSets.length > 0) {
+      for (const s of usableSets) {
         const load = s.performed_load ?? 0;
         const reps = s.performed_reps ?? 0;
         facts.push({
-          ...common,
-          sets: 1,
-          reps,
-          tonnage: load > 0 ? load * reps : 0,
-          maxLoad: load,
-          load,
-          loadIsKg: load > 0,
-          loadIsPct: false,
-          pct1rm: refMax > 0 && load > 0 ? (load / refMax) * 100 : null,
+          ...sessionCommon, ...stripRefMax(ef),
+          sets: 1, reps,
+          tonnage: load > 0 ? load * reps : 0, maxLoad: load, load,
+          loadIsKg: load > 0, loadIsPct: false,
+          pct1rm: ef.refMax > 0 && load > 0 ? (load / ef.refMax) * 100 : null,
         });
       }
     } else if (le.performed_raw) {
@@ -480,15 +559,12 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       const parsed = parsePerformedRaw(le.performed_raw);
       if (parsed.reps > 0) {
         facts.push({
-          ...common,
-          sets: parsed.sets,
-          reps: parsed.reps,
+          ...sessionCommon, ...stripRefMax(ef),
+          sets: parsed.sets, reps: parsed.reps,
           tonnage: parsed.load > 0 ? parsed.load * parsed.reps : 0,
-          maxLoad: parsed.load,
-          load: parsed.load,
-          loadIsKg: parsed.load > 0,
-          loadIsPct: false,
-          pct1rm: refMax > 0 && parsed.load > 0 ? (parsed.load / refMax) * 100 : null,
+          maxLoad: parsed.load, load: parsed.load,
+          loadIsKg: parsed.load > 0, loadIsPct: false,
+          pct1rm: ef.refMax > 0 && parsed.load > 0 ? (parsed.load / ef.refMax) * 100 : null,
         });
       }
     }
@@ -785,14 +861,14 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   if (sessionIds.length > 0) {
     const { data: leRows } = await supabase
       .from('training_log_exercises')
-      .select('id, session_id, exercise_id, planned_exercise_id, performed_raw, status')
+      .select('id, session_id, exercise_id, planned_exercise_id, performed_raw, status, metadata')
       .in('session_id', sessionIds);
     logExercises = (leRows ?? []) as RawLogExercise[];
     const leIds = logExercises.map((l) => l.id);
     if (leIds.length > 0) {
       const { data: lsRows } = await supabase
         .from('training_log_sets')
-        .select('log_exercise_id, performed_load, performed_reps, status')
+        .select('log_exercise_id, performed_load, performed_reps, status, performed_text')
         .in('log_exercise_id', leIds);
       logSets = (lsRows ?? []) as RawLogSet[];
     }
