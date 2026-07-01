@@ -1480,6 +1480,7 @@ export function WeeklyPlanner() {
                 dayDisplayOrder={dayDisplayOrder}
                 dayLabels={currentWeekPlan?.day_labels || {}}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
+                allExercises={allExercises}
                 expanded={showLoadDistribution}
                 onToggle={() => setShowLoadDistribution(s => !s)}
               />

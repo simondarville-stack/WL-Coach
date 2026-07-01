@@ -16,6 +16,7 @@ import type { Athlete, Exercise, PlannedExercise, ComboMemberEntry } from '../..
 import { defaultUnitLabel } from '../../lib/constants';
 import { METRICS, METRIC_ORDER, type MetricKey } from '../../lib/metrics';
 import { expandForCounting, type CountedContribution } from '../../lib/comboExpansion';
+import { buildParentIndex, resolveRootId } from '../../lib/exerciseHierarchy';
 
 type PlannedRow = PlannedExercise & { exercise: Exercise };
 type Contribution = CountedContribution<Exercise>;
@@ -28,6 +29,9 @@ interface WeekSummaryBoxProps {
   dayDisplayOrder: number[];
   dayLabels: Record<number, string>;
   daySchedule: Record<number, { weekday: number; time: string | null }> | null;
+  /** Full catalogue — needed to resolve a child's family root for the optional
+   *  "By family" breakdown (a child's parent may not be in this week's plan). */
+  allExercises?: Exercise[];
   expanded: boolean;
   onToggle: () => void;
 }
@@ -98,7 +102,7 @@ function fmtMetric(key: MetricKey, v: number | null): string {
 
 interface Unit { index: number; label: string; agg: Agg; }
 interface Column { key: string; label: string; units: Unit[]; agg: Agg; }
-interface CatRow { category: string; color: string; agg: Agg; }
+interface GroupRow { key: string; label: string; color: string; agg: Agg; }
 
 const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' };
 const eyebrow: React.CSSProperties = {
@@ -108,11 +112,15 @@ const eyebrow: React.CSSProperties = {
 
 export function WeekSummaryBox({
   selectedAthlete, plannedExercises, comboMembers, activeDays, dayDisplayOrder, dayLabels, daySchedule,
-  expanded, onToggle,
+  allExercises, expanded, onToggle,
 }: WeekSummaryBoxProps) {
   const [metric, setMetric] = useState<MetricKey>('tonnage');
+  const [groupBy, setGroupBy] = useState<'category' | 'family'>('category');
   const compTotal = selectedAthlete?.competition_total ?? null;
   const calendarMapped = !!daySchedule && Object.keys(daySchedule).length > 0;
+  // Offer the "By family" toggle only once trees exist, so a flat catalogue
+  // keeps the panel uncluttered (family would just mirror per-exercise).
+  const hasFamilies = !!allExercises?.some(e => e.parent_exercise_id);
 
   const { columns, cats } = useMemo(() => {
     const labelOf = (i: number) => dayLabels[i] || defaultUnitLabel(i, dayDisplayOrder);
@@ -141,22 +149,40 @@ export function WeekSummaryBox({
       });
     }
 
-    const catMap = new Map<string, CatRow>();
+    // Left panel groups by category, or by exercise FAMILY (the root of the
+    // parent-child tree) when the coach toggles it. Family uses the shared
+    // resolver so it matches the Analysis engine's `family` dimension exactly.
+    const useFamily = groupBy === 'family' && !!allExercises;
+    const parentIndex = useFamily ? buildParentIndex(allExercises!) : null;
+    const exById = useFamily ? new Map(allExercises!.map(e => [e.id, e])) : null;
+
+    const groupMap = new Map<string, GroupRow>();
     for (const i of visible) {
       for (const c of contribsFor(i)) {
         if (c.exercise.counts_towards_totals === false) continue;
-        const category = c.exercise.category;
-        if (!category || category === '— System') continue;
-        const row = catMap.get(category) ?? { category, color: categoryColor(category), agg: emptyAgg() };
+        if (!c.exercise.category || c.exercise.category === '— System') continue;
+        let key: string, label: string, color: string;
+        if (useFamily && parentIndex && exById) {
+          const rootId = resolveRootId(c.exercise_id, parentIndex);
+          const root = exById.get(rootId);
+          key = rootId;
+          label = root?.name ?? c.exercise.name;
+          color = root?.color || categoryColor(label);
+        } else {
+          key = c.exercise.category;
+          label = c.exercise.category;
+          color = categoryColor(label);
+        }
+        const row = groupMap.get(key) ?? { key, label, color, agg: emptyAgg() };
         addEx(row.agg, c);
-        catMap.set(category, row);
+        groupMap.set(key, row);
       }
     }
-    const cats = Array.from(catMap.values())
+    const cats = Array.from(groupMap.values())
       .sort((a, b) => (metricValue(b.agg, metric, compTotal) ?? 0) - (metricValue(a.agg, metric, compTotal) ?? 0));
 
     return { columns, cats };
-  }, [plannedExercises, comboMembers, activeDays, dayDisplayOrder, dayLabels, daySchedule, calendarMapped, metric, compTotal]);
+  }, [plannedExercises, comboMembers, activeDays, dayDisplayOrder, dayLabels, daySchedule, calendarMapped, metric, compTotal, groupBy, allExercises]);
 
   const additive = ADDITIVE[metric];
   const colVal = (c: Column) => metricValue(c.agg, metric, compTotal) ?? 0;
@@ -232,9 +258,31 @@ export function WeekSummaryBox({
 
       {expanded && (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) 1fr' }}>
-          {/* LEFT — by category */}
+          {/* LEFT — by category (or by family, once trees exist) */}
           <div style={{ padding: '10px 14px', borderRight: '0.5px solid var(--color-border-tertiary)' }}>
-            <div style={eyebrow}>By category</div>
+            {hasFamilies ? (
+              <div style={{ display: 'inline-flex', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                {(['category', 'family'] as const).map((g, i) => (
+                  <button
+                    key={g}
+                    onClick={() => setGroupBy(g)}
+                    title={g === 'family' ? 'Roll variations up into their parent exercise' : 'Group by exercise category'}
+                    style={{
+                      fontSize: 'var(--text-caption)', padding: '2px 9px', cursor: 'pointer', border: 'none',
+                      fontFamily: 'var(--font-sans)', textTransform: 'uppercase', letterSpacing: '0.06em',
+                      borderLeft: i > 0 ? '0.5px solid var(--color-border-tertiary)' : 'none',
+                      background: groupBy === g ? 'var(--color-accent)' : 'transparent',
+                      color: groupBy === g ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                      fontWeight: groupBy === g ? 500 : 400,
+                    }}
+                  >
+                    {g === 'category' ? 'Category' : 'Family'}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={eyebrow}>By category</div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
               {cats.length === 0 && (
                 <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
@@ -245,12 +293,12 @@ export function WeekSummaryBox({
                 const v = metricValue(cat.agg, metric, compTotal) ?? 0;
                 const pct = additive && catSum > 0 ? Math.round((v / catSum) * 100) : null;
                 return (
-                  <div key={cat.category} style={{ display: 'grid', gridTemplateColumns: '9px 1fr', gap: 8, alignItems: 'center' }}>
+                  <div key={cat.key} style={{ display: 'grid', gridTemplateColumns: '9px 1fr', gap: 8, alignItems: 'center' }}>
                     <span style={{ width: 9, height: 15, borderRadius: 2, background: cat.color }} />
                     <div>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                         <span style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {cat.category}
+                          {cat.label}
                         </span>
                         <span style={{ ...mono, fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
                           {fmtMetric(metric, v)}
