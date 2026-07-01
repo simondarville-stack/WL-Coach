@@ -134,8 +134,12 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
 - Build in small, incremental slices; reuse existing data models, naming, and
   structures rather than inventing parallel ones.
 - Do not rename or delete existing fields unless explicitly instructed.
-- Do not introduce new packages, UI libraries, or architectural patterns
-  unless explicitly requested.
+- New packages and UI libraries are permitted when they are clearly the right
+  tool — well-maintained, reasonably lightweight, MIT/permissively licensed, and
+  not duplicating something already in the stack. Reuse first; when you do add a
+  dependency, call it out with a one-line rationale. Still avoid introducing new
+  *architectural patterns* casually — prefer the existing ones unless there is a
+  clear, stated reason.
 - When requirements are ambiguous: choose the simplest implementation that
   satisfies them, do not invent features or behaviours, and ask for
   clarification in the next step instead of guessing.
@@ -163,72 +167,64 @@ Mention the new version number in the reply when merging.
 
 ## UI & Design-System conventions
 
-> Distilled from the 2026-06 UX/design review. The goal is a professional,
-> coherent product — not a "vibe-coded" patchwork. Follow these for any UI work.
+> **Status: guidance, not gates.** EMOS is in an active develop-and-explore
+> phase — trying things out and finding out is expected and encouraged. The
+> notes below describe the direction we want to *converge on* for a coherent
+> product; they are **not** blockers. Hand-rolling UI, raw Tailwind, bespoke
+> components, and quick experiments are all fine while iterating. Don't let
+> these conventions stop you shipping an idea to see how it feels. We'll tighten
+> and refactor toward them deliberately once the shape of a feature settles —
+> not mid-exploration.
+>
+> A few genuinely useful bits below are correctness/product facts (the Tailwind
+> `var()` footgun, European dates, don't-recolour data-driven colours) — keep
+> those in mind because getting them wrong is a bug, not a style choice.
 
-### Use the shared primitives — never hand-roll
+### Shared primitives (prefer, don't force)
 
-- **Buttons:** always use `Button` from `src/components/ui` (re-exported via the
-  `ui` barrel). Variants: `primary | secondary | ghost | danger`; sizes
-  `sm | md | lg`; props `icon`, `iconPosition`, `iconOnly` (square, label-less).
-  **Never** hand-roll `bg-blue-600` / `bg-blue-700` buttons or bespoke
-  `onMouseEnter/onMouseLeave` hover-colour icon buttons — use
-  `<Button iconOnly variant="ghost|danger" icon={…} />`.
-- **Pages:** use `StandardPage` (or at minimum the `var(--color-bg-page)`
-  background). No gradient page backgrounds (`bg-gradient-to-br from-slate-*`).
-- The brand accent is `var(--color-accent)` (`#185FA5`) — **not** Tailwind
-  `blue-600` (`#2563EB`). They look similar and reading like the latter is the
-  single most common "off-brand" tell.
+- **Buttons / pages:** prefer `Button` and `StandardPage` from
+  `src/components/ui` when they fit — they keep things consistent for free. But
+  a hand-rolled control while prototyping is fine; converge later.
+- **Brand accent** is `var(--color-accent)` (`#185FA5`), not Tailwind `blue-600`
+  (`#2563EB`) — worth using the token so the app reads as on-brand, but not a
+  hard rule during exploration.
 
-### Colour = design tokens, not raw Tailwind palette
+### Colour tokens (preferred for chrome, optional while iterating)
 
-- Use the CSS custom properties in `src/styles/tokens.css`
-  (`var(--color-text-primary)`, `…-secondary`, `…-tertiary`,
-  `--color-bg-primary/secondary/page`, `--color-border-tertiary`,
-  `--color-accent[-muted/-border/-hover]`, `--color-danger-text/-bg/-border`,
-  `--color-success-*`). Raw `gray-*/blue-*/slate-*` literals can't theme
-  (dark mode) and drift. Migration mapping used in the review:
-  `text-gray-900/800 → text-primary`, `gray-700/600/500 → text-secondary`,
-  `gray-400/300/200 → text-tertiary`, `bg-white → bg-primary`,
-  `bg-gray-50/100 → bg-secondary`, `border-gray-* → border-tertiary`,
-  `blue-600 → accent`, `bg-blue-50 → accent-muted`,
-  `border/ring-blue-* → accent-border`, `red-* → danger-*`.
-- Prefer inline `style={{ color: 'var(--token)' }}` for a static colour; use a
-  Tailwind arbitrary-value class only when a `hover:`/`group-hover:`/`focus:`
-  variant must be preserved.
-- **Tailwind gotcha (silent bug):** for `border`/`ring`/`outline`/`divide`
-  colours via a CSS var, you MUST add the `color:` type hint —
-  `border-[color:var(--token)]`, `ring-[color:var(--token)]`. Bare
-  `border-[var(--token)]` is parsed as a *length* (border-width) and silently
-  renders wrong. `bg-[var(--token)]` and `text-[color:var(--token)]` are the
-  safe forms. Do **not** use the `/opacity` modifier on an arbitrary `var()`
-  (`bg-[var(--x)]/60` won't resolve).
+- For neutral chrome, the CSS custom properties in `src/styles/tokens.css`
+  (`--color-text-primary/secondary/tertiary`, `--color-bg-primary/secondary/
+  page`, `--color-border-*`, `--color-accent*`, `--color-danger-*`,
+  `--color-success-*`) are preferred because they theme (dark mode) and don't
+  drift. Raw `gray-*/blue-*/slate-*` is acceptable while trying things out;
+  tokenise when a component settles.
+- **Tailwind footgun (real silent bug — worth remembering):** for
+  `border`/`ring`/`outline`/`divide` colours via a CSS var you MUST add the
+  `color:` hint — `border-[color:var(--token)]`. Bare `border-[var(--token)]`
+  is parsed as a *length* and renders wrong. `bg-[var(--token)]` and
+  `text-[color:var(--token)]` are the safe forms; the `/opacity` modifier
+  doesn't resolve on an arbitrary `var()`.
 
-### Never tokenise data-driven or semantic colour
+### Don't recolour data-driven / semantic colour (correctness)
 
-When migrating colours, leave anything that encodes meaning: phase / week-type
-colours, chart & SVG series colours, heat/value colouring, `type="color"`
-values, competition-type badges, and category shades (e.g.
-`getExerciseCategoryShade(...)`). Only neutral chrome (greys, generic blue
-accents, delete-mode reds) becomes tokens. When unsure whether a colour is
-data-driven, **leave it**.
+Leave anything that encodes meaning: phase / week-type colours, chart & SVG
+series colours, heat/value colouring, `type="color"` values, competition-type
+badges, category shades (`getExerciseCategoryShade(...)`). These are data, not
+chrome — swapping them for neutral tokens is a bug. When unsure, leave it.
 
-### Dates, chips, and density
+### Dates (product requirement) & chips
 
 - **Dates:** format via `src/lib/dateUtils.ts` (`formatDateShort` → `DD/MM`,
-  `formatDateToDDMMYYYY`, `formatDateRange`). Never write a local US-style
-  formatter (`'Apr 27'`). European day-first, 24h, Monday-first (see Stack).
-- **Chips/badges:** render a chip only when it conveys actionable, non-obvious
-  information. A chip that appears on *every* row carries no signal — drop it.
-  Prefer a `title` tooltip for terse/jargon labels (e.g. a `RAW …/12` score)
-  rather than an unexplained chip.
+  etc.). European day-first, 24h, Monday-first (see Stack) is a firm product
+  requirement — don't hand-write a US-style formatter.
+- **Chips/badges:** a chip that appears on *every* row carries no signal —
+  prefer chips for actionable, non-obvious info, and a `title` tooltip for terse
+  jargon. Guidance, not a gate.
 
-### Verify before you trust
+### Verify
 
-Run `npm run typecheck` and `npm run build` after each change group. Typecheck
-and build both pass even when a Tailwind arbitrary-value class is malformed, so
-also read the diff: confirm handlers/`onClick`/`disabled`/`title` are preserved,
-no imports went unused, and no data colour was touched.
+Run `npm run typecheck` and `npm run build` after a change group and skim the
+diff (handlers/`onClick`/`disabled`/`title` preserved, no unused imports, no
+data colour recoloured). This is about not shipping breakage, not about style.
 
 ## Review workflow artifacts (shared convention between agents)
 
