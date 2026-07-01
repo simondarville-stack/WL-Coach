@@ -104,6 +104,12 @@ export interface Exercise {
   is_archived: boolean;
   pr_reference_exercise_id: string | null;  // derives % from this exercise's PR
   track_pr: boolean;                         // false = excluded from PR table
+  /** Optional self-FK to the parent exercise for catalogue trees. NULL = root.
+   *  A child (e.g. "Snatch from low hang") rolls its reps/tonnage/metrics up
+   *  into its parent for analysis + planner totals, while still being planned
+   *  and logged as its own variation. Arbitrary depth; cycle/owner guards live
+   *  in src/lib/exerciseHierarchy.ts. */
+  parent_exercise_id: string | null;
   lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
   created_at: string;
   updated_at: string;
@@ -127,6 +133,9 @@ export interface ExerciseStub {
    *  (a non-counting exercise must not briefly inflate the week's numbers).
    *  Absent ⇒ countsTowardsTotals defaults to true, as before. */
   counts_towards_totals?: boolean;
+  /** Parent link, carried on optimistic adds so tree rendering doesn't drop the
+   *  row before the next full reload hydrates the real Exercise. Absent ⇒ root. */
+  parent_exercise_id?: string | null;
 }
 
 export interface TrainingGroup {
