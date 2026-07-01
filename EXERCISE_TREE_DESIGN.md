@@ -1,6 +1,12 @@
 # Exercise Hierarchy (Parent–Child Trees) — Design
 
-> Status: **DESIGN — awaiting approval to build.**
+> Status: **BUILT (Phases 1–4 shipped on `feature/exercise-hierarchy`, v0.18.0).**
+> Migration applied. Analysis `family` dimension, planner "By family" breakdown,
+> and the drag-to-reparent catalogue tree (react-arborist) are live and verified
+> (typecheck + build + 181 tests + browser end-to-end). **Deferred:** the bulk
+> import/export parent-column round-trip (Phase 4 item) — the tree is UI/form/
+> drag-driven for now; bulk import still flattens. Manual sibling ordering
+> (needs an `exercises.display_order` column) is also deferred.
 > Feature: coaches can nest exercises into arbitrary-depth trees (e.g.
 > `Snatch › Snatch from hang › Snatch from low hang`). A child's
 > reps/tonnage/metrics **roll up into its parent** for analysis and planner
