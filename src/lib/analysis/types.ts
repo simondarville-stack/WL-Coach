@@ -12,13 +12,17 @@ export type ISODate = string; // 'YYYY-MM-DD'
  *
  * Note: `category` is the coach's own free-text exercise category — EMOS has no
  * fixed "K1–K10" taxonomy (REVIEW_PLAN tension T-01). `movement` maps to
- * `exercises.lift_slot`. `custom:<id>` addresses an athlete day-card metric
+ * `exercises.lift_slot`. `family` rolls a child exercise up into its root parent
+ * (`exercises.parent_exercise_id` tree) — a child ("Snatch from low hang")
+ * groups under its family head ("Snatch"); an un-parented exercise is its own
+ * family. `custom:<id>` addresses an athlete day-card metric
  * (`athlete_metric_definitions.id`).
  */
 export type Dimension =
   | 'athlete'
   | 'group'
   | 'exercise'
+  | 'family'
   | 'category'
   | 'movement'
   | 'weekType'
@@ -151,6 +155,12 @@ export interface FactRow {
   // ── exercise dimensions ──
   exerciseId: string | null;
   exerciseName: string;
+  /** Root ancestor id of this exercise's parent-child tree — the bucket the
+   *  `family` dimension groups on. Equals `exerciseId` for a root/un-parented
+   *  exercise; null for a deleted/unknown exercise. */
+  familyRootId: string | null;
+  /** Display name of `familyRootId` (falls back to '(deleted exercise)'). */
+  familyRootName: string;
   category: string;
   movement: string | null; // exercises.lift_slot
   isCompetitionLift: boolean;

@@ -16,6 +16,7 @@ export const DIMENSIONS: DimOption[] = [
   { id: 'athlete', label: 'Athlete', section: 'Subject' },
   { id: 'group', label: 'Group', section: 'Subject' },
   { id: 'exercise', label: 'Exercise', section: 'Exercise' },
+  { id: 'family', label: 'Family', section: 'Exercise', hint: 'Variations rolled up into their parent exercise' },
   { id: 'category', label: 'Category', section: 'Exercise' },
   { id: 'movement', label: 'Movement', section: 'Exercise', hint: 'Snatch / C&J / squat / pull slot' },
   { id: 'intensityZone', label: 'Intensity zone', section: 'Exercise', hint: 'Banded by %1RM' },

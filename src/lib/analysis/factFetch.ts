@@ -25,6 +25,7 @@ import { getOwnerId } from '../ownerContext';
 import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
 import { parsePrescription, parseComboPrescription } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
+import { buildParentIndex, resolveRootId } from '../exerciseHierarchy';
 import { resolveScopeWindow, type ResolvedScope } from './scopeResolver';
 import type { AnalysisQuery, FactRow } from './types';
 
@@ -40,6 +41,7 @@ export interface RawExercise {
   counts_towards_totals: boolean;
   default_unit: string | null;
   pr_reference_exercise_id: string | null;
+  parent_exercise_id: string | null;
 }
 
 export interface RawWeekPlan {
@@ -221,6 +223,19 @@ function weekdayOf(dateStr: string): number {
 export function buildFacts(input: BuildFactsInput): FactRow[] {
   const facts: FactRow[] = [];
 
+  // Parent-child rollup: resolve each contribution's exercise up to its family
+  // root ONCE (memoised index). Combo expansion runs first (per member), then
+  // family resolution per contribution — so a combo member that is itself a
+  // child variation folds into its own family, never the combo lead's.
+  const parentIndex = buildParentIndex(Object.values(input.exercisesById));
+  const familyOf = (
+    exId: string | null,
+  ): { familyRootId: string | null; familyRootName: string } => {
+    if (!exId) return { familyRootId: null, familyRootName: '(deleted exercise)' };
+    const rootId = resolveRootId(exId, parentIndex);
+    return { familyRootId: rootId, familyRootName: input.exercisesById[rootId]?.name ?? '(deleted exercise)' };
+  };
+
   const setLinesByPe = new Map<string, RawSetLine[]>();
   for (const sl of input.setLines) {
     const arr = setLinesByPe.get(sl.planned_exercise_id) ?? [];
@@ -235,7 +250,8 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
   }
 
   const baseRow = (athleteId: string, weekStart: string): Omit<FactRow,
-    | 'state' | 'exerciseId' | 'exerciseName' | 'category' | 'movement'
+    | 'state' | 'exerciseId' | 'exerciseName' | 'familyRootId' | 'familyRootName'
+    | 'category' | 'movement'
     | 'isCompetitionLift' | 'countsTowardsTotals' | 'unit' | 'date' | 'dayIndex'
     | 'dayOfWeek' | 'sets' | 'reps' | 'tonnage' | 'maxLoad' | 'load'
     | 'loadIsKg' | 'loadIsPct' | 'pct1rm' | 'pairKey'> => {
@@ -315,6 +331,7 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
             ...common,
             exerciseId: cex.id,
             exerciseName: cex.name,
+            ...familyOf(cex.id),
             category: cex.category,
             movement: cex.lift_slot,
             isCompetitionLift: cex.is_competition_lift,
@@ -338,6 +355,7 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       const exFields = {
         exerciseId: ex.id,
         exerciseName: ex.name,
+        ...familyOf(ex.id),
         category: ex.category,
         movement: ex.lift_slot,
         isCompetitionLift: ex.is_competition_lift,
@@ -427,6 +445,7 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       pairKey: le.planned_exercise_id,
       exerciseId: ex?.id ?? null,
       exerciseName: ex?.name ?? '(deleted exercise)',
+      ...familyOf(ex?.id ?? null),
       category: ex?.category ?? '(uncategorised)',
       movement: ex?.lift_slot ?? null,
       isCompetitionLift: ex?.is_competition_lift ?? false,
@@ -622,7 +641,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   // 5. Exercises (host-owned) + PR bests.
   const { data: exRows } = await supabase
     .from('exercises')
-    .select('id, name, category, color, lift_slot, is_competition_lift, counts_towards_totals, default_unit, pr_reference_exercise_id')
+    .select('id, name, category, color, lift_slot, is_competition_lift, counts_towards_totals, default_unit, pr_reference_exercise_id, parent_exercise_id')
     .in('owner_id', hostOwners);
   const exercisesById: Record<string, RawExercise> = {};
   const exerciseColors: Record<string, string> = {}; // name → colour (for chart series)
@@ -802,6 +821,8 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   // Coach-assigned colours per dimension value (data-driven; CLAUDE.md sanctioned).
   const dimensionColors: Record<string, Record<string, string>> = {
     exercise: exerciseColors,
+    // Family labels are the root exercise's name, so the root's colour applies.
+    family: exerciseColors,
     category: categoryColors,
     meso: phaseColors,
     weekType: weekTypeColors,

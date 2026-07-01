@@ -67,6 +67,9 @@ function dimValues(row: FactRow, dim: Dimension, opts: AggregateOptions): string
         : ['(ungrouped)'];
     case 'exercise':
       return [row.exerciseName || '(deleted exercise)'];
+    case 'family':
+      // Root of the parent-child tree; an un-parented exercise is its own family.
+      return [row.familyRootName || row.exerciseName || '(deleted exercise)'];
     case 'category':
       return [row.category || '(uncategorised)'];
     case 'movement':
@@ -482,7 +485,7 @@ export function aggregate(
   // builder's filter UI can offer the full candidate list regardless of the
   // filters currently applied.
   const availableValues: Record<string, string[]> = {};
-  const STANDARD_FILTERABLE: Dimension[] = ['exercise', 'category', 'movement', 'weekType'];
+  const STANDARD_FILTERABLE: Dimension[] = ['exercise', 'family', 'category', 'movement', 'weekType'];
   const filterDims = [...new Set<Dimension>([...rowDims, ...colDims, ...STANDARD_FILTERABLE])];
   for (const dim of filterDims) {
     const set = new Set<string>();

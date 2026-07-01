@@ -24,6 +24,7 @@ function ex(over: Partial<RawExercise> & { id: string; name: string }): RawExerc
     counts_towards_totals: true,
     default_unit: 'absolute_kg',
     pr_reference_exercise_id: null,
+    parent_exercise_id: null,
     ...over,
   };
 }
@@ -243,6 +244,120 @@ describe('aggregate — pivots & dimensions', () => {
   });
 });
 
+describe('aggregate — family (parent-child rollup)', () => {
+  // Snatch (root) → Snatch from hang → Snatch from low hang (a 3-level tree);
+  // Back Squat is a flat, un-parented root. All absolute_kg so tonnage is direct.
+  const FAM = {
+    SN: ex({ id: 'F_SN', name: 'Snatch', category: 'Snatch', lift_slot: 'snatch' }),
+    SNH: ex({ id: 'F_SNH', name: 'Snatch from hang', category: 'Snatch', lift_slot: 'snatch', parent_exercise_id: 'F_SN' }),
+    SNLH: ex({ id: 'F_SNLH', name: 'Snatch from low hang', category: 'Snatch', lift_slot: 'snatch', parent_exercise_id: 'F_SNH' }),
+    BSQ: ex({ id: 'F_BSQ', name: 'Back Squat', category: 'Squat', lift_slot: 'back_squat' }),
+  };
+
+  function famInput(over: Partial<BuildFactsInput> = {}): BuildFactsInput {
+    return baseInput({
+      exercisesById: { F_SN: FAM.SN, F_SNH: FAM.SNH, F_SNLH: FAM.SNLH, F_BSQ: FAM.BSQ },
+      prBest: { A1: {} },
+      weekPlans: [{ id: 'WP1', week_start: '2026-06-01', athlete_id: 'A1', owner_id: 'O1', day_schedule: null }],
+      plannedExercises: [
+        { id: 'P_SN', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_SN', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 1, summary_total_reps: 2, summary_highest_load: 100, summary_avg_load: 100, is_combo: false },
+        { id: 'P_SNH', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_SNH', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 1, summary_total_reps: 3, summary_highest_load: 90, summary_avg_load: 90, is_combo: false },
+        { id: 'P_SNLH', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_SNLH', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 1, summary_total_reps: 5, summary_highest_load: 80, summary_avg_load: 80, is_combo: false },
+        { id: 'P_BSQ', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_BSQ', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 2, summary_total_reps: 10, summary_highest_load: 150, summary_avg_load: 150, is_combo: false },
+      ],
+      setLines: [
+        { planned_exercise_id: 'P_SN', sets: 1, reps: 2, load_value: 100, load_max: null },
+        { planned_exercise_id: 'P_SNH', sets: 1, reps: 3, load_value: 90, load_max: null },
+        { planned_exercise_id: 'P_SNLH', sets: 1, reps: 5, load_value: 80, load_max: null },
+        { planned_exercise_id: 'P_BSQ', sets: 2, reps: 5, load_value: 150, load_max: null },
+      ],
+      comboMembers: [],
+      sessions: [],
+      logExercises: [],
+      logSets: [],
+      ...over,
+    });
+  }
+
+  it('stamps familyRoot on each fact (child → root, root/un-parented → itself)', () => {
+    const facts = buildFacts(famInput()).filter((f) => f.state === 'planned');
+    const byEx = Object.fromEntries(facts.map((f) => [f.exerciseId, f]));
+    expect(byEx['F_SNLH'].familyRootId).toBe('F_SN'); // grandchild → root
+    expect(byEx['F_SNLH'].familyRootName).toBe('Snatch');
+    expect(byEx['F_SNH'].familyRootId).toBe('F_SN');
+    expect(byEx['F_SN'].familyRootId).toBe('F_SN'); // root → itself
+    expect(byEx['F_BSQ'].familyRootId).toBe('F_BSQ'); // un-parented → itself
+  });
+
+  it('rolls child reps/tonnage up into the root family across multiple levels', () => {
+    const facts = buildFacts(famInput());
+    const q = weekQuery([
+      { metricId: 'volume', agg: 'sum', state: 'planned' },
+      { metricId: 'reps', agg: 'sum', state: 'planned' },
+    ]);
+    q.rows = ['family'];
+    const result = analyzeFacts(facts, q);
+    const vol = Object.fromEntries(result.records.map((r) => [r.row[0], r.values['volume::planned']]));
+    const reps = Object.fromEntries(result.records.map((r) => [r.row[0], r.values['reps::planned']]));
+    // Snatch family = 200 + 270 + 400 = 870 kg; reps 2 + 3 + 5 = 10
+    expect(vol['Snatch']).toBe(870);
+    expect(reps['Snatch']).toBe(10);
+    // Back Squat is its own family
+    expect(vol['Back Squat']).toBe(1500);
+    expect(reps['Back Squat']).toBe(10);
+  });
+
+  it('leaves the leaf `exercise` dimension unchanged (children stay separate)', () => {
+    const facts = buildFacts(famInput());
+    const q = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'planned' }]);
+    q.rows = ['exercise'];
+    const result = analyzeFacts(facts, q);
+    const vol = Object.fromEntries(result.records.map((r) => [r.row[0], r.values['volume::planned']]));
+    expect(vol['Snatch']).toBe(200);
+    expect(vol['Snatch from hang']).toBe(270);
+    expect(vol['Snatch from low hang']).toBe(400);
+  });
+
+  it('family totals equal exercise totals when the catalogue is flat', () => {
+    const flat = famInput({
+      exercisesById: { F_SN: ex({ id: 'F_SN', name: 'Snatch' }), F_BSQ: FAM.BSQ },
+      plannedExercises: [
+        { id: 'P_SN', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_SN', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 1, summary_total_reps: 2, summary_highest_load: 100, summary_avg_load: 100, is_combo: false },
+        { id: 'P_BSQ', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_BSQ', unit: 'absolute_kg', prescription_raw: '', summary_total_sets: 2, summary_total_reps: 10, summary_highest_load: 150, summary_avg_load: 150, is_combo: false },
+      ],
+      setLines: [
+        { planned_exercise_id: 'P_SN', sets: 1, reps: 2, load_value: 100, load_max: null },
+        { planned_exercise_id: 'P_BSQ', sets: 2, reps: 5, load_value: 150, load_max: null },
+      ],
+    });
+    const qf = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'planned' }]); qf.rows = ['family'];
+    const qe = weekQuery([{ metricId: 'volume', agg: 'sum', state: 'planned' }]); qe.rows = ['exercise'];
+    const fam = Object.fromEntries(analyzeFacts(buildFacts(flat), qf).records.map((r) => [r.row[0], r.values['volume::planned']]));
+    const exx = Object.fromEntries(analyzeFacts(buildFacts(flat), qe).records.map((r) => [r.row[0], r.values['volume::planned']]));
+    expect(fam).toEqual(exx);
+  });
+
+  it('folds a combo member into its own family, not the combo lead', () => {
+    const CJ = ex({ id: 'F_CJ', name: 'Clean & Jerk', category: 'Clean & Jerk', lift_slot: 'clean_and_jerk' });
+    const input = famInput({
+      exercisesById: { F_SN: FAM.SN, F_SNH: FAM.SNH, F_CJ: CJ },
+      plannedExercises: [
+        { id: 'PEC', weekplan_id: 'WP1', day_index: 1, exercise_id: 'F_SNH', unit: 'absolute_kg', prescription_raw: '80×1+1×3', summary_total_sets: 3, summary_total_reps: 6, summary_highest_load: 80, summary_avg_load: 80, is_combo: true },
+      ],
+      setLines: [],
+      comboMembers: [
+        { planned_exercise_id: 'PEC', exercise_id: 'F_SNH', position: 0 },
+        { planned_exercise_id: 'PEC', exercise_id: 'F_CJ', position: 1 },
+      ],
+    });
+    const facts = buildFacts(input).filter((f) => f.state === 'planned');
+    const snh = facts.find((f) => f.exerciseId === 'F_SNH')!;
+    const cj = facts.find((f) => f.exerciseId === 'F_CJ')!;
+    expect(snh.familyRootName).toBe('Snatch'); // child member folds to its family head
+    expect(cj.familyRootName).toBe('Clean & Jerk'); // sibling member keeps its own family
+  });
+});
+
 describe('aggregate — unresolved percentages', () => {
   it('excludes % loads with no reference max from tonnage and flags them', () => {
     const input = baseInput();
@@ -333,6 +448,8 @@ describe('normalization (multi-athlete comparison)', () => {
       groupIds: [],
       exerciseId: 'EX',
       exerciseName: 'Snatch',
+      familyRootId: 'EX',
+      familyRootName: 'Snatch',
       category: 'Snatch',
       movement: 'snatch',
       isCompetitionLift: true,

@@ -19,6 +19,7 @@ const VALID_DIMENSIONS = new Set<string>([
   'athlete',
   'group',
   'exercise',
+  'family',
   'category',
   'movement',
   'weekType',
