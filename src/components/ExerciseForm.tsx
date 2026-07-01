@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Exercise, DefaultUnit } from '../lib/database.types';
 import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
+import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
 
 interface ExerciseFormProps {
   editingExercise: Exercise | null;
@@ -39,6 +40,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [countsTowardsTotals, setCountsTowardsTotals] = useState(true);
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
+  const [parentId, setParentId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -59,6 +61,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setCountsTowardsTotals(editingExercise.counts_towards_totals);
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
+      setParentId(editingExercise.parent_exercise_id ?? null);
     } else {
       resetForm();
     }
@@ -77,6 +80,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     setCountsTowardsTotals(true);
     setTrackPr(true);
     setPrReferenceId(null);
+    setParentId(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -96,6 +100,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         counts_towards_totals: countsTowardsTotals,
         track_pr: trackPr,
         pr_reference_exercise_id: prReferenceId,
+        parent_exercise_id: parentId,
         notes: notes.trim() || null,
         link: link.trim() || null,
       });
@@ -194,6 +199,51 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           ))}
         </select>
       </div>
+
+      {(() => {
+        // Parent exercise (optional): a child rolls up into this parent for
+        // analysis + planner totals. Candidates exclude self, System sentinels,
+        // archived, and any DESCENDANT of the edited exercise (full multi-hop
+        // cycle guard via the shared resolver — not just one hop).
+        const parentIndex = buildParentIndex(allExercises);
+        const candidates = allExercises
+          .filter(e =>
+            e.id !== editingExercise?.id &&
+            e.category !== '— System' &&
+            !e.is_archived &&
+            !(editingExercise ? wouldCreateCycle(editingExercise.id, e.id, parentIndex) : false),
+          )
+          .sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <div>
+            <label htmlFor="parentExercise" className="block text-sm font-medium text-gray-700 mb-1">
+              Parent Exercise (Optional)
+            </label>
+            <select
+              id="parentExercise"
+              value={parentId ?? ''}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                setParentId(v);
+                // Auto-suggest the parent as the %/PR reference (editable) —
+                // a hang-snatch naturally takes its % off the snatch PR.
+                if (v && !prReferenceId) setPrReferenceId(v);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— None (top-level) —</option>
+              {candidates.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name}{e.exercise_code ? ` (${e.exercise_code})` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              Variations (e.g. “Snatch from low hang”) roll up into their parent for analysis and planner totals, while still being planned and logged on their own. Setting a parent also suggests it as the PR reference.
+            </p>
+          </div>
+        );
+      })()}
 
       <div className="space-y-2">
         <label className="flex items-center space-x-2">

@@ -326,6 +326,16 @@ export function ExerciseDetailPanel({
     ? allExercises.find(e => e.id === exercise.pr_reference_exercise_id)
     : null;
 
+  // Parent-child tree relationships (structural, independent of category).
+  const parentExercise = exercise.parent_exercise_id
+    ? allExercises.find(e => e.id === exercise.parent_exercise_id) ?? null
+    : null;
+  const childExercises = allExercises.filter(e => e.parent_exercise_id === exercise.id);
+  const siblingExercises = exercise.parent_exercise_id
+    ? allExercises.filter(e => e.parent_exercise_id === exercise.parent_exercise_id && e.id !== exercise.id)
+    : [];
+  const hasFamily = !!parentExercise || childExercises.length > 0 || siblingExercises.length > 0;
+
   useEffect(() => {
     setNotesValue(exercise.notes ?? '');
     setShowXrmModal(false);
@@ -726,6 +736,41 @@ export function ExerciseDetailPanel({
               </div>
             )}
           </>
+        )}
+
+        {/* Family (parent-child tree) */}
+        {hasFamily && (
+          <div>
+            <SectionLabel>Family</SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {parentExercise && (
+                <div>
+                  <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Parent</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <RelatedChip rex={parentExercise} onSelect={onSelectExercise} />
+                  </div>
+                </div>
+              )}
+              {childExercises.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>
+                    Variations ({childExercises.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {childExercises.map(c => <RelatedChip key={c.id} rex={c} onSelect={onSelectExercise} />)}
+                  </div>
+                </div>
+              )}
+              {siblingExercises.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginBottom: 4 }}>Siblings</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {siblingExercises.map(s => <RelatedChip key={s.id} rex={s} onSelect={onSelectExercise} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Related exercises */}

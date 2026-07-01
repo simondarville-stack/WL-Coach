@@ -15,7 +15,7 @@ export function ExerciseLibrary() {
   const { athletes, fetchAllAthletes } = useAthletes();
 
   const {
-    exercises, categories,
+    exercises, categories, setExercises,
     fetchExercises, fetchCategories,
     createExercise, updateExercise,
     createCategory, updateCategory, deleteCategory,
@@ -65,13 +65,36 @@ export function ExerciseLibrary() {
 
   const handleSave = async (exerciseData: Partial<Exercise>) => {
     if (editingExercise) {
-      await updateExercise(editingExercise.id, exerciseData);
+      const id = editingExercise.id;
+      await updateExercise(id, exerciseData);
+      // Optimistic store merge — fetchExercises() short-circuits on a warm
+      // cache, so the edit (incl. a new parent link) must be applied directly.
+      setExercises(exercises.map(e => (e.id === id ? { ...e, ...exerciseData } as Exercise : e)));
       setEditingExercise(null);
     } else {
-      await createExercise(exerciseData);
+      const created = await createExercise(exerciseData);
+      if (created) setExercises([created, ...exercises.filter(e => e.id !== created.id)]);
     }
     await fetchExercises();
     setShowCreateModal(false);
+  };
+
+  // Drag-to-reparent from the tree view: parentId=null promotes to a category
+  // root (category is also set). Optimistic, with revert on failure.
+  const handleReparent = async (exerciseId: string, parentId: string | null, category?: string) => {
+    const snapshot = exercises;
+    setExercises(exercises.map(e =>
+      e.id === exerciseId
+        ? { ...e, parent_exercise_id: parentId, ...(category !== undefined ? { category } : {}) }
+        : e,
+    ));
+    try {
+      const patch: Partial<Exercise> = { parent_exercise_id: parentId };
+      if (category !== undefined) patch.category = category;
+      await updateExercise(exerciseId, patch);
+    } catch {
+      setExercises(snapshot); // revert on failure (error already surfaced by the hook)
+    }
   };
 
   const handleArchive = async (exerciseId: string) => {
@@ -128,6 +151,7 @@ export function ExerciseLibrary() {
         onOpenCategoryModal={() => setShowCategoryModal(true)}
         onOpenBulkImport={() => setShowBulkImport(true)}
         onCreateExercise={() => { setEditingExercise(null); setShowCreateModal(true); }}
+        onReparent={handleReparent}
         hasSidePanel={selectedExerciseId !== null}
       />
 

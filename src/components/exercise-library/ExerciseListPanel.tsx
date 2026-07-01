@@ -7,13 +7,14 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import {
-  Search, Plus, Grid3X3, List, Upload,
+  Search, Plus, Grid3X3, List, ListTree, Upload,
   ChevronRight, Layers, X as XIcon, AlertTriangle, SlidersHorizontal,
 } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { StandardPage, Button, Input, Badge, ColorDot } from '../ui';
 import { DEFAULT_UNITS } from '../../lib/constants';
+import { ExerciseTree } from './ExerciseTree';
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -538,6 +539,7 @@ interface ExerciseListPanelProps {
   onOpenCategoryModal: () => void;
   onOpenBulkImport: () => void;
   onCreateExercise: () => void;
+  onReparent: (exerciseId: string, parentId: string | null, category?: string) => void;
   hasSidePanel: boolean;
 }
 
@@ -555,9 +557,10 @@ export function ExerciseListPanel({
   onOpenCategoryModal,
   onOpenBulkImport,
   onCreateExercise,
+  onReparent,
   hasSidePanel,
 }: ExerciseListPanelProps) {
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [showEmptyCategories, setShowEmptyCategories] = useState(false);
@@ -685,10 +688,11 @@ export function ExerciseListPanel({
             borderRadius: 'var(--radius-md)', padding: '2px',
           }}
         >
-          {(['list', 'grid'] as const).map(mode => (
+          {(['list', 'grid', 'tree'] as const).map(mode => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
+              title={mode === 'tree' ? 'Tree view — drag exercises to build parent-child variations' : undefined}
               style={{
                 display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px',
                 fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
@@ -699,8 +703,8 @@ export function ExerciseListPanel({
                 transition: 'all 100ms ease-out',
               }}
             >
-              {mode === 'grid' ? <Grid3X3 size={12} /> : <List size={12} />}
-              {mode === 'grid' ? 'Grid' : 'List'}
+              {mode === 'grid' ? <Grid3X3 size={12} /> : mode === 'tree' ? <ListTree size={12} /> : <List size={12} />}
+              {mode === 'grid' ? 'Grid' : mode === 'tree' ? 'Tree' : 'List'}
             </button>
           ))}
         </div>
@@ -759,8 +763,18 @@ export function ExerciseListPanel({
         </Button>
       </div>
 
-      {/* List */}
+      {/* List / Grid / Tree */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {viewMode === 'tree' ? (
+          <ExerciseTree
+            exercises={exercises}
+            categories={categories}
+            selectedExerciseId={selectedExerciseId}
+            onSelectExercise={onSelectExercise}
+            onReparent={onReparent}
+            searchTerm={searchQuery.trim() || undefined}
+          />
+        ) : (
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {viewMode === 'list' && <ListViewHeader />}
 
@@ -831,6 +845,7 @@ export function ExerciseListPanel({
             </div>
           )}
         </div>
+        )}
       </div>
     </StandardPage>
   );
