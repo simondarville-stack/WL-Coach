@@ -17,7 +17,7 @@ export function ExerciseLibrary() {
   const {
     exercises, categories, setExercises,
     fetchExercises, fetchCategories,
-    createExercise, updateExercise,
+    createExercise, updateExercise, bulkReorderExercises,
     createCategory, updateCategory, deleteCategory,
     bulkReorderCategories,
   } = useExercises();
@@ -79,19 +79,34 @@ export function ExerciseLibrary() {
     setShowCreateModal(false);
   };
 
-  // Drag-to-reparent from the tree view: parentId=null promotes to a category
-  // root (category is also set). Optimistic, with revert on failure.
-  const handleReparent = async (exerciseId: string, parentId: string | null, category?: string) => {
+  // Drag-to-move from the tree view: parentId=null promotes to a category root
+  // (category is also set); orderedSiblingIds records the dropped position as
+  // display_order across the target group. Optimistic, with revert on failure.
+  const handleMoveExercise = async (
+    exerciseId: string,
+    parentId: string | null,
+    category: string | undefined,
+    orderedSiblingIds: string[],
+  ) => {
     const snapshot = exercises;
-    setExercises(exercises.map(e =>
-      e.id === exerciseId
-        ? { ...e, parent_exercise_id: parentId, ...(category !== undefined ? { category } : {}) }
-        : e,
-    ));
+    const orderMap = new Map(orderedSiblingIds.map((id, i) => [id, i] as const));
+    setExercises(exercises.map(e => {
+      if (e.id === exerciseId) {
+        return {
+          ...e,
+          parent_exercise_id: parentId,
+          ...(category !== undefined ? { category } : {}),
+          display_order: orderMap.get(e.id) ?? e.display_order,
+        } as Exercise;
+      }
+      if (orderMap.has(e.id)) return { ...e, display_order: orderMap.get(e.id)! };
+      return e;
+    }));
     try {
       const patch: Partial<Exercise> = { parent_exercise_id: parentId };
       if (category !== undefined) patch.category = category;
       await updateExercise(exerciseId, patch);
+      await bulkReorderExercises(orderedSiblingIds);
     } catch {
       setExercises(snapshot); // revert on failure (error already surfaced by the hook)
     }
@@ -151,7 +166,7 @@ export function ExerciseLibrary() {
         onOpenCategoryModal={() => setShowCategoryModal(true)}
         onOpenBulkImport={() => setShowBulkImport(true)}
         onCreateExercise={() => { setEditingExercise(null); setShowCreateModal(true); }}
-        onReparent={handleReparent}
+        onMoveExercise={handleMoveExercise}
         hasSidePanel={selectedExerciseId !== null}
       />
 

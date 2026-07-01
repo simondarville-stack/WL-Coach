@@ -8,9 +8,9 @@
  * category. Cycle-forming drops (onto your own descendant) are rejected via the
  * shared exerciseHierarchy guard, so the tree can never corrupt itself.
  *
- * The tree is a pure catalogue view; persistence is delegated to `onReparent`
- * (an optimistic store write in ExerciseLibrary). Sibling order is name-sorted
- * (manual ordering would need an exercises.display_order column — a follow-up).
+ * The tree is a pure catalogue view; persistence is delegated to `onMoveExercise`
+ * (an optimistic store write in ExerciseLibrary). Dropping also records the
+ * dragged position as display_order across the target sibling group.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tree, type NodeRendererProps } from 'react-arborist';
@@ -37,8 +37,14 @@ interface ExerciseTreeProps {
   categories: Category[];
   selectedExerciseId: string | null;
   onSelectExercise: (id: string | null) => void;
-  /** Persist a reparent: parentId=null promotes to a category root (category set). */
-  onReparent: (exerciseId: string, parentId: string | null, category?: string) => void;
+  /** Persist a move: parentId=null promotes to a category root (category set);
+   *  orderedSiblingIds is the target group's exercise ids in the new order. */
+  onMoveExercise: (
+    exerciseId: string,
+    parentId: string | null,
+    category: string | undefined,
+    orderedSiblingIds: string[],
+  ) => void;
   /** Optional live search — filters exercises by name/code, keeping ancestors. */
   searchTerm?: string;
 }
@@ -47,11 +53,15 @@ function isProtectedCategory(name: string): boolean {
   return name.toLowerCase().includes('system') || name === 'Unspecified';
 }
 
-const byName = (a: Exercise, b: Exercise) =>
+const ORDER_LAST = Number.MAX_SAFE_INTEGER;
+// Manual display_order first (nulls last), then name/code — matches how the
+// coach dragged siblings within a parent/category.
+const byOrder = (a: Exercise, b: Exercise) =>
+  (a.display_order ?? ORDER_LAST) - (b.display_order ?? ORDER_LAST) ||
   (a.exercise_code || a.name).localeCompare(b.exercise_code || b.name);
 
 export function ExerciseTree({
-  exercises, categories, selectedExerciseId, onSelectExercise, onReparent, searchTerm,
+  exercises, categories, selectedExerciseId, onSelectExercise, onMoveExercise, searchTerm,
 }: ExerciseTreeProps) {
   const parentIndex = useMemo(() => buildParentIndex(exercises), [exercises]);
 
@@ -67,7 +77,7 @@ export function ExerciseTree({
       }
     }
     const buildEx = (ex: Exercise): ExTreeNode => {
-      const kids = (childrenByParent.get(ex.id) ?? []).slice().sort(byName);
+      const kids = (childrenByParent.get(ex.id) ?? []).slice().sort(byOrder);
       return {
         id: ex.id, kind: 'exercise', name: ex.name, color: ex.color, code: ex.exercise_code,
         isCompetition: ex.is_competition_lift, childCount: kids.length,
@@ -97,7 +107,7 @@ export function ExerciseTree({
 
     const catNode = (id: string, name: string, color: string | null, rs: Exercise[]): ExTreeNode => ({
       id: `cat:${id}`, kind: 'category', name, color, code: null, categoryName: name,
-      childCount: rs.length, children: rs.slice().sort(byName).map(buildEx),
+      childCount: rs.length, children: rs.slice().sort(byOrder).map(buildEx),
     });
 
     const visibleCategories = categories
@@ -224,15 +234,27 @@ export function ExerciseTree({
             const dragId = dragNodes[0]?.id;
             return dragId ? wouldCreateCycle(dragId, parentNode.id, parentIndex) : false;
           }}
-          onMove={({ dragIds, parentNode }) => {
+          onMove={({ dragIds, parentNode, index }) => {
             const dragId = dragIds[0];
             if (!dragId || !parentNode) return;
             const p = parentNode.data;
+            let newParentId: string | null;
+            let category: string | undefined;
             if (p.kind === 'category') {
-              onReparent(dragId, null, p.categoryName);
+              newParentId = null;
+              category = p.categoryName;
             } else if (!wouldCreateCycle(dragId, parentNode.id, parentIndex)) {
-              onReparent(dragId, parentNode.id, undefined);
+              newParentId = parentNode.id;
+              category = undefined;
+            } else {
+              return; // cycle — reject
             }
+            // The target group's ordered exercise ids after the move, so the
+            // dropped position persists as display_order for the whole group.
+            const siblings = (p.children ?? []).map(c => c.id).filter(id => id !== dragId);
+            const at = Math.max(0, Math.min(index ?? siblings.length, siblings.length));
+            siblings.splice(at, 0, dragId);
+            onMoveExercise(dragId, newParentId, category, siblings);
           }}
         >
           {Node}

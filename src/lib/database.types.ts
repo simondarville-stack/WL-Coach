@@ -110,6 +110,9 @@ export interface Exercise {
    *  and logged as its own variation. Arbitrary depth; cycle/owner guards live
    *  in src/lib/exerciseHierarchy.ts. */
   parent_exercise_id: string | null;
+  /** Manual sort order within a parent/category for the catalogue tree view.
+   *  NULL sorts after ordered siblings, then by name. Display-only. */
+  display_order: number | null;
   lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
   created_at: string;
   updated_at: string;

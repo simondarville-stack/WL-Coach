@@ -131,6 +131,24 @@ export function useExercises() {
     }
   };
 
+  // Persist manual sibling order (catalogue tree): writes display_order = index
+  // for each id, owner-scoped. Mirrors bulkReorderCategories.
+  const bulkReorderExercises = async (orderedIds: string[]) => {
+    try {
+      const ownerId = getOwnerId();
+      const results = await Promise.all(
+        orderedIds.map((id, i) =>
+          supabase.from('exercises').update({ display_order: i }).eq('id', id).eq('owner_id', ownerId),
+        ),
+      );
+      const firstError = results.find(r => r.error)?.error;
+      if (firstError) throw firstError;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reorder exercises');
+      throw err;
+    }
+  };
+
   // --- Category CRUD ---
 
   const createCategory = async (name: string, displayOrder: number, color?: string) => {
@@ -254,6 +272,7 @@ export function useExercises() {
     updateExercise,
     deleteExercise,
     restoreExercise,
+    bulkReorderExercises,
     fetchCategories,
     fetchCategoriesWithError,
     createCategory,

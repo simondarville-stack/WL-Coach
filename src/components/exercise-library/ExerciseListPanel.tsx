@@ -539,7 +539,12 @@ interface ExerciseListPanelProps {
   onOpenCategoryModal: () => void;
   onOpenBulkImport: () => void;
   onCreateExercise: () => void;
-  onReparent: (exerciseId: string, parentId: string | null, category?: string) => void;
+  onMoveExercise: (
+    exerciseId: string,
+    parentId: string | null,
+    category: string | undefined,
+    orderedSiblingIds: string[],
+  ) => void;
   hasSidePanel: boolean;
 }
 
@@ -557,7 +562,7 @@ export function ExerciseListPanel({
   onOpenCategoryModal,
   onOpenBulkImport,
   onCreateExercise,
-  onReparent,
+  onMoveExercise,
   hasSidePanel,
 }: ExerciseListPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('list');
@@ -771,7 +776,7 @@ export function ExerciseListPanel({
             categories={categories}
             selectedExerciseId={selectedExerciseId}
             onSelectExercise={onSelectExercise}
-            onReparent={onReparent}
+            onMoveExercise={onMoveExercise}
             searchTerm={searchQuery.trim() || undefined}
           />
         ) : (
