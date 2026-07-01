@@ -6,6 +6,7 @@ import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
 
 interface ExerciseBulkImportModalProps {
   onClose: () => void;
@@ -16,6 +17,9 @@ interface ParsedRow {
   rowNumber: number;
   data: Partial<Exercise> | null;
   errors: string[];
+  /** Parent exercise referenced by code or name — resolved to an id in a second
+   *  pass after all rows exist. Set-only: an empty cell never clears a parent. */
+  parentRef?: string | null;
 }
 
 type ImportMode = 'merge' | 'swap';
@@ -26,6 +30,7 @@ const TEMPLATE_HEADERS = [
   'name',
   'exercise_code',
   'category',
+  'parent',
   'is_competition_lift',
   'default_unit',
   'color',
@@ -39,6 +44,7 @@ const EXAMPLE_ROW = [
   'Back Squat',
   'BS',
   'Squat',
+  '',
   'FALSE',
   'percentage',
   '#3B82F6',
@@ -56,6 +62,7 @@ function buildHintRow(categoryNames: string[]): string[] {
     'Required. Exercise name.',
     'Optional. Short code (max 10 chars). Keep stable to round-trip on Swap.',
     catHint,
+    'Optional. Parent exercise by code or name — variations roll up into it. Blank keeps the current parent.',
     'Required. TRUE or FALSE',
     'Required. One of: percentage / absolute_kg / rpe / free_text / other',
     'Optional. Hex color e.g. #3B82F6. Defaults to blue if blank.',
@@ -70,11 +77,12 @@ function boolStr(v: boolean | null | undefined): string {
   return v === true ? 'TRUE' : v === false ? 'FALSE' : '';
 }
 
-function exerciseToRow(ex: Exercise): (string | number)[] {
+function exerciseToRow(ex: Exercise, parentRef: string): (string | number)[] {
   return [
     ex.name ?? '',
     ex.exercise_code ?? '',
     ex.category ?? '',
+    parentRef,
     boolStr(ex.is_competition_lift),
     ex.default_unit ?? '',
     ex.color ?? '',
@@ -126,10 +134,12 @@ function parseRow(raw: Record<string, unknown>, rowNumber: number, defaultCatego
   const exerciseCode = String(raw['exercise_code'] ?? '').trim().toUpperCase().slice(0, 10) || null;
   const notes = String(raw['notes'] ?? '').trim() || null;
   const link = String(raw['link'] ?? '').trim() || null;
+  const parentRef = String(raw['parent'] ?? '').trim() || null;
 
   return {
     rowNumber,
     errors: [],
+    parentRef,
     data: {
       name,
       exercise_code: exerciseCode,
@@ -193,7 +203,15 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
       buildHintRow(categories.map(c => c.name)),
     ];
     if (existingExercises.length > 0) {
-      for (const ex of existingExercises) aoa.push(exerciseToRow(ex));
+      // Resolve each exercise's parent to a code (preferred) or name so the tree
+      // round-trips through the sheet.
+      const byId = new Map(existingExercises.map(e => [e.id, e]));
+      const parentRefOf = (ex: Exercise): string => {
+        if (!ex.parent_exercise_id) return '';
+        const p = byId.get(ex.parent_exercise_id);
+        return p ? (p.exercise_code || p.name) : '';
+      };
+      for (const ex of existingExercises) aoa.push(exerciseToRow(ex, parentRefOf(ex)));
     } else {
       aoa.push(EXAMPLE_ROW);
     }
@@ -201,7 +219,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
     // Column widths
     ws['!cols'] = [
-      { wch: 25 }, { wch: 14 }, { wch: 20 }, { wch: 22 },
+      { wch: 25 }, { wch: 14 }, { wch: 20 }, { wch: 16 }, { wch: 22 },
       { wch: 20 }, { wch: 14 }, { wch: 24 },
       { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 35 },
     ];
@@ -336,7 +354,50 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
 
       const inserted = rowsToInsert.length > 0 ? await bulkCreateExercises(rowsToInsert) : 0;
 
+      // 5. Second pass — resolve parent links now that every row exists. Refs
+      //    match by code (preferred) or name; self/cycle-forming links are
+      //    skipped via the shared guard. Set-only: blank never clears a parent.
+      let parentsUnresolved = 0;
+      let parentsCyclic = 0;
+      const parentRows = parsedRows.filter(r => r.data && r.parentRef);
+      if (parentRows.length > 0) {
+        const { data: allNow, error: allErr } = await supabase
+          .from('exercises')
+          .select('id, exercise_code, name, parent_exercise_id')
+          .eq('owner_id', ownerId)
+          .neq('category', '— System');
+        if (allErr) throw allErr;
+        const list = (allNow as { id: string; exercise_code: string | null; name: string; parent_exercise_id: string | null }[] | null) ?? [];
+        const byCode2 = new Map<string, (typeof list)[number]>();
+        const byName2 = new Map<string, (typeof list)[number]>();
+        for (const e of list) {
+          if (e.exercise_code) byCode2.set(e.exercise_code, e);
+          byName2.set(e.name.toLowerCase(), e);
+        }
+        const resolveRef = (ref: string) =>
+          byCode2.get(ref.trim().toUpperCase()) ?? byName2.get(ref.trim().toLowerCase()) ?? null;
+        const idx = buildParentIndex(list.map(e => ({ id: e.id, parent_exercise_id: e.parent_exercise_id })));
+
+        for (const r of parentRows) {
+          const childCode = (r.data!.exercise_code as string | null) ?? null;
+          const child = (childCode ? byCode2.get(childCode) : null)
+            ?? byName2.get((r.data!.name as string).toLowerCase()) ?? null;
+          const parent = resolveRef(r.parentRef!);
+          if (!child || !parent || child.id === parent.id) { parentsUnresolved++; continue; }
+          if (wouldCreateCycle(child.id, parent.id, idx)) { parentsCyclic++; continue; }
+          const { error: pErr } = await supabase
+            .from('exercises')
+            .update({ parent_exercise_id: parent.id })
+            .eq('id', child.id)
+            .eq('owner_id', ownerId);
+          if (pErr) throw pErr;
+          idx.set(child.id, parent.id);
+        }
+      }
+
       const summaryBits: string[] = [];
+      if (parentsUnresolved > 0) summaryBits.push(`${parentsUnresolved} parent link(s) could not be resolved`);
+      if (parentsCyclic > 0) summaryBits.push(`${parentsCyclic} parent link(s) skipped (would create a cycle)`);
       if (importMode === 'swap') {
         const archivedNotInTemplate = existingExercises.length - restoredCount;
         if (archivedNotInTemplate > 0) {
