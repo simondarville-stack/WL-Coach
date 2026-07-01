@@ -165,7 +165,7 @@ export function ExerciseTree({
           onSelectExercise(d.id === selectedExerciseId ? null : d.id);
         }}
       >
-        {node.isInternal ? (
+        {d.childCount > 0 ? (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); node.toggle(); }}
