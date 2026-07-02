@@ -22,8 +22,7 @@ export function CompactSessionTable({ rows }: { rows: FieldExerciseRow[] }) {
     <table className="w-full text-xs" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
       <thead>
         <tr className="text-[10px] uppercase tracking-wide text-gray-500">
-          <th className="text-left font-normal pl-3 py-1 w-11">Code</th>
-          <th className="text-left font-normal py-1">Exercise</th>
+          <th className="text-left font-normal pl-3 py-1">Exercise</th>
           <th className="text-right font-normal py-1 w-9">Reps</th>
           <th className="text-right font-normal py-1 w-9">Sets</th>
           <th className="text-center font-normal py-1 w-16">Top</th>
@@ -40,8 +39,9 @@ export function CompactSessionTable({ rows }: { rows: FieldExerciseRow[] }) {
               : <span className="text-gray-600">—</span>;
           return (
             <tr key={r.key} className={`border-t border-gray-800/80 ${tone}`}>
-              <td className="pl-3 py-1.5 text-gray-500 font-normal truncate">{r.code ?? ''}</td>
-              <td className="py-1.5 pr-1 truncate">{r.name}</td>
+              {/* No truncate: long names (combos joined with "+") wrap to
+                  extra lines so the whole combination stays readable. */}
+              <td className="pl-3 py-1.5 pr-1 break-words leading-snug">{r.name}</td>
               <td className="py-1.5 text-right tabular-nums">{r.totalReps || '—'}</td>
               <td className="py-1.5 text-right tabular-nums">{r.totalSets || '—'}</td>
               <td className="py-1.5">
