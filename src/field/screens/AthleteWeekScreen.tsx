@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, MessageSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
   fetchAthleteDay,
@@ -18,6 +18,7 @@ import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO, toLocalISO } from '../../lib/dateUtils';
 import { WeekNavigator } from '../../athlete/v2/components/WeekNavigator';
 import { SessionPreview } from '../../athlete/v2/components/SessionPreview';
+import { FieldMessageSheet } from '../components/FieldMessageSheet';
 
 const WEEKDAY_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -34,6 +35,7 @@ export function AthleteWeekScreen() {
   const [days, setDays] = useState<AthleteDayData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [messageOpen, setMessageOpen] = useState(false);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -73,7 +75,17 @@ export function AthleteWeekScreen() {
           >
             <ArrowLeft size={18} />
           </button>
-          <h1 className="text-base font-bold truncate">{athleteName || 'Athlete'}</h1>
+          <h1 className="text-base font-bold truncate flex-1">{athleteName || 'Athlete'}</h1>
+          {athleteId && (
+            <button
+              onClick={() => setMessageOpen(true)}
+              className="p-2 -mr-2 text-gray-400 hover:text-white"
+              aria-label={`Message ${athleteName || 'athlete'}`}
+              title="Message athlete"
+            >
+              <MessageSquare size={17} />
+            </button>
+          )}
         </div>
 
         <div className="mb-4">
@@ -114,6 +126,14 @@ export function AthleteWeekScreen() {
           </div>
         )}
       </div>
+
+      {messageOpen && athleteId && (
+        <FieldMessageSheet
+          athleteId={athleteId}
+          athleteName={athleteName || 'Athlete'}
+          onClose={() => setMessageOpen(false)}
+        />
+      )}
     </div>
   );
 }
