@@ -222,10 +222,17 @@ export function useFieldWeek(weekStart: string) {
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
+    // Live layer: keep the cards fresh while the coach has the screen open
+    // on the gym floor. Same 60 s visible-only cadence as the athlete app's
+    // unread badge (AthleteLayout.useCoachThreadUnread).
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, 60_000);
     return () => {
       aliveRef.current = false;
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
+      window.clearInterval(intervalId);
     };
   }, [refresh]);
 
