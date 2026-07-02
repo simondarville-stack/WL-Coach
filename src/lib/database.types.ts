@@ -381,6 +381,9 @@ export interface GeneralSettings {
   intensity_zones: Array<{ zone: string; min: number; max: number }> | null;
   compliance_warning_threshold: number | null;
   low_intensity_zone_max_pct: number | null;
+  /** Field View: intensity (%) at or above which an exercise row renders bold.
+   *  Null falls back to DEFAULT_FIELD_BOLD_PCT (90). */
+  field_bold_intensity_pct: number | null;
   phase_type_presets: PhaseTypePreset[] | null;
   created_at: string;
   updated_at: string;
