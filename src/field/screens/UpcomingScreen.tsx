@@ -5,7 +5,7 @@
  * Tap zones: the highlight table opens the day's detailed programme; the
  * athlete header opens the full week (plan beside log for done days).
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, RefreshCw, Check } from 'lucide-react';
 import { useFieldWeek } from '../../hooks/useFieldWeek';
@@ -17,6 +17,41 @@ import type { FieldAthleteCard } from '../../hooks/useFieldWeek';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const RAW_MAX = rawAxisRange().max;
+
+/** Persisted group-chip selection ('all' or a training_groups id). */
+const GROUP_FILTER_KEY = 'emos.field.groupFilter';
+
+function readStoredGroupFilter(): string {
+  try {
+    return localStorage.getItem(GROUP_FILTER_KEY) ?? 'all';
+  } catch {
+    return 'all';
+  }
+}
+
+function GroupChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+        active
+          ? 'bg-blue-600 text-white'
+          : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-200'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
 
 function nextLabel(card: FieldAthleteCard, weekStart: string): { text: string; tone: string } {
   const { kind, day } = card.next;
@@ -53,7 +88,22 @@ function nextLabel(card: FieldAthleteCard, weekStart: string): { text: string; t
 export function UpcomingScreen() {
   const navigate = useNavigate();
   const weekStart = useMemo(() => getMondayOfWeekISO(new Date()), []);
-  const { cards, loading, error, refresh } = useFieldWeek(weekStart);
+  const { cards, groups, loading, error, refresh } = useFieldWeek(weekStart);
+
+  const [groupFilter, setGroupFilter] = useState<string>(readStoredGroupFilter);
+  useEffect(() => {
+    try {
+      localStorage.setItem(GROUP_FILTER_KEY, groupFilter);
+    } catch {
+      // Private mode / quota — the chip still works for this visit.
+    }
+  }, [groupFilter]);
+
+  // A stored group that has since been deleted falls back to All.
+  const activeGroup = groups.find(g => g.id === groupFilter) ?? null;
+  const visibleCards = activeGroup
+    ? cards.filter(c => activeGroup.athleteIds.includes(c.athlete.id))
+    : cards;
 
   const today = new Date();
 
@@ -77,15 +127,35 @@ export function UpcomingScreen() {
 
       {error && <p className="text-sm text-red-400 px-1 mb-3">{error}</p>}
 
+      {groups.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto px-1 pb-3" role="group" aria-label="Filter by training group">
+          <GroupChip
+            label="All"
+            active={activeGroup == null}
+            onClick={() => setGroupFilter('all')}
+          />
+          {groups.map(g => (
+            <GroupChip
+              key={g.id}
+              label={g.name}
+              active={activeGroup?.id === g.id}
+              onClick={() => setGroupFilter(g.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {loading && cards.length === 0 ? (
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
         </div>
       ) : cards.length === 0 ? (
         <p className="text-sm text-gray-500 px-1">No active athletes in this environment.</p>
+      ) : visibleCards.length === 0 ? (
+        <p className="text-sm text-gray-500 px-1">No active athletes in this group.</p>
       ) : (
         <div className="flex flex-col gap-2 pb-4">
-          {cards.map(card => {
+          {visibleCards.map(card => {
             const label = nextLabel(card, weekStart);
             const hasTable = card.next.day != null && card.rows.length > 0;
             // The resolved slot itself (overdue) already reads as missed via

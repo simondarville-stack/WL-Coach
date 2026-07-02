@@ -51,6 +51,13 @@ export interface FieldAthleteCard {
   missedDays: WeekDayOverview[];
 }
 
+export interface FieldGroup {
+  id: string;
+  name: string;
+  /** Current members only (group_members.left_at IS NULL). */
+  athleteIds: string[];
+}
+
 /** Monday-first weekday index for a local Date, matching day_schedule. */
 export function mondayWeekday(d: Date): number {
   return (d.getDay() + 6) % 7;
@@ -67,6 +74,7 @@ const KIND_ORDER: Record<NextSessionResolution['kind'], number> = {
 
 export function useFieldWeek(weekStart: string) {
   const [cards, setCards] = useState<FieldAthleteCard[]>([]);
+  const [groups, setGroups] = useState<FieldGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const aliveRef = useRef(true);
@@ -77,21 +85,42 @@ export function useFieldWeek(weekStart: string) {
       const ownerId = getOwnerId();
       const todayWd = mondayWeekday(new Date());
 
-      const [{ data: athleteRows, error: aErr }, { data: settingsRow }] = await Promise.all([
-        supabase
-          .from('athletes')
-          .select('*')
-          .eq('owner_id', ownerId)
-          .eq('is_active', true)
-          .order('name'),
-        supabase
-          .from('general_settings')
-          .select('field_bold_intensity_pct, percent_to_kg_round_enabled, percent_to_kg_round_increment, raw_enabled')
-          .eq('owner_id', ownerId)
-          .maybeSingle(),
-      ]);
+      const [{ data: athleteRows, error: aErr }, { data: settingsRow }, { data: groupRows }] =
+        await Promise.all([
+          supabase
+            .from('athletes')
+            .select('*')
+            .eq('owner_id', ownerId)
+            .eq('is_active', true)
+            .order('name'),
+          supabase
+            .from('general_settings')
+            .select('field_bold_intensity_pct, percent_to_kg_round_enabled, percent_to_kg_round_increment, raw_enabled')
+            .eq('owner_id', ownerId)
+            .maybeSingle(),
+          // One query for the group filter chips: groups + current members.
+          supabase
+            .from('training_groups')
+            .select('id, name, group_members(athlete_id, left_at)')
+            .eq('owner_id', ownerId)
+            .order('name'),
+        ]);
       if (aErr) throw aErr;
       const athletes = (athleteRows ?? []) as Athlete[];
+
+      const builtGroups: FieldGroup[] = (
+        (groupRows ?? []) as unknown as Array<{
+          id: string;
+          name: string;
+          group_members: Array<{ athlete_id: string; left_at: string | null }> | null;
+        }>
+      ).map(g => ({
+        id: g.id,
+        name: g.name,
+        athleteIds: (g.group_members ?? [])
+          .filter(m => m.left_at == null)
+          .map(m => m.athlete_id),
+      }));
 
       const settings = settingsRow as {
         field_bold_intensity_pct: number | null;
@@ -173,7 +202,10 @@ export function useFieldWeek(weekStart: string) {
           || a.athlete.name.localeCompare(b.athlete.name),
       );
 
-      if (aliveRef.current) setCards(built);
+      if (aliveRef.current) {
+        setCards(built);
+        setGroups(builtGroups);
+      }
     } catch (e) {
       if (aliveRef.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -197,5 +229,5 @@ export function useFieldWeek(weekStart: string) {
     };
   }, [refresh]);
 
-  return { cards, loading, error, refresh };
+  return { cards, groups, loading, error, refresh };
 }
