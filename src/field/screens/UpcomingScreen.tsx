@@ -85,7 +85,6 @@ export function UpcomingScreen() {
         <div className="flex flex-col gap-2 pb-4">
           {cards.map(card => {
             const label = nextLabel(card, weekStart);
-            const inSession = card.next.day?.status === 'in_progress';
             const hasTable = card.next.day != null && card.rows.length > 0;
             return (
               <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
@@ -99,7 +98,12 @@ export function UpcomingScreen() {
                   </span>
                   <span className={`text-[11px] shrink-0 flex items-center gap-1 ${label.tone}`}>
                     {card.next.kind === 'week_complete' && <Check size={12} />}
-                    {inSession ? 'in session · ' : ''}{label.text}
+                    {card.progress && (
+                      <span className="text-blue-400">
+                        {card.progress.done}/{card.progress.total} exercises ·{' '}
+                      </span>
+                    )}
+                    {label.text}
                   </span>
                 </button>
                 {hasTable && (

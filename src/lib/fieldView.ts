@@ -20,6 +20,9 @@ import {
 } from './prescriptionParser';
 import { roundToHalf } from './xrmUtils';
 import { getSentinelType } from '../components/planner/sentinelUtils';
+import { hasLoggedWork, isExerciseDone } from './trainingLogModel';
+import { expectedPlannedSetCount } from './plannedSetCount';
+import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
 import type { Exercise } from './database.types';
 import type {
   PlannedExerciseFull,
@@ -217,3 +220,52 @@ export function summarizeSession(
 
 /** Default bold threshold when the coach hasn't configured one. */
 export const DEFAULT_FIELD_BOLD_PCT = 90;
+
+// ─── Live session progress ─────────────────────────────────────────────────
+
+export interface SessionProgress {
+  /** Planned exercises the athlete has finished (canonical isExerciseDone). */
+  done: number;
+  /** Loggable planned exercises in the slot (display-only sentinels excluded). */
+  total: number;
+}
+
+/**
+ * Whether a slot's log session counts as "live" on an Upcoming card:
+ * explicitly in progress, or already carrying real logged work (an athlete
+ * can complete exercises without the session ever leaving 'pending').
+ */
+export function isSessionLive(log: DayLog | null): boolean {
+  if (!log?.session) return false;
+  return log.session.status === 'in_progress' || hasLoggedWork(log);
+}
+
+/**
+ * n/m exercise progress for one training slot.
+ *
+ * m counts the coach-planned exercises the athlete can actually log:
+ * display-only sentinels (TEXT / IMAGE / VIDEO) are excluded, GPP blocks are
+ * included (they complete via explicit "Mark complete"). Off-plan additions
+ * are deliberately not counted — the card reads "how far through the plan".
+ * Done-ness is the canonical isExerciseDone with the same planned-set count
+ * the athlete app uses for auto-promotion (expectedPlannedSetCount).
+ */
+export function countSessionProgress(
+  planned: PlannedExerciseFull[],
+  log: DayLog | null,
+): SessionProgress {
+  const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
+  for (const le of log?.exercises ?? []) {
+    if (le.log.planned_exercise_id) loggedByPlannedId.set(le.log.planned_exercise_id, le);
+  }
+  let done = 0;
+  let total = 0;
+  for (const pe of planned) {
+    const sentinel = getSentinelType(pe.exerciseDef?.exercise_code ?? null);
+    if (sentinel && sentinel !== 'gpp') continue;
+    total += 1;
+    const le = loggedByPlannedId.get(pe.exercise.id) ?? null;
+    if (isExerciseDone(le, expectedPlannedSetCount(pe))) done += 1;
+  }
+  return { done, total };
+}

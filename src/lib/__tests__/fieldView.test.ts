@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
+  countSessionProgress,
+  isSessionLive,
   resolveNextSession,
   summarizeSession,
   DEFAULT_FIELD_BOLD_PCT,
   type FieldSummaryOptions,
 } from '../fieldView';
 import type { WeekDayOverview, WeekOverview, PlannedExerciseFull } from '../trainingLogService';
+import type { DayLog, LoggedExerciseFull } from '../trainingLogModel';
 import type { Exercise, PlannedExercise } from '../database.types';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -240,5 +243,119 @@ describe('summarizeSession', () => {
     );
     expect(row.name).toBe('Jerk from rack');
     expect(row.topRaw).toBeNull();
+  });
+});
+
+// ─── live progress fixtures ─────────────────────────────────────────────────
+
+function loggedEx(over: {
+  plannedExerciseId?: string | null;
+  status?: string;
+  sets?: { status: string }[];
+}): LoggedExerciseFull {
+  return {
+    log: {
+      id: `le-${over.plannedExerciseId ?? 'offplan'}`,
+      planned_exercise_id: over.plannedExerciseId ?? null,
+      status: over.status ?? 'pending',
+    } as never,
+    sets: (over.sets ?? []) as never,
+    exercise: null,
+  };
+}
+
+function dayLog(over: {
+  sessionStatus?: string | null;
+  exercises?: LoggedExerciseFull[];
+}): DayLog {
+  return {
+    date: '2026-07-01',
+    dayIndex: 0,
+    session: over.sessionStatus === null ? null : ({ status: over.sessionStatus ?? 'pending' } as never),
+    exercises: over.exercises ?? [],
+    messages: [],
+  };
+}
+
+// ─── isSessionLive ──────────────────────────────────────────────────────────
+
+describe('isSessionLive', () => {
+  it('is false for a missing log or a pending session without work', () => {
+    expect(isSessionLive(null)).toBe(false);
+    expect(isSessionLive(dayLog({ sessionStatus: 'pending' }))).toBe(false);
+  });
+
+  it('is true for an in_progress session even before any exercise is done', () => {
+    expect(isSessionLive(dayLog({ sessionStatus: 'in_progress' }))).toBe(true);
+  });
+
+  it('is true for a pending session that already carries done work', () => {
+    const log = dayLog({
+      sessionStatus: 'pending',
+      exercises: [loggedEx({ plannedExerciseId: 'pe-ex1', status: 'completed' })],
+    });
+    expect(isSessionLive(log)).toBe(true);
+  });
+});
+
+// ─── countSessionProgress ───────────────────────────────────────────────────
+
+describe('countSessionProgress', () => {
+  const twoLifts = [
+    planned({ raw: '80x2x3', unit: 'percentage', def: { id: 'a' } }),
+    planned({ raw: '100x5x5', unit: 'absolute_kg', def: { id: 'b', name: 'Back squat' } }),
+  ];
+
+  it('counts explicitly completed exercises against the loggable total', () => {
+    const log = dayLog({
+      sessionStatus: 'in_progress',
+      exercises: [loggedEx({ plannedExerciseId: 'pe-a', status: 'completed' })],
+    });
+    expect(countSessionProgress(twoLifts, log)).toEqual({ done: 1, total: 2 });
+  });
+
+  it('counts an exercise whose sets all reached a terminal status', () => {
+    const log = dayLog({
+      sessionStatus: 'in_progress',
+      exercises: [
+        loggedEx({
+          plannedExerciseId: 'pe-a',
+          sets: [{ status: 'completed' }, { status: 'skipped' }],
+        }),
+      ],
+    });
+    expect(countSessionProgress(twoLifts, log)).toEqual({ done: 1, total: 2 });
+  });
+
+  it('does not count partially logged or pending exercises', () => {
+    const log = dayLog({
+      sessionStatus: 'in_progress',
+      exercises: [
+        loggedEx({ plannedExerciseId: 'pe-a', sets: [{ status: 'completed' }, { status: 'pending' }] }),
+      ],
+    });
+    expect(countSessionProgress(twoLifts, log)).toEqual({ done: 0, total: 2 });
+  });
+
+  it('excludes display sentinels from the total but keeps GPP blocks', () => {
+    const withBlocks = [
+      ...twoLifts,
+      planned({ raw: null, unit: 'free_text', def: { id: 'note', exercise_code: 'TEXT', name: 'Note' } }),
+      planned({ raw: null, unit: 'free_text', def: { id: 'gpp', exercise_code: 'GPP', name: 'GPP' } }),
+    ];
+    const log = dayLog({
+      sessionStatus: 'in_progress',
+      exercises: [loggedEx({ plannedExerciseId: 'pe-gpp', status: 'completed' })],
+    });
+    expect(countSessionProgress(withBlocks, log)).toEqual({ done: 1, total: 3 });
+  });
+
+  it('ignores off-plan additions and tolerates a missing log', () => {
+    const log = dayLog({
+      sessionStatus: 'in_progress',
+      exercises: [loggedEx({ plannedExerciseId: null, status: 'completed' })],
+    });
+    expect(countSessionProgress(twoLifts, log)).toEqual({ done: 0, total: 2 });
+    expect(countSessionProgress(twoLifts, null)).toEqual({ done: 0, total: 2 });
   });
 });

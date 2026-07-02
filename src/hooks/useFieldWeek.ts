@@ -13,16 +13,21 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import {
   fetchPlannedDay,
+  fetchSessionForSlot,
   fetchWeekOverview,
   type WeekOverview,
 } from '../lib/trainingLogService';
 import {
+  countSessionProgress,
+  isSessionLive,
   resolveNextSession,
   summarizeSession,
   DEFAULT_FIELD_BOLD_PCT,
   type FieldExerciseRow,
   type NextSessionResolution,
+  type SessionProgress,
 } from '../lib/fieldView';
+import type { DayLog } from '../lib/trainingLogModel';
 import type { Athlete, Exercise } from '../lib/database.types';
 
 export interface FieldAthleteCard {
@@ -31,6 +36,10 @@ export interface FieldAthleteCard {
   next: NextSessionResolution;
   /** Compact rows for the resolved next slot; empty when there is none. */
   rows: FieldExerciseRow[];
+  /** Log session for the resolved slot; only fetched when the slot hasLog. */
+  log: DayLog | null;
+  /** n/m exercise progress when the slot is live (in progress / has work). */
+  progress: SessionProgress | null;
 }
 
 /** Monday-first weekday index for a local Date, matching day_schedule. */
@@ -116,10 +125,25 @@ export function useFieldWeek(weekStart: string) {
         }),
       );
 
+      // Live layer: fetch the log session only for athletes whose resolved
+      // slot already has one — one lean query per logging athlete.
+      const logs = await Promise.all(
+        athletes.map((a, i) => {
+          const d = nexts[i].day;
+          return d?.hasLog
+            ? fetchSessionForSlot(a.id, weekStart, d.dayIndex).catch(() => null)
+            : Promise.resolve(null);
+        }),
+      );
+
       const built: FieldAthleteCard[] = athletes.map((athlete, i) => ({
         athlete,
         overview: overviews[i],
         next: nexts[i],
+        log: logs[i],
+        progress: isSessionLive(logs[i])
+          ? countSessionProgress(plannedPerAthlete[i], logs[i])
+          : null,
         rows: summarizeSession(plannedPerAthlete[i], {
           boldPct,
           roundEnabled,
