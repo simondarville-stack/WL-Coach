@@ -266,10 +266,25 @@ export function summarizeSession(
       isHeavy = (topLoad / oneRm) * 100 >= opts.boldPct;
     }
 
+    // Combo naming mirrors SessionPreview's title rule: explicit
+    // combo_notation wins, then the members joined with " + " (the
+    // planned row's own exercise_id is just the first member).
+    const comboName = isCombo
+      ? pe.exercise.combo_notation
+        ?? (pe.comboMembers.length > 0
+          ? pe.comboMembers
+              .map(m => m.exercise?.name)
+              .filter((n): n is string => !!n)
+              .join(' + ')
+          : pe.exerciseDef?.name)
+      : null;
+
     rows.push({
       key: pe.exercise.id,
-      code: pe.exerciseDef?.exercise_code ?? null,
-      name: pe.exerciseDef?.name ?? 'Unknown',
+      // A combo spans several movements; a single member's code would
+      // misrepresent the row, so the code cell stays empty for combos.
+      code: isCombo ? null : pe.exerciseDef?.exercise_code ?? null,
+      name: (isCombo ? comboName : pe.exerciseDef?.name) ?? 'Unknown',
       isCombo,
       totalReps: summary.total_reps,
       totalSets: summary.total_sets,

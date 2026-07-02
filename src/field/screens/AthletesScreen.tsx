@@ -8,12 +8,14 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight, Loader2, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
+import { fetchAccessibleAthletes } from '../../lib/accessScope';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
 
 export function AthletesScreen() {
   const navigate = useNavigate();
   const [athletes, setAthletes] = useState<Athlete[] | null>(null);
+  const [hostNames, setHostNames] = useState<Record<string, string>>({});
   const [groups, setGroups] = useState<TrainingGroup[]>([]);
   const weekStart = getMondayOfWeekISO(new Date());
 
@@ -21,13 +23,9 @@ export function AthletesScreen() {
     let alive = true;
     (async () => {
       const ownerId = getOwnerId();
-      const [{ data: athleteRows }, { data: groupRows }] = await Promise.all([
-        supabase
-          .from('athletes')
-          .select('*')
-          .eq('owner_id', ownerId)
-          .eq('is_active', true)
-          .order('name'),
+      // Owned + shared athletes, same source as the desktop and Upcoming.
+      const [accessible, { data: groupRows }] = await Promise.all([
+        fetchAccessibleAthletes(ownerId, { activeOnly: true }),
         supabase
           .from('training_groups')
           .select('*')
@@ -35,7 +33,8 @@ export function AthletesScreen() {
           .order('name'),
       ]);
       if (!alive) return;
-      setAthletes((athleteRows ?? []) as Athlete[]);
+      setAthletes(accessible.athletes);
+      setHostNames(accessible.hostNameById);
       setGroups((groupRows ?? []) as TrainingGroup[]);
     })();
     return () => { alive = false; };
@@ -85,7 +84,12 @@ export function AthletesScreen() {
                     i > 0 ? 'border-t border-gray-800/80' : ''
                   }`}
                 >
-                  <span className="text-sm text-white truncate">{a.name}</span>
+                  <span className="text-sm text-white flex items-center gap-1.5 min-w-0">
+                    <span className="truncate">{a.name}</span>
+                    {hostNames[a.id] && (
+                      <span className="text-[10px] text-gray-600 shrink-0">· {hostNames[a.id]}</span>
+                    )}
+                  </span>
                   <ChevronRight size={14} className="text-gray-600 shrink-0" />
                 </button>
               ))}

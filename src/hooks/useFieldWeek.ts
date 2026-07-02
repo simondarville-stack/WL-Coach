@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { fetchAccessibleAthletes } from '../lib/accessScope';
 import {
   fetchPlannedDay,
   fetchSessionForSlot,
@@ -51,6 +52,9 @@ export interface FieldAthleteCard {
   /** Slots missed so far this week (skipped, or assigned before today and
    *  never logged). Includes the resolved slot itself when it is overdue. */
   missedDays: WeekDayOverview[];
+  /** Host coach's display name when the athlete is shared from another
+   *  environment (accessScope); null for the coach's own athletes. */
+  hostName: string | null;
 }
 
 export interface FieldGroup {
@@ -97,14 +101,11 @@ export function useFieldWeek(weekStart: string) {
       const ownerId = getOwnerId();
       const todayWd = mondayWeekday(new Date());
 
-      const [{ data: athleteRows, error: aErr }, { data: settingsRow }, { data: groupRows }] =
+      const [accessible, { data: settingsRow }, { data: groupRows }] =
         await Promise.all([
-          supabase
-            .from('athletes')
-            .select('*')
-            .eq('owner_id', ownerId)
-            .eq('is_active', true)
-            .order('name'),
+          // Owned athletes PLUS athletes shared from other coaches
+          // (directly or via shared groups) — same source as the desktop.
+          fetchAccessibleAthletes(ownerId, { activeOnly: true }),
           supabase
             .from('general_settings')
             .select('field_bold_intensity_pct, percent_to_kg_round_enabled, percent_to_kg_round_increment, raw_enabled')
@@ -117,8 +118,8 @@ export function useFieldWeek(weekStart: string) {
             .eq('owner_id', ownerId)
             .order('name'),
         ]);
-      if (aErr) throw aErr;
-      const athletes = (athleteRows ?? []) as Athlete[];
+      const athletes = accessible.athletes;
+      const hostNameById = accessible.hostNameById;
 
       const builtGroups: FieldGroup[] = (
         (groupRows ?? []) as unknown as Array<{
@@ -199,6 +200,7 @@ export function useFieldWeek(weekStart: string) {
           : null,
         rawTotal: rawEnabled ? sessionRawTotal(logs[i]?.session ?? null) : null,
         missedDays: findMissedDays(overviews[i], todayWd),
+        hostName: hostNameById[athlete.id] ?? null,
         rows: summarizeSession(plannedPerAthlete[i], {
           boldPct,
           roundEnabled,

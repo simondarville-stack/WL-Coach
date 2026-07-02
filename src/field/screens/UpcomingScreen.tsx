@@ -263,6 +263,9 @@ export function UpcomingScreen() {
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white flex items-center gap-1 min-w-0">
                       <span className="truncate">{card.athlete.name}</span>
+                      {card.hostName && (
+                        <span className="text-[10px] font-normal text-gray-600 shrink-0">· {card.hostName}</span>
+                      )}
                       <ChevronRight size={13} className="text-gray-600 shrink-0" />
                     </span>
                     <span className={`text-[11px] shrink-0 flex items-center gap-1 ${tone}`}>

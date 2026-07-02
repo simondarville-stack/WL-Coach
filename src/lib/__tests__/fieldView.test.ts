@@ -58,6 +58,8 @@ function planned(partial: {
   unit: string | null;
   isCombo?: boolean;
   def?: Partial<Exercise>;
+  members?: string[];
+  comboNotation?: string | null;
 }): PlannedExerciseFull {
   const def = exercise(partial.def ?? {});
   return {
@@ -67,10 +69,15 @@ function planned(partial: {
       prescription_raw: partial.raw,
       unit: partial.unit,
       is_combo: partial.isCombo ?? false,
+      combo_notation: partial.comboNotation ?? null,
     } as PlannedExercise,
     exerciseDef: def,
     setLines: [],
-    comboMembers: [],
+    comboMembers: (partial.members ?? []).map((name, i) => ({
+      exerciseId: `m${i}`,
+      exercise: exercise({ id: `m${i}`, name, exercise_code: null }),
+      position: i,
+    })),
   };
 }
 
@@ -226,6 +233,31 @@ describe('summarizeSession', () => {
     expect(row.topRaw).toBe('80x2+1x3');
     expect(row.topKg).toBeNull();
     expect(row.isHeavy).toBe(false);
+  });
+
+  it('names a combo row from its members joined with +, with an empty code cell', () => {
+    const [row] = summarizeSession(
+      [planned({
+        raw: '80x2+1x3', unit: 'absolute_kg', isCombo: true,
+        def: { name: 'Snatch pull', exercise_code: 'SNP' },
+        members: ['Snatch pull', 'Snatch', 'Overhead squat'],
+      })],
+      baseOpts,
+    );
+    expect(row.name).toBe('Snatch pull + Snatch + Overhead squat');
+    expect(row.code).toBeNull();
+  });
+
+  it('prefers explicit combo_notation over the joined member names', () => {
+    const [row] = summarizeSession(
+      [planned({
+        raw: '80x2+1x3', unit: 'absolute_kg', isCombo: true,
+        members: ['Snatch pull', 'Snatch'],
+        comboNotation: 'Pull + Snatch complex',
+      })],
+      baseOpts,
+    );
+    expect(row.name).toBe('Pull + Snatch complex');
   });
 
   it('skips sentinel note blocks', () => {
