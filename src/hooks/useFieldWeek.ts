@@ -19,6 +19,7 @@ import {
   type WeekOverview,
 } from '../lib/trainingLogService';
 import {
+  buildGroupWeekOverview,
   countSessionProgress,
   findMissedDays,
   isSessionLive,
@@ -27,6 +28,7 @@ import {
   summarizeSession,
   DEFAULT_FIELD_BOLD_PCT,
   type FieldExerciseRow,
+  type GroupWeekPlanRow,
   type NextSessionResolution,
   type SessionProgress,
 } from '../lib/fieldView';
@@ -58,6 +60,15 @@ export interface FieldGroup {
   athleteIds: string[];
 }
 
+/** A group-level week plan surfaced as its own Upcoming card. Groups have
+ *  no logs or PRs, so there is no live layer and no %→kg resolution. */
+export interface FieldGroupCard {
+  group: FieldGroup;
+  overview: WeekOverview;
+  next: NextSessionResolution;
+  rows: FieldExerciseRow[];
+}
+
 /** Monday-first weekday index for a local Date, matching day_schedule. */
 export function mondayWeekday(d: Date): number {
   return (d.getDay() + 6) % 7;
@@ -75,6 +86,7 @@ const KIND_ORDER: Record<NextSessionResolution['kind'], number> = {
 export function useFieldWeek(weekStart: string) {
   const [cards, setCards] = useState<FieldAthleteCard[]>([]);
   const [groups, setGroups] = useState<FieldGroup[]>([]);
+  const [groupCards, setGroupCards] = useState<FieldGroupCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const aliveRef = useRef(true);
@@ -202,9 +214,64 @@ export function useFieldWeek(weekStart: string) {
           || a.athlete.name.localeCompare(b.athlete.name),
       );
 
+      // Group-level week plans as their own cards. Groups have no logs, so
+      // resolution is schedule-only; no PRs, so summaries stay in native units.
+      const { data: gpRows } = await supabase
+        .from('week_plans')
+        .select('id, group_id, active_days, day_labels, day_schedule')
+        .eq('owner_id', ownerId)
+        .eq('week_start', weekStart)
+        .is('athlete_id', null)
+        .not('group_id', 'is', null);
+      const groupPlans = (gpRows ?? []) as unknown as Array<GroupWeekPlanRow & { group_id: string }>;
+
+      const countsByPlan = new Map<string, Map<number, number>>();
+      if (groupPlans.length > 0) {
+        const { data: peRows } = await supabase
+          .from('planned_exercises')
+          .select('weekplan_id, day_index')
+          .in('weekplan_id', groupPlans.map(p => p.id));
+        for (const r of (peRows ?? []) as Array<{ weekplan_id: string; day_index: number }>) {
+          const m = countsByPlan.get(r.weekplan_id) ?? new Map<number, number>();
+          m.set(r.day_index, (m.get(r.day_index) ?? 0) + 1);
+          countsByPlan.set(r.weekplan_id, m);
+        }
+      }
+
+      const summaryOpts = {
+        boldPct,
+        roundEnabled,
+        roundIncrement,
+        oneRmFor: () => null,
+      };
+      const builtGroupCards: FieldGroupCard[] = (
+        await Promise.all(
+          groupPlans.map(async plan => {
+            const group = builtGroups.find(g => g.id === plan.group_id);
+            if (!group) return null;
+            const overview = buildGroupWeekOverview(
+              weekStart, plan, countsByPlan.get(plan.id) ?? new Map(),
+            );
+            const next = resolveNextSession(overview, todayWd);
+            // A group plan row with no planned exercises is noise, not a card.
+            if (next.kind === 'no_plan') return null;
+            const planned = next.day
+              ? await fetchPlannedDay(plan.id, next.day.dayIndex).catch(() => [])
+              : [];
+            return { group, overview, next, rows: summarizeSession(planned, summaryOpts) };
+          }),
+        )
+      ).filter((c): c is FieldGroupCard => c != null);
+      builtGroupCards.sort(
+        (a, b) =>
+          KIND_ORDER[a.next.kind] - KIND_ORDER[b.next.kind]
+          || a.group.name.localeCompare(b.group.name),
+      );
+
       if (aliveRef.current) {
         setCards(built);
         setGroups(builtGroups);
+        setGroupCards(builtGroupCards);
       }
     } catch (e) {
       if (aliveRef.current) setError(e instanceof Error ? e.message : String(e));
@@ -236,5 +303,5 @@ export function useFieldWeek(weekStart: string) {
     };
   }, [refresh]);
 
-  return { cards, groups, loading, error, refresh };
+  return { cards, groups, groupCards, loading, error, refresh };
 }

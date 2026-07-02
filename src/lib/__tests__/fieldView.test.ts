@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildGroupWeekOverview,
   countSessionProgress,
   findMissedDays,
   isSessionLive,
@@ -448,5 +449,47 @@ describe('sessionRawTotal', () => {
     expect(sessionRawTotal(session({}))).toBeNull();
     expect(sessionRawTotal(session({ raw_sleep: 2 }))).toBeNull();
     expect(sessionRawTotal(null)).toBeNull();
+  });
+});
+
+// ─── buildGroupWeekOverview ─────────────────────────────────────────────────
+
+describe('buildGroupWeekOverview', () => {
+  const plan = {
+    id: 'gwp1',
+    active_days: [2, 0, 1],
+    day_labels: { 0: 'Heavy day' },
+    day_schedule: { 1: { weekday: 4, time: '16:00' } },
+  };
+
+  it('maps active days in sorted order with labels, weekdays, and counts', () => {
+    const o = buildGroupWeekOverview('2026-06-29', plan, new Map([[0, 4], [1, 2]]));
+    expect(o.weekPlanId).toBe('gwp1');
+    expect(o.days.map(d => d.dayIndex)).toEqual([0, 1, 2]);
+    expect(o.days[0].label).toBe('Heavy day');
+    expect(o.days[1].label).toBe('Day 1');
+    expect(o.days[1].weekday).toBe(4);
+    expect(o.days[0].weekday).toBeNull();
+    expect(o.days.map(d => d.plannedCount)).toEqual([4, 2, 0]);
+    expect(o.days.every(d => d.status === 'pending' && !d.hasLog && !d.isBonus)).toBe(true);
+    expect(o.planSource).toBe('group');
+  });
+
+  it('feeds resolveNextSession: schedule-only resolution, empty slots skipped', () => {
+    const o = buildGroupWeekOverview('2026-06-29', plan, new Map([[0, 4], [1, 2]]));
+    // Thursday (weekday 3): day 1 is assigned to Friday (4); day 0 is unassigned.
+    const r = resolveNextSession(o, 3);
+    expect(r.kind).toBe('next_up');
+    expect(r.day?.dayIndex).toBe(0);
+    // Friday: the assigned slot is today.
+    expect(resolveNextSession(o, 4).kind).toBe('today');
+  });
+
+  it('handles null plan fields and empty counts', () => {
+    const o = buildGroupWeekOverview('2026-06-29', {
+      id: 'gwp2', active_days: null, day_labels: null, day_schedule: null,
+    }, new Map());
+    expect(o.days).toEqual([]);
+    expect(resolveNextSession(o, 0).kind).toBe('no_plan');
   });
 });

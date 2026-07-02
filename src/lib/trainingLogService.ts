@@ -19,6 +19,7 @@ import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
   CustomMetricEntry,
+  WeekPlan,
 } from './database.types';
 import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
 
@@ -246,6 +247,42 @@ export async function fetchGroupSyncStatus(
       .map(r => r.athlete_id)
       .filter((id): id is string => id != null),
   );
+}
+
+/**
+ * The group-level week plan row for one group + week (athlete_id null), or
+ * null when the coach hasn't written a group week. Shared by the athlete
+ * app's group viewer and the coach field view's group screens.
+ */
+export async function fetchGroupWeekPlan(
+  groupId: string,
+  weekStart: string,
+): Promise<WeekPlan | null> {
+  const { data, error } = await supabase
+    .from('week_plans')
+    .select('*')
+    .eq('group_id', groupId)
+    .is('athlete_id', null)
+    .eq('week_start', weekStart)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as WeekPlan | null) ?? null;
+}
+
+/** Planned-exercise counts per day_index for one week plan. */
+export async function fetchPlannedCountsByDay(
+  weekPlanId: string,
+): Promise<Map<number, number>> {
+  const { data, error } = await supabase
+    .from('planned_exercises')
+    .select('day_index')
+    .eq('weekplan_id', weekPlanId);
+  if (error) throw error;
+  const counts = new Map<number, number>();
+  for (const r of (data ?? []) as Array<{ day_index: number }>) {
+    counts.set(r.day_index, (counts.get(r.day_index) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**

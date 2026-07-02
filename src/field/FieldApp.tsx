@@ -20,6 +20,8 @@ import { UpcomingScreen } from './screens/UpcomingScreen';
 import { AthletesScreen } from './screens/AthletesScreen';
 import { AthleteWeekScreen } from './screens/AthleteWeekScreen';
 import { AthleteDayScreen } from './screens/AthleteDayScreen';
+import { GroupWeekScreen } from './screens/GroupWeekScreen';
+import { GroupDayScreen } from './screens/GroupDayScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 
 const TABS = [
@@ -106,6 +108,8 @@ function FieldRoutes() {
       </Route>
       <Route path="/field/a/:athleteId" element={<AthleteWeekScreen />} />
       <Route path="/field/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
+      <Route path="/field/g/:groupId" element={<GroupWeekScreen />} />
+      <Route path="/field/g/:groupId/d/:dayIndex" element={<GroupDayScreen />} />
       <Route path="*" element={<Navigate to="/field" replace />} />
     </Routes>
   );

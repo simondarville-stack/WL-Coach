@@ -107,6 +107,52 @@ export function findMissedDays(
   });
 }
 
+// ─── Group plan overview ───────────────────────────────────────────────────
+
+/** The slice of a group-level week_plans row the field view reads. */
+export interface GroupWeekPlanRow {
+  id: string;
+  active_days: number[] | null;
+  day_labels: Record<number, string> | null;
+  day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+}
+
+/**
+ * Build a WeekOverview for a GROUP plan so resolveNextSession works on it.
+ * Groups have no log sessions, so every slot is open ('pending') and the
+ * resolution reduces to pure schedule logic (today / next_up / scheduled /
+ * overdue). Labels mirror trainingLogService.defaultSlotLabel ("Day N") —
+ * not imported to keep this module free of the Supabase client.
+ */
+export function buildGroupWeekOverview(
+  weekStart: string,
+  plan: GroupWeekPlanRow,
+  plannedCounts: Map<number, number>,
+): WeekOverview {
+  const activeDays = (plan.active_days ?? []).slice().sort((a, b) => a - b);
+  const labels = plan.day_labels ?? {};
+  const schedule = plan.day_schedule ?? {};
+  return {
+    weekStart,
+    weekPlanId: plan.id,
+    activeDays,
+    dayLabels: labels,
+    days: activeDays.map(dayIndex => ({
+      dayIndex,
+      label: labels[dayIndex] ?? `Day ${dayIndex}`,
+      weekday: schedule[dayIndex]?.weekday ?? null,
+      plannedCount: plannedCounts.get(dayIndex) ?? 0,
+      status: 'pending' as const,
+      sessionDate: null,
+      skippedReason: null,
+      hasLog: false,
+      isBonus: false,
+    })),
+    planSource: 'group',
+    weekBrief: null,
+  };
+}
+
 // ─── Compact session summary ───────────────────────────────────────────────
 
 export interface FieldExerciseRow {

@@ -7,13 +7,14 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, RefreshCw, Check } from 'lucide-react';
+import { ChevronRight, RefreshCw, Check, Users } from 'lucide-react';
 import { useFieldWeek } from '../../hooks/useFieldWeek';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
 import { CompactSessionTable } from '../components/CompactSessionTable';
+import { EnvironmentSwitcher } from '../components/EnvironmentSwitcher';
 import { rawAxisRange } from '../../lib/trainingLogModel';
-import type { FieldAthleteCard } from '../../hooks/useFieldWeek';
+import type { NextSessionResolution } from '../../lib/fieldView';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const RAW_MAX = rawAxisRange().max;
@@ -53,12 +54,8 @@ function GroupChip({
   );
 }
 
-function nextLabel(card: FieldAthleteCard, weekStart: string): { text: string; tone: string } {
-  const { kind, day } = card.next;
-  const time = day?.weekday != null && card.overview
-    ? null // time lives in day_schedule; surfaced via sessionDate when logged
-    : null;
-  void time;
+function nextLabel(next: NextSessionResolution, weekStart: string): { text: string; tone: string } {
+  const { kind, day } = next;
   switch (kind) {
     case 'today':
       return { text: `Today · ${day!.label}`, tone: 'text-blue-400' };
@@ -88,7 +85,7 @@ function nextLabel(card: FieldAthleteCard, weekStart: string): { text: string; t
 export function UpcomingScreen() {
   const navigate = useNavigate();
   const weekStart = useMemo(() => getMondayOfWeekISO(new Date()), []);
-  const { cards, groups, loading, error, refresh } = useFieldWeek(weekStart);
+  const { cards, groups, groupCards, loading, error, refresh } = useFieldWeek(weekStart);
 
   const [groupFilter, setGroupFilter] = useState<string>(readStoredGroupFilter);
   useEffect(() => {
@@ -104,6 +101,9 @@ export function UpcomingScreen() {
   const visibleCards = activeGroup
     ? cards.filter(c => activeGroup.athleteIds.includes(c.athlete.id))
     : cards;
+  const visibleGroupCards = activeGroup
+    ? groupCards.filter(gc => gc.group.id === activeGroup.id)
+    : groupCards;
 
   const today = new Date();
 
@@ -112,9 +112,14 @@ export function UpcomingScreen() {
       <div className="flex items-baseline justify-between px-1 mb-3">
         <div>
           <h1 className="text-lg font-bold text-white">Upcoming</h1>
-          <p className="text-xs text-gray-500">
-            {WEEKDAY_SHORT[(today.getDay() + 6) % 7]} {formatDateShort(today.toISOString().slice(0, 10))}
-          </p>
+          {/* div, not p: the switcher renders a bottom-sheet (block content) */}
+          <div className="text-xs text-gray-500 flex items-center gap-1">
+            <span>
+              {WEEKDAY_SHORT[(today.getDay() + 6) % 7]} {formatDateShort(today.toISOString().slice(0, 10))}
+            </span>
+            <span aria-hidden="true">·</span>
+            <EnvironmentSwitcher />
+          </div>
         </div>
         <button
           onClick={() => void refresh()}
@@ -145,18 +150,57 @@ export function UpcomingScreen() {
         </div>
       )}
 
-      {loading && cards.length === 0 ? (
+      {loading && cards.length === 0 && groupCards.length === 0 ? (
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
         </div>
-      ) : cards.length === 0 ? (
-        <p className="text-sm text-gray-500 px-1">No active athletes in this environment.</p>
-      ) : visibleCards.length === 0 ? (
-        <p className="text-sm text-gray-500 px-1">No active athletes in this group.</p>
+      ) : visibleCards.length === 0 && visibleGroupCards.length === 0 ? (
+        <p className="text-sm text-gray-500 px-1">
+          {activeGroup ? 'Nothing to show in this group.' : 'No active athletes in this environment.'}
+        </p>
       ) : (
         <div className="flex flex-col gap-2 pb-4">
+          {visibleGroupCards.length > 0 && (
+            <>
+              <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1">Group plans</p>
+              {visibleGroupCards.map(gc => {
+                const glabel = nextLabel(gc.next, weekStart);
+                return (
+                  <div key={gc.group.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => navigate(`/field/g/${gc.group.id}?w=${weekStart}`)}
+                      className="w-full px-3 pt-2.5 pb-2 text-left"
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-white flex items-center gap-1.5 min-w-0">
+                          <Users size={13} className="text-gray-500 shrink-0" />
+                          <span className="truncate">{gc.group.name}</span>
+                          <ChevronRight size={13} className="text-gray-600 shrink-0" />
+                        </span>
+                        <span className={`text-[11px] shrink-0 ${glabel.tone}`}>{glabel.text}</span>
+                      </span>
+                    </button>
+                    {gc.next.day && gc.rows.length > 0 && (
+                      <button
+                        onClick={() =>
+                          navigate(`/field/g/${gc.group.id}/d/${gc.next.day!.dayIndex}?w=${weekStart}`)
+                        }
+                        className="w-full text-left active:bg-gray-800/50"
+                        aria-label={`Open ${gc.group.name}'s group programme for ${gc.next.day!.label}`}
+                      >
+                        <CompactSessionTable rows={gc.rows} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {visibleCards.length > 0 && (
+                <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1 mt-1">Athletes</p>
+              )}
+            </>
+          )}
           {visibleCards.map(card => {
-            const label = nextLabel(card, weekStart);
+            const label = nextLabel(card.next, weekStart);
             const hasTable = card.next.day != null && card.rows.length > 0;
             // The resolved slot itself (overdue) already reads as missed via
             // its own orange date label — only flag *other* missed slots.
