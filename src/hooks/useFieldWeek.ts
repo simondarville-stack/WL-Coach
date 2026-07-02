@@ -15,10 +15,12 @@ import {
   fetchPlannedDay,
   fetchSessionForSlot,
   fetchWeekOverview,
+  type WeekDayOverview,
   type WeekOverview,
 } from '../lib/trainingLogService';
 import {
   countSessionProgress,
+  findMissedDays,
   isSessionLive,
   resolveNextSession,
   sessionRawTotal,
@@ -44,6 +46,9 @@ export interface FieldAthleteCard {
   /** RAW readiness total (4–12) once the athlete logged it; null when
    *  unlogged or when the coach disabled RAW in general_settings. */
   rawTotal: number | null;
+  /** Slots missed so far this week (skipped, or assigned before today and
+   *  never logged). Includes the resolved slot itself when it is overdue. */
+  missedDays: WeekDayOverview[];
 }
 
 /** Monday-first weekday index for a local Date, matching day_schedule. */
@@ -152,6 +157,7 @@ export function useFieldWeek(weekStart: string) {
           ? countSessionProgress(plannedPerAthlete[i], logs[i])
           : null,
         rawTotal: rawEnabled ? sessionRawTotal(logs[i]?.session ?? null) : null,
+        missedDays: findMissedDays(overviews[i], todayWd),
         rows: summarizeSession(plannedPerAthlete[i], {
           boldPct,
           roundEnabled,

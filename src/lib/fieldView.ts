@@ -87,6 +87,26 @@ export function resolveNextSession(
   return { kind: 'overdue', day: past[0] };
 }
 
+// ─── Missed-day detection ──────────────────────────────────────────────────
+
+/**
+ * Slots the athlete has missed so far this week: explicitly skipped slots
+ * (a logged "not done" decision, whatever their weekday), plus slots
+ * assigned to a weekday strictly before today that were never logged at
+ * all. Athlete-added bonus slots and empty slots don't count. Days in the
+ * future — or today itself — are never "missed".
+ */
+export function findMissedDays(
+  overview: WeekOverview | null,
+  todayWeekday: number,
+): WeekDayOverview[] {
+  return (overview?.days ?? []).filter(d => {
+    if (d.isBonus || d.plannedCount === 0) return false;
+    if (d.status === 'skipped') return true;
+    return d.weekday != null && d.weekday < todayWeekday && !d.hasLog;
+  });
+}
+
 // ─── Compact session summary ───────────────────────────────────────────────
 
 export interface FieldExerciseRow {

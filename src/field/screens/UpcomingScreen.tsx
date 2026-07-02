@@ -88,6 +88,15 @@ export function UpcomingScreen() {
           {cards.map(card => {
             const label = nextLabel(card, weekStart);
             const hasTable = card.next.day != null && card.rows.length > 0;
+            // The resolved slot itself (overdue) already reads as missed via
+            // its own orange date label — only flag *other* missed slots.
+            const missed = card.missedDays.filter(d => d.dayIndex !== card.next.day?.dayIndex);
+            const missedSuffix = missed.length > 0
+              ? missed
+                  .map(d => (d.weekday != null ? WEEKDAY_SHORT[d.weekday] : d.label))
+                  .join(', ')
+              : null;
+            const tone = missedSuffix ? 'text-orange-400' : label.tone;
             return (
               <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                 <button
@@ -99,7 +108,7 @@ export function UpcomingScreen() {
                       <span className="truncate">{card.athlete.name}</span>
                       <ChevronRight size={13} className="text-gray-600 shrink-0" />
                     </span>
-                    <span className={`text-[11px] shrink-0 flex items-center gap-1 ${label.tone}`}>
+                    <span className={`text-[11px] shrink-0 flex items-center gap-1 ${tone}`}>
                       {card.next.kind === 'week_complete' && <Check size={12} />}
                       {card.progress && (
                         <span className="text-blue-400">
@@ -107,6 +116,7 @@ export function UpcomingScreen() {
                         </span>
                       )}
                       {label.text}
+                      {missedSuffix && ` · missed ${missedSuffix}`}
                     </span>
                   </span>
                   {card.rawTotal != null && (

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   countSessionProgress,
+  findMissedDays,
   isSessionLive,
   resolveNextSession,
   sessionRawTotal,
@@ -245,6 +246,56 @@ describe('summarizeSession', () => {
     );
     expect(row.name).toBe('Jerk from rack');
     expect(row.topRaw).toBeNull();
+  });
+});
+
+// ─── findMissedDays ─────────────────────────────────────────────────────────
+
+describe('findMissedDays', () => {
+  const MON = 0, TUE = 1, WED = 2, FRI = 4;
+
+  it('is empty for a null overview or an untouched future week', () => {
+    expect(findMissedDays(null, WED)).toEqual([]);
+    const o = overview([
+      day({ dayIndex: 0, weekday: WED }),
+      day({ dayIndex: 1, weekday: FRI }),
+    ]);
+    expect(findMissedDays(o, WED)).toEqual([]);
+  });
+
+  it('flags an assigned weekday strictly before today with no log', () => {
+    const o = overview([
+      day({ dayIndex: 0, weekday: MON }),
+      day({ dayIndex: 1, weekday: FRI }),
+    ]);
+    const missed = findMissedDays(o, WED);
+    expect(missed.map(d => d.dayIndex)).toEqual([0]);
+  });
+
+  it('does not flag a past assigned day the athlete logged', () => {
+    const o = overview([
+      day({ dayIndex: 0, weekday: MON, hasLog: true, status: 'in_progress' }),
+      day({ dayIndex: 1, weekday: TUE, hasLog: true, status: 'completed' }),
+    ]);
+    expect(findMissedDays(o, WED)).toEqual([]);
+  });
+
+  it('flags explicitly skipped slots regardless of weekday assignment', () => {
+    const o = overview([
+      day({ dayIndex: 0, status: 'skipped', hasLog: true }),
+      day({ dayIndex: 1, weekday: FRI, status: 'skipped', hasLog: true }),
+    ]);
+    expect(findMissedDays(o, MON).map(d => d.dayIndex)).toEqual([0, 1]);
+  });
+
+  it('never flags today, unassigned open slots, bonus or empty slots', () => {
+    const o = overview([
+      day({ dayIndex: 0, weekday: WED }),
+      day({ dayIndex: 1 }),
+      day({ dayIndex: 2, weekday: MON, isBonus: true }),
+      day({ dayIndex: 3, weekday: MON, plannedCount: 0 }),
+    ]);
+    expect(findMissedDays(o, WED)).toEqual([]);
   });
 });
 
