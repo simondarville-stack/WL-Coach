@@ -1,3 +1,11 @@
+> **STATUS: partially historical (last full update predates the Training Log
+> rebuild, Analysis re-enable, and Inbox).** Useful as a product overview, but
+> feature status and version claims in this file may be stale. The root
+> `CLAUDE.md` is authoritative for current module status, scope, and rules.
+> Known drift: the Training Log is now coach Log mode on the Weekly Planner +
+> the mobile athlete app (old standalone routes redirect); versioning is on
+> the `0.x` beta line, not "v2.0".
+
 # EMOS - Complete Product Documentation
 
 ## Product Overview

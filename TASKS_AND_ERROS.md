@@ -1,3 +1,7 @@
+> **STATUS: stale backlog** — last verified 2026-06-14 at build 0.11.1; the
+> app has since moved on (0.18.x). Re-verify each item against the current
+> code before working on it.
+
 # EMOS — Open Tasks & Backlog
 
 > Last verified against the codebase: **2026-06-14** (running build 0.11.1).

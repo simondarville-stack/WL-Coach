@@ -1,14 +1,11 @@
 # EMOS — Project Context for Claude Code
 
-> **Save this at your repo root.** If you already have a `CLAUDE.md`, merge
-> the sections below into it rather than overwriting.
-
 ## What EMOS is
 
 EMOS (Erfolg Muss Organisiert Sein) is an Olympic weightlifting (OWL) coaching
 web application. The name **EMOS is fixed and must never be changed** by any
 agent. Interface text stays English; i18n infrastructure is a future concern
-and not in scope for this review.
+and currently out of scope.
 
 It is an **expert-oriented** training-planning **and monitoring** system; its
 users are coaches and athletes with high domain knowledge. Prioritise
@@ -30,7 +27,8 @@ conventions.
 ## Product & UX principles
 
 - Prefer compact tables, tight spacing, and a scan-friendly hierarchy.
-- Avoid wizard flows and unnecessary modals; use inline editing where it fits.
+- Default to inline editing and dense tables over modals; multi-step/wizard
+  flows need a justification (a genuinely sequential task), not permission.
 - Information density and low interaction cost beat whitespace and marketing
   polish — these are expert tools.
 - Styling uses Tailwind CSS and `lucide-react` icons **only** (details in the
@@ -39,46 +37,73 @@ conventions.
 - Use consistent numeric formatting across tables and views (comma decimals;
   see Stack).
 
-## Current review scope
+## Claude's role — co-designer, not just implementer
 
-**IN SCOPE — agents may audit and propose modifications:**
+EMOS is in a **fuzzy front end**: the shape of the product is still being
+discovered. Claude is expected to act as a **co-designer** of the application,
+not only as an executor of instructions.
+
+- **Explore, then converge.** Don't silently build unrequested features — but
+  DO surface them. When a task reveals an adjacent capability, a richer
+  variant, a domain opportunity a coach would value, or a simplification the
+  user may not have seen, say so explicitly.
+- For feature work, end replies with a short **Ideas** note (1–4 bullets) when
+  there is something worth surfacing: possibilities the current change opens
+  up, alternatives considered, or gaps noticed along the way. Skip it when
+  there is genuinely nothing to add — an empty ritual is noise.
+- Ambitious options presented **alongside** the simple implementation are
+  welcome; unspoken ones are the failure mode. Recommend, don't just enumerate.
+- Challenging a requirement is allowed: if a request seems to fight the
+  product's grain (density, coach flexibility, planned-vs-logged separation),
+  say so and propose the variant that fits.
+
+## Module map & status
+
+All modules are **active** — nothing is currently disabled or hidden:
 
 - Athlete and training-group definition
 - Macro cycle planning
 - Weekly programme writing (`src/components/planner/*`, `WeeklyPlanner.tsx`)
 - Printing weekly programmes
-- Training Log — **shipped and live**: coach **Log mode** toggle on the Weekly
-  Planner (`src/components/planner/log/*`) plus the mobile athlete app
+- Training Log — coach **Log mode** toggle on the Weekly Planner
+  (`src/components/planner/log/*`) plus the mobile athlete app
   (`src/athlete/v2/*`). The old standalone `/training-log` and `/athlete-log`
-  routes now redirect to the dashboard. (`TRAINING_LOG_PLAN.md` was the build
-  plan; the rebuild is done, so it can be removed.)
+  routes redirect to the dashboard.
 - Analysis module (`src/components/analysis/*`, `src/lib/analysis/*`) —
-  **re-enabled and actively developed**, reachable at `/analysis` with a
-  Sidebar entry.
+  rebuilt and actively developed, reachable at `/analysis` with a Sidebar
+  entry. (It was hidden for a while; any old "hide Analysis" instruction is
+  obsolete — re-disabling it would be a regression.)
 - Coach/athlete **Inbox & messaging** (`/inbox`, coach + athlete inboxes) —
   added in 0.6.0.
 
-**OUT OF SCOPE / disabled:**
-
-- Nothing is currently disabled — all modules are active. Analysis was
-  previously hidden, but it has since been rebuilt and re-enabled, so the
-  earlier "hide every Analysis nav entry/route" rule **no longer applies**.
-  Do not re-disable Analysis or the Training Log; that would be a regression.
-  Existing code and database tables for any feature must still never be
-  deleted without explicit instruction.
+**Deletion policy:** shipped code and database tables are never deleted
+without explicit instruction. **Carve-out for failed experiments:** once the
+user has declared an experiment dead (or asks for a prototype to be torn
+down), its code may be removed without further ceremony — say what was
+removed in the reply.
 
 
-## Non-negotiable principles
+## Core principles (staged: hard at ship time, flexible mid-exploration)
+
+Principles 1 and 2 are **convergence targets, staged by maturity**: a
+prototype may take the shortcut if the shortcut is *flagged*; anything that
+settles and ships must satisfy the full rule. Principles 3 and 4 apply always.
 
 1. **Coach-flexibility over hardcoding.** Any OWL concept a coach might
-   legitimately define differently MUST be runtime-configurable. Red flags:
+   legitimately define differently should be runtime-configurable. Red flags:
    `enum WeekType { HIGH, LOW }`, hardcoded zone boundaries, fixed rep
    schemes, hardcoded exercise categories, OWL labels embedded in components.
-   If in doubt, parameterize.
+   *Exploration staging:* a hardcoded first version is fine while a feature is
+   being tried out — mark it `// COACH-CONFIG candidate` and avoid data shapes
+   that would make later parameterization painful. Parameterize when the
+   feature settles; if in doubt at ship time, parameterize.
 2. **API-first internal architecture.** The React client consumes a clean
    data/service layer (typed Supabase queries + hooks). Domain logic
    (stress formulas, lift ratios, load math) lives in dedicated modules, not
    in components. No direct Supabase calls from presentational components.
+   *Exploration staging:* a spike may inline a query or a formula to test an
+   idea — tag it (`// TODO extract to hook/lib`) and lift it into the layer
+   when the feature settles.
 3. **Single source of truth per concept.** If two files encode the same OWL
    decision, consolidate.
 4. **Last-write-wins with timestamps** for any collaborative scenario. No
@@ -107,18 +132,20 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
 
 ## Branch strategy
 
-- Reviewer and synthesizer agents are read-only.
-- Implementer creates a dedicated branch `feature/review/<YYYY-MM-DD>` off the
-  current working branch. Do not push. Do not merge. Leave commits for manual
-  review.
+- Substantial features are built on `feature/<topic>` branches and merged to
+  `main` with the version bump (see Versioning). Small fixes may go straight
+  to `main`.
 
 ## Supabase & migrations
 
-+ Migrations are never applied without explicit per-call user approval.
-+  Agents may apply migrations only via tools that surface a confirmation
-+  prompt to the user (e.g. the Supabase MCP server). Agents never apply
-+  migrations via raw psql, scripts, or any path that bypasses the
-+  per-call prompt.
+- Claude **may apply migrations directly** via the Supabase MCP server
+  (`apply_migration`) — no per-call approval needed.
+- Every schema change is still captured as a migration (never ad-hoc DDL via
+  `execute_sql`), so the migration history stays complete. Mention applied
+  migrations in the reply.
+- **Destructive migrations** (dropping tables/columns that hold real data,
+  irreversible rewrites) still require explicit confirmation first — the
+  failed-experiment carve-out above applies to those too.
 
 ## Code conventions
 
@@ -140,9 +167,11 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
   dependency, call it out with a one-line rationale. Still avoid introducing new
   *architectural patterns* casually — prefer the existing ones unless there is a
   clear, stated reason.
-- When requirements are ambiguous: choose the simplest implementation that
-  satisfies them, do not invent features or behaviours, and ask for
-  clarification in the next step instead of guessing.
+- When requirements are ambiguous: build the simplest implementation that
+  satisfies them and ask for clarification in the next step instead of
+  guessing. Don't *silently* build unrequested behaviour — but per the
+  co-designer role above, do surface richer variants and adjacent
+  possibilities as explicit proposals.
 
 ## Versioning
 
@@ -226,34 +255,33 @@ Run `npm run typecheck` and `npm run build` after a change group and skim the
 diff (handlers/`onClick`/`disabled`/`title` preserved, no unused imports, no
 data colour recoloured). This is about not shipping breakage, not about style.
 
-## Review workflow artifacts (shared convention between agents)
+## Historical artifacts
 
-All review agents share this filesystem layout at the repo root:
+- The one-time EMOS specialist review team (2025) is **retired**; its agent
+  definitions are archived under `docs/history/agents/`. Ad-hoc reviewer
+  agents can be composed on demand when a review is requested — scope always
+  comes from this file, never from an archived agent definition.
+- `review/`, `REVIEW.md`, and `REFACTOR_ROADMAP.md` are review artifacts, not
+  production code. `REVIEW.md`/`REFACTOR_ROADMAP.md` are the most recent
+  (2026) review outputs; roadmap execution is gated on user approval.
+- Executed one-shot build prompts and completed design docs live under
+  `docs/history/` — they are provenance, **not** live guidance. When a
+  history doc contradicts this file, this file wins.
 
-```
-review/
-  findings/
-    ux.md              # written by emos-ux-reviewer
-    engineering.md     # written by emos-engineering-reviewer
-    domain.md          # written by emos-domain-reviewer
-    data.md            # written by emos-data-reviewer
-REVIEW_PLAN.md         # written by emos-synthesizer, read by user & implementer
-```
+## Auth & access (roadmap)
 
-- Specialist reviewers write ONLY to their own file under `review/findings/`.
-- The synthesizer reads all four specialist reports and writes `REVIEW_PLAN.md`
-  at repo root. It is the only agent that writes `REVIEW_PLAN.md`.
-- The implementer reads `REVIEW_PLAN.md` and writes code. It does not read or
-  modify the specialist reports.
+An **authentication gate ships in a later phase** — possibly governed by a
+subscription model. Until then: do not enforce RLS or add auth gating unless
+explicitly asked; the interim soft-gating (athlete access codes, coach-root
+gate) stays. New tables should keep following the `owner_id` pattern so the
+future auth/RLS phase doesn't require schema surgery.
 
-The `review/` directory is an artifact folder, not production code. It may be
-committed for traceability or gitignored — user's preference.
-
-## Anti-goals for this review
+## Standing anti-goals
 
 - Do not modify the string "EMOS" anywhere.
 - Do not modify branding assets (logos, SVGs in `Branding/`).
 - Do not introduce i18n infrastructure.
-- Do not enforce RLS or add auth gating (future phase).
+- Do not enforce RLS or add auth gating on your own initiative (see Auth &
+  access above).
 - Do not re-disable or hide Analysis, the Training Log, or the Inbox — these
-  modules are now active and in scope.
+  modules are active.

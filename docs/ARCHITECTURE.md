@@ -1,3 +1,9 @@
+> **STATUS: reference — verify before trusting details.** This doc predates
+> the Analysis rebuild, the Inbox (0.6.0), and the Training Log's move to
+> planner Log mode + the athlete app (`src/athlete/v2/*`). The root
+> `CLAUDE.md` is authoritative for module status; `src/App.tsx` is
+> authoritative for routing.
+
 # EMOS Architecture
 
 ## Stack
