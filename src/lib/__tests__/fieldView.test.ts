@@ -3,10 +3,12 @@ import {
   countSessionProgress,
   isSessionLive,
   resolveNextSession,
+  sessionRawTotal,
   summarizeSession,
   DEFAULT_FIELD_BOLD_PCT,
   type FieldSummaryOptions,
 } from '../fieldView';
+import type { TrainingLogSession } from '../database.types';
 import type { WeekDayOverview, WeekOverview, PlannedExerciseFull } from '../trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../trainingLogModel';
 import type { Exercise, PlannedExercise } from '../database.types';
@@ -357,5 +359,43 @@ describe('countSessionProgress', () => {
     });
     expect(countSessionProgress(twoLifts, log)).toEqual({ done: 0, total: 2 });
     expect(countSessionProgress(twoLifts, null)).toEqual({ done: 0, total: 2 });
+  });
+});
+
+// ─── sessionRawTotal ────────────────────────────────────────────────────────
+
+describe('sessionRawTotal', () => {
+  function session(over: Partial<TrainingLogSession>): TrainingLogSession {
+    return {
+      raw_sleep: null,
+      raw_physical: null,
+      raw_mood: null,
+      raw_nutrition: null,
+      raw_total: null,
+      ...over,
+    } as TrainingLogSession;
+  }
+
+  it('sums the four pillars when the athlete rated all of them', () => {
+    const s = session({ raw_sleep: 3, raw_physical: 2, raw_mood: 3, raw_nutrition: 1 });
+    expect(sessionRawTotal(s)).toBe(9);
+  });
+
+  it('prefers the fresh pillar sum over a stale stored total', () => {
+    const s = session({
+      raw_sleep: 3, raw_physical: 3, raw_mood: 3, raw_nutrition: 3, raw_total: 8,
+    });
+    expect(sessionRawTotal(s)).toBe(12);
+  });
+
+  it('falls back to the stored raw_total when pillars are incomplete', () => {
+    const s = session({ raw_sleep: 3, raw_total: 10 });
+    expect(sessionRawTotal(s)).toBe(10);
+  });
+
+  it('is null when RAW was never logged, or without a session', () => {
+    expect(sessionRawTotal(session({}))).toBeNull();
+    expect(sessionRawTotal(session({ raw_sleep: 2 }))).toBeNull();
+    expect(sessionRawTotal(null)).toBeNull();
   });
 });

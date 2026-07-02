@@ -12,9 +12,11 @@ import { useFieldWeek } from '../../hooks/useFieldWeek';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
 import { CompactSessionTable } from '../components/CompactSessionTable';
+import { rawAxisRange } from '../../lib/trainingLogModel';
 import type { FieldAthleteCard } from '../../hooks/useFieldWeek';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const RAW_MAX = rawAxisRange().max;
 
 function nextLabel(card: FieldAthleteCard, weekStart: string): { text: string; tone: string } {
   const { kind, day } = card.next;
@@ -90,21 +92,31 @@ export function UpcomingScreen() {
               <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                 <button
                   onClick={() => navigate(`/field/a/${card.athlete.id}?w=${weekStart}`)}
-                  className="w-full flex items-center justify-between gap-2 px-3 pt-2.5 pb-2 text-left"
+                  className="w-full px-3 pt-2.5 pb-2 text-left"
                 >
-                  <span className="text-sm font-medium text-white flex items-center gap-1 min-w-0">
-                    <span className="truncate">{card.athlete.name}</span>
-                    <ChevronRight size={13} className="text-gray-600 shrink-0" />
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-white flex items-center gap-1 min-w-0">
+                      <span className="truncate">{card.athlete.name}</span>
+                      <ChevronRight size={13} className="text-gray-600 shrink-0" />
+                    </span>
+                    <span className={`text-[11px] shrink-0 flex items-center gap-1 ${label.tone}`}>
+                      {card.next.kind === 'week_complete' && <Check size={12} />}
+                      {card.progress && (
+                        <span className="text-blue-400">
+                          {card.progress.done}/{card.progress.total} exercises ·{' '}
+                        </span>
+                      )}
+                      {label.text}
+                    </span>
                   </span>
-                  <span className={`text-[11px] shrink-0 flex items-center gap-1 ${label.tone}`}>
-                    {card.next.kind === 'week_complete' && <Check size={12} />}
-                    {card.progress && (
-                      <span className="text-blue-400">
-                        {card.progress.done}/{card.progress.total} exercises ·{' '}
-                      </span>
-                    )}
-                    {label.text}
-                  </span>
+                  {card.rawTotal != null && (
+                    <span
+                      className="block text-right text-[11px] text-emerald-400 mt-0.5"
+                      title="RAW readiness (Eleiko): sum of 4 pillars rated 1–3, range 4–12"
+                    >
+                      RAW {card.rawTotal}/{RAW_MAX}
+                    </span>
+                  )}
                 </button>
                 {hasTable && (
                   <button

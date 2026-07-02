@@ -23,7 +23,7 @@ import { getSentinelType } from '../components/planner/sentinelUtils';
 import { hasLoggedWork, isExerciseDone } from './trainingLogModel';
 import { expectedPlannedSetCount } from './plannedSetCount';
 import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
-import type { Exercise } from './database.types';
+import type { Exercise, TrainingLogSession } from './database.types';
 import type {
   PlannedExerciseFull,
   WeekDayOverview,
@@ -250,6 +250,20 @@ export function isSessionLive(log: DayLog | null): boolean {
  * Done-ness is the canonical isExerciseDone with the same planned-set count
  * the athlete app uses for auto-promotion (expectedPlannedSetCount).
  */
+/**
+ * RAW readiness total (Eleiko: four pillars each rated 1–3, sum 4–12) for
+ * a logged session. Sums the pillar columns when the athlete rated all
+ * four; falls back to the stored raw_total; null when RAW wasn't logged.
+ */
+export function sessionRawTotal(session: TrainingLogSession | null): number | null {
+  if (!session) return null;
+  const pillars = [session.raw_sleep, session.raw_physical, session.raw_mood, session.raw_nutrition];
+  if (pillars.every(p => p != null)) {
+    return (pillars as number[]).reduce((a, b) => a + b, 0);
+  }
+  return session.raw_total ?? null;
+}
+
 export function countSessionProgress(
   planned: PlannedExerciseFull[],
   log: DayLog | null,

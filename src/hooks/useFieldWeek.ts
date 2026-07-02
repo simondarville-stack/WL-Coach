@@ -21,6 +21,7 @@ import {
   countSessionProgress,
   isSessionLive,
   resolveNextSession,
+  sessionRawTotal,
   summarizeSession,
   DEFAULT_FIELD_BOLD_PCT,
   type FieldExerciseRow,
@@ -40,6 +41,9 @@ export interface FieldAthleteCard {
   log: DayLog | null;
   /** n/m exercise progress when the slot is live (in progress / has work). */
   progress: SessionProgress | null;
+  /** RAW readiness total (4–12) once the athlete logged it; null when
+   *  unlogged or when the coach disabled RAW in general_settings. */
+  rawTotal: number | null;
 }
 
 /** Monday-first weekday index for a local Date, matching day_schedule. */
@@ -77,7 +81,7 @@ export function useFieldWeek(weekStart: string) {
           .order('name'),
         supabase
           .from('general_settings')
-          .select('field_bold_intensity_pct, percent_to_kg_round_enabled, percent_to_kg_round_increment')
+          .select('field_bold_intensity_pct, percent_to_kg_round_enabled, percent_to_kg_round_increment, raw_enabled')
           .eq('owner_id', ownerId)
           .maybeSingle(),
       ]);
@@ -88,10 +92,13 @@ export function useFieldWeek(weekStart: string) {
         field_bold_intensity_pct: number | null;
         percent_to_kg_round_enabled: boolean | null;
         percent_to_kg_round_increment: number | null;
+        raw_enabled: boolean | null;
       } | null;
       const boldPct = settings?.field_bold_intensity_pct ?? DEFAULT_FIELD_BOLD_PCT;
       const roundEnabled = settings?.percent_to_kg_round_enabled ?? false;
       const roundIncrement = settings?.percent_to_kg_round_increment ?? 2.5;
+      // Product default is RAW on (mirrors useSettings' seed row).
+      const rawEnabled = settings?.raw_enabled ?? true;
 
       const overviews = await Promise.all(
         athletes.map(a =>
@@ -144,6 +151,7 @@ export function useFieldWeek(weekStart: string) {
         progress: isSessionLive(logs[i])
           ? countSessionProgress(plannedPerAthlete[i], logs[i])
           : null,
+        rawTotal: rawEnabled ? sessionRawTotal(logs[i]?.session ?? null) : null,
         rows: summarizeSession(plannedPerAthlete[i], {
           boldPct,
           roundEnabled,
