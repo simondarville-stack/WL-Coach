@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { ListChecks, Users } from 'lucide-react';
+import { Calculator, ListChecks, Users } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
 import { SelectEnvironmentPage } from '../components/SelectEnvironmentPage';
@@ -20,10 +20,12 @@ import { UpcomingScreen } from './screens/UpcomingScreen';
 import { AthletesScreen } from './screens/AthletesScreen';
 import { AthleteWeekScreen } from './screens/AthleteWeekScreen';
 import { AthleteDayScreen } from './screens/AthleteDayScreen';
+import { ToolsScreen } from './screens/ToolsScreen';
 
 const TABS = [
   { to: '/field', icon: ListChecks, label: 'Upcoming', end: true },
   { to: '/field/athletes', icon: Users, label: 'Athletes', end: false },
+  { to: '/field/tools', icon: Calculator, label: 'Tools', end: false },
 ] as const;
 
 function FieldLayout() {
@@ -100,6 +102,7 @@ function FieldRoutes() {
       <Route element={<FieldLayout />}>
         <Route path="/field" element={<UpcomingScreen />} />
         <Route path="/field/athletes" element={<AthletesScreen />} />
+        <Route path="/field/tools" element={<ToolsScreen />} />
       </Route>
       <Route path="/field/a/:athleteId" element={<AthleteWeekScreen />} />
       <Route path="/field/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
