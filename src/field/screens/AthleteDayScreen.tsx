@@ -91,6 +91,7 @@ export function AthleteDayScreen() {
             onStart={() => {}}
             isBonus={dayOverview?.isBonus ?? false}
             readOnly
+            viewerRole="coach"
           />
         )}
       </div>

@@ -107,6 +107,7 @@ export function AthleteWeekScreen() {
                   onStart={() => {}}
                   isBonus={d.isBonus}
                   readOnly
+                  viewerRole="coach"
                 />
               );
             })}

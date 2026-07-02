@@ -35,6 +35,10 @@ interface SessionPreviewProps {
    *  Start/Continue/View-in-log button. Used by the group viewer where
    *  there is no athlete profile to log against. */
   readOnly?: boolean;
+  /** Who is looking at the preview. Swaps only the athlete-addressed copy
+   *  ("check with your coach", "Added by you", …) for neutral coach wording;
+   *  layout and data are identical. Defaults to the athlete app's voice. */
+  viewerRole?: 'athlete' | 'coach';
 }
 
 // Binary states: only "Done" surfaces. Everything else renders no pill.
@@ -48,6 +52,7 @@ export function SessionPreview({
   onStart,
   isBonus,
   readOnly = false,
+  viewerRole = 'athlete',
 }: SessionPreviewProps) {
   const prettyDate = formatWeekdayDateLong(date);
   const session = log?.session ?? null;
@@ -123,13 +128,19 @@ export function SessionPreview({
       {planned.length === 0 && offPlan.length === 0 ? (
         <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
           <p className="text-sm text-gray-300 font-semibold">
-            {isBonus ? 'Nothing logged yet' : 'No exercises in this slot'}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
             {isBonus
-              ? 'Tap "Start logging" to add what you did.'
-              : 'Pick another day or check with your coach.'}
+              ? 'Nothing logged yet'
+              : viewerRole === 'coach'
+              ? 'No exercises in this slot.'
+              : 'No exercises in this slot'}
           </p>
+          {viewerRole === 'athlete' && (
+            <p className="text-xs text-gray-500 mt-1">
+              {isBonus
+                ? 'Tap "Start logging" to add what you did.'
+                : 'Pick another day or check with your coach.'}
+            </p>
+          )}
         </div>
       ) : (
         <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
@@ -140,12 +151,13 @@ export function SessionPreview({
                 planned={p}
                 logged={loggedByPlannedId.get(p.exercise.id) ?? null}
                 readOnly={readOnly}
+                viewerRole={viewerRole}
               />
             ))}
             {offPlan.length > 0 && (
               <li>
                 <div className="px-3 py-1.5 bg-amber-950/40 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-                  Added by you
+                  {viewerRole === 'coach' ? 'Added by athlete' : 'Added by you'}
                 </div>
                 <ul className="divide-y divide-gray-800/60">
                   {offPlan.map(le => (
@@ -207,10 +219,12 @@ function PreviewExerciseRow({
   planned,
   logged,
   readOnly = false,
+  viewerRole = 'athlete',
 }: {
   planned: PlannedExerciseFull;
   logged: LoggedExerciseFull | null;
   readOnly?: boolean;
+  viewerRole?: 'athlete' | 'coach';
 }) {
   const sentinel = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
   if (sentinel === 'text' || sentinel === 'image' || sentinel === 'video' || sentinel === 'gpp') {
@@ -342,7 +356,7 @@ function PreviewExerciseRow({
         {logged?.log.performed_notes?.trim() && (
           <p className="text-[11px] text-gray-300 italic whitespace-pre-wrap leading-snug">
             <span className="text-gray-500 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">
-              You
+              {viewerRole === 'coach' ? 'Athlete' : 'You'}
             </span>
             {logged.log.performed_notes}
           </p>
