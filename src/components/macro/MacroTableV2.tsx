@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
+import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroGridCell } from './MacroGridCell';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
@@ -45,6 +46,8 @@ interface MacroTableV2Props {
   visibleColumns?: Set<string>;
   weekTypes?: WeekTypeConfig[];
   highlightedPhaseId?: string | null;
+  /** Live fill-guide preview — pending cells render as non-interactive ghosts. */
+  fillPreview?: FillGuidePreview | null;
 }
 
 function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
@@ -100,6 +103,7 @@ export function MacroTableV2({
   visibleColumns,
   weekTypes = [],
   highlightedPhaseId,
+  fillPreview,
 }: MacroTableV2Props) {
   const deleteMode = useDeleteHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
@@ -376,6 +380,10 @@ export function MacroTableV2({
               });
               const wtColor = getWeekTypeColor(week.week_type, weekTypes);
               const wtAbbr = getWeekTypeAbbr(week.week_type, weekTypes);
+              // Pending fill-guide stamp for this week (ghost until applied)
+              const stampAbbr = fillPreview?.weekTypeStamps?.[week.id];
+              const stampColor = stampAbbr ? getWeekTypeColor(stampAbbr, weekTypes) : null;
+              const previewTotalReps = fillPreview?.totalReps?.[week.id];
 
               const phaseColor = phase?.color;
 
@@ -417,9 +425,18 @@ export function MacroTableV2({
                       style={{ width: 56, left: stickyLeft['weektype'] }}
                     >
                       <div className="flex flex-col items-center gap-0.5">
+                        {stampAbbr && stampColor && (
+                          <span
+                            className="text-[8px] font-medium rounded px-1 py-px select-none inline-block italic"
+                            style={{ backgroundColor: stampColor + '20', color: stampColor, outline: '1.5px dashed var(--color-accent)', outlineOffset: 1 }}
+                            title="Week type will be stamped by the fill guide on apply"
+                          >
+                            {getWeekTypeAbbr(stampAbbr, weekTypes)}
+                          </span>
+                        )}
                         <span
                           className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
-                          style={{ backgroundColor: wtColor + '20', color: wtColor }}
+                          style={{ backgroundColor: wtColor + '20', color: wtColor, opacity: stampAbbr ? 0.45 : 1 }}
                           onClick={() => cycleWeekType(week.id, week.week_type)}
                           onContextMenu={(e) => {
                             e.preventDefault();
@@ -512,7 +529,15 @@ export function MacroTableV2({
                       }}
                       title="Click to set Σreps target"
                     >
-                      {editingKWeekId === week.id ? (
+                      {previewTotalReps !== undefined ? (
+                        <span
+                          className="italic"
+                          style={{ color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-muted)', borderRadius: 3, padding: '0 3px' }}
+                          title="Fill-guide preview — not saved yet"
+                        >
+                          {previewTotalReps}
+                        </span>
+                      ) : editingKWeekId === week.id ? (
                         <div onClick={e => e.stopPropagation()}>
                           <input
                             type="number"
@@ -633,6 +658,40 @@ export function MacroTableV2({
 
                     const repsIsDeleteTarget = deleteMode && repsVal !== null;
                     const avgIsDeleteTarget = deleteMode && avgVal !== null;
+
+                    // Fill-guide ghost — pending values render read-only in accent
+                    // italics; existing sub-values the fill doesn't touch stay visible.
+                    const previewCell = fillPreview?.byTrackedEx?.[te.id]?.[week.id];
+                    if (previewCell) {
+                      const ghostTitle = 'Fill-guide preview — not saved yet';
+                      const ghostStyle = { color: 'var(--color-accent)', backgroundColor: 'var(--color-accent-muted)' } as const;
+                      return (
+                        <React.Fragment key={te.id}>
+                          <td
+                            className={`${teIdx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] text-center font-mono text-[10px] italic px-1 py-0`}
+                            style={ghostStyle}
+                            title={ghostTitle}
+                          >
+                            {previewCell.reps ?? repsVal ?? ''}
+                          </td>
+                          <td className="text-center px-0 py-0" style={{ backgroundColor: 'var(--color-accent-muted)' }} title={ghostTitle}>
+                            <div className="flex items-center justify-center" style={{ minWidth: 52, height: 38 }}>
+                              <div className="flex flex-col items-center">
+                                <span className="font-mono text-[11px] font-medium italic" style={{ color: 'var(--color-accent)' }}>{previewCell.max}</span>
+                                <div className="w-[80%] border-t my-0.5" style={{ borderColor: 'var(--color-accent)', opacity: 0.4 }} />
+                                <span className="text-[9px] font-mono italic" style={{ color: 'var(--color-accent)' }}>{repsAtMax ?? 1}</span>
+                              </div>
+                              {setsAtMax != null && setsAtMax > 1 && (
+                                <span className="text-[9px] font-mono italic pl-0.5" style={{ color: 'var(--color-accent)' }}>{setsAtMax}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="text-center font-mono text-[9px] italic px-1 py-0" style={ghostStyle} title={ghostTitle}>
+                            {previewCell.avg ?? avgVal ?? ''}
+                          </td>
+                        </React.Fragment>
+                      );
+                    }
 
                     return (
                       <React.Fragment key={te.id}>

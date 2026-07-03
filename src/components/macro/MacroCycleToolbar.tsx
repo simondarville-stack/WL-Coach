@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, ChevronDown, Pencil, PieChart, Plus, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, ChevronDown, Pencil, PieChart, Plus, RefreshCw, Trash2, Undo2, Users, Wand2 } from 'lucide-react';
 import { Button } from '../ui';
 import type { MacroCycle, Exercise, TrainingGroup } from '../../lib/database.types';
 import type { GroupMemberWithAthlete } from '../../lib/database.types';
@@ -45,6 +45,12 @@ interface MacroCycleToolbarProps {
   onEditCycle: () => void;
   onDeleteCycle: () => void;
   onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
+  fillGuideOpen: boolean;
+  onFillGuideToggle: () => void;
+  canUndoFill: boolean;
+  onUndoFill: () => void;
+  canRemodulate: boolean;
+  onRemodulate: () => void;
 }
 
 export function MacroCycleToolbar({
@@ -83,6 +89,12 @@ export function MacroCycleToolbar({
   onEditCycle,
   onDeleteCycle,
   onImportTargets,
+  fillGuideOpen,
+  onFillGuideToggle,
+  canUndoFill,
+  onUndoFill,
+  canRemodulate,
+  onRemodulate,
 }: MacroCycleToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0 flex-wrap">
@@ -226,6 +238,39 @@ export function MacroCycleToolbar({
           >
             Phases
           </Button>
+
+          {/* Fill guide */}
+          <Button
+            variant={fillGuideOpen ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<Wand2 size={13} />}
+            onClick={onFillGuideToggle}
+            title="Generate weekly targets from anchors + a rhythm"
+          >
+            Fill guide
+          </Button>
+          {canRemodulate && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw size={13} />}
+              onClick={onRemodulate}
+              title="Re-apply the last fill's anchors + rhythm against the current week types (overwrites that fill)"
+            >
+              Re-modulate
+            </Button>
+          )}
+          {canUndoFill && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Undo2 size={13} />}
+              onClick={onUndoFill}
+              title="Undo the last fill"
+            >
+              Undo fill
+            </Button>
+          )}
 
           {/* Excel IO */}
           {cycleDateRange && (

@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
-import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset } from '../../lib/database.types';
-import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
+import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS, DEFAULT_RHYTHM_PRESETS } from '../../lib/constants';
+import { MacroFillGuide } from './MacroFillGuide';
+import { buildFillPlan } from './fillGuidePlan';
+import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -61,6 +64,10 @@ export function MacroCycles() {
     removeTrackedExercise,
     fetchTargets,
     upsertTarget,
+    bulkUpsertTargets,
+    bulkDeleteTargets,
+    bulkUpdateWeeks,
+    updateTrackedExerciseReference,
     fetchPhases,
     createPhase,
     updatePhase,
@@ -108,6 +115,16 @@ export function MacroCycles() {
   );
 
   const [highlightedPhaseId, setHighlightedPhaseId] = useState<string | null>(null);
+
+  // ── Fill guide state ─────────────────────────────────────────────────────────
+  const [showFillGuide, setShowFillGuide] = useState(false);
+  const [fillPreview, setFillPreview] = useState<FillGuidePreview | null>(null);
+  const [fillUndo, setFillUndo] = useState<{
+    existingRows: MacroTarget[];
+    createdIds: string[];
+    weekRows: Array<{ id: string; week_type: string; total_reps_target: number | null }>;
+  } | null>(null);
+  const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
 
   // Helper: scroll to a phase row in the table and apply a brief highlight
   const scrollToPhase = useCallback((phaseId: string) => {
@@ -212,6 +229,14 @@ export function MacroCycles() {
       fetchPhases(id),
       fetchCompetitions(id),
     ]);
+  }, [selectedCycle?.id]);
+
+  // Fill-guide session state is per cycle — reset on navigation
+  useEffect(() => {
+    setShowFillGuide(false);
+    setFillPreview(null);
+    setFillUndo(null);
+    setLastFillInputs(null);
   }, [selectedCycle?.id]);
 
   // Load targets when weeks change
@@ -348,6 +373,62 @@ export function MacroCycles() {
     const existing = targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === trackedExId);
     await upsertTarget(weekId, trackedExId, field, value, existing);
   }, [targets, upsertTarget]);
+
+  // ─── Fill guide ───────────────────────────────────────────────────────────────
+  // Apply writes plain rows (table = source of truth); undo restores a snapshot.
+
+  const pairKey = (weekId: string, teId: string) => `${weekId}|${teId}`;
+
+  const handleApplyFill = useCallback(async (plan: FillWritePlan, inputs: FillGuideInputs) => {
+    const affectedPairs = new Set(plan.targetRows.map(r => pairKey(r.macro_week_id, r.tracked_exercise_id)));
+    const existingRows = targets
+      .filter(t => affectedPairs.has(pairKey(t.macro_week_id, t.tracked_exercise_id)))
+      .map(t => ({ ...t }));
+    const existingPairSet = new Set(existingRows.map(t => pairKey(t.macro_week_id, t.tracked_exercise_id)));
+    const weekRows = macroWeeks
+      .filter(w => plan.weekUpdates.some(u => u.id === w.id))
+      .map(w => ({ id: w.id, week_type: w.week_type, total_reps_target: w.total_reps_target }));
+
+    const returned = await bulkUpsertTargets(plan.targetRows);
+    await bulkUpdateWeeks(plan.weekUpdates);
+
+    const createdIds = returned
+      .filter(r => !existingPairSet.has(pairKey(r.macro_week_id, r.tracked_exercise_id)))
+      .map(r => r.id);
+    setFillUndo({ existingRows, createdIds, weekRows });
+    setLastFillInputs(inputs);
+    setShowFillGuide(false);
+    setFillPreview(null);
+  }, [targets, macroWeeks, bulkUpsertTargets, bulkUpdateWeeks]);
+
+  const handleUndoFill = useCallback(async () => {
+    if (!fillUndo) return;
+    await bulkDeleteTargets(fillUndo.createdIds);
+    await bulkUpsertTargets(fillUndo.existingRows.map(t => ({
+      macro_week_id: t.macro_week_id,
+      tracked_exercise_id: t.tracked_exercise_id,
+      fields: {
+        target_reps: t.target_reps,
+        target_avg: t.target_avg,
+        target_max: t.target_max,
+        target_reps_at_max: t.target_reps_at_max,
+        target_sets_at_max: t.target_sets_at_max,
+        note: t.note,
+      },
+    })));
+    await bulkUpdateWeeks(fillUndo.weekRows);
+    setFillUndo(null);
+  }, [fillUndo, bulkDeleteTargets, bulkUpsertTargets, bulkUpdateWeeks]);
+
+  // Re-modulate: re-run the last fill's anchors + rhythm against the CURRENT
+  // week types (explicit action, overwrites that fill's cells).
+  const handleRemodulate = useCallback(async () => {
+    if (!lastFillInputs) return;
+    const inputs = { ...lastFillInputs, overwrite: true };
+    const plan = buildFillPlan(inputs, macroWeeks, trackedExercises, targets, settings?.week_types ?? []);
+    if (plan.cellCount === 0) return;
+    await handleApplyFill(plan, lastFillInputs);
+  }, [lastFillInputs, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill]);
 
   // ─── Paste week ───────────────────────────────────────────────────────────────
 
@@ -583,6 +664,12 @@ export function MacroCycles() {
         onEditCycle={() => setShowEditModal(true)}
         onDeleteCycle={handleDeleteCycle}
         onImportTargets={handleImportTargets}
+        fillGuideOpen={showFillGuide}
+        onFillGuideToggle={() => setShowFillGuide(v => !v)}
+        canUndoFill={!!fillUndo}
+        onUndoFill={handleUndoFill}
+        canRemodulate={!!lastFillInputs}
+        onRemodulate={handleRemodulate}
       />
 
       {/* Cycle info + phase bar */}
@@ -696,6 +783,7 @@ export function MacroCycles() {
               visibleColumns={visibleColumns}
               weekTypes={settings?.week_types ?? []}
               highlightedPhaseId={highlightedPhaseId}
+              fillPreview={fillPreview}
             />
           </div>
 
@@ -771,6 +859,24 @@ export function MacroCycles() {
           loading={loading}
           onClose={() => setShowEditModal(false)}
           onSave={handleEditCycle}
+        />
+      )}
+
+      {showFillGuide && selectedCycle && macroWeeks.length > 0 && (
+        <MacroFillGuide
+          macroWeeks={macroWeeks}
+          trackedExercises={trackedExercises}
+          targets={targets}
+          weekTypes={settings?.week_types ?? []}
+          rhythmPresets={
+            (settings?.rhythm_presets as RhythmPreset[] | null | undefined)?.length
+              ? (settings!.rhythm_presets as RhythmPreset[])
+              : DEFAULT_RHYTHM_PRESETS
+          }
+          onPreviewChange={setFillPreview}
+          onApply={handleApplyFill}
+          onUpdateReference={updateTrackedExerciseReference}
+          onClose={() => { setShowFillGuide(false); setFillPreview(null); }}
         />
       )}
 
