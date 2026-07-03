@@ -29,6 +29,7 @@ export function AthleteDayScreen() {
   const dayIndex = Number(dayIndexParam);
 
   const [athleteName, setAthleteName] = useState<string>('');
+  const [athleteOwnerId, setAthleteOwnerId] = useState<string | null>(null);
   const [overview, setOverview] = useState<WeekOverview | null>(null);
   const [dayData, setDayData] = useState<AthleteDayData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,12 +41,14 @@ export function AthleteDayScreen() {
     (async () => {
       try {
         const [{ data: athleteRow }, ov] = await Promise.all([
-          supabase.from('athletes').select('name').eq('id', athleteId).maybeSingle(),
+          supabase.from('athletes').select('name, owner_id').eq('id', athleteId).maybeSingle(),
           fetchWeekOverview(athleteId, weekStart),
         ]);
         const dd = await fetchAthleteDay(athleteId, weekStart, dayIndex, ov.weekPlanId);
         if (!alive) return;
-        setAthleteName((athleteRow as { name: string } | null)?.name ?? '');
+        const a = athleteRow as { name: string; owner_id: string } | null;
+        setAthleteName(a?.name ?? '');
+        setAthleteOwnerId(a?.owner_id ?? null);
         setOverview(ov);
         setDayData(dd);
       } catch (e) {
@@ -112,6 +115,16 @@ export function AthleteDayScreen() {
         <FieldMessageSheet
           athleteId={athleteId}
           athleteName={athleteName || 'Athlete'}
+          // Unit context: the coach is looking at this exact training
+          // unit, so the sheet defaults to its thread (toggle back to
+          // General remains one tap away).
+          unit={athleteOwnerId ? {
+            weekStart,
+            dayIndex,
+            label: dayOverview?.label ?? defaultSlotLabel(dayIndex),
+            date,
+            ownerId: athleteOwnerId,
+          } : null}
           onClose={() => setMessageOpen(false)}
         />
       )}

@@ -16,6 +16,7 @@
 import {
   parsePrescription,
   parseComboPrescription,
+  parseFreeTextPrescription,
   computePrescriptionSummary,
 } from './prescriptionParser';
 import { roundToHalf } from './xrmUtils';
@@ -266,6 +267,21 @@ export function summarizeSession(
       isHeavy = (topLoad / oneRm) * 100 >= opts.boldPct;
     }
 
+    // Structured text loads ("Heavy x 5 x 3", free_text_reps) have no
+    // numeric ranking, so there is no single "top" segment — show the
+    // whole prescription instead; StackedNotation's free-text branch
+    // renders each segment as a text-over-reps column. Prose that
+    // doesn't parse stays null (renders as —, details a level deeper).
+    let topRaw = top ? segmentRaw(top) : null;
+    if (
+      topRaw == null
+      && !isCombo
+      && unit === 'free_text_reps'
+      && parseFreeTextPrescription(raw).length > 0
+    ) {
+      topRaw = raw;
+    }
+
     // Combo naming mirrors SessionPreview's title rule: explicit
     // combo_notation wins, then the members joined with " + " (the
     // planned row's own exercise_id is just the first member).
@@ -288,7 +304,7 @@ export function summarizeSession(
       isCombo,
       totalReps: summary.total_reps,
       totalSets: summary.total_sets,
-      topRaw: top ? segmentRaw(top) : null,
+      topRaw,
       unit,
       topKg,
       avgValue: summary.avg_load != null ? roundToHalf(summary.avg_load) : null,

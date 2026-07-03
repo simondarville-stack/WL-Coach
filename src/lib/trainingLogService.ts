@@ -932,6 +932,64 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Just the session row for one training slot — no exercises, sets or
+ * messages. Cheap existence check for unit-thread surfaces (the field
+ * message sheet needs "is there a session to read messages from?"
+ * without paying for the full DayLog that fetchSessionForSlot builds).
+ */
+export async function fetchSessionRowForSlot(
+  athleteId: string,
+  weekStart: string,
+  dayIndex: number,
+): Promise<TrainingLogSession | null> {
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .select('*')
+    .eq('athlete_id', athleteId)
+    .eq('week_start', weekStart)
+    .eq('day_index', dayIndex)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as TrainingLogSession | null) ?? null;
+}
+
+/** Which training unit (week + slot) a log session belongs to. Lets
+ *  inbox surfaces label session threads as units and deep-link into
+ *  the per-day drill-in screens. */
+export interface SessionSlotRef {
+  sessionId: string;
+  athleteId: string;
+  weekStart: string;
+  dayIndex: number;
+  date: string;
+}
+
+/** Bulk slot lookup for a set of session ids (one query). */
+export async function fetchSessionSlotRefs(
+  sessionIds: string[],
+): Promise<Map<string, SessionSlotRef>> {
+  if (sessionIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .select('id, athlete_id, week_start, day_index, date')
+    .in('id', sessionIds);
+  if (error) throw error;
+  const out = new Map<string, SessionSlotRef>();
+  for (const r of (data ?? []) as Array<{
+    id: string; athlete_id: string; week_start: string; day_index: number; date: string;
+  }>) {
+    out.set(r.id, {
+      sessionId: r.id,
+      athleteId: r.athlete_id,
+      weekStart: r.week_start,
+      dayIndex: r.day_index,
+      date: r.date,
+    });
+  }
+  return out;
+}
+
+/**
  * Fetch all messages for one session, sorted oldest-first.
  * Convenience read for athlete + coach comment threads.
  */

@@ -260,10 +260,13 @@ describe('summarizeSession', () => {
     expect(row.name).toBe('Pull + Snatch complex');
   });
 
-  it('skips sentinel note blocks', () => {
+  it('skips every display sentinel (TEXT / IMAGE / VIDEO / GPP) — secondary content lives a level deeper', () => {
     const rows = summarizeSession(
       [
-        planned({ raw: null, unit: 'free_text', def: { exercise_code: 'TEXT', name: 'Note' } }),
+        planned({ raw: null, unit: 'free_text', def: { id: 't', exercise_code: 'TEXT', name: 'Note' } }),
+        planned({ raw: null, unit: 'free_text', def: { id: 'i', exercise_code: 'IMAGE', name: 'Image' } }),
+        planned({ raw: null, unit: 'free_text', def: { id: 'v', exercise_code: 'VIDEO', name: 'Video' } }),
+        planned({ raw: null, unit: 'free_text', def: { id: 'g', exercise_code: 'GPP', name: 'GPP block' } }),
         planned({ raw: '60x5x3', unit: 'absolute_kg' }),
       ],
       baseOpts,
@@ -279,6 +282,102 @@ describe('summarizeSession', () => {
     );
     expect(row.name).toBe('Jerk from rack');
     expect(row.topRaw).toBeNull();
+  });
+
+  it('keeps a main exercise without a prescription visible with dashes', () => {
+    const rows = summarizeSession(
+      [
+        planned({ raw: null, unit: 'absolute_kg', def: { id: 'a', name: 'Sled push' } }),
+        planned({ raw: '', unit: 'percentage', def: { id: 'b', name: 'Snatch' } }),
+      ],
+      baseOpts,
+    );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.topRaw).toBeNull();
+      expect(row.totalReps).toBe(0);
+      expect(row.totalSets).toBe(0);
+      expect(row.avgValue).toBeNull();
+    }
+  });
+
+  it('summarizes RPE prescriptions: numeric top segment, text-based totals, no kg or bolding', () => {
+    const [row] = summarizeSession(
+      [planned({ raw: '8x2x3', unit: 'rpe', def: { name: 'Power clean' } })],
+      { ...baseOpts, oneRmFor: () => 120 },
+    );
+    expect(row.totalReps).toBe(6);
+    expect(row.totalSets).toBe(3);
+    expect(row.topRaw).toBe('8x2x3');
+    expect(row.topKg).toBeNull();
+    // Fully numeric RPE input parses numerically, so the avg column
+    // carries the average RPE (never resolved to kg, never bolded).
+    expect(row.avgValue).toBe(8);
+    expect(row.isHeavy).toBe(false);
+  });
+
+  it('shows the whole prescription for structured free-text loads (no numeric top exists)', () => {
+    const [row] = summarizeSession(
+      [planned({ raw: 'Heavy x 5 x 3', unit: 'free_text_reps', def: { name: 'Farmer carry' } })],
+      baseOpts,
+    );
+    expect(row.totalReps).toBe(15);
+    expect(row.totalSets).toBe(3);
+    expect(row.topRaw).toBe('Heavy x 5 x 3');
+    expect(row.topKg).toBeNull();
+    expect(row.isHeavy).toBe(false);
+  });
+
+  it('leaves prose in free_text_reps mode without a top segment', () => {
+    const [row] = summarizeSession(
+      [planned({ raw: 'work up to opener', unit: 'free_text_reps', def: { name: 'Snatch' } })],
+      baseOpts,
+    );
+    expect(row.topRaw).toBeNull();
+    expect(row.totalReps).toBe(0);
+  });
+
+  it('handles interval loads: range kept in the top segment, midpoint in the average, upper bound bolds', () => {
+    const [row] = summarizeSession(
+      [planned({ raw: '80-90x5x2', unit: 'absolute_kg' })],
+      { ...baseOpts, oneRmFor: () => 100 },
+    );
+    expect(row.topRaw).toBe('80-90x5x2');
+    expect(row.totalReps).toBe(10);
+    expect(row.totalSets).toBe(2);
+    expect(row.avgValue).toBe(85);
+    expect(row.isHeavy).toBe(true); // 90/100 ≥ 90 % threshold
+  });
+
+  it('omits the sets part of the top segment when sets = 1 (display rule)', () => {
+    const [row] = summarizeSession(
+      [planned({ raw: '80x5', unit: 'absolute_kg' })],
+      baseOpts,
+    );
+    expect(row.topRaw).toBe('80x5');
+    expect(row.totalSets).toBe(1);
+  });
+
+  it('picks the numeric top for combos that mix free-text and numeric lines', () => {
+    const [row] = summarizeSession(
+      [planned({
+        raw: 'Heavyx2+1, 80x2+1x2', unit: 'absolute_kg', isCombo: true,
+        members: ['Snatch pull', 'Snatch'],
+      })],
+      baseOpts,
+    );
+    expect(row.topRaw).toBe('80x2+1x2');
+    expect(row.totalSets).toBe(3);
+    expect(row.totalReps).toBe(9);
+  });
+
+  it('resolves percentage loads through pr_reference_exercise_id, not the row exercise id', () => {
+    const oneRmFor = (ex: Exercise) => (ex.pr_reference_exercise_id === 'sn-ref' ? 100 : null);
+    const [row] = summarizeSession(
+      [planned({ raw: '80x2x2', unit: 'percentage', def: { pr_reference_exercise_id: 'sn-ref' } })],
+      { ...baseOpts, oneRmFor },
+    );
+    expect(row.topKg).toBe(80);
   });
 });
 
