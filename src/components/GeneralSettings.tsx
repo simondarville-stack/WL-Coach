@@ -48,6 +48,7 @@ export function GeneralSettings() {
   const [pctToKgRoundIncrement, setPctToKgRoundIncrement] = useState(0.5);
   const [gridSaveError, setGridSaveError] = useState<string | null>(null);
   const [bodyweightMaDays, setBodyweightMaDays] = useState(7);
+  const [fieldBoldPct, setFieldBoldPct] = useState(90);
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [visibleCardMetrics, setVisibleCardMetrics] = useState<string[]>([...DEFAULT_VISIBLE_METRICS]);
   const [weekTypes, setWeekTypes] = useState<WeekTypeConfig[]>(DEFAULT_WEEK_TYPES);
@@ -133,6 +134,7 @@ export function GeneralSettings() {
       setPctToKgRoundEnabled(settings.percent_to_kg_round_enabled ?? true);
       setPctToKgRoundIncrement(settings.percent_to_kg_round_increment ?? 0.5);
       setBodyweightMaDays(settings.bodyweight_ma_days ?? 7);
+      setFieldBoldPct(settings.field_bold_intensity_pct ?? 90);
       setVisibleMetrics(settings.visible_summary_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setVisibleCardMetrics(settings.visible_card_metrics ?? [...DEFAULT_VISIBLE_METRICS]);
       setWeekTypes((settings.week_types as WeekTypeConfig[] | undefined) ?? DEFAULT_WEEK_TYPES);
@@ -194,6 +196,15 @@ export function GeneralSettings() {
     if (!settings) return;
     try {
       await updateSettings(settings.id, { bodyweight_ma_days: bodyweightMaDays });
+    } catch {
+      // error logged in hook
+    }
+  }
+
+  async function updateFieldBoldPct() {
+    if (!settings) return;
+    try {
+      await updateSettings(settings.id, { field_bold_intensity_pct: fieldBoldPct });
     } catch {
       // error logged in hook
     }
@@ -632,6 +643,41 @@ export function GeneralSettings() {
             {bodyweightMaDays !== (settings?.bodyweight_ma_days ?? 7) && (
               <button
                 onClick={updateBodyweightMaDays}
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                Save
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Field view</h2>
+          <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach field view (/field)</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Bold intensity threshold</label>
+          <p className="text-sm text-gray-600 mb-3">
+            Exercises prescribed at or above this intensity (% of the reference max) render bold in the field view's session tables.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              min="50"
+              max="100"
+              step="1"
+              value={fieldBoldPct}
+              onChange={(e) => setFieldBoldPct(Math.max(50, Math.min(100, parseFloat(e.target.value) || 90)))}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-600">%</span>
+            {fieldBoldPct !== (settings?.field_bold_intensity_pct ?? 90) && (
+              <button
+                onClick={updateFieldBoldPct}
                 disabled={saving}
                 className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
               >

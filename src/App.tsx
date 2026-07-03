@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode, type FormEvent } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { AthleteApp } from './athlete/v2/AthleteApp';
+import { FieldApp } from './field/FieldApp';
 import { Button, Input } from './components/ui';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
@@ -133,6 +134,15 @@ function AppRouter() {
       <Routes>
         <Route path="/athlete/*" element={<AthleteApp />} />
       </Routes>
+    );
+  }
+  // Coach field view — coach-facing, so it sits behind the same gate as
+  // the desktop coach app rather than the athlete-side access codes.
+  if (location.pathname === '/field' || location.pathname.startsWith('/field/')) {
+    return (
+      <CoachGate>
+        <FieldApp />
+      </CoachGate>
     );
   }
   return (
