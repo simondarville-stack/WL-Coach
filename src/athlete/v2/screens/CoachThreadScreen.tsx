@@ -10,27 +10,52 @@
  *
  * Session sub-threads carry a "View session" button so the athlete can
  * jump straight to that day on the Today screen for context.
+ *
+ * The paperclip attach flow mirrors both coach inboxes: pick any
+ * training unit ("ask about a day") and the message lands in that
+ * unit's session thread — the log session row is created on demand
+ * with the first message, never by just browsing the picker.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, MessageCircle, Send } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
+  defaultSlotLabel,
+  ensureSession,
   fetchAthleteInboxThreads,
   fetchCoachNamesForMessages,
   fetchGeneralThreadMessages,
   fetchSessionMessages,
+  fetchSessionRowForSlot,
+  fetchSessionSlotRefs,
+  fetchWeekOverview,
   markGeneralThreadRead,
   markMessagesRead,
   sendGeneralMessage,
   addComment,
   type InboxThread,
+  type SessionSlotRef,
 } from '../../../lib/trainingLogService';
 import { formatWeekdayDateShort, formatTime24, formatDateTimeShort } from '../../../lib/dateUtils';
 import { describeError } from '../../../lib/errorMessage';
+import { UnitPickerSheet, type PickedUnit } from '../components/UnitPickerSheet';
 import type { TrainingLogMessage } from '../../../lib/database.types';
 
-type ViewMode = 'general' | { kind: 'session'; thread: InboxThread };
+/** A unit-thread target from the attach flow. sessionId stays null
+ *  until the first message creates the log session row. */
+interface UnitTarget {
+  sessionId: string | null;
+  weekStart: string;
+  dayIndex: number;
+  label: string;
+  date: string;
+}
+
+type ViewMode =
+  | 'general'
+  | { kind: 'session'; thread: InboxThread }
+  | { kind: 'unit'; unit: UnitTarget };
 
 export function CoachThreadScreen() {
   const { athlete } = useAuth();
@@ -79,6 +104,69 @@ export function CoachThreadScreen() {
     [threads, athleteId],
   );
 
+  // Resolve which training unit each session thread belongs to, plus
+  // the coach's day labels for the involved weeks. Cosmetic — every
+  // label falls back to "Day N".
+  const sessionIdsKey = sessionThreads.map(t => t.sessionId).join(',');
+  const [slotRefs, setSlotRefs] = useState<Map<string, SessionSlotRef>>(new Map());
+  const [unitLabels, setUnitLabels] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!athleteId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const refs = await fetchSessionSlotRefs(sessionIdsKey.split(',').filter(Boolean));
+        if (!alive) return;
+        setSlotRefs(refs);
+        const weekStarts = Array.from(new Set(Array.from(refs.values()).map(r => r.weekStart)));
+        const labels = new Map<string, string>();
+        await Promise.all(
+          weekStarts.map(async ws => {
+            try {
+              const ov = await fetchWeekOverview(athleteId, ws);
+              for (const d of ov.days) labels.set(`${ws}:${d.dayIndex}`, d.label);
+            } catch {
+              // Label lookup failed — the "Day N" fallback still renders.
+            }
+          }),
+        );
+        if (alive) setUnitLabels(labels);
+      } catch {
+        // Slot refs are cosmetic + navigation sugar; threads still work.
+      }
+    })();
+    return () => { alive = false; };
+  }, [athleteId, sessionIdsKey]);
+
+  const unitLabelFor = useCallback(
+    (t: InboxThread): string | null => {
+      const ref = t.sessionId ? slotRefs.get(t.sessionId) : null;
+      if (!ref) return null;
+      return unitLabels.get(`${ref.weekStart}:${ref.dayIndex}`) ?? defaultSlotLabel(ref.dayIndex);
+    },
+    [slotRefs, unitLabels],
+  );
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const handlePickUnit = async (picked: PickedUnit) => {
+    if (!athleteId) return;
+    setPickerOpen(false);
+    // Reuse the unit's existing session/thread when there is one;
+    // otherwise the session row is created with the first message.
+    let sessionId: string | null = null;
+    try {
+      const existing = await fetchSessionRowForSlot(athleteId, picked.weekStart, picked.dayIndex);
+      sessionId = existing?.id ?? null;
+    } catch {
+      // Lookup failure degrades to lazy creation on send.
+    }
+    const existingThread = sessionId
+      ? sessionThreads.find(t => t.sessionId === sessionId)
+      : undefined;
+    if (existingThread) setView({ kind: 'session', thread: existingThread });
+    else setView({ kind: 'unit', unit: { ...picked, sessionId } });
+  };
+
   if (!athlete || !athleteId || !ownerId) {
     return (
       <div className="px-4 py-6 text-sm text-gray-400">
@@ -87,10 +175,28 @@ export function CoachThreadScreen() {
     );
   }
 
-  // Either we're inside a session sub-thread (back button → general)
-  // or we're on the general chat (sub-threads panel visible above it).
-  if (view !== 'general') {
-    return (
+  // Either we're inside a session/unit sub-thread (back button →
+  // general) or we're on the general chat (sub-threads panel above it).
+  let pane: React.ReactNode;
+  if (view === 'general') {
+    pane = (
+      <ChatView
+        thread={generalThread}
+        athleteId={athleteId}
+        ownerId={ownerId}
+        onBack={null}
+        onMessagesChanged={loadThreads}
+        showSubThreadsPanel
+        sessionThreads={sessionThreads}
+        onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+        loadingThreads={loadingThreads}
+        threadsError={error}
+        unitLabelFor={unitLabelFor}
+        onAttach={() => setPickerOpen(true)}
+      />
+    );
+  } else if (view.kind === 'session') {
+    pane = (
       <ChatView
         thread={view.thread}
         athleteId={athleteId}
@@ -100,23 +206,39 @@ export function CoachThreadScreen() {
         showSubThreadsPanel={false}
         sessionThreads={sessionThreads}
         onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+        unitLabelFor={unitLabelFor}
+      />
+    );
+  } else {
+    const u = view.unit;
+    pane = (
+      <ChatView
+        key={`unit:${u.weekStart}:${u.dayIndex}`}
+        thread={syntheticUnitThread(athleteId, u)}
+        unit={u}
+        athleteId={athleteId}
+        ownerId={ownerId}
+        onBack={() => { setView('general'); void loadThreads(); }}
+        onMessagesChanged={loadThreads}
+        showSubThreadsPanel={false}
+        sessionThreads={sessionThreads}
+        onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+        unitLabelFor={unitLabelFor}
       />
     );
   }
 
   return (
-    <ChatView
-      thread={generalThread}
-      athleteId={athleteId}
-      ownerId={ownerId}
-      onBack={null}
-      onMessagesChanged={loadThreads}
-      showSubThreadsPanel
-      sessionThreads={sessionThreads}
-      onSelectSubThread={t => setView({ kind: 'session', thread: t })}
-      loadingThreads={loadingThreads}
-      threadsError={error}
-    />
+    <>
+      {pane}
+      {pickerOpen && (
+        <UnitPickerSheet
+          athleteId={athleteId}
+          onPick={u => void handlePickUnit(u)}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -125,9 +247,11 @@ export function CoachThreadScreen() {
 function SubThreadsPanel({
   sessions,
   onSelect,
+  unitLabelFor,
 }: {
   sessions: InboxThread[];
   onSelect: (t: InboxThread) => void;
+  unitLabelFor: (t: InboxThread) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const totalUnread = sessions.reduce((s, t) => s + t.unreadCount, 0);
@@ -167,10 +291,13 @@ function SubThreadsPanel({
               <span className="text-blue-300 flex-shrink-0">↳</span>
               <span className="flex-1 min-w-0">
                 <span className="text-white font-medium">
-                  {t.performedOn ? formatSessionDate(t.performedOn) : 'Session'}
+                  {unitLabelFor(t) ?? 'Session'}
+                  {t.performedOn && (
+                    <span className="text-gray-500 font-normal"> · {formatSessionDate(t.performedOn)}</span>
+                  )}
                 </span>
                 <span className="text-gray-500 truncate ml-2 text-[11px]">
-                  {t.lastMessage}
+                  {t.lastMessageSender === 'athlete' ? `You: ${t.lastMessage}` : t.lastMessage}
                 </span>
               </span>
               {t.unreadCount > 0 && (
@@ -190,6 +317,7 @@ function SubThreadsPanel({
 
 function ChatView({
   thread,
+  unit = null,
   athleteId,
   ownerId,
   onBack,
@@ -199,8 +327,13 @@ function ChatView({
   onSelectSubThread,
   loadingThreads = false,
   threadsError = null,
+  unitLabelFor,
+  onAttach = null,
 }: {
   thread: InboxThread;
+  /** Attach-flow target. When set (and the unit has no session row
+   *  yet), the session is created with the first message. */
+  unit?: UnitTarget | null;
   athleteId: string;
   ownerId: string;
   /** Null when this is the root general view; otherwise dismisses the
@@ -212,10 +345,16 @@ function ChatView({
   onSelectSubThread: (t: InboxThread) => void;
   loadingThreads?: boolean;
   threadsError?: string | null;
+  unitLabelFor: (t: InboxThread) => string | null;
+  /** Shown as a paperclip in the composer (general view only). */
+  onAttach?: (() => void) | null;
 }) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
   const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
+  // Session id can be born mid-conversation: the attach flow's first
+  // message creates the log session row (ensureSession).
+  const [sessionId, setSessionId] = useState<string | null>(thread.sessionId);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
@@ -226,8 +365,10 @@ function ChatView({
     setError(null);
     setLoading(true);
     try {
-      const m = thread.kind === 'session' && thread.sessionId
-        ? await fetchSessionMessages(thread.sessionId)
+      const m = thread.kind === 'session'
+        ? sessionId
+          ? await fetchSessionMessages(sessionId)
+          : [] // attached unit without a session yet — empty thread
         : await fetchGeneralThreadMessages(athleteId, ownerId);
       setMessages(m);
       const names = await fetchCoachNamesForMessages(m);
@@ -238,7 +379,7 @@ function ChatView({
     } finally {
       setLoading(false);
     }
-  }, [thread.kind, thread.sessionId, athleteId, ownerId]);
+  }, [thread.kind, sessionId, athleteId, ownerId]);
 
   useEffect(() => {
     void load();
@@ -247,12 +388,14 @@ function ChatView({
   // Mark read on open. Both general and session-bound branches.
   useEffect(() => {
     if (thread.unreadCount === 0) return;
-    const p = thread.kind === 'session' && thread.sessionId
-      ? markMessagesRead(thread.sessionId, null, 'athlete')
+    const p = thread.kind === 'session'
+      ? sessionId
+        ? markMessagesRead(sessionId, null, 'athlete')
+        : Promise.resolve()
       : markGeneralThreadRead(athleteId, ownerId, 'athlete');
     void p.then(onMessagesChanged).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.kind, thread.sessionId]);
+  }, [thread.kind, sessionId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -265,13 +408,34 @@ function ChatView({
     setSending(true);
     setError(null);
     try {
-      if (thread.kind === 'session' && thread.sessionId) {
+      if (thread.kind === 'session') {
+        let sid = sessionId;
+        if (!sid && unit) {
+          // First message on a not-yet-logged unit: create its session
+          // row now so the message has an anchor.
+          const session = await ensureSession({
+            athleteId,
+            ownerId,
+            date: unit.date,
+            weekStart: unit.weekStart,
+            dayIndex: unit.dayIndex,
+          });
+          sid = session.id;
+          setSessionId(sid);
+        }
+        if (!sid) throw new Error('No session to attach this message to.');
         await addComment({
-          sessionId: thread.sessionId,
+          sessionId: sid,
           exerciseId: null,
           message: body,
           senderType: 'athlete',
         });
+        setReply('');
+        // Reload directly with the (possibly fresh) session id — the
+        // load callback may still close over sessionId = null.
+        const m = await fetchSessionMessages(sid);
+        setMessages(m);
+        setCoachNames(await fetchCoachNamesForMessages(m));
       } else {
         await sendGeneralMessage({
           athleteId,
@@ -279,9 +443,9 @@ function ChatView({
           message: body,
           senderType: 'athlete',
         });
+        setReply('');
+        await load();
       }
-      setReply('');
-      await load();
       await onMessagesChanged();
     } catch (e) {
       console.error('[CoachInbox] send failed', e);
@@ -291,20 +455,29 @@ function ChatView({
     }
   };
 
-  const jumpToSession = thread.kind === 'session' && thread.performedOn
-    ? () => {
-        const d = new Date(thread.performedOn! + 'T00:00:00Z');
-        const weekday = d.getUTCDay();
-        const slot = weekday === 0 ? 6 : weekday - 1;
-        const mon = new Date(d);
-        mon.setUTCDate(mon.getUTCDate() - slot);
-        const weekISO = mon.toISOString().slice(0, 10);
-        navigate(`/athlete/today?week=${weekISO}&slot=${slot}`);
-      }
+  const jumpTarget = unit
+    ? { week: unit.weekStart, slot: unit.dayIndex }
+    : thread.kind === 'session' && thread.performedOn
+      ? (() => {
+          const d = new Date(thread.performedOn + 'T00:00:00Z');
+          const weekday = d.getUTCDay();
+          const slot = weekday === 0 ? 6 : weekday - 1;
+          const mon = new Date(d);
+          mon.setUTCDate(mon.getUTCDate() - slot);
+          return { week: mon.toISOString().slice(0, 10), slot };
+        })()
+      : null;
+  const jumpToSession = jumpTarget
+    ? () => navigate(`/athlete/today?week=${jumpTarget.week}&slot=${jumpTarget.slot}`)
     : null;
 
-  const dateLabel = thread.kind === 'session' && thread.performedOn
-    ? formatSessionDate(thread.performedOn)
+  const unitLabel = unit?.label ?? (thread.kind === 'session' ? unitLabelFor(thread) : null);
+  const dateLabel = thread.kind === 'session'
+    ? unit
+      ? formatSessionDate(unit.date)
+      : thread.performedOn
+        ? formatSessionDate(thread.performedOn)
+        : null
     : null;
 
   return (
@@ -321,10 +494,10 @@ function ChatView({
         )}
         <div className="flex-1 min-w-0">
           <div className="text-[13px] font-semibold text-white truncate">
-            {thread.kind === 'session' ? `Session · ${dateLabel ?? ''}` : 'Coach'}
+            {thread.kind === 'session' ? `${unitLabel ?? 'Session'} · ${dateLabel ?? ''}` : 'Coach'}
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5">
-            {thread.kind === 'session' ? 'Session sub-thread' : 'General thread with your coach'}
+            {thread.kind === 'session' ? 'Unit discussion' : 'General thread with your coach'}
           </div>
         </div>
         {jumpToSession && (
@@ -340,7 +513,11 @@ function ChatView({
       </header>
 
       {showSubThreadsPanel && !loadingThreads && !threadsError && (
-        <SubThreadsPanel sessions={sessionThreads} onSelect={onSelectSubThread} />
+        <SubThreadsPanel
+          sessions={sessionThreads}
+          onSelect={onSelectSubThread}
+          unitLabelFor={unitLabelFor}
+        />
       )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
@@ -365,6 +542,17 @@ function ChatView({
       </div>
 
       <div className="border-t border-gray-800 px-3 py-2.5 flex gap-2">
+        {onAttach && (
+          <button
+            type="button"
+            onClick={onAttach}
+            className="self-end h-9 w-9 inline-flex items-center justify-center rounded-md bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-200"
+            aria-label="Ask about a training day"
+            title="Ask about a training day"
+          >
+            <Paperclip size={14} />
+          </button>
+        )}
         <textarea
           value={reply}
           onChange={e => setReply(e.target.value)}
@@ -375,7 +563,7 @@ function ChatView({
             }
           }}
           rows={2}
-          placeholder={thread.kind === 'session' ? 'Ask about this session…' : 'Write a message…'}
+          placeholder={thread.kind === 'session' ? 'Ask about this unit…' : 'Write a message…'}
           className="flex-1 resize-none rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
         />
         <button
@@ -460,6 +648,25 @@ function syntheticGeneralThread(athleteId: string | null): InboxThread {
     athletePhotoUrl: null,
     performedOn: null,
     lastMessage: '',
+    lastMessageSender: 'athlete',
+    lastActivityAt: new Date(0).toISOString(),
+    unreadCount: 0,
+    athleteMessageCount: 0,
+  };
+}
+
+/** Thread placeholder for a unit picked via the attach flow that has
+ *  no messages (and possibly no session row) yet. */
+function syntheticUnitThread(athleteId: string, unit: UnitTarget): InboxThread {
+  return {
+    kind: 'session',
+    sessionId: unit.sessionId,
+    athleteId,
+    athleteName: '',
+    athletePhotoUrl: null,
+    performedOn: unit.date,
+    lastMessage: '',
+    lastMessageSender: 'athlete',
     lastActivityAt: new Date(0).toISOString(),
     unreadCount: 0,
     athleteMessageCount: 0,
