@@ -144,7 +144,7 @@ export function MacroGridCell({
             ref={loadRef}
             type="number"
             defaultValue={load ?? 0}
-            className="w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
+            className="no-spin w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
             style={{ backgroundColor: 'var(--color-accent-muted)' }}
             onBlur={(e) => commitLoad(e.target.value)}
             onKeyDown={(e) => {
@@ -180,7 +180,7 @@ export function MacroGridCell({
               type="number"
               defaultValue={reps ?? 1}
               min={1}
-              className="w-[22px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5"
+              className="no-spin w-[22px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5"
               style={{ backgroundColor: 'var(--color-accent-muted)' }}
               onKeyDown={(e) => {
                 if (e.key === 'Tab') {
@@ -204,7 +204,7 @@ export function MacroGridCell({
           type="number"
           defaultValue={sets ?? 1}
           min={1}
-          className="w-[18px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5 self-center"
+          className="no-spin w-[18px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5 self-center"
           style={{ backgroundColor: 'var(--color-accent-muted)' }}
           onBlur={(e) => {
             commitReps(

@@ -11,12 +11,19 @@ import { ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import { Button } from '../ui';
 import {
   EXERCISE_METRIC_LABELS,
+  MACRO_TABLE_COLUMN_LABELS,
   type ExerciseMetricConfig,
+  type MacroTableColumnKey,
 } from './MacroTableV2';
+
+/** Base/general columns the coach may hide ('week' always stays). */
+const TOGGLEABLE_BASE_COLUMNS: MacroTableColumnKey[] = ['weektype', 'notes', 'k', 'tonnage', 'avg', 'kvalue'];
 
 interface MacroViewMenuProps {
   metrics: ExerciseMetricConfig[];
   onMetricsChange: (metrics: ExerciseMetricConfig[]) => void;
+  visibleColumns: Set<MacroTableColumnKey>;
+  onVisibleColumnsChange: (next: Set<MacroTableColumnKey>) => void;
   consistencyTint: boolean;
   onConsistencyTintChange: (v: boolean) => void;
   collapsedHeatmap: boolean;
@@ -28,6 +35,8 @@ interface MacroViewMenuProps {
 export function MacroViewMenu({
   metrics,
   onMetricsChange,
+  visibleColumns,
+  onVisibleColumnsChange,
   consistencyTint,
   onConsistencyTintChange,
   collapsedHeatmap,
@@ -103,6 +112,30 @@ export function MacroViewMenu({
                 {EXERCISE_METRIC_LABELS[m.key]}
               </label>
             </div>
+          ))}
+
+          <div className="text-[9px] font-semibold uppercase tracking-wide px-1 mt-2 mb-1" style={{ color: 'var(--color-text-tertiary)' }}>
+            Table columns
+          </div>
+          {TOGGLEABLE_BASE_COLUMNS.map(col => (
+            <label
+              key={col}
+              className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] cursor-pointer select-none rounded hover:bg-gray-50"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              <input
+                type="checkbox"
+                checked={visibleColumns.has(col)}
+                onChange={e => {
+                  const next = new Set(visibleColumns);
+                  if (e.target.checked) next.add(col);
+                  else next.delete(col);
+                  next.add('week');
+                  onVisibleColumnsChange(next);
+                }}
+              />
+              {MACRO_TABLE_COLUMN_LABELS[col]}
+            </label>
           ))}
 
           <div className="text-[9px] font-semibold uppercase tracking-wide px-1 mt-2 mb-1" style={{ color: 'var(--color-text-tertiary)' }}>

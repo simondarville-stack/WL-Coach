@@ -16,6 +16,12 @@ interface MacroGraphViewProps {
   visibleExercises: Set<string>;
   showReps: boolean;
   fillPreview?: FillGuidePreview | null;
+  visibleGeneralSeries?: Set<string>;
+  onDragWeekTarget?: (
+    weekId: string,
+    field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
+    value: number,
+  ) => Promise<void>;
 }
 
 export function MacroGraphView({
@@ -30,6 +36,8 @@ export function MacroGraphView({
   visibleExercises,
   showReps,
   fillPreview,
+  visibleGeneralSeries,
+  onDragWeekTarget,
 }: MacroGraphViewProps) {
   const [linkedExerciseIds, setLinkedExerciseIds] = useState<Set<string>>(new Set());
 
@@ -44,18 +52,12 @@ export function MacroGraphView({
 
   const displayedExercises = trackedExercises.filter(te => visibleExercises.has(te.id));
 
-  if (macroWeeks.length === 0 || trackedExercises.length === 0) {
+  // Weeks are enough — the general series (Σreps / tonnage / avg intensity)
+  // are chartable and draggable before any exercise is tracked.
+  if (macroWeeks.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-        No data to display. Add tracked exercises and targets to see the chart.
-      </div>
-    );
-  }
-
-  if (displayedExercises.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-        All exercises hidden. Use the toggles above to show exercises.
+        No weeks to display.
       </div>
     );
   }
@@ -74,6 +76,8 @@ export function MacroGraphView({
       focusedExerciseId={focusedExerciseId}
       showReps={showReps}
       fillPreview={fillPreview}
+      visibleGeneralSeries={visibleGeneralSeries}
+      onDragWeekTarget={onDragWeekTarget}
     />
   );
 }

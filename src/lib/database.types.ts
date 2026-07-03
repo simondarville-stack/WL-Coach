@@ -78,6 +78,8 @@ export interface MacroTableLayout {
   exercises?: Record<string, { collapsed?: boolean; expanded?: boolean; hidden?: boolean; graphed?: boolean }>;
   /** ordered exercise-metric registry state; highest priority first */
   metrics?: Array<{ key: string; on: boolean }>;
+  /** visible base/general columns (MacroTableColumnKey[]); absent = settings default */
+  baseColumns?: string[];
   viewToggles?: { consistency?: boolean; heatmap?: boolean };
   graph?: { avg?: boolean; repsBars?: boolean; linkDrag?: boolean };
 }

@@ -248,10 +248,10 @@ export function RhythmPresetManager({ presets, weekTypes, onSave, onClose }: Rhy
                     <div key={t.abbreviation} className="flex flex-col items-center border rounded px-0.5 py-0.5 bg-gray-50" style={{ borderColor: t.color }}>
                       <input type="number" value={m.load}
                         onChange={e => setMult(t.abbreviation, 'load', parseFloat(e.target.value) || 100)}
-                        className="w-[44px] text-center text-[11px] font-bold bg-transparent outline-none" />
+                        className="no-spin w-[44px] text-center text-[11px] font-bold bg-transparent outline-none" />
                       <input type="number" value={m.reps}
                         onChange={e => setMult(t.abbreviation, 'reps', parseFloat(e.target.value) || 100)}
-                        className="w-[44px] text-center text-[10px] text-gray-500 bg-transparent outline-none border-t border-dotted border-gray-300" />
+                        className="no-spin w-[44px] text-center text-[10px] text-gray-500 bg-transparent outline-none border-t border-dotted border-gray-300" />
                       <span className="text-[8px] font-bold text-white rounded px-1" style={{ backgroundColor: t.color }}>{t.name}</span>
                     </div>
                   );
@@ -264,10 +264,10 @@ export function RhythmPresetManager({ presets, weekTypes, onSave, onClose }: Rhy
                       <div key={i} className="flex flex-col items-center border rounded px-0.5 py-0.5 bg-gray-50" style={{ borderColor: stampAbbr ? wtColor(stampAbbr) : '#cbd5e1' }}>
                         <input type="number" value={st.load}
                           onChange={e => setPatternStep(i, 'load', parseFloat(e.target.value) || 100)}
-                          className="w-[44px] text-center text-[11px] font-bold bg-transparent outline-none" />
+                          className="no-spin w-[44px] text-center text-[11px] font-bold bg-transparent outline-none" />
                         <input type="number" value={st.reps}
                           onChange={e => setPatternStep(i, 'reps', parseFloat(e.target.value) || 100)}
-                          className="w-[44px] text-center text-[10px] text-gray-500 bg-transparent outline-none border-t border-dotted border-gray-300" />
+                          className="no-spin w-[44px] text-center text-[10px] text-gray-500 bg-transparent outline-none border-t border-dotted border-gray-300" />
                         <select
                           value={stampAbbr ?? ''}
                           onChange={e => setStamp(i, e.target.value)}

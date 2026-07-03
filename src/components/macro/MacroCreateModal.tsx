@@ -201,7 +201,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
                       step="2.5"
                       value={templateRefs[ex.exercise_id] ?? ''}
                       onChange={e => setTemplateRefs(prev => ({ ...prev, [ex.exercise_id]: e.target.value }))}
-                      className="w-24 px-2 py-1 text-xs text-right border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
+                      className="no-spin w-24 px-2 py-1 text-xs text-right border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-border)]"
                       placeholder="kg"
                     />
                     <span className="text-[10px] w-5" style={{ color: 'var(--color-text-tertiary)' }}>kg</span>

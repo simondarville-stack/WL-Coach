@@ -272,6 +272,40 @@ export function MacroTableV2({
   }
 
   // Summary stats computed from week-level explicit targets (only populated weeks counted)
+  // General week-target cells follow the planner interaction: left-click +step,
+  // right-click −step, Ctrl+click for manual entry. Empty cells seed from the
+  // previous week (falling back to manual entry) instead of typing from scratch.
+  const handleWeekFieldClick = (
+    e: React.MouseEvent,
+    week: MacroWeek,
+    field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
+    step: number,
+    onUpdate: (weekId: string, value: string) => Promise<void>,
+    setEditing: (id: string | null) => void,
+  ) => {
+    e.preventDefault();
+    const current = week[field];
+    if (deleteMode && current != null) {
+      void onUpdate(week.id, '');
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      setEditing(week.id);
+      return;
+    }
+    if (current == null) {
+      const prevWeek = macroWeeks.find(w => w.week_number === week.week_number - 1);
+      const seed = prevWeek?.[field];
+      if (seed != null) void onUpdate(week.id, String(seed));
+      else setEditing(week.id);
+      return;
+    }
+    const delta = e.type === 'contextmenu' ? -step : step;
+    void onUpdate(week.id, String(Math.max(0, current + delta)));
+  };
+
+  const weekFieldTitle = 'Click +, right-click −, Ctrl+click to type';
+
   const weeksWithK = macroWeeks.filter(w => w.total_reps_target != null);
   const avgK = weeksWithK.length > 0
     ? Math.round(weeksWithK.reduce((s, w) => s + (w.total_reps_target ?? 0), 0) / weeksWithK.length) : null;
@@ -635,13 +669,11 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 border-l border-[color:var(--color-border-tertiary)] text-center font-mono font-medium text-[10px] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.total_reps_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 44, backgroundColor: srepsTint }}
-                      onClick={() => {
-                        if (deleteMode && week.total_reps_target != null) onUpdateTotalReps(week.id, '');
-                        else setEditingKWeekId(week.id);
-                      }}
+                      onClick={(e) => handleWeekFieldClick(e, week, 'total_reps_target', 1, onUpdateTotalReps, setEditingKWeekId)}
+                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'total_reps_target', 1, onUpdateTotalReps, setEditingKWeekId)}
                       title={srepsTint
-                        ? `Σ exercise reps ${weekK} vs general target ${week.total_reps_target} — click to edit`
-                        : 'Click to set Σreps target'}
+                        ? `Σ exercise reps ${weekK} vs general target ${week.total_reps_target} — ${weekFieldTitle}`
+                        : `Σreps target — ${weekFieldTitle}`}
                     >
                       {previewTotalReps !== undefined ? (
                         <span
@@ -657,7 +689,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.total_reps_target ?? ''}
                             autoFocus
-                            className="w-[38px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                            className="no-spin w-[38px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateTotalReps(week.id, e.target.value); setEditingKWeekId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -677,11 +709,9 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.tonnage_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 52 }}
-                      onClick={() => {
-                        if (deleteMode && week.tonnage_target != null) onUpdateTonnageTarget(week.id, '');
-                        else setEditingTonnageId(week.id);
-                      }}
-                      title="Click to set tonnage target"
+                      onClick={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
+                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
+                      title={`Tonnage target (±100 kg) — ${weekFieldTitle}`}
                     >
                       {editingTonnageId === week.id ? (
                         <div onClick={e => e.stopPropagation()}>
@@ -689,7 +719,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.tonnage_target ?? ''}
                             autoFocus
-                            className="w-[44px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                            className="no-spin w-[44px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateTonnageTarget(week.id, e.target.value); setEditingTonnageId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -711,11 +741,9 @@ export function MacroTableV2({
                     <td
                       className={`bg-blue-50/10 text-center font-mono text-[10px] text-[color:var(--color-text-secondary)] px-1 py-0 cursor-pointer hover:bg-blue-50/30 ${deleteMode && week.avg_intensity_target != null ? 'bg-[var(--color-danger-bg)]' : ''}`}
                       style={{ minWidth: 40 }}
-                      onClick={() => {
-                        if (deleteMode && week.avg_intensity_target != null) onUpdateAvgTarget(week.id, '');
-                        else setEditingAvgTargetId(week.id);
-                      }}
-                      title="Click to set avg intensity target"
+                      onClick={(e) => handleWeekFieldClick(e, week, 'avg_intensity_target', 1, onUpdateAvgTarget, setEditingAvgTargetId)}
+                      onContextMenu={(e) => handleWeekFieldClick(e, week, 'avg_intensity_target', 1, onUpdateAvgTarget, setEditingAvgTargetId)}
+                      title={`Avg intensity target — ${weekFieldTitle}`}
                     >
                       {editingAvgTargetId === week.id ? (
                         <div onClick={e => e.stopPropagation()}>
@@ -723,7 +751,7 @@ export function MacroTableV2({
                             type="number"
                             defaultValue={week.avg_intensity_target ?? ''}
                             autoFocus
-                            className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                            className="no-spin w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                             onBlur={(e) => { onUpdateAvgTarget(week.id, e.target.value); setEditingAvgTargetId(null); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
@@ -885,7 +913,7 @@ export function MacroTableV2({
                                   type="number"
                                   defaultValue={avgVal ?? ''}
                                   autoFocus
-                                  className="w-[32px] text-center font-mono text-[9px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                                  className="no-spin w-[32px] text-center font-mono text-[9px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                   onBlur={(e) => {
                                     onUpdateTarget(week.id, te.id, 'target_avg', e.target.value);
                                     setEditingCell(null);
@@ -924,7 +952,7 @@ export function MacroTableV2({
                                 type="number"
                                 defaultValue={repsVal ?? ''}
                                 autoFocus
-                                className="w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                                className="no-spin w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                 onBlur={(e) => {
                                   onUpdateTarget(week.id, te.id, 'target_reps', e.target.value);
                                   setEditingCell(null);

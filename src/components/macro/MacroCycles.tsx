@@ -239,12 +239,10 @@ export function MacroCycles() {
   // Load exercises on mount + settings for column visibility
   useEffect(() => { fetchExercisesByName(); }, []);
 
+  // Settings are fetched once; column visibility itself resolves in the
+  // per-macro layout effect below (per-macro override → settings → defaults).
   useEffect(() => {
-    fetchSettingsSilent().then(s => {
-      if (s?.macro_table_columns && s.macro_table_columns.length > 0) {
-        setVisibleColumns(new Set(s.macro_table_columns as MacroTableColumnKey[]));
-      }
-    });
+    void fetchSettingsSilent();
   }, []);
 
   // Load group members when in group mode
@@ -317,7 +315,20 @@ export function MacroCycles() {
     setExColStates((layout?.exercises as Record<string, ExerciseColumnState> | undefined) ?? {});
     setConsistencyTint(layout?.viewToggles?.consistency ?? true);
     setCollapsedHeatmap(layout?.viewToggles?.heatmap ?? true);
-  }, [selectedCycle?.id, selectedCycle?.table_layout]);
+    // Base columns: per-macro override → coach settings → app defaults
+    if (layout?.baseColumns?.length) {
+      setVisibleColumns(new Set([...layout.baseColumns, 'week'] as MacroTableColumnKey[]));
+    } else if (settings?.macro_table_columns?.length) {
+      setVisibleColumns(new Set(settings.macro_table_columns as MacroTableColumnKey[]));
+    } else {
+      setVisibleColumns(new Set(DEFAULT_MACRO_TABLE_COLUMNS));
+    }
+  }, [selectedCycle?.id, selectedCycle?.table_layout, settings?.macro_table_columns]);
+
+  const handleVisibleColumnsChange = useCallback((next: Set<MacroTableColumnKey>) => {
+    setVisibleColumns(next);
+    persistLayout({ baseColumns: Array.from(next) });
+  }, [persistLayout]);
 
   // Load targets when weeks change
   useEffect(() => {
@@ -833,8 +844,10 @@ export function MacroCycles() {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          {/* Toggle bar: exercises + Reps chip */}
-          {trackedExercises.length > 0 && (
+          {/* Toggle bar: exercises + general metrics + view menu — present as
+              soon as the cycle has weeks, so general targets are workable
+              before any exercise is tracked */}
+          {macroWeeks.length > 0 && (
             <div className="px-3 pt-2 pb-1 flex-shrink-0 flex items-center gap-2 flex-wrap border-b border-gray-100">
               <ExerciseToggleBar
                 exercises={trackedExercises}
@@ -860,6 +873,8 @@ export function MacroCycles() {
               <MacroViewMenu
                 metrics={exerciseMetrics}
                 onMetricsChange={applyMetrics}
+                visibleColumns={visibleColumns}
+                onVisibleColumnsChange={handleVisibleColumnsChange}
                 consistencyTint={consistencyTint}
                 onConsistencyTintChange={(v) => { setConsistencyTint(v); persistLayout({ viewToggles: { consistency: v, heatmap: collapsedHeatmap } }); }}
                 collapsedHeatmap={collapsedHeatmap}
@@ -922,6 +937,8 @@ export function MacroCycles() {
                 visibleExercises={visibleExercises}
                 showReps={showReps}
                 fillPreview={fillPreview}
+                visibleGeneralSeries={visibleGeneralMetrics}
+                onDragWeekTarget={async (weekId, field, value) => { await updateMacroWeek(weekId, { [field]: value }); }}
               />
             </div>
           )}

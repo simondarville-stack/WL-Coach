@@ -69,7 +69,36 @@ interface MacroDraggableChartProps {
   showReps: boolean;
   /** Live fill-guide preview — pending max/avg render as dashed ghost lines. */
   fillPreview?: FillGuidePreview | null;
+  /** Week-level general series to draw ('k' Σreps, 'tonnage', 'avg' intensity). */
+  visibleGeneralSeries?: Set<string>;
+  /** Drag-commit for general series — writes macro_weeks fields. */
+  onDragWeekTarget?: (
+    weekId: string,
+    field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
+    value: number,
+  ) => Promise<void>;
 }
+
+/** Week-level general series: chart display units + write-back conversion.
+ *  Tonnage charts in tonnes on the reps axis so its magnitude stays readable. */
+const GENERAL_SERIES = {
+  k: {
+    dataKey: 'g_sreps', field: 'total_reps_target' as const, label: 'Σreps target',
+    axis: 'reps' as const, color: '#334155',
+    toDisplay: (kg: number) => kg, fromDisplay: (v: number) => Math.round(v), roundDisplay: (v: number) => Math.round(v),
+  },
+  tonnage: {
+    dataKey: 'g_ton', field: 'tonnage_target' as const, label: 'Ton target (t)',
+    axis: 'reps' as const, color: '#B45309',
+    toDisplay: (kg: number) => kg / 1000, fromDisplay: (v: number) => Math.round(v * 10) * 100, roundDisplay: (v: number) => Math.round(v * 10) / 10,
+  },
+  avg: {
+    dataKey: 'g_avgint', field: 'avg_intensity_target' as const, label: 'Avg int. target',
+    axis: 'kg' as const, color: '#0F766E',
+    toDisplay: (kg: number) => kg, fromDisplay: (v: number) => Math.round(v), roundDisplay: (v: number) => Math.round(v),
+  },
+} as const;
+type GeneralSeriesKey = keyof typeof GENERAL_SERIES;
 
 const CHART_HEIGHT = 480;
 const MARGIN = { top: 10, right: 44, bottom: 52, left: 0 };
@@ -86,6 +115,8 @@ export function MacroDraggableChart({
   onToggleLink,
   showReps,
   fillPreview,
+  visibleGeneralSeries,
+  onDragWeekTarget,
 }: MacroDraggableChartProps) {
   const [dragOverrides, setDragOverrides] = useState<Record<string, number>>({});
   const [activeDrag, setActiveDrag] = useState<DragState | null>(null);
@@ -114,6 +145,66 @@ export function MacroDraggableChart({
     const t = targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === teId);
     return (t?.[METRIC_FIELD[metric]] as number | null) ?? 0;
   }, [dragOverrides, targets]);
+
+  const activeGeneralKeys = (Object.keys(GENERAL_SERIES) as GeneralSeriesKey[])
+    .filter(k => visibleGeneralSeries?.has(k));
+
+  // Display value of a week-level general series (drag override wins)
+  const getWeekDisplayValue = useCallback((weekId: string, gk: GeneralSeriesKey): number | null => {
+    const k = `${weekId}:__gen_${gk}:x`;
+    if (k in dragOverrides) return dragOverrides[k];
+    const week = macroWeeks.find(w => w.id === weekId);
+    const raw = week?.[GENERAL_SERIES[gk].field] ?? null;
+    return raw != null ? GENERAL_SERIES[gk].toDisplay(raw) : null;
+  }, [dragOverrides, macroWeeks]);
+
+  // Drag a general-series dot: same feel as exercise dots, writes macro_weeks.
+  const startDragGeneral = useCallback((e: React.MouseEvent, weekId: string, gk: GeneralSeriesKey) => {
+    if (!onDragWeekTarget) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cfg = GENERAL_SERIES[gk];
+    const startValue = getWeekDisplayValue(weekId, gk) ?? 0;
+    const values = macroWeeks
+      .map(w => getWeekDisplayValue(w.id, gk))
+      .filter((v): v is number => v != null && v > 0);
+    const yMax = values.length > 0 ? Math.ceil(Math.max(...values) * 1.3 / 10) * 10 || 50 : (cfg.axis === 'kg' ? 200 : 50);
+    const heightPx = CHART_HEIGHT - MARGIN.top - MARGIN.bottom;
+    const overrideKey = `${weekId}:__gen_${gk}:x`;
+
+    const drag: DragState = {
+      weekId, trackedExId: `__gen_${gk}`, metric: cfg.axis === 'kg' ? 'avg' : 'reps',
+      startClientY: e.clientY, startValue,
+      linkedMetric: null, linkedStartValue: 0,
+      currentValue: startValue, currentLinkedValue: 0,
+      clientX: e.clientX, clientY: e.clientY,
+      yMax, heightPx,
+      yAxisId: cfg.axis,
+    };
+    setActiveDrag(drag);
+
+    const onMove = (ev: MouseEvent) => {
+      const dy = ev.clientY - drag.startClientY;
+      const newVal = Math.max(0, cfg.roundDisplay(drag.startValue - (dy / drag.heightPx) * drag.yMax));
+      setDragOverrides(prev => ({ ...prev, [overrideKey]: newVal }));
+      setActiveDrag(prev => prev ? { ...prev, currentValue: newVal, clientX: ev.clientX, clientY: ev.clientY } : null);
+    };
+    const onUp = async (ev: MouseEvent) => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const dy = ev.clientY - drag.startClientY;
+      const finalDisplay = Math.max(0, cfg.roundDisplay(drag.startValue - (dy / drag.heightPx) * drag.yMax));
+      await onDragWeekTarget(weekId, cfg.field, cfg.fromDisplay(finalDisplay));
+      setDragOverrides(prev => {
+        const next = { ...prev };
+        delete next[overrideKey];
+        return next;
+      });
+      setActiveDrag(null);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [getWeekDisplayValue, macroWeeks, onDragWeekTarget]);
 
   const startDrag = useCallback((
     e: React.MouseEvent,
@@ -223,15 +314,33 @@ export function MacroDraggableChart({
       point[`p_max_${te.id}`] = previewCell?.max ?? null;
       point[`p_avg_${te.id}`] = previewCell?.avg ?? null;
     });
+    // Week-level general series (work with zero tracked exercises too)
+    for (const gk of Object.keys(GENERAL_SERIES) as GeneralSeriesKey[]) {
+      const cfg = GENERAL_SERIES[gk];
+      const overrideKey = `${week.id}:__gen_${gk}:x`;
+      const raw = week[cfg.field];
+      point[cfg.dataKey] = overrideKey in dragOverrides
+        ? dragOverrides[overrideKey]
+        : raw != null ? cfg.toDisplay(raw) : null;
+      // Σreps also gets the fill-guide ghost
+      if (gk === 'k' && fillPreview?.totalReps?.[week.id] !== undefined) {
+        point['p_sreps'] = fillPreview.totalReps[week.id];
+      } else if (gk === 'k') {
+        point['p_sreps'] = null;
+      }
+    }
     return point;
   }), [macroWeeks, trackedExercises, targets, actuals, dragOverrides, fillPreview]);
 
   const allKgValues = chartData.flatMap(p =>
-    trackedExercises.flatMap(te => [
-      ...(['max', 'avg'] as const).map(m => p[`t_${m}_${te.id}`] as number | null),
-      p[`p_max_${te.id}`] as number | null,
-      p[`p_avg_${te.id}`] as number | null,
-    ])
+    [
+      ...trackedExercises.flatMap(te => [
+        ...(['max', 'avg'] as const).map(m => p[`t_${m}_${te.id}`] as number | null),
+        p[`p_max_${te.id}`] as number | null,
+        p[`p_avg_${te.id}`] as number | null,
+      ]),
+      ...(activeGeneralKeys.includes('avg') ? [p['g_avgint'] as number | null] : []),
+    ]
   ).filter((v): v is number => v !== null && v > 0);
   const yMinKg = allKgValues.length > 0 ? Math.max(0, Math.floor(Math.min(...allKgValues) * 0.7 / 10) * 10) : 0;
   const yMaxKg = activeDrag?.yAxisId === 'kg'
@@ -240,7 +349,12 @@ export function MacroDraggableChart({
 
   // Side-by-side bars: use max individual value per week, not sum
   const maxRepsPerWeek = chartData.map(p =>
-    Math.max(0, ...trackedExercises.map(te => (p[`t_reps_${te.id}`] as number | null) ?? 0))
+    Math.max(
+      0,
+      ...trackedExercises.map(te => (p[`t_reps_${te.id}`] as number | null) ?? 0),
+      ...(activeGeneralKeys.includes('k') ? [(p['g_sreps'] as number | null) ?? 0, (p['p_sreps'] as number | null) ?? 0] : []),
+      ...(activeGeneralKeys.includes('tonnage') ? [(p['g_ton'] as number | null) ?? 0] : []),
+    )
   );
   const yMaxReps = activeDrag?.yAxisId === 'reps'
     ? activeDrag.yMax
@@ -357,6 +471,14 @@ export function MacroDraggableChart({
               </span>
             );
           })}
+          {activeGeneralKeys.map(gk => (
+            <span key={gk} className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: GENERAL_SERIES[gk].color }} />
+              <span className="font-medium" style={{ color: GENERAL_SERIES[gk].color }}>
+                {GENERAL_SERIES[gk].label}
+              </span>
+            </span>
+          ))}
           <span className="text-gray-300 mx-0.5">|</span>
           <span className="flex items-center gap-1">
             <svg width="14" height="4"><line x1="0" y1="2" x2="14" y2="2" stroke="#888" strokeWidth="2.5" /></svg>
@@ -636,6 +758,59 @@ export function MacroDraggableChart({
                 />
               );
             })}
+
+            {/* Week-level general series — draggable, work with zero exercises */}
+            {activeGeneralKeys.map(gk => {
+              const cfg = GENERAL_SERIES[gk];
+              return (
+                <Line
+                  key={cfg.dataKey}
+                  yAxisId={cfg.axis}
+                  type="monotone"
+                  dataKey={cfg.dataKey}
+                  name={cfg.label}
+                  stroke={cfg.color}
+                  strokeWidth={1.8}
+                  dot={(props: { cx?: number; cy?: number; index?: number }) => {
+                    const { cx = 0, cy = 0, index = 0 } = props;
+                    const week = macroWeeks[index];
+                    if (!week || chartData[index]?.[cfg.dataKey] == null) return <g key={`gd_${gk}_${index}`} />;
+                    const isActive = activeDrag?.weekId === week.id && activeDrag?.trackedExId === `__gen_${gk}`;
+                    return (
+                      <circle
+                        key={`gd_${gk}_${week.id}`}
+                        cx={cx} cy={cy} r={isActive ? 7 : 4.5}
+                        fill={cfg.color}
+                        stroke="white"
+                        strokeWidth={1.5}
+                        style={{ cursor: onDragWeekTarget ? 'ns-resize' : 'default', userSelect: 'none', outline: 'none' }}
+                        onMouseDown={onDragWeekTarget ? (e => startDragGeneral(e, week.id, gk)) : undefined}
+                      />
+                    );
+                  }}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              );
+            })}
+
+            {/* Σreps fill-guide ghost */}
+            {activeGeneralKeys.includes('k') && fillPreview && (
+              <Line
+                yAxisId="reps"
+                type="monotone"
+                dataKey="p_sreps"
+                name="Σreps target (preview)"
+                stroke={GENERAL_SERIES.k.color}
+                strokeWidth={1.4}
+                strokeDasharray="5 4"
+                dot={{ r: 2.5, fill: '#fff', stroke: GENERAL_SERIES.k.color, strokeWidth: 1.2 }}
+                activeDot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
 
