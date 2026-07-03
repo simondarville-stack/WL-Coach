@@ -17,6 +17,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Edit3,
   ExternalLink,
@@ -24,6 +25,7 @@ import {
   Mail,
   MailOpen,
   MessageCircle,
+  Paperclip,
   Search,
   Send,
   X as XIcon,
@@ -31,20 +33,39 @@ import {
 import { useNavigate } from 'react-router-dom';
 import {
   addComment,
+  defaultSlotLabel,
+  ensureSession,
   fetchCoachNamesForMessages,
   fetchGeneralThreadMessages,
   fetchInboxThreads,
   fetchSessionMessages,
+  fetchSessionRowForSlot,
+  fetchSessionSlotRefs,
+  fetchWeekOverview,
   markGeneralThreadRead,
   markMessagesRead,
   sendGeneralMessage,
   type InboxThread,
+  type SessionSlotRef,
+  type WeekOverview,
 } from '../lib/trainingLogService';
 import { getOwnerId } from '../lib/ownerContext';
+import { getMondayOfWeekISO } from '../lib/weekUtils';
+import { addDaysToISO, formatDateShort, toLocalISO } from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import type { TrainingLogMessage } from '../lib/database.types';
+
+/** A unit-thread target from the attach flow. sessionId stays null
+ *  until the first message creates the log session row. */
+interface UnitTarget {
+  sessionId: string | null;
+  weekStart: string;
+  dayIndex: number;
+  label: string;
+  date: string;
+}
 
 interface AthleteSummary {
   athleteId: string;
@@ -483,14 +504,100 @@ function AthleteConversation({
   sessionThreads: InboxThread[];
   onMessagesChanged: () => Promise<void>;
 }) {
-  type View = 'general' | { kind: 'session'; thread: InboxThread };
+  type View =
+    | 'general'
+    | { kind: 'session'; thread: InboxThread }
+    // Attach flow: a unit picked from the athlete's weeks — there may be
+    // no session row (created on first send) and no thread row yet.
+    | { kind: 'unit'; unit: UnitTarget };
   const [view, setView] = useState<View>('general');
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Resolve which training unit each session thread belongs to, plus
+  // the coach's day labels for the involved weeks (usually one or two
+  // overview fetches). Cosmetic — everything falls back to "Day N".
+  const sessionIdsKey = sessionThreads.map(t => t.sessionId).join(',');
+  const [slotRefs, setSlotRefs] = useState<Map<string, SessionSlotRef>>(new Map());
+  const [unitLabels, setUnitLabels] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const ids = sessionIdsKey.split(',').filter(Boolean);
+        const refs = await fetchSessionSlotRefs(ids);
+        if (!alive) return;
+        setSlotRefs(refs);
+        const weekStarts = Array.from(new Set(Array.from(refs.values()).map(r => r.weekStart)));
+        const labels = new Map<string, string>();
+        await Promise.all(
+          weekStarts.map(async ws => {
+            try {
+              const ov = await fetchWeekOverview(athleteId, ws);
+              for (const d of ov.days) labels.set(`${ws}:${d.dayIndex}`, d.label);
+            } catch {
+              // Label lookup failed — "Day N" fallback still renders.
+            }
+          }),
+        );
+        if (alive) setUnitLabels(labels);
+      } catch {
+        // Slot refs are cosmetic + navigation sugar; the threads still work.
+      }
+    })();
+    return () => { alive = false; };
+  }, [athleteId, sessionIdsKey]);
+
+  const unitLabelFor = useCallback(
+    (t: InboxThread): string | null => {
+      const ref = t.sessionId ? slotRefs.get(t.sessionId) : null;
+      if (!ref) return null;
+      return unitLabels.get(`${ref.weekStart}:${ref.dayIndex}`) ?? defaultSlotLabel(ref.dayIndex);
+    },
+    [slotRefs, unitLabels],
+  );
+
+  const handlePickUnit = async (picked: Omit<UnitTarget, 'sessionId'>) => {
+    setPickerOpen(false);
+    // Reuse an existing session/thread when the unit already has one;
+    // otherwise the thread starts empty and the session row is created
+    // with the first message.
+    let sessionId: string | null = null;
+    try {
+      const existing = await fetchSessionRowForSlot(athleteId, picked.weekStart, picked.dayIndex);
+      sessionId = existing?.id ?? null;
+    } catch {
+      // Lookup failure degrades to lazy creation on send.
+    }
+    const existingThread = sessionId
+      ? sessionThreads.find(t => t.sessionId === sessionId)
+      : undefined;
+    if (existingThread) setView({ kind: 'session', thread: existingThread });
+    else setView({ kind: 'unit', unit: { ...picked, sessionId } });
+  };
 
   const generalForChat: InboxThread =
     generalThread ?? syntheticGeneralThread(athleteId, athleteName, athletePhotoUrl);
 
-  if (view !== 'general') {
-    return (
+  let pane: React.ReactNode;
+  if (view === 'general') {
+    pane = (
+      <ChatPane
+        thread={generalForChat}
+        athleteId={athleteId}
+        athleteName={athleteName}
+        athletePhotoUrl={athletePhotoUrl}
+        ownerId={ownerId}
+        onBack={null}
+        onMessagesChanged={onMessagesChanged}
+        sessionThreads={sessionThreads}
+        onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+        showSubThreadsPanel
+        unitLabelFor={unitLabelFor}
+        onAttachUnit={() => setPickerOpen(true)}
+      />
+    );
+  } else if (view.kind === 'session') {
+    pane = (
       <ChatPane
         thread={view.thread}
         athleteId={athleteId}
@@ -502,32 +609,53 @@ function AthleteConversation({
         sessionThreads={sessionThreads}
         onSelectSubThread={t => setView({ kind: 'session', thread: t })}
         showSubThreadsPanel={false}
+        unitLabelFor={unitLabelFor}
+      />
+    );
+  } else {
+    const u = view.unit;
+    pane = (
+      <ChatPane
+        key={`unit:${u.weekStart}:${u.dayIndex}`}
+        thread={syntheticUnitThread(athleteId, athleteName, athletePhotoUrl, u)}
+        unit={u}
+        athleteId={athleteId}
+        athleteName={athleteName}
+        athletePhotoUrl={athletePhotoUrl}
+        ownerId={ownerId}
+        onBack={() => { setView('general'); void onMessagesChanged(); }}
+        onMessagesChanged={onMessagesChanged}
+        sessionThreads={sessionThreads}
+        onSelectSubThread={t => setView({ kind: 'session', thread: t })}
+        showSubThreadsPanel={false}
+        unitLabelFor={unitLabelFor}
       />
     );
   }
 
   return (
-    <ChatPane
-      thread={generalForChat}
-      athleteId={athleteId}
-      athleteName={athleteName}
-      athletePhotoUrl={athletePhotoUrl}
-      ownerId={ownerId}
-      onBack={null}
-      onMessagesChanged={onMessagesChanged}
-      sessionThreads={sessionThreads}
-      onSelectSubThread={t => setView({ kind: 'session', thread: t })}
-      showSubThreadsPanel
-    />
+    <>
+      {pane}
+      {pickerOpen && (
+        <UnitPickerModal
+          athleteId={athleteId}
+          athleteName={athleteName}
+          onPick={u => void handlePickUnit(u)}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
 function SubThreadsPanel({
   sessions,
   onSelect,
+  unitLabelFor,
 }: {
   sessions: InboxThread[];
   onSelect: (t: InboxThread) => void;
+  unitLabelFor: (t: InboxThread) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const totalUnread = sessions.reduce((s, t) => s + t.unreadCount, 0);
@@ -592,8 +720,13 @@ function SubThreadsPanel({
               }}
             >
               <span style={{ color: 'var(--color-accent)' }}>↳</span>
-              <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                {t.performedOn ? formatDate(t.performedOn) : 'Session'}
+              <span style={{ fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap' }}>
+                {unitLabelFor(t) ?? 'Session'}
+                {t.performedOn && (
+                  <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}>
+                    {' · '}{formatDate(t.performedOn)}
+                  </span>
+                )}
               </span>
               <span style={{ flex: 1, color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>
                 {t.lastMessage}
@@ -622,6 +755,7 @@ function SubThreadsPanel({
 
 function ChatPane({
   thread,
+  unit = null,
   athleteId,
   athleteName,
   athletePhotoUrl,
@@ -631,8 +765,13 @@ function ChatPane({
   sessionThreads,
   onSelectSubThread,
   showSubThreadsPanel,
+  unitLabelFor,
+  onAttachUnit,
 }: {
   thread: InboxThread;
+  /** Attach-flow target. When set (and the unit has no session row
+   *  yet), the session is created with the first message. */
+  unit?: UnitTarget | null;
   athleteId: string;
   athleteName: string;
   athletePhotoUrl: string | null;
@@ -642,6 +781,9 @@ function ChatPane({
   sessionThreads: InboxThread[];
   onSelectSubThread: (t: InboxThread) => void;
   showSubThreadsPanel: boolean;
+  unitLabelFor: (t: InboxThread) => string | null;
+  /** Shown as a paperclip in the composer (general thread only). */
+  onAttachUnit?: (() => void) | null;
 }) {
   const navigate = useNavigate();
   const setSelectedAthlete = useAthleteStore(s => s.setSelectedAthlete);
@@ -650,6 +792,10 @@ function ChatPane({
 
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
   const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
+  // Session id can be born mid-conversation: the attach flow's first
+  // message creates the log session row (ensureSession) and the thread
+  // continues on it.
+  const [sessionId, setSessionId] = useState<string | null>(thread.sessionId);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
@@ -659,8 +805,10 @@ function ChatPane({
     setError(null);
     setLoading(true);
     try {
-      const m = thread.kind === 'session' && thread.sessionId
-        ? await fetchSessionMessages(thread.sessionId)
+      const m = thread.kind === 'session'
+        ? sessionId
+          ? await fetchSessionMessages(sessionId)
+          : [] // attached unit without a session yet — empty thread
         : await fetchGeneralThreadMessages(athleteId, ownerId);
       setMessages(m);
       const names = await fetchCoachNamesForMessages(m);
@@ -671,7 +819,7 @@ function ChatPane({
     } finally {
       setLoading(false);
     }
-  }, [thread.kind, thread.sessionId, athleteId, ownerId]);
+  }, [thread.kind, sessionId, athleteId, ownerId]);
 
   useEffect(() => {
     void loadMessages();
@@ -679,12 +827,14 @@ function ChatPane({
 
   useEffect(() => {
     if (thread.unreadCount === 0) return;
-    const p = thread.kind === 'session' && thread.sessionId
-      ? markMessagesRead(thread.sessionId, null, 'coach')
+    const p = thread.kind === 'session'
+      ? sessionId
+        ? markMessagesRead(sessionId, null, 'coach')
+        : Promise.resolve()
       : markGeneralThreadRead(athleteId, ownerId, 'coach');
     void p.then(onMessagesChanged).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.kind, thread.sessionId, athleteId]);
+  }, [thread.kind, sessionId, athleteId]);
 
   const handleSend = async () => {
     const body = reply.trim();
@@ -692,14 +842,38 @@ function ChatPane({
     setSending(true);
     setError(null);
     try {
-      if (thread.kind === 'session' && thread.sessionId) {
+      if (thread.kind === 'session') {
+        let sid = sessionId;
+        if (!sid && unit) {
+          // First message on a not-yet-logged unit: create its session
+          // row now so the message has an anchor. Owner is the athlete's
+          // host environment so the athlete app finds the session.
+          const athleteOwner =
+            accessibleAthletes.find(a => a.id === athleteId)?.owner_id ?? ownerId;
+          const session = await ensureSession({
+            athleteId,
+            ownerId: athleteOwner,
+            date: unit.date,
+            weekStart: unit.weekStart,
+            dayIndex: unit.dayIndex,
+          });
+          sid = session.id;
+          setSessionId(sid);
+        }
+        if (!sid) throw new Error('No session to attach this message to.');
         await addComment({
-          sessionId: thread.sessionId,
+          sessionId: sid,
           exerciseId: null,
           message: body,
           senderType: 'coach',
           senderCoachId: activeCoachId,
         });
+        setReply('');
+        // Reload directly with the (possibly fresh) session id — the
+        // loadMessages callback may still close over sessionId = null.
+        const m = await fetchSessionMessages(sid);
+        setMessages(m);
+        setCoachNames(await fetchCoachNamesForMessages(m));
       } else {
         await sendGeneralMessage({
           athleteId,
@@ -708,9 +882,9 @@ function ChatPane({
           senderType: 'coach',
           senderCoachId: activeCoachId,
         });
+        setReply('');
+        await loadMessages();
       }
-      setReply('');
-      await loadMessages();
       await onMessagesChanged();
     } catch (e) {
       console.error('[CoachInbox] send failed', e);
@@ -720,22 +894,26 @@ function ChatPane({
     }
   };
 
-  const onOpenSession = thread.kind === 'session' && thread.performedOn
+  const openWeekStart = unit?.weekStart
+    ?? (thread.kind === 'session' && thread.performedOn
+      ? mondayOfDate(thread.performedOn)
+      : null);
+  const onOpenSession = thread.kind === 'session' && openWeekStart
     ? () => {
         // Set planner context to this athlete first, then navigate.
         const target = accessibleAthletes.find(a => a.id === thread.athleteId);
         if (target) setSelectedAthlete(target);
-        const d = new Date(thread.performedOn! + 'T00:00:00Z');
-        const weekday = d.getUTCDay();
-        const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
-        d.setUTCDate(d.getUTCDate() - daysFromMonday);
-        const weekStart = d.toISOString().slice(0, 10);
-        navigate(`/planner/${weekStart}`);
+        navigate(`/planner/${openWeekStart}`);
       }
     : null;
 
-  const headerDate = thread.kind === 'session' && thread.performedOn
-    ? formatDate(thread.performedOn)
+  const headerLabel = unit?.label ?? (thread.kind === 'session' ? unitLabelFor(thread) : null);
+  const headerDate = thread.kind === 'session'
+    ? unit
+      ? formatDate(unit.date)
+      : thread.performedOn
+        ? formatDate(thread.performedOn)
+        : null
     : null;
 
   return (
@@ -767,7 +945,7 @@ function ChatPane({
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
             {thread.kind === 'general'
               ? 'General thread'
-              : `Session sub-thread · ${headerDate ?? ''}`}
+              : `${headerLabel ?? 'Session'} · ${headerDate ?? ''}`}
           </div>
         </div>
         {onOpenSession && (
@@ -788,13 +966,17 @@ function ChatPane({
             }}
           >
             <ExternalLink size={11} />
-            Open session
+            Open unit
           </button>
         )}
       </div>
 
       {showSubThreadsPanel && (
-        <SubThreadsPanel sessions={sessionThreads} onSelect={onSelectSubThread} />
+        <SubThreadsPanel
+          sessions={sessionThreads}
+          onSelect={onSelectSubThread}
+          unitLabelFor={unitLabelFor}
+        />
       )}
 
       <div
@@ -819,7 +1001,9 @@ function ChatPane({
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', textAlign: 'center', padding: 24 }}>
             {thread.kind === 'general'
               ? 'No messages yet. Send the first one.'
-              : 'No messages on this session yet.'}
+              : unit
+                ? `Start the discussion about ${unit.label} — the athlete sees it attached to that unit.`
+                : 'No messages on this unit yet.'}
           </div>
         ) : (
           messages.map(m => (
@@ -841,6 +1025,28 @@ function ChatPane({
           background: 'var(--color-bg-primary)',
         }}
       >
+        {onAttachUnit && (
+          <button
+            type="button"
+            onClick={onAttachUnit}
+            title="Attach a training unit — the message lands in that unit's thread"
+            style={{
+              alignSelf: 'flex-end',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              background: 'var(--color-bg-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            <Paperclip size={13} />
+          </button>
+        )}
         <textarea
           value={reply}
           onChange={e => setReply(e.target.value)}
@@ -851,7 +1057,7 @@ function ChatPane({
             }
           }}
           rows={2}
-          placeholder={thread.kind === 'session' ? 'Comment on this session…' : `Message ${athleteName}…`}
+          placeholder={thread.kind === 'session' ? 'Comment on this unit…' : `Message ${athleteName}…`}
           style={{
             flex: 1,
             resize: 'none',
@@ -1032,6 +1238,248 @@ function syntheticGeneralThread(athleteId: string, athleteName: string, athleteP
     unreadCount: 0,
     athleteMessageCount: 0,
   };
+}
+
+/** Thread placeholder for a unit picked via the attach flow that has
+ *  no messages (and possibly no session row) yet. */
+function syntheticUnitThread(
+  athleteId: string,
+  athleteName: string,
+  athletePhotoUrl: string | null,
+  unit: UnitTarget,
+): InboxThread {
+  return {
+    kind: 'session',
+    sessionId: unit.sessionId,
+    athleteId,
+    athleteName,
+    athletePhotoUrl,
+    performedOn: unit.date,
+    lastMessage: '',
+    lastActivityAt: new Date(0).toISOString(),
+    unreadCount: 0,
+    athleteMessageCount: 0,
+  };
+}
+
+/** Monday (ISO yyyy-mm-dd) of the week containing the given date. */
+function mondayOfDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime())) return iso;
+  const weekday = d.getUTCDay();
+  const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+  d.setUTCDate(d.getUTCDate() - daysFromMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+// ─── Unit picker (attach flow) ───────────────────────────────────────
+
+const WEEKDAY_SHORT_EU = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const UNIT_STATUS_LABEL: Record<string, { text: string; color: string }> = {
+  completed: { text: 'completed', color: 'var(--color-success-text)' },
+  in_progress: { text: 'in progress', color: 'var(--color-accent)' },
+  skipped: { text: 'skipped', color: 'var(--color-danger-text)' },
+};
+
+/**
+ * UnitPickerModal — pick one training unit (week + slot) to attach a
+ * message thread to. Desktop twin of the Field View's UnitPickerSheet:
+ * ‹ › week navigation, one row per unit with label, scheduled weekday
+ * + date, planned exercise count and log status.
+ */
+function UnitPickerModal({
+  athleteId,
+  athleteName,
+  onPick,
+  onClose,
+}: {
+  athleteId: string;
+  athleteName: string;
+  onPick: (unit: Omit<UnitTarget, 'sessionId'>) => void;
+  onClose: () => void;
+}) {
+  const [weekStart, setWeekStart] = useState(() => getMondayOfWeekISO(new Date()));
+  const [overview, setOverview] = useState<WeekOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const ov = await fetchWeekOverview(athleteId, weekStart);
+        if (alive) setOverview(ov);
+      } catch (e) {
+        if (alive) setError(describeError(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [athleteId, weekStart]);
+
+  const isCurrentWeek = weekStart === getMondayOfWeekISO(new Date());
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`Attach a training unit for ${athleteName}`}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <button
+        onClick={onClose}
+        aria-label="Close"
+        tabIndex={-1}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.4)',
+          border: 'none',
+          cursor: 'default',
+        }}
+      />
+      <div
+        style={{
+          position: 'relative',
+          width: 400,
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: '70vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--color-bg-primary)',
+          border: '0.5px solid var(--color-border-secondary)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 14px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+          }}
+        >
+          <Paperclip size={13} style={{ color: 'var(--color-text-tertiary)' }} />
+          <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>
+            Attach a training unit
+          </span>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{ padding: 2, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', display: 'inline-flex' }}
+          >
+            <XIcon size={13} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--color-bg-secondary)',
+          }}
+        >
+          <button
+            onClick={() => setWeekStart(w => addDaysToISO(w, -7))}
+            aria-label="Previous week"
+            style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'inline-flex' }}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+            Week of {formatDateShort(weekStart)}
+            {isCurrentWeek && (
+              <span style={{ color: 'var(--color-accent)' }}> · this week</span>
+            )}
+          </span>
+          <button
+            onClick={() => setWeekStart(w => addDaysToISO(w, 7))}
+            aria-label="Next week"
+            style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'inline-flex' }}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 8, minHeight: 120 }}>
+          {loading ? (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: 11 }}>
+              <Loader2 size={14} className="animate-spin" style={{ display: 'inline-block', marginRight: 6 }} />
+              Loading…
+            </div>
+          ) : error ? (
+            <div style={{ padding: 12, fontSize: 11, color: 'var(--color-danger-text)' }}>{error}</div>
+          ) : !overview || overview.days.length === 0 ? (
+            <div style={{ padding: 24, textAlign: 'center', fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              No training units in this week.
+            </div>
+          ) : (
+            overview.days.map(d => {
+              const date =
+                d.sessionDate
+                ?? (d.weekday != null ? addDaysToISO(weekStart, d.weekday) : toLocalISO(new Date()));
+              const status = UNIT_STATUS_LABEL[d.status] ?? null;
+              return (
+                <button
+                  key={d.dayIndex}
+                  onClick={() => onPick({ weekStart, dayIndex: d.dayIndex, label: d.label, date })}
+                  style={{
+                    width: '100%',
+                    display: 'block',
+                    textAlign: 'left',
+                    padding: '7px 10px',
+                    marginBottom: 4,
+                    background: 'var(--color-bg-secondary)',
+                    border: '0.5px solid var(--color-border-secondary)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                      {d.label}
+                      {d.isBonus && (
+                        <span style={{ fontSize: 9.5, fontWeight: 400, color: 'var(--color-text-tertiary)' }}>
+                          {' · athlete-added'}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+                      {d.weekday != null && `${WEEKDAY_SHORT_EU[d.weekday]} `}
+                      {formatDateShort(date)}
+                    </span>
+                  </span>
+                  <span style={{ display: 'flex', gap: 8, fontSize: 10, marginTop: 2 }}>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>
+                      {d.plannedCount > 0
+                        ? `${d.plannedCount} exercise${d.plannedCount === 1 ? '' : 's'}`
+                        : 'no plan'}
+                    </span>
+                    {status && <span style={{ color: status.color }}>{status.text}</span>}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────

@@ -1260,9 +1260,12 @@ export interface InboxThread {
   athleteMessageCount: number;
 }
 
-/** Fetch every athlete-sent message for the active coach, grouped into
- *  threads by session. Unread threads sort first; within a sort group,
- *  most-recently-active threads come first. */
+/** Fetch every message-bearing thread for the active coach, grouped by
+ *  session (plus one general thread per athlete). Coach-initiated unit
+ *  threads — sessions where only the coach has written so far — are
+ *  included, so a discussion the coach attached to a training unit is
+ *  visible before the athlete's first reply. Unread threads sort first;
+ *  within a sort group, most-recently-active threads come first. */
 export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]> {
   // 1. Pull every athlete-sent message owned by this coach. We need the
   //    full set so we can compute unreadCount and pick the latest message
@@ -1282,7 +1285,6 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     created_at: string;
     coach_read_at: string | null;
   }[];
-  if (rows.length === 0) return [];
 
   // Session-bound rows only; general (session_id NULL) athlete messages
   // are aggregated separately below. Without this filter, sessionIds
@@ -1290,16 +1292,30 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   // the literal string "null", which Postgres rejects with
   // "invalid input syntax for type uuid: \"null\"".
   const sessionRows = rows.filter((r): r is typeof r & { session_id: string } => r.session_id !== null);
-  const sessionIds = Array.from(new Set(sessionRows.map(r => r.session_id)));
 
-  // 2. For "last activity", we also need coach messages — a thread the
-  //    coach just replied to should bubble up.
-  const { data: coachMsgs } = await supabase
+  // 2. Coach-sent session messages, owner-wide (not just for sessions the
+  //    athlete wrote on): they feed "last activity" AND surface sessions
+  //    where only the coach has written so far as their own threads.
+  const { data: coachMsgRows } = await supabase
     .from('training_log_messages')
-    .select('session_id, created_at')
-    .in('session_id', sessionIds)
+    .select('session_id, message, created_at')
+    .eq('owner_id', ownerId)
     .eq('sender_type', 'coach')
+    .not('session_id', 'is', null)
     .order('created_at', { ascending: false });
+  const coachMsgs = (coachMsgRows ?? []) as {
+    session_id: string; message: string; created_at: string;
+  }[];
+
+  const sessionIds = Array.from(new Set([
+    ...sessionRows.map(r => r.session_id),
+    ...coachMsgs.map(r => r.session_id),
+  ]));
+  if (sessionIds.length === 0) {
+    // No session threads at all — general threads may still exist
+    // (e.g. the coach wrote first and the athlete hasn't replied).
+    return (await fetchGeneralThreadsForCoach(ownerId)).sort(compareInboxThreads);
+  }
 
   // 3. Session → athlete map. The DB column is `date`; we expose it as
   // `performedOn` on the InboxThread for clarity at the call site.
@@ -1325,14 +1341,13 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     athleteMap.set(a.id, { name: a.name, photoUrl: a.photo_url });
   });
 
-  // Latest coach activity per session.
-  const latestCoachAt = new Map<string, string>();
-  (coachMsgs ?? []).forEach(m => {
-    // session_id is nullable on the row but we filtered out nulls at the
-    // query level (.not('session_id', 'is', null)). Coerce explicitly so
-    // downstream Map ops keep their string key type.
-    if (!m.session_id) return;
-    if (!latestCoachAt.has(m.session_id)) latestCoachAt.set(m.session_id, m.created_at);
+  // Latest coach activity (and message body, for coach-only threads)
+  // per session. coachMsgs is ordered newest-first, so first seen wins.
+  const latestCoach = new Map<string, { at: string; message: string }>();
+  coachMsgs.forEach(m => {
+    if (!latestCoach.has(m.session_id)) {
+      latestCoach.set(m.session_id, { at: m.created_at, message: m.message });
+    }
   });
 
   // Build threads. rows is already ordered newest-first, so the first
@@ -1348,8 +1363,8 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
 
     let t = threads.get(r.session_id);
     if (!t) {
-      const coachAt = latestCoachAt.get(r.session_id) ?? null;
-      const lastActivity = coachAt && coachAt > r.created_at ? coachAt : r.created_at;
+      const coach = latestCoach.get(r.session_id) ?? null;
+      const lastActivity = coach && coach.at > r.created_at ? coach.at : r.created_at;
       t = {
         kind: 'session',
         sessionId: r.session_id,
@@ -1368,18 +1383,44 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     if (r.coach_read_at == null) t.unreadCount += 1;
   }
 
+  // Coach-only session threads: the coach attached a discussion to a
+  // unit and the athlete hasn't replied yet. Nothing is unread for the
+  // coach; the preview shows the coach's own latest message.
+  for (const [sid, coach] of latestCoach) {
+    if (threads.has(sid)) continue;
+    const sess = sessionMap.get(sid);
+    if (!sess) continue; // orphan message — session was deleted
+    const athlete = athleteMap.get(sess.athleteId);
+    if (!athlete) continue; // orphan — athlete was deleted
+    threads.set(sid, {
+      kind: 'session',
+      sessionId: sid,
+      athleteId: sess.athleteId,
+      athleteName: athlete.name,
+      athletePhotoUrl: athlete.photoUrl,
+      performedOn: sess.performedOn,
+      lastMessage: coach.message,
+      lastActivityAt: coach.at,
+      unreadCount: 0,
+      athleteMessageCount: 0,
+    });
+  }
+
   // 4. General (no-session) threads — one per athlete that has any
   //    general messages. Keyed separately so the coach sees them next
   //    to the session threads.
   const generalThreads = await fetchGeneralThreadsForCoach(ownerId);
 
   // Sort: unread first, then by lastActivity desc.
-  return [...Array.from(threads.values()), ...generalThreads].sort((a, b) => {
-    const aUnread = a.unreadCount > 0 ? 1 : 0;
-    const bUnread = b.unreadCount > 0 ? 1 : 0;
-    if (aUnread !== bUnread) return bUnread - aUnread;
-    return b.lastActivityAt.localeCompare(a.lastActivityAt);
-  });
+  return [...Array.from(threads.values()), ...generalThreads].sort(compareInboxThreads);
+}
+
+/** Inbox ordering: unread threads first, then most recent activity. */
+function compareInboxThreads(a: InboxThread, b: InboxThread): number {
+  const aUnread = a.unreadCount > 0 ? 1 : 0;
+  const bUnread = b.unreadCount > 0 ? 1 : 0;
+  if (aUnread !== bUnread) return bUnread - aUnread;
+  return b.lastActivityAt.localeCompare(a.lastActivityAt);
 }
 
 /** Aggregate every general (session_id IS NULL) message owned by this
