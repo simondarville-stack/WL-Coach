@@ -34,6 +34,40 @@ export interface PhaseTypePreset {
   label: string;   // display name, e.g. 'Preparatory'
   color: string;   // default hex color for this phase type
 }
+
+/** One rhythm step: multipliers in % of the interpolated trend, for load and reps. */
+export interface RhythmStep {
+  load: number;  // e.g. 88 = week lands at 88 % of the load trend
+  reps: number;  // e.g. 110 = week lands at 110 % of the reps trend
+}
+
+/**
+ * Coach-defined fill-guide rhythm preset (general_settings.rhythm_presets; NULL column =
+ * DEFAULT_RHYTHM_PRESETS).
+ * - mode 'weektype': one step per week-type abbreviation — follows the types already on the
+ *   weeks; abbreviations missing from `mult` count as 100/100 (sandbox-safe for custom types).
+ * - mode 'pattern': repeating step sequence starting at the fill's first in-range week;
+ *   `stampTypes` optionally carries a week-type abbreviation per step to write onto the weeks
+ *   on apply (entries may be null = leave that week's type alone).
+ */
+export interface RhythmPreset {
+  id: string;
+  name: string;
+  mode: 'weektype' | 'pattern';
+  mult?: Record<string, RhythmStep>;
+  pattern?: RhythmStep[];
+  stampTypes?: (string | null)[] | null;
+}
+
+/** Per-macro table view config (macrocycles.table_layout; NULL = app defaults). */
+export interface MacroTableLayout {
+  /** keyed by tracked-exercise id */
+  exercises?: Record<string, { collapsed?: boolean; expanded?: boolean; hidden?: boolean; graphed?: boolean }>;
+  /** ordered exercise-metric registry state; highest priority first */
+  metrics?: Array<{ key: string; on: boolean }>;
+  viewToggles?: { consistency?: boolean; heatmap?: boolean };
+  graph?: { avg?: boolean; repsBars?: boolean; linkDrag?: boolean };
+}
 /** Open string — the four preset values ('preparatory', 'strength', 'competition', 'transition')
  * are suggestions only; free-text entry is allowed. See REVIEW_PLAN.md ENG-037. */
 export type PhaseType = string;
@@ -286,6 +320,8 @@ export interface MacroCycle {
   name: string;
   start_date: string;
   end_date: string;
+  /** Per-macro table view config (column states, metric registry, toggles). NULL = app defaults. */
+  table_layout: MacroTableLayout | null;
   created_at: string;
   updated_at: string;
 }
@@ -338,6 +374,8 @@ export interface MacroTrackedExercise {
   macrocycle_id: string;
   exercise_id: string;
   position: number;
+  /** Reference load (kg) for %-anchored fills and general-model templates. NULL = unset. */
+  reference_kg: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -355,6 +393,8 @@ export interface MacroTarget {
   target_max: number | null;
   target_reps_at_max: number | null;
   target_sets_at_max: number | null;
+  /** Coach note for this exercise+week (e.g. "Go for a 3RM this week"). A row may hold only a note. */
+  note: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -385,6 +425,8 @@ export interface GeneralSettings {
    *  Null falls back to DEFAULT_FIELD_BOLD_PCT (90). */
   field_bold_intensity_pct: number | null;
   phase_type_presets: PhaseTypePreset[] | null;
+  /** Coach-defined fill-guide rhythm presets. NULL = DEFAULT_RHYTHM_PRESETS. */
+  rhythm_presets: RhythmPreset[] | null;
   created_at: string;
   updated_at: string;
 }
