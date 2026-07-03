@@ -4,15 +4,16 @@
  *
  * Lists the athlete's units for a week with ‹ › week navigation:
  * label, scheduled weekday + date, planned exercise count, and log
- * status, so the coach can tell units apart at a glance. Picking a
- * unit hands back everything the caller needs to open (or lazily
- * create) that unit's session thread.
+ * status, so units are distinguishable at a glance. Picking a unit
+ * hands back everything the caller needs to open (or lazily create)
+ * that unit's session thread. Shared by the coach Field View and the
+ * athlete app's Coach thread — both run the same dark visual language.
  */
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, Paperclip, X } from 'lucide-react';
-import { fetchWeekOverview, type WeekOverview } from '../../lib/trainingLogService';
-import { getMondayOfWeekISO } from '../../lib/weekUtils';
-import { addDaysToISO, formatDateShort, toLocalISO } from '../../lib/dateUtils';
+import { fetchWeekOverview, type WeekOverview } from '../../../lib/trainingLogService';
+import { getMondayOfWeekISO } from '../../../lib/weekUtils';
+import { addDaysToISO, formatDateShort, toLocalISO } from '../../../lib/dateUtils';
 
 export interface PickedUnit {
   weekStart: string;

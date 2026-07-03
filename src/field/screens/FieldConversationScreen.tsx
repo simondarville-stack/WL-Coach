@@ -53,7 +53,7 @@ import {
   formatTime24,
   formatWeekdayDateShort,
 } from '../../lib/dateUtils';
-import { UnitPickerSheet, type PickedUnit } from '../components/UnitPickerSheet';
+import { UnitPickerSheet, type PickedUnit } from '../../athlete/v2/components/UnitPickerSheet';
 import { InitialsAvatar } from './FieldInboxScreen';
 import type { TrainingLogMessage } from '../../lib/database.types';
 
@@ -321,7 +321,9 @@ function UnitThreadsPanel({
                       <span className="text-gray-500 font-normal"> · {formatDateShort(t.performedOn)}</span>
                     )}
                   </span>
-                  <span className="text-gray-500 truncate ml-2 text-[11px]">{t.lastMessage}</span>
+                  <span className="text-gray-500 truncate ml-2 text-[11px]">
+                    {t.lastMessageSender === 'coach' ? `You: ${t.lastMessage}` : t.lastMessage}
+                  </span>
                 </span>
                 {t.unreadCount > 0 && (
                   <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white shrink-0">

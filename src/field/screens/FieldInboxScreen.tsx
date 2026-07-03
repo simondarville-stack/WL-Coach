@@ -104,7 +104,9 @@ export function FieldInboxScreen() {
       s.totalUnread += t.unreadCount;
       if (!s.lastActivityAt || t.lastActivityAt > s.lastActivityAt) {
         s.lastActivityAt = t.lastActivityAt;
-        s.preview = t.lastMessage;
+        // Coach-authored previews (coach-initiated threads) read as
+        // "You: …" so they aren't mistaken for athlete messages.
+        s.preview = t.lastMessageSender === 'coach' ? `You: ${t.lastMessage}` : t.lastMessage;
       }
     }
     const sorted = Array.from(byAthlete.values()).sort((a, b) => {

@@ -1248,8 +1248,13 @@ export interface InboxThread {
   athletePhotoUrl: string | null;
   /** Session date in ISO yyyy-mm-dd; null for general threads. */
   performedOn: string | null;
-  /** Most recent athlete message body — list preview. */
+  /** List-preview message body. Coach inboxes prefer the most recent
+   *  athlete message; coach-only threads fall back to the coach's own
+   *  latest message. The athlete inbox prefers the coach's latest. */
   lastMessage: string;
+  /** Who wrote lastMessage — lets lists prefix the viewer's own
+   *  messages with "You:" so coach-initiated threads read correctly. */
+  lastMessageSender: 'athlete' | 'coach';
   /** created_at of the most recent message (athlete or coach), so the
    *  sort matches what a chat app would show. */
   lastActivityAt: string;
@@ -1373,6 +1378,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
         athletePhotoUrl: athlete.photoUrl,
         performedOn: sess.performedOn,
         lastMessage: r.message,
+        lastMessageSender: 'athlete',
         lastActivityAt: lastActivity,
         unreadCount: 0,
         athleteMessageCount: 0,
@@ -1400,6 +1406,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
       athletePhotoUrl: athlete.photoUrl,
       performedOn: sess.performedOn,
       lastMessage: coach.message,
+      lastMessageSender: 'coach',
       lastActivityAt: coach.at,
       unreadCount: 0,
       athleteMessageCount: 0,
@@ -1470,6 +1477,7 @@ async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread
         athletePhotoUrl: athlete.photoUrl,
         performedOn: null,
         lastMessage: r.message,
+        lastMessageSender: r.sender_type,
         lastActivityAt: r.created_at,
         unreadCount: 0,
         athleteMessageCount: 0,
@@ -1479,7 +1487,10 @@ async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread
       t.lastActivityAt = r.created_at;
       // Use the latest athlete message as the preview; if the latest
       // overall is a coach message, keep the existing athlete preview.
-      if (r.sender_type === 'athlete') t.lastMessage = r.message;
+      if (r.sender_type === 'athlete') {
+        t.lastMessage = r.message;
+        t.lastMessageSender = 'athlete';
+      }
     }
     if (r.sender_type === 'athlete') {
       t.athleteMessageCount += 1;
@@ -1718,6 +1729,7 @@ export async function fetchAthleteInboxThreads(
         athletePhotoUrl,
         performedOn,
         lastMessage: r.message,
+        lastMessageSender: r.sender_type,
         lastActivityAt: r.created_at,
         unreadCount: 0,
         athleteMessageCount: 0,
@@ -1728,7 +1740,10 @@ export async function fetchAthleteInboxThreads(
       // Preview prefers the most-recent coach message — that's the one
       // the athlete most cares about. Athlete-sent text echoes are less
       // useful as a "what's new" hint.
-      if (r.sender_type === 'coach') t.lastMessage = r.message;
+      if (r.sender_type === 'coach') {
+        t.lastMessage = r.message;
+        t.lastMessageSender = 'coach';
+      }
     }
     if (r.sender_type === 'athlete') t.athleteMessageCount += 1;
     if (r.sender_type === 'coach' && r.athlete_read_at == null) t.unreadCount += 1;

@@ -144,7 +144,9 @@ export function CoachInbox() {
       s.totalUnread += t.unreadCount;
       if (!s.lastActivityAt || t.lastActivityAt > s.lastActivityAt) {
         s.lastActivityAt = t.lastActivityAt;
-        s.preview = t.lastMessage;
+        // Coach-authored previews (coach-initiated threads) read as
+        // "You: …" so they aren't mistaken for athlete messages.
+        s.preview = t.lastMessageSender === 'coach' ? `You: ${t.lastMessage}` : t.lastMessage;
       }
     }
     const active = Array.from(byAthlete.values()).sort((a, b) => {
@@ -729,7 +731,7 @@ function SubThreadsPanel({
                 )}
               </span>
               <span style={{ flex: 1, color: 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11 }}>
-                {t.lastMessage}
+                {t.lastMessageSender === 'coach' ? `You: ${t.lastMessage}` : t.lastMessage}
               </span>
               {t.unreadCount > 0 && (
                 <span
@@ -1234,6 +1236,7 @@ function syntheticGeneralThread(athleteId: string, athleteName: string, athleteP
     athletePhotoUrl,
     performedOn: null,
     lastMessage: '',
+    lastMessageSender: 'coach',
     lastActivityAt: new Date(0).toISOString(),
     unreadCount: 0,
     athleteMessageCount: 0,
@@ -1256,6 +1259,7 @@ function syntheticUnitThread(
     athletePhotoUrl,
     performedOn: unit.date,
     lastMessage: '',
+    lastMessageSender: 'coach',
     lastActivityAt: new Date(0).toISOString(),
     unreadCount: 0,
     athleteMessageCount: 0,
