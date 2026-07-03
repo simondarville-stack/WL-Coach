@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
+import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroDraggableChart } from './MacroDraggableChart';
 
 interface MacroGraphViewProps {
@@ -14,6 +15,7 @@ interface MacroGraphViewProps {
   focusedExerciseId?: string | null;
   visibleExercises: Set<string>;
   showReps: boolean;
+  fillPreview?: FillGuidePreview | null;
 }
 
 export function MacroGraphView({
@@ -27,6 +29,7 @@ export function MacroGraphView({
   focusedExerciseId,
   visibleExercises,
   showReps,
+  fillPreview,
 }: MacroGraphViewProps) {
   const [linkedExerciseIds, setLinkedExerciseIds] = useState<Set<string>>(new Set());
 
@@ -70,6 +73,7 @@ export function MacroGraphView({
       onToggleLink={handleToggleLink}
       focusedExerciseId={focusedExerciseId}
       showReps={showReps}
+      fillPreview={fillPreview}
     />
   );
 }

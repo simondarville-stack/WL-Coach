@@ -59,6 +59,19 @@ export interface RhythmPreset {
   stampTypes?: (string | null)[] | null;
 }
 
+/** macro_templates row; payload typed loosely here to avoid a module cycle —
+ *  the rich payload types live in src/lib/macroTemplate.ts (MacroTemplateRow). */
+export interface MacroTemplateDbRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  mode: 'kg' | 'pct';
+  week_count: number;
+  payload: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Per-macro table view config (macrocycles.table_layout; NULL = app defaults). */
 export interface MacroTableLayout {
   /** keyed by tracked-exercise id */
@@ -963,6 +976,12 @@ export interface Database {
         Row: MacroTarget & Record<string, unknown>;
         Insert: Partial<Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Update: Partial<Omit<MacroTarget, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      macro_templates: {
+        Row: MacroTemplateDbRow & Record<string, unknown>;
+        Insert: Partial<Omit<MacroTemplateDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<MacroTemplateDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       general_settings: {

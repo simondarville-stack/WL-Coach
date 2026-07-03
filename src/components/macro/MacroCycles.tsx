@@ -4,6 +4,11 @@ import { Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS, DEFAULT_RHYTHM_PRESETS } from '../../lib/constants';
 import { MacroFillGuide } from './MacroFillGuide';
+import { RhythmPresetManager } from './RhythmPresetManager';
+import { MacroTemplateSaveModal } from './MacroTemplateSaveModal';
+import { useMacroTemplates } from '../../hooks/useMacroTemplates';
+import { materializeTemplate } from '../../lib/macroTemplate';
+import type { MacroTemplateRow } from '../../lib/macroTemplate';
 import { buildFillPlan } from './fillGuidePlan';
 import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
@@ -40,7 +45,7 @@ export function MacroCycles() {
   const { cycleId: urlCycleId } = useParams<{ cycleId?: string }>();
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
-  const { settings, fetchSettingsSilent } = useSettings();
+  const { settings, fetchSettingsSilent, updateSettings } = useSettings();
   const { groupMembers: hookGroupMembers, fetchGroupMembers } = useTrainingGroups();
 
   const {
@@ -127,6 +132,20 @@ export function MacroCycles() {
     weekRows: Array<{ id: string; week_type: string; total_reps_target: number | null }>;
   } | null>(null);
   const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
+  const [showRhythmManager, setShowRhythmManager] = useState(false);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
+  const { templates, fetchTemplates, createTemplate, deleteTemplate, applyTemplate } = useMacroTemplates();
+
+  useEffect(() => { void fetchTemplates(); }, []);
+
+  // Coach rhythm presets: settings override, app defaults otherwise
+  const rhythmPresets: RhythmPreset[] =
+    (settings?.rhythm_presets?.length ? settings.rhythm_presets : DEFAULT_RHYTHM_PRESETS);
+
+  const handleSaveRhythmPresets = useCallback(async (presets: RhythmPreset[]) => {
+    if (!settings) return;
+    await updateSettings(settings.id, { rhythm_presets: presets });
+  }, [settings, updateSettings]);
 
   // ── Table view config (metric registry, column states, tints) — per macro ────
   const [exerciseMetrics, setExerciseMetrics] = useState<ExerciseMetricConfig[]>(DEFAULT_EXERCISE_METRICS);
@@ -336,6 +355,8 @@ export function MacroCycles() {
     endDate: string;
     competitions: { name: string; date: string; is_primary: boolean }[];
     phasePreset: 'none' | '8week' | '12week' | 'custom';
+    template?: MacroTemplateRow;
+    templateReferences?: Record<string, number | null>;
   }) => {
     if (!macroTarget) return;
 
@@ -365,6 +386,15 @@ export function MacroCycles() {
         })
       )
     );
+
+    // Apply a template: week rhythm + phases + exercises + targets, all in one
+    if (data.template) {
+      const mat = materializeTemplate(data.template, data.templateReferences ?? {});
+      await applyTemplate(cycle.id, mat);
+      navigate(`/macrocycles/${cycle.id}`);
+      setShowCreateModal(false);
+      return;
+    }
 
     // Create phase presets
     const totalWeeks = weekInserts.length;
@@ -742,6 +772,7 @@ export function MacroCycles() {
         onUndoFill={handleUndoFill}
         canRemodulate={!!lastFillInputs}
         onRemodulate={handleRemodulate}
+        onSaveTemplate={() => setShowTemplateSave(true)}
       />
 
       {/* Cycle info + phase bar */}
@@ -890,6 +921,7 @@ export function MacroCycles() {
                 focusedExerciseId={focusedExerciseId}
                 visibleExercises={visibleExercises}
                 showReps={showReps}
+                fillPreview={fillPreview}
               />
             </div>
           )}
@@ -936,8 +968,22 @@ export function MacroCycles() {
       {showCreateModal && (
         <MacroCreateModal
           loading={loading}
+          templates={templates}
+          onDeleteTemplate={deleteTemplate}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateCycle}
+        />
+      )}
+
+      {showTemplateSave && selectedCycle && (
+        <MacroTemplateSaveModal
+          cycleName={selectedCycle.name}
+          macroWeeks={macroWeeks}
+          phases={phases}
+          trackedExercises={trackedExercises}
+          targets={targets}
+          onSave={async (name, mode, weekCount, payload) => { await createTemplate(name, mode, weekCount, payload); }}
+          onClose={() => setShowTemplateSave(false)}
         />
       )}
 
@@ -957,15 +1003,21 @@ export function MacroCycles() {
           trackedExercises={trackedExercises}
           targets={targets}
           weekTypes={settings?.week_types ?? []}
-          rhythmPresets={
-            (settings?.rhythm_presets as RhythmPreset[] | null | undefined)?.length
-              ? (settings!.rhythm_presets as RhythmPreset[])
-              : DEFAULT_RHYTHM_PRESETS
-          }
+          rhythmPresets={rhythmPresets}
           onPreviewChange={setFillPreview}
           onApply={handleApplyFill}
           onUpdateReference={updateTrackedExerciseReference}
+          onEditPresets={() => setShowRhythmManager(true)}
           onClose={() => { setShowFillGuide(false); setFillPreview(null); }}
+        />
+      )}
+
+      {showRhythmManager && (
+        <RhythmPresetManager
+          presets={rhythmPresets}
+          weekTypes={settings?.week_types ?? []}
+          onSave={handleSaveRhythmPresets}
+          onClose={() => setShowRhythmManager(false)}
         />
       )}
 

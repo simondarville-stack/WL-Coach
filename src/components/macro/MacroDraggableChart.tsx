@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
 import type { MacroActuals, MacroActualsMap } from '../../hooks/useMacroCycles';
+import type { FillGuidePreview } from './fillGuidePlan';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 
 export type ChartMetric = 'reps' | 'max' | 'avg';
@@ -66,6 +67,8 @@ interface MacroDraggableChartProps {
   onToggleLink: (trackedExId: string) => void;
   focusedExerciseId?: string | null;
   showReps: boolean;
+  /** Live fill-guide preview — pending max/avg render as dashed ghost lines. */
+  fillPreview?: FillGuidePreview | null;
 }
 
 const CHART_HEIGHT = 480;
@@ -82,6 +85,7 @@ export function MacroDraggableChart({
   linkedExerciseIds,
   onToggleLink,
   showReps,
+  fillPreview,
 }: MacroDraggableChartProps) {
   const [dragOverrides, setDragOverrides] = useState<Record<string, number>>({});
   const [activeDrag, setActiveDrag] = useState<DragState | null>(null);
@@ -214,12 +218,20 @@ export function MacroDraggableChart({
         const exActuals = actuals[week.id]?.[te.exercise_id];
         point[`a_${metric}_${te.id}`] = exActuals ? (exActuals[ACTUAL_KEY[metric]] as number) : null;
       });
+      // Fill-guide preview overlay (pending values, not saved yet)
+      const previewCell = fillPreview?.byTrackedEx?.[te.id]?.[week.id];
+      point[`p_max_${te.id}`] = previewCell?.max ?? null;
+      point[`p_avg_${te.id}`] = previewCell?.avg ?? null;
     });
     return point;
-  }), [macroWeeks, trackedExercises, targets, actuals, dragOverrides]);
+  }), [macroWeeks, trackedExercises, targets, actuals, dragOverrides, fillPreview]);
 
   const allKgValues = chartData.flatMap(p =>
-    trackedExercises.flatMap(te => (['max', 'avg'] as const).map(m => p[`t_${m}_${te.id}`] as number | null))
+    trackedExercises.flatMap(te => [
+      ...(['max', 'avg'] as const).map(m => p[`t_${m}_${te.id}`] as number | null),
+      p[`p_max_${te.id}`] as number | null,
+      p[`p_avg_${te.id}`] as number | null,
+    ])
   ).filter((v): v is number => v !== null && v > 0);
   const yMinKg = allKgValues.length > 0 ? Math.max(0, Math.floor(Math.min(...allKgValues) * 0.7 / 10) * 10) : 0;
   const yMaxKg = activeDrag?.yAxisId === 'kg'
@@ -566,6 +578,43 @@ export function MacroDraggableChart({
                 />
               );
             })}
+
+            {/* Fill-guide preview overlay — pending max/avg as ghost lines */}
+            {fillPreview && trackedExercises
+              .filter(te => fillPreview.byTrackedEx?.[te.id])
+              .flatMap(te => {
+                const color = getColor(te);
+                return [
+                  <Line
+                    key={`prev_max_${te.id}`}
+                    yAxisId="kg"
+                    type="monotone"
+                    dataKey={`p_max_${te.id}`}
+                    name={`${te.exercise.exercise_code || te.exercise.name} Max (preview)`}
+                    stroke={color}
+                    strokeWidth={1.5}
+                    strokeDasharray="5 4"
+                    dot={{ r: 2.5, fill: '#fff', stroke: color, strokeWidth: 1.2 }}
+                    activeDot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />,
+                  <Line
+                    key={`prev_avg_${te.id}`}
+                    yAxisId="kg"
+                    type="monotone"
+                    dataKey={`p_avg_${te.id}`}
+                    name={`${te.exercise.exercise_code || te.exercise.name} Avg (preview)`}
+                    stroke={withOpacity(color, 0.55)}
+                    strokeWidth={1}
+                    strokeDasharray="2 3"
+                    dot={false}
+                    activeDot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                  />,
+                ];
+              })}
 
             {/* Target avg lines */}
             {showAvgSeries && trackedExercises.map(te => {

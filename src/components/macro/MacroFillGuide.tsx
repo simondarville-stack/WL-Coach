@@ -38,6 +38,7 @@ interface MacroFillGuideProps {
   onPreviewChange: (preview: FillGuidePreview | null) => void;
   onApply: (plan: FillWritePlan, inputs: FillGuideInputs) => Promise<void>;
   onUpdateReference: (trackedExId: string, referenceKg: number | null) => Promise<void>;
+  onEditPresets?: () => void;
   onClose: () => void;
 }
 
@@ -54,6 +55,7 @@ export function MacroFillGuide({
   onPreviewChange,
   onApply,
   onUpdateReference,
+  onEditPresets,
   onClose,
 }: MacroFillGuideProps) {
   const lastWeek = macroWeeks.length > 0 ? Math.max(...macroWeeks.map(w => w.week_number)) : 1;
@@ -368,12 +370,21 @@ export function MacroFillGuide({
           <select
             value={rhythm.id}
             onChange={e => selectRhythm(e.target.value)}
-            className={`${inputCls} max-w-[220px]`}
+            className={`${inputCls} max-w-[200px]`}
           >
             {rhythmPresets.map(r => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
           </select>
+          {onEditPresets && (
+            <button
+              onClick={onEditPresets}
+              className="text-[10px] text-[color:var(--color-accent)] hover:underline"
+              title="Create and edit your saved rhythm presets"
+            >
+              edit presets…
+            </button>
+          )}
         </div>
         <div className="text-[9px] text-[color:var(--color-text-tertiary)] pl-[94px]">
           top = load % · bottom = reps % of trend · tweaks apply to this fill only

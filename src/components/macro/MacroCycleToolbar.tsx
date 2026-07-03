@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, ChevronDown, Pencil, PieChart, Plus, RefreshCw, Trash2, Undo2, Users, Wand2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, BookmarkPlus, ChevronDown, Pencil, PieChart, Plus, RefreshCw, Trash2, Undo2, Users, Wand2 } from 'lucide-react';
 import { Button } from '../ui';
 import type { MacroCycle, Exercise, TrainingGroup } from '../../lib/database.types';
 import type { GroupMemberWithAthlete } from '../../lib/database.types';
@@ -51,6 +51,7 @@ interface MacroCycleToolbarProps {
   onUndoFill: () => void;
   canRemodulate: boolean;
   onRemodulate: () => void;
+  onSaveTemplate: () => void;
 }
 
 export function MacroCycleToolbar({
@@ -95,6 +96,7 @@ export function MacroCycleToolbar({
   onUndoFill,
   canRemodulate,
   onRemodulate,
+  onSaveTemplate,
 }: MacroCycleToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0 flex-wrap">
@@ -271,6 +273,17 @@ export function MacroCycleToolbar({
               Undo fill
             </Button>
           )}
+
+          {/* Save as template */}
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<BookmarkPlus size={13} />}
+            onClick={onSaveTemplate}
+            title="Save this cycle as a reusable template (exact kg or general % model)"
+          >
+            Template
+          </Button>
 
           {/* Excel IO */}
           {cycleDateRange && (
