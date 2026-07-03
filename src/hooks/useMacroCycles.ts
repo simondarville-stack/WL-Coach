@@ -135,6 +135,19 @@ export function useMacroCycles() {
     }
   };
 
+  /** Persist per-macro table view config. Quiet: no loading flag (fires on
+   *  collapse/metric clicks), non-throwing (a failed layout save must never
+   *  break the interaction that triggered it). */
+  const updateMacrocycleLayout = async (id: string, layout: import('../lib/database.types').MacroTableLayout | null) => {
+    setMacrocycles(prev => prev.map(m => m.id === id ? { ...m, table_layout: layout } : m));
+    try {
+      const { error } = await supabase.from('macrocycles').update({ table_layout: layout }).eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      setError(errMsg(err, 'Failed to save table layout'));
+    }
+  };
+
   const deleteMacrocycle = async (id: string) => {
     try {
       setLoading(true);
@@ -1040,6 +1053,7 @@ export function useMacroCycles() {
     swapTrackedExercisePositions,
     removeTrackedExercise,
     reorderTrackedExercise,
+    updateMacrocycleLayout,
     fetchTargets,
     upsertTarget,
     bulkUpsertTargets,

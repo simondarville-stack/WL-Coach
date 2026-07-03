@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
-import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
+import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS, DEFAULT_RHYTHM_PRESETS } from '../../lib/constants';
 import { MacroFillGuide } from './MacroFillGuide';
 import { buildFillPlan } from './fillGuidePlan';
@@ -11,8 +11,9 @@ import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
-import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
-import type { MacroTableColumnKey } from './MacroTableV2';
+import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS } from './MacroTableV2';
+import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
+import { MacroViewMenu } from './MacroViewMenu';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
 import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
@@ -79,6 +80,7 @@ export function MacroCycles() {
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
+    updateMacrocycleLayout,
     extendCycle,
     trimCycle,
   } = useMacroCycles();
@@ -125,6 +127,45 @@ export function MacroCycles() {
     weekRows: Array<{ id: string; week_type: string; total_reps_target: number | null }>;
   } | null>(null);
   const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
+
+  // ── Table view config (metric registry, column states, tints) — per macro ────
+  const [exerciseMetrics, setExerciseMetrics] = useState<ExerciseMetricConfig[]>(DEFAULT_EXERCISE_METRICS);
+  const [exColStates, setExColStates] = useState<Record<string, ExerciseColumnState>>({});
+  const [consistencyTint, setConsistencyTint] = useState(true);
+  const [collapsedHeatmap, setCollapsedHeatmap] = useState(true);
+
+  // Persist the whole view config to macrocycles.table_layout (quiet write).
+  // Each setter passes its NEXT value explicitly so we never persist stale state.
+  const persistLayout = useCallback((overrides: Partial<MacroTableLayout>) => {
+    if (!selectedCycle) return;
+    const layout: MacroTableLayout = {
+      exercises: exColStates,
+      metrics: exerciseMetrics,
+      viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap },
+      ...overrides,
+    };
+    void updateMacrocycleLayout(selectedCycle.id, layout);
+  }, [selectedCycle, exColStates, exerciseMetrics, consistencyTint, collapsedHeatmap, updateMacrocycleLayout]);
+
+  const applyMetrics = useCallback((m: ExerciseMetricConfig[]) => {
+    setExerciseMetrics(m);
+    persistLayout({ metrics: m });
+  }, [persistLayout]);
+
+  const applyColStates = useCallback((next: Record<string, ExerciseColumnState>) => {
+    setExColStates(next);
+    persistLayout({ exercises: next });
+  }, [persistLayout]);
+
+  const handleToggleCollapse = useCallback((teId: string) => {
+    const cur = exColStates[teId] ?? {};
+    applyColStates({ ...exColStates, [teId]: { collapsed: !cur.collapsed, expanded: false } });
+  }, [exColStates, applyColStates]);
+
+  const handleToggleExpand = useCallback((teId: string) => {
+    const cur = exColStates[teId] ?? {};
+    applyColStates({ ...exColStates, [teId]: { collapsed: false, expanded: !cur.expanded } });
+  }, [exColStates, applyColStates]);
 
   // Helper: scroll to a phase row in the table and apply a brief highlight
   const scrollToPhase = useCallback((phaseId: string) => {
@@ -238,6 +279,26 @@ export function MacroCycles() {
     setFillUndo(null);
     setLastFillInputs(null);
   }, [selectedCycle?.id]);
+
+  // Load the per-macro table view config. Saved metric order wins for known
+  // keys; new registry entries (future metrics) append with their defaults.
+  useEffect(() => {
+    const layout = selectedCycle?.table_layout;
+    const known = new Map(DEFAULT_EXERCISE_METRICS.map(m => [m.key, m]));
+    const merged: ExerciseMetricConfig[] = [];
+    for (const saved of layout?.metrics ?? []) {
+      const base = known.get(saved.key as ExerciseMetricConfig['key']);
+      if (base) {
+        merged.push({ key: base.key, on: saved.on !== false });
+        known.delete(base.key);
+      }
+    }
+    merged.push(...Array.from(known.values(), m => ({ ...m })));
+    setExerciseMetrics(merged);
+    setExColStates((layout?.exercises as Record<string, ExerciseColumnState> | undefined) ?? {});
+    setConsistencyTint(layout?.viewToggles?.consistency ?? true);
+    setCollapsedHeatmap(layout?.viewToggles?.heatmap ?? true);
+  }, [selectedCycle?.id, selectedCycle?.table_layout]);
 
   // Load targets when weeks change
   useEffect(() => {
@@ -429,6 +490,17 @@ export function MacroCycles() {
     if (plan.cellCount === 0) return;
     await handleApplyFill(plan, lastFillInputs);
   }, [lastFillInputs, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill]);
+
+  // ─── Weekly exercise note ───────────────────────────────────────────────────
+  // A macro_targets row may hold only a note (all numeric targets NULL).
+  const handleUpdateTargetNote = useCallback(async (weekId: string, teId: string, note: string) => {
+    const trimmed = note.trim();
+    await bulkUpsertTargets([{
+      macro_week_id: weekId,
+      tracked_exercise_id: teId,
+      fields: { note: trimmed || null },
+    }]);
+  }, [bulkUpsertTargets]);
 
   // ─── Paste week ───────────────────────────────────────────────────────────────
 
@@ -754,6 +826,16 @@ export function MacroCycles() {
               >
                 Reps
               </button>
+              <MacroViewMenu
+                metrics={exerciseMetrics}
+                onMetricsChange={applyMetrics}
+                consistencyTint={consistencyTint}
+                onConsistencyTintChange={(v) => { setConsistencyTint(v); persistLayout({ viewToggles: { consistency: v, heatmap: collapsedHeatmap } }); }}
+                collapsedHeatmap={collapsedHeatmap}
+                onCollapsedHeatmapChange={(v) => { setCollapsedHeatmap(v); persistLayout({ viewToggles: { consistency: consistencyTint, heatmap: v } }); }}
+                onCollapseAll={() => applyColStates(Object.fromEntries(trackedExercises.map(te => [te.id, { collapsed: true, expanded: false }])))}
+                onExpandAll={() => applyColStates({})}
+              />
             </div>
           )}
 
@@ -784,6 +866,13 @@ export function MacroCycles() {
               weekTypes={settings?.week_types ?? []}
               highlightedPhaseId={highlightedPhaseId}
               fillPreview={fillPreview}
+              metrics={exerciseMetrics}
+              exerciseColumnStates={exColStates}
+              onToggleCollapse={handleToggleCollapse}
+              onToggleExpand={handleToggleExpand}
+              consistencyTint={consistencyTint}
+              collapsedHeatmap={collapsedHeatmap}
+              onUpdateTargetNote={handleUpdateTargetNote}
             />
           </div>
 

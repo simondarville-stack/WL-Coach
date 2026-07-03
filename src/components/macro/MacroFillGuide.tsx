@@ -185,6 +185,23 @@ export function MacroFillGuide({
     }));
   };
 
+  // Switching anchor unit CONVERTS the values (via the reference) instead of
+  // reinterpreting the raw numbers — 120 kg at ref 150 becomes 80 %, not 120 %.
+  const switchUnit = (next: 'kg' | 'pct') => {
+    if (next === unit) return;
+    const ref = referenceKg && referenceKg > 0 ? referenceKg : selectedTe?.reference_kg ?? null;
+    if (ref && ref > 0) {
+      if (next === 'pct') {
+        setFromValue(Math.round((fromValue / ref) * 200) / 2);
+        setToValue(Math.round((toValue / ref) * 200) / 2);
+      } else {
+        setFromValue(Math.round((ref * fromValue) / 100 / 2.5) * 2.5);
+        setToValue(Math.round((ref * toValue) / 100 / 2.5) * 2.5);
+      }
+    }
+    setUnit(next);
+  };
+
   const canStamp = stampAllowed(rhythm, weekTypes);
   const hasStamps = rhythm.mode === 'pattern' && !!rhythm.stampTypes?.some(Boolean);
   const missingStampTypes = hasStamps && !canStamp
@@ -250,14 +267,14 @@ export function MacroFillGuide({
             <label className={labelCls}>Anchors in</label>
             <div className="inline-flex border border-gray-300 rounded overflow-hidden">
               <button
-                onClick={() => !isAll && setUnit('kg')}
+                onClick={() => !isAll && switchUnit('kg')}
                 className={`px-2.5 py-0.5 text-[11px] ${effectiveUnit === 'kg' ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-gray-600'} ${isAll ? 'opacity-40 cursor-not-allowed' : ''}`}
                 title={isAll ? 'All-exercises fills are always % of each reference' : undefined}
               >
                 kg
               </button>
               <button
-                onClick={() => setUnit('pct')}
+                onClick={() => switchUnit('pct')}
                 className={`px-2.5 py-0.5 text-[11px] ${effectiveUnit === 'pct' ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-gray-600'}`}
               >
                 % of reference
