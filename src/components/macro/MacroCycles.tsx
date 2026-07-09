@@ -588,16 +588,16 @@ export function MacroCycles() {
       {/* Cycle info + phase bar */}
       {selectedCycle && (
         <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-          {/* MacroTimeline replaces the old MacroPhaseBar + local fetch */}
           <div style={{ padding: '12px 16px 8px' }}>
             <MacroTimeline
-              mode="bounded"
+              mode="macro"
               cycleId={selectedCycle.id}
+              contextWeeks={0}
               athleteId={selectedAthlete?.id ?? null}
               groupId={selectedGroup?.id ?? null}
-              onPhaseClick={(cell) => {
+              onPhaseClick={(week) => {
                 const phase = phases.find(
-                  p => p.macrocycle_id === cell.macroId && p.name === cell.phase
+                  p => p.macrocycle_id === week.macroId && p.name === week.phaseName
                 );
                 if (phase) scrollToPhase(phase.id);
               }}

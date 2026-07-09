@@ -1,8 +1,5 @@
-export { MacroPhaseBar } from './MacroPhaseBar';
 export { MacroTimeline } from './MacroTimeline';
-export type {
-  MacroPhaseBarProps,
-  MacroPhaseBarCell,
-  MacroPhaseBarEvent,
-} from './MacroPhaseBar';
+export { MacroTimelineStrip } from './MacroTimelineStrip';
 export type { MacroTimelineProps } from './MacroTimeline';
+export type { MacroTimelineStripProps } from './MacroTimelineStrip';
+export type { TimelineWeek, TimelineMarker } from '../../lib/macroTimelineData';
