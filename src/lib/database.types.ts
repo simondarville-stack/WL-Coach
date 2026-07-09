@@ -385,6 +385,9 @@ export interface GeneralSettings {
    *  Null falls back to DEFAULT_FIELD_BOLD_PCT (90). */
   field_bold_intensity_pct: number | null;
   phase_type_presets: PhaseTypePreset[] | null;
+  /** Metric driving the macro timeline's load silhouette + logged-actual
+   *  marker. Null falls back to 'reps'. */
+  timeline_metric: 'reps' | 'tonnage' | null;
   created_at: string;
   updated_at: string;
 }

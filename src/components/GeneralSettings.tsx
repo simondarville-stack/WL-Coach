@@ -737,6 +737,39 @@ export function GeneralSettings() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Macro timeline</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Which metric drives the load silhouette and the logged-actual marker on the macro timeline.
+            Falls back to the other metric when a macro carries no targets for the chosen one.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          {([
+            { value: 'reps' as const, label: 'Total reps (K)', hint: 'Week K targets vs. performed reps' },
+            { value: 'tonnage' as const, label: 'Tonnage', hint: 'Week tonnage targets vs. performed kg volume' },
+          ] as const).map(({ value, label, hint }) => {
+            const active = (settings?.timeline_metric ?? 'reps') === value;
+            return (
+              <button
+                key={value}
+                onClick={async () => {
+                  if (!settings) return;
+                  await updateSettings(settings.id, { timeline_metric: value });
+                }}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                  active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <p className={`text-xs font-medium ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <h2 className="text-lg font-medium text-gray-900 mb-1">Week types</h2>
         <p className="text-sm text-gray-600 mb-4">Define the week classification labels used in the macro planner. Each type has a name, abbreviation (1–3 chars), and color.</p>
 

@@ -42,6 +42,11 @@ export interface TimelineWeek {
   repsTarget: number | null;
   /** Week-level tonnage target (kg) from the macro plan. */
   tonnageTarget: number | null;
+  /** Performed reps from training logs (completed sets; group = per-athlete
+   *  average). Null when nothing is logged for the week. */
+  actualReps: number | null;
+  /** Performed tonnage (kg) from training logs; same semantics. */
+  actualTonnage: number | null;
   /** Coach note on the macro week ('' = none). */
   notes: string;
   /** True for dimmed context weeks outside the anchor macro (macro mode). */
@@ -258,6 +263,109 @@ export async function fetchTimelineMarkers(
   return [...markers.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Performed weekly volume, keyed by week_start. */
+export interface WeeklyActuals {
+  reps: number;
+  tonnage: number;
+}
+
+/** PostgREST `.in()` filters go into the URL — chunk long UUID lists. */
+const IN_CHUNK = 150;
+
+async function chunked<T>(
+  ids: string[],
+  fetchChunk: (chunk: string[]) => Promise<T[]>
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    out.push(...(await fetchChunk(ids.slice(i, i + IN_CHUNK))));
+  }
+  return out;
+}
+
+/**
+ * Aggregate performed volume from the training logs for the given athletes
+ * over [rangeStart, rangeEnd] (week_start bounds, inclusive). Counts only
+ * completed sets (same rule as trainingLogModel.sumPerformedReps); tonnage
+ * is performed_load × performed_reps. With multiple athletes (group scope)
+ * the result is the per-athlete average across athletes that logged
+ * anything that week — comparable to the per-athlete macro target.
+ */
+export async function fetchWeeklyActuals(
+  athleteIds: string[],
+  rangeStart: string,
+  rangeEnd: string
+): Promise<Map<string, WeeklyActuals>> {
+  const result = new Map<string, WeeklyActuals>();
+  if (athleteIds.length === 0) return result;
+
+  const { data: sessions } = await supabase
+    .from('training_log_sessions')
+    .select('id, athlete_id, week_start')
+    .in('athlete_id', athleteIds)
+    .gte('week_start', rangeStart)
+    .lte('week_start', rangeEnd);
+  if (!sessions || sessions.length === 0) return result;
+
+  type SessionRow = { id: string; athlete_id: string; week_start: string };
+  const sessionById = new Map((sessions as SessionRow[]).map(s => [s.id, s]));
+
+  type LogExRow = { id: string; session_id: string };
+  const logExercises = await chunked([...sessionById.keys()], async chunk => {
+    const { data } = await supabase
+      .from('training_log_exercises')
+      .select('id, session_id')
+      .in('session_id', chunk);
+    return (data ?? []) as LogExRow[];
+  });
+  if (logExercises.length === 0) return result;
+
+  const sessionByLogExId = new Map(
+    logExercises.map(le => [le.id, sessionById.get(le.session_id)!])
+  );
+
+  type SetRow = { log_exercise_id: string; performed_load: number | null; performed_reps: number | null };
+  const sets = await chunked(logExercises.map(le => le.id), async chunk => {
+    const { data } = await supabase
+      .from('training_log_sets')
+      .select('log_exercise_id, performed_load, performed_reps')
+      .in('log_exercise_id', chunk)
+      .eq('status', 'completed');
+    return (data ?? []) as SetRow[];
+  });
+
+  // Sum per athlete per week, then average across logging athletes.
+  const perAthleteWeek = new Map<string, WeeklyActuals>();
+  for (const s of sets) {
+    const session = sessionByLogExId.get(s.log_exercise_id);
+    if (!session) continue;
+    const reps = s.performed_reps ?? 0;
+    if (reps <= 0) continue;
+    const key = `${session.athlete_id}|${session.week_start}`;
+    const acc = perAthleteWeek.get(key) ?? { reps: 0, tonnage: 0 };
+    acc.reps += reps;
+    acc.tonnage += (s.performed_load ?? 0) * reps;
+    perAthleteWeek.set(key, acc);
+  }
+
+  const sums = new Map<string, { reps: number; tonnage: number; athletes: number }>();
+  for (const [key, acc] of perAthleteWeek) {
+    const weekStart = key.slice(key.indexOf('|') + 1);
+    const sum = sums.get(weekStart) ?? { reps: 0, tonnage: 0, athletes: 0 };
+    sum.reps += acc.reps;
+    sum.tonnage += acc.tonnage;
+    sum.athletes += 1;
+    sums.set(weekStart, sum);
+  }
+  for (const [weekStart, sum] of sums) {
+    result.set(weekStart, {
+      reps: Math.round(sum.reps / sum.athletes),
+      tonnage: Math.round(sum.tonnage / sum.athletes),
+    });
+  }
+  return result;
+}
+
 // ── Pure builders ────────────────────────────────────────────────────────────
 
 function findPhaseForWeek(
@@ -334,6 +442,8 @@ export function buildTimelineWeeks(
         rawWeekType: null,
         repsTarget: null,
         tonnageTarget: null,
+        actualReps: null,
+        actualTonnage: null,
         notes: '',
         isContext: anchorMacroId != null,
       };
@@ -357,6 +467,8 @@ export function buildTimelineWeeks(
       rawWeekType: row.week_type ?? null,
       repsTarget: row.total_reps_target,
       tonnageTarget: row.tonnage_target,
+      actualReps: null,
+      actualTonnage: null,
       notes: row.notes ?? '',
       isContext: anchorMacroId != null && macro.id !== anchorMacroId,
     };

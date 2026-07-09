@@ -7,10 +7,16 @@
 import { getISOWeek } from '../../lib/dateUtils';
 import type { TimelineWeek, TimelineMarker } from '../../lib/macroTimelineData';
 
+export type TimelineMetric = 'reps' | 'tonnage';
+
 export interface MacroTimelineStripProps {
   /** One entry per week, chronological. */
   weeks: TimelineWeek[];
   markers?: TimelineMarker[];
+  /** Preferred metric for the load silhouette + actual marker (coach
+   *  setting). Falls back to the other metric when no week in view carries
+   *  this one. Default 'reps'. */
+  metric?: TimelineMetric;
   /** weekStart (Monday) of the selected week; gets the accent ring. */
   selectedWeekStart?: string | null;
   /** Today's exact date; the playhead is drawn at its day within the week. */
@@ -119,7 +125,11 @@ function markersForWeek(week: TimelineWeek, markers: TimelineMarker[]): Timeline
   });
 }
 
-function buildTooltip(w: TimelineWeek, weekMarkers: TimelineMarker[]): string {
+function buildTooltip(
+  w: TimelineWeek,
+  weekMarkers: TimelineMarker[],
+  metric: TimelineMetric | null
+): string {
   const lines: string[] = [];
 
   const head: string[] = [];
@@ -138,6 +148,23 @@ function buildTooltip(w: TimelineWeek, weekMarkers: TimelineMarker[]): string {
   if (w.tonnageTarget != null) targets.push(formatTonnage(w.tonnageTarget));
   if (targets.length) lines.push(`Target: ${targets.join(' · ')}`);
 
+  // Actual (performed) — express compliance against the target of the
+  // metric that drives the silhouette.
+  if (w.actualReps != null || w.actualTonnage != null) {
+    const actuals: string[] = [];
+    if (w.actualReps != null && w.actualReps > 0) actuals.push(`K ${w.actualReps}`);
+    if (w.actualTonnage != null && w.actualTonnage > 0) actuals.push(formatTonnage(w.actualTonnage));
+    if (actuals.length) {
+      let compliance = '';
+      const actualV = metric === 'tonnage' ? w.actualTonnage : w.actualReps;
+      const targetV = metric === 'tonnage' ? w.tonnageTarget : w.repsTarget;
+      if (metric && actualV != null && targetV != null && targetV > 0) {
+        compliance = ` (${Math.round((actualV / targetV) * 100)} %)`;
+      }
+      lines.push(`Actual: ${actuals.join(' · ')}${compliance}`);
+    }
+  }
+
   if (w.notes.trim()) lines.push(`✎ ${w.notes.trim()}`);
   weekMarkers.forEach(m => {
     lines.push(`${m.kind === 'competition' ? '⚑' : '•'} ${m.title} (${formatDateEUFromISO(m.date)})`);
@@ -150,6 +177,7 @@ function buildTooltip(w: TimelineWeek, weekMarkers: TimelineMarker[]): string {
 export function MacroTimelineStrip({
   weeks,
   markers = [],
+  metric: preferredMetric = 'reps',
   selectedWeekStart = null,
   todayDate = null,
   onWeekClick,
@@ -166,24 +194,45 @@ export function MacroTimelineStrip({
   const cellPct = 100 / total;
 
   // ── Load silhouette normalisation ──
-  // Prefer the K (total reps) target; fall back to tonnage when no week in
-  // view carries a K target. Weeks without a value get a baseline sliver so
-  // the phase band stays visible; when NO week has any target the fill is
-  // full-height (classic solid bar).
-  const anyReps = weeks.some(w => w.repsTarget != null);
-  const anyTonnage = weeks.some(w => w.tonnageTarget != null);
-  const metric: 'reps' | 'tonnage' | null = anyReps ? 'reps' : anyTonnage ? 'tonnage' : null;
-  const valueOf = (w: TimelineWeek): number | null =>
+  // The coach's preferred metric (settings) drives the silhouette; fall back
+  // to the other metric when no week in view carries the preferred one
+  // (neither as target nor as logged actual). Weeks without a value get a
+  // baseline sliver so the phase band stays visible; when NO week has any
+  // target the fill is full-height (classic solid bar).
+  const hasMetric = (m: TimelineMetric) =>
+    weeks.some(w => (m === 'reps' ? w.repsTarget ?? w.actualReps : w.tonnageTarget ?? w.actualTonnage) != null);
+  const otherMetric: TimelineMetric = preferredMetric === 'reps' ? 'tonnage' : 'reps';
+  const metric: TimelineMetric | null = hasMetric(preferredMetric)
+    ? preferredMetric
+    : hasMetric(otherMetric) ? otherMetric : null;
+
+  const targetOf = (w: TimelineWeek): number | null =>
     metric === 'reps' ? w.repsTarget : metric === 'tonnage' ? w.tonnageTarget : null;
+  const actualOf = (w: TimelineWeek): number | null => {
+    const v = metric === 'reps' ? w.actualReps : metric === 'tonnage' ? w.actualTonnage : null;
+    return v != null && v > 0 ? v : null;
+  };
+
+  // Planned and actual share one scale, so the tick reads directly against
+  // the fill's top edge: above = over target, below = under.
   const maxValue = metric
-    ? Math.max(...weeks.map(w => valueOf(w) ?? 0), 1)
+    ? Math.max(...weeks.map(w => Math.max(targetOf(w) ?? 0, actualOf(w) ?? 0)), 1)
     : 1;
+  const scaled = (v: number): number => MIN_FILL + (1 - MIN_FILL) * (v / maxValue);
+  const anyTarget = metric != null && weeks.some(w => targetOf(w) != null);
   const fillFraction = (w: TimelineWeek): number => {
     if (w.macroId === null) return 0;
-    if (!metric) return 1;
-    const v = valueOf(w);
+    if (!anyTarget) return 1;
+    const v = targetOf(w);
     if (v == null) return NO_TARGET_FILL;
-    return MIN_FILL + (1 - MIN_FILL) * (v / maxValue);
+    return scaled(v);
+  };
+  const actualFraction = (w: TimelineWeek): number | null => {
+    const v = actualOf(w);
+    // Without any target in view the fill is a full solid bar on an
+    // arbitrary scale — an actual tick would be meaningless there.
+    if (v == null || !anyTarget) return null;
+    return Math.min(scaled(v), 1);
   };
 
   // ── Marker positioning ──
@@ -355,11 +404,12 @@ export function MacroTimelineStrip({
             const weekMarkers = markersForWeek(w, markers);
             const isSelected = selectedWeekStart != null && w.weekStart === selectedWeekStart;
             const frac = fillFraction(w);
+            const actualFrac = actualFraction(w);
             const isGap = w.macroId === null;
             return (
               <div
                 key={w.weekStart}
-                title={buildTooltip(w, weekMarkers)}
+                title={buildTooltip(w, weekMarkers, metric)}
                 onClick={onWeekClick ? () => onWeekClick(w) : undefined}
                 style={{
                   flex: 1, position: 'relative', minWidth: 0,
@@ -382,6 +432,18 @@ export function MacroTimelineStrip({
                     height: `${frac * 100}%`,
                     background: w.typeWarning ? 'var(--color-warning-border)' : fillOf(w.phaseColor),
                     pointerEvents: 'none',
+                  }} />
+                )}
+                {/* Actual (performed) tick — reads against the fill's top
+                    edge: above = over target, below = under. */}
+                {actualFrac != null && (
+                  <div style={{
+                    position: 'absolute', left: '18%', right: '18%',
+                    bottom: `calc(${actualFrac * 100}% - 1px)`,
+                    height: 2, borderRadius: 1,
+                    background: 'var(--color-text-primary)',
+                    boxShadow: '0 0 0 0.5px var(--color-bg-primary)',
+                    pointerEvents: 'none', zIndex: 2,
                   }} />
                 )}
                 {/* Notes dot */}
