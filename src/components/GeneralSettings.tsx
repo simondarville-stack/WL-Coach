@@ -740,14 +740,14 @@ export function GeneralSettings() {
         <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Macro timeline</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Which metric drives the load silhouette and the logged-actual marker on the macro timeline.
-            Falls back to the other metric when a macro carries no targets for the chosen one.
+            Which metric drives the load silhouette (macro targets) and the week-planned marker on the
+            macro timeline. Falls back to the other metric when a macro carries no targets for the chosen one.
           </p>
         </div>
         <div className="flex gap-3">
           {([
-            { value: 'reps' as const, label: 'Total reps (K)', hint: 'Week K targets vs. performed reps' },
-            { value: 'tonnage' as const, label: 'Tonnage', hint: 'Week tonnage targets vs. performed kg volume' },
+            { value: 'reps' as const, label: 'Total reps (K)', hint: 'Macro K targets vs. week-planned reps' },
+            { value: 'tonnage' as const, label: 'Tonnage', hint: 'Macro tonnage targets vs. week-planned kg volume' },
           ] as const).map(({ value, label, hint }) => {
             const active = (settings?.timeline_metric ?? 'reps') === value;
             return (

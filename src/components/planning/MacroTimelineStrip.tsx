@@ -148,20 +148,20 @@ function buildTooltip(
   if (w.tonnageTarget != null) targets.push(formatTonnage(w.tonnageTarget));
   if (targets.length) lines.push(`Target: ${targets.join(' · ')}`);
 
-  // Actual (performed) — express compliance against the target of the
-  // metric that drives the silhouette.
-  if (w.actualReps != null || w.actualTonnage != null) {
-    const actuals: string[] = [];
-    if (w.actualReps != null && w.actualReps > 0) actuals.push(`K ${w.actualReps}`);
-    if (w.actualTonnage != null && w.actualTonnage > 0) actuals.push(formatTonnage(w.actualTonnage));
-    if (actuals.length) {
-      let compliance = '';
-      const actualV = metric === 'tonnage' ? w.actualTonnage : w.actualReps;
+  // Week-programmed (micro-level plan) — expressed against the macro-level
+  // target of the metric that drives the silhouette.
+  if (w.programmedReps != null || w.programmedTonnage != null) {
+    const programmed: string[] = [];
+    if (w.programmedReps != null && w.programmedReps > 0) programmed.push(`K ${w.programmedReps}`);
+    if (w.programmedTonnage != null && w.programmedTonnage > 0) programmed.push(formatTonnage(w.programmedTonnage));
+    if (programmed.length) {
+      let vsTarget = '';
+      const programmedV = metric === 'tonnage' ? w.programmedTonnage : w.programmedReps;
       const targetV = metric === 'tonnage' ? w.tonnageTarget : w.repsTarget;
-      if (metric && actualV != null && targetV != null && targetV > 0) {
-        compliance = ` (${Math.round((actualV / targetV) * 100)} %)`;
+      if (metric && programmedV != null && targetV != null && targetV > 0) {
+        vsTarget = ` (${Math.round((programmedV / targetV) * 100)} %)`;
       }
-      lines.push(`Actual: ${actuals.join(' · ')}${compliance}`);
+      lines.push(`Planned: ${programmed.join(' · ')}${vsTarget}`);
     }
   }
 
@@ -200,7 +200,7 @@ export function MacroTimelineStrip({
   // baseline sliver so the phase band stays visible; when NO week has any
   // target the fill is full-height (classic solid bar).
   const hasMetric = (m: TimelineMetric) =>
-    weeks.some(w => (m === 'reps' ? w.repsTarget ?? w.actualReps : w.tonnageTarget ?? w.actualTonnage) != null);
+    weeks.some(w => (m === 'reps' ? w.repsTarget ?? w.programmedReps : w.tonnageTarget ?? w.programmedTonnage) != null);
   const otherMetric: TimelineMetric = preferredMetric === 'reps' ? 'tonnage' : 'reps';
   const metric: TimelineMetric | null = hasMetric(preferredMetric)
     ? preferredMetric
@@ -208,15 +208,16 @@ export function MacroTimelineStrip({
 
   const targetOf = (w: TimelineWeek): number | null =>
     metric === 'reps' ? w.repsTarget : metric === 'tonnage' ? w.tonnageTarget : null;
-  const actualOf = (w: TimelineWeek): number | null => {
-    const v = metric === 'reps' ? w.actualReps : metric === 'tonnage' ? w.actualTonnage : null;
+  const programmedOf = (w: TimelineWeek): number | null => {
+    const v = metric === 'reps' ? w.programmedReps : metric === 'tonnage' ? w.programmedTonnage : null;
     return v != null && v > 0 ? v : null;
   };
 
-  // Planned and actual share one scale, so the tick reads directly against
-  // the fill's top edge: above = over target, below = under.
+  // Macro target and week-programmed share one scale, so the tick reads
+  // directly against the fill's top edge: above = programmed over the macro
+  // target, below = under.
   const maxValue = metric
-    ? Math.max(...weeks.map(w => Math.max(targetOf(w) ?? 0, actualOf(w) ?? 0)), 1)
+    ? Math.max(...weeks.map(w => Math.max(targetOf(w) ?? 0, programmedOf(w) ?? 0)), 1)
     : 1;
   const scaled = (v: number): number => MIN_FILL + (1 - MIN_FILL) * (v / maxValue);
   const anyTarget = metric != null && weeks.some(w => targetOf(w) != null);
@@ -227,10 +228,10 @@ export function MacroTimelineStrip({
     if (v == null) return NO_TARGET_FILL;
     return scaled(v);
   };
-  const actualFraction = (w: TimelineWeek): number | null => {
-    const v = actualOf(w);
+  const programmedFraction = (w: TimelineWeek): number | null => {
+    const v = programmedOf(w);
     // Without any target in view the fill is a full solid bar on an
-    // arbitrary scale — an actual tick would be meaningless there.
+    // arbitrary scale — a programmed tick would be meaningless there.
     if (v == null || !anyTarget) return null;
     return Math.min(scaled(v), 1);
   };
@@ -404,7 +405,7 @@ export function MacroTimelineStrip({
             const weekMarkers = markersForWeek(w, markers);
             const isSelected = selectedWeekStart != null && w.weekStart === selectedWeekStart;
             const frac = fillFraction(w);
-            const actualFrac = actualFraction(w);
+            const programmedFrac = programmedFraction(w);
             const isGap = w.macroId === null;
             return (
               <div
@@ -434,12 +435,12 @@ export function MacroTimelineStrip({
                     pointerEvents: 'none',
                   }} />
                 )}
-                {/* Actual (performed) tick — reads against the fill's top
-                    edge: above = over target, below = under. */}
-                {actualFrac != null && (
+                {/* Week-programmed tick — reads against the fill's top edge:
+                    above = programmed over the macro target, below = under. */}
+                {programmedFrac != null && (
                   <div style={{
                     position: 'absolute', left: '18%', right: '18%',
-                    bottom: `calc(${actualFrac * 100}% - 1px)`,
+                    bottom: `calc(${programmedFrac * 100}% - 1px)`,
                     height: 2, borderRadius: 1,
                     background: 'var(--color-text-primary)',
                     boxShadow: '0 0 0 0.5px var(--color-bg-primary)',

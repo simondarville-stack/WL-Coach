@@ -8,6 +8,7 @@ import { supabase } from './supabase';
 import { getOwnerId } from './ownerContext';
 import { getMondayOfWeekISO } from './weekUtils';
 import { addDaysToISO } from './dateUtils';
+import { expandForCounting } from './comboExpansion';
 import type {
   MacroCycle,
   MacroPhase,
@@ -42,11 +43,11 @@ export interface TimelineWeek {
   repsTarget: number | null;
   /** Week-level tonnage target (kg) from the macro plan. */
   tonnageTarget: number | null;
-  /** Performed reps from training logs (completed sets; group = per-athlete
-   *  average). Null when nothing is logged for the week. */
-  actualReps: number | null;
-  /** Performed tonnage (kg) from training logs; same semantics. */
-  actualTonnage: number | null;
+  /** Reps programmed in the weekly planner for this week (micro-level plan).
+   *  Null when no week plan exists / nothing is programmed. */
+  programmedReps: number | null;
+  /** Tonnage (kg) programmed in the weekly planner; same semantics. */
+  programmedTonnage: number | null;
   /** Coach note on the macro week ('' = none). */
   notes: string;
   /** True for dimmed context weeks outside the anchor macro (macro mode). */
@@ -263,10 +264,22 @@ export async function fetchTimelineMarkers(
   return [...markers.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Performed weekly volume, keyed by week_start. */
-export interface WeeklyActuals {
+/**
+ * Week-programmed volume — what the coach actually wrote into the weekly
+ * planner — keyed by week_start. This is the micro-level plan the timeline
+ * compares against the macro-level targets (performed-vs-planned is a
+ * separate, later concern).
+ */
+export interface WeeklyProgrammed {
+  /** Total programmed reps (combo-expanded, counts_towards_totals only). */
   reps: number;
+  /** Programmed tonnage in kg (absolute_kg prescriptions only). */
   tonnage: number;
+  /** Programmed reps per exercise. Work on a child variation also credits
+   *  every ancestor, so a tracked parent lift includes its variations. */
+  repsByExercise: Map<string, number>;
+  /** Programmed reps per exercise category. */
+  repsByCategory: Map<string, number>;
 }
 
 /** PostgREST `.in()` filters go into the URL — chunk long UUID lists. */
@@ -283,85 +296,181 @@ async function chunked<T>(
   return out;
 }
 
+interface CatalogueExercise {
+  id: string;
+  parent_exercise_id: string | null;
+  category: string;
+  counts_towards_totals: boolean;
+}
+
+/** Fetch the given exercises plus every ancestor up the parent chain. */
+async function fetchExercisesWithAncestors(
+  ids: string[]
+): Promise<Map<string, CatalogueExercise>> {
+  const byId = new Map<string, CatalogueExercise>();
+  let pending = [...new Set(ids)];
+  // Bounded walk up the parent chain (hierarchies are shallow in practice).
+  for (let depth = 0; depth < 6 && pending.length > 0; depth++) {
+    const rows = await chunked(pending, async chunk => {
+      const { data } = await supabase
+        .from('exercises')
+        .select('id, parent_exercise_id, category, counts_towards_totals')
+        .in('id', chunk);
+      return (data ?? []) as CatalogueExercise[];
+    });
+    rows.forEach(r => byId.set(r.id, r));
+    pending = [...new Set(
+      rows
+        .map(r => r.parent_exercise_id)
+        .filter((p): p is string => p != null && !byId.has(p))
+    )];
+  }
+  return byId;
+}
+
 /**
- * Aggregate performed volume from the training logs for the given athletes
- * over [rangeStart, rangeEnd] (week_start bounds, inclusive). Counts only
- * completed sets (same rule as trainingLogModel.sumPerformedReps); tonnage
- * is performed_load × performed_reps. With multiple athletes (group scope)
- * the result is the per-athlete average across athletes that logged
- * anything that week — comparable to the per-athlete macro target.
+ * Aggregate the programmed weekly volume from the weekly planner for the
+ * scope over [rangeStart, rangeEnd] (week_start bounds, inclusive).
+ *
+ * Scope follows the planner's own rule: an athlete counts their individual
+ * plans (is_group_plan = false); a group counts the group plan. Combos are
+ * expanded into member contributions via expandForCounting (single source
+ * of truth), non-counting exercises are excluded from totals, and tonnage
+ * only accumulates from absolute-kg prescriptions.
  */
-export async function fetchWeeklyActuals(
-  athleteIds: string[],
+export async function fetchWeeklyProgrammed(
+  athleteId: string | null,
+  groupId: string | null,
   rangeStart: string,
   rangeEnd: string
-): Promise<Map<string, WeeklyActuals>> {
-  const result = new Map<string, WeeklyActuals>();
-  if (athleteIds.length === 0) return result;
+): Promise<Map<string, WeeklyProgrammed>> {
+  const result = new Map<string, WeeklyProgrammed>();
+  if (!athleteId && !groupId) return result;
 
-  const { data: sessions } = await supabase
-    .from('training_log_sessions')
-    .select('id, athlete_id, week_start')
-    .in('athlete_id', athleteIds)
+  let wpQuery = supabase
+    .from('week_plans')
+    .select('id, week_start')
     .gte('week_start', rangeStart)
     .lte('week_start', rangeEnd);
-  if (!sessions || sessions.length === 0) return result;
+  if (athleteId) {
+    wpQuery = wpQuery.eq('athlete_id', athleteId).eq('is_group_plan', false);
+  } else {
+    wpQuery = wpQuery.eq('group_id', groupId!).eq('is_group_plan', true);
+  }
+  const { data: weekPlans } = await wpQuery;
+  if (!weekPlans || weekPlans.length === 0) return result;
 
-  type SessionRow = { id: string; athlete_id: string; week_start: string };
-  const sessionById = new Map((sessions as SessionRow[]).map(s => [s.id, s]));
-
-  type LogExRow = { id: string; session_id: string };
-  const logExercises = await chunked([...sessionById.keys()], async chunk => {
-    const { data } = await supabase
-      .from('training_log_exercises')
-      .select('id, session_id')
-      .in('session_id', chunk);
-    return (data ?? []) as LogExRow[];
-  });
-  if (logExercises.length === 0) return result;
-
-  const sessionByLogExId = new Map(
-    logExercises.map(le => [le.id, sessionById.get(le.session_id)!])
+  const weekStartByWpId = new Map(
+    (weekPlans as { id: string; week_start: string }[]).map(wp => [wp.id, wp.week_start])
   );
 
-  type SetRow = { log_exercise_id: string; performed_load: number | null; performed_reps: number | null };
-  const sets = await chunked(logExercises.map(le => le.id), async chunk => {
+  type PlannedRow = {
+    id: string;
+    weekplan_id: string;
+    exercise_id: string;
+    is_combo: boolean;
+    prescription_raw: string | null;
+    unit: string | null;
+    summary_total_sets: number | null;
+    summary_total_reps: number | null;
+    summary_highest_load: number | null;
+    summary_avg_load: number | null;
+  };
+  const planned = await chunked([...weekStartByWpId.keys()], async chunk => {
     const { data } = await supabase
-      .from('training_log_sets')
-      .select('log_exercise_id, performed_load, performed_reps')
-      .in('log_exercise_id', chunk)
-      .eq('status', 'completed');
-    return (data ?? []) as SetRow[];
+      .from('planned_exercises')
+      .select('id, weekplan_id, exercise_id, is_combo, prescription_raw, unit, summary_total_sets, summary_total_reps, summary_highest_load, summary_avg_load')
+      .in('weekplan_id', chunk);
+    return (data ?? []) as PlannedRow[];
+  });
+  if (planned.length === 0) return result;
+
+  type MemberRow = { planned_exercise_id: string; exercise_id: string; position: number };
+  const comboIds = planned.filter(p => p.is_combo).map(p => p.id);
+  const memberRows = comboIds.length > 0
+    ? await chunked(comboIds, async chunk => {
+        const { data } = await supabase
+          .from('planned_exercise_combo_members')
+          .select('planned_exercise_id, exercise_id, position')
+          .in('planned_exercise_id', chunk);
+        return (data ?? []) as MemberRow[];
+      })
+    : [];
+  const membersByPe = new Map<string, MemberRow[]>();
+  memberRows.forEach(m => {
+    const arr = membersByPe.get(m.planned_exercise_id) ?? [];
+    arr.push(m);
+    membersByPe.set(m.planned_exercise_id, arr);
   });
 
-  // Sum per athlete per week, then average across logging athletes.
-  const perAthleteWeek = new Map<string, WeeklyActuals>();
-  for (const s of sets) {
-    const session = sessionByLogExId.get(s.log_exercise_id);
-    if (!session) continue;
-    const reps = s.performed_reps ?? 0;
-    if (reps <= 0) continue;
-    const key = `${session.athlete_id}|${session.week_start}`;
-    const acc = perAthleteWeek.get(key) ?? { reps: 0, tonnage: 0 };
-    acc.reps += reps;
-    acc.tonnage += (s.performed_load ?? 0) * reps;
-    perAthleteWeek.set(key, acc);
+  const exerciseIds = [
+    ...new Set([...planned.map(p => p.exercise_id), ...memberRows.map(m => m.exercise_id)]),
+  ];
+  const catalogue = await fetchExercisesWithAncestors(exerciseIds);
+  const fallbackEx = (id: string): CatalogueExercise => ({
+    id, parent_exercise_id: null, category: '', counts_towards_totals: true,
+  });
+  const exOf = (id: string): CatalogueExercise => catalogue.get(id) ?? fallbackEx(id);
+
+  for (const row of planned) {
+    const weekStart = weekStartByWpId.get(row.weekplan_id);
+    if (!weekStart) continue;
+
+    const contributions = expandForCounting(
+      {
+        exercise_id: row.exercise_id,
+        exercise: exOf(row.exercise_id),
+        unit: row.unit,
+        is_combo: row.is_combo,
+        prescription_raw: row.prescription_raw,
+        summary_total_sets: row.summary_total_sets,
+        summary_total_reps: row.summary_total_reps,
+        summary_highest_load: row.summary_highest_load,
+        summary_avg_load: row.summary_avg_load,
+      },
+      membersByPe.get(row.id)?.map(m => ({
+        exerciseId: m.exercise_id,
+        exercise: exOf(m.exercise_id),
+        position: m.position,
+      }))
+    );
+
+    let week = result.get(weekStart);
+    if (!week) {
+      week = { reps: 0, tonnage: 0, repsByExercise: new Map(), repsByCategory: new Map() };
+      result.set(weekStart, week);
+    }
+
+    for (const c of contributions) {
+      if (c.exercise.counts_towards_totals === false) continue;
+      const reps = c.summary_total_reps;
+      if (reps <= 0) continue;
+
+      week.reps += reps;
+      if (c.unit === 'absolute_kg' && c.summary_avg_load != null) {
+        week.tonnage += reps * c.summary_avg_load;
+      }
+
+      // Credit the exercise and every ancestor so parent lifts include the
+      // work done via their variations.
+      let cursor: CatalogueExercise | undefined = exOf(c.exercise_id);
+      const visited = new Set<string>();
+      while (cursor && !visited.has(cursor.id)) {
+        visited.add(cursor.id);
+        week.repsByExercise.set(cursor.id, (week.repsByExercise.get(cursor.id) ?? 0) + reps);
+        cursor = cursor.parent_exercise_id ? catalogue.get(cursor.parent_exercise_id) : undefined;
+      }
+
+      const category = exOf(c.exercise_id).category;
+      if (category) {
+        week.repsByCategory.set(category, (week.repsByCategory.get(category) ?? 0) + reps);
+      }
+    }
   }
 
-  const sums = new Map<string, { reps: number; tonnage: number; athletes: number }>();
-  for (const [key, acc] of perAthleteWeek) {
-    const weekStart = key.slice(key.indexOf('|') + 1);
-    const sum = sums.get(weekStart) ?? { reps: 0, tonnage: 0, athletes: 0 };
-    sum.reps += acc.reps;
-    sum.tonnage += acc.tonnage;
-    sum.athletes += 1;
-    sums.set(weekStart, sum);
-  }
-  for (const [weekStart, sum] of sums) {
-    result.set(weekStart, {
-      reps: Math.round(sum.reps / sum.athletes),
-      tonnage: Math.round(sum.tonnage / sum.athletes),
-    });
+  // Round tonnage once at the end.
+  for (const week of result.values()) {
+    week.tonnage = Math.round(week.tonnage);
   }
   return result;
 }
@@ -442,8 +551,8 @@ export function buildTimelineWeeks(
         rawWeekType: null,
         repsTarget: null,
         tonnageTarget: null,
-        actualReps: null,
-        actualTonnage: null,
+        programmedReps: null,
+        programmedTonnage: null,
         notes: '',
         isContext: anchorMacroId != null,
       };
@@ -467,8 +576,8 @@ export function buildTimelineWeeks(
       rawWeekType: row.week_type ?? null,
       repsTarget: row.total_reps_target,
       tonnageTarget: row.tonnage_target,
-      actualReps: null,
-      actualTonnage: null,
+      programmedReps: null,
+      programmedTonnage: null,
       notes: row.notes ?? '',
       isContext: anchorMacroId != null && macro.id !== anchorMacroId,
     };

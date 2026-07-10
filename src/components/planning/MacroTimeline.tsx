@@ -24,12 +24,12 @@ import {
   continuousRangeWeekStarts,
   fetchTimelineMarkers,
   fetchTimelineSource,
-  fetchWeeklyActuals,
+  fetchWeeklyProgrammed,
   macroRangeWeekStarts,
   resolveScopeAthleteIds,
   type TimelineMarker,
   type TimelineWeek,
-  type WeeklyActuals,
+  type WeeklyProgrammed,
 } from '../../lib/macroTimelineData';
 import { MacroTimelineStrip } from './MacroTimelineStrip';
 import type { MacroCycle, MacroPhase, MacroWeek } from '../../lib/database.types';
@@ -80,7 +80,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
   const [phases, setPhases] = useState<MacroPhase[]>([]);
   const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
-  const [actuals, setActuals] = useState<Map<string, WeeklyActuals>>(() => new Map());
+  const [programmed, setProgrammed] = useState<Map<string, WeeklyProgrammed>>(() => new Map());
 
   const todayMonday = getMondayOfWeekISO(new Date());
   const todayIso = toLocalISO(new Date());
@@ -153,12 +153,12 @@ export function MacroTimeline(props: MacroTimelineProps) {
     todayMonday,
   ]);
 
-  // ── Load markers (competitions + events) and logged actuals for the
-  //    visible range ──
+  // ── Load markers (competitions + events) and week-programmed volume for
+  //    the visible range ──
   useEffect(() => {
     if (weeks.length === 0) {
       setMarkers([]);
-      setActuals(new Map());
+      setProgrammed(new Map());
       return;
     }
     let cancelled = false;
@@ -170,36 +170,36 @@ export function MacroTimeline(props: MacroTimelineProps) {
         const rangeStart = weeks[0].weekStart;
         const lastWeekStart = weeks[weeks.length - 1].weekStart;
         const rangeEnd = addDaysToISO(lastWeekStart, 6);
-        const [fetchedMarkers, fetchedActuals] = await Promise.all([
+        const [fetchedMarkers, fetchedProgrammed] = await Promise.all([
           fetchTimelineMarkers(athleteIds, macroIds, rangeStart, rangeEnd),
-          fetchWeeklyActuals(athleteIds, rangeStart, lastWeekStart),
+          fetchWeeklyProgrammed(props.athleteId, props.groupId, rangeStart, lastWeekStart),
         ]);
         if (cancelled) return;
         setMarkers(fetchedMarkers);
-        setActuals(fetchedActuals);
+        setProgrammed(fetchedProgrammed);
       } catch (err) {
         if (cancelled) return;
-        console.error('MacroTimeline: markers/actuals load failed', err);
+        console.error('MacroTimeline: markers/programmed load failed', err);
         setMarkers([]);
-        setActuals(new Map());
+        setProgrammed(new Map());
       }
     })();
     return () => { cancelled = true; };
   }, [weeks, props.athleteId, props.groupId]);
 
-  // ── Merge logged actuals into the built weeks ──
-  const weeksWithActuals: TimelineWeek[] = useMemo(() => {
-    if (actuals.size === 0) return weeks;
+  // ── Merge week-programmed volume into the built weeks ──
+  const weeksWithProgrammed: TimelineWeek[] = useMemo(() => {
+    if (programmed.size === 0) return weeks;
     return weeks.map(w => {
-      const a = actuals.get(w.weekStart);
-      if (!a) return w;
+      const p = programmed.get(w.weekStart);
+      if (!p) return w;
       return {
         ...w,
-        actualReps: a.reps > 0 ? a.reps : null,
-        actualTonnage: a.tonnage > 0 ? a.tonnage : null,
+        programmedReps: p.reps > 0 ? p.reps : null,
+        programmedTonnage: p.tonnage > 0 ? p.tonnage : null,
       };
     });
-  }, [weeks, actuals]);
+  }, [weeks, programmed]);
 
   // ── Handlers ──
   const handleWeekClick = (week: TimelineWeek) => {
@@ -217,7 +217,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
 
   return (
     <MacroTimelineStrip
-      weeks={weeksWithActuals}
+      weeks={weeksWithProgrammed}
       markers={markers}
       metric={settings?.timeline_metric ?? 'reps'}
       selectedWeekStart={props.selectedWeekStart ?? todayMonday}

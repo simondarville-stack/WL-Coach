@@ -5,12 +5,15 @@
 // selected week (gap weeks, groups without an athlete-level macro) it falls
 // back to a continuous window centered on the selected week.
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { MacroTimeline } from '../planning';
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Table2 } from 'lucide-react';
+import { MacroTimeline, MacroReviewTable } from '../planning';
 import type { MacroContext } from './WeeklyPlanner';
 import type { WeekTypeConfig } from '../../lib/database.types';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 import { formatDateRange } from '../../lib/dateUtils';
+
+const TABLE_TOGGLE_KEY = 'emos.planner.macroTable';
 
 interface WeekTimelineHeaderProps {
   selectedDate: string;
@@ -45,6 +48,16 @@ export function WeekTimelineHeader({
   onSelectWeek,
 }: WeekTimelineHeaderProps) {
   const weekTypeColor = macroContext ? getWeekTypeColor(macroContext.weekType, weekTypes) : null;
+
+  const [showTable, setShowTable] = useState(
+    () => localStorage.getItem(TABLE_TOGGLE_KEY) === '1'
+  );
+  const toggleTable = () => {
+    setShowTable(prev => {
+      localStorage.setItem(TABLE_TOGGLE_KEY, prev ? '0' : '1');
+      return !prev;
+    });
+  };
 
   return (
     <div style={{
@@ -100,7 +113,7 @@ export function WeekTimelineHeader({
       {/* Selected-week meta line */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-        marginTop: 6, minWidth: 0,
+        marginTop: 6, minWidth: 0, position: 'relative',
       }}>
         <span style={{
           fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
@@ -133,7 +146,43 @@ export function WeekTimelineHeader({
             )}
           </span>
         )}
+        {macroContext && (
+          <button
+            onClick={toggleTable}
+            title={showTable ? 'Hide macro table' : 'Show macro table — planned work vs. macro targets per lift'}
+            style={{
+              position: 'absolute', right: 0,
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '2px 6px',
+              background: showTable ? 'var(--color-accent-muted)' : 'transparent',
+              border: '0.5px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--radius-sm)',
+              color: showTable ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-caption)',
+              cursor: 'pointer',
+            }}
+          >
+            <Table2 size={12} />
+            Table
+          </button>
+        )}
       </div>
+
+      {/* Macro review table (toggleable) */}
+      {showTable && macroContext && (
+        <div style={{
+          marginTop: 8, paddingTop: 6,
+          borderTop: '0.5px solid var(--color-border-tertiary)',
+        }}>
+          <MacroReviewTable
+            cycleId={macroContext.macroId}
+            athleteId={athleteId}
+            groupId={groupId}
+            selectedWeekStart={selectedDate}
+            onSelectWeek={onSelectWeek}
+          />
+        </div>
+      )}
     </div>
   );
 }
