@@ -286,6 +286,10 @@ export interface WeeklyProgrammed {
   reps: number;
   /** Programmed tonnage in kg (absolute_kg prescriptions only). */
   tonnage: number;
+  /** Heaviest programmed load of the week (kg). */
+  maxLoad: number | null;
+  /** Rep-weighted average programmed load of the week (kg). */
+  avgLoad: number | null;
   /** Programmed stats per exercise. Work on a child variation also credits
    *  every ancestor, so a tracked parent lift includes its variations. */
   byExercise: Map<string, ProgrammedStats>;
@@ -423,9 +427,11 @@ export async function fetchWeeklyProgrammed(
   });
   const exOf = (id: string): CatalogueExercise => catalogue.get(id) ?? fallbackEx(id);
 
-  // weekStart → (exerciseId / category) → running stats
+  // weekStart → (exerciseId / category) → running stats.
+  // weekAcc uses a single '*' key per week for the week-level load stats.
   const exerciseAcc = new Map<string, Map<string, AccStats>>();
   const categoryAcc = new Map<string, Map<string, AccStats>>();
+  const weekAcc = new Map<string, Map<string, AccStats>>();
 
   for (const row of planned) {
     const weekStart = weekStartByWpId.get(row.weekplan_id);
@@ -452,7 +458,7 @@ export async function fetchWeeklyProgrammed(
 
     let week = result.get(weekStart);
     if (!week) {
-      week = { reps: 0, tonnage: 0, byExercise: new Map(), byCategory: new Map() };
+      week = { reps: 0, tonnage: 0, maxLoad: null, avgLoad: null, byExercise: new Map(), byCategory: new Map() };
       result.set(weekStart, week);
     }
 
@@ -480,6 +486,8 @@ export async function fetchWeeklyProgrammed(
         }
       };
 
+      credit(accFor(weekAcc, weekStart, '*'));
+
       // Credit the exercise and every ancestor so parent lifts include the
       // work done via their variations.
       let cursor: CatalogueExercise | undefined = exOf(c.exercise_id);
@@ -502,6 +510,9 @@ export async function fetchWeeklyProgrammed(
     week.tonnage = Math.round(week.tonnage);
     week.byExercise = finalizeAcc(exerciseAcc.get(weekStart));
     week.byCategory = finalizeAcc(categoryAcc.get(weekStart));
+    const weekStats = finalizeAcc(weekAcc.get(weekStart)).get('*');
+    week.maxLoad = weekStats?.maxLoad ?? null;
+    week.avgLoad = weekStats?.avgLoad ?? null;
   }
   return result;
 }

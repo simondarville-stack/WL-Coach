@@ -37,6 +37,9 @@ export const REVIEW_METRIC_LABELS: Record<ReviewMetric, string> = {
 export interface ReviewWeek {
   weekStart: string;
   weekNumber: number;
+  /** Macro-level week note ('' / undefined = none) — shown as a dot on the
+   *  week header with the text in the tooltip. */
+  note?: string;
 }
 
 export interface ReviewPair {
@@ -49,7 +52,7 @@ export type ReviewCell = Record<ReviewMetric, ReviewPair>;
 
 export interface ReviewRow {
   key: string;
-  kind: 'category' | 'exercise';
+  kind: 'total' | 'category' | 'exercise';
   label: string;
   /** Dot color for exercise rows (category shade). */
   color?: string;
@@ -163,7 +166,7 @@ export function MacroReviewTableView({
                   {REVIEW_METRIC_LABELS[m]}
                 </span>
               )}
-              <Pair pair={cell[m]} bold={row.kind === 'category'} />
+              <Pair pair={cell[m]} bold={row.kind !== 'exercise'} />
             </span>
           ))}
         </span>
@@ -171,7 +174,7 @@ export function MacroReviewTableView({
     }
     const p = cell[metric];
     if (pairEmpty(p)) return '';
-    return <Pair pair={p} bold={row.kind === 'category'} />;
+    return <Pair pair={p} bold={row.kind !== 'exercise'} />;
   };
 
   return (
@@ -204,24 +207,36 @@ export function MacroReviewTableView({
             );
           })}
         </div>
-        {weeks.map((w, i) => (
-          <div
-            key={w.weekStart}
-            onClick={onSelectWeek ? () => onSelectWeek(w.weekStart) : undefined}
-            title={`Week ${w.weekNumber}`}
-            style={{
-              textAlign: 'center', fontSize: 9, lineHeight: '16px',
-              color: i === selectedIdx ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
-              fontWeight: i === selectedIdx ? 700 : 400,
-              background: colBg(i),
-              borderRadius: '3px 3px 0 0',
-              cursor: onSelectWeek ? 'pointer' : 'default',
-              userSelect: 'none',
-            }}
-          >
-            {w.weekNumber}
-          </div>
-        ))}
+        {weeks.map((w, i) => {
+          const hasNote = !!w.note && w.note.trim() !== '';
+          return (
+            <div
+              key={w.weekStart}
+              onClick={onSelectWeek ? () => onSelectWeek(w.weekStart) : undefined}
+              title={hasNote ? `Week ${w.weekNumber} · ✎ ${w.note}` : `Week ${w.weekNumber}`}
+              style={{
+                textAlign: 'center', fontSize: 9, lineHeight: '16px',
+                color: i === selectedIdx ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                fontWeight: i === selectedIdx ? 700 : 400,
+                background: colBg(i),
+                borderRadius: '3px 3px 0 0',
+                cursor: onSelectWeek ? 'pointer' : 'default',
+                userSelect: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {w.weekNumber}
+              {hasNote && (
+                <span style={{
+                  display: 'inline-block', verticalAlign: 'middle',
+                  width: 3.5, height: 3.5, borderRadius: '50%',
+                  background: 'var(--color-text-secondary)',
+                  marginLeft: 3, marginTop: -1,
+                }} />
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Rows */}
@@ -230,9 +245,12 @@ export function MacroReviewTableView({
           key={row.key}
           style={{
             display: 'grid', gridTemplateColumns,
-            background: row.kind === 'category' ? 'var(--color-bg-secondary)' : undefined,
-            borderTop: row.kind === 'category'
+            background: row.kind !== 'exercise' ? 'var(--color-bg-secondary)' : undefined,
+            borderTop: row.kind !== 'exercise'
               ? '0.5px solid var(--color-border-tertiary)'
+              : undefined,
+            borderBottom: row.kind === 'total'
+              ? '0.5px solid var(--color-border-secondary)'
               : undefined,
           }}
         >
@@ -240,12 +258,14 @@ export function MacroReviewTableView({
             display: 'flex', alignItems: 'center', gap: 5, minWidth: 0,
             paddingLeft: row.kind === 'exercise' ? 12 : 2,
             fontFamily: 'var(--font-sans)',
-            fontSize: row.kind === 'category' ? 9.5 : 10,
+            fontSize: row.kind === 'exercise' ? 10 : 9.5,
             lineHeight: '18px',
-            fontWeight: row.kind === 'category' ? 600 : 400,
-            textTransform: row.kind === 'category' ? 'uppercase' : undefined,
-            letterSpacing: row.kind === 'category' ? '0.05em' : undefined,
-            color: row.kind === 'category' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+            fontWeight: row.kind === 'total' ? 700 : row.kind === 'category' ? 600 : 400,
+            textTransform: row.kind !== 'exercise' ? 'uppercase' : undefined,
+            letterSpacing: row.kind !== 'exercise' ? '0.05em' : undefined,
+            color: row.kind === 'total'
+              ? 'var(--color-text-secondary)'
+              : row.kind === 'category' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {row.kind === 'exercise' && row.color && (
@@ -387,6 +407,7 @@ export function MacroReviewTable({
     const weeks: ReviewWeek[] = macroWeeks.map(w => ({
       weekStart: w.week_start,
       weekNumber: w.week_number,
+      note: w.notes ?? '',
     }));
 
     const trackedById = new Map(tracked.map(te => [te.id, te]));
@@ -410,6 +431,25 @@ export function MacroReviewTable({
     }
 
     const rows: ReviewRow[] = [];
+
+    // Week totals — the general metrics of the whole week. Rep target comes
+    // from the macro week (total_reps_target); max/avg have no week-level
+    // macro target (avg_intensity_target is a % and would mismatch the kg
+    // planned values), so those show the planned side only.
+    rows.push({
+      key: 'week-total',
+      kind: 'total',
+      label: 'Week total',
+      cells: macroWeeks.map(mw => {
+        const p = programmed.get(mw.week_start);
+        return {
+          reps: { planned: p != null && p.reps > 0 ? p.reps : null, target: mw.total_reps_target },
+          max: { planned: p?.maxLoad ?? null, target: null },
+          avg: { planned: p?.avgLoad ?? null, target: null },
+        };
+      }),
+    });
+
     for (const cat of categories) {
       const catTracked = tracked.filter(te => (te.exercise.category || 'other') === cat);
 

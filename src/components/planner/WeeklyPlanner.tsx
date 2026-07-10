@@ -59,6 +59,8 @@ export interface MacroContext {
   phaseName: string | null;
   phaseColor: string | null;
   totalRepsTarget: number | null;
+  /** Coach's macro-level note for this week ('' = none). */
+  weekNotes: string;
 }
 
 type PanelView = 'overview' | 'day' | 'exercise';
@@ -365,7 +367,7 @@ export function WeeklyPlanner() {
       const { data: mwRaw } = await supabase
         .from('macro_weeks')
         .select(`
-          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target,
+          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target, notes,
           macrocycles!inner(id, athlete_id, start_date, end_date, name)
         `)
         .eq('macrocycles.athlete_id', athleteId)
@@ -378,6 +380,7 @@ export function WeeklyPlanner() {
       type MacroWeekWithJoin = {
         id: string; macrocycle_id: string; week_number: number;
         week_type: string | null; week_type_text: string | null; total_reps_target: number | null;
+        notes: string | null;
         macrocycles: { id: string; name: string } | null;
       };
       const mw = mwRaw as MacroWeekWithJoin | null;
@@ -409,6 +412,7 @@ export function WeeklyPlanner() {
         phaseName: phaseResult.data?.name ?? null,
         phaseColor: phaseResult.data?.color ?? null,
         totalRepsTarget: mw.total_reps_target,
+        weekNotes: mw.notes ?? '',
       });
     } catch {
       setMacroContext(null);

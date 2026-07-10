@@ -168,6 +168,23 @@ export function WeekTimelineHeader({
         )}
       </div>
 
+      {/* Macro week note — the macro-level intent for this week, kept in
+          view while the week is written. Coach-only (athletes never see
+          macro notes; the week brief is the athlete-facing channel). */}
+      {macroContext && macroContext.weekNotes.trim() !== '' && (
+        <div
+          title={macroContext.weekNotes}
+          style={{
+            marginTop: 4, textAlign: 'center',
+            fontSize: 'var(--text-caption)', fontStyle: 'italic',
+            color: 'var(--color-text-secondary)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
+          ✎ {macroContext.weekNotes}
+        </div>
+      )}
+
       {/* Macro review table (toggleable) */}
       {showTable && macroContext && (
         <div style={{
