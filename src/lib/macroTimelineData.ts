@@ -264,6 +264,17 @@ export async function fetchTimelineMarkers(
   return [...markers.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Per-exercise / per-category programmed stats for one week. Load stats
+ *  (max/avg, kg) only accumulate from absolute-kg prescriptions. */
+export interface ProgrammedStats {
+  reps: number;
+  /** Highest programmed load (kg). Null when nothing kg-prescribed. */
+  maxLoad: number | null;
+  /** Rep-weighted average programmed load (kg). Null when nothing
+   *  kg-prescribed. */
+  avgLoad: number | null;
+}
+
 /**
  * Week-programmed volume — what the coach actually wrote into the weekly
  * planner — keyed by week_start. This is the micro-level plan the timeline
@@ -275,11 +286,11 @@ export interface WeeklyProgrammed {
   reps: number;
   /** Programmed tonnage in kg (absolute_kg prescriptions only). */
   tonnage: number;
-  /** Programmed reps per exercise. Work on a child variation also credits
+  /** Programmed stats per exercise. Work on a child variation also credits
    *  every ancestor, so a tracked parent lift includes its variations. */
-  repsByExercise: Map<string, number>;
-  /** Programmed reps per exercise category. */
-  repsByCategory: Map<string, number>;
+  byExercise: Map<string, ProgrammedStats>;
+  /** Programmed stats per exercise category. */
+  byCategory: Map<string, ProgrammedStats>;
 }
 
 /** PostgREST `.in()` filters go into the URL — chunk long UUID lists. */
@@ -412,6 +423,10 @@ export async function fetchWeeklyProgrammed(
   });
   const exOf = (id: string): CatalogueExercise => catalogue.get(id) ?? fallbackEx(id);
 
+  // weekStart → (exerciseId / category) → running stats
+  const exerciseAcc = new Map<string, Map<string, AccStats>>();
+  const categoryAcc = new Map<string, Map<string, AccStats>>();
+
   for (const row of planned) {
     const weekStart = weekStartByWpId.get(row.weekplan_id);
     if (!weekStart) continue;
@@ -437,7 +452,7 @@ export async function fetchWeeklyProgrammed(
 
     let week = result.get(weekStart);
     if (!week) {
-      week = { reps: 0, tonnage: 0, repsByExercise: new Map(), repsByCategory: new Map() };
+      week = { reps: 0, tonnage: 0, byExercise: new Map(), byCategory: new Map() };
       result.set(weekStart, week);
     }
 
@@ -446,10 +461,24 @@ export async function fetchWeeklyProgrammed(
       const reps = c.summary_total_reps;
       if (reps <= 0) continue;
 
+      const isKg = c.unit === 'absolute_kg';
       week.reps += reps;
-      if (c.unit === 'absolute_kg' && c.summary_avg_load != null) {
+      if (isKg && c.summary_avg_load != null) {
         week.tonnage += reps * c.summary_avg_load;
       }
+
+      const credit = (acc: AccStats) => {
+        acc.reps += reps;
+        if (isKg && c.summary_highest_load != null) {
+          acc.maxLoad = acc.maxLoad == null
+            ? c.summary_highest_load
+            : Math.max(acc.maxLoad, c.summary_highest_load);
+        }
+        if (isKg && c.summary_avg_load != null) {
+          acc.loadRepsSum += c.summary_avg_load * reps;
+          acc.loadReps += reps;
+        }
+      };
 
       // Credit the exercise and every ancestor so parent lifts include the
       // work done via their variations.
@@ -457,22 +486,62 @@ export async function fetchWeeklyProgrammed(
       const visited = new Set<string>();
       while (cursor && !visited.has(cursor.id)) {
         visited.add(cursor.id);
-        week.repsByExercise.set(cursor.id, (week.repsByExercise.get(cursor.id) ?? 0) + reps);
+        credit(accFor(exerciseAcc, weekStart, cursor.id));
         cursor = cursor.parent_exercise_id ? catalogue.get(cursor.parent_exercise_id) : undefined;
       }
 
       const category = exOf(c.exercise_id).category;
       if (category) {
-        week.repsByCategory.set(category, (week.repsByCategory.get(category) ?? 0) + reps);
+        credit(accFor(categoryAcc, weekStart, category));
       }
     }
   }
 
-  // Round tonnage once at the end.
-  for (const week of result.values()) {
+  // Finalize: derive avg loads, round tonnage.
+  for (const [weekStart, week] of result) {
     week.tonnage = Math.round(week.tonnage);
+    week.byExercise = finalizeAcc(exerciseAcc.get(weekStart));
+    week.byCategory = finalizeAcc(categoryAcc.get(weekStart));
   }
   return result;
+}
+
+interface AccStats {
+  reps: number;
+  maxLoad: number | null;
+  loadRepsSum: number;
+  loadReps: number;
+}
+
+function accFor(
+  store: Map<string, Map<string, AccStats>>,
+  weekStart: string,
+  key: string
+): AccStats {
+  let weekMap = store.get(weekStart);
+  if (!weekMap) {
+    weekMap = new Map();
+    store.set(weekStart, weekMap);
+  }
+  let acc = weekMap.get(key);
+  if (!acc) {
+    acc = { reps: 0, maxLoad: null, loadRepsSum: 0, loadReps: 0 };
+    weekMap.set(key, acc);
+  }
+  return acc;
+}
+
+function finalizeAcc(weekMap: Map<string, AccStats> | undefined): Map<string, ProgrammedStats> {
+  const out = new Map<string, ProgrammedStats>();
+  if (!weekMap) return out;
+  for (const [key, acc] of weekMap) {
+    out.set(key, {
+      reps: acc.reps,
+      maxLoad: acc.maxLoad,
+      avgLoad: acc.loadReps > 0 ? Math.round((acc.loadRepsSum / acc.loadReps) * 10) / 10 : null,
+    });
+  }
+  return out;
 }
 
 // ── Pure builders ────────────────────────────────────────────────────────────

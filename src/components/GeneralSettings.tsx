@@ -767,6 +767,41 @@ export function GeneralSettings() {
             );
           })}
         </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-medium text-gray-900 mb-1">Active-week detail</h3>
+          <p className="text-xs text-gray-600 mb-2">
+            Which target metrics the macro table expands on the week you are planning. The rest of the
+            macro stays on the single metric selected in the table itself.
+          </p>
+          <div className="flex gap-4">
+            {([
+              { value: 'reps' as const, label: 'Rep target (K)' },
+              { value: 'max' as const, label: 'Max target' },
+              { value: 'avg' as const, label: 'Average target' },
+            ] as const).map(({ value, label }) => {
+              const current = settings?.timeline_week_detail ?? ['reps', 'max', 'avg'];
+              const checked = current.includes(value);
+              return (
+                <label key={value} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={async () => {
+                      if (!settings) return;
+                      const next = checked
+                        ? current.filter(v => v !== value)
+                        : [...current, value];
+                      await updateSettings(settings.id, { timeline_week_detail: next });
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
