@@ -1,14 +1,15 @@
 // MacroReviewTable — read-only review grid shown under the macro timeline in
-// the Weekly Planner header (toggleable). Weeks as columns (mirroring the
-// timeline), rows per exercise category and per tracked lift. Each cell
-// compares what is programmed in the weekly planner (micro-level plan)
-// against the macro-level target: `planned∕target`.
+// the Weekly Planner header (toggleable). Two levels:
 //
-// The coach switches the reviewed metric (K reps / max / avg) with the
-// segmented control in the top-left; the active (selected) week's column
-// expands to show every metric chosen in settings (timeline_week_detail),
-// so the week being planned is reviewed at full detail while the rest of
-// the macro stays compact.
+// 1. GENERAL table (always shown when the table is open): one row per
+//    week-level guiding metric — Σ reps, tonnage, heaviest load, Ø load —
+//    each cell `planned∕target` against the macro week. This is the guiding
+//    principle level.
+// 2. LIFTS & CATEGORIES (expandable): the detailed per-category / per-lift
+//    grid with a K / Max / Ø metric switcher; the active (selected) week's
+//    column expands to every metric chosen in settings
+//    (timeline_week_detail), so the week being planned is reviewed at full
+//    detail while the rest of the macro stays compact.
 //
 // Category rows aggregate ALL programmed work of that category — including
 // lifts that aren't tracked in the macro — so the coach sees total category
@@ -18,6 +19,7 @@
 // targets across different lifts has no meaning).
 
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useSettings } from '../../hooks/useSettings';
 import { fetchWeeklyProgrammed, type WeeklyProgrammed } from '../../lib/macroTimelineData';
@@ -47,12 +49,22 @@ export interface ReviewPair {
   target: number | null;
 }
 
-/** All metric pairs for one row × week. */
+/** All metric pairs for one lift-row × week. */
 export type ReviewCell = Record<ReviewMetric, ReviewPair>;
+
+/** One guiding-metric row of the general table. */
+export interface GeneralRow {
+  key: string;
+  label: string;
+  /** One pair per week, same order as `weeks`. */
+  cells: ReviewPair[];
+  /** Optional value formatter (e.g. kg → t). */
+  format?: (v: number) => string;
+}
 
 export interface ReviewRow {
   key: string;
-  kind: 'total' | 'category' | 'exercise';
+  kind: 'category' | 'exercise';
   label: string;
   /** Dot color for exercise rows (category shade). */
   color?: string;
@@ -62,11 +74,14 @@ export interface ReviewRow {
 
 export interface MacroReviewTableViewProps {
   weeks: ReviewWeek[];
-  rows: ReviewRow[];
-  /** Metric shown in the compact (non-selected) columns. */
+  generalRows: GeneralRow[];
+  liftRows: ReviewRow[];
+  expanded: boolean;
+  onToggleExpanded?: () => void;
+  /** Metric shown in the compact (non-selected) lift columns. */
   metric: ReviewMetric;
   onMetricChange?: (metric: ReviewMetric) => void;
-  /** Metrics expanded on the selected week's column. */
+  /** Metrics expanded on the selected week's column (lift rows). */
   detailMetrics: ReviewMetric[];
   selectedWeekStart?: string | null;
   onSelectWeek?: (weekStart: string) => void;
@@ -81,18 +96,21 @@ function fmtValue(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1).replace('.', ',');
 }
 
-function pairText(p: ReviewPair): { planned: string; target: string | null } {
-  return {
-    planned: p.planned != null ? fmtValue(p.planned) : '–',
-    target: p.target != null ? fmtValue(p.target) : null,
-  };
-}
-
 function pairEmpty(p: ReviewPair): boolean {
   return p.planned == null && p.target == null;
 }
 
-function cellTooltip(row: ReviewRow, week: ReviewWeek, cell: ReviewCell): string {
+function pairTooltip(label: string, week: ReviewWeek, p: ReviewPair, fmt: (v: number) => string): string {
+  const parts = [`W${week.weekNumber} · ${label}`];
+  parts.push(`Planned ${p.planned != null ? fmt(p.planned) : '–'}`);
+  if (p.target != null) {
+    const pct = p.planned != null && p.target > 0 ? ` (${Math.round((p.planned / p.target) * 100)} %)` : '';
+    parts.push(`Target ${fmt(p.target)}${pct}`);
+  }
+  return parts.join(' · ');
+}
+
+function liftCellTooltip(row: ReviewRow, week: ReviewWeek, cell: ReviewCell): string {
   const parts = [`W${week.weekNumber} · ${row.label}`];
   (Object.keys(REVIEW_METRIC_LABELS) as ReviewMetric[]).forEach(m => {
     const p = cell[m];
@@ -108,24 +126,26 @@ function cellTooltip(row: ReviewRow, week: ReviewWeek, cell: ReviewCell): string
 
 // ── Pure view ────────────────────────────────────────────────────────────────
 
-function Pair({ pair, bold }: { pair: ReviewPair; bold?: boolean }) {
-  const t = pairText(pair);
+function Pair({ pair, bold, format = fmtValue }: { pair: ReviewPair; bold?: boolean; format?: (v: number) => string }) {
   return (
     <span style={{ whiteSpace: 'nowrap' }}>
       <span style={{
         color: pair.planned != null ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
         fontWeight: bold ? 600 : 500,
       }}>
-        {t.planned}
+        {pair.planned != null ? format(pair.planned) : '–'}
       </span>
-      {t.target != null && <span style={{ color: 'var(--color-text-tertiary)' }}>∕{t.target}</span>}
+      {pair.target != null && <span style={{ color: 'var(--color-text-tertiary)' }}>∕{format(pair.target)}</span>}
     </span>
   );
 }
 
 export function MacroReviewTableView({
   weeks,
-  rows,
+  generalRows,
+  liftRows,
+  expanded,
+  onToggleExpanded,
   metric,
   onMetricChange,
   detailMetrics,
@@ -135,8 +155,9 @@ export function MacroReviewTableView({
   if (weeks.length === 0) return null;
 
   const selectedIdx = weeks.findIndex(w => w.weekStart === selectedWeekStart);
-  // The selected column widens to fit its detail metrics.
-  const detailCount = Math.max(detailMetrics.length, 1);
+  // The selected column widens to fit the lift rows' detail metrics — only
+  // relevant while the lift level is expanded.
+  const detailCount = expanded ? Math.max(detailMetrics.length, 1) : 1;
   const gridTemplateColumns = [
     `${LABEL_COL}px`,
     ...weeks.map((_, i) =>
@@ -149,7 +170,13 @@ export function MacroReviewTableView({
   const colBg = (idx: number): string | undefined =>
     idx === selectedIdx ? 'var(--color-accent-muted)' : undefined;
 
-  const renderCell = (row: ReviewRow, cell: ReviewCell, i: number) => {
+  const cellBase: React.CSSProperties = {
+    textAlign: 'center', fontSize: 9.5, lineHeight: '18px',
+    whiteSpace: 'nowrap', overflow: 'hidden',
+    cursor: onSelectWeek ? 'pointer' : 'default',
+  };
+
+  const renderLiftCell = (row: ReviewRow, cell: ReviewCell, i: number) => {
     if (i === selectedIdx) {
       const shown = detailMetrics.length > 0 ? detailMetrics : [metric];
       const nonEmpty = shown.filter(m => !pairEmpty(cell[m]));
@@ -166,7 +193,7 @@ export function MacroReviewTableView({
                   {REVIEW_METRIC_LABELS[m]}
                 </span>
               )}
-              <Pair pair={cell[m]} bold={row.kind !== 'exercise'} />
+              <Pair pair={cell[m]} bold={row.kind === 'category'} />
             </span>
           ))}
         </span>
@@ -174,38 +201,19 @@ export function MacroReviewTableView({
     }
     const p = cell[metric];
     if (pairEmpty(p)) return '';
-    return <Pair pair={p} bold={row.kind !== 'exercise'} />;
+    return <Pair pair={p} bold={row.kind === 'category'} />;
   };
 
   return (
     <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
-      {/* Header: metric switcher + week numbers */}
+      {/* Header: week numbers + note dots */}
       <div style={{ display: 'grid', gridTemplateColumns }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, paddingBottom: 2 }}>
-          {(Object.keys(REVIEW_METRIC_LABELS) as ReviewMetric[]).map(m => {
-            const active = m === metric;
-            return (
-              <button
-                key={m}
-                onClick={onMetricChange ? () => onMetricChange(m) : undefined}
-                title={m === 'reps' ? 'Rep target (K)' : m === 'max' ? 'Max target' : 'Average target'}
-                style={{
-                  padding: '1px 6px',
-                  fontSize: 8.5, lineHeight: '12px',
-                  fontFamily: 'var(--font-sans)', fontWeight: 600,
-                  letterSpacing: '0.04em', textTransform: 'uppercase',
-                  background: active ? 'var(--color-accent-muted)' : 'transparent',
-                  color: active ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                  border: '0.5px solid',
-                  borderColor: active ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: onMetricChange ? 'pointer' : 'default',
-                }}
-              >
-                {REVIEW_METRIC_LABELS[m]}
-              </button>
-            );
-          })}
+        <div style={{
+          fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.06em',
+          color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-sans)',
+          display: 'flex', alignItems: 'flex-end', paddingBottom: 2,
+        }}>
+          planned ∕ target
         </div>
         {weeks.map((w, i) => {
           const hasNote = !!w.note && w.note.trim() !== '';
@@ -239,18 +247,93 @@ export function MacroReviewTableView({
         })}
       </div>
 
-      {/* Rows */}
-      {rows.map(row => (
+      {/* General level — the guiding week metrics */}
+      {generalRows.map(row => (
+        <div
+          key={row.key}
+          style={{ display: 'grid', gridTemplateColumns, borderTop: '0.5px solid var(--color-border-tertiary)' }}
+        >
+          <div style={{
+            fontFamily: 'var(--font-sans)', fontSize: 10, lineHeight: '18px',
+            fontWeight: 500, color: 'var(--color-text-secondary)',
+            paddingLeft: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {row.label}
+          </div>
+          {row.cells.map((p, i) => (
+            <div
+              key={weeks[i].weekStart}
+              title={pairEmpty(p) ? undefined : pairTooltip(row.label, weeks[i], p, row.format ?? fmtValue)}
+              onClick={onSelectWeek ? () => onSelectWeek(weeks[i].weekStart) : undefined}
+              style={{ ...cellBase, background: colBg(i) }}
+            >
+              {pairEmpty(p) ? '' : <Pair pair={p} bold format={row.format} />}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {/* Expand control + metric switcher for the lift level */}
+      {onToggleExpanded && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          borderTop: '0.5px solid var(--color-border-tertiary)',
+          padding: '2px 0',
+        }}>
+          <button
+            onClick={onToggleExpanded}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              padding: '1px 4px', background: 'transparent', border: 'none',
+              fontSize: 9, fontFamily: 'var(--font-sans)', fontWeight: 600,
+              letterSpacing: '0.05em', textTransform: 'uppercase',
+              color: 'var(--color-text-tertiary)', cursor: 'pointer',
+            }}
+            title={expanded ? 'Collapse lift detail' : 'Expand per-lift and per-category detail'}
+          >
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            Lifts & categories
+          </button>
+          {expanded && onMetricChange && (
+            <span style={{ display: 'inline-flex', gap: 2 }}>
+              {(Object.keys(REVIEW_METRIC_LABELS) as ReviewMetric[]).map(m => {
+                const active = m === metric;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => onMetricChange(m)}
+                    title={m === 'reps' ? 'Rep target (K)' : m === 'max' ? 'Max target' : 'Average target'}
+                    style={{
+                      padding: '0px 6px',
+                      fontSize: 8.5, lineHeight: '12px',
+                      fontFamily: 'var(--font-sans)', fontWeight: 600,
+                      letterSpacing: '0.04em', textTransform: 'uppercase',
+                      background: active ? 'var(--color-accent-muted)' : 'transparent',
+                      color: active ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+                      border: '0.5px solid',
+                      borderColor: active ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {REVIEW_METRIC_LABELS[m]}
+                  </button>
+                );
+              })}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Lift level (expanded) */}
+      {expanded && liftRows.map(row => (
         <div
           key={row.key}
           style={{
             display: 'grid', gridTemplateColumns,
-            background: row.kind !== 'exercise' ? 'var(--color-bg-secondary)' : undefined,
-            borderTop: row.kind !== 'exercise'
+            background: row.kind === 'category' ? 'var(--color-bg-secondary)' : undefined,
+            borderTop: row.kind === 'category'
               ? '0.5px solid var(--color-border-tertiary)'
-              : undefined,
-            borderBottom: row.kind === 'total'
-              ? '0.5px solid var(--color-border-secondary)'
               : undefined,
           }}
         >
@@ -258,14 +341,12 @@ export function MacroReviewTableView({
             display: 'flex', alignItems: 'center', gap: 5, minWidth: 0,
             paddingLeft: row.kind === 'exercise' ? 12 : 2,
             fontFamily: 'var(--font-sans)',
-            fontSize: row.kind === 'exercise' ? 10 : 9.5,
+            fontSize: row.kind === 'category' ? 9.5 : 10,
             lineHeight: '18px',
-            fontWeight: row.kind === 'total' ? 700 : row.kind === 'category' ? 600 : 400,
-            textTransform: row.kind !== 'exercise' ? 'uppercase' : undefined,
-            letterSpacing: row.kind !== 'exercise' ? '0.05em' : undefined,
-            color: row.kind === 'total'
-              ? 'var(--color-text-secondary)'
-              : row.kind === 'category' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
+            fontWeight: row.kind === 'category' ? 600 : 400,
+            textTransform: row.kind === 'category' ? 'uppercase' : undefined,
+            letterSpacing: row.kind === 'category' ? '0.05em' : undefined,
+            color: row.kind === 'category' ? 'var(--color-text-tertiary)' : 'var(--color-text-secondary)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {row.kind === 'exercise' && row.color && (
@@ -280,16 +361,11 @@ export function MacroReviewTableView({
           {row.cells.map((cell, i) => (
             <div
               key={weeks[i].weekStart}
-              title={cellTooltip(row, weeks[i], cell)}
+              title={liftCellTooltip(row, weeks[i], cell)}
               onClick={onSelectWeek ? () => onSelectWeek(weeks[i].weekStart) : undefined}
-              style={{
-                textAlign: 'center', fontSize: 9.5, lineHeight: '18px',
-                background: colBg(i),
-                cursor: onSelectWeek ? 'pointer' : 'default',
-                whiteSpace: 'nowrap', overflow: 'hidden',
-              }}
+              style={{ ...cellBase, background: colBg(i) }}
             >
-              {renderCell(row, cell, i)}
+              {renderLiftCell(row, cell, i)}
             </div>
           ))}
         </div>
@@ -301,9 +377,13 @@ export function MacroReviewTableView({
 // ── Container ────────────────────────────────────────────────────────────────
 
 const METRIC_STORAGE_KEY = 'emos.planner.macroTableMetric';
+const LIFTS_STORAGE_KEY = 'emos.planner.macroTableLifts';
 
 const isReviewMetric = (v: string): v is ReviewMetric =>
   v === 'reps' || v === 'max' || v === 'avg';
+
+const formatTonnageT = (kg: number): string =>
+  (Math.round(kg / 100) / 10).toFixed(1).replace('.', ',');
 
 export interface MacroReviewTableProps {
   cycleId: string;
@@ -330,6 +410,9 @@ export function MacroReviewTable({
     const stored = localStorage.getItem(METRIC_STORAGE_KEY) ?? '';
     return isReviewMetric(stored) ? stored : 'reps';
   });
+  const [expanded, setExpanded] = useState(
+    () => localStorage.getItem(LIFTS_STORAGE_KEY) === '1'
+  );
 
   useEffect(() => {
     void fetchSettingsSilent();
@@ -339,6 +422,13 @@ export function MacroReviewTable({
   const handleMetricChange = (m: ReviewMetric) => {
     setMetric(m);
     localStorage.setItem(METRIC_STORAGE_KEY, m);
+  };
+
+  const handleToggleExpanded = () => {
+    setExpanded(prev => {
+      localStorage.setItem(LIFTS_STORAGE_KEY, prev ? '0' : '1');
+      return !prev;
+    });
   };
 
   const detailMetrics: ReviewMetric[] = useMemo(() => {
@@ -403,16 +493,56 @@ export function MacroReviewTable({
     return () => { cancelled = true; };
   }, [cycleId, athleteId, groupId]);
 
-  const { weeks, rows } = useMemo(() => {
+  const { weeks, generalRows, liftRows } = useMemo(() => {
     const weeks: ReviewWeek[] = macroWeeks.map(w => ({
       weekStart: w.week_start,
       weekNumber: w.week_number,
       note: w.notes ?? '',
     }));
 
+    // ── General level: guiding week metrics ──
+    const val = (v: number | null | undefined): number | null =>
+      v != null && v > 0 ? v : null;
+    const allGeneral: GeneralRow[] = [
+      {
+        key: 'g-reps',
+        label: 'Σ reps',
+        cells: macroWeeks.map(mw => ({
+          planned: val(programmed.get(mw.week_start)?.reps),
+          target: mw.total_reps_target,
+        })),
+      },
+      {
+        key: 'g-tonnage',
+        label: 'Tonnage (t)',
+        format: formatTonnageT,
+        cells: macroWeeks.map(mw => ({
+          planned: val(programmed.get(mw.week_start)?.tonnage),
+          target: mw.tonnage_target,
+        })),
+      },
+      {
+        key: 'g-max',
+        label: 'Heaviest (kg)',
+        cells: macroWeeks.map(mw => ({
+          planned: programmed.get(mw.week_start)?.maxLoad ?? null,
+          target: null,
+        })),
+      },
+      {
+        key: 'g-avg',
+        label: 'Ø load (kg)',
+        cells: macroWeeks.map(mw => ({
+          planned: programmed.get(mw.week_start)?.avgLoad ?? null,
+          target: null,
+        })),
+      },
+    ];
+    const generalRows = allGeneral.filter(r => r.cells.some(c => !pairEmpty(c)));
+
+    // ── Lift level ──
     const trackedById = new Map(tracked.map(te => [te.id, te]));
     const weekStartById = new Map(macroWeeks.map(w => [w.id, w.week_start]));
-    // weekStart|exerciseId → macro target row
     const targetByWeekAndExercise = new Map<string, MacroTarget>();
     for (const t of targets) {
       const te = trackedById.get(t.tracked_exercise_id);
@@ -423,46 +553,26 @@ export function MacroReviewTable({
     const targetFor = (weekStart: string, exerciseId: string): MacroTarget | undefined =>
       targetByWeekAndExercise.get(`${weekStart}|${exerciseId}`);
 
-    // Categories in order of first appearance among tracked lifts.
     const categories: string[] = [];
     for (const te of tracked) {
       const cat = te.exercise.category || 'other';
       if (!categories.includes(cat)) categories.push(cat);
     }
 
-    const rows: ReviewRow[] = [];
-
-    // Week totals — the general metrics of the whole week. Rep target comes
-    // from the macro week (total_reps_target); max/avg have no week-level
-    // macro target (avg_intensity_target is a % and would mismatch the kg
-    // planned values), so those show the planned side only.
-    rows.push({
-      key: 'week-total',
-      kind: 'total',
-      label: 'Week total',
-      cells: macroWeeks.map(mw => {
-        const p = programmed.get(mw.week_start);
-        return {
-          reps: { planned: p != null && p.reps > 0 ? p.reps : null, target: mw.total_reps_target },
-          max: { planned: p?.maxLoad ?? null, target: null },
-          avg: { planned: p?.avgLoad ?? null, target: null },
-        };
-      }),
-    });
-
+    const liftRows: ReviewRow[] = [];
     for (const cat of categories) {
       const catTracked = tracked.filter(te => (te.exercise.category || 'other') === cat);
 
-      rows.push({
+      liftRows.push({
         key: `cat-${cat}`,
         kind: 'category',
         label: cat,
-        cells: weeks.map(w => {
-          const stats = programmed.get(w.weekStart)?.byCategory.get(cat);
+        cells: macroWeeks.map(mw => {
+          const stats = programmed.get(mw.week_start)?.byCategory.get(cat);
           let repsTarget: number | null = null;
           let maxTarget: number | null = null;
           for (const te of catTracked) {
-            const t = targetFor(w.weekStart, te.exercise_id);
+            const t = targetFor(mw.week_start, te.exercise_id);
             if (t?.target_reps != null) repsTarget = (repsTarget ?? 0) + t.target_reps;
             if (t?.target_max != null) maxTarget = maxTarget == null ? t.target_max : Math.max(maxTarget, t.target_max);
           }
@@ -476,7 +586,7 @@ export function MacroReviewTable({
       });
 
       for (const te of catTracked) {
-        rows.push({
+        liftRows.push({
           key: `ex-${te.id}`,
           kind: 'exercise',
           label: te.exercise.name,
@@ -486,9 +596,9 @@ export function MacroReviewTable({
             te.exercise.category,
             tracked
           ),
-          cells: weeks.map(w => {
-            const stats = programmed.get(w.weekStart)?.byExercise.get(te.exercise_id);
-            const t = targetFor(w.weekStart, te.exercise_id);
+          cells: macroWeeks.map(mw => {
+            const stats = programmed.get(mw.week_start)?.byExercise.get(te.exercise_id);
+            const t = targetFor(mw.week_start, te.exercise_id);
             return {
               reps: { planned: stats?.reps ?? null, target: t?.target_reps ?? null },
               max: { planned: stats?.maxLoad ?? null, target: t?.target_max ?? null },
@@ -499,7 +609,7 @@ export function MacroReviewTable({
       }
     }
 
-    return { weeks, rows };
+    return { weeks, generalRows, liftRows };
   }, [macroWeeks, tracked, targets, programmed]);
 
   if (loading) {
@@ -513,21 +623,15 @@ export function MacroReviewTable({
     );
   }
 
-  if (tracked.length === 0) {
-    return (
-      <div style={{
-        padding: '8px 0', fontSize: 'var(--text-caption)',
-        color: 'var(--color-text-tertiary)',
-      }}>
-        No tracked lifts in this macro — add them on the macro cycle page to review targets here.
-      </div>
-    );
-  }
+  if (weeks.length === 0) return null;
 
   return (
     <MacroReviewTableView
       weeks={weeks}
-      rows={rows}
+      generalRows={generalRows}
+      liftRows={liftRows}
+      expanded={expanded && liftRows.length > 0}
+      onToggleExpanded={liftRows.length > 0 ? handleToggleExpanded : undefined}
       metric={metric}
       onMetricChange={handleMetricChange}
       detailMetrics={detailMetrics}

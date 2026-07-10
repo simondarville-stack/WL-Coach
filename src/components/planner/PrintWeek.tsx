@@ -502,7 +502,8 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                                 ? (ex.combo_notation || (members?.map(m => m.exercise.name).join(' + ') ?? ex.exercise.name))
                                 : ex.exercise.name}
                             </h3>
-                            {ex.variation_note && (
+                            {/* Legacy variation_note fallback — the folded note (ex.notes) prints below */}
+                            {!ex.notes?.trim() && ex.variation_note && (
                               <span className="text-[10px] text-gray-500 italic leading-tight">{ex.variation_note}</span>
                             )}
                             {unitSymbol && <span className="text-[9px] font-medium text-gray-800 bg-gray-200 px-1 py-px rounded">{unitSymbol}</span>}

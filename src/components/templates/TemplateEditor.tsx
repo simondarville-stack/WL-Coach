@@ -783,29 +783,7 @@ function ExerciseRow({
             {exercise.exercise.exercise_code}
           </span>
         )}
-        <input
-          type="text"
-          value={exercise.variation_note ?? ''}
-          onChange={e => onFieldChange({ variation_note: e.target.value || null })}
-          placeholder="Variation note"
-          style={{
-            flex: 1, fontSize: 11, fontStyle: 'italic',
-            padding: '2px 6px', minWidth: 60,
-            background: 'transparent',
-            border: '0.5px solid transparent',
-            borderRadius: 'var(--radius-sm)', outline: 'none',
-            color: 'var(--color-text-secondary)',
-            transition: 'border-color var(--transition-fast), background var(--transition-fast)',
-          }}
-          onFocus={e => {
-            (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--color-border-tertiary)';
-            (e.currentTarget as HTMLInputElement).style.background = 'var(--color-bg-primary)';
-          }}
-          onBlur={e => {
-            (e.currentTarget as HTMLInputElement).style.borderColor = 'transparent';
-            (e.currentTarget as HTMLInputElement).style.background = 'transparent';
-          }}
-        />
+        <span style={{ flex: 1 }} />
         <button
           onClick={onDelete}
           title="Remove exercise"
@@ -838,11 +816,13 @@ function ExerciseRow({
         onSave={onPrescriptionSave}
       />
 
+      {/* Folded note: notes is the single field; legacy variation_note
+          pre-fills until the note is edited (then it is cleared). */}
       <input
         type="text"
-        value={exercise.notes ?? ''}
-        onChange={e => onFieldChange({ notes: e.target.value || null })}
-        placeholder="Notes"
+        value={exercise.notes ?? exercise.variation_note ?? ''}
+        onChange={e => onFieldChange({ notes: e.target.value || null, variation_note: null })}
+        placeholder="Note"
         style={inputStyle}
       />
     </div>

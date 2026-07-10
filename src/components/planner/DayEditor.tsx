@@ -365,7 +365,9 @@ export function DayEditor({
                   ) : (
                     <>
                       <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{ex.exercise.name}</span>
-                      {ex.variation_note && (
+                      {/* Legacy variation_note surfaces only until the folded
+                          note (ex.notes, shown below) takes over. */}
+                      {!ex.notes?.trim() && ex.variation_note && (
                         <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.variation_note}</span>
                       )}
                       {ex.unit && ex.unit !== 'absolute_kg' && (

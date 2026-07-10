@@ -608,9 +608,12 @@ export function useWeekPlans() {
   };
 
   const saveNotes = async (plannedExId: string, notes: string): Promise<void> => {
+    // Notes and the legacy variation_note are folded into ONE note (see
+    // src/lib/plannedNote.ts): writing the note clears variation_note so
+    // legacy content migrates lazily on first edit.
     const { error } = await supabase
       .from('planned_exercises')
-      .update({ notes: notes.trim() || null })
+      .update({ notes: notes.trim() || null, variation_note: null })
       .eq('id', plannedExId);
     if (error) throw error;
     // Promote group-sourced exercise to individual when coach edits it

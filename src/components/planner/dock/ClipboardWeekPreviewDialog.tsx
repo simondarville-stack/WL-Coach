@@ -98,7 +98,7 @@ export function ClipboardWeekPreviewDialog({ week, onClose }: ClipboardWeekPrevi
                         >
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>{ex.display.label}</span>
-                            {s.variation_note && (
+                            {!s.notes?.trim() && s.variation_note && (
                               <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{s.variation_note}</span>
                             )}
                           </div>
