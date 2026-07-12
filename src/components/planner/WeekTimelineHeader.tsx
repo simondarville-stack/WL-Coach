@@ -5,13 +5,15 @@
 // selected week (gap weeks, groups without an athlete-level macro) it falls
 // back to a continuous window centered on the selected week.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Table2 } from 'lucide-react';
 import { MacroTimeline, MacroReviewTable } from '../planning';
+import { WeekReviewPanel } from './WeekReviewPanel';
 import type { MacroContext } from './WeeklyPlanner';
 import type { WeekTypeConfig } from '../../lib/database.types';
-import { getWeekTypeColor } from '../../lib/weekUtils';
+import { getMondayOfWeekISO, getWeekTypeColor } from '../../lib/weekUtils';
 import { formatDateRange } from '../../lib/dateUtils';
+import { useSettings } from '../../hooks/useSettings';
 
 const TABLE_TOGGLE_KEY = 'emos.planner.macroTable';
 
@@ -47,7 +49,16 @@ export function WeekTimelineHeader({
   onNextWeek,
   onSelectWeek,
 }: WeekTimelineHeaderProps) {
+  const { settings, fetchSettingsSilent } = useSettings();
+  useEffect(() => {
+    void fetchSettingsSilent();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const weekTypeColor = macroContext ? getWeekTypeColor(macroContext.weekType, weekTypes) : null;
+
+  // Review applies once the selected week has started; the panel renders
+  // nothing when no training was logged.
+  const reviewEligible = !!athleteId && selectedDate <= getMondayOfWeekISO(new Date());
 
   const [showTable, setShowTable] = useState(
     () => localStorage.getItem(TABLE_TOGGLE_KEY) === '1'
@@ -183,6 +194,16 @@ export function WeekTimelineHeader({
         >
           ✎ {macroContext.weekNotes}
         </div>
+      )}
+
+      {/* Week review — done vs planned, athlete feedback, plan-next jump */}
+      {reviewEligible && (
+        <WeekReviewPanel
+          athleteId={athleteId!}
+          weekStart={selectedDate}
+          complianceThreshold={(settings?.compliance_warning_threshold ?? 90) / 100}
+          onSelectWeek={onSelectWeek}
+        />
       )}
 
       {/* Macro review table (toggleable) */}

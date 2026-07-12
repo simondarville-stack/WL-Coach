@@ -24,11 +24,13 @@ import {
   continuousRangeWeekStarts,
   fetchTimelineMarkers,
   fetchTimelineSource,
+  fetchWeeklyPerformed,
   fetchWeeklyProgrammed,
   macroRangeWeekStarts,
   resolveScopeAthleteIds,
   type TimelineMarker,
   type TimelineWeek,
+  type WeeklyPerformed,
   type WeeklyProgrammed,
 } from '../../lib/macroTimelineData';
 import { MacroTimelineStrip } from './MacroTimelineStrip';
@@ -81,6 +83,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
   const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
   const [markers, setMarkers] = useState<TimelineMarker[]>([]);
   const [programmed, setProgrammed] = useState<Map<string, WeeklyProgrammed>>(() => new Map());
+  const [performed, setPerformed] = useState<Map<string, WeeklyPerformed>>(() => new Map());
 
   const todayMonday = getMondayOfWeekISO(new Date());
   const todayIso = toLocalISO(new Date());
@@ -159,6 +162,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
     if (weeks.length === 0) {
       setMarkers([]);
       setProgrammed(new Map());
+      setPerformed(new Map());
       return;
     }
     let cancelled = false;
@@ -170,36 +174,42 @@ export function MacroTimeline(props: MacroTimelineProps) {
         const rangeStart = weeks[0].weekStart;
         const lastWeekStart = weeks[weeks.length - 1].weekStart;
         const rangeEnd = addDaysToISO(lastWeekStart, 6);
-        const [fetchedMarkers, fetchedProgrammed] = await Promise.all([
+        const [fetchedMarkers, fetchedProgrammed, fetchedPerformed] = await Promise.all([
           fetchTimelineMarkers(athleteIds, macroIds, rangeStart, rangeEnd),
           fetchWeeklyProgrammed(props.athleteId, props.groupId, rangeStart, lastWeekStart),
+          fetchWeeklyPerformed(athleteIds, rangeStart, lastWeekStart),
         ]);
         if (cancelled) return;
         setMarkers(fetchedMarkers);
         setProgrammed(fetchedProgrammed);
+        setPerformed(fetchedPerformed);
       } catch (err) {
         if (cancelled) return;
-        console.error('MacroTimeline: markers/programmed load failed', err);
+        console.error('MacroTimeline: markers/volume load failed', err);
         setMarkers([]);
         setProgrammed(new Map());
+        setPerformed(new Map());
       }
     })();
     return () => { cancelled = true; };
   }, [weeks, props.athleteId, props.groupId]);
 
-  // ── Merge week-programmed volume into the built weeks ──
+  // ── Merge week-programmed + performed volume into the built weeks ──
   const weeksWithProgrammed: TimelineWeek[] = useMemo(() => {
-    if (programmed.size === 0) return weeks;
+    if (programmed.size === 0 && performed.size === 0) return weeks;
     return weeks.map(w => {
       const p = programmed.get(w.weekStart);
-      if (!p) return w;
+      const d = performed.get(w.weekStart);
+      if (!p && !d) return w;
       return {
         ...w,
-        programmedReps: p.reps > 0 ? p.reps : null,
-        programmedTonnage: p.tonnage > 0 ? p.tonnage : null,
+        programmedReps: p != null && p.reps > 0 ? p.reps : null,
+        programmedTonnage: p != null && p.tonnage > 0 ? p.tonnage : null,
+        performedReps: d != null && d.reps > 0 ? d.reps : null,
+        performedTonnage: d != null && d.tonnage > 0 ? d.tonnage : null,
       };
     });
-  }, [weeks, programmed]);
+  }, [weeks, programmed, performed]);
 
   // ── Handlers ──
   const handleWeekClick = (week: TimelineWeek) => {
@@ -220,6 +230,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
       weeks={weeksWithProgrammed}
       markers={markers}
       metric={settings?.timeline_metric ?? 'reps'}
+      complianceThreshold={(settings?.compliance_warning_threshold ?? 90) / 100}
       selectedWeekStart={props.selectedWeekStart ?? todayMonday}
       todayDate={todayIso}
       onWeekClick={handleWeekClick}

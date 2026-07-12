@@ -22,7 +22,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useSettings } from '../../hooks/useSettings';
-import { fetchWeeklyProgrammed, type WeeklyProgrammed } from '../../lib/macroTimelineData';
+import {
+  fetchWeeklyPerformed,
+  fetchWeeklyProgrammed,
+  resolveScopeAthleteIds,
+  type WeeklyPerformed,
+  type WeeklyProgrammed,
+} from '../../lib/macroTimelineData';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import type { MacroTarget, MacroTrackedExerciseWithExercise, MacroWeek } from '../../lib/database.types';
 
@@ -47,6 +53,9 @@ export interface ReviewWeek {
 export interface ReviewPair {
   planned: number | null;
   target: number | null;
+  /** Performed (logged) value; rendered as a third ∕done element coloured
+   *  by compliance against `planned`. */
+  done?: number | null;
 }
 
 /** All metric pairs for one lift-row × week. */
@@ -83,6 +92,8 @@ export interface MacroReviewTableViewProps {
   onMetricChange?: (metric: ReviewMetric) => void;
   /** Metrics expanded on the selected week's column (lift rows). */
   detailMetrics: ReviewMetric[];
+  /** Compliance threshold (done / planned) as a fraction. Default 0.9. */
+  complianceThreshold?: number;
   selectedWeekStart?: string | null;
   onSelectWeek?: (weekStart: string) => void;
 }
@@ -97,7 +108,13 @@ function fmtValue(v: number): string {
 }
 
 function pairEmpty(p: ReviewPair): boolean {
-  return p.planned == null && p.target == null;
+  return p.planned == null && p.target == null && p.done == null;
+}
+
+/** true = compliant, false = under threshold, null = not comparable. */
+function complianceOf(p: ReviewPair, threshold: number): boolean | null {
+  if (p.done == null || p.planned == null || p.planned <= 0) return null;
+  return p.done / p.planned >= threshold;
 }
 
 function pairTooltip(label: string, week: ReviewWeek, p: ReviewPair, fmt: (v: number) => string): string {
@@ -106,6 +123,10 @@ function pairTooltip(label: string, week: ReviewWeek, p: ReviewPair, fmt: (v: nu
   if (p.target != null) {
     const pct = p.planned != null && p.target > 0 ? ` (${Math.round((p.planned / p.target) * 100)} %)` : '';
     parts.push(`Target ${fmt(p.target)}${pct}`);
+  }
+  if (p.done != null) {
+    const pct = p.planned != null && p.planned > 0 ? ` (${Math.round((p.done / p.planned) * 100)} % of plan)` : '';
+    parts.push(`Done ${fmt(p.done)}${pct}`);
   }
   return parts.join(' · ');
 }
@@ -126,7 +147,10 @@ function liftCellTooltip(row: ReviewRow, week: ReviewWeek, cell: ReviewCell): st
 
 // ── Pure view ────────────────────────────────────────────────────────────────
 
-function Pair({ pair, bold, format = fmtValue }: { pair: ReviewPair; bold?: boolean; format?: (v: number) => string }) {
+function Pair({ pair, bold, format = fmtValue, threshold = 0.9 }: {
+  pair: ReviewPair; bold?: boolean; format?: (v: number) => string; threshold?: number;
+}) {
+  const compliant = complianceOf(pair, threshold);
   return (
     <span style={{ whiteSpace: 'nowrap' }}>
       <span style={{
@@ -136,6 +160,16 @@ function Pair({ pair, bold, format = fmtValue }: { pair: ReviewPair; bold?: bool
         {pair.planned != null ? format(pair.planned) : '–'}
       </span>
       {pair.target != null && <span style={{ color: 'var(--color-text-tertiary)' }}>∕{format(pair.target)}</span>}
+      {pair.done != null && (
+        <span style={{
+          fontWeight: 600,
+          color: compliant == null
+            ? 'var(--color-text-secondary)'
+            : compliant ? 'var(--color-success-text)' : 'var(--color-warning-text)',
+        }}>
+          ∕{format(pair.done)}
+        </span>
+      )}
     </span>
   );
 }
@@ -149,10 +183,17 @@ export function MacroReviewTableView({
   metric,
   onMetricChange,
   detailMetrics,
+  complianceThreshold = 0.9,
   selectedWeekStart = null,
   onSelectWeek,
 }: MacroReviewTableViewProps) {
   if (weeks.length === 0) return null;
+
+  const anyDone =
+    generalRows.some(r => r.cells.some(c => c.done != null)) ||
+    liftRows.some(r => r.cells.some(c =>
+      (Object.keys(REVIEW_METRIC_LABELS) as ReviewMetric[]).some(m => c[m].done != null)
+    ));
 
   const selectedIdx = weeks.findIndex(w => w.weekStart === selectedWeekStart);
   // The selected column widens to fit the lift rows' detail metrics — only
@@ -193,7 +234,7 @@ export function MacroReviewTableView({
                   {REVIEW_METRIC_LABELS[m]}
                 </span>
               )}
-              <Pair pair={cell[m]} bold={row.kind === 'category'} />
+              <Pair pair={cell[m]} bold={row.kind === 'category'} threshold={complianceThreshold} />
             </span>
           ))}
         </span>
@@ -201,7 +242,7 @@ export function MacroReviewTableView({
     }
     const p = cell[metric];
     if (pairEmpty(p)) return '';
-    return <Pair pair={p} bold={row.kind === 'category'} />;
+    return <Pair pair={p} bold={row.kind === 'category'} threshold={complianceThreshold} />;
   };
 
   return (
@@ -213,7 +254,7 @@ export function MacroReviewTableView({
           color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-sans)',
           display: 'flex', alignItems: 'flex-end', paddingBottom: 2,
         }}>
-          planned ∕ target
+          {anyDone ? 'planned ∕ target ∕ done' : 'planned ∕ target'}
         </div>
         {weeks.map((w, i) => {
           const hasNote = !!w.note && w.note.trim() !== '';
@@ -267,7 +308,7 @@ export function MacroReviewTableView({
               onClick={onSelectWeek ? () => onSelectWeek(weeks[i].weekStart) : undefined}
               style={{ ...cellBase, background: colBg(i) }}
             >
-              {pairEmpty(p) ? '' : <Pair pair={p} bold format={row.format} />}
+              {pairEmpty(p) ? '' : <Pair pair={p} bold format={row.format} threshold={complianceThreshold} />}
             </div>
           ))}
         </div>
@@ -405,6 +446,7 @@ export function MacroReviewTable({
   const [tracked, setTracked] = useState<MacroTrackedExerciseWithExercise[]>([]);
   const [targets, setTargets] = useState<MacroTarget[]>([]);
   const [programmed, setProgrammed] = useState<Map<string, WeeklyProgrammed>>(() => new Map());
+  const [performed, setPerformed] = useState<Map<string, WeeklyPerformed>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [metric, setMetric] = useState<ReviewMetric>(() => {
     const stored = localStorage.getItem(METRIC_STORAGE_KEY) ?? '';
@@ -459,18 +501,19 @@ export function MacroReviewTable({
         const weeks = (weeksRes.data as MacroWeek[]) ?? [];
         const weekIds = weeks.map(w => w.id);
 
-        const [targetsRes, programmedMap] = await Promise.all([
+        const rangeStart = weeks.length > 0 ? weeks[0].week_start : null;
+        const rangeEnd = weeks.length > 0 ? weeks[weeks.length - 1].week_start : null;
+        const [targetsRes, programmedMap, performedMap] = await Promise.all([
           weekIds.length > 0
             ? supabase.from('macro_targets').select('*').in('macro_week_id', weekIds)
             : Promise.resolve({ data: [], error: null }),
-          weeks.length > 0
-            ? fetchWeeklyProgrammed(
-                athleteId,
-                groupId,
-                weeks[0].week_start,
-                weeks[weeks.length - 1].week_start
-              )
+          rangeStart && rangeEnd
+            ? fetchWeeklyProgrammed(athleteId, groupId, rangeStart, rangeEnd)
             : Promise.resolve(new Map<string, WeeklyProgrammed>()),
+          rangeStart && rangeEnd
+            ? resolveScopeAthleteIds(athleteId, groupId).then(ids =>
+                fetchWeeklyPerformed(ids, rangeStart, rangeEnd))
+            : Promise.resolve(new Map<string, WeeklyPerformed>()),
         ]);
         if (targetsRes.error) throw targetsRes.error;
 
@@ -479,6 +522,7 @@ export function MacroReviewTable({
         setTracked((trackedRes.data as unknown as MacroTrackedExerciseWithExercise[]) ?? []);
         setTargets((targetsRes.data as MacroTarget[]) ?? []);
         setProgrammed(programmedMap);
+        setPerformed(performedMap);
       } catch (err) {
         if (cancelled) return;
         console.error('MacroReviewTable: load failed', err);
@@ -486,6 +530,7 @@ export function MacroReviewTable({
         setTracked([]);
         setTargets([]);
         setProgrammed(new Map());
+        setPerformed(new Map());
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -510,6 +555,7 @@ export function MacroReviewTable({
         cells: macroWeeks.map(mw => ({
           planned: val(programmed.get(mw.week_start)?.reps),
           target: mw.total_reps_target,
+          done: val(performed.get(mw.week_start)?.reps),
         })),
       },
       {
@@ -519,6 +565,7 @@ export function MacroReviewTable({
         cells: macroWeeks.map(mw => ({
           planned: val(programmed.get(mw.week_start)?.tonnage),
           target: mw.tonnage_target,
+          done: val(performed.get(mw.week_start)?.tonnage),
         })),
       },
       {
@@ -527,6 +574,7 @@ export function MacroReviewTable({
         cells: macroWeeks.map(mw => ({
           planned: programmed.get(mw.week_start)?.maxLoad ?? null,
           target: null,
+          done: performed.get(mw.week_start)?.maxLoad ?? null,
         })),
       },
       {
@@ -535,6 +583,7 @@ export function MacroReviewTable({
         cells: macroWeeks.map(mw => ({
           planned: programmed.get(mw.week_start)?.avgLoad ?? null,
           target: null,
+          done: performed.get(mw.week_start)?.avgLoad ?? null,
         })),
       },
     ];
@@ -569,6 +618,7 @@ export function MacroReviewTable({
         label: cat,
         cells: macroWeeks.map(mw => {
           const stats = programmed.get(mw.week_start)?.byCategory.get(cat);
+          const done = performed.get(mw.week_start)?.byCategory.get(cat);
           let repsTarget: number | null = null;
           let maxTarget: number | null = null;
           for (const te of catTracked) {
@@ -577,10 +627,10 @@ export function MacroReviewTable({
             if (t?.target_max != null) maxTarget = maxTarget == null ? t.target_max : Math.max(maxTarget, t.target_max);
           }
           return {
-            reps: { planned: stats?.reps ?? null, target: repsTarget },
-            max: { planned: stats?.maxLoad ?? null, target: maxTarget },
+            reps: { planned: stats?.reps ?? null, target: repsTarget, done: done?.reps ?? null },
+            max: { planned: stats?.maxLoad ?? null, target: maxTarget, done: done?.maxLoad ?? null },
             // Averaging avg-targets across different lifts has no meaning.
-            avg: { planned: stats?.avgLoad ?? null, target: null },
+            avg: { planned: stats?.avgLoad ?? null, target: null, done: done?.avgLoad ?? null },
           };
         }),
       });
@@ -598,11 +648,12 @@ export function MacroReviewTable({
           ),
           cells: macroWeeks.map(mw => {
             const stats = programmed.get(mw.week_start)?.byExercise.get(te.exercise_id);
+            const done = performed.get(mw.week_start)?.byExercise.get(te.exercise_id);
             const t = targetFor(mw.week_start, te.exercise_id);
             return {
-              reps: { planned: stats?.reps ?? null, target: t?.target_reps ?? null },
-              max: { planned: stats?.maxLoad ?? null, target: t?.target_max ?? null },
-              avg: { planned: stats?.avgLoad ?? null, target: t?.target_avg ?? null },
+              reps: { planned: stats?.reps ?? null, target: t?.target_reps ?? null, done: done?.reps ?? null },
+              max: { planned: stats?.maxLoad ?? null, target: t?.target_max ?? null, done: done?.maxLoad ?? null },
+              avg: { planned: stats?.avgLoad ?? null, target: t?.target_avg ?? null, done: done?.avgLoad ?? null },
             };
           }),
         });
@@ -610,7 +661,7 @@ export function MacroReviewTable({
     }
 
     return { weeks, generalRows, liftRows };
-  }, [macroWeeks, tracked, targets, programmed]);
+  }, [macroWeeks, tracked, targets, programmed, performed]);
 
   if (loading) {
     return (
@@ -635,6 +686,7 @@ export function MacroReviewTable({
       metric={metric}
       onMetricChange={handleMetricChange}
       detailMetrics={detailMetrics}
+      complianceThreshold={(settings?.compliance_warning_threshold ?? 90) / 100}
       selectedWeekStart={selectedWeekStart}
       onSelectWeek={onSelectWeek}
     />

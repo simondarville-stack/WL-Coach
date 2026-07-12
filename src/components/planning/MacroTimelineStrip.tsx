@@ -17,6 +17,9 @@ export interface MacroTimelineStripProps {
    *  setting). Falls back to the other metric when no week in view carries
    *  this one. Default 'reps'. */
   metric?: TimelineMetric;
+  /** Compliance threshold as a fraction (performed / week-planned); below it
+   *  the compliance dot renders in the warning colour. Default 0.9. */
+  complianceThreshold?: number;
   /** weekStart (Monday) of the selected week; gets the accent ring. */
   selectedWeekStart?: string | null;
   /** Today's exact date; the playhead is drawn at its day within the week. */
@@ -165,6 +168,22 @@ function buildTooltip(
     }
   }
 
+  // Performed (logged) — expressed against the week plan.
+  if (w.performedReps != null || w.performedTonnage != null) {
+    const performed: string[] = [];
+    if (w.performedReps != null && w.performedReps > 0) performed.push(`K ${w.performedReps}`);
+    if (w.performedTonnage != null && w.performedTonnage > 0) performed.push(formatTonnage(w.performedTonnage));
+    if (performed.length) {
+      let vsPlanned = '';
+      const performedV = metric === 'tonnage' ? w.performedTonnage : w.performedReps;
+      const plannedV = metric === 'tonnage' ? w.programmedTonnage : w.programmedReps;
+      if (metric && performedV != null && plannedV != null && plannedV > 0) {
+        vsPlanned = ` (${Math.round((performedV / plannedV) * 100)} % of plan)`;
+      }
+      lines.push(`Done: ${performed.join(' · ')}${vsPlanned}`);
+    }
+  }
+
   if (w.notes.trim()) lines.push(`✎ ${w.notes.trim()}`);
   weekMarkers.forEach(m => {
     lines.push(`${m.kind === 'competition' ? '⚑' : '•'} ${m.title} (${formatDateEUFromISO(m.date)})`);
@@ -178,6 +197,7 @@ export function MacroTimelineStrip({
   weeks,
   markers = [],
   metric: preferredMetric = 'reps',
+  complianceThreshold = 0.9,
   selectedWeekStart = null,
   todayDate = null,
   onWeekClick,
@@ -212,12 +232,16 @@ export function MacroTimelineStrip({
     const v = metric === 'reps' ? w.programmedReps : metric === 'tonnage' ? w.programmedTonnage : null;
     return v != null && v > 0 ? v : null;
   };
+  const performedOf = (w: TimelineWeek): number | null => {
+    const v = metric === 'reps' ? w.performedReps : metric === 'tonnage' ? w.performedTonnage : null;
+    return v != null && v > 0 ? v : null;
+  };
 
   // Macro target and week-programmed share one scale, so the tick reads
   // directly against the fill's top edge: above = programmed over the macro
   // target, below = under.
   const maxValue = metric
-    ? Math.max(...weeks.map(w => Math.max(targetOf(w) ?? 0, programmedOf(w) ?? 0)), 1)
+    ? Math.max(...weeks.map(w => Math.max(targetOf(w) ?? 0, programmedOf(w) ?? 0, performedOf(w) ?? 0)), 1)
     : 1;
   const scaled = (v: number): number => MIN_FILL + (1 - MIN_FILL) * (v / maxValue);
   const anyTarget = metric != null && weeks.some(w => targetOf(w) != null);
@@ -234,6 +258,18 @@ export function MacroTimelineStrip({
     // arbitrary scale — a programmed tick would be meaningless there.
     if (v == null || !anyTarget) return null;
     return Math.min(scaled(v), 1);
+  };
+  const performedFraction = (w: TimelineWeek): number | null => {
+    const v = performedOf(w);
+    if (v == null || !anyTarget) return null;
+    return Math.min(scaled(v), 1);
+  };
+  /** true = compliant, false = under threshold, null = not comparable. */
+  const complianceOf = (w: TimelineWeek): boolean | null => {
+    const done = performedOf(w);
+    const planned = programmedOf(w);
+    if (done == null || planned == null || planned <= 0) return null;
+    return done / planned >= complianceThreshold;
   };
 
   // ── Marker positioning ──
@@ -406,6 +442,8 @@ export function MacroTimelineStrip({
             const isSelected = selectedWeekStart != null && w.weekStart === selectedWeekStart;
             const frac = fillFraction(w);
             const programmedFrac = programmedFraction(w);
+            const performedFrac = performedFraction(w);
+            const compliant = complianceOf(w);
             const isGap = w.macroId === null;
             return (
               <div
@@ -433,6 +471,28 @@ export function MacroTimelineStrip({
                     height: `${frac * 100}%`,
                     background: w.typeWarning ? 'var(--color-warning-border)' : fillOf(w.phaseColor),
                     pointerEvents: 'none',
+                  }} />
+                )}
+                {/* Performed (logged) bar — inner bar against the same scale,
+                    so done reads directly against target fill and plan tick. */}
+                {performedFrac != null && (
+                  <div style={{
+                    position: 'absolute', right: '10%', width: '36%', bottom: 0,
+                    height: `${performedFrac * 100}%`,
+                    background: 'var(--color-text-primary)',
+                    opacity: 0.5,
+                    borderRadius: '1px 1px 0 0',
+                    pointerEvents: 'none', zIndex: 1,
+                  }} />
+                )}
+                {/* Compliance dot: performed vs week-planned ≥/< threshold */}
+                {compliant != null && (
+                  <span style={{
+                    position: 'absolute', top: 3, left: 3,
+                    width: 5, height: 5, borderRadius: '50%',
+                    background: compliant ? 'var(--color-success-border)' : 'var(--color-warning-border)',
+                    boxShadow: '0 0 0 1px var(--color-bg-primary)',
+                    pointerEvents: 'none', zIndex: 2,
                   }} />
                 )}
                 {/* Week-programmed tick — reads against the fill's top edge:

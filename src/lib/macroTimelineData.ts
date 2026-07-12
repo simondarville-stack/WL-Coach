@@ -48,6 +48,11 @@ export interface TimelineWeek {
   programmedReps: number | null;
   /** Tonnage (kg) programmed in the weekly planner; same semantics. */
   programmedTonnage: number | null;
+  /** Reps actually performed (training logs, completed sets). Null when
+   *  nothing is logged. Group scope = per-athlete average. */
+  performedReps: number | null;
+  /** Performed tonnage (kg); same semantics. */
+  performedTonnage: number | null;
   /** Coach note on the macro week ('' = none). */
   notes: string;
   /** True for dimmed context weeks outside the anchor macro (macro mode). */
@@ -517,6 +522,204 @@ export async function fetchWeeklyProgrammed(
   return result;
 }
 
+// ── Performed volume (training logs) ────────────────────────────────────────
+
+/**
+ * What the athlete actually logged for a week — the third layer of the
+ * review loop (macro target → week plan → performed). Counts completed sets
+ * only (same rule as trainingLogModel.sumPerformedReps); tonnage/loads are
+ * performed_load × performed_reps. With multiple athletes (group scope)
+ * reps/tonnage/Ø are per-athlete averages across athletes that logged that
+ * week, while maxLoad takes the heaviest across the group.
+ *
+ * Limitation: logged combos are attributed to the combo's lead exercise
+ * (the log schema has no per-member split), so per-exercise performed
+ * values under-report combo members other than the lead.
+ */
+export interface WeeklyPerformed {
+  reps: number;
+  tonnage: number;
+  maxLoad: number | null;
+  avgLoad: number | null;
+  /** Performed stats per exercise (ancestors credited like programmed). */
+  byExercise: Map<string, ProgrammedStats>;
+  /** Performed stats per exercise category. */
+  byCategory: Map<string, ProgrammedStats>;
+}
+
+export async function fetchWeeklyPerformed(
+  athleteIds: string[],
+  rangeStart: string,
+  rangeEnd: string
+): Promise<Map<string, WeeklyPerformed>> {
+  const result = new Map<string, WeeklyPerformed>();
+  if (athleteIds.length === 0) return result;
+
+  const { data: sessions } = await supabase
+    .from('training_log_sessions')
+    .select('id, athlete_id, week_start')
+    .in('athlete_id', athleteIds)
+    .gte('week_start', rangeStart)
+    .lte('week_start', rangeEnd);
+  if (!sessions || sessions.length === 0) return result;
+
+  type SessionRow = { id: string; athlete_id: string; week_start: string };
+  const sessionById = new Map((sessions as SessionRow[]).map(s => [s.id, s]));
+
+  type LogExRow = { id: string; session_id: string; exercise_id: string | null };
+  const logExercises = await chunked([...sessionById.keys()], async chunk => {
+    const { data } = await supabase
+      .from('training_log_exercises')
+      .select('id, session_id, exercise_id')
+      .in('session_id', chunk);
+    return (data ?? []) as LogExRow[];
+  });
+  if (logExercises.length === 0) return result;
+  const logExById = new Map(logExercises.map(le => [le.id, le]));
+
+  type SetRow = { log_exercise_id: string; performed_load: number | null; performed_reps: number | null };
+  const sets = await chunked(logExercises.map(le => le.id), async chunk => {
+    const { data } = await supabase
+      .from('training_log_sets')
+      .select('log_exercise_id, performed_load, performed_reps')
+      .in('log_exercise_id', chunk)
+      .eq('status', 'completed');
+    return (data ?? []) as SetRow[];
+  });
+  if (sets.length === 0) return result;
+
+  const exerciseIds = [
+    ...new Set(logExercises.map(le => le.exercise_id).filter((id): id is string => id != null)),
+  ];
+  const catalogue = await fetchExercisesWithAncestors(exerciseIds);
+
+  // Per athlete|week accumulation, then averaged across athletes per week.
+  interface AthleteWeekAcc {
+    week: AccStats;
+    byExercise: Map<string, AccStats>;
+    byCategory: Map<string, AccStats>;
+  }
+  const perAthleteWeek = new Map<string, AthleteWeekAcc>();
+  const newAcc = (): AccStats => ({ reps: 0, maxLoad: null, loadRepsSum: 0, loadReps: 0 });
+
+  for (const s of sets) {
+    const le = logExById.get(s.log_exercise_id);
+    const session = le ? sessionById.get(le.session_id) : undefined;
+    if (!le || !session) continue;
+    const reps = s.performed_reps ?? 0;
+    if (reps <= 0) continue;
+    const catalogueEx = le.exercise_id ? catalogue.get(le.exercise_id) : undefined;
+    if (catalogueEx && catalogueEx.counts_towards_totals === false) continue;
+
+    const key = `${session.athlete_id}|${session.week_start}`;
+    let acc = perAthleteWeek.get(key);
+    if (!acc) {
+      acc = { week: newAcc(), byExercise: new Map(), byCategory: new Map() };
+      perAthleteWeek.set(key, acc);
+    }
+
+    const credit = (a: AccStats) => {
+      a.reps += reps;
+      if (s.performed_load != null) {
+        a.maxLoad = a.maxLoad == null ? s.performed_load : Math.max(a.maxLoad, s.performed_load);
+        a.loadRepsSum += s.performed_load * reps;
+        a.loadReps += reps;
+      }
+    };
+
+    credit(acc.week);
+    let cursor: CatalogueExercise | undefined = catalogueEx;
+    const visited = new Set<string>();
+    while (cursor && !visited.has(cursor.id)) {
+      visited.add(cursor.id);
+      let exAcc = acc.byExercise.get(cursor.id);
+      if (!exAcc) { exAcc = newAcc(); acc.byExercise.set(cursor.id, exAcc); }
+      credit(exAcc);
+      cursor = cursor.parent_exercise_id ? catalogue.get(cursor.parent_exercise_id) : undefined;
+    }
+    if (catalogueEx?.category) {
+      let catAcc = acc.byCategory.get(catalogueEx.category);
+      if (!catAcc) { catAcc = newAcc(); acc.byCategory.set(catalogueEx.category, catAcc); }
+      credit(catAcc);
+    }
+  }
+
+  // Merge across athletes per week: reps/tonnage/Ø average, max takes the
+  // heaviest — comparable to the per-athlete plan.
+  interface WeekMerge {
+    athletes: number;
+    repsSum: number;
+    tonnageSum: number;
+    maxLoad: number | null;
+    avgSum: number;
+    avgCount: number;
+    byExercise: Map<string, { athletes: number; repsSum: number; maxLoad: number | null; avgSum: number; avgCount: number }>;
+    byCategory: Map<string, { athletes: number; repsSum: number; maxLoad: number | null; avgSum: number; avgCount: number }>;
+  }
+  const merges = new Map<string, WeekMerge>();
+  const finalizeStats = (a: AccStats) => ({
+    reps: a.reps,
+    maxLoad: a.maxLoad,
+    avgLoad: a.loadReps > 0 ? a.loadRepsSum / a.loadReps : null,
+    tonnage: a.loadRepsSum,
+  });
+
+  for (const [key, acc] of perAthleteWeek) {
+    const weekStart = key.slice(key.indexOf('|') + 1);
+    let m = merges.get(weekStart);
+    if (!m) {
+      m = { athletes: 0, repsSum: 0, tonnageSum: 0, maxLoad: null, avgSum: 0, avgCount: 0, byExercise: new Map(), byCategory: new Map() };
+      merges.set(weekStart, m);
+    }
+    const w = finalizeStats(acc.week);
+    m.athletes += 1;
+    m.repsSum += w.reps;
+    m.tonnageSum += w.tonnage;
+    if (w.maxLoad != null) m.maxLoad = m.maxLoad == null ? w.maxLoad : Math.max(m.maxLoad, w.maxLoad);
+    if (w.avgLoad != null) { m.avgSum += w.avgLoad; m.avgCount += 1; }
+
+    const mergeInto = (
+      store: WeekMerge['byExercise'],
+      source: Map<string, AccStats>
+    ) => {
+      for (const [k, a] of source) {
+        const st = finalizeStats(a);
+        let e = store.get(k);
+        if (!e) { e = { athletes: 0, repsSum: 0, maxLoad: null, avgSum: 0, avgCount: 0 }; store.set(k, e); }
+        e.athletes += 1;
+        e.repsSum += st.reps;
+        if (st.maxLoad != null) e.maxLoad = e.maxLoad == null ? st.maxLoad : Math.max(e.maxLoad, st.maxLoad);
+        if (st.avgLoad != null) { e.avgSum += st.avgLoad; e.avgCount += 1; }
+      }
+    };
+    mergeInto(m.byExercise, acc.byExercise);
+    mergeInto(m.byCategory, acc.byCategory);
+  }
+
+  for (const [weekStart, m] of merges) {
+    const finalizeMerge = (store: WeekMerge['byExercise']): Map<string, ProgrammedStats> => {
+      const out = new Map<string, ProgrammedStats>();
+      for (const [k, e] of store) {
+        out.set(k, {
+          reps: Math.round(e.repsSum / e.athletes),
+          maxLoad: e.maxLoad,
+          avgLoad: e.avgCount > 0 ? Math.round((e.avgSum / e.avgCount) * 10) / 10 : null,
+        });
+      }
+      return out;
+    };
+    result.set(weekStart, {
+      reps: Math.round(m.repsSum / m.athletes),
+      tonnage: Math.round(m.tonnageSum / m.athletes),
+      maxLoad: m.maxLoad,
+      avgLoad: m.avgCount > 0 ? Math.round((m.avgSum / m.avgCount) * 10) / 10 : null,
+      byExercise: finalizeMerge(m.byExercise),
+      byCategory: finalizeMerge(m.byCategory),
+    });
+  }
+  return result;
+}
+
 interface AccStats {
   reps: number;
   maxLoad: number | null;
@@ -633,6 +836,8 @@ export function buildTimelineWeeks(
         tonnageTarget: null,
         programmedReps: null,
         programmedTonnage: null,
+        performedReps: null,
+        performedTonnage: null,
         notes: '',
         isContext: anchorMacroId != null,
       };
@@ -658,6 +863,8 @@ export function buildTimelineWeeks(
       tonnageTarget: row.tonnage_target,
       programmedReps: null,
       programmedTonnage: null,
+      performedReps: null,
+      performedTonnage: null,
       notes: row.notes ?? '',
       isContext: anchorMacroId != null && macro.id !== anchorMacroId,
     };
