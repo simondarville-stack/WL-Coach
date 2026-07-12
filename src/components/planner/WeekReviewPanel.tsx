@@ -8,10 +8,11 @@
 // week with its macro intent (week type, K target, macro note) in view.
 
 import { useEffect, useState } from 'react';
-import { ArrowRight, Check, Flag, MessageSquare, Minus, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, Flag, MessageSquare, Minus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO } from '../../lib/dateUtils';
+import { copyWeekAsDraft } from '../../lib/weekDraftService';
 import {
   fetchWeeklyPerformed,
   fetchWeeklyProgrammed,
@@ -69,6 +70,7 @@ export function WeekReviewPanel({
   onSelectWeek,
 }: WeekReviewPanelProps) {
   const [data, setData] = useState<ReviewData | null>(null);
+  const [copying, setCopying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,6 +192,29 @@ export function WeekReviewPanel({
   const { days, rawAvg, notes, programmed, performed, nextIntent } = data;
   const nextWeekStart = addDaysToISO(weekStart, 7);
 
+  // "Plan next from this week": copy the reviewed week's plan into the next
+  // week as a starting draft, then open it. Never overwrites — an occupied
+  // next week is opened untouched.
+  const handleCopyAndPlanNext = async () => {
+    if (copying) return;
+    setCopying(true);
+    try {
+      const result = await copyWeekAsDraft(athleteId, weekStart, nextWeekStart);
+      if (result === 'occupied') {
+        window.alert('Next week already has planned work — opening it without copying.');
+      } else if (result === 'empty') {
+        window.alert('This week has no planned work to copy — opening next week empty.');
+      }
+      onSelectWeek(nextWeekStart);
+    } catch (err) {
+      console.error('WeekReviewPanel: copy-as-draft failed', err);
+      window.alert('Copying the week failed — opening next week without a draft.');
+      onSelectWeek(nextWeekStart);
+    } finally {
+      setCopying(false);
+    }
+  };
+
   // ── Totals: done / planned with threshold colour ──
   interface Total { label: string; done: string; planned: string | null; pct: number | null }
   const totals: Total[] = [];
@@ -269,20 +294,39 @@ export function WeekReviewPanel({
               RAW Ø <b style={{ color: 'var(--color-text-primary)' }}>{String(rawAvg).replace('.', ',')}</b>/12
             </span>
           )}
-          <button
-            onClick={() => onSelectWeek(nextWeekStart)}
-            title={nextIntent
-              ? `Plan W${nextIntent.weekNumber}${nextIntent.weekType ? ` · ${nextIntent.weekType}` : ''}${nextIntent.repsTarget != null ? ` · K ${nextIntent.repsTarget}` : ''}${nextIntent.notes ? ` · ✎ ${nextIntent.notes}` : ''}`
-              : 'Plan next week'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '3px 10px', borderRadius: 'var(--radius-md)', border: 'none',
-              background: 'var(--color-accent)', color: '#fff',
-              fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-            }}
-          >
-            Plan {nextIntent ? `W${nextIntent.weekNumber}` : 'next week'} <ArrowRight size={12} />
-          </button>
+          <span style={{ display: 'inline-flex' }}>
+            <button
+              onClick={() => onSelectWeek(nextWeekStart)}
+              title={nextIntent
+                ? `Plan W${nextIntent.weekNumber}${nextIntent.weekType ? ` · ${nextIntent.weekType}` : ''}${nextIntent.repsTarget != null ? ` · K ${nextIntent.repsTarget}` : ''}${nextIntent.notes ? ` · ✎ ${nextIntent.notes}` : ''}`
+                : 'Plan next week'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 10px',
+                borderRadius: 'var(--radius-md) 0 0 var(--radius-md)', border: 'none',
+                background: 'var(--color-accent)', color: '#fff',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Plan {nextIntent ? `W${nextIntent.weekNumber}` : 'next week'} <ArrowRight size={12} />
+            </button>
+            <button
+              onClick={() => void handleCopyAndPlanNext()}
+              disabled={copying}
+              title="Plan next week starting from a copy of this week's plan (never overwrites existing work)"
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                padding: '3px 7px',
+                borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                border: 'none', borderLeft: '1px solid rgba(255,255,255,0.35)',
+                background: 'var(--color-accent)', color: '#fff',
+                cursor: copying ? 'wait' : 'pointer',
+                opacity: copying ? 0.7 : 1,
+              }}
+            >
+              <Copy size={11} />
+            </button>
+          </span>
         </span>
       </div>
 
