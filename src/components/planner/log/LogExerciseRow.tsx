@@ -69,7 +69,9 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
     : isSubstituted
     ? logged!.exercise!.name
     : planned?.exercise?.name ?? logged?.exercise?.name ?? '(unknown exercise)';
-  const variationNote = planned?.variation_note ?? null;
+  // Legacy variation_note surfaces only until the folded note (planned.notes,
+  // rendered below) takes over.
+  const variationNote = planned && !planned.notes?.trim() ? planned.variation_note ?? null : null;
   const accentColor =
     offPlanCombo?.color ??
     (isSubstituted

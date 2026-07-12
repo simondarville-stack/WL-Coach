@@ -21,7 +21,7 @@ import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { WeekSummaryBox } from './WeekSummaryBox';
-import { WeekNavRibbon } from './WeekNavRibbon';
+import { WeekTimelineHeader } from './WeekTimelineHeader';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
@@ -39,7 +39,6 @@ import {
 import { getSentinelType } from './sentinelUtils';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
-import { MacroTimeline } from '../planning';
 import { ArrowLeft } from 'lucide-react';
 import {
   applyTemplateDayToPlanDay,
@@ -60,6 +59,8 @@ export interface MacroContext {
   phaseName: string | null;
   phaseColor: string | null;
   totalRepsTarget: number | null;
+  /** Coach's macro-level note for this week ('' = none). */
+  weekNotes: string;
 }
 
 type PanelView = 'overview' | 'day' | 'exercise';
@@ -366,7 +367,7 @@ export function WeeklyPlanner() {
       const { data: mwRaw } = await supabase
         .from('macro_weeks')
         .select(`
-          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target,
+          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target, notes,
           macrocycles!inner(id, athlete_id, start_date, end_date, name)
         `)
         .eq('macrocycles.athlete_id', athleteId)
@@ -379,6 +380,7 @@ export function WeeklyPlanner() {
       type MacroWeekWithJoin = {
         id: string; macrocycle_id: string; week_number: number;
         week_type: string | null; week_type_text: string | null; total_reps_target: number | null;
+        notes: string | null;
         macrocycles: { id: string; name: string } | null;
       };
       const mw = mwRaw as MacroWeekWithJoin | null;
@@ -410,6 +412,7 @@ export function WeeklyPlanner() {
         phaseName: phaseResult.data?.name ?? null,
         phaseColor: phaseResult.data?.color ?? null,
         totalRepsTarget: mw.total_reps_target,
+        weekNotes: mw.notes ?? '',
       });
     } catch {
       setMacroContext(null);
@@ -1416,28 +1419,18 @@ export function WeeklyPlanner() {
               </button>
             </div>
 
-            {/* ── Macro timeline (bounded mode, above the control panel) ── */}
-            {macroContext && planSelection.athlete && (
-              <div style={{ padding: '12px 24px 0' }}>
-                <MacroTimeline
-                  mode="bounded"
-                  cycleId={macroContext.macroId}
-                  athleteId={planSelection.athlete.id}
-                  groupId={planSelection.group?.id ?? null}
-                  selectedWeekStart={selectedDate}
-                />
-              </div>
-            )}
-
-            {/* ── Unified week header card (overview · profile · brief · load) ── */}
+            {/* ── Unified week header card (timeline · overview · profile · brief · load) ── */}
             <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
             {(planSelection.athlete || planSelection.group) && (
-              <WeekNavRibbon
+              <WeekTimelineHeader
                 selectedDate={selectedDate}
                 macroContext={macroContext}
                 weekTypes={settings?.week_types ?? []}
+                athleteId={planSelection.athlete?.id ?? null}
+                groupId={planSelection.group?.id ?? null}
                 onPrevWeek={goToPreviousWeek}
                 onNextWeek={goToNextWeek}
+                onSelectWeek={(weekStart) => navigate(`/planner/${weekStart}`)}
               />
             )}
 

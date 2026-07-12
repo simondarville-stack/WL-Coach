@@ -17,6 +17,7 @@ import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
 import { useAutoCommit } from '../lib/useAutoCommit';
+import { plannedNote } from '../../../lib/plannedNote';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -330,9 +331,9 @@ export function ExerciseLogCard({
               isCombo={planned.exercise.is_combo}
             />
           </div>
-          {planned.exercise.variation_note && (
+          {plannedNote(planned.exercise) && (
             <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">
-              {planned.exercise.variation_note}
+              {plannedNote(planned.exercise)}
             </p>
           )}
         </div>

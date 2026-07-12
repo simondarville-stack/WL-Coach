@@ -14,6 +14,7 @@ import { GppBlockEditor } from './GppBlockEditor';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { expandForCounting } from '../../lib/comboExpansion';
+import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
 
 interface DayCardProps {
@@ -586,9 +587,6 @@ export function DayCard({
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
                           </div>
-                          {ex.variation_note && (
-                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{ex.variation_note}</p>
-                          )}
                           <div
                             onClick={e => e.stopPropagation()}
                             onMouseDown={e => e.stopPropagation()}
@@ -607,8 +605,8 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
-                          {ex.notes && (
-                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
+                          {plannedNote(ex) && (
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
                           )}
                         </>
                       ) : (
@@ -617,9 +615,6 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.exercise.name}
                             </span>
-                            {ex.variation_note && (
-                              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{ex.variation_note}</span>
-                            )}
                             {isLinkedToGroupPlan && ex.source === 'group' && (
                               <span title="Group exercise" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>G</span>
                             )}
@@ -644,8 +639,8 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
-                          {ex.notes && (
-                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{ex.notes}</p>
+                          {plannedNote(ex) && (
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
                           )}
                         </>
                       )}

@@ -9,6 +9,7 @@ import type {
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
+import { plannedNote } from '../../lib/plannedNote';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { DEFAULT_UNITS } from '../../lib/constants';
@@ -102,10 +103,12 @@ export function ExerciseDetail({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
-  const [variationNote, setVariationNote] = useState(plannedExercise?.variation_note ?? '');
   const [comboName, setComboName] = useState(plannedExercise?.combo_notation ?? '');
-  const [notes, setNotes] = useState(plannedExercise?.notes ?? '');
-  const notesRef = useRef(plannedExercise?.notes ?? '');
+  // Single folded note: notes is the written field, legacy variation_note
+  // pre-fills when notes is still empty (see src/lib/plannedNote.ts).
+  const initialNote = plannedExercise ? (plannedNote(plannedExercise) ?? '') : '';
+  const [notes, setNotes] = useState(initialNote);
+  const notesRef = useRef(initialNote);
   const [mediaDescription, setMediaDescription] = useState(plannedExercise?.metadata?.description ?? '');
   const mediaDescriptionRef = useRef(plannedExercise?.metadata?.description ?? '');
   const mediaDescriptionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,7 +118,6 @@ export function ExerciseDetail({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notesTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const variationNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSwapPicker, setShowSwapPicker] = useState(false);
   const [showComboEditor, setShowComboEditor] = useState(false);
@@ -128,11 +130,6 @@ export function ExerciseDetail({
   function saveNotesDebounced(id: string, value: string) {
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(() => { void saveNotes(id, value); }, 400);
-  }
-
-  function saveVariationNoteDebounced(value: string) {
-    if (variationNoteTimerRef.current) clearTimeout(variationNoteTimerRef.current);
-    variationNoteTimerRef.current = setTimeout(() => { void saveSettingsField('variation_note', value); }, 400);
   }
 
   function saveComboNameDebounced(value: string) {
@@ -252,14 +249,14 @@ export function ExerciseDetail({
     } finally { setUploading(false); }
   }
 
-  async function saveSettingsField(field: 'unit' | 'variation_note' | 'combo_notation', value: string) {
+  async function saveSettingsField(field: 'unit' | 'combo_notation', value: string) {
     if (!plannedExercise) return;
     await supabase.from('planned_exercises').update({ [field]: value || null }).eq('id', plannedExercise.id);
     if (field === 'unit') await onSaved();
   }
 
   function handleClose() {
-    [variationNoteTimerRef, comboNameTimerRef, notesTimerRef, mediaDescriptionTimerRef, refreshTimerRef].forEach(r => {
+    [comboNameTimerRef, notesTimerRef, mediaDescriptionTimerRef, refreshTimerRef].forEach(r => {
       if (r.current) { clearTimeout(r.current); r.current = null; }
     });
     if (plannedExercise) {
@@ -267,10 +264,9 @@ export function ExerciseDetail({
       // Supabase query builders are PromiseLike, not strict Promise.
       const tasks: PromiseLike<unknown>[] = [
         saveNotes(id, notesRef.current).catch(() => {}),
-        supabase.from('planned_exercises').update({
-          variation_note: variationNote || null,
-          ...(isCombo && { combo_notation: comboName || null }),
-        }).eq('id', id),
+        ...(isCombo
+          ? [supabase.from('planned_exercises').update({ combo_notation: comboName || null }).eq('id', id)]
+          : []),
       ];
       if (saveMediaDescription && (sentinel === 'image' || sentinel === 'video')) {
         tasks.push(saveMediaDescription(id, mediaDescriptionRef.current).catch(() => {}));
@@ -337,8 +333,8 @@ export function ExerciseDetail({
           )}
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
-            {plannedExercise?.variation_note && (
-              <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>{plannedExercise.variation_note}</p>
+            {plannedExercise && plannedNote(plannedExercise) && (
+              <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plannedNote(plannedExercise)}</p>
             )}
           </div>
         </div>
@@ -619,31 +615,16 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* Variation note */}
+        {/* Note (folded: variation note + coach notes are one field) */}
         {!sentinel && plannedExercise && (
           <div>
-            <label style={labelStyle}>Variation note</label>
-            <input
-              type="text"
-              value={variationNote}
-              onChange={e => { setVariationNote(e.target.value); saveVariationNoteDebounced(e.target.value); }}
-              onBlur={() => { if (variationNoteTimerRef.current) clearTimeout(variationNoteTimerRef.current); void saveSettingsField('variation_note', variationNote); }}
-              placeholder="e.g. pause at knee, blocks"
-              style={inputStyle}
-            />
-          </div>
-        )}
-
-        {/* Coach notes */}
-        {!sentinel && plannedExercise && (
-          <div>
-            <label style={labelStyle}>Coach notes</label>
+            <label style={labelStyle}>Note</label>
             <textarea
               value={notes}
               onChange={e => { notesRef.current = e.target.value; setNotes(e.target.value); saveNotesDebounced(plannedExercise.id, e.target.value); }}
               onBlur={() => { if (notesTimerRef.current) clearTimeout(notesTimerRef.current); void saveNotes(plannedExercise.id, notesRef.current); }}
               rows={3}
-              placeholder="Notes visible to athlete…"
+              placeholder="e.g. pause at knee, blocks — visible to athlete"
               className="planner-week-notes"
               style={{ ...inputStyle, resize: 'none', lineHeight: 1.55 }}
             />

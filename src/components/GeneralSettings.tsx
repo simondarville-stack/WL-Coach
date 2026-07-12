@@ -737,6 +737,74 @@ export function GeneralSettings() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-1">Macro timeline</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Which metric drives the load silhouette (macro targets) and the week-planned marker on the
+            macro timeline. Falls back to the other metric when a macro carries no targets for the chosen one.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          {([
+            { value: 'reps' as const, label: 'Total reps (K)', hint: 'Macro K targets vs. week-planned reps' },
+            { value: 'tonnage' as const, label: 'Tonnage', hint: 'Macro tonnage targets vs. week-planned kg volume' },
+          ] as const).map(({ value, label, hint }) => {
+            const active = (settings?.timeline_metric ?? 'reps') === value;
+            return (
+              <button
+                key={value}
+                onClick={async () => {
+                  if (!settings) return;
+                  await updateSettings(settings.id, { timeline_metric: value });
+                }}
+                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                  active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <p className={`text-xs font-medium ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-medium text-gray-900 mb-1">Active-week detail</h3>
+          <p className="text-xs text-gray-600 mb-2">
+            Which target metrics the macro table expands on the week you are planning. The rest of the
+            macro stays on the single metric selected in the table itself.
+          </p>
+          <div className="flex gap-4">
+            {([
+              { value: 'reps' as const, label: 'Rep target (K)' },
+              { value: 'max' as const, label: 'Max target' },
+              { value: 'avg' as const, label: 'Average target' },
+            ] as const).map(({ value, label }) => {
+              const current = settings?.timeline_week_detail ?? ['reps', 'max', 'avg'];
+              const checked = current.includes(value);
+              return (
+                <label key={value} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={async () => {
+                      if (!settings) return;
+                      const next = checked
+                        ? current.filter(v => v !== value)
+                        : [...current, value];
+                      await updateSettings(settings.id, { timeline_week_detail: next });
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  {label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <h2 className="text-lg font-medium text-gray-900 mb-1">Week types</h2>
         <p className="text-sm text-gray-600 mb-4">Define the week classification labels used in the macro planner. Each type has a name, abbreviation (1–3 chars), and color.</p>
 

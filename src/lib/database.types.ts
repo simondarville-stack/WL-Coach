@@ -442,6 +442,12 @@ export interface GeneralSettings {
   phase_type_presets: PhaseTypePreset[] | null;
   /** Coach-defined fill-guide rhythm presets. NULL = DEFAULT_RHYTHM_PRESETS. */
   rhythm_presets: RhythmPreset[] | null;
+  /** Metric driving the macro timeline's load silhouette + week-planned
+   *  marker. Null falls back to 'reps'. */
+  timeline_metric: 'reps' | 'tonnage' | null;
+  /** Which target metrics the macro review table expands on the active
+   *  (selected) week. Null falls back to all three. */
+  timeline_week_detail: Array<'reps' | 'max' | 'avg'> | null;
   created_at: string;
   updated_at: string;
 }

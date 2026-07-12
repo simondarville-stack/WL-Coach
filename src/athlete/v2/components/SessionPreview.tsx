@@ -278,7 +278,9 @@ function PreviewExerciseRow({
                 '(unknown exercise)'
               : planned.exerciseDef?.name ?? '(unknown exercise)'}
           </h3>
-          {planned.exercise.variation_note && (
+          {/* Legacy variation_note fallback — the folded note
+              (exercise.notes) renders in its own block below. */}
+          {!planned.exercise.notes?.trim() && planned.exercise.variation_note && (
             <span className="text-[11px] text-gray-400 italic">
               {planned.exercise.variation_note}
             </span>
