@@ -167,45 +167,8 @@ export function MacroCycleToolbar({
 
       {selectedCycle && (
         <>
-          {/* Chart toggle */}
-          <Button
-            variant={showChart ? 'primary' : 'secondary'}
-            size="sm"
-            icon={<BarChart3 size={13} />}
-            onClick={onChartToggle}
-          >
-            Chart
-          </Button>
-
-          {/* Distribution toggle */}
-          <Button
-            variant={showDistribution ? 'primary' : 'secondary'}
-            size="sm"
-            icon={<PieChart size={13} />}
-            onClick={onDistributionToggle}
-          >
-            Distribution
-          </Button>
-
-          {/* Individual view dropdown (group mode only) */}
-          {isGroupMode && groupMembers.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Users size={13} className="text-gray-400" />
-              <select
-                value={individualViewAthleteId ?? ''}
-                onChange={e => onIndividualViewChange(e.target.value || null)}
-                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                title="Individual view: see one athlete's actuals"
-              >
-                <option value="">Group average actuals</option>
-                {groupMembers.map(gm => (
-                  <option key={gm.athlete_id} value={gm.athlete_id}>
-                    {gm.athlete.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {/* Toolbar reads left→right as the coach's workflow:
+              BUILD (exercises → fill → phases) · VIEWS · REUSE · manage. */}
 
           {/* Add exercise — searchable picker (type-ahead, no long scroll) */}
           {showAddExercise ? (
@@ -273,15 +236,6 @@ export function MacroCycleToolbar({
             </Button>
           )}
 
-          {/* Phases */}
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onAddPhase}
-          >
-            Phases
-          </Button>
-
           {/* Fill guide */}
           <Button
             variant={fillGuideOpen ? 'primary' : 'secondary'}
@@ -314,6 +268,59 @@ export function MacroCycleToolbar({
               Undo fill
             </Button>
           )}
+
+          {/* Phases */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onAddPhase}
+          >
+            Phases
+          </Button>
+
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
+
+          {/* Chart toggle */}
+          <Button
+            variant={showChart ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<BarChart3 size={13} />}
+            onClick={onChartToggle}
+          >
+            Chart
+          </Button>
+
+          {/* Distribution toggle */}
+          <Button
+            variant={showDistribution ? 'primary' : 'secondary'}
+            size="sm"
+            icon={<PieChart size={13} />}
+            onClick={onDistributionToggle}
+          >
+            Distribution
+          </Button>
+
+          {/* Individual view dropdown (group mode only) */}
+          {isGroupMode && groupMembers.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Users size={13} className="text-gray-400" />
+              <select
+                value={individualViewAthleteId ?? ''}
+                onChange={e => onIndividualViewChange(e.target.value || null)}
+                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                title="Individual view: see one athlete's actuals"
+              >
+                <option value="">Group average actuals</option>
+                {groupMembers.map(gm => (
+                  <option key={gm.athlete_id} value={gm.athlete_id}>
+                    {gm.athlete.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
 
           {/* Save as template */}
           <Button

@@ -6,6 +6,7 @@
 // back to a continuous window centered on the selected week.
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Table2 } from 'lucide-react';
 import { MacroTimeline, MacroReviewTable } from '../planning';
 import { WeekReviewPanel } from './WeekReviewPanel';
@@ -50,6 +51,7 @@ export function WeekTimelineHeader({
   onSelectWeek,
 }: WeekTimelineHeaderProps) {
   const { settings, fetchSettingsSilent } = useSettings();
+  const navigate = useNavigate();
   useEffect(() => {
     void fetchSettingsSilent();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,7 +151,20 @@ export function WeekTimelineHeader({
             fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {macroContext.macroName}
+            {/* The macro name is the doorway back to the macro designer —
+                the writing surface (planner) links to the design surface. */}
+            <button
+              onClick={() => navigate(`/macrocycles/${macroContext.macroId}`)}
+              title="Open this macro cycle — design view (targets, rhythm, phases)"
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                font: 'inherit', color: 'inherit', textDecoration: 'none',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.textDecoration = 'underline'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-accent)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.textDecoration = 'none'; (e.currentTarget as HTMLButtonElement).style.color = 'inherit'; }}
+            >
+              {macroContext.macroName}
+            </button>
             {macroContext.totalWeeks > 0 && (
               <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', marginLeft: 6 }}>
                 W{macroContext.weekNumber}/{macroContext.totalWeeks}

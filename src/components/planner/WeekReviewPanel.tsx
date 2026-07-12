@@ -227,9 +227,9 @@ export function WeekReviewPanel({
       pct: planned != null && planned > 0 ? Math.round((done / planned) * 100) : null,
     });
   };
-  pushTotal('Σ reps', performed?.reps ?? null, programmed?.reps ?? null, fmt);
+  pushTotal('Σreps', performed?.reps ?? null, programmed?.reps ?? null, fmt);
   pushTotal('Tonnage', performed?.tonnage ?? null, programmed?.tonnage ?? null, fmtT);
-  pushTotal('Heaviest', performed?.maxLoad ?? null, null, v => `${fmt(v)} kg`);
+  pushTotal('Max', performed?.maxLoad ?? null, null, v => `${fmt(v)} kg`);
   // Top categories by planned reps.
   if (performed && programmed) {
     const cats = [...programmed.byCategory.entries()]

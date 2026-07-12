@@ -16,6 +16,7 @@ import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
+import { formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS } from './MacroTableV2';
 import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
 import { MacroViewMenu } from './MacroViewMenu';
@@ -810,7 +811,7 @@ export function MacroCycles() {
           {/* Meta row: cycle name, dates, week count, group, competitions */}
           <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
             <span className="font-medium text-gray-800">{selectedCycle.name}</span>
-            <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
+            <span className="text-gray-400">{formatDateToDDMMYYYY(selectedCycle.start_date)} → {formatDateToDDMMYYYY(selectedCycle.end_date)}</span>
             <span className="text-gray-400">{macroWeeks.length} weeks</span>
             {isGroupMode && selectedGroup && (
               <span className="flex items-center gap-1 text-purple-600 font-medium">

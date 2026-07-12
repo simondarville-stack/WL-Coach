@@ -36,10 +36,13 @@ import type { MacroTarget, MacroTrackedExerciseWithExercise, MacroWeek } from '.
 
 export type ReviewMetric = 'reps' | 'max' | 'avg';
 
+// Canonical macro-metric vocabulary — must match the macro table/toggle bar
+// (Σreps / Max / Avg). 'K' is NOT used for reps here: on the macro page 'K'
+// already means the K-value column (tonnage ÷ competition total).
 export const REVIEW_METRIC_LABELS: Record<ReviewMetric, string> = {
-  reps: 'K',
+  reps: 'Σreps',
   max: 'Max',
-  avg: 'Ø',
+  avg: 'Avg',
 };
 
 export interface ReviewWeek {
@@ -343,7 +346,7 @@ export function MacroReviewTableView({
                   <button
                     key={m}
                     onClick={() => onMetricChange(m)}
-                    title={m === 'reps' ? 'Rep target (K)' : m === 'max' ? 'Max target' : 'Average target'}
+                    title={m === 'reps' ? 'Σreps target' : m === 'max' ? 'Max target' : 'Average load target'}
                     style={{
                       padding: '0px 6px',
                       fontSize: 8.5, lineHeight: '12px',
@@ -551,7 +554,7 @@ export function MacroReviewTable({
     const allGeneral: GeneralRow[] = [
       {
         key: 'g-reps',
-        label: 'Σ reps',
+        label: 'Σreps',
         cells: macroWeeks.map(mw => ({
           planned: val(programmed.get(mw.week_start)?.reps),
           target: mw.total_reps_target,
@@ -570,7 +573,7 @@ export function MacroReviewTable({
       },
       {
         key: 'g-max',
-        label: 'Heaviest (kg)',
+        label: 'Max (kg)',
         cells: macroWeeks.map(mw => ({
           planned: programmed.get(mw.week_start)?.maxLoad ?? null,
           target: null,
@@ -579,7 +582,7 @@ export function MacroReviewTable({
       },
       {
         key: 'g-avg',
-        label: 'Ø load (kg)',
+        label: 'Avg (kg)',
         cells: macroWeeks.map(mw => ({
           planned: programmed.get(mw.week_start)?.avgLoad ?? null,
           target: null,

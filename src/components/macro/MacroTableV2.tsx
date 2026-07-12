@@ -41,6 +41,11 @@ export const DEFAULT_EXERCISE_METRICS: ExerciseMetricConfig[] = [
 
 export interface ExerciseColumnState { collapsed?: boolean; expanded?: boolean }
 
+/** One-decimal display with a comma (European numeric formatting). */
+function fmt1(n: number): string {
+  return n.toFixed(1).replace('.', ',');
+}
+
 // Collapsed-column heatmap: week max as a fraction of the exercise reference,
 // green (well below) → red (at/above). Semantic colour — encodes intensity.
 function heatColor(ratio: number): string {
@@ -108,15 +113,16 @@ function getISOWeek(dateStr: string): number {
   return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-function formatDateMD(dateStr: string): string {
+// European day-first D/M (product requirement — never month-first)
+function formatDateDM(dateStr: string): string {
   const d = new Date(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr);
   d.setDate(d.getDate() + days);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 export function MacroTableV2({
@@ -559,7 +565,7 @@ export function MacroTableV2({
                         <span className="text-[12px] font-medium leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
                         <span className="text-[9px] font-medium leading-none mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
                         <span className="text-[7px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-                          {formatDateMD(week.week_start)}–{addDays(week.week_start, 6)}
+                          {formatDateDM(week.week_start)}–{addDays(week.week_start, 6)}
                         </span>
                       </div>
                     </td>
@@ -730,7 +736,7 @@ export function MacroTableV2({
                       ) : (
                         <span className={deleteMode && week.tonnage_target != null ? 'text-[color:var(--color-danger-text)]' : ''}>
                           {week.tonnage_target != null
-                            ? (week.tonnage_target / 1000).toFixed(1)
+                            ? fmt1(week.tonnage_target / 1000)
                             : <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </span>
                       )}
@@ -775,7 +781,7 @@ export function MacroTableV2({
                       {(() => {
                         const ton = week.tonnage_target ?? weekTonnage;
                         if (!ton || !competitionTotal) return <span className="italic text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>;
-                        return (ton / competitionTotal).toFixed(1);
+                        return fmt1(ton / competitionTotal);
                       })()}
                     </td>
                   )}
@@ -1057,7 +1063,7 @@ export function MacroTableV2({
                 )}
                 {showCol('tonnage') && (
                   <td className={`${avgBg} text-center font-mono ${summaryText} px-1 py-0`}>
-                    {avgTonnage != null ? (avgTonnage / 1000).toFixed(1) : ''}
+                    {avgTonnage != null ? fmt1(avgTonnage / 1000) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
@@ -1067,7 +1073,7 @@ export function MacroTableV2({
                 )}
                 {showCol('kvalue') && (
                   <td className={`${avgBg} text-center font-mono ${summaryText} px-1 py-0`}>
-                    {avgTonnage != null && competitionTotal ? (avgTonnage / competitionTotal).toFixed(1) : ''}
+                    {avgTonnage != null && competitionTotal ? fmt1(avgTonnage / competitionTotal) : ''}
                   </td>
                 )}
                 {displayed.map((te, teIdx) => {
@@ -1139,7 +1145,7 @@ export function MacroTableV2({
                 )}
                 {showCol('tonnage') && (
                   <td className={`${maxBg} text-center font-mono ${summaryText} px-1 py-0`}>
-                    {maxTonnage != null ? (maxTonnage / 1000).toFixed(1) : ''}
+                    {maxTonnage != null ? fmt1(maxTonnage / 1000) : ''}
                   </td>
                 )}
                 {showCol('avg') && (
@@ -1149,7 +1155,7 @@ export function MacroTableV2({
                 )}
                 {showCol('kvalue') && (
                   <td className={`${maxBg} text-center font-mono ${summaryText} px-1 py-0`}>
-                    {maxTonnage != null && competitionTotal ? (maxTonnage / competitionTotal).toFixed(1) : ''}
+                    {maxTonnage != null && competitionTotal ? fmt1(maxTonnage / competitionTotal) : ''}
                   </td>
                 )}
                 {displayed.map((te, teIdx) => {

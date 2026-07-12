@@ -42,11 +42,11 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
     >
       <div className="flex items-center gap-1">
         <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Planned volume:</span>
-        <span>{totalTargetReps.toLocaleString()} reps</span>
+        <span>{totalTargetReps.toLocaleString('da-DK')} reps</span>
       </div>
       <div className="flex items-center gap-1">
         <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Actual so far:</span>
-        <span>{totalActualReps.toLocaleString()} reps</span>
+        <span>{totalActualReps.toLocaleString('da-DK')} reps</span>
         {totalTargetReps > 0 && (
           <span style={{ color: 'var(--color-text-tertiary)' }}>({Math.round((totalActualReps / totalTargetReps) * 100)}%)</span>
         )}

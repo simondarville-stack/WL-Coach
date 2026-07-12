@@ -235,6 +235,9 @@ export function MacroTimeline(props: MacroTimelineProps) {
       todayDate={todayIso}
       onWeekClick={handleWeekClick}
       onPhaseClick={handlePhaseClick}
+      weekClickHint={props.onSelectWeek
+        ? 'Click: select this week'
+        : 'Click: open this week in the weekly planner'}
       showMonths={props.showMonths ?? true}
       className={props.className}
       style={props.style}

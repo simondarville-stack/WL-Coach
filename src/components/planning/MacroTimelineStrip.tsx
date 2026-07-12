@@ -27,6 +27,9 @@ export interface MacroTimelineStripProps {
   onWeekClick?: (week: TimelineWeek) => void;
   /** Fired with the first week of the clicked phase group. */
   onPhaseClick?: (week: TimelineWeek) => void;
+  /** Action hint appended to each week's tooltip (differs per page: select
+   *  week in the planner vs. open in the planner from the macro page). */
+  weekClickHint?: string;
   showMonths?: boolean;
   className?: string;
   style?: React.CSSProperties;
@@ -131,7 +134,8 @@ function markersForWeek(week: TimelineWeek, markers: TimelineMarker[]): Timeline
 function buildTooltip(
   w: TimelineWeek,
   weekMarkers: TimelineMarker[],
-  metric: TimelineMetric | null
+  metric: TimelineMetric | null,
+  clickHint?: string
 ): string {
   const lines: string[] = [];
 
@@ -147,7 +151,7 @@ function buildTooltip(
   lines.push(`Week ${getISOWeek(start)} · ${formatDateEU(start)} — ${formatDateEU(addDays(start, 6))}`);
 
   const targets: string[] = [];
-  if (w.repsTarget != null) targets.push(`K ${w.repsTarget}`);
+  if (w.repsTarget != null) targets.push(`Σreps ${w.repsTarget}`);
   if (w.tonnageTarget != null) targets.push(formatTonnage(w.tonnageTarget));
   if (targets.length) lines.push(`Target: ${targets.join(' · ')}`);
 
@@ -155,7 +159,7 @@ function buildTooltip(
   // target of the metric that drives the silhouette.
   if (w.programmedReps != null || w.programmedTonnage != null) {
     const programmed: string[] = [];
-    if (w.programmedReps != null && w.programmedReps > 0) programmed.push(`K ${w.programmedReps}`);
+    if (w.programmedReps != null && w.programmedReps > 0) programmed.push(`Σreps ${w.programmedReps}`);
     if (w.programmedTonnage != null && w.programmedTonnage > 0) programmed.push(formatTonnage(w.programmedTonnage));
     if (programmed.length) {
       let vsTarget = '';
@@ -171,7 +175,7 @@ function buildTooltip(
   // Performed (logged) — expressed against the week plan.
   if (w.performedReps != null || w.performedTonnage != null) {
     const performed: string[] = [];
-    if (w.performedReps != null && w.performedReps > 0) performed.push(`K ${w.performedReps}`);
+    if (w.performedReps != null && w.performedReps > 0) performed.push(`Σreps ${w.performedReps}`);
     if (w.performedTonnage != null && w.performedTonnage > 0) performed.push(formatTonnage(w.performedTonnage));
     if (performed.length) {
       let vsPlanned = '';
@@ -188,6 +192,7 @@ function buildTooltip(
   weekMarkers.forEach(m => {
     lines.push(`${m.kind === 'competition' ? '⚑' : '•'} ${m.title} (${formatDateEUFromISO(m.date)})`);
   });
+  if (clickHint) lines.push(clickHint);
   return lines.join('\n');
 }
 
@@ -202,6 +207,7 @@ export function MacroTimelineStrip({
   todayDate = null,
   onWeekClick,
   onPhaseClick,
+  weekClickHint,
   showMonths = true,
   className,
   style,
@@ -448,7 +454,7 @@ export function MacroTimelineStrip({
             return (
               <div
                 key={w.weekStart}
-                title={buildTooltip(w, weekMarkers, metric)}
+                title={buildTooltip(w, weekMarkers, metric, weekClickHint)}
                 onClick={onWeekClick ? () => onWeekClick(w) : undefined}
                 style={{
                   flex: 1, position: 'relative', minWidth: 0,
