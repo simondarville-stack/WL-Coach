@@ -39,6 +39,9 @@ interface MacroFillGuideProps {
   onApply: (plan: FillWritePlan, inputs: FillGuideInputs) => Promise<void>;
   onUpdateReference: (trackedExId: string, referenceKg: number | null) => Promise<void>;
   onEditPresets?: () => void;
+  /** Registers a setter the chart's ◆ anchor handles use to drive the guide's
+   *  from/to values while dragging (kg in, converted to the active unit). */
+  registerAnchorSetter?: (fn: ((which: 'from' | 'to', kg: number) => void) | null) => void;
   onClose: () => void;
 }
 
@@ -56,6 +59,7 @@ export function MacroFillGuide({
   onApply,
   onUpdateReference,
   onEditPresets,
+  registerAnchorSetter,
   onClose,
 }: MacroFillGuideProps) {
   const lastWeek = macroWeeks.length > 0 ? Math.max(...macroWeeks.map(w => w.week_number)) : 1;
@@ -128,6 +132,21 @@ export function MacroFillGuide({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan]);
   useEffect(() => () => onPreviewChange(null), [onPreviewChange]);
+
+  // Chart anchor handles drive the guide's from/to values (kg → active unit).
+  useEffect(() => {
+    if (!registerAnchorSetter) return;
+    registerAnchorSetter((which, kg) => {
+      const ref = referenceKg && referenceKg > 0 ? referenceKg : selectedTe?.reference_kg ?? null;
+      const value = effectiveUnit === 'pct'
+        ? (ref && ref > 0 ? Math.round((kg / ref) * 200) / 2 : null)
+        : Math.round(kg / 2.5) * 2.5;
+      if (value == null) return;
+      if (which === 'from') setFromValue(value);
+      else setToValue(value);
+    });
+    return () => registerAnchorSetter(null);
+  }, [registerAnchorSetter, effectiveUnit, referenceKg, selectedTe?.reference_kg]);
 
   // ── movable window ──────────────────────────────────────────────────────────
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);

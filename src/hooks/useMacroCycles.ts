@@ -379,18 +379,22 @@ export function useMacroCycles() {
   ): Promise<MacroTarget | null> => {
     try {
       if (existingTarget) {
-        // Optimistic: update UI immediately, rollback on error
-        const optimistic = { ...existingTarget, [field]: numValue };
-        setTargets(prev => prev.map(t => t.id === existingTarget.id ? optimistic : t));
+        // Optimistic: patch ONLY this field inside the functional updater.
+        // Spreading the (possibly stale) existingTarget snapshot instead would
+        // make two concurrent single-field writes to the same row clobber each
+        // other in local state (e.g. Ctrl+drag in the chart writes max + avg).
+        setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
         const { error } = await supabase
           .from('macro_targets')
           .update({ [field]: numValue })
           .eq('id', existingTarget.id);
         if (error) {
-          setTargets(prev => prev.map(t => t.id === existingTarget.id ? existingTarget : t));
+          // Roll back only this field — sibling fields may have been updated
+          // by concurrent writes that succeeded.
+          setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: existingTarget[field] } : t));
           throw error;
         }
-        return optimistic;
+        return { ...existingTarget, [field]: numValue };
       } else {
         // Row may not exist yet — use true DB upsert so concurrent calls don't conflict
         const { data, error } = await supabase

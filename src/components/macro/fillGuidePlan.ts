@@ -53,6 +53,14 @@ export interface FillGuidePreview {
   weekTypeStamps: Record<string, string>;
   /** macro_week_id → Σreps value (general fills) */
   totalReps: Record<string, number>;
+  /** Draggable ramp anchors (single-exercise fills only) — kg positions for the chart's ◆ handles. */
+  anchors?: {
+    trackedExId: string;
+    fromWeekNumber: number;
+    toWeekNumber: number;
+    fromKg: number;
+    toKg: number;
+  } | null;
 }
 
 export interface FillWritePlan {
@@ -176,6 +184,23 @@ export function buildFillPlan(
         plan.cellCount++;
       }
       if (Object.keys(cellsByWeekId).length > 0) preview.byTrackedEx[te.id] = cellsByWeekId;
+
+      // Ramp anchors for the chart's draggable ◆ handles (single-exercise fills)
+      if (!isAll) {
+        const toKgValue = (v: number): number | null =>
+          usesPct ? (reference && reference > 0 ? (reference * v) / 100 : null) : v;
+        const fromKg = toKgValue(inputs.fromValue);
+        const toKg = toKgValue(inputs.toValue);
+        preview.anchors = fromKg != null && toKg != null
+          ? {
+              trackedExId: te.id,
+              fromWeekNumber: inputs.fromWeek,
+              toWeekNumber: inputs.toWeek,
+              fromKg,
+              toKg,
+            }
+          : null;
+      }
     }
   }
 

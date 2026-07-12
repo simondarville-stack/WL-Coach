@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
@@ -134,6 +134,8 @@ export function MacroCycles() {
   const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
   const [showRhythmManager, setShowRhythmManager] = useState(false);
   const [showTemplateSave, setShowTemplateSave] = useState(false);
+  // Chart ◆ anchor drags route into the fill guide through this registered setter
+  const anchorSetterRef = useRef<((which: 'from' | 'to', kg: number) => void) | null>(null);
   const { templates, fetchTemplates, createTemplate, deleteTemplate, applyTemplate } = useMacroTemplates();
 
   useEffect(() => { void fetchTemplates(); }, []);
@@ -929,9 +931,9 @@ export function MacroCycles() {
                 macroWeeks={macroWeeks}
                 trackedExercises={trackedExercises}
                 targets={targets}
-                phases={phases}
                 competitions={competitions}
                 actuals={displayedActuals}
+                weekTypes={settings?.week_types ?? []}
                 onDragTarget={handleDragTarget}
                 focusedExerciseId={focusedExerciseId}
                 visibleExercises={visibleExercises}
@@ -939,6 +941,7 @@ export function MacroCycles() {
                 fillPreview={fillPreview}
                 visibleGeneralSeries={visibleGeneralMetrics}
                 onDragWeekTarget={async (weekId, field, value) => { await updateMacroWeek(weekId, { [field]: value }); }}
+                onDragAnchor={(which, kg) => anchorSetterRef.current?.(which, kg)}
               />
             </div>
           )}
@@ -1025,6 +1028,7 @@ export function MacroCycles() {
           onApply={handleApplyFill}
           onUpdateReference={updateTrackedExerciseReference}
           onEditPresets={() => setShowRhythmManager(true)}
+          registerAnchorSetter={(fn) => { anchorSetterRef.current = fn; }}
           onClose={() => { setShowFillGuide(false); setFillPreview(null); }}
         />
       )}

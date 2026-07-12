@@ -1,16 +1,15 @@
-import { useState } from 'react';
-import type { MacroWeek, MacroPhase, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget } from '../../lib/database.types';
+import type { MacroWeek, MacroCompetition, MacroTrackedExerciseWithExercise, MacroTarget, WeekTypeConfig } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import type { FillGuidePreview } from './fillGuidePlan';
-import { MacroDraggableChart } from './MacroDraggableChart';
+import { MacroChartV2 } from './MacroChartV2';
 
 interface MacroGraphViewProps {
   macroWeeks: MacroWeek[];
   trackedExercises: MacroTrackedExerciseWithExercise[];
   targets: MacroTarget[];
-  phases: MacroPhase[];
   competitions: MacroCompetition[];
   actuals: MacroActualsMap;
+  weekTypes: WeekTypeConfig[];
   onDragTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: number) => Promise<void>;
   focusedExerciseId?: string | null;
   visibleExercises: Set<string>;
@@ -22,15 +21,16 @@ interface MacroGraphViewProps {
     field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
     value: number,
   ) => Promise<void>;
+  onDragAnchor?: (which: 'from' | 'to', kg: number) => void;
 }
 
 export function MacroGraphView({
   macroWeeks,
   trackedExercises,
   targets,
-  phases,
   competitions,
   actuals,
+  weekTypes,
   onDragTarget,
   focusedExerciseId,
   visibleExercises,
@@ -38,18 +38,8 @@ export function MacroGraphView({
   fillPreview,
   visibleGeneralSeries,
   onDragWeekTarget,
+  onDragAnchor,
 }: MacroGraphViewProps) {
-  const [linkedExerciseIds, setLinkedExerciseIds] = useState<Set<string>>(new Set());
-
-  const handleToggleLink = (trackedExId: string) => {
-    setLinkedExerciseIds(prev => {
-      const next = new Set(prev);
-      if (next.has(trackedExId)) next.delete(trackedExId);
-      else next.add(trackedExId);
-      return next;
-    });
-  };
-
   const displayedExercises = trackedExercises.filter(te => visibleExercises.has(te.id));
 
   // Weeks are enough — the general series (Σreps / tonnage / avg intensity)
@@ -63,21 +53,20 @@ export function MacroGraphView({
   }
 
   return (
-    <MacroDraggableChart
+    <MacroChartV2
       macroWeeks={macroWeeks}
       trackedExercises={displayedExercises}
       targets={targets}
-      phases={phases}
       competitions={competitions}
       actuals={actuals}
+      weekTypes={weekTypes}
       onDragTarget={onDragTarget}
-      linkedExerciseIds={linkedExerciseIds}
-      onToggleLink={handleToggleLink}
       focusedExerciseId={focusedExerciseId}
       showReps={showReps}
       fillPreview={fillPreview}
       visibleGeneralSeries={visibleGeneralSeries}
       onDragWeekTarget={onDragWeekTarget}
+      onDragAnchor={onDragAnchor}
     />
   );
 }
