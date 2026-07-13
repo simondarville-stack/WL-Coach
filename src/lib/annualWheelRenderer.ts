@@ -5,6 +5,7 @@
  * No React, no Supabase — only math and ctx calls.
  */
 import type { MacroCycle, MacroPhase, MacroCompetition } from './database.types';
+import { CAL_EVENT_COLORS, CAL_EVENT_LABELS } from './eventTypes';
 
 // ── Color palette ───────────────────────────────────────────────────
 
@@ -13,23 +14,8 @@ export const MACRO_COLORS = [
   '#EF9F27', '#639922', '#E24B4A', '#888780',
 ];
 
-export const CAL_EVENT_COLORS: Record<string, string> = {
-  competition:   '#E24B4A',
-  training_camp: '#2563eb',
-  seminar:       '#7c3aed',
-  testing_day:   '#d97706',
-  team_meeting:  '#059669',
-  other:         '#6b7280',
-};
-
-export const CAL_EVENT_LABELS: Record<string, string> = {
-  competition:   'Competition',
-  training_camp: 'Training Camp',
-  seminar:       'Seminar',
-  testing_day:   'Testing Day',
-  team_meeting:  'Team Meeting',
-  other:         'Event',
-};
+// Re-exported for back-compat; canonical definitions live in ./eventTypes.
+export { CAL_EVENT_COLORS, CAL_EVENT_LABELS };
 
 const PHASE_COLORS: Record<string, string> = {
   foundation: '#378ADD', grundlage: '#378ADD', grundlagenphase: '#378ADD', base: '#378ADD',

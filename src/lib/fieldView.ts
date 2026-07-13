@@ -207,6 +207,7 @@ interface Segment {
   loadMax: number | null;
   repsDisplay: string;
   sets: number;
+  multiplier?: number;   // combo round-grouping ("m(a+b)")
 }
 
 /** Numeric segments of a prescription, combo tuples preserved. */
@@ -214,7 +215,7 @@ function numericSegments(raw: string, isCombo: boolean): Segment[] {
   if (isCombo) {
     return parseComboPrescription(raw)
       .filter(l => l.loadText == null)
-      .map(l => ({ load: l.load, loadMax: l.loadMax, repsDisplay: l.repsText, sets: l.sets }));
+      .map(l => ({ load: l.load, loadMax: l.loadMax, repsDisplay: l.repsText, sets: l.sets, multiplier: l.multiplier }));
   }
   return parsePrescription(raw).map(l => ({
     load: l.load,
@@ -224,10 +225,11 @@ function numericSegments(raw: string, isCombo: boolean): Segment[] {
   }));
 }
 
-/** Rebuild input-grammar text for one segment ("85x2x3", "80-90x2", "80x2+1x3"). */
+/** Rebuild input-grammar text for one segment ("85x2x3", "80-90x2", "80x2+1x3", "80x2(1+1)x3"). */
 function segmentRaw(s: Segment): string {
   const load = s.loadMax != null ? `${s.load}-${s.loadMax}` : String(s.load);
-  return s.sets > 1 ? `${load}x${s.repsDisplay}x${s.sets}` : `${load}x${s.repsDisplay}`;
+  const reps = s.multiplier != null ? `${s.multiplier}(${s.repsDisplay})` : s.repsDisplay;
+  return s.sets > 1 ? `${load}x${reps}x${s.sets}` : `${load}x${reps}`;
 }
 
 export function summarizeSession(

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { addDaysToISO } from '../lib/dateUtils';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -678,6 +679,38 @@ export function useMacroCycles() {
     if (error) throw error;
   };
 
+  /**
+   * Slide every macro week's Monday by `shiftDays` (always a multiple of 7).
+   * Used when a cycle's START date is edited: the whole cycle moves in time,
+   * preserving week structure, types, notes and targets (never renumbers).
+   * Optimistic with rollback, mirroring bulkUpdateWeeks.
+   */
+  const shiftMacroWeeks = async (cycleId: string, shiftDays: number): Promise<void> => {
+    if (shiftDays === 0) return;
+    const affected = macroWeeks.filter(w => w.macrocycle_id === cycleId);
+    if (affected.length === 0) return;
+    const originals = affected.map(w => ({ id: w.id, week_start: w.week_start }));
+    setMacroWeeks(prev => prev.map(w =>
+      w.macrocycle_id === cycleId ? { ...w, week_start: addDaysToISO(w.week_start, shiftDays) } : w,
+    ));
+    try {
+      await Promise.all(originals.map(async o => {
+        const { error } = await supabase
+          .from('macro_weeks')
+          .update({ week_start: addDaysToISO(o.week_start, shiftDays) })
+          .eq('id', o.id);
+        if (error) throw error;
+      }));
+    } catch (err) {
+      setMacroWeeks(prev => prev.map(w => {
+        const o = originals.find(x => x.id === w.id);
+        return o ? { ...w, week_start: o.week_start } : w;
+      }));
+      setError(errMsg(err, 'Failed to shift weeks'));
+      throw err;
+    }
+  };
+
   // --- Phase operations ---
 
   const fetchPhases = async (macrocycleId: string) => {
@@ -1079,5 +1112,6 @@ export function useMacroCycles() {
     updateMacrocycle,
     extendCycle,
     trimCycle,
+    shiftMacroWeeks,
   };
 }

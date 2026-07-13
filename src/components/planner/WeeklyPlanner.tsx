@@ -999,6 +999,9 @@ export function WeeklyPlanner() {
           load: line.loadText ? line.load : round((line.load / prKg) * 100),
           loadMax: line.loadMax != null ? round((line.loadMax / prKg) * 100) : null,
           loadText: line.loadText,
+          // Preserve the round-grouping multiplier across the kg→% conversion,
+          // else formatComboPrescription drops "m(a+b)" and the volume halves.
+          ...(line.multiplier != null ? { multiplier: line.multiplier } : {}),
         }));
         prescriptionOverrides[id] = {
           prescription_raw: formatComboPrescription(pctLines, 'percentage'),
@@ -1297,6 +1300,8 @@ export function WeeklyPlanner() {
           load: line.loadText ? line.load : convert(line.load, prKg),
           loadMax: line.loadMax != null ? convert(line.loadMax, prKg) : null,
           loadText: line.loadText,
+          // Preserve the round-grouping multiplier across the kg↔% toggle.
+          ...(line.multiplier != null ? { multiplier: line.multiplier } : {}),
         }));
         await savePrescription(ex.id, {
           prescription: formatComboPrescription(newLines, targetUnit),
@@ -1651,6 +1656,7 @@ export function WeeklyPlanner() {
                     createComboExercise={createComboExercise}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
+                    saveGppSection={saveGppSection}
                     deletePlannedExercise={deletePlannedExercise}
                     reorderExercises={reorderExercises}
                     moveExercise={moveExercise}

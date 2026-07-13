@@ -17,11 +17,13 @@ interface GridColumn {
   reps: number;
   repsText: string;
   sets: number;
+  /** Combo round-grouping multiplier ("m(a+b)"). null = ungrouped. */
+  multiplier: number | null;
 }
 
 interface EditingCell {
   colId: string;
-  field: 'load' | 'reps' | 'sets';
+  field: 'load' | 'reps' | 'sets' | 'multiplier';
   value: string;
 }
 
@@ -64,21 +66,21 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
     return lines.map(line => ({
       id: nextId(), load: line.load, loadMax: line.loadMax ?? null,
       loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : (line.loadText ?? String(line.load)),
-      reps: line.totalReps, repsText: line.repsText, sets: line.sets,
+      reps: line.totalReps, repsText: line.repsText, sets: line.sets, multiplier: line.multiplier ?? null,
     }));
   }
   if (unit === 'free_text_reps') {
     const lines = parseFreeTextPrescription(raw);
     return lines.map(line => ({
       id: nextId(), load: parseFloat(line.loadText) || 0, loadMax: null,
-      loadText: line.loadText, reps: line.reps, repsText: String(line.reps), sets: line.sets,
+      loadText: line.loadText, reps: line.reps, repsText: String(line.reps), sets: line.sets, multiplier: null,
     }));
   }
   const lines = parsePrescription(raw);
   return lines.map(line => ({
     id: nextId(), load: line.load, loadMax: line.loadMax ?? null,
     loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : String(line.load),
-    reps: line.reps, repsText: String(line.reps), sets: line.sets,
+    reps: line.reps, repsText: String(line.reps), sets: line.sets, multiplier: null,
   }));
 }
 
@@ -152,6 +154,7 @@ export function PrescriptionGrid({
         cols.map(col => ({
           sets: col.sets, repsText: col.repsText, totalReps: col.reps,
           load: col.load, loadMax: col.loadMax ?? null,
+          ...(col.multiplier != null ? { multiplier: col.multiplier } : {}),
           ...(isFreeTextReps ? { loadText: col.loadText } : {}),
         })),
         unit,
@@ -293,6 +296,7 @@ export function PrescriptionGrid({
                 totalReps: col.reps,
                 load: col.load,
                 loadMax: col.loadMax ?? null,
+                ...(col.multiplier != null ? { multiplier: col.multiplier } : {}),
                 ...(isFreeTextRepsDetected ? { loadText: col.loadText } : {}),
               })),
               detected,
@@ -342,6 +346,9 @@ export function PrescriptionGrid({
           updateColumn(editing.colId, { load: val, loadMax: null, loadText: String(val) });
         }
       }
+    } else if (editing.field === 'multiplier') {
+      const val = Math.max(1, parseInt(editing.value, 10) || (col.multiplier ?? 1));
+      updateColumn(editing.colId, { multiplier: val });
     } else {
       const val = Math.max(1, parseInt(editing.value, 10) || col.sets);
       updateColumn(editing.colId, { sets: val });
@@ -386,6 +393,7 @@ export function PrescriptionGrid({
     const newCol: GridColumn = {
       id: nextId(), load: newLoad, loadMax: newLoadMax, loadText: newLoadText,
       reps: last ? last.reps : 1, repsText: defaultRepsText, sets: 1,
+      multiplier: last?.multiplier ?? null,
     };
     const next = [...columns, newCol];
     setColumns(next);
@@ -410,8 +418,11 @@ export function PrescriptionGrid({
   }
 
   function renderComboRepsCell(col: GridColumn) {
-    const isEditingThis = editing?.colId === col.id && editing.field === 'reps';
+    // The reps tuple and the round-multiplier "m" share the same inline editor.
+    const isEditingThis =
+      editing?.colId === col.id && (editing.field === 'reps' || editing.field === 'multiplier');
     const isDeleting = deleteHeld;
+    const grouped = col.multiplier != null;
 
     if (isEditingThis) {
       return (
@@ -430,9 +441,39 @@ export function PrescriptionGrid({
       );
     }
 
+    const glyph = (ch: string) => (
+      <span style={{ fontSize: 11, lineHeight: 1, userSelect: 'none', color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>{ch}</span>
+    );
+
     const parts = col.repsText.split('+');
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
+        {/* Round multiplier "m": m(a+b) = m rounds of the tuple. Same
+            click grammar as the rep cells — left +1, right −1 (min 1),
+            ctrl+click to type a value. */}
+        {grouped && (
+          <>
+            <button
+              onMouseDown={e => {
+                if (e.button !== 0 && e.button !== 2) return;
+                e.preventDefault();
+                if (isDeleting) { removeColumn(col.id); return; }
+                if (e.ctrlKey || e.metaKey) { setEditing({ colId: col.id, field: 'multiplier', value: String(col.multiplier ?? 1) }); return; }
+                const delta = e.button === 2 ? -1 : 1;
+                updateColumn(col.id, { multiplier: Math.max(1, (col.multiplier ?? 1) + delta) });
+              }}
+              onContextMenu={e => e.preventDefault()}
+              tabIndex={-1}
+              disabled={disabled}
+              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type"
+              className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
+              style={{ minWidth: '1rem', padding: '0 2px' }}
+            >
+              {col.multiplier}
+            </button>
+            {glyph('(')}
+          </>
+        )}
         {parts.map((part, partIdx) => (
           <React.Fragment key={partIdx}>
             {partIdx > 0 && (
@@ -461,6 +502,28 @@ export function PrescriptionGrid({
             </button>
           </React.Fragment>
         ))}
+        {grouped && glyph(')')}
+        {/* Group/ungroup toggle: wrap the tuple as rounds "m(a+b)" or unwrap. */}
+        {!disabled && !isDeleting && (
+          <button
+            onMouseDown={e => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              updateColumn(col.id, { multiplier: grouped ? null : 1 });
+            }}
+            onContextMenu={e => e.preventDefault()}
+            tabIndex={-1}
+            title={grouped ? 'Ungroup rounds' : 'Group into rounds — m(a+b)'}
+            className="pgrid-btn"
+            style={{
+              minWidth: '0.85rem', padding: '0 1px', fontSize: 9, lineHeight: 1, alignSelf: 'flex-start',
+              color: grouped ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              opacity: grouped ? 0.9 : 0.45,
+            }}
+          >
+            ()
+          </button>
+        )}
       </div>
     );
   }

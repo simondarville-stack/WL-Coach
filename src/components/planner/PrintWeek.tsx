@@ -90,7 +90,9 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
                   : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
               </span>
               <div className="border-t border-gray-400 w-full my-px" />
-              <span className="text-xs font-semibold text-gray-900">{line.repsText}</span>
+              <span className="text-xs font-semibold text-gray-900">
+                {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
+              </span>
             </div>
             {line.sets > 1 && <span className="text-xs font-bold text-gray-900">{line.sets}</span>}
           </div>

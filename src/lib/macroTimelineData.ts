@@ -9,6 +9,7 @@ import { getOwnerId } from './ownerContext';
 import { getMondayOfWeekISO } from './weekUtils';
 import { addDaysToISO } from './dateUtils';
 import { expandForCounting } from './comboExpansion';
+import { CAL_EVENT_COLORS } from './eventTypes';
 import type {
   MacroCycle,
   MacroPhase,
@@ -59,10 +60,11 @@ export interface TimelineWeek {
   isContext: boolean;
 }
 
-/** A dated marker drawn above the bar: competitions get flags, events dots. */
+/** A dated marker drawn above the bar: competitions get flags, camps a labelled
+ *  band, other events dots. */
 export interface TimelineMarker {
   id: string;
-  kind: 'competition' | 'event';
+  kind: 'competition' | 'camp' | 'event';
   /** True for a macro's primary competition — rendered strongest. */
   primary: boolean;
   date: string;
@@ -225,14 +227,21 @@ export async function fetchTimelineMarkers(
       >[]) {
         const end = ev.end_date || ev.event_date;
         if (ev.event_date > rangeEnd || end < rangeStart) continue;
+        const kind = ev.event_type === 'competition'
+          ? 'competition'
+          : ev.event_type === 'training_camp'
+          ? 'camp'
+          : 'event';
         markers.set(ev.id, {
           id: ev.id,
-          kind: ev.event_type === 'competition' ? 'competition' : 'event',
+          kind,
           primary: false,
           date: ev.event_date,
           endDate: ev.end_date && ev.end_date !== ev.event_date ? ev.end_date : null,
           title: ev.name,
-          color: ev.color,
+          // Camps often have no explicit colour — fall back to the canonical
+          // training-camp colour so they stay distinguishable from grey events.
+          color: ev.color ?? (kind === 'camp' ? CAL_EVENT_COLORS.training_camp : null),
         });
       }
     }

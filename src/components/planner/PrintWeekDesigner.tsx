@@ -158,7 +158,9 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
                   : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
               </span>
               <div className="dz-rx-bar" />
-              <span className="dz-rx-reps">{line.repsText}</span>
+              <span className="dz-rx-reps">
+                {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
+              </span>
             </div>
             {line.sets > 1 && <span className="dz-rx-sets">{line.sets}</span>}
           </div>

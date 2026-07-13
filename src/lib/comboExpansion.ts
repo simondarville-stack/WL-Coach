@@ -98,6 +98,7 @@ export function expandForCounting<E extends { counts_towards_totals?: boolean | 
 
   const parsed = lines.map(l => ({
     sets: l.sets,
+    multiplier: l.multiplier ?? 1,   // "m(a+b)" ⇒ m rounds of the tuple per set
     parts: l.repsText.split('+').map(p => parseInt(p, 10) || 0),
     load: l.load,
     loadMax: l.loadMax,
@@ -110,7 +111,9 @@ export function expandForCounting<E extends { counts_towards_totals?: boolean | 
     for (const ln of parsed) {
       const part = ln.parts[i] ?? 0;
       if (part <= 0) continue;            // member not performed in this line
-      const lineReps = part * ln.sets;
+      // Reps scale by the round multiplier (m rounds per set); the set/round
+      // count below does NOT — a set stays a set regardless of m (Option A).
+      const lineReps = part * ln.sets * ln.multiplier;
       reps += lineReps;
       const eff = ln.loadMax != null ? (ln.load + ln.loadMax) / 2 : ln.load;
       weighted += eff * lineReps;

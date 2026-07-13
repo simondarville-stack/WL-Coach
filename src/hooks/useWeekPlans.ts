@@ -512,15 +512,22 @@ export function useWeekPlans() {
 
     if (isCombo) {
       const parsed = parseComboPrescription(prescription);
-      const lines = parsed.map((line, idx) => ({
-        planned_exercise_id: plannedExId,
-        sets: line.sets,
-        reps: line.totalReps,
-        reps_text: line.repsText,
-        load_value: line.load,
-        load_max: line.loadMax ?? null,
-        position: idx + 1,
-      }));
+      const lines = parsed.map((line, idx) => {
+        // Round multiplier scales the per-set reps (m rounds of the tuple) but
+        // not the set count (Option A). reps_text carries the grouped display
+        // ("2(1+2)") so the athlete sees the rounds; it is display-only —
+        // per-member attribution reads prescription_raw, not this cache.
+        const m = line.multiplier ?? 1;
+        return {
+          planned_exercise_id: plannedExId,
+          sets: line.sets,
+          reps: line.totalReps * m,
+          reps_text: line.multiplier != null ? `${m}(${line.repsText})` : line.repsText,
+          load_value: line.load,
+          load_max: line.loadMax ?? null,
+          position: idx + 1,
+        };
+      });
       await replaceSetLines(plannedExId, lines);
       await supabase.from('planned_exercises').update(summaryUpdate).eq('id', plannedExId);
       return;

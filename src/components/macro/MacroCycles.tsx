@@ -15,8 +15,8 @@ import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
-import { generateMacroWeeks } from '../../lib/weekUtils';
-import { formatDateToDDMMYYYY } from '../../lib/dateUtils';
+import { generateMacroWeeks, getMondayOfWeekISO } from '../../lib/weekUtils';
+import { formatDateToDDMMYYYY, addDaysToISO } from '../../lib/dateUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS } from './MacroTableV2';
 import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
 import { MacroViewMenu } from './MacroViewMenu';
@@ -37,6 +37,8 @@ import { MacroAnnualWheel } from './MacroAnnualWheel';
 import { MacroCycleToolbar } from './MacroCycleToolbar';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
 import { MacroTimeline } from '../planning';
+import { resolveScopeAthleteIds, fetchTimelineMarkers } from '../../lib/macroTimelineData';
+import type { TimelineMarker } from '../../lib/macroTimelineData';
 import { StandardPage } from '../ui';
 
 
@@ -89,6 +91,7 @@ export function MacroCycles() {
     updateMacrocycleLayout,
     extendCycle,
     trimCycle,
+    shiftMacroWeeks,
   } = useMacroCycles();
 
   const [selectedCycle, setSelectedCycle] = useState<MacroCycle | null>(null);
@@ -100,6 +103,13 @@ export function MacroCycles() {
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  // Bumped after a cycle edit so the top MacroTimeline strip re-fetches the
+  // shifted/updated weeks (its own effect is keyed only on ids, which don't
+  // change when just the dates move).
+  const [timelineReloadKey, setTimelineReloadKey] = useState(0);
+  // Competition/camp markers overlapping each macro week (weekId → markers),
+  // surfaced as Trophy/Tent icons in the table's week cell.
+  const [weekMarkers, setWeekMarkers] = useState<Map<string, TimelineMarker[]>>(new Map());
   const [showPhasesPanel, setShowPhasesPanel] = useState(false);
   const [phasePanelInitialEdit, setPhasePanelInitialEdit] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -350,6 +360,43 @@ export function MacroCycles() {
     if (!macroTarget || macroWeeks.length === 0 || trackedExercises.length === 0) return;
     fetchMacroActuals(macroTarget, macroWeeks, trackedExercises).then(setActuals);
   }, [selectedAthlete?.id, selectedGroup?.id, macroWeeks.length, trackedExercises.length]);
+
+  // Fetch competitions + camps for the cycle range and bucket them per week
+  // (weekId → markers overlapping that week's Mon–Sun) for the table icons.
+  // Reuses the timeline data path so macro_competitions, competition-type
+  // events and training camps are all included and de-duplicated.
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedCycle || macroWeeks.length === 0) { setWeekMarkers(new Map()); return; }
+    void (async () => {
+      try {
+        const athleteIds = await resolveScopeAthleteIds(selectedAthlete?.id ?? null, selectedGroup?.id ?? null);
+        // Fetch over the week-aligned span (first Monday … last Sunday), NOT the
+        // raw cycle dates — those are often mid-week, so a marker inside a
+        // boundary week but outside [start_date, end_date] would be filtered out
+        // before bucketing and its icon silently dropped (the top strip, which
+        // fetches week-aligned, would still show it → inconsistent UI).
+        const weekStarts = macroWeeks.map(w => w.week_start);
+        const rangeStart = weekStarts.reduce((a, b) => (a < b ? a : b));
+        const rangeEnd = addDaysToISO(weekStarts.reduce((a, b) => (a > b ? a : b)), 6);
+        const markers = await fetchTimelineMarkers(
+          athleteIds, [selectedCycle.id], rangeStart, rangeEnd,
+        );
+        if (cancelled) return;
+        const bucket = new Map<string, TimelineMarker[]>();
+        for (const w of macroWeeks) {
+          const wStart = w.week_start;
+          const wEnd = addDaysToISO(w.week_start, 6);
+          const hits = markers.filter(m => m.date <= wEnd && (m.endDate ?? m.date) >= wStart);
+          if (hits.length) bucket.set(w.id, hits);
+        }
+        setWeekMarkers(bucket);
+      } catch (err) {
+        if (!cancelled) { console.error('MacroCycles: marker load failed', err); setWeekMarkers(new Map()); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedCycle?.id, selectedCycle?.start_date, selectedCycle?.end_date, selectedAthlete?.id, selectedGroup?.id, macroWeeks, timelineReloadKey]);
 
   // Load individual athlete actuals for "individual view" in group mode
   useEffect(() => {
@@ -658,10 +705,22 @@ export function MacroCycles() {
   }) => {
     if (!selectedCycle) return;
 
+    // A start-date edit slides the WHOLE cycle in time — every week keeps its
+    // structure, type, notes and targets. The shift is Monday-of-new minus
+    // Monday-of-old (always a multiple of 7). When only the start moved, the
+    // end slides by the same amount so the week count is preserved; an explicit
+    // end edit wins.
+    const oldStartMonday = getMondayOfWeekISO(new Date(selectedCycle.start_date + 'T00:00:00'));
+    const newStartMonday = getMondayOfWeekISO(new Date(data.startDate + 'T00:00:00'));
+    const shiftDays = Math.round((Date.parse(newStartMonday) - Date.parse(oldStartMonday)) / 86400000);
+    const endChangedByUser = data.endDate !== selectedCycle.end_date;
+    const slidEnd = shiftDays !== 0 ? addDaysToISO(selectedCycle.end_date, shiftDays) : selectedCycle.end_date;
+    const desiredEnd = endChangedByUser ? data.endDate : slidEnd;
+
     await updateMacrocycle(selectedCycle.id, {
       name: data.name,
       start_date: data.startDate,
-      end_date: data.endDate,
+      end_date: desiredEnd,
     });
 
     const originalIds = competitions.map(c => c.id);
@@ -699,25 +758,38 @@ export function MacroCycles() {
       }
     }
 
-    if (data.endDate !== selectedCycle.end_date) {
-      if (data.endDate > selectedCycle.end_date) {
-        const lastWeek = macroWeeks[macroWeeks.length - 1];
-        if (lastWeek) {
-          const s = await fetchSettingsSilent();
-          const defaultWeekType = s?.week_types?.[0]?.abbreviation ?? '';
-          await extendCycle(selectedCycle.id, lastWeek.week_number, lastWeek.week_start, data.endDate, defaultWeekType);
-        }
-      } else {
-        await trimCycle(selectedCycle.id, data.endDate);
+    // 1) Slide existing weeks (DB + local) so the table re-dates on a start move.
+    if (shiftDays !== 0) {
+      await shiftMacroWeeks(selectedCycle.id, shiftDays);
+    }
+    // 2) Reconcile the tail against the desired end, operating on the SHIFTED
+    //    weeks: extend adds Mondays past the (shifted) last week; trim deletes
+    //    weeks now beyond the desired end. `macroWeeks` here is the pre-shift
+    //    snapshot, so the shifted last-week start is derived explicitly.
+    if (desiredEnd > slidEnd) {
+      const lastWeek = macroWeeks[macroWeeks.length - 1];
+      if (lastWeek) {
+        const s = await fetchSettingsSilent();
+        const defaultWeekType = s?.week_types?.[0]?.abbreviation ?? '';
+        await extendCycle(
+          selectedCycle.id,
+          lastWeek.week_number,
+          addDaysToISO(lastWeek.week_start, shiftDays),
+          desiredEnd,
+          defaultWeekType,
+        );
       }
+    } else if (desiredEnd < slidEnd) {
+      await trimCycle(selectedCycle.id, desiredEnd);
     }
 
-    const updated = { ...selectedCycle, name: data.name, start_date: data.startDate, end_date: data.endDate };
+    const updated = { ...selectedCycle, name: data.name, start_date: data.startDate, end_date: desiredEnd };
     setSelectedCycle(updated);
     await Promise.all([
       fetchMacroWeeks(selectedCycle.id),
       fetchCompetitions(selectedCycle.id),
     ]);
+    setTimelineReloadKey(k => k + 1);
     setShowEditModal(false);
   };
 
@@ -844,6 +916,7 @@ export function MacroCycles() {
               mode="macro"
               cycleId={selectedCycle.id}
               contextWeeks={0}
+              reloadKey={timelineReloadKey}
               athleteId={selectedAthlete?.id ?? null}
               groupId={selectedGroup?.id ?? null}
               onPhaseClick={(week) => {
@@ -961,6 +1034,7 @@ export function MacroCycles() {
               consistencyTint={consistencyTint}
               collapsedHeatmap={collapsedHeatmap}
               onUpdateTargetNote={handleUpdateTargetNote}
+              weekMarkers={weekMarkers}
             />
           </div>
 

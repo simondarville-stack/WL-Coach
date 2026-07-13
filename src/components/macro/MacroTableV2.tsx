@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, ChevronsLeft, StickyNote, X } from 'lucide-react';
+import React, { useState, useCallback, useRef } from 'react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, StickyNote, X, Trophy, Tent } from 'lucide-react';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
+import type { TimelineMarker } from '../../lib/macroTimelineData';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroGridCell } from './MacroGridCell';
@@ -92,6 +93,9 @@ interface MacroTableV2Props {
   /** Shade collapsed columns by max as % of the exercise reference. */
   collapsedHeatmap?: boolean;
   onUpdateTargetNote?: (weekId: string, trackedExId: string, note: string) => Promise<void>;
+  /** Competition/camp markers overlapping each week (weekId → markers), shown
+   *  as Trophy / Tent icons in the week cell. */
+  weekMarkers?: Map<string, TimelineMarker[]>;
 }
 
 function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
@@ -140,6 +144,7 @@ export function MacroTableV2({
   consistencyTint = true,
   collapsedHeatmap = true,
   onUpdateTargetNote,
+  weekMarkers,
 }: MacroTableV2Props) {
   const deleteMode = useDeleteHeld();
   const [editingCell, setEditingCell] = useState<string | null>(null);
@@ -151,6 +156,29 @@ export function MacroTableV2({
   const [editingWeekTypeTextId, setEditingWeekTypeTextId] = useState<string | null>(null);
   const [dragWeekId, setDragWeekId] = useState<string | null>(null);
   const [dropWeekId, setDropWeekId] = useState<string | null>(null);
+
+  // Per-week note height (session-local): a top drag handle lets a coach grow
+  // a note to reveal long text or shrink it back. Compact default = one line.
+  const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
+  const noteDrag = useRef<{ weekId: string; startY: number; startH: number } | null>(null);
+  const COMPACT_NOTE_H = 18, MIN_NOTE_H = 18, MAX_NOTE_H = 220;
+  const startNoteResize = (e: React.PointerEvent, weekId: string) => {
+    e.preventDefault(); e.stopPropagation();
+    noteDrag.current = { weekId, startY: e.clientY, startH: noteHeights[weekId] ?? COMPACT_NOTE_H };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+  const onNoteResizeMove = (e: React.PointerEvent) => {
+    const d = noteDrag.current;
+    if (!d) return;
+    // Top handle: dragging UP (clientY decreases) grows the note.
+    const next = Math.min(MAX_NOTE_H, Math.max(MIN_NOTE_H, d.startH + (d.startY - e.clientY)));
+    setNoteHeights(h => ({ ...h, [d.weekId]: next }));
+  };
+  const endNoteResize = (e: React.PointerEvent) => {
+    if (!noteDrag.current) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    noteDrag.current = null;
+  };
 
   const displayed = visibleExercises
     ? trackedExercises.filter(te => visibleExercises.has(te.id))
@@ -549,6 +577,28 @@ export function MacroTableV2({
                         <span className="text-[7px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
                           {formatDateShort(week.week_start)}–{formatDateShort(addDaysToISO(week.week_start, 6))}
                         </span>
+                        {(() => {
+                          const ms = weekMarkers?.get(week.id);
+                          if (!ms || ms.length === 0) return null;
+                          const comps = ms.filter(m => m.kind === 'competition');
+                          const camps = ms.filter(m => m.kind === 'camp');
+                          if (comps.length === 0 && camps.length === 0) return null;
+                          return (
+                            <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                              {comps.slice(0, 2).map(c => (
+                                <span key={c.id} title={`${c.title} · ${formatDateShort(c.date)}`} className="inline-flex">
+                                  {/* is_primary red / secondary orange — data-driven, not chrome. */}
+                                  <Trophy size={9} style={{ color: c.primary ? '#E24B4A' : '#EA9A27' }} />
+                                </span>
+                              ))}
+                              {camps.slice(0, 2).map(c => (
+                                <span key={c.id} title={`${c.title}${c.endDate ? ` · ${formatDateShort(c.date)}–${formatDateShort(c.endDate)}` : ` · ${formatDateShort(c.date)}`}`} className="inline-flex">
+                                  <Tent size={9} style={{ color: c.color || '#2563eb' }} />
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
                   )}
@@ -622,32 +672,43 @@ export function MacroTableV2({
                     >
                       {editingNotesId === week.id ? (
                         <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
-                          <input
-                            type="text"
+                          <textarea
                             defaultValue={week.notes ?? ''}
                             autoFocus
-                            className="w-full text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-1 py-0.5"
+                            rows={1}
+                            className="w-full text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-1 py-0.5 resize-none leading-snug"
+                            style={{ height: Math.max(noteHeights[week.id] ?? COMPACT_NOTE_H, 44) }}
                             onBlur={(e) => { onUpdateNotes(week.id, e.target.value); setEditingNotesId(null); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                              if (e.key === 'Escape') setEditingNotesId(null);
-                            }}
+                            onKeyDown={(e) => { if (e.key === 'Escape') setEditingNotesId(null); }}
                           />
                         </div>
                       ) : (
-                        <span
-                          className={`block truncate text-[10px] cursor-pointer transition-colors ${
-                            deleteMode && week.notes ? 'text-[color:var(--color-danger-text)] hover:text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
-                          }`}
-                          style={{ maxWidth: 96 }}
-                          onClick={() => {
-                            if (deleteMode && week.notes) onUpdateNotes(week.id, '');
-                            else setEditingNotesId(week.id);
-                          }}
-                          title={deleteMode ? 'Click to clear' : (week.notes ?? '')}
-                        >
-                          {week.notes || <span className="italic text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
-                        </span>
+                        <div className="relative">
+                          {/* Draggable top handle — grow to reveal, shrink to hide. */}
+                          {week.notes && (
+                            <div
+                              onPointerDown={e => startNoteResize(e, week.id)}
+                              onPointerMove={onNoteResizeMove}
+                              onPointerUp={endNoteResize}
+                              onPointerCancel={endNoteResize}
+                              title="Drag to resize note"
+                              style={{ position: 'absolute', top: -2, left: 0, right: 0, height: 5, cursor: 'row-resize', zIndex: 1 }}
+                            />
+                          )}
+                          <div
+                            className={`text-[10px] leading-snug cursor-pointer transition-colors whitespace-pre-wrap break-words ${
+                              deleteMode && week.notes ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
+                            }`}
+                            style={{ height: noteHeights[week.id] ?? COMPACT_NOTE_H, overflowY: 'auto' }}
+                            onClick={() => {
+                              if (deleteMode && week.notes) onUpdateNotes(week.id, '');
+                              else setEditingNotesId(week.id);
+                            }}
+                            title={deleteMode ? 'Click to clear' : undefined}
+                          >
+                            {week.notes || <span className="italic text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
+                          </div>
+                        </div>
                       )}
                     </td>
                   )}

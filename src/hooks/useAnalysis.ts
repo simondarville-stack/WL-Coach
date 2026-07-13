@@ -99,7 +99,8 @@ function parsePerformedRaw(raw: string): { reps: number; sets: number; load: num
   // Try combo
   const combo = parseComboPrescription(raw);
   if (combo.length > 0) {
-    const totalReps = combo.reduce((s, l) => s + l.totalReps * l.sets, 0);
+    // Round multiplier scales reps, not the set count (Option A).
+    const totalReps = combo.reduce((s, l) => s + l.totalReps * l.sets * (l.multiplier ?? 1), 0);
     const totalSets = combo.reduce((s, l) => s + l.sets, 0);
     const maxLoad = Math.max(...combo.map(l => l.load));
     return { reps: totalReps, sets: totalSets, load: maxLoad };
@@ -129,7 +130,8 @@ function parsePlannedExercise(pe: {
       const lines = parseComboPrescription(pe.prescription_raw);
       if (lines.length > 0) {
         const totalSets = lines.reduce((s, l) => s + l.sets, 0);
-        const totalReps = lines.reduce((s, l) => s + l.totalReps * l.sets, 0);
+        // Round multiplier scales reps, not the set count (Option A).
+        const totalReps = lines.reduce((s, l) => s + l.totalReps * l.sets * (l.multiplier ?? 1), 0);
         const mxLoad = Math.max(...lines.map(l => l.loadMax ?? l.load));
         const effectiveLC = (l: typeof lines[0]) => l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load;
         const avgL = lines.reduce((s, l) => s + effectiveLC(l) * l.sets, 0) / (totalSets || 1);

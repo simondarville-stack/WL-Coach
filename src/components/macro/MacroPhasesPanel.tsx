@@ -23,7 +23,44 @@ function getOverlapWith(start: number, end: number, phases: MacroPhase[], exclud
   return phases.find(p => p.id !== excludeId && start <= p.end_week_number && end >= p.start_week_number) ?? null;
 }
 
+/** Week numbers not covered by any phase (optionally ignoring the one being edited). */
+function freeWeekNumbers(weekNums: number[], phases: MacroPhase[], excludeId?: string): number[] {
+  return weekNums.filter(n =>
+    !phases.some(p => p.id !== excludeId && n >= p.start_week_number && n <= p.end_week_number),
+  );
+}
+
+/** Collapse a sorted list of week numbers into compact ranges ("W7–W9, W14"). */
+function formatWeekRanges(nums: number[]): string {
+  if (nums.length === 0) return 'none';
+  const sorted = [...nums].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0], prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === prev + 1) { prev = sorted[i]; continue; }
+    ranges.push(start === prev ? `W${start}` : `W${start}–W${prev}`);
+    start = prev = sorted[i];
+  }
+  ranges.push(start === prev ? `W${start}` : `W${start}–W${prev}`);
+  return ranges.join(', ');
+}
+
+/** One-line "N free weeks (…)" summary, reused by both views. */
+function FreeWeeksSummary({ weekNums, phases, excludeId }: { weekNums: number[]; phases: MacroPhase[]; excludeId?: string }) {
+  const free = freeWeekNumbers(weekNums, phases, excludeId);
+  return (
+    <p className="mt-1" style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+      {free.length > 0
+        ? `${free.length} free week${free.length === 1 ? '' : 's'}: ${formatWeekRanges(free)}`
+        : 'All weeks are covered by a phase.'}
+    </p>
+  );
+}
+
 // ── Week coverage strip ────────────────────────────────────────────────────────
+
+// Diagonal hatch so a FREE week never reads as a pale phase colour.
+const FREE_CELL_BG = 'repeating-linear-gradient(45deg, var(--color-bg-tertiary) 0 3px, transparent 3px 6px)';
 
 function CoverageStrip({
   totalWeeks,
@@ -32,6 +69,7 @@ function CoverageStrip({
   highlightEnd,
   highlightColor,
   highlightId,
+  startWeekNum = 1,
 }: {
   totalWeeks: number;
   phases: MacroPhase[];
@@ -39,30 +77,41 @@ function CoverageStrip({
   highlightEnd?: number;
   highlightColor?: string;
   highlightId?: string;
+  /** First real week_number (usually 1) so cells map to actual weeks. */
+  startWeekNum?: number;
 }) {
   if (totalWeeks === 0) return null;
+  const showNums = totalWeeks <= 24;
+  const swatch = (bg: string) => (
+    <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, display: 'inline-block', border: '0.5px solid var(--color-border-secondary)' }} />
+  );
   return (
     <div>
-      <div className="flex w-full rounded overflow-hidden" style={{ height: 14 }}>
-        {Array.from({ length: totalWeeks }, (_, i) => i + 1).map(n => {
+      <div className="flex w-full rounded overflow-hidden" style={{ height: showNums ? 16 : 14 }}>
+        {Array.from({ length: totalWeeks }, (_, i) => startWeekNum + i).map(n => {
           const isHighlighted = highlightStart !== undefined && highlightEnd !== undefined && n >= highlightStart && n <= highlightEnd;
           const existing = phases.find(p => p.id !== highlightId && n >= p.start_week_number && n <= p.end_week_number);
-          let bg = 'var(--color-bg-secondary)';
-          if (existing) bg = existing.color;
-          if (isHighlighted && existing) bg = '#ef4444';
-          else if (isHighlighted && highlightColor) bg = highlightColor;
+          let background = FREE_CELL_BG;
+          let textColor = 'var(--color-text-tertiary)';
+          if (existing) { background = existing.color; textColor = '#fff'; }
+          if (isHighlighted && existing) { background = '#ef4444'; textColor = '#fff'; }
+          else if (isHighlighted && highlightColor) { background = highlightColor; textColor = '#fff'; }
           return (
             <div
               key={n}
-              style={{ flex: 1, backgroundColor: bg, borderRight: '1px solid var(--color-bg-primary)' }}
-              title={existing ? existing.name : isHighlighted ? 'New phase' : `Wk ${n}`}
-            />
+              className="flex items-center justify-center"
+              style={{ flex: 1, background, borderRight: '1px solid var(--color-bg-primary)', fontSize: 8, fontWeight: 600, color: textColor }}
+              title={existing ? existing.name : isHighlighted ? 'New phase' : `Wk ${n} · free`}
+            >
+              {showNums ? n : ''}
+            </div>
           );
         })}
       </div>
-      <div className="flex justify-between mt-0.5">
-        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>Wk 1</span>
-        <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>Wk {totalWeeks}</span>
+      <div className="flex items-center gap-3 mt-1" style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+        <span className="flex items-center gap-1">{swatch(FREE_CELL_BG)} free</span>
+        <span className="flex items-center gap-1">{swatch('var(--color-text-tertiary)')} claimed</span>
+        <span className="flex items-center gap-1">{swatch('#ef4444')} overlap</span>
       </div>
     </div>
   );
@@ -191,7 +240,10 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
               onChange={e => handleStartChange(Number(e.target.value))}
               className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             >
-              {weeks.map(n => <option key={n} value={n}>Week {n}</option>)}
+              {weeks.map(n => {
+                const p = getOverlapWith(n, n, phases, editingPhase?.id);
+                return <option key={n} value={n}>Week {n}{p ? ` — ${p.name}` : ' (free)'}</option>;
+              })}
             </select>
           </div>
           <div>
@@ -201,20 +253,27 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
               onChange={e => setEndWeek(Number(e.target.value))}
               className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             >
-              {weeks.filter(n => n >= startWeek).map(n => <option key={n} value={n}>Week {n}</option>)}
+              {weeks.filter(n => n >= startWeek).map(n => {
+                const p = getOverlapWith(n, n, phases, editingPhase?.id);
+                return <option key={n} value={n}>Week {n}{p ? ` — ${p.name}` : ' (free)'}</option>;
+              })}
             </select>
           </div>
         </div>
 
         {/* Coverage strip showing impact of current selection */}
-        <CoverageStrip
-          totalWeeks={maxWeek - minWeek + 1}
-          phases={phases}
-          highlightStart={startWeek}
-          highlightEnd={endWeek}
-          highlightColor={color}
-          highlightId={editingPhase?.id}
-        />
+        <div>
+          <CoverageStrip
+            totalWeeks={maxWeek - minWeek + 1}
+            startWeekNum={minWeek}
+            phases={phases}
+            highlightStart={startWeek}
+            highlightEnd={endWeek}
+            highlightColor={color}
+            highlightId={editingPhase?.id}
+          />
+          <FreeWeeksSummary weekNums={weekNums} phases={phases} excludeId={editingPhase?.id} />
+        </div>
 
         {overlapError && (
           <div className="flex items-center gap-2 px-3 py-2 rounded text-xs" style={{ color: 'var(--color-danger-text)', backgroundColor: 'var(--color-danger-bg)', border: '0.5px solid var(--color-danger-border)' }}>
@@ -308,6 +367,7 @@ function ListView({ phases, totalWeeks, onEdit, onAdd, onDelete }: ListViewProps
       {/* Coverage strip for all phases */}
       <div className="px-5 pt-4 pb-3" style={{ borderBottom: '0.5px solid var(--color-border-primary)' }}>
         <CoverageStrip totalWeeks={totalWeeks} phases={phases} />
+        <FreeWeeksSummary weekNums={Array.from({ length: totalWeeks }, (_, i) => i + 1)} phases={phases} />
       </div>
 
       {/* Phase list */}

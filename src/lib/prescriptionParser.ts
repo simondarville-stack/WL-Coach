@@ -214,11 +214,20 @@ function parseFreeTextSegment(segment: string): FreeTextSetLine | null {
  */
 export interface ParsedComboSetLine {
   sets: number;
-  repsText: string;   // "2+1" or "1+1+1"
-  totalReps: number;  // sum of all parts
+  repsText: string;   // "2+1" or "1+1+1" — always the BARE per-round tuple
+  totalReps: number;  // sum of all parts (one round)
   load: number;
   loadMax: number | null;   // null = fixed, number = interval upper bound
   loadText?: string;  // set when load is free text (non-numeric)
+  /**
+   * Optional round-grouping multiplier. `undefined` = ungrouped, render the
+   * bare tuple "a+b" and count exactly one round. A present integer ≥1 marks
+   * the tuple as grouped and serializes as "m(a+b)" — read as "m rounds of
+   * (a+b)". It multiplies REPS/volume only; the set count (the ×N suffix)
+   * is unaffected. Presence (not magnitude) is the toggle state, so m=1 still
+   * round-trips as "1(a+b)".
+   */
+  multiplier?: number;
 }
 
 /**
@@ -287,6 +296,18 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     }
 
     if (!repsText) continue;
+
+    // Optional grouping multiplier: "m(a+b)" ⇒ m rounds of the tuple (a+b).
+    // Strip it into a separate `multiplier`, leaving repsText the BARE tuple so
+    // downstream positional per-member mapping (comboExpansion) is unaffected.
+    // The parens contain no 'x', so the trailing "×sets" detection above is safe.
+    let multiplier: number | undefined;
+    const groupMatch = repsText.match(/^(\d+)\((.+)\)$/);
+    if (groupMatch) {
+      multiplier = parseInt(groupMatch[1], 10) || 1;
+      repsText = groupMatch[2];
+    }
+
     const repsParts = repsText.split('+').map(p => parseInt(p, 10) || 0);
     const totalReps = repsParts.reduce((s, n) => s + n, 0);
     if (totalReps <= 0 || sets <= 0) continue;
@@ -297,6 +318,7 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
       totalReps,
       load: loadIsNumeric ? load : 0,
       loadMax: loadIsNumeric ? loadMax : null,
+      ...(multiplier != null ? { multiplier } : {}),
       ...(loadIsNumeric ? {} : { loadText: loadStr }),
     });
   }
@@ -320,7 +342,8 @@ export function formatComboPrescription(lines: ParsedComboSetLine[], unit: strin
       } else {
         loadPart = `${l.load}${sym}`;
       }
-      return l.sets === 1 ? `${loadPart}×${l.repsText}` : `${loadPart}×${l.repsText}×${l.sets}`;
+      const repsPart = l.multiplier != null ? `${l.multiplier}(${l.repsText})` : l.repsText;
+      return l.sets === 1 ? `${loadPart}×${repsPart}` : `${loadPart}×${repsPart}×${l.sets}`;
     })
     .join(', ');
 }
@@ -371,11 +394,14 @@ export function computePrescriptionSummary(
   if (isCombo) {
     const parsed = parseComboPrescription(prescription);
     if (parsed.length === 0) return empty;
+    // Round-grouping multiplier scales REPS/volume only — the set count is the
+    // ×N suffix and is never multiplied (Option A: "the number to the right
+    // stays the set count"). m absent ⇒ ×1, so legacy prescriptions are unchanged.
     const total_sets = parsed.reduce((s, l) => s + l.sets, 0);
-    const total_reps = parsed.reduce((s, l) => s + l.sets * l.totalReps, 0);
+    const total_reps = parsed.reduce((s, l) => s + l.sets * (l.multiplier ?? 1) * l.totalReps, 0);
     const highest_load = Math.max(...parsed.map(l => l.loadMax ?? l.load));
     const weighted = parsed.reduce(
-      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * l.totalReps, 0);
+      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * (l.multiplier ?? 1) * l.totalReps, 0);
     return { total_sets, total_reps, highest_load, avg_load: total_reps > 0 ? weighted / total_reps : null };
   }
 
