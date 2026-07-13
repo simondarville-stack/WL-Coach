@@ -1,15 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
-import type { MacroCycle, MacroTarget, WeekType, PhaseTypePreset } from '../../lib/database.types';
-import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
+import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
+import { DEFAULT_PHASE_TYPE_PRESETS, DEFAULT_RHYTHM_PRESETS } from '../../lib/constants';
+import { MacroFillGuide } from './MacroFillGuide';
+import { RhythmPresetManager } from './RhythmPresetManager';
+import { MacroTemplateSaveModal } from './MacroTemplateSaveModal';
+import { useMacroTemplates } from '../../hooks/useMacroTemplates';
+import { materializeTemplate } from '../../lib/macroTemplate';
+import type { MacroTemplateRow } from '../../lib/macroTemplate';
+import { buildFillPlan } from './fillGuidePlan';
+import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks } from '../../lib/weekUtils';
-import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS } from './MacroTableV2';
-import type { MacroTableColumnKey } from './MacroTableV2';
+import { formatDateToDDMMYYYY } from '../../lib/dateUtils';
+import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS } from './MacroTableV2';
+import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
+import { MacroViewMenu } from './MacroViewMenu';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
 import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
@@ -36,7 +46,7 @@ export function MacroCycles() {
   const { cycleId: urlCycleId } = useParams<{ cycleId?: string }>();
   const { selectedAthlete, selectedGroup } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
-  const { settings, fetchSettingsSilent } = useSettings();
+  const { settings, fetchSettingsSilent, updateSettings } = useSettings();
   const { groupMembers: hookGroupMembers, fetchGroupMembers } = useTrainingGroups();
 
   const {
@@ -61,6 +71,10 @@ export function MacroCycles() {
     removeTrackedExercise,
     fetchTargets,
     upsertTarget,
+    bulkUpsertTargets,
+    bulkDeleteTargets,
+    bulkUpdateWeeks,
+    updateTrackedExerciseReference,
     fetchPhases,
     createPhase,
     updatePhase,
@@ -72,6 +86,7 @@ export function MacroCycles() {
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
+    updateMacrocycleLayout,
     extendCycle,
     trimCycle,
   } = useMacroCycles();
@@ -108,6 +123,71 @@ export function MacroCycles() {
   );
 
   const [highlightedPhaseId, setHighlightedPhaseId] = useState<string | null>(null);
+
+  // ── Fill guide state ─────────────────────────────────────────────────────────
+  const [showFillGuide, setShowFillGuide] = useState(false);
+  const [fillPreview, setFillPreview] = useState<FillGuidePreview | null>(null);
+  const [fillUndo, setFillUndo] = useState<{
+    existingRows: MacroTarget[];
+    createdIds: string[];
+    weekRows: Array<{ id: string; week_type: string; total_reps_target: number | null }>;
+  } | null>(null);
+  const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
+  const [showRhythmManager, setShowRhythmManager] = useState(false);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
+  // Chart ◆ anchor drags route into the fill guide through this registered setter
+  const anchorSetterRef = useRef<((which: 'from' | 'to', kg: number) => void) | null>(null);
+  const { templates, fetchTemplates, createTemplate, deleteTemplate, applyTemplate } = useMacroTemplates();
+
+  useEffect(() => { void fetchTemplates(); }, []);
+
+  // Coach rhythm presets: settings override, app defaults otherwise
+  const rhythmPresets: RhythmPreset[] =
+    (settings?.rhythm_presets?.length ? settings.rhythm_presets : DEFAULT_RHYTHM_PRESETS);
+
+  const handleSaveRhythmPresets = useCallback(async (presets: RhythmPreset[]) => {
+    if (!settings) return;
+    await updateSettings(settings.id, { rhythm_presets: presets });
+  }, [settings, updateSettings]);
+
+  // ── Table view config (metric registry, column states, tints) — per macro ────
+  const [exerciseMetrics, setExerciseMetrics] = useState<ExerciseMetricConfig[]>(DEFAULT_EXERCISE_METRICS);
+  const [exColStates, setExColStates] = useState<Record<string, ExerciseColumnState>>({});
+  const [consistencyTint, setConsistencyTint] = useState(true);
+  const [collapsedHeatmap, setCollapsedHeatmap] = useState(true);
+
+  // Persist the whole view config to macrocycles.table_layout (quiet write).
+  // Each setter passes its NEXT value explicitly so we never persist stale state.
+  const persistLayout = useCallback((overrides: Partial<MacroTableLayout>) => {
+    if (!selectedCycle) return;
+    const layout: MacroTableLayout = {
+      exercises: exColStates,
+      metrics: exerciseMetrics,
+      viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap },
+      ...overrides,
+    };
+    void updateMacrocycleLayout(selectedCycle.id, layout);
+  }, [selectedCycle, exColStates, exerciseMetrics, consistencyTint, collapsedHeatmap, updateMacrocycleLayout]);
+
+  const applyMetrics = useCallback((m: ExerciseMetricConfig[]) => {
+    setExerciseMetrics(m);
+    persistLayout({ metrics: m });
+  }, [persistLayout]);
+
+  const applyColStates = useCallback((next: Record<string, ExerciseColumnState>) => {
+    setExColStates(next);
+    persistLayout({ exercises: next });
+  }, [persistLayout]);
+
+  const handleToggleCollapse = useCallback((teId: string) => {
+    const cur = exColStates[teId] ?? {};
+    applyColStates({ ...exColStates, [teId]: { collapsed: !cur.collapsed, expanded: false } });
+  }, [exColStates, applyColStates]);
+
+  const handleToggleExpand = useCallback((teId: string) => {
+    const cur = exColStates[teId] ?? {};
+    applyColStates({ ...exColStates, [teId]: { collapsed: false, expanded: !cur.expanded } });
+  }, [exColStates, applyColStates]);
 
   // Helper: scroll to a phase row in the table and apply a brief highlight
   const scrollToPhase = useCallback((phaseId: string) => {
@@ -162,12 +242,10 @@ export function MacroCycles() {
   // Load exercises on mount + settings for column visibility
   useEffect(() => { fetchExercisesByName(); }, []);
 
+  // Settings are fetched once; column visibility itself resolves in the
+  // per-macro layout effect below (per-macro override → settings → defaults).
   useEffect(() => {
-    fetchSettingsSilent().then(s => {
-      if (s?.macro_table_columns && s.macro_table_columns.length > 0) {
-        setVisibleColumns(new Set(s.macro_table_columns as MacroTableColumnKey[]));
-      }
-    });
+    void fetchSettingsSilent();
   }, []);
 
   // Load group members when in group mode
@@ -214,6 +292,47 @@ export function MacroCycles() {
     ]);
   }, [selectedCycle?.id]);
 
+  // Fill-guide session state is per cycle — reset on navigation
+  useEffect(() => {
+    setShowFillGuide(false);
+    setFillPreview(null);
+    setFillUndo(null);
+    setLastFillInputs(null);
+  }, [selectedCycle?.id]);
+
+  // Load the per-macro table view config. Saved metric order wins for known
+  // keys; new registry entries (future metrics) append with their defaults.
+  useEffect(() => {
+    const layout = selectedCycle?.table_layout;
+    const known = new Map(DEFAULT_EXERCISE_METRICS.map(m => [m.key, m]));
+    const merged: ExerciseMetricConfig[] = [];
+    for (const saved of layout?.metrics ?? []) {
+      const base = known.get(saved.key as ExerciseMetricConfig['key']);
+      if (base) {
+        merged.push({ key: base.key, on: saved.on !== false });
+        known.delete(base.key);
+      }
+    }
+    merged.push(...Array.from(known.values(), m => ({ ...m })));
+    setExerciseMetrics(merged);
+    setExColStates((layout?.exercises as Record<string, ExerciseColumnState> | undefined) ?? {});
+    setConsistencyTint(layout?.viewToggles?.consistency ?? true);
+    setCollapsedHeatmap(layout?.viewToggles?.heatmap ?? true);
+    // Base columns: per-macro override → coach settings → app defaults
+    if (layout?.baseColumns?.length) {
+      setVisibleColumns(new Set([...layout.baseColumns, 'week'] as MacroTableColumnKey[]));
+    } else if (settings?.macro_table_columns?.length) {
+      setVisibleColumns(new Set(settings.macro_table_columns as MacroTableColumnKey[]));
+    } else {
+      setVisibleColumns(new Set(DEFAULT_MACRO_TABLE_COLUMNS));
+    }
+  }, [selectedCycle?.id, selectedCycle?.table_layout, settings?.macro_table_columns]);
+
+  const handleVisibleColumnsChange = useCallback((next: Set<MacroTableColumnKey>) => {
+    setVisibleColumns(next);
+    persistLayout({ baseColumns: Array.from(next) });
+  }, [persistLayout]);
+
   // Load targets when weeks change
   useEffect(() => {
     if (macroWeeks.length > 0) {
@@ -250,6 +369,8 @@ export function MacroCycles() {
     endDate: string;
     competitions: { name: string; date: string; is_primary: boolean }[];
     phasePreset: 'none' | '8week' | '12week' | 'custom';
+    template?: MacroTemplateRow;
+    templateReferences?: Record<string, number | null>;
   }) => {
     if (!macroTarget) return;
 
@@ -279,6 +400,15 @@ export function MacroCycles() {
         })
       )
     );
+
+    // Apply a template: week rhythm + phases + exercises + targets, all in one
+    if (data.template) {
+      const mat = materializeTemplate(data.template, data.templateReferences ?? {});
+      await applyTemplate(cycle.id, mat);
+      navigate(`/macrocycles/${cycle.id}`);
+      setShowCreateModal(false);
+      return;
+    }
 
     // Create phase presets
     const totalWeeks = weekInserts.length;
@@ -348,6 +478,111 @@ export function MacroCycles() {
     const existing = targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === trackedExId);
     await upsertTarget(weekId, trackedExId, field, value, existing);
   }, [targets, upsertTarget]);
+
+  // ─── Fill guide ───────────────────────────────────────────────────────────────
+  // Apply writes plain rows (table = source of truth); undo restores a snapshot.
+
+  const pairKey = (weekId: string, teId: string) => `${weekId}|${teId}`;
+
+  // Shared in-flight flag for the bulk fill operations (apply / undo /
+  // re-modulate) — prevents concurrent bulk writes from double-clicks.
+  const [fillBusy, setFillBusy] = useState(false);
+
+  const handleApplyFill = useCallback(async (plan: FillWritePlan, inputs: FillGuideInputs) => {
+    if (fillBusy) return;
+    const affectedPairs = new Set(plan.targetRows.map(r => pairKey(r.macro_week_id, r.tracked_exercise_id)));
+    const existingRows = targets
+      .filter(t => affectedPairs.has(pairKey(t.macro_week_id, t.tracked_exercise_id)))
+      .map(t => ({ ...t }));
+    const existingPairSet = new Set(existingRows.map(t => pairKey(t.macro_week_id, t.tracked_exercise_id)));
+    const weekRows = macroWeeks
+      .filter(w => plan.weekUpdates.some(u => u.id === w.id))
+      .map(w => ({ id: w.id, week_type: w.week_type, total_reps_target: w.total_reps_target }));
+
+    setFillBusy(true);
+    let returned: MacroTarget[] = [];
+    try {
+      returned = await bulkUpsertTargets(plan.targetRows);
+      await bulkUpdateWeeks(plan.weekUpdates);
+    } catch (err) {
+      // Partial apply is possible (writes commit group by group): arm undo
+      // with everything we know landed, drop the stale ghost overlay, and
+      // resync targets from the DB. The hook's error banner explains the
+      // failure; the guide stays open so the coach can retry.
+      const createdIds = returned
+        .filter(r => !existingPairSet.has(pairKey(r.macro_week_id, r.tracked_exercise_id)))
+        .map(r => r.id);
+      if (createdIds.length > 0 || existingRows.length > 0) {
+        setFillUndo({ existingRows, createdIds, weekRows });
+        setLastFillInputs(inputs);
+      }
+      setFillPreview(null);
+      if (macroWeeks.length > 0) void fetchTargets(macroWeeks.map(w => w.id));
+      setFillBusy(false);
+      throw err; // let the fill guide's Apply button reset its own busy state
+    }
+
+    const createdIds = returned
+      .filter(r => !existingPairSet.has(pairKey(r.macro_week_id, r.tracked_exercise_id)))
+      .map(r => r.id);
+    setFillUndo({ existingRows, createdIds, weekRows });
+    setLastFillInputs(inputs);
+    setShowFillGuide(false);
+    setFillPreview(null);
+    setFillBusy(false);
+  }, [fillBusy, targets, macroWeeks, bulkUpsertTargets, bulkUpdateWeeks, fetchTargets]);
+
+  const handleUndoFill = useCallback(async () => {
+    if (!fillUndo || fillBusy) return;
+    setFillBusy(true);
+    try {
+      await bulkDeleteTargets(fillUndo.createdIds);
+      await bulkUpsertTargets(fillUndo.existingRows.map(t => ({
+        macro_week_id: t.macro_week_id,
+        tracked_exercise_id: t.tracked_exercise_id,
+        fields: {
+          target_reps: t.target_reps,
+          target_avg: t.target_avg,
+          target_max: t.target_max,
+          target_reps_at_max: t.target_reps_at_max,
+          target_sets_at_max: t.target_sets_at_max,
+          note: t.note,
+        },
+      })));
+      await bulkUpdateWeeks(fillUndo.weekRows);
+      setFillUndo(null);
+    } finally {
+      setFillBusy(false);
+    }
+  }, [fillUndo, fillBusy, bulkDeleteTargets, bulkUpsertTargets, bulkUpdateWeeks]);
+
+  // Re-modulate: re-run the last fill's anchors + rhythm against the CURRENT
+  // week types (explicit action, overwrites that fill's cells).
+  const handleRemodulate = useCallback(async () => {
+    if (!lastFillInputs || fillBusy) return;
+    const inputs = { ...lastFillInputs, overwrite: true };
+    const plan = buildFillPlan(inputs, macroWeeks, trackedExercises, targets, settings?.week_types ?? []);
+    if (plan.cellCount === 0) {
+      setError('Re-modulate produced no cells — the anchors or tracked exercises have changed since the last fill.');
+      return;
+    }
+    try {
+      await handleApplyFill(plan, lastFillInputs);
+    } catch {
+      // surfaced via the error banner
+    }
+  }, [lastFillInputs, fillBusy, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill, setError]);
+
+  // ─── Weekly exercise note ───────────────────────────────────────────────────
+  // A macro_targets row may hold only a note (all numeric targets NULL).
+  const handleUpdateTargetNote = useCallback(async (weekId: string, teId: string, note: string) => {
+    const trimmed = note.trim();
+    await bulkUpsertTargets([{
+      macro_week_id: weekId,
+      tracked_exercise_id: teId,
+      fields: { note: trimmed || null },
+    }]);
+  }, [bulkUpsertTargets]);
 
   // ─── Paste week ───────────────────────────────────────────────────────────────
 
@@ -544,6 +779,14 @@ export function MacroCycles() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Error banner — outside the cycle/wheel branch so load failures are
+          visible on the annual-wheel landing view too (not just inside a cycle). */}
+      {error && (
+        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700 flex items-center justify-between flex-shrink-0">
+          {error}
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+        </div>
+      )}
       {selectedCycle ? (<StandardPage>
       {/* Top toolbar */}
       <MacroCycleToolbar
@@ -583,21 +826,29 @@ export function MacroCycles() {
         onEditCycle={() => setShowEditModal(true)}
         onDeleteCycle={handleDeleteCycle}
         onImportTargets={handleImportTargets}
+        fillGuideOpen={showFillGuide}
+        onFillGuideToggle={() => setShowFillGuide(v => !v)}
+        canUndoFill={!!fillUndo}
+        onUndoFill={handleUndoFill}
+        canRemodulate={!!lastFillInputs}
+        onRemodulate={handleRemodulate}
+        fillBusy={fillBusy}
+        onSaveTemplate={() => setShowTemplateSave(true)}
       />
 
       {/* Cycle info + phase bar */}
       {selectedCycle && (
         <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-          {/* MacroTimeline replaces the old MacroPhaseBar + local fetch */}
           <div style={{ padding: '12px 16px 8px' }}>
             <MacroTimeline
-              mode="bounded"
+              mode="macro"
               cycleId={selectedCycle.id}
+              contextWeeks={0}
               athleteId={selectedAthlete?.id ?? null}
               groupId={selectedGroup?.id ?? null}
-              onPhaseClick={(cell) => {
+              onPhaseClick={(week) => {
                 const phase = phases.find(
-                  p => p.macrocycle_id === cell.macroId && p.name === cell.phase
+                  p => p.macrocycle_id === week.macroId && p.name === week.phaseName
                 );
                 if (phase) scrollToPhase(phase.id);
               }}
@@ -607,7 +858,7 @@ export function MacroCycles() {
           {/* Meta row: cycle name, dates, week count, group, competitions */}
           <div className="flex items-center gap-3 px-4 py-1.5 text-xs text-gray-600 flex-wrap">
             <span className="font-medium text-gray-800">{selectedCycle.name}</span>
-            <span className="text-gray-400">{selectedCycle.start_date} → {selectedCycle.end_date}</span>
+            <span className="text-gray-400">{formatDateToDDMMYYYY(selectedCycle.start_date)} → {formatDateToDDMMYYYY(selectedCycle.end_date)}</span>
             <span className="text-gray-400">{macroWeeks.length} weeks</span>
             {isGroupMode && selectedGroup && (
               <span className="flex items-center gap-1 text-purple-600 font-medium">
@@ -627,14 +878,6 @@ export function MacroCycles() {
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700 flex items-center justify-between flex-shrink-0">
-          {error}
-          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 ml-2">×</button>
-        </div>
-      )}
-
       {/* Main content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
@@ -643,8 +886,10 @@ export function MacroCycles() {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          {/* Toggle bar: exercises + Reps chip */}
-          {trackedExercises.length > 0 && (
+          {/* Toggle bar: exercises + general metrics + view menu — present as
+              soon as the cycle has weeks, so general targets are workable
+              before any exercise is tracked */}
+          {macroWeeks.length > 0 && (
             <div className="px-3 pt-2 pb-1 flex-shrink-0 flex items-center gap-2 flex-wrap border-b border-gray-100">
               <ExerciseToggleBar
                 exercises={trackedExercises}
@@ -667,6 +912,18 @@ export function MacroCycles() {
               >
                 Reps
               </button>
+              <MacroViewMenu
+                metrics={exerciseMetrics}
+                onMetricsChange={applyMetrics}
+                visibleColumns={visibleColumns}
+                onVisibleColumnsChange={handleVisibleColumnsChange}
+                consistencyTint={consistencyTint}
+                onConsistencyTintChange={(v) => { setConsistencyTint(v); persistLayout({ viewToggles: { consistency: v, heatmap: collapsedHeatmap } }); }}
+                collapsedHeatmap={collapsedHeatmap}
+                onCollapsedHeatmapChange={(v) => { setCollapsedHeatmap(v); persistLayout({ viewToggles: { consistency: consistencyTint, heatmap: v } }); }}
+                onCollapseAll={() => applyColStates(Object.fromEntries(trackedExercises.map(te => [te.id, { collapsed: true, expanded: false }])))}
+                onExpandAll={() => applyColStates({})}
+              />
             </div>
           )}
 
@@ -696,6 +953,14 @@ export function MacroCycles() {
               visibleColumns={visibleColumns}
               weekTypes={settings?.week_types ?? []}
               highlightedPhaseId={highlightedPhaseId}
+              fillPreview={fillPreview}
+              metrics={exerciseMetrics}
+              exerciseColumnStates={exColStates}
+              onToggleCollapse={handleToggleCollapse}
+              onToggleExpand={handleToggleExpand}
+              consistencyTint={consistencyTint}
+              collapsedHeatmap={collapsedHeatmap}
+              onUpdateTargetNote={handleUpdateTargetNote}
             />
           </div>
 
@@ -706,13 +971,17 @@ export function MacroCycles() {
                 macroWeeks={macroWeeks}
                 trackedExercises={trackedExercises}
                 targets={targets}
-                phases={phases}
                 competitions={competitions}
                 actuals={displayedActuals}
+                weekTypes={settings?.week_types ?? []}
                 onDragTarget={handleDragTarget}
                 focusedExerciseId={focusedExerciseId}
                 visibleExercises={visibleExercises}
                 showReps={showReps}
+                fillPreview={fillPreview}
+                visibleGeneralSeries={visibleGeneralMetrics}
+                onDragWeekTarget={async (weekId, field, value) => { await updateMacroWeek(weekId, { [field]: value }); }}
+                onDragAnchor={(which, kg) => anchorSetterRef.current?.(which, kg)}
               />
             </div>
           )}
@@ -759,8 +1028,22 @@ export function MacroCycles() {
       {showCreateModal && (
         <MacroCreateModal
           loading={loading}
+          templates={templates}
+          onDeleteTemplate={deleteTemplate}
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreateCycle}
+        />
+      )}
+
+      {showTemplateSave && selectedCycle && (
+        <MacroTemplateSaveModal
+          cycleName={selectedCycle.name}
+          macroWeeks={macroWeeks}
+          phases={phases}
+          trackedExercises={trackedExercises}
+          targets={targets}
+          onSave={async (name, mode, weekCount, payload) => { await createTemplate(name, mode, weekCount, payload); }}
+          onClose={() => setShowTemplateSave(false)}
         />
       )}
 
@@ -771,6 +1054,31 @@ export function MacroCycles() {
           loading={loading}
           onClose={() => setShowEditModal(false)}
           onSave={handleEditCycle}
+        />
+      )}
+
+      {showFillGuide && selectedCycle && macroWeeks.length > 0 && (
+        <MacroFillGuide
+          macroWeeks={macroWeeks}
+          trackedExercises={trackedExercises}
+          targets={targets}
+          weekTypes={settings?.week_types ?? []}
+          rhythmPresets={rhythmPresets}
+          onPreviewChange={setFillPreview}
+          onApply={handleApplyFill}
+          onUpdateReference={updateTrackedExerciseReference}
+          onEditPresets={() => setShowRhythmManager(true)}
+          registerAnchorSetter={(fn) => { anchorSetterRef.current = fn; }}
+          onClose={() => { setShowFillGuide(false); setFillPreview(null); }}
+        />
+      )}
+
+      {showRhythmManager && (
+        <RhythmPresetManager
+          presets={rhythmPresets}
+          weekTypes={settings?.week_types ?? []}
+          onSave={handleSaveRhythmPresets}
+          onClose={() => setShowRhythmManager(false)}
         />
       )}
 

@@ -236,8 +236,10 @@ export function PlannerWeekOverview({
         <div style={{ marginBottom: 'var(--space-md)' }}>
           <MacroTimeline
             mode="continuous"
+            centerWeekStart={centerDate}
             athleteId={athlete?.id ?? null}
             groupId={group?.id ?? null}
+            onSelectWeek={onSelectWeek}
           />
         </div>
       )}

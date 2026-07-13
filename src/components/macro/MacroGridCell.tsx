@@ -123,6 +123,7 @@ export function MacroGridCell({
       <div
         className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-[var(--color-accent-muted)]"
         style={{ minWidth: 52, height: 38 }}
+        title={hasPrev ? "Click to start from last week's value" : 'Click to start a max set · Ctrl+click to type'}
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
@@ -144,7 +145,7 @@ export function MacroGridCell({
             ref={loadRef}
             type="number"
             defaultValue={load ?? 0}
-            className="w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
+            className="no-spin w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
             style={{ backgroundColor: 'var(--color-accent-muted)' }}
             onBlur={(e) => commitLoad(e.target.value)}
             onKeyDown={(e) => {
@@ -180,7 +181,7 @@ export function MacroGridCell({
               type="number"
               defaultValue={reps ?? 1}
               min={1}
-              className="w-[22px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5"
+              className="no-spin w-[22px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5"
               style={{ backgroundColor: 'var(--color-accent-muted)' }}
               onKeyDown={(e) => {
                 if (e.key === 'Tab') {
@@ -204,7 +205,7 @@ export function MacroGridCell({
           type="number"
           defaultValue={sets ?? 1}
           min={1}
-          className="w-[18px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5 self-center"
+          className="no-spin w-[18px] text-center font-mono text-[9px] border-none outline-none rounded px-0.5 py-0.5 self-center"
           style={{ backgroundColor: 'var(--color-accent-muted)' }}
           onBlur={(e) => {
             commitReps(
@@ -250,6 +251,7 @@ export function MacroGridCell({
           className={`text-[11px] font-mono font-medium cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]'
           }`}
+          title={isDeleteMode ? 'Click to clear' : 'Load: click +1 · right-click −1 · Ctrl+click to type'}
           onClick={handleLoadClick}
           onContextMenu={handleLoadClick}
         >
@@ -260,6 +262,7 @@ export function MacroGridCell({
           className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]'
           }`}
+          title={isDeleteMode ? 'Click to clear' : 'Reps: click +1 · right-click −1 · Ctrl+click to type'}
           onClick={handleRepsClick}
           onContextMenu={handleRepsClick}
         >
@@ -274,6 +277,7 @@ export function MacroGridCell({
             ? 'opacity-0 group-hover:opacity-40'
             : (isDeleteMode ? 'opacity-80 text-[color:var(--color-danger-text)]' : 'opacity-80 text-[color:var(--color-text-tertiary)]')
         } ${isDeleteMode && !setsIsOne ? '' : 'text-[color:var(--color-text-tertiary)]'}`}
+        title={isDeleteMode ? 'Click to clear' : 'Sets: click +1 · right-click −1'}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();

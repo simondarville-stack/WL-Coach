@@ -1,58 +1,73 @@
+// MacroTimeline — data container for the macro timeline strip.
+//
+// Two modes:
+// - 'macro':      the whole anchor macro W1→Wn plus `contextWeeks` dimmed
+//                 weeks on each side (neighbouring macros / gaps stay
+//                 visible and clickable). Used by the Weekly Planner header
+//                 and the Macro Cycles page.
+// - 'continuous': a fixed window around `centerWeekStart`, crossing macro
+//                 boundaries freely. Used by the planner week overview and
+//                 as the planner-header fallback when no macro covers the
+//                 selected week. Controlled — the parent owns the center.
+//
+// Clicking a week navigates to that week in the planner (overridable via
+// onSelectWeek); clicking a phase label opens the macro page (overridable
+// via onPhaseClick).
+
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { getOwnerId } from '../../lib/ownerContext';
 import { useSettings } from '../../hooks/useSettings';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
-import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
+import { addDaysToISO, toLocalISO } from '../../lib/dateUtils';
 import {
-  buildCellsForSingleMacro,
-  buildCellsForContinuousRange,
-  fetchMacroPhaseBarEvents,
+  buildTimelineWeeks,
+  continuousRangeWeekStarts,
+  fetchTimelineMarkers,
+  fetchTimelineSource,
+  fetchWeeklyPerformed,
+  fetchWeeklyProgrammed,
+  macroRangeWeekStarts,
   resolveScopeAthleteIds,
-} from '../../lib/macroPhaseBarData';
-import { MacroPhaseBar } from './MacroPhaseBar';
-import type {
-  MacroPhaseBarCell,
-  MacroPhaseBarEvent,
-} from './MacroPhaseBar';
-import type {
-  MacroCycle,
-  MacroPhase,
-  MacroWeek,
-} from '../../lib/database.types';
+  type TimelineMarker,
+  type TimelineWeek,
+  type WeeklyPerformed,
+  type WeeklyProgrammed,
+} from '../../lib/macroTimelineData';
+import { MacroTimelineStrip } from './MacroTimelineStrip';
+import type { MacroCycle, MacroPhase, MacroWeek } from '../../lib/database.types';
 
 const CONTINUOUS_WEEKS_BACK = 5;
 const CONTINUOUS_WEEKS_FORWARD = 6;
-const SHIFT_WEEKS = 4;
-
-// ───────────────────────────────────────────────────────────────
-// Props
-// ───────────────────────────────────────────────────────────────
+const DEFAULT_CONTEXT_WEEKS = 3;
 
 type CommonProps = {
   athleteId: string | null;
   groupId: string | null;
+  /** weekStart of the week highlighted with the accent ring. */
+  selectedWeekStart?: string | null;
+  /** Overrides the default navigate(`/planner/${weekStart}`). */
+  onSelectWeek?: (weekStart: string) => void;
+  /** Overrides the default navigate(`/macrocycles/${macroId}`). */
+  onPhaseClick?: (week: TimelineWeek) => void;
+  showMonths?: boolean;
   className?: string;
   style?: React.CSSProperties;
 };
 
-type ContinuousProps = CommonProps & {
-  mode: 'continuous';
-};
-
-type BoundedProps = CommonProps & {
-  mode: 'bounded';
+type MacroModeProps = CommonProps & {
+  mode: 'macro';
   cycleId: string;
-  selectedWeekStart?: string | null;
-  onPhaseClick?: (cell: MacroPhaseBarCell) => void;
+  /** Dimmed weeks shown on each side of the macro (0 = macro only). */
+  contextWeeks?: number;
 };
 
-export type MacroTimelineProps = ContinuousProps | BoundedProps;
+type ContinuousModeProps = CommonProps & {
+  mode: 'continuous';
+  /** Monday the window centers on; defaults to the current week. */
+  centerWeekStart?: string;
+};
 
-// ───────────────────────────────────────────────────────────────
-// Component
-// ───────────────────────────────────────────────────────────────
+export type MacroTimelineProps = MacroModeProps | ContinuousModeProps;
 
 export function MacroTimeline(props: MacroTimelineProps) {
   const navigate = useNavigate();
@@ -63,310 +78,169 @@ export function MacroTimeline(props: MacroTimelineProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [centerWeekStart, setCenterWeekStart] = useState(() =>
-    getMondayOfWeekISO(new Date())
-  );
-
-  const [allMacros, setAllMacros] = useState<MacroCycle[]>([]);
-  const [allPhases, setAllPhases] = useState<MacroPhase[]>([]);
-  const [allMacroWeeks, setAllMacroWeeks] = useState<MacroWeek[]>([]);
-  const [events, setEvents] = useState<MacroPhaseBarEvent[]>([]);
+  const [macros, setMacros] = useState<MacroCycle[]>([]);
+  const [phases, setPhases] = useState<MacroPhase[]>([]);
+  const [macroWeeks, setMacroWeeks] = useState<MacroWeek[]>([]);
+  const [markers, setMarkers] = useState<TimelineMarker[]>([]);
+  const [programmed, setProgrammed] = useState<Map<string, WeeklyProgrammed>>(() => new Map());
+  const [performed, setPerformed] = useState<Map<string, WeeklyPerformed>>(() => new Map());
 
   const todayMonday = getMondayOfWeekISO(new Date());
+  const todayIso = toLocalISO(new Date());
+  const cycleId = props.mode === 'macro' ? props.cycleId : null;
 
-  // ── Load macros + phases + macro_weeks ──
-  // All three datasets are committed atomically in one render. Sequential
-  // setState calls with awaits between them break React batching and produce
-  // intermediate renders where (e.g.) macros are present but macro_weeks is
-  // still empty — the cell builder then paints every week as a gap, which is
-  // why the bar sometimes flashes uncolored.
+  // ── Load macros + phases + macro_weeks (committed atomically so the
+  //    strip never renders a half-loaded snapshot) ──
   useEffect(() => {
     let cancelled = false;
-
     void (async () => {
       try {
-        const ownerId = getOwnerId();
-        if (!ownerId) return;
-
-        let macrosQuery = supabase
-          .from('macrocycles')
-          .select('*')
-          .eq('owner_id', ownerId);
-
-        if (props.mode === 'bounded') {
-          macrosQuery = macrosQuery.eq('id', props.cycleId);
-        } else {
-          if (props.athleteId) {
-            macrosQuery = macrosQuery.or(`athlete_id.eq.${props.athleteId},group_id.not.is.null`);
-          } else if (props.groupId) {
-            macrosQuery = macrosQuery.eq('group_id', props.groupId);
-          }
-        }
-
-        const { data: macros, error: macrosErr } = await macrosQuery;
-        if (macrosErr) throw macrosErr;
-        let macrosFiltered = (macros as MacroCycle[]) ?? [];
-
-        if (props.mode === 'continuous' && props.athleteId) {
-          const groupMacros = macrosFiltered.filter(m => m.group_id);
-          if (groupMacros.length > 0) {
-            const groupIds = [...new Set(groupMacros.map(m => m.group_id!))];
-            const { data: memberships, error: memErr } = await supabase
-              .from('group_members')
-              .select('group_id, athlete_id')
-              .in('group_id', groupIds)
-              .eq('athlete_id', props.athleteId)
-              .is('left_at', null);
-            if (memErr) throw memErr;
-            const memberOfGroups = new Set((memberships || []).map((m: { group_id: string }) => m.group_id));
-            macrosFiltered = macrosFiltered.filter(
-              m => !m.group_id || memberOfGroups.has(m.group_id)
-            );
-          }
-        }
-
-        const macroIds = macrosFiltered.map(m => m.id);
-
-        if (macroIds.length === 0) {
-          if (cancelled) return;
-          setAllMacros(macrosFiltered);
-          setAllPhases([]);
-          setAllMacroWeeks([]);
-          return;
-        }
-
-        // Fetch phases and macro_weeks in parallel — they're independent.
-        const [phasesRes, weeksRes] = await Promise.all([
-          supabase
-            .from('macro_phases')
-            .select('*')
-            .in('macrocycle_id', macroIds)
-            .order('position'),
-          supabase
-            .from('macro_weeks')
-            .select('*')
-            .in('macrocycle_id', macroIds)
-            .order('week_number'),
-        ]);
-        if (phasesRes.error) throw phasesRes.error;
-        if (weeksRes.error) throw weeksRes.error;
-
+        const source = await fetchTimelineSource(
+          props.athleteId,
+          props.groupId,
+          cycleId ?? undefined
+        );
         if (cancelled) return;
-
-        // Commit all three atomically. React 18 batches synchronous setState
-        // calls, so the next render sees a consistent macros/phases/weeks
-        // snapshot rather than a half-loaded one.
-        setAllMacros(macrosFiltered);
-        setAllPhases((phasesRes.data as MacroPhase[]) ?? []);
-        setAllMacroWeeks((weeksRes.data as MacroWeek[]) ?? []);
+        setMacros(source.macros);
+        setPhases(source.phases);
+        setMacroWeeks(source.weeks);
       } catch (err) {
         if (cancelled) return;
         console.error('MacroTimeline: load failed', err);
-        setAllMacros([]);
-        setAllPhases([]);
-        setAllMacroWeeks([]);
+        setMacros([]);
+        setPhases([]);
+        setMacroWeeks([]);
       }
     })();
-
     return () => { cancelled = true; };
-  }, [
-    props.mode,
-    props.mode === 'bounded' ? props.cycleId : null,
-    props.athleteId,
-    props.groupId,
-  ]);
+  }, [props.athleteId, props.groupId, cycleId]);
 
-  // ── Build cells ──
-  const cells = useMemo(() => {
-    if (allMacros.length === 0 && props.mode === 'bounded') return [];
+  // ── Build week cells ──
+  const centerWeekStart =
+    props.mode === 'continuous'
+      ? (props.centerWeekStart ?? todayMonday)
+      : null;
 
-    // In continuous mode, multiple macros may share the same week_start date
-    // (e.g. overlapping macros or duplicates). Deduplicate by week_start,
-    // preferring: (1) macros with phases, (2) individual over group macros.
-    const macroIdsWithPhases = new Set(allPhases.map(p => p.macrocycle_id));
-    const individualMacroIds = new Set(allMacros.filter(m => !m.group_id).map(m => m.id));
-    const score = (macroId: string) =>
-      (macroIdsWithPhases.has(macroId) ? 2 : 0) +
-      (individualMacroIds.has(macroId) ? 1 : 0);
-
-    const deduplicatedWeeks = props.mode === 'continuous'
-      ? Object.values(
-          allMacroWeeks.reduce<Record<string, typeof allMacroWeeks[number]>>(
-            (acc, w) => {
-              const existing = acc[w.week_start];
-              if (!existing || score(w.macrocycle_id) > score(existing.macrocycle_id)) {
-                acc[w.week_start] = w;
-              }
-              return acc;
-            },
-            {}
-          )
-        )
-      : allMacroWeeks;
-
+  const weeks: TimelineWeek[] = useMemo(() => {
     const source = {
-      macros: allMacros,
-      phases: allPhases,
-      weeks: deduplicatedWeeks,
+      macros,
+      phases,
+      weeks: macroWeeks,
       weekTypeConfigs: settings?.week_types ?? [],
     };
 
-    if (props.mode === 'bounded') {
-      const macro = allMacros.find(m => m.id === props.cycleId);
-      if (!macro) return [];
-      return buildCellsForSingleMacro(macro, source);
+    if (props.mode === 'macro') {
+      const weekStarts = macroRangeWeekStarts(
+        props.cycleId,
+        macroWeeks,
+        props.contextWeeks ?? DEFAULT_CONTEXT_WEEKS
+      );
+      return buildTimelineWeeks(weekStarts, source, props.cycleId);
     }
 
-    return buildCellsForContinuousRange(
-      centerWeekStart,
+    const weekStarts = continuousRangeWeekStarts(
+      centerWeekStart ?? todayMonday,
       CONTINUOUS_WEEKS_BACK,
-      CONTINUOUS_WEEKS_FORWARD,
-      source
+      CONTINUOUS_WEEKS_FORWARD
     );
+    return buildTimelineWeeks(weekStarts, source);
   }, [
     props.mode,
-    props.mode === 'bounded' ? props.cycleId : null,
-    allMacros,
-    allPhases,
-    allMacroWeeks,
-    settings?.week_types,
+    cycleId,
+    props.mode === 'macro' ? props.contextWeeks : null,
     centerWeekStart,
+    macros,
+    phases,
+    macroWeeks,
+    settings?.week_types,
+    todayMonday,
   ]);
 
-  // ── Load events for the visible range ──
+  // ── Load markers (competitions + events) and week-programmed volume for
+  //    the visible range ──
   useEffect(() => {
-    if (cells.length === 0) {
-      setEvents([]);
+    if (weeks.length === 0) {
+      setMarkers([]);
+      setProgrammed(new Map());
+      setPerformed(new Map());
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const athleteIds = await resolveScopeAthleteIds(
-          props.athleteId,
-          props.groupId
-        );
+        const athleteIds = await resolveScopeAthleteIds(props.athleteId, props.groupId);
         if (cancelled) return;
-        if (athleteIds.length === 0) {
-          setEvents([]);
-          return;
-        }
-        const rangeStart = cells[0].weekStart;
-        const lastCell = cells[cells.length - 1];
-        const rangeEnd = addDaysToISO(lastCell.weekStart, 6);
-        const fetched = await fetchMacroPhaseBarEvents(
-          athleteIds,
-          rangeStart,
-          rangeEnd
-        );
+        const macroIds = [...new Set(weeks.map(w => w.macroId).filter((id): id is string => id !== null))];
+        const rangeStart = weeks[0].weekStart;
+        const lastWeekStart = weeks[weeks.length - 1].weekStart;
+        const rangeEnd = addDaysToISO(lastWeekStart, 6);
+        const [fetchedMarkers, fetchedProgrammed, fetchedPerformed] = await Promise.all([
+          fetchTimelineMarkers(athleteIds, macroIds, rangeStart, rangeEnd),
+          fetchWeeklyProgrammed(props.athleteId, props.groupId, rangeStart, lastWeekStart),
+          fetchWeeklyPerformed(athleteIds, rangeStart, lastWeekStart),
+        ]);
         if (cancelled) return;
-        setEvents(fetched);
+        setMarkers(fetchedMarkers);
+        setProgrammed(fetchedProgrammed);
+        setPerformed(fetchedPerformed);
       } catch (err) {
         if (cancelled) return;
-        console.error('MacroTimeline: events load failed', err);
-        setEvents([]);
+        console.error('MacroTimeline: markers/volume load failed', err);
+        setMarkers([]);
+        setProgrammed(new Map());
+        setPerformed(new Map());
       }
     })();
     return () => { cancelled = true; };
-  }, [cells, props.athleteId, props.groupId]);
+  }, [weeks, props.athleteId, props.groupId]);
 
-  // ── Resolve playhead + selected week ──
-  const playheadDate = todayMonday;
-  const selectedWeekStart =
-    props.mode === 'bounded'
-      ? props.selectedWeekStart ?? todayMonday
-      : todayMonday;
+  // ── Merge week-programmed + performed volume into the built weeks ──
+  const weeksWithProgrammed: TimelineWeek[] = useMemo(() => {
+    if (programmed.size === 0 && performed.size === 0) return weeks;
+    return weeks.map(w => {
+      const p = programmed.get(w.weekStart);
+      const d = performed.get(w.weekStart);
+      if (!p && !d) return w;
+      return {
+        ...w,
+        programmedReps: p != null && p.reps > 0 ? p.reps : null,
+        programmedTonnage: p != null && p.tonnage > 0 ? p.tonnage : null,
+        performedReps: d != null && d.reps > 0 ? d.reps : null,
+        performedTonnage: d != null && d.tonnage > 0 ? d.tonnage : null,
+      };
+    });
+  }, [weeks, programmed, performed]);
 
-  // ── Click handlers ──
-  const handleCellClick = (cell: MacroPhaseBarCell) => {
-    navigate(`/planner/${cell.weekStart}`);
+  // ── Handlers ──
+  const handleWeekClick = (week: TimelineWeek) => {
+    if (props.onSelectWeek) props.onSelectWeek(week.weekStart);
+    else navigate(`/planner/${week.weekStart}`);
   };
 
-  const handlePhaseClick = (cell: MacroPhaseBarCell) => {
-    if (cell.macroId === null) return;
-    if (props.mode === 'bounded' && props.onPhaseClick) {
-      props.onPhaseClick(cell);
-      return;
-    }
-    navigate(`/macrocycles/${cell.macroId}`);
+  const handlePhaseClick = (week: TimelineWeek) => {
+    if (week.macroId === null) return;
+    if (props.onPhaseClick) props.onPhaseClick(week);
+    else navigate(`/macrocycles/${week.macroId}`);
   };
 
-  const showNav = props.mode === 'continuous';
+  if (weeks.length === 0) return null;
 
   return (
-    <div className={props.className} style={props.style}>
-      {showNav && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-            marginBottom: '8px',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() =>
-              setCenterWeekStart(addDaysToISO(centerWeekStart, -SHIFT_WEEKS * 7))
-            }
-            style={navBtnStyle}
-          >
-            ← Earlier
-          </button>
-          <span
-            style={{
-              fontSize: '11px',
-              color: 'var(--color-text-tertiary)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            {cells.length > 0
-              ? `${formatDateShort(cells[0].weekStart)} → ${formatDateShort(addDaysToISO(cells[cells.length - 1].weekStart, 6))}`
-              : ''}
-          </span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              type="button"
-              onClick={() => setCenterWeekStart(todayMonday)}
-              style={navBtnStyle}
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setCenterWeekStart(addDaysToISO(centerWeekStart, SHIFT_WEEKS * 7))
-              }
-              style={navBtnStyle}
-            >
-              Later →
-            </button>
-          </div>
-        </div>
-      )}
-
-      <MacroPhaseBar
-        cells={cells}
-        events={events}
-        selectedWeekStart={selectedWeekStart}
-        playheadDate={playheadDate}
-        showMonthRow
-        showWeekDates
-        onCellClick={handleCellClick}
-        onPhaseClick={handlePhaseClick}
-      />
-    </div>
+    <MacroTimelineStrip
+      weeks={weeksWithProgrammed}
+      markers={markers}
+      metric={settings?.timeline_metric ?? 'reps'}
+      complianceThreshold={(settings?.compliance_warning_threshold ?? 90) / 100}
+      selectedWeekStart={props.selectedWeekStart ?? todayMonday}
+      todayDate={todayIso}
+      onWeekClick={handleWeekClick}
+      onPhaseClick={handlePhaseClick}
+      weekClickHint={props.onSelectWeek
+        ? 'Click: select this week'
+        : 'Click: open this week in the weekly planner'}
+      showMonths={props.showMonths ?? true}
+      className={props.className}
+      style={props.style}
+    />
   );
 }
-
-const navBtnStyle: React.CSSProperties = {
-  background: 'transparent',
-  border: '0.5px solid var(--color-border-tertiary)',
-  borderRadius: 'var(--radius-md, 6px)',
-  padding: '4px 10px',
-  fontSize: '11px',
-  color: 'var(--color-text-secondary)',
-  cursor: 'pointer',
-  fontFamily: 'var(--font-sans)',
-};

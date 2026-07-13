@@ -9,11 +9,12 @@ export const GENERAL_METRIC_LABELS: Record<GeneralMetricKey, string> = {
   avg: 'Avg int.',
 };
 
-// Neutral colors for general metric chips
-const GENERAL_METRIC_COLORS: Record<GeneralMetricKey, string> = {
-  k: '#6366f1',
-  tonnage: '#f59e0b',
-  avg: '#10b981',
+// Single source of truth for the three general-series colours — the toggle
+// chips and the chart series they control must match (chart imports these).
+export const GENERAL_METRIC_COLORS: Record<GeneralMetricKey, string> = {
+  k: '#334155',
+  tonnage: '#B45309',
+  avg: '#0F766E',
 };
 
 interface ExerciseToggleBarProps {

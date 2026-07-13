@@ -135,6 +135,19 @@ export function useMacroCycles() {
     }
   };
 
+  /** Persist per-macro table view config. Quiet: no loading flag (fires on
+   *  collapse/metric clicks), non-throwing (a failed layout save must never
+   *  break the interaction that triggered it). */
+  const updateMacrocycleLayout = async (id: string, layout: import('../lib/database.types').MacroTableLayout | null) => {
+    setMacrocycles(prev => prev.map(m => m.id === id ? { ...m, table_layout: layout } : m));
+    try {
+      const { error } = await supabase.from('macrocycles').update({ table_layout: layout }).eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      setError(errMsg(err, 'Failed to save table layout'));
+    }
+  };
+
   const deleteMacrocycle = async (id: string) => {
     try {
       setLoading(true);
@@ -366,18 +379,22 @@ export function useMacroCycles() {
   ): Promise<MacroTarget | null> => {
     try {
       if (existingTarget) {
-        // Optimistic: update UI immediately, rollback on error
-        const optimistic = { ...existingTarget, [field]: numValue };
-        setTargets(prev => prev.map(t => t.id === existingTarget.id ? optimistic : t));
+        // Optimistic: patch ONLY this field inside the functional updater.
+        // Spreading the (possibly stale) existingTarget snapshot instead would
+        // make two concurrent single-field writes to the same row clobber each
+        // other in local state (e.g. Ctrl+drag in the chart writes max + avg).
+        setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: numValue } : t));
         const { error } = await supabase
           .from('macro_targets')
           .update({ [field]: numValue })
           .eq('id', existingTarget.id);
         if (error) {
-          setTargets(prev => prev.map(t => t.id === existingTarget.id ? existingTarget : t));
+          // Roll back only this field — sibling fields may have been updated
+          // by concurrent writes that succeeded.
+          setTargets(prev => prev.map(t => t.id === existingTarget.id ? { ...t, [field]: existingTarget[field] } : t));
           throw error;
         }
-        return optimistic;
+        return { ...existingTarget, [field]: numValue };
       } else {
         // Row may not exist yet — use true DB upsert so concurrent calls don't conflict
         const { data, error } = await supabase
@@ -399,6 +416,106 @@ export function useMacroCycles() {
       }
     } catch (err) {
       setError(errMsg(err, 'Failed to update target'));
+      throw err;
+    }
+  };
+
+  // ─── Fill guide bulk operations ────────────────────────────────────────────
+  // One fill can touch dozens of cells; these write in a handful of requests
+  // instead of one per cell, and return the affected rows so the caller can
+  // build an undo snapshot.
+
+  const bulkUpsertTargets = async (
+    rows: Array<{
+      macro_week_id: string;
+      tracked_exercise_id: string;
+      fields: Partial<MacroTarget>;
+    }>,
+  ): Promise<MacroTarget[]> => {
+    if (rows.length === 0) return [];
+    try {
+      // PostgREST bulk upsert requires uniform keys per request — group rows
+      // by field signature (a fill writes a uniform set; undo restores full
+      // rows, also uniform).
+      const groups = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const sig = Object.keys(row.fields).sort().join(',');
+        const list = groups.get(sig) ?? [];
+        list.push(row);
+        groups.set(sig, list);
+      }
+      const returned: MacroTarget[] = [];
+      for (const group of groups.values()) {
+        const payload = group.map(r => ({
+          macro_week_id: r.macro_week_id,
+          tracked_exercise_id: r.tracked_exercise_id,
+          ...r.fields,
+        }));
+        const { data, error } = await supabase
+          .from('macro_targets')
+          .upsert(payload, { onConflict: 'macro_week_id,tracked_exercise_id' })
+          .select();
+        if (error) throw error;
+        returned.push(...(data ?? []));
+      }
+      setTargets(prev => {
+        const byId = new Map(prev.map(t => [t.id, t]));
+        for (const row of returned) byId.set(row.id, row);
+        return Array.from(byId.values());
+      });
+      return returned;
+    } catch (err) {
+      setError(errMsg(err, 'Failed to write targets'));
+      throw err;
+    }
+  };
+
+  const bulkDeleteTargets = async (ids: string[]): Promise<void> => {
+    if (ids.length === 0) return;
+    try {
+      const { error } = await supabase.from('macro_targets').delete().in('id', ids);
+      if (error) throw error;
+      setTargets(prev => prev.filter(t => !ids.includes(t.id)));
+    } catch (err) {
+      setError(errMsg(err, 'Failed to delete targets'));
+      throw err;
+    }
+  };
+
+  const bulkUpdateWeeks = async (
+    updates: Array<{ id: string } & Partial<Pick<MacroWeek, 'week_type' | 'week_type_text' | 'total_reps_target'>>>,
+  ): Promise<void> => {
+    if (updates.length === 0) return;
+    const originals = macroWeeks.filter(w => updates.some(u => u.id === w.id));
+    setMacroWeeks(prev => prev.map(w => {
+      const u = updates.find(x => x.id === w.id);
+      return u ? { ...w, ...u } : w;
+    }));
+    try {
+      await Promise.all(updates.map(async ({ id, ...fields }) => {
+        const { error } = await supabase.from('macro_weeks').update(fields).eq('id', id);
+        if (error) throw error;
+      }));
+    } catch (err) {
+      setMacroWeeks(prev => prev.map(w => originals.find(o => o.id === w.id) ?? w));
+      setError(errMsg(err, 'Failed to update weeks'));
+      throw err;
+    }
+  };
+
+  /** Persist a tracked exercise's reference load (for %-anchored fills). */
+  const updateTrackedExerciseReference = async (id: string, referenceKg: number | null): Promise<void> => {
+    const original = trackedExercises.find(te => te.id === id);
+    setTrackedExercises(prev => prev.map(te => te.id === id ? { ...te, reference_kg: referenceKg } : te));
+    try {
+      const { error } = await supabase
+        .from('macro_tracked_exercises')
+        .update({ reference_kg: referenceKg })
+        .eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      if (original) setTrackedExercises(prev => prev.map(te => te.id === id ? original : te));
+      setError(errMsg(err, 'Failed to update reference'));
       throw err;
     }
   };
@@ -940,8 +1057,13 @@ export function useMacroCycles() {
     swapTrackedExercisePositions,
     removeTrackedExercise,
     reorderTrackedExercise,
+    updateMacrocycleLayout,
     fetchTargets,
     upsertTarget,
+    bulkUpsertTargets,
+    bulkDeleteTargets,
+    bulkUpdateWeeks,
+    updateTrackedExerciseReference,
     fetchMacroTargetForExercise,
     fetchMacroValidationData,
     fetchPhases,

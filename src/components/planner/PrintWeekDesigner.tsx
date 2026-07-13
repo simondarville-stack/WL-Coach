@@ -737,7 +737,8 @@ function ExerciseRow({
               ? (ex.combo_notation || (members?.map(m => m.exercise.name).join(' + ') ?? ex.exercise.name))
               : ex.exercise.name}
           </h3>
-          {options.showVariationNotes && ex.variation_note && (
+          {/* Legacy variation_note fallback — the folded note (ex.notes) renders via showExerciseNotes */}
+          {options.showVariationNotes && !ex.notes?.trim() && ex.variation_note && (
             <span className="dz-variation">{ex.variation_note}</span>
           )}
           {ex.is_combo && <span className="dz-badge dz-badge-combo">Combo</span>}

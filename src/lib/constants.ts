@@ -1,10 +1,52 @@
-import type { DefaultUnit, PhaseTypePreset } from './database.types';
+import type { DefaultUnit, PhaseTypePreset, RhythmPreset } from './database.types';
 
 export const DEFAULT_PHASE_TYPE_PRESETS: PhaseTypePreset[] = [
   { value: 'preparatory', label: 'Preparatory', color: '#DBEAFE' },
   { value: 'strength',    label: 'Strength',    color: '#FEE2E2' },
   { value: 'competition', label: 'Competition', color: '#FEF3C7' },
   { value: 'transition',  label: 'Transition',  color: '#F3F4F6' },
+];
+
+/**
+ * Default fill-guide rhythm presets (general_settings.rhythm_presets = NULL).
+ * The weektype preset's `mult` keys match the default week types (h/m/g from
+ * the week_types column default); coach-added types fall back to 100/100 in
+ * the engine, so custom week-type sets never break a preset.
+ */
+export const DEFAULT_RHYTHM_PRESETS: RhythmPreset[] = [
+  {
+    id: 'weektype-wave', name: 'Week-type wave', mode: 'weektype',
+    mult: {
+      h: { load: 100, reps: 100 },
+      m: { load: 95,  reps: 100 },
+      g: { load: 88,  reps: 105 },
+    },
+  },
+  {
+    id: 'step-3-1', name: '3:1 step build', mode: 'pattern',
+    pattern: [
+      { load: 94,  reps: 105 },
+      { load: 98,  reps: 100 },
+      { load: 102, reps: 92 },
+      { load: 86,  reps: 70 },
+    ],
+    stampTypes: ['m', 'h', 'h', 'g'],
+  },
+  {
+    id: 'undulating', name: 'Undulating', mode: 'pattern',
+    pattern: [
+      { load: 100, reps: 95 },
+      { load: 88,  reps: 118 },
+      { load: 106, reps: 82 },
+      { load: 92,  reps: 108 },
+    ],
+    stampTypes: null,
+  },
+  {
+    id: 'flat', name: 'Flat (trend only)', mode: 'pattern',
+    pattern: [{ load: 100, reps: 100 }],
+    stampTypes: null,
+  },
 ];
 
 export const DEFAULT_UNITS: { value: DefaultUnit; label: string }[] = [

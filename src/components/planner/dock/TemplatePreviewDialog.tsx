@@ -183,7 +183,7 @@ function ExercisePreview({ ex }: { ex: ProgramTemplateFull['days'][number]['exer
         <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)' }}>
           {ex.exercise.name}
         </span>
-        {ex.variation_note && (
+        {!ex.notes?.trim() && ex.variation_note && (
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
             {ex.variation_note}
           </span>
