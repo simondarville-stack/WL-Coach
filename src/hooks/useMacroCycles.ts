@@ -947,8 +947,16 @@ export function useMacroCycles() {
             const combo = weekCombos.find(c => c.id === ci.planned_combo_id);
             if (!combo || combo.unit !== 'absolute_kg') return;
             weekComboSetLines.filter(csl => csl.planned_combo_id === ci.planned_combo_id).forEach(line => {
-              const repsTuple = line.reps_tuple_text.split('+').map((r: string) => parseInt(r.trim(), 10));
-              const repsForEx = repsTuple[ci.position - 1] || 0;
+              // reps_tuple_text is normally a bare tuple ("2+2+2"), but honor an
+              // optional round multiplier "m(a+b)" (Option A: reps ×m, the set
+              // count is unchanged) so this legacy combo counter matches the
+              // planner's grouping semantics. Migration-free — no writer exists
+              // for this table today, so this is defensive/forward-compatible.
+              const rawTuple = line.reps_tuple_text.trim();
+              const grouped = rawTuple.match(/^(\d+)\((.+)\)$/);
+              const roundMult = grouped ? (parseInt(grouped[1], 10) || 1) : 1;
+              const repsTuple = (grouped ? grouped[2] : rawTuple).split('+').map((r: string) => parseInt(r.trim(), 10));
+              const repsForEx = (repsTuple[ci.position - 1] || 0) * roundMult;
               const weight = line.load_value || 0;
               const sets = line.sets || 1;
               const lineReps = repsForEx * sets;

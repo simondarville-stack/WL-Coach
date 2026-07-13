@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Pencil, Trash2, ArrowLeft, AlertTriangle } from 'lucide-react';
 import type { MacroPhase, MacroWeek, PhaseType, PhaseTypePreset } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../../lib/constants';
@@ -70,6 +70,7 @@ function CoverageStrip({
   highlightColor,
   highlightId,
   startWeekNum = 1,
+  onSelectRange,
 }: {
   totalWeeks: number;
   phases: MacroPhase[];
@@ -79,15 +80,35 @@ function CoverageStrip({
   highlightId?: string;
   /** First real week_number (usually 1) so cells map to actual weeks. */
   startWeekNum?: number;
+  /** When provided, the strip is interactive: click a cell to set the start,
+   *  drag across cells to set the whole range (start..end). */
+  onSelectRange?: (start: number, end: number) => void;
 }) {
+  // Hooks must run unconditionally (before the totalWeeks===0 early return).
+  const anchorRef = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!dragging) return;
+    const stop = () => { setDragging(false); anchorRef.current = null; };
+    window.addEventListener('pointerup', stop);
+    return () => window.removeEventListener('pointerup', stop);
+  }, [dragging]);
+
   if (totalWeeks === 0) return null;
+  const interactive = !!onSelectRange;
   const showNums = totalWeeks <= 24;
   const swatch = (bg: string) => (
     <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, display: 'inline-block', border: '0.5px solid var(--color-border-secondary)' }} />
   );
+  const beginAt = (n: number) => { anchorRef.current = n; setDragging(true); onSelectRange?.(n, n); };
+  const extendTo = (n: number) => {
+    const a = anchorRef.current;
+    if (!dragging || a == null) return;
+    onSelectRange?.(Math.min(a, n), Math.max(a, n));
+  };
   return (
     <div>
-      <div className="flex w-full rounded overflow-hidden" style={{ height: showNums ? 16 : 14 }}>
+      <div className="flex w-full rounded overflow-hidden" style={{ height: showNums ? 16 : 14, touchAction: interactive ? 'none' : undefined }}>
         {Array.from({ length: totalWeeks }, (_, i) => startWeekNum + i).map(n => {
           const isHighlighted = highlightStart !== undefined && highlightEnd !== undefined && n >= highlightStart && n <= highlightEnd;
           const existing = phases.find(p => p.id !== highlightId && n >= p.start_week_number && n <= p.end_week_number);
@@ -100,8 +121,18 @@ function CoverageStrip({
             <div
               key={n}
               className="flex items-center justify-center"
-              style={{ flex: 1, background, borderRight: '1px solid var(--color-bg-primary)', fontSize: 8, fontWeight: 600, color: textColor }}
-              title={existing ? existing.name : isHighlighted ? 'New phase' : `Wk ${n} · free`}
+              onPointerDown={interactive ? (e => {
+                e.preventDefault();
+                // Touch/pen implicitly capture the pointer to this cell on
+                // pointerdown, which suppresses pointerenter on the other cells
+                // mid-drag. Release it so the range-drag (driven by
+                // onPointerEnter → extendTo) works on touch, not just mouse.
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                beginAt(n);
+              }) : undefined}
+              onPointerEnter={interactive ? (() => extendTo(n)) : undefined}
+              style={{ flex: 1, background, borderRight: '1px solid var(--color-bg-primary)', fontSize: 8, fontWeight: 600, color: textColor, cursor: interactive ? 'pointer' : undefined, userSelect: 'none' }}
+              title={existing ? existing.name : isHighlighted ? 'New phase' : `Wk ${n} · free${interactive ? ' · click/drag to select' : ''}`}
             >
               {showNums ? n : ''}
             </div>
@@ -112,6 +143,7 @@ function CoverageStrip({
         <span className="flex items-center gap-1">{swatch(FREE_CELL_BG)} free</span>
         <span className="flex items-center gap-1">{swatch('var(--color-text-tertiary)')} claimed</span>
         <span className="flex items-center gap-1">{swatch('#ef4444')} overlap</span>
+        {interactive && <span className="ml-auto italic">click a week, drag to set range</span>}
       </div>
     </div>
   );
@@ -271,6 +303,7 @@ function FormView({ macrocycleId, macroWeeks, phases, editingPhase, nextPosition
             highlightEnd={endWeek}
             highlightColor={color}
             highlightId={editingPhase?.id}
+            onSelectRange={(s, e) => { setStartWeek(s); setEndWeek(e); }}
           />
           <FreeWeeksSummary weekNums={weekNums} phases={phases} excludeId={editingPhase?.id} />
         </div>

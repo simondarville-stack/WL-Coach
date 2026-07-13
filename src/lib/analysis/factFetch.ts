@@ -501,7 +501,13 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       for (const s of completedSets) {
         const load = s.performed_load ?? 0;
         const raw = (s.performed_text ?? '').trim();
-        const parts = raw.includes('+') ? raw.split('+').map((p) => parseInt(p, 10) || 0) : null;
+        // Strip an optional round multiplier "m(a+b)" and scale each member's
+        // reps by m (m rounds of the tuple) — Option A: the round still counts
+        // as one logged set, only the per-member reps grow.
+        const group = raw.match(/^(\d+)\((.+)\)$/);
+        const mult = group ? (parseInt(group[1], 10) || 1) : 1;
+        const body = group ? group[2] : raw;
+        const parts = body.includes('+') ? body.split('+').map((p) => (parseInt(p, 10) || 0) * mult) : null;
 
         if (!parts) {
           // No per-member tuple (numeric-only entry) — attribute the round to

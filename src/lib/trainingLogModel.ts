@@ -303,14 +303,25 @@ export function parseNumericInput(text: string): number | null {
  * the athlete echoes it back ("2+2+2"), naive parseFloat silently drops
  * everything after the first digit. Summing the parts preserves their
  * intent in performed_reps.
+ *
+ * Round-grouped combos also show the coach's "m(a+b)" placeholder (m rounds
+ * of the tuple), so echoing "2(1+1)" must sum to m × Σ(parts) = 4, matching
+ * the planner's Option-A multiplier semantics.
  */
 export function parseRepsInput(text: string): number | null {
   const trimmed = text.trim();
   if (trimmed === '') return null;
-  if (!trimmed.includes('+')) return parseNumericInput(trimmed);
-  const parts = trimmed.split('+').map(p => parseNumericInput(p));
+  // Strip an optional round multiplier "m(...)"; the reps scale by m.
+  const group = trimmed.match(/^(\d+)\((.+)\)$/);
+  const mult = group ? (parseInt(group[1], 10) || 1) : 1;
+  const body = group ? group[2] : trimmed;
+  if (!body.includes('+')) {
+    const n = parseNumericInput(body);
+    return n == null ? null : n * mult;
+  }
+  const parts = body.split('+').map(p => parseNumericInput(p));
   if (parts.some(p => p == null)) return null;
-  return (parts as number[]).reduce((a, b) => a + b, 0);
+  return (parts as number[]).reduce((a, b) => a + b, 0) * mult;
 }
 
 // ─── Delta colour helpers ────────────────────────────────────────────────────
