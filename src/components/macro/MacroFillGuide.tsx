@@ -133,6 +133,13 @@ export function MacroFillGuide({
   }, [plan]);
   useEffect(() => () => onPreviewChange(null), [onPreviewChange]);
 
+  // Escape closes the popup (standard dismissal, matching the app's modals)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // Chart anchor handles drive the guide's from/to values (kg → active unit).
   useEffect(() => {
     if (!registerAnchorSetter) return;

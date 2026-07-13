@@ -238,7 +238,7 @@ export function WeekReviewPanel({
     for (const [cat, plannedStats] of cats) {
       const doneStats = performed.byCategory.get(cat);
       if (!doneStats) continue;
-      pushTotal(`${cat} K`, doneStats.reps, plannedStats.reps, fmt);
+      pushTotal(`${cat} Σreps`, doneStats.reps, plannedStats.reps, fmt);
     }
   }
 
@@ -298,7 +298,7 @@ export function WeekReviewPanel({
             <button
               onClick={() => onSelectWeek(nextWeekStart)}
               title={nextIntent
-                ? `Plan W${nextIntent.weekNumber}${nextIntent.weekType ? ` · ${nextIntent.weekType}` : ''}${nextIntent.repsTarget != null ? ` · K ${nextIntent.repsTarget}` : ''}${nextIntent.notes ? ` · ✎ ${nextIntent.notes}` : ''}`
+                ? `Plan W${nextIntent.weekNumber}${nextIntent.weekType ? ` · ${nextIntent.weekType}` : ''}${nextIntent.repsTarget != null ? ` · Σreps ${nextIntent.repsTarget}` : ''}${nextIntent.notes ? ` · ✎ ${nextIntent.notes}` : ''}`
                 : 'Plan next week'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -342,9 +342,12 @@ export function WeekReviewPanel({
               <div style={{ fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
                 {t.label}
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}>
+              <div
+                style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, whiteSpace: 'nowrap' }}
+                title="done ∕ planned"
+              >
                 <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>{t.done}</span>
-                {t.planned != null && <span style={{ color: 'var(--color-text-tertiary)' }}> / {t.planned}</span>}
+                {t.planned != null && <span style={{ color: 'var(--color-text-tertiary)' }}> ∕ {t.planned}</span>}
                 {t.pct != null && (
                   <span style={{
                     marginLeft: 4, fontSize: 10, fontWeight: 700,

@@ -7,6 +7,7 @@ import { MacroGridCell } from './MacroGridCell';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor } from '../../lib/weekUtils';
+import { getISOWeek as isoWeekOfDate, formatDateShort, addDaysToISO } from '../../lib/dateUtils';
 
 export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
 
@@ -14,7 +15,7 @@ export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'week
 
 export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
   week: 'Week',
-  weektype: 'Week style',
+  weektype: 'Week type',
   k: 'Σreps',
   tonnage: 'Tonnage',
   avg: 'Avg intensity',
@@ -103,26 +104,10 @@ function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
 const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'notes'];
 const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, weektype: 56, notes: 100 };
 
-// ISO calendar week number from a date string
+// Week helpers delegate to dateUtils — one ISO-week implementation, one
+// padded DD/MM day-first format across the app (product requirement).
 function getISOWeek(dateStr: string): number {
-  const d = new Date(dateStr);
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-}
-
-// European day-first D/M (product requirement — never month-first)
-function formatDateDM(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
+  return isoWeekOfDate(new Date(dateStr + 'T00:00:00'));
 }
 
 export function MacroTableV2({
@@ -544,9 +529,6 @@ export function MacroTableV2({
                   key={week.id}
                   className={`transition-colors ${dropWeekId === week.id && dragWeekId !== week.id ? 'outline outline-2 outline-blue-400 outline-offset-[-1px]' : ''}`}
                   style={phaseColor ? { backgroundColor: phaseColor + '0D' } : undefined}
-                  draggable={!!onSwapWeeks}
-                  onDragStart={() => setDragWeekId(week.id)}
-                  onDragEnd={() => { setDragWeekId(null); setDropWeekId(null); }}
                   onDragOver={e => { e.preventDefault(); setDropWeekId(week.id); }}
                   onDragLeave={() => setDropWeekId(null)}
                   onDrop={() => {
@@ -565,7 +547,7 @@ export function MacroTableV2({
                         <span className="text-[12px] font-medium leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
                         <span className="text-[9px] font-medium leading-none mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
                         <span className="text-[7px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-                          {formatDateDM(week.week_start)}–{addDays(week.week_start, 6)}
+                          {formatDateShort(week.week_start)}–{formatDateShort(addDaysToISO(week.week_start, 6))}
                         </span>
                       </div>
                     </td>
@@ -869,13 +851,13 @@ export function MacroTableV2({
                         }
                         if (mk === 'avg') {
                           return (
-                            <td key={mk} className={`${firstBorder}text-center font-mono text-[9px] italic px-1 py-0`} style={ghostStyle} title={ghostTitle}>
+                            <td key={mk} className={`${firstBorder}text-center font-mono text-[10px] italic px-1 py-0`} style={ghostStyle} title={ghostTitle}>
                               {previewCell.avg ?? avgVal ?? ''}
                             </td>
                           );
                         }
                         return (
-                          <td key={mk} className={`${firstBorder}text-center font-mono text-[10px] italic px-1 py-0`} style={ghostStyle} title={ghostTitle}>
+                          <td key={mk} className={`${firstBorder}text-center font-mono text-[9px] italic px-1 py-0`} style={ghostStyle} title={ghostTitle}>
                             {previewCell.reps ?? repsVal ?? ''}
                           </td>
                         );
@@ -903,7 +885,7 @@ export function MacroTableV2({
                         return (
                           <td
                             key={mk}
-                            className={`${firstBorder}relative text-center font-mono text-[9px] cursor-pointer select-none px-1 py-0 transition-colors ${
+                            className={`${firstBorder}relative text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 transition-colors ${
                               avgIsDeleteTarget
                                 ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
                                 : 'hover:bg-[var(--color-accent-muted)]'
@@ -919,7 +901,7 @@ export function MacroTableV2({
                                   type="number"
                                   defaultValue={avgVal ?? ''}
                                   autoFocus
-                                  className="no-spin w-[32px] text-center font-mono text-[9px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                                  className="no-spin w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                   onBlur={(e) => {
                                     onUpdateTarget(week.id, te.id, 'target_avg', e.target.value);
                                     setEditingCell(null);
@@ -931,7 +913,7 @@ export function MacroTableV2({
                                 />
                               </div>
                             ) : (
-                              <span className={avgVal !== null ? (avgIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[8px]'}>
+                              <span className={avgVal !== null ? (avgIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[9px]'}>
                                 {avgVal !== null ? avgVal : (prevAvg !== null ? prevAvg : '-')}
                               </span>
                             )}
@@ -942,7 +924,7 @@ export function MacroTableV2({
                       return (
                         <td
                           key={mk}
-                          className={`${firstBorder}relative text-center font-mono text-[10px] cursor-pointer select-none px-1 py-0 transition-colors ${
+                          className={`${firstBorder}relative text-center font-mono text-[9px] cursor-pointer select-none px-1 py-0 transition-colors ${
                             repsIsDeleteTarget
                               ? 'bg-[var(--color-danger-bg)] hover:bg-[var(--color-danger-bg)]'
                               : 'hover:bg-[var(--color-accent-muted)]'
@@ -958,7 +940,7 @@ export function MacroTableV2({
                                 type="number"
                                 defaultValue={repsVal ?? ''}
                                 autoFocus
-                                className="no-spin w-[32px] text-center font-mono text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
+                                className="no-spin w-[32px] text-center font-mono text-[9px] border-none outline-none bg-[var(--color-accent-muted)] rounded"
                                 onBlur={(e) => {
                                   onUpdateTarget(week.id, te.id, 'target_reps', e.target.value);
                                   setEditingCell(null);
@@ -970,7 +952,7 @@ export function MacroTableV2({
                               />
                             </div>
                           ) : (
-                            <span className={repsVal !== null ? (repsIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[9px]'}>
+                            <span className={repsVal !== null ? (repsIsDeleteTarget ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]') : 'text-[color:var(--color-text-tertiary)] italic text-[8px]'}>
                               {repsVal !== null ? repsVal : (prevReps !== null ? prevReps : '-')}
                             </span>
                           )}
@@ -1028,7 +1010,13 @@ export function MacroTableV2({
                     <td
                       className="w-5 px-0 text-center select-none cursor-grab active:cursor-grabbing"
                       style={{ color: 'var(--color-text-tertiary)' }}
-                      title="Drag to reorder weeks"
+                      title="Drag to swap this week with another"
+                      // Drag source is the HANDLE only — a whole-row drag source
+                      // swallowed the cells' click grammar and invited accidental
+                      // week swaps. The row stays the drop target.
+                      draggable
+                      onDragStart={() => setDragWeekId(week.id)}
+                      onDragEnd={() => { setDragWeekId(null); setDropWeekId(null); }}
                     >
                       <span className="text-[10px]">⠿</span>
                     </td>
@@ -1040,7 +1028,7 @@ export function MacroTableV2({
             // Summary / average row — grey bg, small italic non-bold text so it reads as metadata not entries
             // ── Average row ────────────────────────────────────────────────────────
             const avgBg = 'bg-[var(--color-bg-secondary)]';
-            const summaryText = 'font-normal italic text-[color:var(--color-text-tertiary)] text-[7px]';
+            const summaryText = 'font-normal italic text-[color:var(--color-text-tertiary)] text-[8px]';
             rows.push(
               <tr key="avg-row" className={`border-t-2 border-gray-400 ${avgBg}`}>
                 {showCol('week') && (

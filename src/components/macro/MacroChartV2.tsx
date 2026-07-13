@@ -29,6 +29,7 @@ import type {
 } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
 import type { FillGuidePreview } from './fillGuidePlan';
+import { GENERAL_METRIC_COLORS } from './ExerciseToggleBar';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 
@@ -59,9 +60,9 @@ const PAD_B = 36;
 const PAD_L = 40;
 
 const GENERAL = {
-  k: { label: 'Σreps target', color: '#334155', axis: 'reps' as const, field: 'total_reps_target' as const, snap: (v: number) => Math.round(v), toKg: (v: number) => Math.round(v) },
-  tonnage: { label: 'Ton target (t)', color: '#B45309', axis: 'reps' as const, field: 'tonnage_target' as const, snap: (v: number) => Math.round(v * 10) / 10, toKg: (v: number) => Math.round(v * 10) * 100 },
-  avg: { label: 'Avg int. target', color: '#0F766E', axis: 'kg' as const, field: 'avg_intensity_target' as const, snap: (v: number) => Math.round(v), toKg: (v: number) => Math.round(v) },
+  k: { label: 'Σreps target', color: GENERAL_METRIC_COLORS.k, axis: 'reps' as const, field: 'total_reps_target' as const, snap: (v: number) => Math.round(v), toKg: (v: number) => Math.round(v) },
+  tonnage: { label: 'Ton target (t)', color: GENERAL_METRIC_COLORS.tonnage, axis: 'reps' as const, field: 'tonnage_target' as const, snap: (v: number) => Math.round(v * 10) / 10, toKg: (v: number) => Math.round(v * 10) * 100 },
+  avg: { label: 'Avg int. target', color: GENERAL_METRIC_COLORS.avg, axis: 'kg' as const, field: 'avg_intensity_target' as const, snap: (v: number) => Math.round(v), toKg: (v: number) => Math.round(v) },
 } as const;
 type GeneralKey = keyof typeof GENERAL;
 

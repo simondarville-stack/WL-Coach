@@ -746,7 +746,7 @@ export function GeneralSettings() {
         </div>
         <div className="flex gap-3">
           {([
-            { value: 'reps' as const, label: 'Total reps (K)', hint: 'Macro K targets vs. week-planned reps' },
+            { value: 'reps' as const, label: 'Σreps', hint: 'Macro Σreps targets vs. week-planned reps' },
             { value: 'tonnage' as const, label: 'Tonnage', hint: 'Macro tonnage targets vs. week-planned kg volume' },
           ] as const).map(({ value, label, hint }) => {
             const active = (settings?.timeline_metric ?? 'reps') === value;
@@ -776,7 +776,7 @@ export function GeneralSettings() {
           </p>
           <div className="flex gap-4">
             {([
-              { value: 'reps' as const, label: 'Rep target (K)' },
+              { value: 'reps' as const, label: 'Σreps target' },
               { value: 'max' as const, label: 'Max target' },
               { value: 'avg' as const, label: 'Average target' },
             ] as const).map(({ value, label }) => {

@@ -6,7 +6,7 @@
  * "Exact copy (kg)" stores kilograms as they stand. Reps/Σreps/notes stay
  * absolute in both.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui';
 import type { MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, MacroWeek } from '../../lib/database.types';
@@ -40,6 +40,13 @@ export function MacroTemplateSaveModal({
     () => buildTemplatePayload(mode, macroWeeks, phases, trackedExercises, targets),
     [mode, macroWeeks, phases, trackedExercises, targets],
   );
+
+  // Escape closes the modal
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const cellCount = payload.exercises.reduce((s, ex) => s + ex.targets.length, 0);
 
   const handleSave = async () => {
@@ -70,6 +77,7 @@ export function MacroTemplateSaveModal({
             <input
               type="text"
               value={name}
+              autoFocus
               onChange={e => setName(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"
             />

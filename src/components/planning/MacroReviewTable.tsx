@@ -207,7 +207,9 @@ export function MacroReviewTableView({
     ...weeks.map((_, i) =>
       i === selectedIdx && detailCount > 1
         ? `minmax(${detailCount * 58}px, ${detailCount}fr)`
-        : 'minmax(0, 1fr)'
+        // 58px floor fits a 3-digit planned∕target∕done triple — long macros
+        // scroll horizontally instead of silently clipping digits.
+        : 'minmax(58px, 1fr)'
     ),
   ].join(' ');
 
@@ -249,7 +251,8 @@ export function MacroReviewTableView({
   };
 
   return (
-    <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums' }}>
+    <div style={{ overflowX: 'auto' }}>
+    <div style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', width: 'fit-content', minWidth: '100%' }}>
       {/* Header: week numbers + note dots */}
       <div style={{ display: 'grid', gridTemplateColumns }}>
         <div style={{
@@ -414,6 +417,7 @@ export function MacroReviewTableView({
           ))}
         </div>
       ))}
+    </div>
     </div>
   );
 }

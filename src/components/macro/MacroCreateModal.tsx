@@ -56,6 +56,13 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
 
   const template = templates.find(t => t.id === templateId);
 
+  // Escape closes the modal
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // Template drives the length: end date follows the start date automatically.
   useEffect(() => {
     if (template && startDate) setEndDate(endDateForWeeks(startDate, template.week_count));
@@ -137,7 +144,11 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
                 </select>
                 {template && onDeleteTemplate && (
                   <button
-                    onClick={() => { void onDeleteTemplate(template.id); setTemplateId(''); }}
+                    onClick={() => {
+                      if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return;
+                      void onDeleteTemplate(template.id);
+                      setTemplateId('');
+                    }}
                     className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-danger-text)]"
                     title="Delete this template"
                   >
@@ -158,6 +169,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
             <input
               type="text"
               value={name}
+              autoFocus
               onChange={e => setName(e.target.value)}
               placeholder="e.g. 2026 Olympic Prep"
               className="w-full px-3 py-2 text-sm border border-[color:var(--color-border-tertiary)] rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-border)]"

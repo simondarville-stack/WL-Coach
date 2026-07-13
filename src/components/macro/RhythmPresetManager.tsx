@@ -10,7 +10,7 @@
  * Every preset row shows a sparkline (solid = load %, dotted = reps %) so
  * undulating vs step vs flat is recognisable at a glance.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Plus, Trash2, X } from 'lucide-react';
 import type { RhythmPreset, RhythmStep, WeekTypeConfig } from '../../lib/database.types';
 
@@ -61,6 +61,13 @@ export function RhythmPresetManager({ presets, weekTypes, onSave, onClose }: Rhy
   const [draft, setDraft] = useState<RhythmPreset[]>(() => JSON.parse(JSON.stringify(presets)) as RhythmPreset[]);
   const [selectedId, setSelectedId] = useState<string>(presets[0]?.id ?? '');
   const [saving, setSaving] = useState(false);
+
+  // Escape closes without saving (draft edits are discarded, like Cancel)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const selected = draft.find(p => p.id === selectedId) ?? draft[0];
 

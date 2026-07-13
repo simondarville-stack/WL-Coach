@@ -1,5 +1,6 @@
 import type { MacroWeek, MacroTarget, MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
+import { getExerciseCategoryShade } from '../../lib/colorUtils';
 
 interface MacroSummaryBarProps {
   macroWeeks: MacroWeek[];
@@ -28,7 +29,12 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
         .filter(t => t.tracked_exercise_id === te.id && t.target_max !== null)
         .map(t => t.target_max as number),
     );
-    return { name: te.exercise.exercise_code || te.exercise.name, color: te.exercise.color, peak };
+    return {
+      name: te.exercise.exercise_code || te.exercise.name,
+      // Same shade the table header / chart legend / toggle chips use
+      color: getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, trackedExercises),
+      peak,
+    };
   }).filter(x => x.peak > 0);
 
   return (
@@ -48,7 +54,7 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
         <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Actual so far:</span>
         <span>{totalActualReps.toLocaleString('da-DK')} reps</span>
         {totalTargetReps > 0 && (
-          <span style={{ color: 'var(--color-text-tertiary)' }}>({Math.round((totalActualReps / totalTargetReps) * 100)}%)</span>
+          <span style={{ color: 'var(--color-text-tertiary)' }}>({Math.round((totalActualReps / totalTargetReps) * 100)} %)</span>
         )}
       </div>
       <div className="flex items-center gap-1">
@@ -57,11 +63,11 @@ export function MacroSummaryBar({ macroWeeks, targets, trackedExercises, actuals
       </div>
       {peakHiPerExercise.length > 0 && (
         <div className="flex items-center gap-2 ml-auto">
-          <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Peak Hi:</span>
+          <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>Peak max:</span>
           {peakHiPerExercise.map(ex => (
             <span key={ex.name} className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ex.color }} />
-              <span>{ex.name}: {ex.peak}kg</span>
+              <span>{ex.name}: {ex.peak.toLocaleString('da-DK')} kg</span>
             </span>
           ))}
         </div>

@@ -123,6 +123,7 @@ export function MacroGridCell({
       <div
         className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-[var(--color-accent-muted)]"
         style={{ minWidth: 52, height: 38 }}
+        title={hasPrev ? "Click to start from last week's value" : 'Click to start a max set · Ctrl+click to type'}
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
@@ -250,6 +251,7 @@ export function MacroGridCell({
           className={`text-[11px] font-mono font-medium cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]'
           }`}
+          title={isDeleteMode ? 'Click to clear' : 'Load: click +1 · right-click −1 · Ctrl+click to type'}
           onClick={handleLoadClick}
           onContextMenu={handleLoadClick}
         >
@@ -260,6 +262,7 @@ export function MacroGridCell({
           className={`text-[9px] font-mono cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)]'
           }`}
+          title={isDeleteMode ? 'Click to clear' : 'Reps: click +1 · right-click −1 · Ctrl+click to type'}
           onClick={handleRepsClick}
           onContextMenu={handleRepsClick}
         >
@@ -274,6 +277,7 @@ export function MacroGridCell({
             ? 'opacity-0 group-hover:opacity-40'
             : (isDeleteMode ? 'opacity-80 text-[color:var(--color-danger-text)]' : 'opacity-80 text-[color:var(--color-text-tertiary)]')
         } ${isDeleteMode && !setsIsOne ? '' : 'text-[color:var(--color-text-tertiary)]'}`}
+        title={isDeleteMode ? 'Click to clear' : 'Sets: click +1 · right-click −1'}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
