@@ -65,6 +65,26 @@ the same `createComboExercise` path the modal uses), Backspace on an empty query
 pops the last chip, Escape clears. Opt-in via a new `onAddCombo` prop
 (`DayCard`/`DayEditor` pass it; other call sites keep single-add behaviour).
 
+#Follow-up ideas from the 0.22.0 batch (done 13/07/2026, v0.23.0)
+Four co-designer ideas surfaced alongside the multiplier work, all now done:
+* **Athlete-side multiplier symmetry.** `parseRepsInput` (and the analysis
+  off-plan combo path in `factFetch`) now parse a grouped `m(a+b)` reps entry as
+  `m × Σ(parts)`, so an athlete echoing the coach's `2(1+1)` placeholder logs the
+  right volume — same Option-A semantics as the planner.
+* **Macro combo model honors the multiplier.** Investigation found the macro's
+  structured combo tables (`planned_combos`/`planned_combo_set_lines`) are a
+  **legacy, write-dead model with no editor** — the disambiguation already works
+  for every combo a coach can author today (via the prescription-string model +
+  the multiplier-aware summary cache). Made the one remaining consumer (the
+  legacy combo counter in `useMacroCycles`) honor a grouped `m(a+b)` tuple
+  (reps ×m, sets unchanged), migration-free. See Ideas below for the bigger,
+  still-open consolidation this uncovered.
+* **Removed dead code.** Deleted the orphaned `MacroWeekNotes.tsx` (0 importers;
+  the resizable notes cell was built inline in `MacroTableV2`).
+* **Interactive phase coverage strip.** The phase panel's coverage strip is now
+  click-and-drag — click a week to set the phase start, drag across weeks to set
+  the range — wired live to the start/end selects.
+
 #Macro (done 13/07/2026, v0.22.0)
 * **Editing a macro's dates now updates the table.** Wrong: only an end-date
   change mutated `macro_weeks`; a start-date edit updated the header only, so

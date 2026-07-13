@@ -5,6 +5,7 @@ import {
   computePrescriptionSummary,
 } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
+import { parseRepsInput } from '../trainingLogModel';
 
 // Item #2 — combo round-grouping multiplier "m(a+b)" under Option A:
 // m scales REPS/volume, NOT the set count. m absent = perfect no-op.
@@ -59,6 +60,22 @@ describe('computePrescriptionSummary — Option A (reps ×m, sets unchanged)', (
     expect(flat.total_reps).toBe(6);
     expect(grouped.total_reps).toBe(2 * flat.total_reps);
     expect(grouped.total_sets).toBe(flat.total_sets); // set count unchanged
+  });
+});
+
+describe('parseRepsInput — athlete-side round multiplier (symmetry)', () => {
+  it('sums a bare tuple as before', () => {
+    expect(parseRepsInput('2+2+2')).toBe(6);
+    expect(parseRepsInput('5')).toBe(5);
+  });
+  it('scales a grouped "m(a+b)" echo by m', () => {
+    expect(parseRepsInput('2(1+1)')).toBe(4);   // 2 rounds of 1+1
+    expect(parseRepsInput('3(1+1+1)')).toBe(9);
+    expect(parseRepsInput('2(3)')).toBe(6);      // grouped single part
+  });
+  it('rejects malformed input', () => {
+    expect(parseRepsInput('')).toBeNull();
+    expect(parseRepsInput('2+x')).toBeNull();
   });
 });
 
