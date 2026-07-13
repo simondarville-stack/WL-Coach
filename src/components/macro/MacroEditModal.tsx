@@ -97,7 +97,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
               <DateInput value={startDate} onChange={setStartDate} />
               {startChanged && (
                 <p className="text-[11px] text-amber-600 mt-1">
-                  Changing the start date updates the cycle header only — individual week dates are unchanged.
+                  The whole cycle shifts to the new start — week structure, types and targets are preserved.
                 </p>
               )}
             </div>

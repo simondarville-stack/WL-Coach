@@ -190,6 +190,25 @@ export function DayCard({
     setShowComboModal(false);
   }
 
+  // Inline combo builder: "+" in the search line staged 2+ members. Commits
+  // via the same createComboExercise path as the modal (unit + colour default
+  // to the lead member), so inline and modal combos are byte-identical.
+  async function handleAddComboInline(members: Exercise[]) {
+    if (members.length < 2) return;
+    setAdding(true);
+    try {
+      await createComboExercise(weekPlanId, dayIndex, exercises.length + 1, {
+        exercises: members.map((exercise, i) => ({ exercise, position: i + 1 })),
+        unit: members[0].default_unit,
+        comboName: '',
+        color: members[0].color,
+      });
+      await onRefresh();
+    } finally {
+      setAdding(false);
+    }
+  }
+
   function handleReorder(draggedId: string, targetId: string, pos: 'before' | 'after') {
     const ids = exercises.map(e => e.id);
     const fromIdx = ids.indexOf(draggedId);
@@ -663,6 +682,7 @@ export function DayCard({
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}
+            onAddCombo={members => void handleAddComboInline(members)}
             onSlashCommand={key => void handleSlashCommand(key)}
             placeholder={adding ? '…' : '+ Add exercise...'}
           />

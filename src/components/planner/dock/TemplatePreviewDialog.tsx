@@ -225,7 +225,8 @@ export function readableLines(raw: string | null, unit: string | null, isCombo: 
           : l.loadMax != null
           ? `${l.load}-${l.loadMax}${sym}`
           : `${l.load}${sym}`;
-        return l.sets > 1 ? `${load}×${l.repsText}×${l.sets}` : `${load}×${l.repsText}`;
+        const reps = l.multiplier != null ? `${l.multiplier}(${l.repsText})` : l.repsText;
+        return l.sets > 1 ? `${load}×${reps}×${l.sets}` : `${load}×${reps}`;
       });
     }
     const lines = parsePrescription(raw);

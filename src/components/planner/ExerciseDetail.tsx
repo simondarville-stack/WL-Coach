@@ -1,7 +1,7 @@
 // TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, ArrowLeft, Video, Upload, Save, Replace } from 'lucide-react';
+import { X, ArrowLeft, Video, Upload, Replace } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   PlannedExercise, Exercise,
@@ -219,16 +219,6 @@ export function ExerciseDetail({
     } finally { setSaving(false); }
   }
 
-  async function saveSentinelNotes() {
-    if (!plannedExercise) return;
-    setSaving(true);
-    try {
-      await saveNotes(plannedExercise.id, notes);
-      await onSaved();
-      onClose();
-    } finally { setSaving(false); }
-  }
-
   async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !plannedExercise) return;
@@ -407,7 +397,15 @@ export function ExerciseDetail({
             <span style={sectionHeaderStyle}>Text content</span>
             <textarea
               value={notes}
-              onChange={e => setNotes(e.target.value)}
+              onChange={e => {
+                notesRef.current = e.target.value;
+                setNotes(e.target.value);
+                saveNotesDebounced(plannedExercise.id, e.target.value);
+              }}
+              onBlur={() => {
+                if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+                void saveNotes(plannedExercise.id, notesRef.current);
+              }}
               rows={6}
               placeholder="Type your notes or instructions…"
               className="planner-week-notes"
@@ -719,27 +717,9 @@ export function ExerciseDetail({
         )}
       </div>
 
-      {/* Footer — Save button for sentinels only */}
-      {sentinel && plannedExercise && (
-        <div style={{ flexShrink: 0, borderTop: '1px solid var(--color-border-secondary)', padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', background: 'var(--color-bg-primary)' }}>
-          <button
-            onClick={() => void saveSentinelNotes()}
-            disabled={saving || uploading}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
-              background: saving || uploading ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
-              color: saving || uploading ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
-              border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500,
-              cursor: saving || uploading ? 'not-allowed' : 'pointer',
-              opacity: saving || uploading ? 0.5 : 1,
-              transition: 'background 0.1s',
-            }}
-          >
-            <Save size={14} />
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      )}
+      {/* Sentinel text/video/image fields autosave on blur + debounce (and
+          flush on close via handleClose), matching every other note field —
+          no explicit Save button. Media uploads persist immediately. */}
 
       {/* Combo edit modal — reopens the same creator UI pre-filled */}
       {showComboEditor && plannedExercise && isCombo && (

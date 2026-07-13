@@ -109,7 +109,9 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
                   : `${line.load}${unit === 'percentage' ? '%' : ''}`}
               </span>
               <div style={ruleStyle} />
-              <span style={mono}>{line.repsText}</span>
+              <span style={mono}>
+                {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
+              </span>
             </div>
             {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
           </div>

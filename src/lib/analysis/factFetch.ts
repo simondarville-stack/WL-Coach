@@ -587,7 +587,8 @@ function parsePerformedRaw(raw: string): { reps: number; sets: number; load: num
   const combo = parseComboPrescription(raw);
   if (combo.length > 0) {
     return {
-      reps: combo.reduce((s, l) => s + l.totalReps * l.sets, 0),
+      // Round multiplier scales reps, not the set count (Option A).
+      reps: combo.reduce((s, l) => s + l.totalReps * l.sets * (l.multiplier ?? 1), 0),
       sets: combo.reduce((s, l) => s + l.sets, 0),
       load: Math.max(...combo.map((l) => l.load)),
     };

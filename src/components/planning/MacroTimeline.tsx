@@ -52,6 +52,9 @@ type CommonProps = {
   showMonths?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** Bump to force a re-fetch when the underlying weeks/dates change without
+   *  the ids changing (e.g. a cycle's start date was edited). */
+  reloadKey?: number;
 };
 
 type MacroModeProps = CommonProps & {
@@ -113,7 +116,7 @@ export function MacroTimeline(props: MacroTimelineProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [props.athleteId, props.groupId, cycleId]);
+  }, [props.athleteId, props.groupId, cycleId, props.reloadKey]);
 
   // ── Build week cells ──
   const centerWeekStart =

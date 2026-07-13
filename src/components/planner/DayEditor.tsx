@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft } from 'lucide-react';
+import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
 import { supabase } from '../../lib/supabase';
 import type {
   WeekPlan, PlannedExercise, Exercise,
-  AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry,
+  AthletePR, GeneralSettings, DefaultUnit, ComboMemberEntry, GppSection,
 } from '../../lib/database.types';
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
@@ -13,6 +13,7 @@ import { getOrCreateSentinel } from './sentinelService';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { GppBlockEditor } from './GppBlockEditor';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { Button } from '../ui';
@@ -42,6 +43,8 @@ interface DayEditorProps {
   createComboExercise: (weekPlanId: string, dayIndex: number, position: number, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   saveNotes: (id: string, notes: string) => Promise<unknown>;
+  /** Persist a GPP block payload on a planned_exercise row (mirrors DayCard). */
+  saveGppSection?: (plannedExId: string, section: GppSection) => Promise<void>;
   deletePlannedExercise: (id: string) => Promise<unknown>;
   reorderExercises: (weekPlanId: string, orderedIds: string[]) => Promise<unknown>;
   moveExercise: (weekPlanId: string, exerciseId: string, fromDayIndex: number, toDayIndex: number) => Promise<unknown>;
@@ -78,6 +81,7 @@ export function DayEditor({
   createComboExercise,
   savePrescription,
   saveNotes,
+  saveGppSection,
   deletePlannedExercise,
 }: DayEditorProps) {
   const { createExercise } = useExercises();
@@ -88,6 +92,8 @@ export function DayEditor({
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
+  /** When non-null, opens the GPP editor for that planned_exercise. */
+  const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const pendingSaveRef = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
@@ -159,6 +165,25 @@ export function DayEditor({
     await createComboExercise(weekPlan.id, dayIndex, exercises.length + 1, data);
     await onRefresh();
     setShowComboModal(false);
+  }
+
+  // Inline combo builder: "+" in the search line staged 2+ members. Commits
+  // through the same createComboExercise path the modal uses, so inline and
+  // modal combos are identical (unit + colour default to the lead member).
+  async function handleAddComboInline(members: Exercise[]) {
+    if (members.length < 2) return;
+    setAdding(true);
+    try {
+      await createComboExercise(weekPlan.id, dayIndex, exercises.length + 1, {
+        exercises: members.map((exercise, i) => ({ exercise, position: i + 1 })),
+        unit: members[0].default_unit,
+        comboName: '',
+        color: members[0].color,
+      });
+      await onRefresh();
+    } finally {
+      setAdding(false);
+    }
   }
 
   function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
@@ -351,6 +376,18 @@ export function DayEditor({
                       <ImageIcon size={12} style={{ color: '#EC4899', flexShrink: 0 }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', flex: 1 }}>Image</span>
                     </>
+                  ) : sentinel === 'gpp' ? (
+                    <>
+                      <Dumbbell size={12} style={{ color: '#10B981', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        {ex.metadata?.gpp?.title || 'GPP'}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', flexShrink: 0 }}>
+                        {ex.metadata?.gpp?.rows?.length
+                          ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
+                          : 'click to edit'}
+                      </span>
+                    </>
                   ) : ex.is_combo && members ? (
                     <>
                       <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
@@ -402,8 +439,8 @@ export function DayEditor({
                       size="sm"
                       iconOnly
                       icon={<GearIcon size={16} />}
-                      title="Detail"
-                      onClick={() => onNavigateToExercise(ex.id)}
+                      title={sentinel === 'gpp' ? 'Edit GPP' : 'Detail'}
+                      onClick={() => sentinel === 'gpp' ? setEditingGpp(ex) : onNavigateToExercise(ex.id)}
                     />
                     <Button
                       variant="danger"
@@ -471,6 +508,37 @@ export function DayEditor({
                       <img src={ex.notes} alt="" style={{ borderRadius: 4, width: '100%', maxWidth: 200, objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                     )}
                   </div>
+                ) : sentinel === 'gpp' ? (
+                  <div
+                    onClick={() => setEditingGpp(ex)}
+                    title="Click to edit GPP block"
+                    style={{ padding: '8px 12px', cursor: 'pointer' }}
+                  >
+                    {ex.metadata?.gpp?.rows?.length ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {ex.metadata.gpp.rows.slice(0, 6).map((row, i) => {
+                          const label = row.exercise || `Exercise ${i + 1}`;
+                          const repsSets = [row.reps || '', row.sets > 1 ? `×${row.sets}` : ''].filter(Boolean).join('');
+                          const suffix = [repsSets, row.load].filter(Boolean).join(' · ');
+                          return (
+                            <div key={i} style={{ fontSize: 11, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+                              <span style={{ color: 'var(--color-text-primary)' }}>{label}</span>
+                              {suffix && <span style={{ color: 'var(--color-text-tertiary)' }}> {suffix}</span>}
+                            </div>
+                          );
+                        })}
+                        {ex.metadata.gpp.rows.length > 6 && (
+                          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                            +{ex.metadata.gpp.rows.length - 6} more
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>
+                        Empty GPP block — click to add rows
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div style={{ padding: '8px 12px' }}>
@@ -510,8 +578,9 @@ export function DayEditor({
           <ExerciseSearch
             exercises={allExercises}
             onAdd={handleAddExercise}
+            onAddCombo={members => void handleAddComboInline(members)}
             onSlashCommand={key => void handleSlashCommand(key)}
-            placeholder={adding ? '…' : 'Search or / for commands'}
+            placeholder={adding ? '…' : 'Search, + to chain a combo, / for commands'}
           />
         </div>
       </div>
@@ -530,6 +599,20 @@ export function DayEditor({
         editingExercise={null}
         onSave={handleNewExerciseSave}
       />
+
+      {editingGpp && (
+        <GppBlockEditor
+          open
+          initial={editingGpp.metadata?.gpp ?? null}
+          exerciseCatalogue={allExercises}
+          onClose={() => setEditingGpp(null)}
+          onSave={async section => {
+            if (!saveGppSection) return;
+            await saveGppSection(editingGpp.id, section);
+            await onRefresh();
+          }}
+        />
+      )}
     </>
   );
 }

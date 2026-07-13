@@ -355,6 +355,37 @@ export function MacroTimelineStrip({
               );
             }
 
+            // Training camps: a labelled band (tent glyph + name), tinted with
+            // the camp colour so they read distinctly from plain event dots.
+            if (m.kind === 'camp') {
+              const width = endPct != null && endPct > startPct ? endPct - startPct : null;
+              return (
+                <div
+                  key={m.id}
+                  title={tip}
+                  style={{
+                    position: 'absolute', bottom: 0, left: `${startPct}%`,
+                    width: width != null ? `${width}%` : undefined,
+                    minWidth: 12, height: 13,
+                    display: 'flex', alignItems: 'center', gap: 2, padding: '0 3px',
+                    background: color, borderRadius: 3, overflow: 'hidden',
+                    pointerEvents: 'auto', zIndex: 1,
+                    transform: width == null ? 'translateX(-6px)' : undefined,
+                  }}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" style={{ flexShrink: 0, display: 'block' }}>
+                    <path d="M4 1 L7.5 7 L0.5 7 Z" fill="none" stroke="#fff" strokeWidth="1" />
+                  </svg>
+                  <span style={{
+                    fontSize: 8, lineHeight: '10px', fontWeight: 600, color: '#fff',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none',
+                  }}>
+                    {m.title}
+                  </span>
+                </div>
+              );
+            }
+
             // Non-competition events: dot, or thin span for multi-day ranges.
             if (endPct != null && endPct > startPct) {
               return (
