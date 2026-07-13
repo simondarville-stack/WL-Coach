@@ -72,6 +72,9 @@ export interface FillWritePlan {
   weekUpdates: Array<{ id: string } & Partial<Pick<MacroWeek, 'week_type' | 'total_reps_target'>>>;
   /** Exercise names skipped in an all-exercises fill because they have no reference. */
   skippedNoReference: string[];
+  /** In-range weeks skipped because they already hold values (overwrite off) —
+   *  lets the guide say "tick Overwrite" instead of a generic hint. */
+  skippedExisting: number;
   cellCount: number;
   preview: FillGuidePreview;
 }
@@ -99,8 +102,14 @@ export function buildFillPlan(
     targetRows: [],
     weekUpdates: [],
     skippedNoReference: [],
+    skippedExisting: 0,
     cellCount: 0,
     preview,
+  };
+  const inRange = (weekNumber: number): boolean => {
+    const lo = Math.min(inputs.fromWeek, inputs.toWeek);
+    const hi = Math.max(inputs.fromWeek, inputs.toWeek);
+    return weekNumber >= lo && weekNumber <= hi;
   };
   const weekByNumber = new Map(macroWeeks.map(w => [w.week_number, w]));
   // Merged per-week updates — a week may receive both a Σreps value and a stamp.
@@ -123,6 +132,9 @@ export function buildFillPlan(
 
   if (inputs.target === FILL_TARGET_SREPS) {
     const weeks = toFillWeeks(macroWeeks, w => w.total_reps_target != null);
+    if (!inputs.overwrite) {
+      plan.skippedExisting += weeks.filter(w => inRange(w.weekNumber) && w.hasExisting).length;
+    }
     const res = computeGeneralFill(weeks, inputs.rhythm, weekTypes, {
       anchors,
       overwrite: inputs.overwrite,
@@ -157,6 +169,9 @@ export function buildFillPlan(
         macroWeeks,
         w => existingByWeekId.get(w.id)?.target_max != null,
       );
+      if (!inputs.overwrite) {
+        plan.skippedExisting += weeks.filter(w => inRange(w.weekNumber) && w.hasExisting).length;
+      }
       const res = computeExerciseFill(weeks, inputs.rhythm, weekTypes, {
         anchors,
         unit: usesPct ? 'pct' : 'kg',

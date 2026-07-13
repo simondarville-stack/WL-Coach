@@ -52,6 +52,8 @@ interface MacroCycleToolbarProps {
   onUndoFill: () => void;
   canRemodulate: boolean;
   onRemodulate: () => void;
+  /** A bulk fill operation (apply / undo / re-modulate) is in flight. */
+  fillBusy: boolean;
   onSaveTemplate: () => void;
 }
 
@@ -97,6 +99,7 @@ export function MacroCycleToolbar({
   onUndoFill,
   canRemodulate,
   onRemodulate,
+  fillBusy,
   onSaveTemplate,
 }: MacroCycleToolbarProps) {
   // Searchable exercise picker — type to filter instead of scanning a long list
@@ -252,9 +255,10 @@ export function MacroCycleToolbar({
               size="sm"
               icon={<RefreshCw size={13} />}
               onClick={onRemodulate}
+              disabled={fillBusy}
               title="Re-apply the last fill's anchors + rhythm against the current week types (overwrites that fill)"
             >
-              Re-modulate
+              {fillBusy ? 'Working…' : 'Re-modulate'}
             </Button>
           )}
           {canUndoFill && (
@@ -263,9 +267,10 @@ export function MacroCycleToolbar({
               size="sm"
               icon={<Undo2 size={13} />}
               onClick={onUndoFill}
+              disabled={fillBusy}
               title="Undo the last fill"
             >
-              Undo fill
+              {fillBusy ? 'Working…' : 'Undo fill'}
             </Button>
           )}
 

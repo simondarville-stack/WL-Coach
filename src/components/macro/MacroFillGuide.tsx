@@ -237,6 +237,9 @@ export function MacroFillGuide({
     setApplying(true);
     try {
       await onApply(plan, inputs);
+    } catch {
+      // Failure is surfaced by the macro page's error banner; the guide stays
+      // open (parent keeps it mounted) so the coach can retry.
     } finally {
       setApplying(false);
     }
@@ -495,7 +498,13 @@ export function MacroFillGuide({
             Cancel
           </button>
           {plan.cellCount === 0 && (
-            <span className="text-[10px] text-[color:var(--color-text-tertiary)]">Nothing to fill — check the anchors</span>
+            <span className="text-[10px] text-[color:var(--color-text-tertiary)]">
+              {!isAll && !isGeneral && effectiveUnit === 'pct' && !(referenceKg && referenceKg > 0)
+                ? 'No reference set — enter one above'
+                : plan.skippedExisting > 0
+                ? 'All weeks in range already have values — tick Overwrite'
+                : 'Nothing to fill — check the anchors'}
+            </span>
           )}
         </div>
       </div>

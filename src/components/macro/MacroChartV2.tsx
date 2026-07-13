@@ -417,6 +417,24 @@ export function MacroChartV2({
               <span className="font-medium" style={{ color: GENERAL[gk].color }}>{GENERAL[gk].label}</span>
             </span>
           ))}
+          {/* Line-style key — the same colour carries three encodings per exercise */}
+          <span className="flex items-center gap-2 text-gray-400 pl-2 border-l border-gray-200">
+            <span className="flex items-center gap-1">
+              <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1.8" /></svg>
+              max
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="16" height="8">
+                <line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+                <circle cx="8" cy="4" r="2.5" fill="#fff" stroke="#94a3b8" />
+              </svg>
+              avg
+            </span>
+            <span className="flex items-center gap-1">
+              <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1" strokeDasharray="1 3" strokeLinecap="round" opacity="0.7" /></svg>
+              done
+            </span>
+          </span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-gray-600">
           <label className="flex items-center gap-1 cursor-pointer select-none">
@@ -510,9 +528,10 @@ export function MacroChartV2({
             .map(k => {
               const vals = weeks.map(w => actuals[w.id]?.[te.exercise_id]?.[k] || null);
               const pts = linePoints(vals, yKg);
+              // Dotted "1 3" — distinct from the avg lines' "3 3" dash
               return pts.split(' ').length > 1 ? (
                 <polyline key={`act-${k}-${te.id}`} points={pts} fill="none"
-                  stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.25} />
+                  stroke={color} strokeWidth={1} strokeDasharray="1 3" strokeLinecap="round" opacity={0.3} />
               ) : null;
             });
         })}

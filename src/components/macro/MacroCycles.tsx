@@ -484,7 +484,12 @@ export function MacroCycles() {
 
   const pairKey = (weekId: string, teId: string) => `${weekId}|${teId}`;
 
+  // Shared in-flight flag for the bulk fill operations (apply / undo /
+  // re-modulate) — prevents concurrent bulk writes from double-clicks.
+  const [fillBusy, setFillBusy] = useState(false);
+
   const handleApplyFill = useCallback(async (plan: FillWritePlan, inputs: FillGuideInputs) => {
+    if (fillBusy) return;
     const affectedPairs = new Set(plan.targetRows.map(r => pairKey(r.macro_week_id, r.tracked_exercise_id)));
     const existingRows = targets
       .filter(t => affectedPairs.has(pairKey(t.macro_week_id, t.tracked_exercise_id)))
@@ -494,8 +499,28 @@ export function MacroCycles() {
       .filter(w => plan.weekUpdates.some(u => u.id === w.id))
       .map(w => ({ id: w.id, week_type: w.week_type, total_reps_target: w.total_reps_target }));
 
-    const returned = await bulkUpsertTargets(plan.targetRows);
-    await bulkUpdateWeeks(plan.weekUpdates);
+    setFillBusy(true);
+    let returned: MacroTarget[] = [];
+    try {
+      returned = await bulkUpsertTargets(plan.targetRows);
+      await bulkUpdateWeeks(plan.weekUpdates);
+    } catch (err) {
+      // Partial apply is possible (writes commit group by group): arm undo
+      // with everything we know landed, drop the stale ghost overlay, and
+      // resync targets from the DB. The hook's error banner explains the
+      // failure; the guide stays open so the coach can retry.
+      const createdIds = returned
+        .filter(r => !existingPairSet.has(pairKey(r.macro_week_id, r.tracked_exercise_id)))
+        .map(r => r.id);
+      if (createdIds.length > 0 || existingRows.length > 0) {
+        setFillUndo({ existingRows, createdIds, weekRows });
+        setLastFillInputs(inputs);
+      }
+      setFillPreview(null);
+      if (macroWeeks.length > 0) void fetchTargets(macroWeeks.map(w => w.id));
+      setFillBusy(false);
+      throw err; // let the fill guide's Apply button reset its own busy state
+    }
 
     const createdIds = returned
       .filter(r => !existingPairSet.has(pairKey(r.macro_week_id, r.tracked_exercise_id)))
@@ -504,36 +529,49 @@ export function MacroCycles() {
     setLastFillInputs(inputs);
     setShowFillGuide(false);
     setFillPreview(null);
-  }, [targets, macroWeeks, bulkUpsertTargets, bulkUpdateWeeks]);
+    setFillBusy(false);
+  }, [fillBusy, targets, macroWeeks, bulkUpsertTargets, bulkUpdateWeeks, fetchTargets]);
 
   const handleUndoFill = useCallback(async () => {
-    if (!fillUndo) return;
-    await bulkDeleteTargets(fillUndo.createdIds);
-    await bulkUpsertTargets(fillUndo.existingRows.map(t => ({
-      macro_week_id: t.macro_week_id,
-      tracked_exercise_id: t.tracked_exercise_id,
-      fields: {
-        target_reps: t.target_reps,
-        target_avg: t.target_avg,
-        target_max: t.target_max,
-        target_reps_at_max: t.target_reps_at_max,
-        target_sets_at_max: t.target_sets_at_max,
-        note: t.note,
-      },
-    })));
-    await bulkUpdateWeeks(fillUndo.weekRows);
-    setFillUndo(null);
-  }, [fillUndo, bulkDeleteTargets, bulkUpsertTargets, bulkUpdateWeeks]);
+    if (!fillUndo || fillBusy) return;
+    setFillBusy(true);
+    try {
+      await bulkDeleteTargets(fillUndo.createdIds);
+      await bulkUpsertTargets(fillUndo.existingRows.map(t => ({
+        macro_week_id: t.macro_week_id,
+        tracked_exercise_id: t.tracked_exercise_id,
+        fields: {
+          target_reps: t.target_reps,
+          target_avg: t.target_avg,
+          target_max: t.target_max,
+          target_reps_at_max: t.target_reps_at_max,
+          target_sets_at_max: t.target_sets_at_max,
+          note: t.note,
+        },
+      })));
+      await bulkUpdateWeeks(fillUndo.weekRows);
+      setFillUndo(null);
+    } finally {
+      setFillBusy(false);
+    }
+  }, [fillUndo, fillBusy, bulkDeleteTargets, bulkUpsertTargets, bulkUpdateWeeks]);
 
   // Re-modulate: re-run the last fill's anchors + rhythm against the CURRENT
   // week types (explicit action, overwrites that fill's cells).
   const handleRemodulate = useCallback(async () => {
-    if (!lastFillInputs) return;
+    if (!lastFillInputs || fillBusy) return;
     const inputs = { ...lastFillInputs, overwrite: true };
     const plan = buildFillPlan(inputs, macroWeeks, trackedExercises, targets, settings?.week_types ?? []);
-    if (plan.cellCount === 0) return;
-    await handleApplyFill(plan, lastFillInputs);
-  }, [lastFillInputs, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill]);
+    if (plan.cellCount === 0) {
+      setError('Re-modulate produced no cells — the anchors or tracked exercises have changed since the last fill.');
+      return;
+    }
+    try {
+      await handleApplyFill(plan, lastFillInputs);
+    } catch {
+      // surfaced via the error banner
+    }
+  }, [lastFillInputs, fillBusy, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill, setError]);
 
   // ─── Weekly exercise note ───────────────────────────────────────────────────
   // A macro_targets row may hold only a note (all numeric targets NULL).
@@ -741,6 +779,14 @@ export function MacroCycles() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Error banner — outside the cycle/wheel branch so load failures are
+          visible on the annual-wheel landing view too (not just inside a cycle). */}
+      {error && (
+        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700 flex items-center justify-between flex-shrink-0">
+          {error}
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 ml-2">×</button>
+        </div>
+      )}
       {selectedCycle ? (<StandardPage>
       {/* Top toolbar */}
       <MacroCycleToolbar
@@ -786,6 +832,7 @@ export function MacroCycles() {
         onUndoFill={handleUndoFill}
         canRemodulate={!!lastFillInputs}
         onRemodulate={handleRemodulate}
+        fillBusy={fillBusy}
         onSaveTemplate={() => setShowTemplateSave(true)}
       />
 
@@ -828,14 +875,6 @@ export function MacroCycles() {
               <MacroCompetitionBadge key={comp.id} competition={comp} />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700 flex items-center justify-between flex-shrink-0">
-          {error}
-          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 ml-2">×</button>
         </div>
       )}
 
