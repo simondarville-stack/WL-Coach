@@ -80,8 +80,13 @@ export interface MacroTableLayout {
   metrics?: Array<{ key: string; on: boolean }>;
   /** visible base/general columns (MacroTableColumnKey[]); absent = settings default */
   baseColumns?: string[];
-  viewToggles?: { consistency?: boolean; heatmap?: boolean };
+  viewToggles?: { consistency?: boolean; heatmap?: boolean; notesCollapsed?: boolean };
   graph?: { avg?: boolean; repsBars?: boolean; linkDrag?: boolean };
+  /** Layout schema version. Absent = pre-versioning (predates the Training
+   *  Week / Dates / Events columns); such layouts get those columns unioned in
+   *  on load so they aren't silently hidden. Stamped to the current version on
+   *  the next persist. */
+  v?: number;
 }
 /** Open string — the four preset values ('preparatory', 'strength', 'competition', 'transition')
  * are suggestions only; free-text entry is allowed. See REVIEW_PLAN.md ENG-037. */
@@ -337,6 +342,10 @@ export interface MacroCycle {
   end_date: string;
   /** Per-macro table view config (column states, metric registry, toggles). NULL = app defaults. */
   table_layout: MacroTableLayout | null;
+  /** The macro's primary / target competition — an event id (events model).
+   *  Competitions now live in `events`; this pointer marks which one is the
+   *  target for this cycle. NULL = no primary set. */
+  primary_event_id: string | null;
   created_at: string;
   updated_at: string;
 }

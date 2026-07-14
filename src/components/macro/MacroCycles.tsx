@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
-import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset } from '../../lib/database.types';
+import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset, EventType, Athlete, Exercise } from '../../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS, DEFAULT_RHYTHM_PRESETS } from '../../lib/constants';
 import { MacroFillGuide } from './MacroFillGuide';
 import { RhythmPresetManager } from './RhythmPresetManager';
@@ -17,7 +17,7 @@ import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
 import { generateMacroWeeks, getMondayOfWeekISO } from '../../lib/weekUtils';
 import { formatDateToDDMMYYYY, addDaysToISO } from '../../lib/dateUtils';
-import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS } from './MacroTableV2';
+import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS, STRUCTURAL_MACRO_COLUMNS } from './MacroTableV2';
 import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
 import { MacroViewMenu } from './MacroViewMenu';
 import { ExerciseToggleBar } from './ExerciseToggleBar';
@@ -36,6 +36,8 @@ import { AthleteCardPicker } from '../AthleteCardPicker';
 import { MacroAnnualWheel } from './MacroAnnualWheel';
 import { MacroCycleToolbar } from './MacroCycleToolbar';
 import { MacroCompetitionBadge } from './MacroCompetitionBadge';
+import { useEvents } from '../../hooks/useEvents';
+import { EventFormModal } from '../calendar/EventFormModal';
 import { MacroTimeline } from '../planning';
 import { resolveScopeAthleteIds, fetchTimelineMarkers } from '../../lib/macroTimelineData';
 import type { TimelineMarker } from '../../lib/macroTimelineData';
@@ -46,10 +48,11 @@ export function MacroCycles() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { cycleId: urlCycleId } = useParams<{ cycleId?: string }>();
-  const { selectedAthlete, selectedGroup } = useAthleteStore();
+  const { selectedAthlete, selectedGroup, athletes: allAthletes } = useAthleteStore();
   const { exercises, fetchExercisesByName } = useExercises();
   const { settings, fetchSettingsSilent, updateSettings } = useSettings();
   const { groupMembers: hookGroupMembers, fetchGroupMembers } = useTrainingGroups();
+  const { createEvent } = useEvents();
 
   const {
     macrocycles,
@@ -82,9 +85,6 @@ export function MacroCycles() {
     updatePhase,
     deletePhase,
     fetchCompetitions,
-    createCompetition,
-    updateCompetition,
-    deleteCompetition,
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,
@@ -103,6 +103,9 @@ export function MacroCycles() {
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  // Non-null while the "Add event" modal is open, holding the preselected type
+  // (competition / training camp) chosen from the toolbar menu.
+  const [eventModalType, setEventModalType] = useState<EventType | null>(null);
   // Bumped after a cycle edit so the top MacroTimeline strip re-fetches the
   // shifted/updated weeks (its own effect is keyed only on ids, which don't
   // change when just the dates move).
@@ -113,7 +116,6 @@ export function MacroCycles() {
   const [showPhasesPanel, setShowPhasesPanel] = useState(false);
   const [phasePanelInitialEdit, setPhasePanelInitialEdit] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
-  const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
 
   // Group mode state — members come from useTrainingGroups
@@ -165,6 +167,7 @@ export function MacroCycles() {
   const [exColStates, setExColStates] = useState<Record<string, ExerciseColumnState>>({});
   const [consistencyTint, setConsistencyTint] = useState(true);
   const [collapsedHeatmap, setCollapsedHeatmap] = useState(true);
+  const [notesCollapsed, setNotesCollapsed] = useState(false);
 
   // Persist the whole view config to macrocycles.table_layout (quiet write).
   // Each setter passes its NEXT value explicitly so we never persist stale state.
@@ -173,11 +176,16 @@ export function MacroCycles() {
     const layout: MacroTableLayout = {
       exercises: exColStates,
       metrics: exerciseMetrics,
-      viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap },
+      // Always carry the current column visibility — otherwise a non-column
+      // persist (collapse/expand, metric reorder, a tint toggle) would drop
+      // baseColumns and the coach's hidden columns would spring back on reload.
+      baseColumns: Array.from(visibleColumns),
+      viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap, notesCollapsed },
+      v: 1, // stamp current layout version (see MacroTableLayout.v)
       ...overrides,
     };
     void updateMacrocycleLayout(selectedCycle.id, layout);
-  }, [selectedCycle, exColStates, exerciseMetrics, consistencyTint, collapsedHeatmap, updateMacrocycleLayout]);
+  }, [selectedCycle, exColStates, exerciseMetrics, visibleColumns, consistencyTint, collapsedHeatmap, notesCollapsed, updateMacrocycleLayout]);
 
   const applyMetrics = useCallback((m: ExerciseMetricConfig[]) => {
     setExerciseMetrics(m);
@@ -350,11 +358,18 @@ export function MacroCycles() {
     setExColStates((layout?.exercises as Record<string, ExerciseColumnState> | undefined) ?? {});
     setConsistencyTint(layout?.viewToggles?.consistency ?? true);
     setCollapsedHeatmap(layout?.viewToggles?.heatmap ?? true);
-    // Base columns: per-macro override → coach settings → app defaults
+    setNotesCollapsed(layout?.viewToggles?.notesCollapsed ?? false);
+    // Base columns: per-macro override → coach settings → app defaults.
+    // Layouts (and the global default) saved before the Training Week / Dates /
+    // Events columns existed get them unioned in so they aren't silently hidden;
+    // once the layout is re-saved (v stamped) the coach's explicit hide/show
+    // choices are respected verbatim.
     if (layout?.baseColumns?.length) {
-      setVisibleColumns(new Set([...layout.baseColumns, 'week'] as MacroTableColumnKey[]));
+      const cols = new Set(layout.baseColumns as MacroTableColumnKey[]);
+      if (!layout.v) STRUCTURAL_MACRO_COLUMNS.forEach(c => cols.add(c));
+      setVisibleColumns(cols);
     } else if (settings?.macro_table_columns?.length) {
-      setVisibleColumns(new Set(settings.macro_table_columns as MacroTableColumnKey[]));
+      setVisibleColumns(new Set([...(settings.macro_table_columns as MacroTableColumnKey[]), ...STRUCTURAL_MACRO_COLUMNS]));
     } else {
       setVisibleColumns(new Set(DEFAULT_MACRO_TABLE_COLUMNS));
     }
@@ -457,18 +472,22 @@ export function MacroCycles() {
       macroTarget, data.name, data.startDate, data.endDate, weekInserts,
     );
 
-    // Create competitions
-    await Promise.all(
-      data.competitions.map(c =>
-        createCompetition({
-          macrocycle_id: cycle.id,
-          competition_name: c.name,
-          competition_date: c.date,
-          is_primary: c.is_primary,
-          event_id: null,
-        })
-      )
-    );
+    // Create competitions as shared events (calendar ↔ macro are one source),
+    // attached to the macro's athlete(s). The primary one becomes the cycle's
+    // target event (macrocycles.primary_event_id).
+    const scopeAthleteIds = isGroupMode
+      ? groupMembers.map(gm => gm.athlete_id)
+      : (selectedAthlete ? [selectedAthlete.id] : []);
+    let primaryEventId: string | null = null;
+    for (const c of data.competitions) {
+      if (!c.name.trim() || !c.date) continue;
+      const ev = await createEvent(
+        { name: c.name.trim(), event_type: 'competition', event_date: c.date, is_all_day: true },
+        scopeAthleteIds,
+      );
+      if (ev && c.is_primary) primaryEventId = ev.id;
+    }
+    if (primaryEventId) await updateMacrocycle(cycle.id, { primary_event_id: primaryEventId });
 
     // Apply a template: week rhythm + phases + exercises + targets, all in one
     if (data.template) {
@@ -502,10 +521,6 @@ export function MacroCycles() {
 
   const handleUpdateWeekType = useCallback(async (weekId: string, weekType: WeekType) => {
     await updateMacroWeek(weekId, { week_type: weekType });
-  }, [updateMacroWeek]);
-
-  const handleUpdateWeekLabel = useCallback(async (weekId: string, label: string) => {
-    await updateMacroWeek(weekId, { week_type_text: label });
   }, [updateMacroWeek]);
 
   const handleUpdateTotalReps = useCallback(async (weekId: string, value: string) => {
@@ -683,15 +698,15 @@ export function MacroCycles() {
 
   // ─── Exercise management ──────────────────────────────────────────────────────
 
-  const handleAddExercise = async () => {
-    if (!selectedCycle || !selectedExerciseId) return;
+  // Add a tracked exercise directly from the ranked ExerciseSearch. The search
+  // field stays open so the coach can add several in a row (already-tracked ones
+  // drop out of availableExercises automatically).
+  const handleAddExerciseDirect = async (exercise: Exercise) => {
+    if (!selectedCycle) return;
     const nextPosition = trackedExercises.length > 0
       ? Math.max(...trackedExercises.map(te => te.position)) + 1
       : 0;
-    // Close UI immediately for instant feedback
-    setSelectedExerciseId('');
-    setShowAddExercise(false);
-    await addTrackedExercise(selectedCycle.id, selectedExerciseId, nextPosition);
+    await addTrackedExercise(selectedCycle.id, exercise.id, nextPosition);
     await fetchTrackedExercises(selectedCycle.id);
   };
 
@@ -723,7 +738,6 @@ export function MacroCycles() {
     name: string;
     startDate: string;
     endDate: string;
-    competitions: Array<{ id?: string; name: string; date: string; is_primary: boolean }>;
   }) => {
     if (!selectedCycle) return;
 
@@ -744,41 +758,6 @@ export function MacroCycles() {
       start_date: data.startDate,
       end_date: desiredEnd,
     });
-
-    const originalIds = competitions.map(c => c.id);
-    const keptIds = data.competitions.filter(c => c.id).map(c => c.id!);
-
-    for (const id of originalIds) {
-      if (!keptIds.includes(id)) {
-        await deleteCompetition(id);
-      }
-    }
-
-    for (const comp of data.competitions) {
-      if (comp.id) {
-        const original = competitions.find(c => c.id === comp.id);
-        if (
-          original &&
-          (original.competition_name !== comp.name ||
-            original.competition_date !== comp.date ||
-            original.is_primary !== comp.is_primary)
-        ) {
-          await updateCompetition(comp.id, {
-            competition_name: comp.name,
-            competition_date: comp.date,
-            is_primary: comp.is_primary,
-          });
-        }
-      } else if (comp.name.trim() && comp.date) {
-        await createCompetition({
-          macrocycle_id: selectedCycle.id,
-          competition_name: comp.name,
-          competition_date: comp.date,
-          is_primary: comp.is_primary,
-          event_id: null,
-        });
-      }
-    }
 
     // 1) Slide existing weeks (DB + local) so the table re-dates on a start move.
     if (shiftDays !== 0) {
@@ -813,6 +792,59 @@ export function MacroCycles() {
     ]);
     setTimelineReloadKey(k => k + 1);
     setShowEditModal(false);
+  };
+
+  // ─── Events (competitions / training camps) ───────────────────────────────────
+  // Added from the toolbar's "Add event" menu. Competitions and camps live in
+  // the shared events model (event_athletes), so one entry shows on the macro
+  // timeline, the calendar and the athlete dashboard alike. The current scope's
+  // athletes are preselected.
+  const eventAthletes: Athlete[] = isGroupMode
+    ? groupMembers.map(m => m.athlete)
+    : (selectedAthlete ? [selectedAthlete] : []);
+
+  const handleSaveEvent = async (data: {
+    name: string; event_type: EventType; event_date: string; end_date: string;
+    is_all_day: boolean; start_time: string; end_time: string; location: string;
+    description: string; notes: string; external_url: string; color: string;
+    athlete_ids: string[];
+  }) => {
+    // An event with no athletes attaches to nobody and never surfaces on the
+    // timeline/table (markers are fetched via event_athletes). Require ≥1.
+    if (data.athlete_ids.length === 0) {
+      alert('Add at least one athlete so this event shows on the timeline.');
+      return;
+    }
+    await createEvent({
+      name: data.name,
+      event_type: data.event_type,
+      event_date: data.event_date,
+      end_date: data.end_date || null,
+      description: data.description || null,
+      location: data.location || null,
+      color: data.color || null,
+      notes: data.notes || null,
+      is_all_day: data.is_all_day,
+      start_time: data.is_all_day ? null : (data.start_time || null),
+      end_time: data.is_all_day ? null : (data.end_time || null),
+      external_url: data.external_url || null,
+    }, data.athlete_ids);
+    setEventModalType(null);
+    setTimelineReloadKey(k => k + 1);
+    // Competitions feed the header chips + chart from the events model, so
+    // refresh them too (not just the timeline strip / week markers).
+    if (selectedCycle) await fetchCompetitions(selectedCycle.id);
+  };
+
+  // Designate (or clear) the macro's target competition — clicking a header
+  // competition chip sets macrocycles.primary_event_id to that event.
+  const handleSetPrimaryCompetition = async (eventId: string | null) => {
+    if (!selectedCycle || !eventId) return;
+    const next = selectedCycle.primary_event_id === eventId ? null : eventId;
+    await updateMacrocycle(selectedCycle.id, { primary_event_id: next });
+    setSelectedCycle({ ...selectedCycle, primary_event_id: next });
+    await fetchCompetitions(selectedCycle.id);
+    setTimelineReloadKey(k => k + 1);
   };
 
   // ─── Delete cycle ─────────────────────────────────────────────────────────────
@@ -892,7 +924,6 @@ export function MacroCycles() {
         groupMembers={groupMembers}
         individualViewAthleteId={individualViewAthleteId}
         showAddExercise={showAddExercise}
-        selectedExerciseId={selectedExerciseId}
         availableExercises={availableExercises}
         showChart={showChart}
         showDistribution={showDistribution}
@@ -913,10 +944,10 @@ export function MacroCycles() {
         onDistributionToggle={() => setShowDistribution(v => { if (!v) setDistKey(k => k + 1); return !v; })}
         onIndividualViewChange={setIndividualViewAthleteId}
         onShowAddExercise={() => setShowAddExercise(true)}
-        onCancelAddExercise={() => { setShowAddExercise(false); setSelectedExerciseId(''); }}
-        onExerciseSelect={setSelectedExerciseId}
-        onAddExercise={handleAddExercise}
+        onCancelAddExercise={() => setShowAddExercise(false)}
+        onAddExerciseDirect={handleAddExerciseDirect}
         onAddPhase={() => { setPhasePanelInitialEdit(null); setShowPhasesPanel(true); }}
+        onAddEvent={(type) => setEventModalType(type)}
         onEditCycle={() => setShowEditModal(true)}
         onDeleteCycle={handleDeleteCycle}
         onImportTargets={handleImportTargets}
@@ -967,7 +998,11 @@ export function MacroCycles() {
               </span>
             )}
             {competitions.map(comp => (
-              <MacroCompetitionBadge key={comp.id} competition={comp} />
+              <MacroCompetitionBadge
+                key={comp.id}
+                competition={comp}
+                onSetPrimary={() => handleSetPrimaryCompetition(comp.event_id)}
+              />
             ))}
           </div>
         </div>
@@ -1012,10 +1047,12 @@ export function MacroCycles() {
                 onMetricsChange={applyMetrics}
                 visibleColumns={visibleColumns}
                 onVisibleColumnsChange={handleVisibleColumnsChange}
+                notesCollapsed={notesCollapsed}
+                onNotesCollapsedChange={(v) => { setNotesCollapsed(v); persistLayout({ viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap, notesCollapsed: v } }); }}
                 consistencyTint={consistencyTint}
-                onConsistencyTintChange={(v) => { setConsistencyTint(v); persistLayout({ viewToggles: { consistency: v, heatmap: collapsedHeatmap } }); }}
+                onConsistencyTintChange={(v) => { setConsistencyTint(v); persistLayout({ viewToggles: { consistency: v, heatmap: collapsedHeatmap, notesCollapsed } }); }}
                 collapsedHeatmap={collapsedHeatmap}
-                onCollapsedHeatmapChange={(v) => { setCollapsedHeatmap(v); persistLayout({ viewToggles: { consistency: consistencyTint, heatmap: v } }); }}
+                onCollapsedHeatmapChange={(v) => { setCollapsedHeatmap(v); persistLayout({ viewToggles: { consistency: consistencyTint, heatmap: v, notesCollapsed } }); }}
                 onCollapseAll={() => applyColStates(Object.fromEntries(trackedExercises.map(te => [te.id, { collapsed: true, expanded: false }])))}
                 onExpandAll={() => applyColStates({})}
               />
@@ -1032,7 +1069,6 @@ export function MacroCycles() {
               actuals={displayedActuals}
               onUpdateTarget={handleUpdateTarget}
               onUpdateWeekType={handleUpdateWeekType}
-              onUpdateWeekLabel={handleUpdateWeekLabel}
               onUpdateTotalReps={handleUpdateTotalReps}
               onUpdateTonnageTarget={handleUpdateTonnageTarget}
               onUpdateAvgTarget={handleUpdateAvgTarget}
@@ -1055,6 +1091,7 @@ export function MacroCycles() {
               onToggleExpand={handleToggleExpand}
               consistencyTint={consistencyTint}
               collapsedHeatmap={collapsedHeatmap}
+              notesCollapsed={notesCollapsed}
               onUpdateTargetNote={handleUpdateTargetNote}
               weekMarkers={weekMarkers}
             />
@@ -1146,10 +1183,22 @@ export function MacroCycles() {
       {showEditModal && selectedCycle && (
         <MacroEditModal
           cycle={selectedCycle}
-          competitions={competitions}
           loading={loading}
           onClose={() => setShowEditModal(false)}
           onSave={handleEditCycle}
+        />
+      )}
+
+      {eventModalType && (
+        // The current athlete/group is preselected, but the coach can attach the
+        // event to ANY athlete in the roster from here (not just the macro scope).
+        <EventFormModal
+          editing={null}
+          athletes={allAthletes.length > 0 ? allAthletes : eventAthletes}
+          initialType={eventModalType}
+          initialAthleteIds={eventAthletes.map(a => a.id)}
+          onSave={handleSaveEvent}
+          onClose={() => setEventModalType(null)}
         />
       )}
 

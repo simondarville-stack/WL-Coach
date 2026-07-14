@@ -802,7 +802,9 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
       if (mw) {
         return {
           relativeWeek: mw.week_number,
-          weekType: mw.week_type_text || mw.week_type || null,
+          // week_type (abbreviation) is the single source of truth for a week's
+          // type; week_type_text is a legacy label kept only as a fallback.
+          weekType: mw.week_type || mw.week_type_text || null,
           macroId: c.id,
           macroName: cycleById.get(c.id)?.name ?? null,
           phaseId: mw.phase_id,
@@ -895,7 +897,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   const weekTypeColors: Record<string, string> = {};
   for (const wt of gs.find((g) => g.week_types)?.week_types ?? []) {
     if (wt.color) {
-      // macroContext exposes weekType as week_type_text||abbreviation, so key both.
+      // macroContext exposes weekType as abbreviation||week_type_text, so key both.
       if (wt.name) weekTypeColors[wt.name] = wt.color;
       if (wt.abbreviation) weekTypeColors[wt.abbreviation] = wt.color;
     }

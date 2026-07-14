@@ -701,7 +701,7 @@ export function PlannerControlPanel({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {macroContext.weekTypeText || macroContext.weekType}
+                    {macroContext.weekType || macroContext.weekTypeText}
                   </span>
                 );
               })()}

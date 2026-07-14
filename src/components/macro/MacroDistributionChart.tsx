@@ -394,7 +394,7 @@ export function MacroDistributionChart({
             >
               {macroWeeks.map(w => (
                 <option key={w.id} value={w.week_number}>
-                  W{w.week_number} — {w.week_type_text || w.week_type || 'untyped'}
+                  W{w.week_number} — {w.week_type || w.week_type_text || 'untyped'}
                 </option>
               ))}
             </select>

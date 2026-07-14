@@ -38,14 +38,18 @@ interface EventFormData {
 interface Props {
   editing: EventWithAthletes | null;
   athletes: Athlete[];
+  /** Preselected event type for a NEW event (ignored when editing). */
+  initialType?: EventType;
+  /** Preselected participating athletes for a NEW event (ignored when editing). */
+  initialAthleteIds?: string[];
   onSave: (data: Omit<EventFormData, 'athlete_ids'> & { athlete_ids: string[] }) => Promise<void>;
   onClose: () => void;
 }
 
-export function EventFormModal({ editing, athletes, onSave, onClose }: Props) {
+export function EventFormModal({ editing, athletes, initialType, initialAthleteIds, onSave, onClose }: Props) {
   const [formData, setFormData] = useState<EventFormData>(() => ({
     name: editing?.name ?? '',
-    event_type: (editing?.event_type as EventType) ?? 'competition',
+    event_type: (editing?.event_type as EventType) ?? initialType ?? 'competition',
     event_date: editing?.event_date?.slice(0, 10) ?? '',
     end_date: editing?.end_date?.slice(0, 10) ?? '',
     is_all_day: editing?.is_all_day ?? true,
@@ -56,7 +60,7 @@ export function EventFormModal({ editing, athletes, onSave, onClose }: Props) {
     notes: editing?.notes ?? '',
     external_url: editing?.external_url ?? '',
     color: editing?.color ?? '#3b82f6',
-    athlete_ids: editing?.athletes.map(a => a.id) ?? [],
+    athlete_ids: editing?.athletes.map(a => a.id) ?? initialAthleteIds ?? [],
   }));
   const [saving, setSaving] = useState(false);
 

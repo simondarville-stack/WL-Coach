@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, BarChart3, BookmarkPlus, ChevronDown, Pencil, PieChart, Plus, RefreshCw, Search, Trash2, Undo2, Users, Wand2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, BarChart3, BookmarkPlus, CalendarPlus, ChevronDown, Layers, Pencil, PieChart, Plus, RefreshCw, Tent, Trash2, Trophy, Undo2, Users, Wand2 } from 'lucide-react';
 import { Button } from '../ui';
-import type { MacroCycle, Exercise, TrainingGroup } from '../../lib/database.types';
+import { ExerciseSearch } from '../planner/ExerciseSearch';
+import type { MacroCycle, Exercise, TrainingGroup, EventType } from '../../lib/database.types';
 import type { GroupMemberWithAthlete } from '../../lib/database.types';
 import type { MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 import { MacroExcelIO } from './MacroExcelIO';
@@ -18,7 +19,6 @@ interface MacroCycleToolbarProps {
   groupMembers: GroupMemberWithAthlete[];
   individualViewAthleteId: string | null;
   showAddExercise: boolean;
-  selectedExerciseId: string;
   availableExercises: Exercise[];
   showChart: boolean;
   showDistribution: boolean;
@@ -40,9 +40,9 @@ interface MacroCycleToolbarProps {
   onIndividualViewChange: (athleteId: string | null) => void;
   onShowAddExercise: () => void;
   onCancelAddExercise: () => void;
-  onExerciseSelect: (id: string) => void;
-  onAddExercise: () => void;
+  onAddExerciseDirect: (exercise: Exercise) => void;
   onAddPhase: () => void;
+  onAddEvent: (type: EventType) => void;
   onEditCycle: () => void;
   onDeleteCycle: () => void;
   onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
@@ -65,7 +65,6 @@ export function MacroCycleToolbar({
   groupMembers,
   individualViewAthleteId,
   showAddExercise,
-  selectedExerciseId,
   availableExercises,
   showChart,
   showDistribution,
@@ -87,9 +86,9 @@ export function MacroCycleToolbar({
   onIndividualViewChange,
   onShowAddExercise,
   onCancelAddExercise,
-  onExerciseSelect,
-  onAddExercise,
+  onAddExerciseDirect,
   onAddPhase,
+  onAddEvent,
   onEditCycle,
   onDeleteCycle,
   onImportTargets,
@@ -102,21 +101,18 @@ export function MacroCycleToolbar({
   fillBusy,
   onSaveTemplate,
 }: MacroCycleToolbarProps) {
-  // Searchable exercise picker — type to filter instead of scanning a long list
-  const [exerciseQuery, setExerciseQuery] = useState('');
+  // "Add event" dropdown (competition / training camp)
+  const [eventMenuOpen, setEventMenuOpen] = useState(false);
+  const eventMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (showAddExercise) setExerciseQuery('');
-  }, [showAddExercise]);
-
-  const exerciseLabel = (ex: Exercise) => (ex.exercise_code ? `${ex.exercise_code} — ${ex.name}` : ex.name);
-  const selectedExercise = availableExercises.find(ex => ex.id === selectedExerciseId);
-  const q = exerciseQuery.trim().toLowerCase();
-  const matches = q.length === 0
-    ? availableExercises.slice(0, 12)
-    : availableExercises
-        .filter(ex => ex.name.toLowerCase().includes(q) || (ex.exercise_code ?? '').toLowerCase().includes(q))
-        .slice(0, 12);
-  const showResults = showAddExercise && !selectedExercise;
+    if (!eventMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (eventMenuRef.current && !eventMenuRef.current.contains(e.target as Node)) setEventMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [eventMenuOpen]);
+  const pickEvent = (type: EventType) => { setEventMenuOpen(false); onAddEvent(type); };
 
   return (
     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0 flex-wrap">
@@ -170,62 +166,31 @@ export function MacroCycleToolbar({
 
       {selectedCycle && (
         <>
-          {/* Toolbar reads left→right as the coach's workflow:
-              BUILD (exercises → fill → phases) · VIEWS · REUSE · manage. */}
+          {/* Groups read left→right, separated by thin dividers:
+              NAV · BUILD (exercises · fill · phases · events) · VIEWS · REUSE · MANAGE. */}
+          <div className="w-px h-5 bg-gray-200 mx-0.5" />
 
-          {/* Add exercise — searchable picker (type-ahead, no long scroll) */}
+          {/* Add exercise — the shared ranked ExerciseSearch (same as the
+              planner). Selecting a match adds it and keeps the field open so a
+              coach can add several in a row; Done closes it. */}
           {showAddExercise ? (
-            <div className="flex items-center gap-1.5 relative">
-              <div className="relative">
-                <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
+            <div className="flex items-center gap-1.5">
+              <div className="border border-gray-300 rounded-lg px-1" style={{ width: 240 }}>
+                <ExerciseSearch
+                  exercises={availableExercises}
+                  onAdd={onAddExerciseDirect}
+                  disableSlashCommands
+                  dropUp={false}
                   autoFocus
-                  value={selectedExercise ? exerciseLabel(selectedExercise) : exerciseQuery}
-                  onChange={e => { onExerciseSelect(''); setExerciseQuery(e.target.value); }}
-                  onKeyDown={e => {
-                    if (e.key === 'Escape') onCancelAddExercise();
-                    if (e.key === 'Enter' && !selectedExercise && matches.length === 1) onExerciseSelect(matches[0].id);
-                    if (e.key === 'Enter' && selectedExercise) onAddExercise();
-                  }}
                   placeholder="Search exercise…"
-                  className="text-xs border border-gray-300 rounded-lg pl-6 pr-2 py-1.5 w-52 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                {showResults && (
-                  <div
-                    className="absolute top-full left-0 mt-1 z-30 rounded-lg overflow-y-auto max-h-64 w-64"
-                    style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', boxShadow: '0 6px 20px rgba(15,40,70,.14)' }}
-                  >
-                    {matches.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-gray-400">No matches</div>
-                    ) : (
-                      matches.map(ex => (
-                        <button
-                          key={ex.id}
-                          onClick={() => onExerciseSelect(ex.id)}
-                          className="block w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[var(--color-accent-muted)]"
-                        >
-                          {exerciseLabel(ex)}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={onAddExercise}
-                disabled={!selectedExerciseId}
-              >
-                Add
-              </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onCancelAddExercise}
               >
-                Cancel
+                Done
               </Button>
             </div>
           ) : (
@@ -278,10 +243,43 @@ export function MacroCycleToolbar({
           <Button
             variant="secondary"
             size="sm"
+            icon={<Layers size={13} />}
             onClick={onAddPhase}
           >
             Phases
           </Button>
+
+          {/* Add event — competition / training camp (shared events model) */}
+          <div ref={eventMenuRef} className="relative">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<CalendarPlus size={13} />}
+              onClick={() => setEventMenuOpen(o => !o)}
+              title="Add a competition or training camp for this athlete"
+            >
+              Add event
+            </Button>
+            {eventMenuOpen && (
+              <div
+                className="absolute top-full left-0 mt-1 rounded-lg z-30 min-w-[168px] py-1"
+                style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', boxShadow: '0 6px 20px rgba(15,40,70,.14)' }}
+              >
+                <button
+                  onClick={() => pickEvent('competition')}
+                  className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[var(--color-accent-muted)]"
+                >
+                  <Trophy size={13} style={{ color: '#E24B4A' }} /> Competition
+                </button>
+                <button
+                  onClick={() => pickEvent('training_camp')}
+                  className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[var(--color-accent-muted)]"
+                >
+                  <Tent size={13} style={{ color: '#2563eb' }} /> Training camp
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
 

@@ -7,7 +7,7 @@ import { useExercises } from '../hooks/useExercises';
 import { METRICS, METRIC_ORDER, DEFAULT_VISIBLE_METRICS } from '../lib/metrics';
 import type { WeekTypeConfig, Exercise, PhaseTypePreset } from '../lib/database.types';
 import { DEFAULT_PHASE_TYPE_PRESETS } from '../lib/constants';
-import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS } from './macro/MacroTableV2';
+import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS, STRUCTURAL_MACRO_COLUMNS } from './macro/MacroTableV2';
 import type { MacroTableColumnKey } from './macro/MacroTableV2';
 import { FlagSettingsSection } from './dashboard-v2/FlagSettingsSection';
 
@@ -1000,9 +1000,11 @@ export function GeneralSettings() {
       {/* Macro table columns */}
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <h2 className="text-lg font-medium text-gray-900 mb-1">Macro Table Columns</h2>
-        <p className="text-sm text-gray-600 mb-4">Choose which columns appear in the macro cycle table.</p>
+        <p className="text-sm text-gray-600 mb-4">Default columns for new macro cycle tables. Training Week, Dates and Events always seed a new table; every column (including those) can still be toggled per macro from its own “Table view” menu.</p>
         <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
-          {(Object.keys(MACRO_TABLE_COLUMN_LABELS) as MacroTableColumnKey[]).map(col => (
+          {(Object.keys(MACRO_TABLE_COLUMN_LABELS) as MacroTableColumnKey[])
+            .filter(col => !STRUCTURAL_MACRO_COLUMNS.includes(col))
+            .map(col => (
             <label key={col} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
               <input
                 type="checkbox"

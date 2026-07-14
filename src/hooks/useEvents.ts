@@ -121,6 +121,7 @@ export function useEvents() {
           .insert(athleteIds.map(athlete_id => ({ event_id: newEvent.id, athlete_id })));
         if (athletesError) throw athletesError;
       }
+      return newEvent as Event | null;
     } catch (error) {
       throw error;
     }

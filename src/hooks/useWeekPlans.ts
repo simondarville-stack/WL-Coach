@@ -203,7 +203,7 @@ export function useWeekPlans() {
 
       const { data: macroWeeks, error: weekError } = await supabase
         .from('macro_weeks')
-        .select('id, total_reps_target, week_type_text')
+        .select('id, total_reps_target, week_type, week_type_text')
         .eq('macrocycle_id', macrocycles[0].id)
         .lte('week_start', selectedDate)
         .gte('week_start', new Date(new Date(selectedDate).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
@@ -214,7 +214,8 @@ export function useWeekPlans() {
       if (weekError) throw weekError;
 
       setMacroWeekTarget(macroWeek?.total_reps_target || null);
-      setMacroWeekTypeText(macroWeek?.week_type_text || null);
+      // week_type (abbreviation) is canonical; week_type_text is a legacy fallback.
+      setMacroWeekTypeText(macroWeek?.week_type || macroWeek?.week_type_text || null);
     } catch (err) {
       setMacroWeekTarget(null);
       setMacroWeekTypeText(null);

@@ -16,14 +16,17 @@ import {
   type MacroTableColumnKey,
 } from './MacroTableV2';
 
-/** Base/general columns the coach may hide ('week' always stays). */
-const TOGGLEABLE_BASE_COLUMNS: MacroTableColumnKey[] = ['weektype', 'notes', 'k', 'tonnage', 'avg', 'kvalue'];
+/** Every base/general column is toggleable — coaches decide per macro how much
+ *  detail they want (different athletes warrant different levels of attention). */
+const TOGGLEABLE_BASE_COLUMNS: MacroTableColumnKey[] = ['week', 'dates', 'events', 'weektype', 'notes', 'k', 'tonnage', 'avg', 'kvalue'];
 
 interface MacroViewMenuProps {
   metrics: ExerciseMetricConfig[];
   onMetricsChange: (metrics: ExerciseMetricConfig[]) => void;
   visibleColumns: Set<MacroTableColumnKey>;
   onVisibleColumnsChange: (next: Set<MacroTableColumnKey>) => void;
+  notesCollapsed: boolean;
+  onNotesCollapsedChange: (v: boolean) => void;
   consistencyTint: boolean;
   onConsistencyTintChange: (v: boolean) => void;
   collapsedHeatmap: boolean;
@@ -37,6 +40,8 @@ export function MacroViewMenu({
   onMetricsChange,
   visibleColumns,
   onVisibleColumnsChange,
+  notesCollapsed,
+  onNotesCollapsedChange,
   consistencyTint,
   onConsistencyTintChange,
   collapsedHeatmap,
@@ -127,16 +132,33 @@ export function MacroViewMenu({
                 type="checkbox"
                 checked={visibleColumns.has(col)}
                 onChange={e => {
+                  // Keep ≥1 column visible: an empty set is read as "show all"
+                  // elsewhere, so unchecking the last one would paradoxically
+                  // bring every column back. Refuse to remove the last.
+                  if (!e.target.checked && visibleColumns.size <= 1) return;
                   const next = new Set(visibleColumns);
                   if (e.target.checked) next.add(col);
                   else next.delete(col);
-                  next.add('week');
                   onVisibleColumnsChange(next);
                 }}
               />
               {MACRO_TABLE_COLUMN_LABELS[col]}
             </label>
           ))}
+          {/* Notes display mode — collapse the whole column to a note icon. */}
+          {visibleColumns.has('notes') && (
+            <label
+              className="flex items-center gap-1.5 px-1 py-0.5 text-[11px] cursor-pointer select-none rounded hover:bg-gray-50"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              <input
+                type="checkbox"
+                checked={notesCollapsed}
+                onChange={e => onNotesCollapsedChange(e.target.checked)}
+              />
+              Collapse notes to icon
+            </label>
+          )}
 
           <div className="text-[9px] font-semibold uppercase tracking-wide px-1 mt-2 mb-1" style={{ color: 'var(--color-text-tertiary)' }}>
             Indicators

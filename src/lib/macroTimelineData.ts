@@ -14,7 +14,6 @@ import type {
   MacroCycle,
   MacroPhase,
   MacroWeek,
-  MacroCompetition,
   WeekTypeConfig,
   Event,
 } from './database.types';
@@ -65,6 +64,9 @@ export interface TimelineWeek {
 export interface TimelineMarker {
   id: string;
   kind: 'competition' | 'camp' | 'event';
+  /** Raw event type ('competition' | 'training_camp' | 'seminar' |
+   *  'testing_day' | 'team_meeting' | 'other') — drives the per-type icon. */
+  eventType: string;
   /** True for a macro's primary competition — rendered strongest. */
   primary: boolean;
   date: string;
@@ -235,6 +237,7 @@ export async function fetchTimelineMarkers(
         markers.set(ev.id, {
           id: ev.id,
           kind,
+          eventType: ev.event_type,
           primary: false,
           date: ev.event_date,
           endDate: ev.end_date && ev.end_date !== ev.event_date ? ev.end_date : null,
@@ -248,30 +251,16 @@ export async function fetchTimelineMarkers(
   }
 
   if (macroIds.length > 0) {
-    const { data: comps } = await supabase
-      .from('macro_competitions')
-      .select('id, competition_name, competition_date, is_primary, event_id')
-      .in('macrocycle_id', macroIds);
-
-    for (const comp of (comps || []) as Pick<
-      MacroCompetition, 'id' | 'competition_name' | 'competition_date' | 'is_primary' | 'event_id'
-    >[]) {
-      if (comp.competition_date > rangeEnd || comp.competition_date < rangeStart) continue;
-      const linked = comp.event_id ? markers.get(comp.event_id) : undefined;
-      if (linked) {
-        linked.kind = 'competition';
-        linked.primary = linked.primary || comp.is_primary;
-      } else {
-        markers.set(`mc-${comp.id}`, {
-          id: `mc-${comp.id}`,
-          kind: 'competition',
-          primary: comp.is_primary,
-          date: comp.competition_date,
-          endDate: null,
-          title: comp.competition_name,
-          color: null,
-        });
-      }
+    // Competitions are plain events now; a macro just points at its primary /
+    // target competition event, which we flag so it renders strongest.
+    const { data: macros } = await supabase
+      .from('macrocycles')
+      .select('primary_event_id')
+      .in('id', macroIds);
+    for (const mm of (macros || []) as { primary_event_id: string | null }[]) {
+      if (!mm.primary_event_id) continue;
+      const marker = markers.get(mm.primary_event_id);
+      if (marker) marker.primary = true;
     }
   }
 

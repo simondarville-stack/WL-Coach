@@ -35,8 +35,26 @@ export function MacroAnnualWheel({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [allPhases, setAllPhases] = useState<Record<string, MacroPhase[]>>({});
-  const [allComps, setAllComps] = useState<Record<string, MacroCompetition[]>>({});
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  // Competitions are derived from the shared events model (same source as the
+  // calendar): each competition-type event is assigned to any cycle whose dates
+  // contain it; the cycle's primary_event_id marks its target competition.
+  const allComps = useMemo<Record<string, MacroCompetition[]>>(() => {
+    const comps = calendarEvents.filter(e => e.event_type === 'competition');
+    const cMap: Record<string, MacroCompetition[]> = {};
+    for (const mc of macrocycles) {
+      const inRange = comps.filter(e => e.event_date >= mc.start_date && e.event_date <= mc.end_date);
+      if (inRange.length > 0) {
+        cMap[mc.id] = inRange.map(e => ({
+          id: e.id, macrocycle_id: mc.id,
+          competition_name: e.name, competition_date: e.event_date,
+          is_primary: e.id === mc.primary_event_id,
+          event_id: e.id, created_at: '', owner_id: '',
+        }));
+      }
+    }
+    return cMap;
+  }, [calendarEvents, macrocycles]);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
   const hitZonesRef = useRef<HitZone[]>([]);
   const rafRef = useRef<number>(0);
@@ -56,25 +74,15 @@ export function MacroAnnualWheel({
     let cancelled = false;
 
     (async () => {
-      const [phasesRes, compsRes] = await Promise.all([
-        supabase.from('macro_phases').select('*').in('macrocycle_id', ids).eq('owner_id', getOwnerId()).order('position'),
-        supabase.from('macro_competitions').select('*').in('macrocycle_id', ids).eq('owner_id', getOwnerId()).order('competition_date'),
-      ]);
+      const { data: phasesData } = await supabase
+        .from('macro_phases').select('*').in('macrocycle_id', ids).eq('owner_id', getOwnerId()).order('position');
       if (cancelled) return;
-
       const pMap: Record<string, MacroPhase[]> = {};
-      (phasesRes.data || []).forEach(p => {
+      (phasesData || []).forEach(p => {
         if (!pMap[p.macrocycle_id]) pMap[p.macrocycle_id] = [];
         pMap[p.macrocycle_id].push(p);
       });
       setAllPhases(pMap);
-
-      const cMap: Record<string, MacroCompetition[]> = {};
-      (compsRes.data || []).forEach(c => {
-        if (!cMap[c.macrocycle_id]) cMap[c.macrocycle_id] = [];
-        cMap[c.macrocycle_id].push(c);
-      });
-      setAllComps(cMap);
     })();
     return () => { cancelled = true; };
   }, [macrocycles]);

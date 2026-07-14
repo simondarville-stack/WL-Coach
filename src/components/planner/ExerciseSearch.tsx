@@ -30,6 +30,8 @@ interface ExerciseSearchProps {
    *  Enter commits (2+ staged → combo via this callback, exactly 1 → a plain
    *  onAdd). Omit to keep single-add behaviour (template editor, swap picker). */
   onAddCombo?: (exercises: Exercise[]) => void | Promise<void>;
+  /** Focus the input on mount (used where the search is revealed on demand). */
+  autoFocus?: boolean;
 }
 
 export function ExerciseSearch({
@@ -40,6 +42,7 @@ export function ExerciseSearch({
   disableSlashCommands = false,
   dropUp = true,
   onAddCombo,
+  autoFocus = false,
 }: ExerciseSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -205,6 +208,7 @@ export function ExerciseSearch({
         <input
           ref={inputRef}
           type="text"
+          autoFocus={autoFocus}
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => { setOpen(true); setInputFocused(true); }}

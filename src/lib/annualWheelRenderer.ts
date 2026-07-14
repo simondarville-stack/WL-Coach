@@ -395,6 +395,9 @@ export function drawAnnualWheel(params: DrawAnnualWheelParams): HitZone[] {
 
   calendarEvents.forEach(ev => {
     if (!overlapsYear(ev.event_date, ev.end_date || ev.event_date, year)) return;
+    // Competitions already drawn as comp diamonds (from allComps) must not be
+    // redrawn here as a calendar arc/marker — covers single- AND multi-day.
+    if (ev.event_type === 'competition' && usedEventIds.has(ev.id)) return;
 
     const isMultiDay = !!(ev.end_date && ev.end_date > ev.event_date);
     const color = ev.color || CAL_EVENT_COLORS[ev.event_type] || '#6b7280';
