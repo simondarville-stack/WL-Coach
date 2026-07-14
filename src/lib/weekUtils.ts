@@ -42,6 +42,20 @@ export function isWeekComplete(weekStart: string, todayMonday?: string): boolean
   return weekState(weekStart, todayMonday) === 'past';
 }
 
+/**
+ * Order weeks for an in-place `week_start` shift so no single-row update ever
+ * lands on a slot still occupied by an un-shifted week — which would violate the
+ * `(macrocycle_id, week_start)` unique constraint mid-shift. Shifting FORWARD
+ * (shiftDays > 0), update the latest week first (descending); shifting BACK,
+ * the earliest first (ascending). Each target slot is then always already free.
+ * The caller must apply the updates SEQUENTIALLY in this order (not in parallel).
+ */
+export function orderWeeksForShift<T extends { week_start: string }>(weeks: T[], shiftDays: number): T[] {
+  return [...weeks].sort((a, b) =>
+    shiftDays > 0 ? b.week_start.localeCompare(a.week_start) : a.week_start.localeCompare(b.week_start),
+  );
+}
+
 export function findCurrentMacroWeek<T extends { week_start: string }>(macroWeeks: T[]): T | null {
   const today = new Date();
   return macroWeeks.find(mw => {

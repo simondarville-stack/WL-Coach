@@ -273,6 +273,28 @@ export function MacroCycles() {
     }
   }, [selectedAthlete?.id, selectedGroup?.id]);
 
+  // When the coach switches athlete/group via the top-right selector while
+  // viewing a specific cycle, that cycle belongs to the PREVIOUS target — its
+  // id won't match any macrocycle in the new list, so the URL-sync effect below
+  // can't resolve it and the page would stay pinned to the previous athlete's
+  // macro. Drop the stale :cycleId on an actual switch. A ref skips the initial
+  // mount so deep-links (/macrocycles/:id) still resolve on first load.
+  const prevTargetKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = selectedAthlete?.id ?? (selectedGroup ? `g:${selectedGroup.id}` : null);
+    const prev = prevTargetKeyRef.current;
+    prevTargetKeyRef.current = key;
+    // Only on a real athlete↔athlete/group SWITCH (both sides non-null). Clearing
+    // the selection (key === null) is handled by AthleteSelector, which routes to
+    // /dashboard — reacting here too would double-navigate.
+    if (prev !== null && key !== null && prev !== key && urlCycleId) {
+      setSelectedCycle(null);
+      navigate('/macrocycles');
+    }
+  // urlCycleId/navigate are intentionally not triggers — only a target switch is.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAthlete?.id, selectedGroup?.id]);
+
   // Sync the URL cycleId param to selectedCycle. When the URL changes
   // (entering /macrocycles/:cycleId or going back to /macrocycles),
   // update internal state.
