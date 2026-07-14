@@ -5,15 +5,17 @@ import { formatDateShort } from '../../lib/dateUtils';
 
 interface MacroCompetitionBadgeProps {
   competition: MacroCompetition;
+  /** When provided, clicking the chip designates this competition as the
+   *  macro's target (primary), or clears it if it already is. */
+  onSetPrimary?: () => void;
 }
 
-export function MacroCompetitionBadge({ competition }: MacroCompetitionBadgeProps) {
+export function MacroCompetitionBadge({ competition, onSetPrimary }: MacroCompetitionBadgeProps) {
   const navigate = useNavigate();
 
   const handleClick = () => {
-    if (competition.event_id) {
-      navigate('/events');
-    }
+    if (onSetPrimary) onSetPrimary();
+    else if (competition.event_id) navigate('/events');
   };
 
   const base = competition.is_primary
@@ -24,9 +26,11 @@ export function MacroCompetitionBadge({ competition }: MacroCompetitionBadgeProp
     <span
       onClick={handleClick}
       className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium border rounded-full ${base} ${
-        competition.event_id ? 'cursor-pointer hover:opacity-80' : ''
+        onSetPrimary || competition.event_id ? 'cursor-pointer hover:opacity-80' : ''
       }`}
-      title={competition.is_primary ? 'Primary competition' : 'Competition'}
+      title={onSetPrimary
+        ? (competition.is_primary ? 'Target competition — click to unset' : 'Click to set as the target competition')
+        : (competition.is_primary ? 'Primary competition' : 'Competition')}
     >
       <Trophy size={10} />
       {competition.competition_name} — {formatDateShort(competition.competition_date)}

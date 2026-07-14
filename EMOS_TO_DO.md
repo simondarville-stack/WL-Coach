@@ -19,6 +19,149 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Pre-merge adversarial review — 9 confirmed fixes (done 14/07/2026, v0.24.0)
+A full multi-agent review of the whole 0.24.0 diff before merge found and I fixed:
+* (HIGH) two planner display sites (`WeekTimelineHeader`, `PlannerControlPanel`)
+  still read `week_type_text` first — flipped to `week_type` like the other
+  readers, so cycling a week type no longer shows a stale label in the planner.
+* (MED) the events-consolidation migration was applied to the remote DB but had
+  no file — committed `supabase/migrations/20260714141523_consolidate_macro_competitions_into_events.sql`.
+* (MED) the annual wheel double-drew multi-day competition events (diamond +
+  arc) — the dedup now skips any competition already drawn as a comp diamond.
+* (MED) unchecking the *last* table column inverted the toggle (all columns
+  reappeared) — the menu now keeps ≥1 column visible.
+* (MED) header competition chips used raw cycle dates while the table/strip use
+  the week-aligned range — `fetchCompetitions` now week-aligns too.
+* (LOW) restored a way to set the target/primary competition after creation
+  (click a header chip); removed the orphaned `macro_competitions` CRUD writers;
+  added a `+N` overflow indicator to the Events column.
+
+#Events unified: symbols for all types, add-from-macro, one source (done 14/07/2026, v0.24.0)
+* **Every event type gets a symbol** in both the macro table's Events column and
+  the timeline strip. Wrong: only competitions (Trophy) and camps (Tent) had a
+  glyph; seminars / testing days / team meetings / other showed nothing in the
+  table and a plain dot on the strip. Changed: a shared `eventTypeIcons` registry
+  (Trophy / Tent / GraduationCap / Gauge / Users / CalendarDays) drives both
+  surfaces; the `TimelineMarker` now carries the raw `eventType`.
+* **Add events for additional athletes from the macro.** The macro's "Add event"
+  modal now lists the full athlete roster (current athlete/group preselected), so
+  a coach can attach a competition/camp to extra athletes in one go — not just
+  the macro's scope.
+* **Competitions live in ONE place (events).** Wrong: `macro_competitions` was a
+  parallel table, so a competition added at cycle-creation never reached the
+  calendar, and a calendar competition never reached the macro's chips/chart.
+  Changed: competitions are now the shared `events` model end-to-end —
+  - migration `consolidate_macro_competitions_into_events`: added
+    `macrocycles.primary_event_id` (the target competition) and migrated the
+    existing standalone `macro_competitions` into competition events attached to
+    their athlete(s), setting the primary pointer;
+  - the macro derives its competitions from events (`useMacroCycles.fetchCompetitions`,
+    the timeline markers, and the annual wheel all read events now; primary comes
+    from `primary_event_id`), and cycle-creation writes competition **events**;
+  - so adding a competition/camp in the calendar surfaces it in the athlete's
+    macro and vice-versa. `macro_competitions` is now unused (kept, not dropped).
+  Badge/chart/graph consumers are unchanged — events are mapped to the
+  `MacroCompetition` shape. Self-review fix: adding a competition via the macro
+  "Add event" menu now refreshes the header chips/chart too (`fetchCompetitions`),
+  not just the timeline strip. (Annual-wheel dedup verified safe — comp-arc event
+  ids populate `usedEventIds`, so competition events aren't drawn twice.)
+
+#Macro "Track exercise" reuses the planner's ranked search (done 14/07/2026, v0.24.0)
+Wrong: the macro toolbar's add-exercise picker did a flat, unranked substring
+`.includes()` filter with a clunky select-then-click-Add step. Changed: it now
+renders the planner's shared `ExerciseSearch` (ranked via `rankExercises`: exact
+code > code prefix > name prefix > code contains > name contains), so a match is
+added on selection and the field stays open to add several in a row. Added an
+opt-in `autoFocus` prop to `ExerciseSearch` (planner unaffected); removed the
+toolbar's bespoke query/matches state and the `selectedExerciseId`/`onAddExercise`
+plumbing in favour of a single `onAddExerciseDirect(exercise)`. The exercise
+**swap/replace picker** (planner `ExerciseDetail`, "Swap exercise (keeps
+prescription)") already used the same `ExerciseSearch`; aligned it to `autoFocus`
+on open so every exercise add/swap surface now feels identical. (Confirmed with
+the coach that the macro table itself doesn't need a swap/replace for now.)
+
+#Macro toolbar, events menu & table controls (done 14/07/2026, v0.24.0)
+Follow-up batch on the combined macro experience:
+* **Camp = lucide Tent in the strip.** The timeline strip's training-camp glyph
+  was a hand-drawn triangle; swapped to the lucide `Tent` so the strip mirrors
+  the table's Trophy/Tent pairing exactly.
+* **Notes drag is horizontal now.** Replaced the per-row vertical height drag
+  with a **column-width** resize (drag the Notes header's right edge); notes
+  wrap and each row auto-grows to show all text — no fixed height, no inner
+  scrollbar. When the column is collapsed to an icon, **tapping an empty cell
+  now opens a new note** (previously empty cells were inert); the collapsed-note
+  editor is a **portal popover** (renders on top, never clipped by the table's
+  scroll container, flips up near the bottom edge).
+* **All table fields are toggleable.** Training Week / Dates / Events are no
+  longer forced-on — every column is in the "Table view" menu now. Choices
+  persist **per macrocycle** (`table_layout.baseColumns`, coach-confirmed scope)
+  with a layout `v` so cycles customised before these columns existed don't lose
+  them. `showCol` is now a pure membership test; `GeneralSettings` lists all
+  columns as the default set for new cycles.
+* **Competitions & camps added from a top menu.** New "Add event" dropdown in
+  the toolbar (Competition / Training camp) opens the shared `EventFormModal`
+  preset to that type with the current athlete/group preselected, saved via the
+  events model (so it shows on the macro timeline, the calendar and the
+  dashboard alike). The competition editor was **removed from Edit cycle**
+  (now just name + dates); existing `macro_competitions` still render read-only.
+* **Toolbar regrouped.** The ribbon now reads in labelled groups separated by
+  dividers — NAV · BUILD (Track exercise · Fill guide · Phases · Add event) ·
+  VIEWS (Chart · Distribution) · REUSE (Template · Export/Import) · MANAGE
+  (Edit cycle · Delete, right-aligned) — with icons added where missing.
+* **Adversarial-review fixes (same ship).** A multi-agent review of the diff
+  surfaced and I fixed: (HIGH) `persistLayout` didn't carry `baseColumns`, so any
+  non-column view change (collapse, metric reorder, a tint toggle) silently wiped
+  the coach's hidden columns on the next reload — now every persist includes the
+  current column set; (MED) cycling a week type stopped syncing the legacy
+  `week_type_text`, so Analysis / distribution / week-review / planner read stale
+  types — those readers now resolve `week_type` first (single source of truth),
+  `week_type_text` kept only as a fallback; (LOW) an event added with no athletes
+  in scope attached to nobody and never showed — now blocked with a prompt; (LOW)
+  reconciled the structural-column doc + kept those three out of the *global*
+  settings chooser (they seed every table) while staying toggleable per macro.
+
+#Macro timeline & notes — trophy marker, collapsible/draggable notes (done 14/07/2026, v0.24.0)
+* **Strip competition marker = the table's Trophy.** Wrong: the top timeline
+  strip drew competitions as a bespoke pennant *flag*, while the table uses a
+  lucide **Trophy** — two symbols for one thing. Changed (`MacroTimelineStrip`):
+  competitions now render as a Trophy in the **top-left corner of their week
+  cell** (primary=red / secondary=orange, matching the table), co-existing with
+  the notes dot (top-right); the compliance dot drops to bottom-left when a
+  competition shares the cell. Competitions left the separate markers lane
+  (which now carries only camps + events), so a competition-only macro no longer
+  reserves an empty lane.
+* **Notes column collapsible + drag-to-reveal.** Added a "Collapse notes to
+  icon" toggle in the Table-view menu (persisted in `table_layout.viewToggles`):
+  collapsed, the Notes column shrinks to a 30 px strip showing a note icon only
+  where a week has a note (click reads/edits it in a widened overlay). Expanded,
+  the per-row drag handle (now with a hover grip) grows the cell to show **all**
+  the text — the inner scrollbar was removed (`overflow: hidden`, max height
+  raised) per the coach's "no scroll on notes" preference.
+
+#Macro table — week columns split, resizable, single week-type chip (done 14/07/2026, v0.24.0)
+Restructure of the macro cycle table's identity columns (`MacroTableV2`):
+* **Duplicate week-type indicator removed.** Wrong: the Type cell showed *two*
+  things that read the same — a coloured chip (from `week_type`) and a small
+  uncoloured label (from `week_type_text`) — because cycling the type stamped
+  the abbreviation into `week_type_text` too. Changed: dropped the uncoloured
+  label (display + inline edit) and the stamping (its "origin"), leaving one
+  coloured chip. The now-dead `onUpdateWeekLabel` prop and `handleUpdateWeekLabel`
+  were removed so nothing in the table listens to `week_type_text` anymore. The
+  DB column stays (read-only fallback consumers — analysis, distribution chart,
+  Excel export — resolve `week_type_text || week_type`, so an empty label just
+  falls back to the abbreviation); it was **not** dropped (destructive change,
+  live readers).
+* **Week identity split into three columns.** The single cramped "Week" cell
+  (number + ISO week + dates + event icons) became: **Training Week** (the
+  sequential number, and the column is now user-**resizable** via a right-edge
+  drag handle — sticky offsets of the following columns recompute from the
+  width), **Dates** (ISO `W##` over the Mon–Sun `DD/MM–DD/MM` range), and
+  **Events** (the Trophy/Tent competition & training-camp icons, now larger in
+  their own column; more event kinds can be added later). These three are
+  structural — always shown, kept out of the show/hide toggle set so older saved
+  column sets still render them. Verified live: headers, single chip, the
+  Limfjords-Cup trophy bucketed into the correct week, and the resize handle.
+
 #Macro date inputs snap to Monday (done 14/07/2026, v0.23.3)
 The macro start/end date fields now snap any chosen date to that week's Monday
 (new opt-in `snapToMonday` on `DateInput`), so cycles stay Monday-aligned and

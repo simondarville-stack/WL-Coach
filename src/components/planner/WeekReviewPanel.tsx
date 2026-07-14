@@ -407,7 +407,7 @@ async function fetchNextIntent(athleteId: string, weekStart: string): Promise<Ne
   };
   return {
     weekNumber: row.week_number,
-    weekType: row.week_type_text || row.week_type || '',
+    weekType: row.week_type || row.week_type_text || '',
     repsTarget: row.total_reps_target,
     notes: row.notes ?? '',
   };

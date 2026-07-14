@@ -4,6 +4,8 @@
 // All data arrives pre-built as TimelineWeek/TimelineMarker records
 // (src/lib/macroTimelineData.ts); this component only draws.
 
+import { Trophy, Tent } from 'lucide-react';
+import { getEventTypeIcon } from '../../lib/eventTypeIcons';
 import { getISOWeek } from '../../lib/dateUtils';
 import type { TimelineWeek, TimelineMarker } from '../../lib/macroTimelineData';
 
@@ -190,7 +192,7 @@ function buildTooltip(
 
   if (w.notes.trim()) lines.push(`✎ ${w.notes.trim()}`);
   weekMarkers.forEach(m => {
-    lines.push(`${m.kind === 'competition' ? '⚑' : '•'} ${m.title} (${formatDateEUFromISO(m.date)})`);
+    lines.push(`${m.kind === 'competition' ? '🏆' : m.kind === 'camp' ? '⛺' : '•'} ${m.title} (${formatDateEUFromISO(m.date)})`);
   });
   if (clickHint) lines.push(clickHint);
   return lines.join('\n');
@@ -299,61 +301,24 @@ export function MacroTimelineStrip({
   // ── Playhead ──
   const playheadPct = todayDate ? positionOf(todayDate) : null;
 
-  const hasMarkers = markers.length > 0;
+  // Competitions now render as a Trophy in the corresponding week cell (matching
+  // the table's icon). The markers lane keeps only camps + non-competition events.
+  const laneMarkers = markers.filter(m => m.kind !== 'competition');
+  const hasLaneMarkers = laneMarkers.length > 0;
   const hasTypes = weeks.some(w => w.typeAbbr !== '');
 
   return (
     <div className={className} style={{ position: 'relative', ...style }}>
 
-      {/* Markers lane */}
-      {hasMarkers && (
+      {/* Markers lane — camps + events (competitions live in the bar corner) */}
+      {hasLaneMarkers && (
         <div style={{ position: 'relative', height: 17, marginBottom: 1 }}>
-          {markers.map(m => {
+          {laneMarkers.map(m => {
             const startPct = m.endDate ? clampedPositionOf(m.date) : positionOf(m.date);
             if (startPct == null) return null;
             const endPct = m.endDate ? clampedPositionOf(m.endDate) : null;
             const tip = `${m.title} · ${formatDateEUFromISO(m.date)}${m.endDate ? ` — ${formatDateEUFromISO(m.endDate)}` : ''}`;
-            const color = m.color || (m.kind === 'competition' ? 'var(--color-danger-text, #C2410C)' : 'var(--color-text-tertiary)');
-
-            if (m.kind === 'competition') {
-              // Near the right edge, the label flips to the left of the pole
-              // so it never overflows the strip.
-              const flip = startPct > 82;
-              return (
-                <div
-                  key={m.id}
-                  title={tip}
-                  style={{
-                    position: 'absolute', bottom: 0,
-                    ...(flip
-                      ? { right: `${100 - startPct}%`, flexDirection: 'row-reverse' as const, transform: 'translateX(5px)' }
-                      : { left: `${startPct}%`, transform: 'translateX(-4px)' }),
-                    display: 'flex', alignItems: 'flex-end', gap: 3,
-                    maxWidth: `${Math.max(cellPct * 3, 12)}%`,
-                    pointerEvents: 'auto', zIndex: 2,
-                  }}
-                >
-                  {/* Pennant flag: pole + triangle */}
-                  <svg width="9" height="16" viewBox="0 0 9 16" style={{ flexShrink: 0, display: 'block', transform: flip ? 'scaleX(-1)' : undefined }}>
-                    <line x1="1" y1="0.5" x2="1" y2="16" stroke={color} strokeWidth="1.6" />
-                    <path
-                      d="M2 1 L9 3.75 L2 6.5 Z"
-                      fill={m.primary ? color : 'var(--color-bg-primary)'}
-                      stroke={color}
-                      strokeWidth="1.2"
-                    />
-                  </svg>
-                  <span style={{
-                    fontSize: 9, lineHeight: '11px', fontWeight: m.primary ? 700 : 500,
-                    color, fontFamily: 'var(--font-sans)',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    userSelect: 'none',
-                  }}>
-                    {m.title}
-                  </span>
-                </div>
-              );
-            }
+            const color = m.color || 'var(--color-text-tertiary)';
 
             // Training camps: a labelled band (tent glyph + name), tinted with
             // the camp colour so they read distinctly from plain event dots.
@@ -373,9 +338,7 @@ export function MacroTimelineStrip({
                     transform: width == null ? 'translateX(-6px)' : undefined,
                   }}
                 >
-                  <svg width="8" height="8" viewBox="0 0 8 8" style={{ flexShrink: 0, display: 'block' }}>
-                    <path d="M4 1 L7.5 7 L0.5 7 Z" fill="none" stroke="#fff" strokeWidth="1" />
-                  </svg>
+                  <Tent size={9} color="#fff" strokeWidth={2} style={{ flexShrink: 0, display: 'block' }} />
                   <span style={{
                     fontSize: 8, lineHeight: '10px', fontWeight: 600, color: '#fff',
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none',
@@ -386,29 +349,26 @@ export function MacroTimelineStrip({
               );
             }
 
-            // Non-competition events: dot, or thin span for multi-day ranges.
-            if (endPct != null && endPct > startPct) {
-              return (
-                <div
-                  key={m.id}
-                  title={tip}
-                  style={{
-                    position: 'absolute', bottom: 3, left: `${startPct}%`,
-                    width: `${endPct - startPct}%`, height: 3,
-                    borderRadius: 2, background: color, opacity: 0.75,
-                  }}
-                />
-              );
-            }
+            // Other events (seminar / testing day / team meeting / other): the
+            // event-type icon at the start, plus a thin span for multi-day ranges,
+            // so every kind reads with its own symbol (matching the table).
+            const EventIcon = getEventTypeIcon(m.eventType);
+            const isRange = endPct != null && endPct > startPct;
             return (
               <div
                 key={m.id}
                 title={tip}
                 style={{
-                  position: 'absolute', bottom: 2, left: `calc(${startPct}% - 2.5px)`,
-                  width: 5, height: 5, borderRadius: '50%', background: color,
+                  position: 'absolute', bottom: 0, left: `${startPct}%`,
+                  width: isRange ? `${endPct! - startPct}%` : undefined,
+                  pointerEvents: 'auto', zIndex: 1,
                 }}
-              />
+              >
+                {isRange && (
+                  <div style={{ position: 'absolute', bottom: 2, left: 0, right: 0, height: 3, borderRadius: 2, background: color, opacity: 0.6 }} />
+                )}
+                <EventIcon size={11} color={color} style={{ position: 'absolute', bottom: 0, left: -5, display: 'block', filter: 'drop-shadow(0 0 1px var(--color-bg-primary))' }} />
+              </div>
             );
           })}
         </div>
@@ -476,6 +436,8 @@ export function MacroTimelineStrip({
         }}>
           {weeks.map(w => {
             const weekMarkers = markersForWeek(w, markers);
+            const weekComps = weekMarkers.filter(m => m.kind === 'competition');
+            const hasComp = weekComps.length > 0;
             const isSelected = selectedWeekStart != null && w.weekStart === selectedWeekStart;
             const frac = fillFraction(w);
             const programmedFrac = programmedFraction(w);
@@ -522,10 +484,12 @@ export function MacroTimelineStrip({
                     pointerEvents: 'none', zIndex: 1,
                   }} />
                 )}
-                {/* Compliance dot: performed vs week-planned ≥/< threshold */}
+                {/* Compliance dot: performed vs week-planned ≥/< threshold.
+                    Drops to the bottom-left when a competition Trophy occupies
+                    the top-left corner, so the two never overlap. */}
                 {compliant != null && (
                   <span style={{
-                    position: 'absolute', top: 3, left: 3,
+                    position: 'absolute', ...(hasComp ? { bottom: 3 } : { top: 3 }), left: 3,
                     width: 5, height: 5, borderRadius: '50%',
                     background: compliant ? 'var(--color-success-border)' : 'var(--color-warning-border)',
                     boxShadow: '0 0 0 1px var(--color-bg-primary)',
@@ -544,7 +508,7 @@ export function MacroTimelineStrip({
                     pointerEvents: 'none', zIndex: 2,
                   }} />
                 )}
-                {/* Notes dot */}
+                {/* Notes dot — top-right corner */}
                 {w.notes.trim() !== '' && (
                   <span style={{
                     position: 'absolute', top: 3, right: 3,
@@ -554,6 +518,24 @@ export function MacroTimelineStrip({
                     pointerEvents: 'none',
                   }} />
                 )}
+                {/* Competition Trophy — top-left corner, matching the table icon.
+                    Co-exists with the notes dot (top-right). primary=red /
+                    secondary=orange, same data-driven colours as the table.
+                    pointerEvents:none so the week stays clickable; the cell
+                    tooltip already lists the competition + date. */}
+                {weekComps.map((c, i) => (
+                  <span key={c.id} style={{
+                    position: 'absolute', top: 1, left: 1 + i * 9,
+                    lineHeight: 0, pointerEvents: 'none', zIndex: 4,
+                  }}>
+                    <Trophy
+                      size={10}
+                      strokeWidth={2.2}
+                      color={c.primary ? '#E24B4A' : '#EA9A27'}
+                      style={{ display: 'block', filter: 'drop-shadow(0 0 1.5px var(--color-bg-primary))' }}
+                    />
+                  </span>
+                ))}
               </div>
             );
           })}

@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO } from '../lib/dateUtils';
+import { getMondayOfWeekISO } from '../lib/weekUtils';
+import { resolveScopeAthleteIds } from '../lib/macroTimelineData';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -122,7 +124,7 @@ export function useMacroCycles() {
     }
   };
 
-  const updateMacrocycle = async (id: string, updates: Partial<Pick<MacroCycle, 'name' | 'start_date' | 'end_date'>>) => {
+  const updateMacrocycle = async (id: string, updates: Partial<Pick<MacroCycle, 'name' | 'start_date' | 'end_date' | 'primary_event_id'>>) => {
     try {
       setLoading(true);
       const { error } = await supabase.from('macrocycles').update(updates).eq('id', id);
@@ -772,59 +774,54 @@ export function useMacroCycles() {
 
   // --- Competition operations ---
 
+  // Competitions live in the shared events model (calendar ↔ macro are one
+  // source). Derive this macro's competitions from competition-type events for
+  // its athlete(s) within the cycle's dates; the "primary" one is the cycle's
+  // target event (macrocycles.primary_event_id). Mapped to the MacroCompetition
+  // shape so the chips / chart / graph consumers are unchanged.
   const fetchCompetitions = async (macrocycleId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('macro_competitions')
-        .select('*')
-        .eq('macrocycle_id', macrocycleId)
-        .eq('owner_id', getOwnerId())
-        .order('competition_date');
-      if (error) throw error;
-      setCompetitions(data || []);
+      const { data: m } = await supabase
+        .from('macrocycles')
+        .select('athlete_id, group_id, start_date, end_date, primary_event_id')
+        .eq('id', macrocycleId)
+        .single();
+      if (!m) { setCompetitions([]); return; }
+      const athleteIds = await resolveScopeAthleteIds(m.athlete_id, m.group_id);
+      if (athleteIds.length === 0) { setCompetitions([]); return; }
+      const { data: ea } = await supabase
+        .from('event_athletes').select('event_id').in('athlete_id', athleteIds);
+      const eventIds = [...new Set((ea || []).map((x: { event_id: string }) => x.event_id))];
+      if (eventIds.length === 0) { setCompetitions([]); return; }
+      const { data: evs } = await supabase
+        .from('events')
+        .select('id, name, event_date')
+        .in('id', eventIds)
+        .eq('event_type', 'competition')
+        // Week-aligned range (Mon of the first week … Sun of the last week) so the
+        // header chips match the table Events column and the timeline strip.
+        .gte('event_date', getMondayOfWeekISO(new Date(m.start_date + 'T00:00:00')))
+        .lte('event_date', addDaysToISO(getMondayOfWeekISO(new Date(m.end_date + 'T00:00:00')), 6))
+        .order('event_date');
+      const comps: MacroCompetition[] = (evs || []).map((e: { id: string; name: string; event_date: string }) => ({
+        id: e.id,
+        macrocycle_id: macrocycleId,
+        competition_name: e.name,
+        competition_date: e.event_date,
+        is_primary: e.id === m.primary_event_id,
+        event_id: e.id,
+        created_at: '',
+        owner_id: '',
+      }));
+      setCompetitions(comps);
     } catch (err) {
       setError(errMsg(err, 'Failed to load competitions'));
     }
   };
 
-  const createCompetition = async (comp: Omit<MacroCompetition, 'id' | 'created_at' | 'owner_id'>): Promise<MacroCompetition> => {
-    try {
-      const compWithOwner = { ...comp, owner_id: getOwnerId() };
-      const { data, error } = await supabase
-        .from('macro_competitions')
-        .insert(compWithOwner)
-        .select()
-        .single();
-      if (error) throw error;
-      setCompetitions(prev => [...prev, data].sort((a, b) => a.competition_date.localeCompare(b.competition_date)));
-      return data;
-    } catch (err) {
-      setError(errMsg(err, 'Failed to create competition'));
-      throw err;
-    }
-  };
-
-  const updateCompetition = async (id: string, updates: Partial<Pick<MacroCompetition, 'competition_name' | 'competition_date' | 'is_primary'>>) => {
-    try {
-      const { error } = await supabase.from('macro_competitions').update(updates).eq('id', id);
-      if (error) throw error;
-      setCompetitions(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    } catch (err) {
-      setError(errMsg(err, 'Failed to update competition'));
-      throw err;
-    }
-  };
-
-  const deleteCompetition = async (id: string) => {
-    try {
-      const { error } = await supabase.from('macro_competitions').delete().eq('id', id);
-      if (error) throw error;
-      setCompetitions(prev => prev.filter(c => c.id !== id));
-    } catch (err) {
-      setError(errMsg(err, 'Failed to delete competition'));
-      throw err;
-    }
-  };
+  // Competition create/update/delete now go through the shared events model
+  // (useEvents); the old macro_competitions writers were removed with the
+  // consolidation. `fetchCompetitions` (above) reads competitions from events.
 
   // --- Actuals computation across full macro ---
 
@@ -1115,9 +1112,6 @@ export function useMacroCycles() {
     updatePhase,
     deletePhase,
     fetchCompetitions,
-    createCompetition,
-    updateCompetition,
-    deleteCompetition,
     fetchMacroActuals,
     fetchActualsForAthlete,
     updateMacrocycle,

@@ -366,6 +366,7 @@ export function ExerciseDetail({
             exercises={allExercises.filter(e => e.category !== '— System' && e.id !== plannedExercise.exercise_id)}
             disableSlashCommands
             dropUp={false}
+            autoFocus
             placeholder="Swap to another exercise…"
             onAdd={async (newEx) => {
               await swapPlannedExercise(plannedExercise.id, newEx.id);

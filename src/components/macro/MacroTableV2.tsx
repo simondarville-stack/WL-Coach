@@ -1,5 +1,8 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronsLeft, StickyNote, X, Trophy, Tent } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronLeft, ChevronRight, ChevronsLeft, StickyNote, X } from 'lucide-react';
+import { getEventTypeIcon } from '../../lib/eventTypeIcons';
+import { CAL_EVENT_COLORS } from '../../lib/eventTypes';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
 import type { TimelineMarker } from '../../lib/macroTimelineData';
 import type { MacroActualsMap } from '../../hooks/useMacroCycles';
@@ -10,12 +13,14 @@ import { getExerciseCategoryShade } from '../../lib/colorUtils';
 import { getWeekTypeColor } from '../../lib/weekUtils';
 import { getISOWeek as isoWeekOfDate, formatDateShort, addDaysToISO } from '../../lib/dateUtils';
 
-export type MacroTableColumnKey = 'week' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
+export type MacroTableColumnKey = 'week' | 'dates' | 'events' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
 
-export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'weektype', 'k', 'tonnage', 'avg', 'kvalue', 'notes'];
+export const DEFAULT_MACRO_TABLE_COLUMNS: MacroTableColumnKey[] = ['week', 'dates', 'events', 'weektype', 'k', 'tonnage', 'avg', 'kvalue', 'notes'];
 
 export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
-  week: 'Week',
+  week: 'Training Week',
+  dates: 'Dates',
+  events: 'Events',
   weektype: 'Week type',
   k: 'Σreps',
   tonnage: 'Tonnage',
@@ -23,6 +28,14 @@ export const MACRO_TABLE_COLUMN_LABELS: Record<MacroTableColumnKey, string> = {
   kvalue: 'K-value',
   notes: 'Notes',
 };
+
+// The week-identity columns added in the combined-macro release (Training Week /
+// Dates / Events). They ARE toggleable per macro from the "Table view" menu like
+// every other column, but they're shown by default: this list is used to (a) keep
+// them out of the GLOBAL default-column chooser in Settings (they always seed new
+// macros) and (b) union them into saved layouts / global defaults that predate
+// them so an older cycle doesn't render without its dates.
+export const STRUCTURAL_MACRO_COLUMNS: MacroTableColumnKey[] = ['week', 'dates', 'events'];
 
 // ─── Exercise-metric registry ────────────────────────────────────────────────
 // The sub-columns of every exercise column, as an ordered + toggleable list.
@@ -64,7 +77,6 @@ interface MacroTableV2Props {
   actuals: MacroActualsMap;
   onUpdateTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: string) => Promise<void>;
   onUpdateWeekType: (weekId: string, weekType: WeekType) => Promise<void>;
-  onUpdateWeekLabel: (weekId: string, label: string) => Promise<void>;
   onUpdateTotalReps: (weekId: string, value: string) => Promise<void>;
   onUpdateTonnageTarget: (weekId: string, value: string) => Promise<void>;
   onUpdateAvgTarget: (weekId: string, value: string) => Promise<void>;
@@ -92,6 +104,9 @@ interface MacroTableV2Props {
   consistencyTint?: boolean;
   /** Shade collapsed columns by max as % of the exercise reference. */
   collapsedHeatmap?: boolean;
+  /** Collapse the Notes column to a small note icon (shown only where a week
+   *  has a note). Toggled from the "Table view" menu. */
+  notesCollapsed?: boolean;
   onUpdateTargetNote?: (weekId: string, trackedExId: string, note: string) => Promise<void>;
   /** Competition/camp markers overlapping each week (weekId → markers), shown
    *  as Trophy / Tent icons in the week cell. */
@@ -104,9 +119,11 @@ function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
   return config?.abbreviation ?? wt.slice(0, 2).toLowerCase();
 }
 
-// Sticky column widths in px — Notes is sticky; K/Σreps is in the General section
-const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'weektype', 'notes'];
-const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, weektype: 56, notes: 100 };
+// Sticky column widths in px — Notes is sticky; K/Σreps is in the General section.
+// 'week' (Training Week) is user-resizable; the value here is only its default
+// starting width. The others are fixed.
+const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'dates', 'events', 'weektype', 'notes'];
+const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, dates: 76, events: 44, weektype: 44, notes: 100 };
 
 // Week helpers delegate to dateUtils — one ISO-week implementation, one
 // padded DD/MM day-first format across the app (product requirement).
@@ -121,7 +138,6 @@ export function MacroTableV2({
   phases,
   onUpdateTarget,
   onUpdateWeekType,
-  onUpdateWeekLabel,
   onUpdateTotalReps,
   onUpdateTonnageTarget,
   onUpdateAvgTarget,
@@ -143,6 +159,7 @@ export function MacroTableV2({
   onToggleExpand,
   consistencyTint = true,
   collapsedHeatmap = true,
+  notesCollapsed = false,
   onUpdateTargetNote,
   weekMarkers,
 }: MacroTableV2Props) {
@@ -153,31 +170,65 @@ export function MacroTableV2({
   const [editingKWeekId, setEditingKWeekId] = useState<string | null>(null);
   const [editingTonnageId, setEditingTonnageId] = useState<string | null>(null);
   const [editingAvgTargetId, setEditingAvgTargetId] = useState<string | null>(null);
-  const [editingWeekTypeTextId, setEditingWeekTypeTextId] = useState<string | null>(null);
   const [dragWeekId, setDragWeekId] = useState<string | null>(null);
   const [dropWeekId, setDropWeekId] = useState<string | null>(null);
 
-  // Per-week note height (session-local): a top drag handle lets a coach grow
-  // a note to reveal long text or shrink it back. Compact default = one line.
-  const [noteHeights, setNoteHeights] = useState<Record<string, number>>({});
-  const noteDrag = useRef<{ weekId: string; startY: number; startH: number } | null>(null);
-  const COMPACT_NOTE_H = 18, MIN_NOTE_H = 18, MAX_NOTE_H = 220;
-  const startNoteResize = (e: React.PointerEvent, weekId: string) => {
+  // Notes column width (session-local): a right-edge drag handle on the Notes
+  // header widens/narrows the whole column. Notes wrap and each row auto-grows
+  // to show all its text — horizontal resize, no per-row height, no scrollbar.
+  const [notesColWidth, setNotesColWidth] = useState<number>(STICKY_COL_WIDTHS.notes);
+  const notesColDrag = useRef<{ startX: number; startW: number } | null>(null);
+  const MIN_NOTES_W = 60, MAX_NOTES_W = 460;
+  const startNotesResize = (e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation();
-    noteDrag.current = { weekId, startY: e.clientY, startH: noteHeights[weekId] ?? COMPACT_NOTE_H };
+    notesColDrag.current = { startX: e.clientX, startW: notesColWidth };
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
   };
-  const onNoteResizeMove = (e: React.PointerEvent) => {
-    const d = noteDrag.current;
+  const onNotesResizeMove = (e: React.PointerEvent) => {
+    const d = notesColDrag.current;
     if (!d) return;
-    // Top handle: dragging UP (clientY decreases) grows the note.
-    const next = Math.min(MAX_NOTE_H, Math.max(MIN_NOTE_H, d.startH + (d.startY - e.clientY)));
-    setNoteHeights(h => ({ ...h, [d.weekId]: next }));
+    setNotesColWidth(Math.min(MAX_NOTES_W, Math.max(MIN_NOTES_W, d.startW + (e.clientX - d.startX))));
   };
-  const endNoteResize = (e: React.PointerEvent) => {
-    if (!noteDrag.current) return;
+  const endNotesResize = (e: React.PointerEvent) => {
+    if (!notesColDrag.current) return;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    noteDrag.current = null;
+    notesColDrag.current = null;
+  };
+
+  // Collapsed-notes editor: a floating popover anchored to the clicked icon.
+  // Rendered in a portal so it escapes the table's overflow clipping (a plain
+  // in-cell overlay gets cut off near the bottom edge); flips up when there
+  // isn't room below.
+  const [notesAnchor, setNotesAnchor] = useState<{ left: number; top: number; openUp: boolean } | null>(null);
+  const openCollapsedNote = (e: React.MouseEvent, weekId: string) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const POPOVER_H = 130;
+    const openUp = r.bottom + POPOVER_H > window.innerHeight;
+    setNotesAnchor({ left: r.left, top: openUp ? r.top : r.bottom, openUp });
+    setEditingNotesId(weekId);
+  };
+  const closeCollapsedNote = () => { setEditingNotesId(null); setNotesAnchor(null); };
+
+  // Resizable Training Week column (session-local): a right-edge drag handle on
+  // the header widens/narrows the first sticky column. Sticky left-offsets of the
+  // following columns recompute from this width, so the layout stays aligned.
+  const [weekColWidth, setWeekColWidth] = useState<number>(STICKY_COL_WIDTHS.week);
+  const weekColDrag = useRef<{ startX: number; startW: number } | null>(null);
+  const MIN_WEEK_W = 44, MAX_WEEK_W = 220;
+  const startWeekResize = (e: React.PointerEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    weekColDrag.current = { startX: e.clientX, startW: weekColWidth };
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
+  const onWeekResizeMove = (e: React.PointerEvent) => {
+    const d = weekColDrag.current;
+    if (!d) return;
+    setWeekColWidth(Math.min(MAX_WEEK_W, Math.max(MIN_WEEK_W, d.startW + (e.clientX - d.startX))));
+  };
+  const endWeekResize = (e: React.PointerEvent) => {
+    if (!weekColDrag.current) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    weekColDrag.current = null;
   };
 
   const displayed = visibleExercises
@@ -192,9 +243,16 @@ export function MacroTableV2({
     colState(teId).collapsed ? 1 : activeMetrics.length + (colState(teId).expanded ? 1 : 0);
   const totalExSpan = displayed.reduce((s, te) => s + exSpan(te.id), 0);
 
-  // Column visibility helper — defaults to all visible
+  // Column visibility helper — every column is toggleable; defaults to all
+  // visible when no set is provided.
   const showCol = (col: MacroTableColumnKey): boolean =>
     !visibleColumns || visibleColumns.size === 0 || visibleColumns.has(col);
+
+  // Effective sticky width — Training Week is resizable, Notes shrinks to an
+  // icon strip when collapsed, the rest are fixed.
+  const notesWidth = notesCollapsed ? 30 : notesColWidth;
+  const colWidth = (col: MacroTableColumnKey): number =>
+    col === 'week' ? weekColWidth : col === 'notes' ? notesWidth : (STICKY_COL_WIDTHS[col] ?? 0);
 
   // Compute sticky left offsets dynamically
   const stickyLeft: Record<string, number> = {};
@@ -202,7 +260,7 @@ export function MacroTableV2({
   for (const c of STICKY_COL_ORDER) {
     if (showCol(c)) {
       stickyLeft[c] = stickyOffset;
-      stickyOffset += STICKY_COL_WIDTHS[c];
+      stickyOffset += colWidth(c);
     }
   }
   const lastStickyVisible = [...STICKY_COL_ORDER].reverse().find(c => showCol(c));
@@ -266,8 +324,7 @@ export function MacroTableV2({
     const idx = weekTypes.findIndex(t => t.abbreviation === current || t.name === current);
     const next = weekTypes[(idx + 1) % weekTypes.length];
     onUpdateWeekType(weekId, next.abbreviation as WeekType);
-    onUpdateWeekLabel(weekId, next.abbreviation);
-  }, [onUpdateWeekType, onUpdateWeekLabel, weekTypes]);
+  }, [onUpdateWeekType, weekTypes]);
 
   // Phase grouping
   const sortedPhases = [...phases].sort((a, b) => a.position - b.position);
@@ -456,13 +513,45 @@ export function MacroTableV2({
           {/* Sub-headers */}
           <tr className="bg-[var(--color-bg-secondary)] border-b border-[color:var(--color-border-tertiary)]">
             {showCol('week') && (
-              <th className={stickyTh('week')} style={{ width: 68, left: stickyLeft['week'] }}>Wk</th>
+              <th className={stickyTh('week')} style={{ width: weekColWidth, left: stickyLeft['week'] }}>
+                Training Wk
+                {/* Right-edge drag handle — resize the Training Week column.
+                    The sticky <th> is a positioned box, so this absolute handle
+                    anchors to it without an extra relative wrapper. */}
+                <div
+                  onPointerDown={startWeekResize}
+                  onPointerMove={onWeekResizeMove}
+                  onPointerUp={endWeekResize}
+                  onPointerCancel={endWeekResize}
+                  title="Drag to resize the Training Week column"
+                  style={{ position: 'absolute', top: 0, right: -3, width: 6, height: '100%', cursor: 'col-resize', zIndex: 11 }}
+                />
+              </th>
+            )}
+            {showCol('dates') && (
+              <th className={stickyTh('dates')} style={{ width: STICKY_COL_WIDTHS.dates, left: stickyLeft['dates'] }}>Dates</th>
+            )}
+            {showCol('events') && (
+              <th className={stickyTh('events')} style={{ width: STICKY_COL_WIDTHS.events, left: stickyLeft['events'] }}>Events</th>
             )}
             {showCol('weektype') && (
-              <th className={stickyTh('weektype')} style={{ width: 56, left: stickyLeft['weektype'] }}>Type</th>
+              <th className={stickyTh('weektype')} style={{ width: STICKY_COL_WIDTHS.weektype, left: stickyLeft['weektype'] }}>Type</th>
             )}
             {showCol('notes') && (
-              <th className={stickyTh('notes')} style={{ width: 100, left: stickyLeft['notes'] }}>Notes</th>
+              <th className={stickyTh('notes')} style={{ width: notesWidth, left: stickyLeft['notes'] }} title="Notes">
+                {notesCollapsed ? <StickyNote size={11} className="inline-block align-middle" /> : 'Notes'}
+                {/* Right-edge handle — resize the Notes column horizontally. */}
+                {!notesCollapsed && (
+                  <div
+                    onPointerDown={startNotesResize}
+                    onPointerMove={onNotesResizeMove}
+                    onPointerUp={endNotesResize}
+                    onPointerCancel={endNotesResize}
+                    title="Drag to resize the Notes column"
+                    style={{ position: 'absolute', top: 0, right: -3, width: 6, height: '100%', cursor: 'col-resize', zIndex: 11 }}
+                  />
+                )}
+              </th>
             )}
             {showCol('k') && (
               <th className="bg-blue-50/60 border-l border-[color:var(--color-border-tertiary)] text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
@@ -566,47 +655,82 @@ export function MacroTableV2({
                   onMouseEnter={e => { if (dragWeekId) return; (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '26' : '#f9fafb'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '0D' : ''; }}
                 >
+                  {/* Training Week — the sequential week number only (resizable column). */}
                   {showCol('week') && (
                     <td
                       className={`${stickyTd('week')} text-center px-1 py-0.5`}
-                      style={{ width: 68, left: stickyLeft['week'] }}
+                      style={{ width: weekColWidth, left: stickyLeft['week'] }}
+                    >
+                      <span className="text-[13px] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
+                    </td>
+                  )}
+
+                  {/* Dates — ISO week number over the Mon–Sun date range. */}
+                  {showCol('dates') && (
+                    <td
+                      className={`${stickyTd('dates')} text-center px-1 py-0.5`}
+                      style={{ width: STICKY_COL_WIDTHS.dates, left: stickyLeft['dates'] }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[12px] font-medium leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
-                        <span className="text-[9px] font-medium leading-none mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
-                        <span className="text-[7px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span className="text-[10px] font-medium leading-none" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
+                        <span className="text-[8px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
                           {formatDateShort(week.week_start)}–{formatDateShort(addDaysToISO(week.week_start, 6))}
                         </span>
-                        {(() => {
-                          const ms = weekMarkers?.get(week.id);
-                          if (!ms || ms.length === 0) return null;
-                          const comps = ms.filter(m => m.kind === 'competition');
-                          const camps = ms.filter(m => m.kind === 'camp');
-                          if (comps.length === 0 && camps.length === 0) return null;
-                          return (
-                            <div className="flex items-center justify-center gap-0.5 mt-0.5">
-                              {comps.slice(0, 2).map(c => (
-                                <span key={c.id} title={`${c.title} · ${formatDateShort(c.date)}`} className="inline-flex">
-                                  {/* is_primary red / secondary orange — data-driven, not chrome. */}
-                                  <Trophy size={9} style={{ color: c.primary ? '#E24B4A' : '#EA9A27' }} />
-                                </span>
-                              ))}
-                              {camps.slice(0, 2).map(c => (
-                                <span key={c.id} title={`${c.title}${c.endDate ? ` · ${formatDateShort(c.date)}–${formatDateShort(c.endDate)}` : ` · ${formatDateShort(c.date)}`}`} className="inline-flex">
-                                  <Tent size={9} style={{ color: c.color || '#2563eb' }} />
-                                </span>
-                              ))}
-                            </div>
-                          );
-                        })()}
                       </div>
                     </td>
                   )}
 
+                  {/* Events — competition / training-camp icons for this week. */}
+                  {showCol('events') && (
+                    <td
+                      className={`${stickyTd('events')} text-center px-0.5 py-0.5`}
+                      style={{ width: STICKY_COL_WIDTHS.events, left: stickyLeft['events'] }}
+                    >
+                      {(() => {
+                        const ms = weekMarkers?.get(week.id);
+                        if (!ms || ms.length === 0) return null;
+                        return (
+                          <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                            {ms.slice(0, 3).map(m => {
+                              const Icon = getEventTypeIcon(m.eventType);
+                              // Competitions: primary red / secondary orange. Other
+                              // types: their canonical colour. All data-driven.
+                              const color = m.eventType === 'competition'
+                                ? (m.primary ? '#E24B4A' : '#EA9A27')
+                                : (m.color || CAL_EVENT_COLORS[m.eventType] || 'var(--color-text-tertiary)');
+                              const range = m.endDate
+                                ? `${formatDateShort(m.date)}–${formatDateShort(m.endDate)}`
+                                : formatDateShort(m.date);
+                              return (
+                                <span key={m.id} title={`${m.title} · ${range}`} className="inline-flex">
+                                  <Icon size={11} style={{ color }} />
+                                </span>
+                              );
+                            })}
+                            {ms.length > 3 && (
+                              <span
+                                className="text-[8px] font-medium leading-none"
+                                style={{ color: 'var(--color-text-tertiary)' }}
+                                title={ms.slice(3).map(m => {
+                                  const r = m.endDate ? `${formatDateShort(m.date)}–${formatDateShort(m.endDate)}` : formatDateShort(m.date);
+                                  return `${m.title} · ${r}`;
+                                }).join('\n')}
+                              >
+                                +{ms.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                  )}
+
+                  {/* Week type — a single coloured chip (click cycles, right-click
+                      reverses). The old uncolored duplicate label was removed. */}
                   {showCol('weektype') && (
                     <td
                       className={`${stickyTd('weektype')} text-center px-0.5 py-0.5`}
-                      style={{ width: 56, left: stickyLeft['weektype'] }}
+                      style={{ width: STICKY_COL_WIDTHS.weektype, left: stickyLeft['weektype'] }}
                     >
                       <div className="flex flex-col items-center gap-0.5">
                         {stampAbbr && stampColor && (
@@ -619,7 +743,7 @@ export function MacroTableV2({
                           </span>
                         )}
                         <span
-                          className="text-[8px] font-medium rounded px-1 py-px cursor-pointer select-none inline-block"
+                          className="text-[9px] font-medium rounded px-1.5 py-px cursor-pointer select-none inline-block"
                           style={{ backgroundColor: wtColor + '20', color: wtColor, opacity: stampAbbr ? 0.45 : 1 }}
                           onClick={() => cycleWeekType(week.id, week.week_type)}
                           onContextMenu={(e) => {
@@ -628,86 +752,75 @@ export function MacroTableV2({
                             const idx = weekTypes.findIndex(t => t.abbreviation === week.week_type || t.name === week.week_type);
                             const prev = weekTypes[(idx - 1 + weekTypes.length) % weekTypes.length];
                             onUpdateWeekType(week.id, prev.abbreviation as WeekType);
-                            onUpdateWeekLabel(week.id, prev.abbreviation);
                           }}
-                          title="Click to cycle week type"
+                          title="Click to cycle week type · right-click to reverse"
                         >
                           {wtAbbr}
                         </span>
-                        {editingWeekTypeTextId === week.id ? (
-                          <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              defaultValue={week.week_type_text ?? ''}
-                              autoFocus
-                              className="w-[50px] text-center text-[8px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-0.5 py-px"
-                              onBlur={(e) => {
-                                onUpdateWeekLabel(week.id, e.target.value);
-                                setEditingWeekTypeTextId(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                if (e.key === 'Escape') setEditingWeekTypeTextId(null);
-                              }}
-                            />
-                          </div>
-                        ) : (
-                          <span
-                            className="text-[8px] text-[color:var(--color-text-tertiary)] cursor-pointer truncate max-w-[52px] hover:text-[color:var(--color-text-secondary)]"
-                            onClick={() => setEditingWeekTypeTextId(week.id)}
-                            title={week.week_type_text ?? ''}
-                          >
-                            {week.week_type_text || <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
-                          </span>
-                        )}
                       </div>
                     </td>
                   )}
 
-                  {/* Notes — now STICKY, part of Week section */}
+                  {/* Notes — sticky. Collapse to an icon via the Table-view menu;
+                      expanded, the column is width-resizable (drag the header's
+                      right edge) and each note wraps to show all its text — the
+                      row auto-grows, no inner scrollbar. */}
                   {showCol('notes') && (
                     <td
-                      className={`${stickyTd('notes')} px-1 py-0 transition-colors ${deleteMode && week.notes ? 'bg-[var(--color-danger-bg)]' : ''}`}
-                      style={{ width: 100, left: stickyLeft['notes'] }}
+                      className={`${stickyTd('notes')} px-1 py-0.5 transition-colors align-top ${deleteMode && week.notes ? 'bg-[var(--color-danger-bg)]' : ''}`}
+                      style={{ width: notesWidth, left: stickyLeft['notes'] }}
                     >
-                      {editingNotesId === week.id ? (
+                      {notesCollapsed ? (
+                        // Collapsed: a note icon where a note exists; an empty cell
+                        // is still tappable to start a new note. Editing opens a
+                        // floating popover (portal) so the narrow column isn't a
+                        // constraint and it can't be clipped by the table scroll.
+                        <div className="flex items-center justify-center" style={{ minHeight: 18 }}>
+                          {week.notes ? (
+                            <button
+                              type="button"
+                              title={deleteMode ? 'Click to clear' : week.notes}
+                              onClick={(e) => { if (deleteMode) onUpdateNotes(week.id, ''); else openCollapsedNote(e, week.id); }}
+                              className="p-0.5 hover:opacity-70"
+                            >
+                              <StickyNote size={12} style={{ color: deleteMode ? 'var(--color-danger-text)' : 'var(--color-accent)' }} />
+                            </button>
+                          ) : (
+                            // Empty week: a full-cell tap target opens a new note.
+                            <button
+                              type="button"
+                              title="Add a note"
+                              onClick={(e) => openCollapsedNote(e, week.id)}
+                              className="w-full flex items-center justify-center text-[color:var(--color-text-tertiary)] opacity-0 hover:opacity-100"
+                              style={{ minHeight: 18 }}
+                            >
+                              <StickyNote size={11} />
+                            </button>
+                          )}
+                        </div>
+                      ) : editingNotesId === week.id ? (
                         <div onClick={e => e.stopPropagation()} onContextMenu={e => e.stopPropagation()}>
                           <textarea
                             defaultValue={week.notes ?? ''}
                             autoFocus
-                            rows={1}
-                            className="w-full text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-1 py-0.5 resize-none leading-snug"
-                            style={{ height: Math.max(noteHeights[week.id] ?? COMPACT_NOTE_H, 44) }}
+                            rows={3}
+                            className="w-full text-[10px] border-none outline-none bg-[var(--color-accent-muted)] rounded px-1 py-0.5 resize-y leading-snug"
                             onBlur={(e) => { onUpdateNotes(week.id, e.target.value); setEditingNotesId(null); }}
                             onKeyDown={(e) => { if (e.key === 'Escape') setEditingNotesId(null); }}
                           />
                         </div>
                       ) : (
-                        <div className="relative">
-                          {/* Draggable top handle — grow to reveal, shrink to hide. */}
-                          {week.notes && (
-                            <div
-                              onPointerDown={e => startNoteResize(e, week.id)}
-                              onPointerMove={onNoteResizeMove}
-                              onPointerUp={endNoteResize}
-                              onPointerCancel={endNoteResize}
-                              title="Drag to resize note"
-                              style={{ position: 'absolute', top: -2, left: 0, right: 0, height: 5, cursor: 'row-resize', zIndex: 1 }}
-                            />
-                          )}
-                          <div
-                            className={`text-[10px] leading-snug cursor-pointer transition-colors whitespace-pre-wrap break-words ${
-                              deleteMode && week.notes ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
-                            }`}
-                            style={{ height: noteHeights[week.id] ?? COMPACT_NOTE_H, overflowY: 'auto' }}
-                            onClick={() => {
-                              if (deleteMode && week.notes) onUpdateNotes(week.id, '');
-                              else setEditingNotesId(week.id);
-                            }}
-                            title={deleteMode ? 'Click to clear' : undefined}
-                          >
-                            {week.notes || <span className="italic text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
-                          </div>
+                        <div
+                          className={`text-[10px] leading-snug cursor-pointer transition-colors whitespace-pre-wrap break-words ${
+                            deleteMode && week.notes ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
+                          }`}
+                          onClick={() => {
+                            if (deleteMode && week.notes) onUpdateNotes(week.id, '');
+                            else setEditingNotesId(week.id);
+                          }}
+                          title={deleteMode ? 'Click to clear' : undefined}
+                        >
+                          {week.notes || <span className="italic text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>}
                         </div>
                       )}
                     </td>
@@ -1097,12 +1210,18 @@ export function MacroTableV2({
                     Ø
                   </td>
                 )}
+                {showCol('dates') && (
+                  <td className={`${stickyTd('dates')} ${avgBg} py-0`} style={{ left: stickyLeft['dates'] }} />
+                )}
+                {showCol('events') && (
+                  <td className={`${stickyTd('events')} ${avgBg} py-0`} style={{ left: stickyLeft['events'] }} />
+                )}
                 {showCol('weektype') && (
                   <td className={`${stickyTd('weektype')} ${avgBg} py-0`} style={{ left: stickyLeft['weektype'] }} />
                 )}
                 {showCol('notes') && (
                   <td className={`${stickyTd('notes')} ${avgBg} px-2 py-0 ${summaryText}`} style={{ left: stickyLeft['notes'] }}>
-                    average
+                    {notesCollapsed ? '' : 'average'}
                   </td>
                 )}
                 {showCol('k') && (
@@ -1179,12 +1298,18 @@ export function MacroTableV2({
                     ↑
                   </td>
                 )}
+                {showCol('dates') && (
+                  <td className={`${stickyTd('dates')} ${maxBg} py-0`} style={{ left: stickyLeft['dates'] }} />
+                )}
+                {showCol('events') && (
+                  <td className={`${stickyTd('events')} ${maxBg} py-0`} style={{ left: stickyLeft['events'] }} />
+                )}
                 {showCol('weektype') && (
                   <td className={`${stickyTd('weektype')} ${maxBg} py-0`} style={{ left: stickyLeft['weektype'] }} />
                 )}
                 {showCol('notes') && (
                   <td className={`${stickyTd('notes')} ${maxBg} px-2 py-0 ${summaryText}`} style={{ left: stickyLeft['notes'] }}>
-                    peak
+                    {notesCollapsed ? '' : 'peak'}
                   </td>
                 )}
                 {showCol('k') && (
@@ -1256,6 +1381,37 @@ export function MacroTableV2({
           })()}
         </tbody>
       </table>
+
+      {/* Collapsed-notes editor — floating popover in a portal (renders on top,
+          never clipped by the table's scroll container). */}
+      {notesCollapsed && editingNotesId && notesAnchor && createPortal(
+        (() => {
+          const w = macroWeeks.find(mw => mw.id === editingNotesId);
+          return (
+            <div
+              style={{
+                position: 'fixed', left: notesAnchor.left, zIndex: 1000, width: 240,
+                ...(notesAnchor.openUp
+                  ? { bottom: Math.max(4, window.innerHeight - notesAnchor.top + 2) }
+                  : { top: notesAnchor.top + 2 }),
+              }}
+              onClick={e => e.stopPropagation()}
+              onContextMenu={e => e.stopPropagation()}
+            >
+              <textarea
+                defaultValue={w?.notes ?? ''}
+                autoFocus
+                rows={4}
+                placeholder="Week note…"
+                className="w-full text-[11px] outline-none bg-[var(--color-bg-primary)] rounded px-1.5 py-1 resize leading-snug shadow-xl border border-[color:var(--color-border-primary)]"
+                onBlur={(e) => { onUpdateNotes(editingNotesId, e.target.value); closeCollapsedNote(); }}
+                onKeyDown={(e) => { if (e.key === 'Escape') closeCollapsedNote(); }}
+              />
+            </div>
+          );
+        })(),
+        document.body
+      )}
     </div>
   );
 }

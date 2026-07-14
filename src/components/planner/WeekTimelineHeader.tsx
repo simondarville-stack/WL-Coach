@@ -143,7 +143,7 @@ export function WeekTimelineHeader({
             textTransform: 'uppercase', letterSpacing: '0.05em',
             fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
           }}>
-            {macroContext.weekTypeText || macroContext.weekType}
+            {macroContext.weekType || macroContext.weekTypeText}
           </span>
         )}
         {macroContext && (
