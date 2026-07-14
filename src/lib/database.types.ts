@@ -1153,7 +1153,10 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      shift_macro_weeks: {
+        Args: { p_cycle_id: string; p_shift_days: number };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;

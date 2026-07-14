@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO } from '../lib/dateUtils';
-import { orderWeeksForShift } from '../lib/weekUtils';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -646,24 +645,22 @@ export function useMacroCycles() {
   // --- Cycle extend / trim ---
 
   const extendCycle = async (cycleId: string, lastWeekNumber: number, lastWeekStart: string, newEndDate: string, defaultWeekType: string): Promise<void> => {
-    const newStart = new Date(lastWeekStart);
-    newStart.setDate(newStart.getDate() + 7);
-    const startISO = newStart.toISOString().slice(0, 10);
-    // Build weeks from startISO to newEndDate
+    // Step by 7 days with STRING date math (addDaysToISO) — never
+    // `new Date(...).toISOString().slice(0,10)`, which rolls back a day for
+    // positive-UTC coaches and produced non-Monday week_starts (DD-01/02).
     const weeks: { week_start: string; week_number: number; week_type: string; week_type_text: string; notes: string; macrocycle_id: string }[] = [];
-    const d = new Date(startISO + 'T00:00:00');
-    const end = new Date(newEndDate + 'T00:00:00');
+    let cur = addDaysToISO(lastWeekStart, 7);
     let weekNum = lastWeekNumber + 1;
-    while (d <= end) {
+    while (cur <= newEndDate) {
       weeks.push({
         macrocycle_id: cycleId,
-        week_start: d.toISOString().slice(0, 10),
+        week_start: cur,
         week_number: weekNum++,
         week_type: defaultWeekType,
         week_type_text: '',
         notes: '',
       });
-      d.setDate(d.getDate() + 7);
+      cur = addDaysToISO(cur, 7);
     }
     if (weeks.length > 0) {
       const { error } = await supabase.from('macro_weeks').insert(weeks);
@@ -691,29 +688,29 @@ export function useMacroCycles() {
     const affected = macroWeeks.filter(w => w.macrocycle_id === cycleId);
     if (affected.length === 0) return;
     const originals = affected.map(w => ({ id: w.id, week_start: w.week_start }));
-    // Order the writes so a week never lands on another week's not-yet-vacated
-    // slot — the (macrocycle_id, week_start) unique constraint would otherwise
-    // fire mid-shift. Must be sequential, not Promise.all (parallel writes race
-    // and re-introduce the transient collision). See orderWeeksForShift.
-    const ordered = orderWeeksForShift(originals, shiftDays);
+    // Optimistic: slide local state immediately so the table re-dates without a
+    // refetch remount.
     setMacroWeeks(prev => prev.map(w =>
       w.macrocycle_id === cycleId ? { ...w, week_start: addDaysToISO(w.week_start, shiftDays) } : w,
     ));
-    try {
-      for (const o of ordered) {
-        const { error } = await supabase
-          .from('macro_weeks')
-          .update({ week_start: addDaysToISO(o.week_start, shiftDays) })
-          .eq('id', o.id);
-        if (error) throw error;
-      }
-    } catch (err) {
+    // The whole shift runs in ONE atomic DB function (shift_macro_weeks): it
+    // updates the rows in a collision-safe order (so they never trip the
+    // (macrocycle_id, week_start) unique constraint mid-shift) and, being a
+    // single transaction, can never leave a PARTIAL shift committed — the
+    // earlier client-side per-row loop could, which is how cycles got corrupted
+    // (gaps / misaligned starts). It also acts on the current DB rows, so a
+    // stale local snapshot can't skew the shift.
+    const { error } = await supabase.rpc('shift_macro_weeks', {
+      p_cycle_id: cycleId,
+      p_shift_days: shiftDays,
+    });
+    if (error) {
       setMacroWeeks(prev => prev.map(w => {
         const o = originals.find(x => x.id === w.id);
         return o ? { ...w, week_start: o.week_start } : w;
       }));
-      setError(errMsg(err, 'Failed to shift weeks'));
-      throw err;
+      setError(errMsg(error, 'Failed to shift weeks'));
+      throw error;
     }
   };
 
