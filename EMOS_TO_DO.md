@@ -19,15 +19,20 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
-#Bug fixes (done 14/07/2026, v0.23.1)
+#Bug fixes (done 14/07/2026, v0.23.1–0.23.2)
 * **Shifting a macro's start date failed with "duplicate key value violates
   unique_macrocycle_week".** Wrong: `shiftMacroWeeks` updated every week's
-  `week_start` in parallel (`Promise.all`); moving the cycle forward made a week
-  momentarily land on the next week's not-yet-vacated slot, tripping the
-  `(macrocycle_id, week_start)` unique constraint. Changed: the writes now run
-  **sequentially in a safe order** (latest week first when moving forward,
-  earliest first when moving back — new pure helper `orderWeeksForShift`), so no
-  target slot is ever occupied mid-shift. Covered by `weekShift.test.ts`.
+  `week_start` in parallel (`Promise.all`), so moving the cycle forward made a
+  week momentarily land on the next week's not-yet-vacated slot, tripping the
+  `(macrocycle_id, week_start)` unique constraint — and, being separate
+  transactions, it committed *partial* shifts before aborting, corrupting some
+  cycles (gaps / misaligned starts). Fixed (0.23.2) with an **atomic DB function
+  `shift_macro_weeks(cycle_id, shift_days)`** (migration
+  `add_shift_macro_weeks_function`) that updates the rows in a collision-safe
+  order (latest-first forward, earliest-first back) inside one transaction, so
+  it can never collide *or* leave a partial shift; the hook calls it via
+  `supabase.rpc`. Verified at the DB level against the real corrupted data
+  (naive bulk update reproduces the error; the ordered function does not).
 * **Switching athlete in the top-right selector while viewing a macro stayed on
   the previous athlete's macro.** Wrong: `AthleteSelector` changes the athlete
   but doesn't navigate; the stale `/macrocycles/:cycleId` couldn't be resolved
