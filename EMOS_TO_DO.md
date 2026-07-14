@@ -19,6 +19,24 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Bug fixes (done 14/07/2026, v0.23.1)
+* **Shifting a macro's start date failed with "duplicate key value violates
+  unique_macrocycle_week".** Wrong: `shiftMacroWeeks` updated every week's
+  `week_start` in parallel (`Promise.all`); moving the cycle forward made a week
+  momentarily land on the next week's not-yet-vacated slot, tripping the
+  `(macrocycle_id, week_start)` unique constraint. Changed: the writes now run
+  **sequentially in a safe order** (latest week first when moving forward,
+  earliest first when moving back — new pure helper `orderWeeksForShift`), so no
+  target slot is ever occupied mid-shift. Covered by `weekShift.test.ts`.
+* **Switching athlete in the top-right selector while viewing a macro stayed on
+  the previous athlete's macro.** Wrong: `AthleteSelector` changes the athlete
+  but doesn't navigate; the stale `/macrocycles/:cycleId` couldn't be resolved
+  in the new athlete's cycle list, so the page stayed pinned. Changed:
+  `MacroCycles` now drops the stale `:cycleId` (routes to `/macrocycles`) on an
+  actual athlete/group switch — a ref skips the initial mount so deep-links still
+  resolve, and clearing the selection (handled by `AthleteSelector` → dashboard)
+  is left alone.
+
 #Weekly planner day view — GPP module (done 13/07/2026, v0.22.0)
 **Wrong:** the full-day edit surface (`DayEditor`, opened from a day's top
 banner) had no GPP-sentinel handling, so a GPP block fell through to the

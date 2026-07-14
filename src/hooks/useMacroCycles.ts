@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO } from '../lib/dateUtils';
+import { orderWeeksForShift } from '../lib/weekUtils';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -690,17 +691,22 @@ export function useMacroCycles() {
     const affected = macroWeeks.filter(w => w.macrocycle_id === cycleId);
     if (affected.length === 0) return;
     const originals = affected.map(w => ({ id: w.id, week_start: w.week_start }));
+    // Order the writes so a week never lands on another week's not-yet-vacated
+    // slot — the (macrocycle_id, week_start) unique constraint would otherwise
+    // fire mid-shift. Must be sequential, not Promise.all (parallel writes race
+    // and re-introduce the transient collision). See orderWeeksForShift.
+    const ordered = orderWeeksForShift(originals, shiftDays);
     setMacroWeeks(prev => prev.map(w =>
       w.macrocycle_id === cycleId ? { ...w, week_start: addDaysToISO(w.week_start, shiftDays) } : w,
     ));
     try {
-      await Promise.all(originals.map(async o => {
+      for (const o of ordered) {
         const { error } = await supabase
           .from('macro_weeks')
           .update({ week_start: addDaysToISO(o.week_start, shiftDays) })
           .eq('id', o.id);
         if (error) throw error;
-      }));
+      }
     } catch (err) {
       setMacroWeeks(prev => prev.map(w => {
         const o = originals.find(x => x.id === w.id);
