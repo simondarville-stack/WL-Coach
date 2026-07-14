@@ -179,7 +179,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start date *</label>
-              <DateInput value={startDate} onChange={setStartDate} />
+              <DateInput value={startDate} onChange={setStartDate} snapToMonday />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End date *</label>
@@ -188,7 +188,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
                   {endDate || '— pick a start date'}
                 </p>
               ) : (
-                <DateInput value={endDate} onChange={setEndDate} />
+                <DateInput value={endDate} onChange={setEndDate} snapToMonday />
               )}
               {startDate && endDate && startDate > endDate && (
                 <p className="text-[11px] mt-1" style={{ color: 'var(--color-danger-text)' }}>End date must be after start date.</p>

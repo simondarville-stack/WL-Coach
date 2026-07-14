@@ -19,6 +19,12 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Macro date inputs snap to Monday (done 14/07/2026, v0.23.3)
+The macro start/end date fields now snap any chosen date to that week's Monday
+(new opt-in `snapToMonday` on `DateInput`), so cycles stay Monday-aligned and
+editing the start+end reliably re-ranges the table (the atomic shift RPC below
+makes the update itself robust). Competition/event date fields are unaffected.
+
 #Bug fixes (done 14/07/2026, v0.23.1–0.23.2)
 * **Shifting a macro's start date failed with "duplicate key value violates
   unique_macrocycle_week".** Wrong: `shiftMacroWeeks` updated every week's

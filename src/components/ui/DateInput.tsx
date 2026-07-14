@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Calendar } from 'lucide-react';
+import { getMondayOfWeekISO } from '../../lib/weekUtils';
 
 interface DateInputProps {
   /** Internal value in YYYY-MM-DD format (what the DB uses). */
@@ -7,6 +8,9 @@ interface DateInputProps {
   onChange: (isoDate: string) => void;
   className?: string;
   id?: string;
+  /** When true, any chosen date snaps to the Monday of its week (EMOS weeks
+   *  start Monday). Used for macro start/end dates so cycles stay Monday-aligned. */
+  snapToMonday?: boolean;
 }
 
 /** Parse dd/mm/yyyy → YYYY-MM-DD. Returns '' if invalid. */
@@ -32,11 +36,15 @@ function formatEU(iso: string): string {
  * Auto-inserts slashes after day and month digits.
  * A calendar icon opens the native browser date picker.
  */
-export function DateInput({ value, onChange, className, id }: DateInputProps) {
+export function DateInput({ value, onChange, className, id, snapToMonday = false }: DateInputProps) {
   const [display, setDisplay] = useState(formatEU(value));
   const [error, setError] = useState(false);
   const prevIso = useRef(value);
   const nativeDateRef = useRef<HTMLInputElement>(null);
+
+  /** Snap an ISO date to the Monday of its week when snapToMonday is on. */
+  const maybeSnap = (iso: string): string =>
+    snapToMonday && iso ? getMondayOfWeekISO(new Date(iso + 'T00:00:00')) : iso;
 
   // Sync when the parent changes the ISO value externally
   useEffect(() => {
@@ -58,9 +66,12 @@ export function DateInput({ value, onChange, className, id }: DateInputProps) {
     const iso = parseEU(out);
     if (iso) {
       setError(false);
-      if (iso !== prevIso.current) {
-        prevIso.current = iso;
-        onChange(iso);
+      // Emit the (possibly Monday-snapped) value; keep the display as typed
+      // until blur so snapping doesn't rewrite digits mid-entry.
+      const snapped = maybeSnap(iso);
+      if (snapped !== prevIso.current) {
+        prevIso.current = snapped;
+        onChange(snapped);
       }
     } else {
       setError(out.length === 10);
@@ -74,15 +85,20 @@ export function DateInput({ value, onChange, className, id }: DateInputProps) {
   const handleBlur = () => {
     const iso = parseEU(display);
     if (iso) {
-      setDisplay(formatEU(iso));
+      const snapped = maybeSnap(iso);
+      setDisplay(formatEU(snapped));
       setError(false);
+      if (snapped !== prevIso.current) {
+        prevIso.current = snapped;
+        onChange(snapped);
+      }
     } else if (display.length > 0) {
       setError(true);
     }
   };
 
   const handleNativePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const iso = e.target.value; // YYYY-MM-DD
+    const iso = maybeSnap(e.target.value); // YYYY-MM-DD, snapped to Monday if enabled
     if (iso) {
       prevIso.current = iso;
       setDisplay(formatEU(iso));

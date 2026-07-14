@@ -94,7 +94,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start date *</label>
-              <DateInput value={startDate} onChange={setStartDate} />
+              <DateInput value={startDate} onChange={setStartDate} snapToMonday />
               {startChanged && (
                 <p className="text-[11px] text-amber-600 mt-1">
                   The whole cycle shifts to the new start — week structure, types and targets are preserved.
@@ -103,7 +103,7 @@ export function MacroEditModal({ cycle, competitions, loading, onClose, onSave }
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End date *</label>
-              <DateInput value={endDate} onChange={setEndDate} />
+              <DateInput value={endDate} onChange={setEndDate} snapToMonday />
               {endExtended && (
                 <p className="text-[11px] text-green-600 mt-1">New weeks will be added to the end.</p>
               )}
