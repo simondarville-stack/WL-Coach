@@ -11,6 +11,7 @@ import { Calendar, CalendarDays, MessageCircle, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { fetchAthleteInboxUnreadCount } from '../../../lib/trainingLogService';
+import { onInboxChanged } from '../../../lib/inboxEvents';
 
 const TABS = [
   { to: '/athlete/today', icon: Calendar, label: 'Today' },
@@ -62,8 +63,11 @@ export function AthleteLayout() {
 }
 
 /**
- * Lightweight unread-count poller for the Coach tab badge. Refreshes
- * on mount, on tab focus, and every 60 s while the tab is visible.
+ * Lightweight unread-count poller for the Coach tab badge. Refreshes on
+ * mount, on tab focus, every 60 s while the tab is visible, and
+ * immediately when the service layer reports a read-state change — the
+ * last one is what clears the badge the moment the athlete reads the
+ * thread, since navigating within the app fires no `focus` event.
  */
 function useCoachThreadUnread(athleteId: string | null): number {
   const [count, setCount] = useState(0);
@@ -91,11 +95,13 @@ function useCoachThreadUnread(athleteId: string | null): number {
     const id = window.setInterval(() => {
       if (!document.hidden) void load();
     }, 60_000);
+    const unsubscribe = onInboxChanged(() => void load());
     return () => {
       alive = false;
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onVis);
       window.clearInterval(id);
+      unsubscribe();
     };
   }, [athleteId]);
 

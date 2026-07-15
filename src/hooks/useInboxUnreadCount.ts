@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchInboxUnreadCount } from '../lib/trainingLogService';
+import { onInboxChanged } from '../lib/inboxEvents';
 import { getOwnerId } from '../lib/ownerContext';
 
 /**
  * Lightweight unread-thread count for the sidebar badge. Refreshes on
- * mount, on tab focus, and on a 60 s interval while the tab is visible
- * — keeps the badge live without spamming Supabase. The actual inbox
- * page does its own fetch so opening it reflects fresh data immediately.
+ * mount, on tab focus, on a 60 s interval while the tab is visible, and
+ * immediately whenever the service layer reports a read-state change —
+ * without that last channel the badge would keep showing a stale count
+ * for up to a minute after the coach read the thread, since in-app
+ * navigation fires no `focus` event.
  */
 export function useInboxUnreadCount(): number {
   const [count, setCount] = useState(0);
@@ -31,10 +34,12 @@ export function useInboxUnreadCount(): number {
     const id = window.setInterval(() => {
       if (!document.hidden) void load();
     }, 60_000);
+    const unsubscribe = onInboxChanged(() => void load());
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onVis);
       window.clearInterval(id);
+      unsubscribe();
     };
   }, [load]);
 

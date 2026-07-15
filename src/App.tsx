@@ -31,7 +31,7 @@ import { SystemGuide } from './components/system/SystemGuide';
 import { ErrorLogViewer } from './components/system/ErrorLogViewer';
 import { InvitationsPage } from './components/system/InvitationsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { setActorResolver } from './lib/errorLogger';
+import { logError, setActorResolver } from './lib/errorLogger';
 import { useRouteBreadcrumbs } from './hooks/useRouteBreadcrumbs';
 import { useAthletes } from './hooks/useAthletes';
 import { useTrainingGroups } from './hooks/useTrainingGroups';
@@ -175,13 +175,23 @@ function CoachApp() {
   const [showPrilepin, setShowPrilepin] = useState(false);
   const [coachesLoaded, setCoachesLoaded] = useState(false);
 
+  // The app renders a full-screen spinner until coachesLoaded flips, so a
+  // rejected fetch here (an offline first load, a transient Supabase blip)
+  // used to leave the coach staring at that spinner forever. Fail open:
+  // log it and let the app boot with no coach profiles, which the rest of
+  // the shell already tolerates.
   useEffect(() => {
     const init = async () => {
-      const coaches = await fetchCoaches();
-      setCoaches(coaches);
-      setCoachesLoaded(true);
+      try {
+        const coaches = await fetchCoaches();
+        setCoaches(coaches);
+      } catch (err) {
+        void logError(err, { source: 'manual', context: { at: 'App.init/fetchCoaches' } });
+      } finally {
+        setCoachesLoaded(true);
+      }
     };
-    init();
+    void init();
   }, []);
 
   useEffect(() => {

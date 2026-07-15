@@ -406,10 +406,34 @@ export function useCoachDashboardV2() {
 
   // Reload the foundational dashboard data once on mount + every minute, same
   // cadence as v1 so the two stay in sync if someone toggles between them.
+  //
+  // The poll only runs while the tab is visible, and its rejection is
+  // swallowed here rather than escaping as an unhandled rejection: a tab
+  // left open on the dashboard used to fire this every 60 s regardless,
+  // so a sleeping laptop or a dropped network logged a NetworkError to
+  // error_logs every minute. A failed poll needs no handling — the next
+  // tick resyncs — but it must not surface as a crash.
   useEffect(() => {
-    base.loadDashboardData();
-    const id = setInterval(() => base.loadDashboardData(), 60_000);
-    return () => clearInterval(id);
+    const poll = () => {
+      base.loadDashboardData().catch(() => {
+        // Transient — the next tick resyncs.
+      });
+    };
+    poll();
+    const id = setInterval(() => {
+      if (!document.hidden) poll();
+    }, 60_000);
+    // Skipping hidden ticks means a backgrounded tab goes stale, so
+    // refresh on the way back in — otherwise the coach could stare at
+    // up to a minute of stale data. Same shape as useInboxUnreadCount.
+    const onVis = () => {
+      if (!document.hidden) poll();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

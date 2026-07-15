@@ -19,6 +19,104 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Inbox: stuck unread badges, invisible session threads (done 16/07/2026, v0.24.1)
+All three messaging items traced to **two defects duplicated in both inboxes**
+(`CoachInbox.tsx` and the athlete app's `CoachThreadScreen.tsx` are the same
+component written twice), plus a badge-refresh gap. Verified live against the
+real data, not just reasoned about.
+
+* **An athlete's message with a training session attached never appeared in the
+  thread.** Wrong: the chat component seeds `sessionId` from its prop *once*, at
+  mount — but only the *unit* branch had a React `key`, so switching from the
+  general thread into a session sub-thread **did not remount it**. `sessionId`
+  stayed at the general view's `null`, and the loader's `sessionId ? fetch : []`
+  took the empty branch, so **every session sub-thread rendered "No messages
+  yet", always**. The message was in the database and perfectly formed the whole
+  time; only the render was broken. Changed: both call sites now key the chat
+  per view (`general` / `session:<id>` / `unit:…`), the pattern
+  `FieldConversationScreen` already used.
+* **The coach's unread icon never went away.** Same missing-key defect: with
+  `sessionId` stuck at `null`, the mark-read branch fell through to
+  `Promise.resolve()`, so `coach_read_at` was **never written** for any
+  session-bound message — while the badge counts exactly those. Opening the
+  athlete only marked the *general* thread read (`markGeneralThreadRead` filters
+  `session_id IS NULL`), so the count could never reach zero. Fixed by the same
+  keying; verified live (badge 3 → 2 on opening the thread, and the write landed).
+* **The athlete's badge did not clear after reading.** A *second*, distinct
+  defect: the mark-read effect bailed on `unreadCount === 0`, but on first render
+  the threads list is still loading, so it saw a **synthetic** thread with
+  `unreadCount: 0` and returned early — and its deps (`[thread.kind, sessionId]`)
+  never changed when the real count arrived, so it **never re-ran** and
+  `athlete_read_at` was never written. It only ever cleared via a side door
+  (entering a sub-thread and back, which flips `thread.kind`). Changed: added
+  `thread.unreadCount` to the deps of both effects. Re-running is safe — the
+  write only touches rows whose read column is still null.
+* **Badges lagged up to 60 s even after a correct write.** Both badges were
+  self-contained pollers with no channel from the inbox. Added `lib/inboxEvents.ts`
+  — a tiny pub/sub the service layer emits on every read-state change and both
+  badge hooks subscribe to — so the badge clears the moment the thread is read
+  (in-app navigation fires no `focus` event, which is why nothing woke them).
+* **Data fix: 3 athlete messages were invisible to the coach.** Found while
+  investigating: 4 rows had `owner_id NULL` (written before the fill-from-session
+  trigger existed; migration `20260526000001` backfilled `athlete_id` but not
+  `owner_id`). Every coach-side read filters on `owner_id`, so real athlete
+  messages could never be seen, answered, or counted. Migration
+  `20260716090000_backfill_training_log_message_owner_id` fills them from their
+  session using the same rule as the trigger. Additive only; now 0 orphans.
+* **European date/time in the coach inbox.** Spotted during verification: the
+  inbox used `toLocaleTimeString/DateString(undefined, …)`, which follows the
+  *browser's* locale — it rendered `09:23 AM` and `May 31` on an en-US machine
+  while the athlete app showed `09:23` / `31/05` for the same messages. Now on
+  the shared `dateUtils` helpers (24h, day-first), per CLAUDE.md.
+
+#Training-log week overview: unit names + context-free Max (done 16/07/2026, v0.24.1)
+`WeekReviewPanel` (the review strip above the week).
+* **Wrong names.** It re-derived labels itself instead of reusing the planner's
+  rule: `session_label || day_labels[i] || \`Day ${i + 1}\``. Two bugs — the
+  athlete's `session_label` **outranked the coach's own unit name**, and the
+  fallback said `Day ${i + 1}` where `i` is the 1-based `day_index`, so an
+  unnamed first unit rendered as **"Day 2"** while the planner called it
+  "Unit 1". Changed to the planner's resolution: `day_labels[i]` first, then
+  `session_label` (bonus days the coach never planned), then
+  `defaultUnitLabel(i, displayOrder)` — with `day_display_order` now selected and
+  the same *sorted* `active_days` fallback the planner uses, so the two surfaces
+  can't number units differently. Verified live: a week with coach-named units
+  shows "Mandag · Onsdag · Tor/Fre"; an unnamed week shows "Unit 1…Unit 5"
+  (was "Day 2…Day 6").
+* **Removed "Max".** It was the heaviest single load across the whole week and
+  every exercise, passed `planned = null` — so it rendered as a bare "180 kg"
+  with no `∕ planned` and no %, while every neighbouring total had both. The
+  per-exercise and per-day Max in the log itself keep their context and stay.
+
+#Production error log reviewed (done 16/07/2026, v0.24.1)
+Reviewed all 12 unresolved rows in `error_logs`; they collapse to two real
+causes, both fixed at the root, plus one that had to be diagnosed before it
+could be believed.
+* **`/dashboard` — "NetworkError when attempting to fetch resource" (recurring).**
+  The dashboard's 60 s poller called `loadDashboardData()` **un-awaited, with no
+  `.catch`, and — alone among the app's pollers — no `document.hidden` guard**, so
+  a tab left open on the dashboard kept firing it while the machine slept; each
+  failure escaped as an unhandled rejection and logged an error. (`UnknownError`
+  was the giveaway: postgrest resolves with an error *object*, so only an
+  explicit `if (error) throw error` in `accessScope` could turn it into a
+  rejection.) Now guarded on visibility and its rejection swallowed — a failed
+  poll needs no handling, the next tick resyncs, but it must not read as a crash.
+* **`/athlete/profile` — "Script error." (v0.24.0).** The recorded stack pointed
+  at `index.js:704`, which decompiled to **the error logger's own listener**:
+  `logError(event.error ?? new Error(event.message))` synthesised the Error
+  *inside* the handler, capturing **its own** stack and filing it as the throw
+  site — a fabricated lead. Now it passes a plain `{name, message, stack: null}`
+  (a null stack is honest) and records `muted: true` in context, so an opaque
+  third-party throw — the likely cause here, e.g. an injected script in an in-app
+  webview — is distinguishable from a real app error at a glance. The underlying
+  event carried no information about what threw; **no ProfileScreen defect was
+  found**, and CORS/`crossorigin` was ruled out (assets are same-origin, so the
+  config was already correct).
+* **App could hang on the splash spinner forever.** Found in passing: `App.tsx`
+  awaited `fetchCoaches()` un-caught, and `coachesLoaded` gates a full-screen
+  spinner — one rejected call on boot (offline, a Supabase blip) and the coach
+  stares at a spinner with no way out. Now fails open: logs and boots.
+
 #Pre-merge adversarial review — 9 confirmed fixes (done 14/07/2026, v0.24.0)
 A full multi-agent review of the whole 0.24.0 diff before merge found and I fixed:
 * (HIGH) two planner display sites (`WeekTimelineHeader`, `PlannerControlPanel`)

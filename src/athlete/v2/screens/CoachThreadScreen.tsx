@@ -181,6 +181,7 @@ export function CoachThreadScreen() {
   if (view === 'general') {
     pane = (
       <ChatView
+        key="general"
         thread={generalThread}
         athleteId={athleteId}
         ownerId={ownerId}
@@ -198,6 +199,7 @@ export function CoachThreadScreen() {
   } else if (view.kind === 'session') {
     pane = (
       <ChatView
+        key={`session:${view.thread.sessionId ?? 'none'}`}
         thread={view.thread}
         athleteId={athleteId}
         ownerId={ownerId}
@@ -353,7 +355,9 @@ function ChatView({
   const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
   const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
   // Session id can be born mid-conversation: the attach flow's first
-  // message creates the log session row (ensureSession).
+  // message creates the log session row (ensureSession). Seeded once per
+  // view — every call site keys this component per thread, so switching
+  // threads remounts rather than reusing the previous thread's id.
   const [sessionId, setSessionId] = useState<string | null>(thread.sessionId);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
@@ -386,6 +390,13 @@ function ChatView({
   }, [load]);
 
   // Mark read on open. Both general and session-bound branches.
+  //
+  // unreadCount is a dep on purpose: the threads list loads async, so the
+  // first render gets a synthetic thread with unreadCount 0 and bails.
+  // Without it the effect would never re-run once the real count lands
+  // and the messages would stay unread forever. Re-running is safe — the
+  // update only touches rows whose read column is still null, and the
+  // resulting refresh drives the count to 0, which bails again.
   useEffect(() => {
     if (thread.unreadCount === 0) return;
     const p = thread.kind === 'session'
@@ -395,7 +406,7 @@ function ChatView({
       : markGeneralThreadRead(athleteId, ownerId, 'athlete');
     void p.then(onMessagesChanged).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.kind, sessionId]);
+  }, [thread.kind, sessionId, thread.unreadCount]);
 
   useEffect(() => {
     const el = scrollRef.current;

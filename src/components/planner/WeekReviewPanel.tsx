@@ -12,6 +12,7 @@ import { ArrowRight, Check, Copy, Flag, MessageSquare, Minus, X } from 'lucide-r
 import { supabase } from '../../lib/supabase';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO } from '../../lib/dateUtils';
+import { defaultUnitLabel } from '../../lib/constants';
 import { copyWeekAsDraft } from '../../lib/weekDraftService';
 import {
   fetchWeeklyPerformed,
@@ -93,11 +94,15 @@ export function WeekReviewPanel({
           return;
         }
 
-        type WpRow = { active_days: number[]; day_labels: Record<number, string> | null };
+        type WpRow = {
+          active_days: number[];
+          day_labels: Record<number, string> | null;
+          day_display_order: number[] | null;
+        };
         const [{ data: wpRaw }, { data: logExRaw }, programmedMap, performedMap, nextIntent] = await Promise.all([
           supabase
             .from('week_plans')
-            .select('active_days, day_labels')
+            .select('active_days, day_labels, day_display_order')
             .eq('athlete_id', athleteId)
             .eq('is_group_plan', false)
             .eq('week_start', weekStart)
@@ -114,8 +119,20 @@ export function WeekReviewPanel({
 
         const wp = wpRaw as WpRow | null;
         const sessionByDay = new Map(sessions.map(s => [s.day_index, s]));
+        // Same derivation as WeeklyPlanner (see its currentWeekPlan effect):
+        // fall back to active_days *sorted*, or the two surfaces would number
+        // the units differently for the same week.
+        const displayOrder =
+          wp?.day_display_order ?? (wp?.active_days ?? []).slice().sort((a, b) => a - b);
+        // The unit's name is whatever the coach called it — the same
+        // resolution the planner uses (day_labels → "Unit N" by display
+        // position). The athlete's session_label only names sessions the
+        // coach never planned (bonus days), so it is the last resort, not
+        // the first: letting it win would rename the coach's own units.
         const dayLabel = (i: number, s?: SessionRow): string =>
-          s?.session_label || wp?.day_labels?.[i] || `Day ${i + 1}`;
+          wp?.day_labels?.[i]
+          || s?.session_label
+          || defaultUnitLabel(i, displayOrder);
 
         // Day chips: the plan's active days first, then bonus sessions.
         const weekIsPast = addDaysToISO(weekStart, 6) < getMondayOfWeekISO(new Date());
@@ -229,7 +246,11 @@ export function WeekReviewPanel({
   };
   pushTotal('Σreps', performed?.reps ?? null, programmed?.reps ?? null, fmt);
   pushTotal('Tonnage', performed?.tonnage ?? null, programmed?.tonnage ?? null, fmtT);
-  pushTotal('Max', performed?.maxLoad ?? null, null, v => `${fmt(v)} kg`);
+  // No "Max" here: it was the heaviest single load across every exercise
+  // in the week, with no planned counterpart and no exercise attribution
+  // — a bare number with nothing to read it against. The per-exercise and
+  // per-day Max in the log itself (LogExerciseRow / LogDayCard) keep the
+  // context that makes the figure mean something.
   // Top categories by planned reps.
   if (performed && programmed) {
     const cats = [...programmed.byCategory.entries()]

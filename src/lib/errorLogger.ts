@@ -154,14 +154,28 @@ export function installGlobalHandlers(): void {
   installed = true;
 
   window.addEventListener('error', (event) => {
-    void logError(event.error ?? new Error(event.message), {
-      source: 'window',
-      context: {
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
+    // When the browser mutes an error (cross-origin script, or a callback
+    // with no script on the stack) event.error is null and all we get is
+    // "Script error." with zeroed filename/lineno. Do NOT synthesise an
+    // Error here: `new Error(event.message)` captures ITS OWN stack — this
+    // listener — and files it as the throw site, which reads as a real
+    // lead and sends you hunting through the wrong code. A null stack is
+    // honest. `muted` records which kind of report this was, so an opaque
+    // third-party throw is distinguishable from a genuine app error at a
+    // glance rather than by forensics.
+    const muted = event.error == null;
+    void logError(
+      event.error ?? { name: 'Error', message: event.message, stack: null },
+      {
+        source: 'window',
+        context: {
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          muted,
+        },
       },
-    });
+    );
   });
 
   window.addEventListener('unhandledrejection', (event) => {
