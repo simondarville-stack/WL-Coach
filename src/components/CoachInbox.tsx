@@ -51,7 +51,15 @@ import {
 } from '../lib/trainingLogService';
 import { getOwnerId } from '../lib/ownerContext';
 import { getMondayOfWeekISO } from '../lib/weekUtils';
-import { addDaysToISO, formatDateShort, toLocalISO } from '../lib/dateUtils';
+import {
+  addDaysToISO,
+  formatDateShort,
+  formatDateTimeShort,
+  formatTime24,
+  formatWeekday,
+  formatWeekdayDateShort,
+  toLocalISO,
+} from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
@@ -584,6 +592,7 @@ function AthleteConversation({
   if (view === 'general') {
     pane = (
       <ChatPane
+        key="general"
         thread={generalForChat}
         athleteId={athleteId}
         athleteName={athleteName}
@@ -601,6 +610,7 @@ function AthleteConversation({
   } else if (view.kind === 'session') {
     pane = (
       <ChatPane
+        key={`session:${view.thread.sessionId ?? 'none'}`}
         thread={view.thread}
         athleteId={athleteId}
         athleteName={athleteName}
@@ -796,7 +806,9 @@ function ChatPane({
   const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
   // Session id can be born mid-conversation: the attach flow's first
   // message creates the log session row (ensureSession) and the thread
-  // continues on it.
+  // continues on it. Seeded once per view — every call site keys this
+  // component per thread, so switching threads remounts rather than
+  // reusing the previous thread's id.
   const [sessionId, setSessionId] = useState<string | null>(thread.sessionId);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
@@ -827,6 +839,10 @@ function ChatPane({
     void loadMessages();
   }, [loadMessages]);
 
+  // unreadCount is a dep on purpose — see the matching effect in the
+  // athlete app's CoachThreadScreen: a thread whose real count arrives
+  // after mount would otherwise never be marked read. Re-running is safe
+  // (the update only touches rows whose read column is still null).
   useEffect(() => {
     if (thread.unreadCount === 0) return;
     const p = thread.kind === 'session'
@@ -836,7 +852,7 @@ function ChatPane({
       : markGeneralThreadRead(athleteId, ownerId, 'coach');
     void p.then(onMessagesChanged).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.kind, sessionId, athleteId]);
+  }, [thread.kind, sessionId, athleteId, thread.unreadCount]);
 
   const handleSend = async () => {
     const body = reply.trim();
@@ -1487,6 +1503,12 @@ function UnitPickerModal({
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────
+//
+// These delegate to dateUtils rather than toLocaleTimeString/DateString,
+// which follow the *browser's* locale: on an en-US machine the inbox
+// rendered "09:23 AM" and "May 31" while the athlete app — already on the
+// shared helpers — showed "09:21" and "31/05" for the same messages.
+// 24h and day-first are product requirements, not machine preferences.
 
 function formatActivity(iso: string): string {
   const d = new Date(iso);
@@ -1495,26 +1517,24 @@ function formatActivity(iso: string): string {
   const diff = now.getTime() - d.getTime();
   const oneDayMs = 24 * 60 * 60 * 1000;
   if (diff < oneDayMs && now.getDate() === d.getDate()) {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return formatTime24(d);
   }
   if (diff < 7 * oneDayMs) {
-    return d.toLocaleDateString(undefined, { weekday: 'short' });
+    return formatWeekday(d.toISOString(), 'short');
   }
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatDateShort(d.toISOString());
 }
 
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return formatWeekdayDateShort(iso);
 }
 
 function formatTimeStamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  const sameDay = isToday(d);
-  if (sameDay) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return isToday(d) ? formatTime24(d) : formatDateTimeShort(d);
 }
 
 function isToday(d: Date): boolean {

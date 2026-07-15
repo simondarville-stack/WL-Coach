@@ -6,6 +6,7 @@
  */
 import { supabase } from './supabase';
 import { rankExercises } from './exerciseRanker';
+import { emitInboxChanged } from './inboxEvents';
 import type {
   TrainingLogSession,
   TrainingLogExercise,
@@ -1230,6 +1231,7 @@ export async function markMessagesRead(
   }
   const { error } = await q;
   if (error) throw error;
+  emitInboxChanged();
 }
 
 // ─── Coach inbox ──────────────────────────────────────────────────────────
@@ -1595,6 +1597,7 @@ export async function markGeneralThreadRead(
     .eq('sender_type', otherSender)
     .is(column, null);
   if (error) throw error;
+  emitInboxChanged();
 }
 
 /** Lightweight unread count for one athlete's general thread, used by

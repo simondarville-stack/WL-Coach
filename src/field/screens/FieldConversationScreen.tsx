@@ -397,6 +397,13 @@ function ThreadChat({
 
   // Mark the other party's messages read on open, like every other
   // inbox surface. Failure is non-fatal — the next open retries.
+  //
+  // unreadHint is a dep on purpose — same reason as CoachInbox and the
+  // athlete app's CoachThreadScreen: threads load async, so the general
+  // view's first render sees a hint of 0 and bails, and without this the
+  // effect would never re-run once the real count arrives, leaving the
+  // messages unread forever. Re-running is safe (the update only touches
+  // rows whose read column is still null).
   useEffect(() => {
     if (unreadHint === 0) return;
     const p = unit
@@ -406,7 +413,7 @@ function ThreadChat({
       : markGeneralThreadRead(athleteId, ownerId, 'coach');
     void p.then(onMessagesChanged).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unit?.sessionId, sessionId, athleteId]);
+  }, [unit?.sessionId, sessionId, athleteId, unreadHint]);
 
   useEffect(() => {
     const el = scrollRef.current;
