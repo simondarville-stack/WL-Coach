@@ -2,9 +2,10 @@
 // selected week has logged training (individual athletes only; group plans
 // have no single log stream). One chip per training unit: the coach-given
 // unit name plus whether the athlete did it (done / partial / skipped /
-// missed / pending).
+// missed / pending). Clicking a chip opens that unit in Log mode.
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Check, Minus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
@@ -21,11 +22,13 @@ type DayState = 'done' | 'partial' | 'skipped' | 'missed' | 'pending';
 
 interface DayChip {
   key: string;
+  dayIndex: number;
   label: string;
   state: DayState;
 }
 
 export function WeekReviewPanel({ athleteId, weekStart }: WeekReviewPanelProps) {
+  const navigate = useNavigate();
   const [days, setDays] = useState<DayChip[] | null>(null);
 
   useEffect(() => {
@@ -97,12 +100,18 @@ export function WeekReviewPanel({ athleteId, weekStart }: WeekReviewPanelProps) 
         const planDays = (wp?.active_days ?? []).slice().sort((a, b) => a - b);
         const chips: DayChip[] = planDays.map(i => ({
           key: `d-${i}`,
+          dayIndex: i,
           label: dayLabel(i, sessionByDay.get(i)),
           state: stateOf(sessionByDay.get(i)),
         }));
         for (const s of sessions) {
           if (!planDays.includes(s.day_index)) {
-            chips.push({ key: `b-${s.day_index}`, label: dayLabel(s.day_index, s), state: stateOf(s) });
+            chips.push({
+              key: `b-${s.day_index}`,
+              dayIndex: s.day_index,
+              label: dayLabel(s.day_index, s),
+              state: stateOf(s),
+            });
           }
         }
 
@@ -145,18 +154,20 @@ export function WeekReviewPanel({ athleteId, weekStart }: WeekReviewPanelProps) 
         {days.map(d => {
           const c = chipStyle(d.state);
           return (
-            <span
+            <button
               key={d.key}
-              title={`${d.label} — ${d.state}`}
+              title={`${d.label} — ${d.state} · open in Log mode`}
+              onClick={() => navigate(`/planner/${weekStart}?mode=log&day=${d.dayIndex}`)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
-                padding: '1px 7px', borderRadius: 999,
+                padding: '1px 7px', borderRadius: 999, border: 'none',
                 background: c.bg, color: c.fg,
-                fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
+                fontFamily: 'inherit', fontSize: 10, fontWeight: 600,
+                whiteSpace: 'nowrap', cursor: 'pointer',
               }}
             >
               {c.icon}{d.label}
-            </span>
+            </button>
           );
         })}
       </span>
