@@ -5,7 +5,7 @@
 // selected week (gap weeks, groups without an athlete-level macro) it falls
 // back to a continuous window centered on the selected week.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Table2 } from 'lucide-react';
 import { MacroTimeline, MacroReviewTable } from '../planning';
@@ -14,7 +14,6 @@ import type { MacroContext } from './WeeklyPlanner';
 import type { WeekTypeConfig } from '../../lib/database.types';
 import { getMondayOfWeekISO, getWeekTypeColor } from '../../lib/weekUtils';
 import { formatDateRange } from '../../lib/dateUtils';
-import { useSettings } from '../../hooks/useSettings';
 
 const TABLE_TOGGLE_KEY = 'emos.planner.macroTable';
 
@@ -50,12 +49,7 @@ export function WeekTimelineHeader({
   onNextWeek,
   onSelectWeek,
 }: WeekTimelineHeaderProps) {
-  const { settings, fetchSettingsSilent } = useSettings();
   const navigate = useNavigate();
-  useEffect(() => {
-    void fetchSettingsSilent();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const weekTypeColor = macroContext ? getWeekTypeColor(macroContext.weekType, weekTypes) : null;
 
   // Review applies once the selected week has started; the panel renders
@@ -211,13 +205,11 @@ export function WeekTimelineHeader({
         </div>
       )}
 
-      {/* Week review — done vs planned, athlete feedback, plan-next jump */}
+      {/* Week review — which units the athlete did */}
       {reviewEligible && (
         <WeekReviewPanel
           athleteId={athleteId!}
           weekStart={selectedDate}
-          complianceThreshold={(settings?.compliance_warning_threshold ?? 90) / 100}
-          onSelectWeek={onSelectWeek}
         />
       )}
 
