@@ -21,6 +21,7 @@ import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
 import { WeekSummaryBox } from './WeekSummaryBox';
+import { WeekCategoryTable } from './WeekCategoryTable';
 import { WeekTimelineHeader } from './WeekTimelineHeader';
 import { PlannerControlPanel } from './PlannerControlPanel';
 import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
@@ -152,16 +153,30 @@ export function WeeklyPlanner() {
   // skip them. Defaults to adding (no silent data loss). Reset on each open.
   const [pasteIncludeExtra, setPasteIncludeExtra] = useState(true);
   const [showLoadDistribution, setShowLoadDistribution] = useState(false);
+  // Category table (Wochenplan-style boxes) — persisted per device: it is a
+  // design-time view a coach tends to keep on or off for a whole session.
+  const [showCategoryTable, setShowCategoryTable] = useState(
+    () => localStorage.getItem('emos.planner.categoryTable') === '1',
+  );
+  const toggleCategoryTable = () => {
+    setShowCategoryTable(prev => {
+      localStorage.setItem('emos.planner.categoryTable', prev ? '0' : '1');
+      return !prev;
+    });
+  };
 
-  // Press "L" toggles the load-distribution band (D stays bound to the dock).
+  // Press "L" toggles the load-distribution band, "K" the category table
+  // (D stays bound to the dock).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (e.key !== 'l' && e.key !== 'L') return;
+      const key = e.key.toLowerCase();
+      if (key !== 'l' && key !== 'k') return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       e.preventDefault();
-      setShowLoadDistribution(s => !s);
+      if (key === 'l') setShowLoadDistribution(s => !s);
+      else toggleCategoryTable();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1481,6 +1496,19 @@ export function WeeklyPlanner() {
                 allExercises={allExercises}
                 expanded={showLoadDistribution}
                 onToggle={() => setShowLoadDistribution(s => !s)}
+              />
+            )}
+
+            {/* ── Category table (collapsible band, Wochenplan-style) ── */}
+            {(planSelection.athlete || planSelection.group) && (
+              <WeekCategoryTable
+                plannedExercises={plannedExercises}
+                comboMembers={comboMembers}
+                activeDays={activeDays}
+                allExercises={allExercises}
+                macroContext={macroContext}
+                expanded={showCategoryTable}
+                onToggle={toggleCategoryTable}
               />
             )}
             </div>{/* end unified week header card */}
