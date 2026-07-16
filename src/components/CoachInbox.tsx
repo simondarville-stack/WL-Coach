@@ -32,23 +32,16 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  addComment,
   defaultSlotLabel,
-  ensureSession,
-  fetchCoachNamesForMessages,
-  fetchGeneralThreadMessages,
   fetchInboxThreads,
-  fetchSessionMessages,
   fetchSessionRowForSlot,
   fetchSessionSlotRefs,
   fetchWeekOverview,
-  markGeneralThreadRead,
-  markMessagesRead,
-  sendGeneralMessage,
   type InboxThread,
   type SessionSlotRef,
   type WeekOverview,
 } from '../lib/trainingLogService';
+import { useThreadChat, type ThreadChatUnit } from '../hooks/useThreadChat';
 import { getOwnerId } from '../lib/ownerContext';
 import { getMondayOfWeekISO } from '../lib/weekUtils';
 import {
@@ -67,13 +60,7 @@ import type { TrainingLogMessage } from '../lib/database.types';
 
 /** A unit-thread target from the attach flow. sessionId stays null
  *  until the first message creates the log session row. */
-interface UnitTarget {
-  sessionId: string | null;
-  weekStart: string;
-  dayIndex: number;
-  label: string;
-  date: string;
-}
+type UnitTarget = ThreadChatUnit;
 
 interface AthleteSummary {
   athleteId: string;
@@ -802,115 +789,31 @@ function ChatPane({
   const accessibleAthletes = useAthleteStore(s => s.athletes);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
 
-  const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
-  const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
-  // Session id can be born mid-conversation: the attach flow's first
-  // message creates the log session row (ensureSession) and the thread
-  // continues on it. Seeded once per view — every call site keys this
-  // component per thread, so switching threads remounts rather than
-  // reusing the previous thread's id.
-  const [sessionId, setSessionId] = useState<string | null>(thread.sessionId);
-  const [loading, setLoading] = useState(true);
-  const [reply, setReply] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadMessages = useCallback(async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      const m = thread.kind === 'session'
-        ? sessionId
-          ? await fetchSessionMessages(sessionId)
-          : [] // attached unit without a session yet — empty thread
-        : await fetchGeneralThreadMessages(athleteId, ownerId);
-      setMessages(m);
-      const names = await fetchCoachNamesForMessages(m);
-      setCoachNames(names);
-    } catch (e) {
-      console.error('[CoachInbox] loadMessages failed', e);
-      setError(describeError(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [thread.kind, sessionId, athleteId, ownerId]);
-
-  useEffect(() => {
-    void loadMessages();
-  }, [loadMessages]);
-
-  // unreadCount is a dep on purpose — see the matching effect in the
-  // athlete app's CoachThreadScreen: a thread whose real count arrives
-  // after mount would otherwise never be marked read. Re-running is safe
-  // (the update only touches rows whose read column is still null).
-  useEffect(() => {
-    if (thread.unreadCount === 0) return;
-    const p = thread.kind === 'session'
-      ? sessionId
-        ? markMessagesRead(sessionId, null, 'coach')
-        : Promise.resolve()
-      : markGeneralThreadRead(athleteId, ownerId, 'coach');
-    void p.then(onMessagesChanged).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread.kind, sessionId, athleteId, thread.unreadCount]);
-
-  const handleSend = async () => {
-    const body = reply.trim();
-    if (!body || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      if (thread.kind === 'session') {
-        let sid = sessionId;
-        if (!sid && unit) {
-          // First message on a not-yet-logged unit: create its session
-          // row now so the message has an anchor. Owner is the athlete's
-          // host environment so the athlete app finds the session.
-          const athleteOwner =
-            accessibleAthletes.find(a => a.id === athleteId)?.owner_id ?? ownerId;
-          const session = await ensureSession({
-            athleteId,
-            ownerId: athleteOwner,
-            date: unit.date,
-            weekStart: unit.weekStart,
-            dayIndex: unit.dayIndex,
-          });
-          sid = session.id;
-          setSessionId(sid);
-        }
-        if (!sid) throw new Error('No session to attach this message to.');
-        await addComment({
-          sessionId: sid,
-          exerciseId: null,
-          message: body,
-          senderType: 'coach',
-          senderCoachId: activeCoachId,
-        });
-        setReply('');
-        // Reload directly with the (possibly fresh) session id — the
-        // loadMessages callback may still close over sessionId = null.
-        const m = await fetchSessionMessages(sid);
-        setMessages(m);
-        setCoachNames(await fetchCoachNamesForMessages(m));
-      } else {
-        await sendGeneralMessage({
-          athleteId,
-          ownerId,
-          message: body,
-          senderType: 'coach',
-          senderCoachId: activeCoachId,
-        });
-        setReply('');
-        await loadMessages();
-      }
-      await onMessagesChanged();
-    } catch (e) {
-      console.error('[CoachInbox] send failed', e);
-      setError(describeError(e));
-    } finally {
-      setSending(false);
-    }
-  };
+  // Thread state/logic is shared with the athlete app and the field app —
+  // see useThreadChat. This pane only renders it.
+  const {
+    messages,
+    coachNames,
+    loading,
+    sending,
+    error,
+    draft: reply,
+    setDraft: setReply,
+    send: handleSend,
+  } = useThreadChat({
+    kind: thread.kind,
+    initialSessionId: thread.sessionId,
+    unit,
+    athleteId,
+    ownerId,
+    // A session created from the coach's side must be stamped with the
+    // ATHLETE's host environment, or the athlete app never finds it.
+    sessionOwnerId: accessibleAthletes.find(a => a.id === athleteId)?.owner_id ?? ownerId,
+    role: 'coach',
+    senderCoachId: activeCoachId,
+    unreadCount: thread.unreadCount,
+    onMessagesChanged,
+  });
 
   const openWeekStart = unit?.weekStart
     ?? (thread.kind === 'session' && thread.performedOn

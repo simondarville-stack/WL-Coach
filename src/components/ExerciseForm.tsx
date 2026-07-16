@@ -3,6 +3,7 @@ import type { Exercise, DefaultUnit } from '../lib/database.types';
 import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
 import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
+import { describeError } from '../lib/errorMessage';
 
 interface ExerciseFormProps {
   editingExercise: Exercise | null;
@@ -109,12 +110,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       }
     } catch (err) {
       console.error('Save exercise failed:', err);
-      const msg = err instanceof Error
-        ? err.message
-        : (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string')
-          ? (err as { message: string }).message
-          : 'Failed to save exercise';
-      setSubmitError(msg);
+      setSubmitError(describeError(err));
     } finally {
       setIsSubmitting(false);
     }

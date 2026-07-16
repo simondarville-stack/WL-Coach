@@ -8,6 +8,7 @@ import { useState, useRef } from 'react';
 import { Layers, GripVertical, Trash2, Check } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
+import { describeError } from '../../lib/errorMessage';
 import { Modal, Button, Input } from '../ui';
 
 const PRESET_COLORS = [
@@ -49,6 +50,12 @@ export function ExerciseCategoryNav({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Add/rename report failures the same way delete already did. Before this,
+  // both fired their promise without awaiting or catching: a duplicate name
+  // silently did nothing (the input was even cleared regardless), and the raw
+  // constraint violation escaped as an unhandled rejection into error_logs.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState<string>(PRESET_COLORS[0]);
   const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number; targetId: string | null } | null>(null);
@@ -71,6 +78,47 @@ export function ExerciseCategoryNav({
   function openNewColorPicker(e: React.MouseEvent) {
     const rect = (e.target as HTMLElement).getBoundingClientRect();
     setColorPickerPos({ x: rect.left, y: rect.top - 140, targetId: null });
+  }
+
+  // Only clears the field once the write actually succeeded — on a duplicate
+  // name the coach keeps what they typed and can edit it.
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    setDeleteError(null); // this action's outcome supersedes a prior delete error
+    try {
+      await onAdd(name, newColor);
+      setNewName('');
+    } catch (err) {
+      setSaveError(describeError(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRename(id: string, name: string) {
+    // Unchanged name → nothing to persist. editName is prefilled with the
+    // current name, so without this every blur would fire a rename UPDATE
+    // (and a fetch) even when the coach only clicked in and out.
+    const current = sorted.find(c => c.id === id)?.name;
+    if (name === current) {
+      setEditingId(cur => (cur === id ? null : cur));
+      return;
+    }
+    setSaveError(null);
+    setDeleteError(null);
+    try {
+      await onRename(id, name);
+    } catch (err) {
+      setSaveError(describeError(err));
+    } finally {
+      // Only close the editor if it is STILL on this row. The await above
+      // spans a round trip; clearing unconditionally would stomp a different
+      // row the coach may have opened in the meantime.
+      setEditingId(cur => (cur === id ? null : cur));
+    }
   }
 
   return (
@@ -109,26 +157,26 @@ export function ExerciseCategoryNav({
               value={newName}
               onChange={e => setNewName(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && newName.trim()) { onAdd(newName.trim(), newColor); setNewName(''); }
+                if (e.key === 'Enter') void handleAdd();
               }}
               style={{ flex: 1 }}
             />
             <Button
-              variant="primary" size="sm" icon={<Check size={12} />} disabled={!newName.trim()}
-              onClick={() => { if (newName.trim()) { onAdd(newName.trim(), newColor); setNewName(''); } }}
+              variant="primary" size="sm" icon={<Check size={12} />} disabled={!newName.trim() || saving}
+              onClick={() => void handleAdd()}
             >
               Add
             </Button>
           </div>
         }
       >
-        {deleteError && (
+        {(deleteError || saveError) && (
           <div style={{
             marginBottom: 'var(--space-sm)', padding: '8px 12px',
             background: '#fee2e2', border: '0.5px solid #fca5a5',
             borderRadius: 'var(--radius-md)', fontSize: 'var(--text-caption)', color: '#dc2626',
           }}>
-            {deleteError}
+            {deleteError || saveError}
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -153,7 +201,11 @@ export function ExerciseCategoryNav({
                   dragIdxRef.current = null;
                   dragOverIdxRef.current = null;
                   if (from !== null && to !== null && from !== to) {
-                    await onReorder(from, to);
+                    try {
+                      await onReorder(from, to);
+                    } catch (err) {
+                      setSaveError(describeError(err));
+                    }
                   }
                 }}
                 className="group"
@@ -191,10 +243,13 @@ export function ExerciseCategoryNav({
                     onChange={e => setEditName(e.target.value)}
                     onMouseDown={e => e.stopPropagation()}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') { onRename(cat.id, editName); setEditingId(null); }
+                      if (e.key === 'Enter' && editName.trim()) void handleRename(cat.id, editName.trim());
                       if (e.key === 'Escape') setEditingId(null);
                     }}
-                    onBlur={() => { if (editName.trim()) onRename(cat.id, editName); setEditingId(null); }}
+                    onBlur={() => {
+                      if (editName.trim()) void handleRename(cat.id, editName.trim());
+                      else setEditingId(null);
+                    }}
                     style={{ flex: 1 }}
                   />
                 ) : (
@@ -231,18 +286,16 @@ export function ExerciseCategoryNav({
                       onClick={async () => {
                         setDeleting(true);
                         setDeleteError(null);
+                        setSaveError(null); // this action's outcome supersedes a prior save error
                         try {
                           await onDelete(cat.id);
-                          setConfirmDeleteId(null);
                         } catch (err) {
                           console.error('Category delete error:', err);
-                          const msg = err instanceof Error
-                            ? err.message
-                            : (err as { message?: string; details?: string })?.message
-                              ?? (err as { details?: string })?.details
-                              ?? JSON.stringify(err);
-                          setDeleteError(msg);
+                          setDeleteError(describeError(err));
                         } finally {
+                          // Close the confirm prompt either way — a failed
+                          // delete left it open with a stale error before.
+                          setConfirmDeleteId(null);
                           setDeleting(false);
                         }
                       }}
@@ -310,8 +363,12 @@ export function ExerciseCategoryNav({
                 <button
                   key={color}
                   onClick={() => {
-                    if (colorPickerPos.targetId) onRecolor(colorPickerPos.targetId, color);
-                    else setNewColor(color);
+                    if (colorPickerPos.targetId) {
+                      const id = colorPickerPos.targetId;
+                      void onRecolor(id, color).catch(err => setSaveError(describeError(err)));
+                    } else {
+                      setNewColor(color);
+                    }
                     setColorPickerPos(null);
                   }}
                   style={{

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Exercise, CategoryRow } from '../lib/database.types';
 import { useExerciseStore } from '../store/exerciseStore';
 import { getOwnerId, getContextOwnerId } from '../lib/ownerContext';
+import { describeError } from '../lib/errorMessage';
 
 // Re-export CategoryRow as Category for backward compatibility
 export type Category = CategoryRow;
@@ -158,7 +159,9 @@ export function useExercises() {
         .insert([{ name, display_order: displayOrder, color: color ?? '#888780', owner_id: getOwnerId() }]);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add category');
+      // describeError, not `instanceof Error`: a postgrest error is a plain
+      // object, so that check was always false and threw the real reason away.
+      setError(describeError(err));
       throw err;
     }
   };
@@ -174,7 +177,7 @@ export function useExercises() {
         .eq('owner_id', getOwnerId());
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update category');
+      setError(describeError(err));
       throw err;
     }
   };

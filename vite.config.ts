@@ -28,11 +28,17 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   build: {
-    // 'hidden' emits .map files but omits the //# sourceMappingURL comment,
-    // so browsers/devtools don't auto-load them (source isn't surfaced in the
-    // UI) — yet the maps are deployed, letting a captured production stack
-    // (e.g. the in-app error log's "index-*.js:634:101479") be mapped back to
-    // a real file/line. Without these, iOS "Script error." stacks are opaque.
+    // 'hidden' emits .map files but omits the //# sourceMappingURL comment, so
+    // browsers/devtools don't auto-load them. The maps let a captured
+    // production stack (e.g. the in-app error log's "index-*.js:704:107058")
+    // be mapped back to a real file/line — without them, "Script error."
+    // stacks stay opaque.
+    //
+    // They are NOT deployed: netlify.toml deletes dist/**/*.map after the
+    // build, because 'hidden' only hides the comment, not the file — publishing
+    // dist wholesale exposed the entire source at a guessable URL. Local builds
+    // keep the map, and a build of the same SHA reproduces the same offsets, so
+    // mapping a production stack still works.
     sourcemap: 'hidden',
   },
   optimizeDeps: {
