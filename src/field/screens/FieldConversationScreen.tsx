@@ -31,22 +31,15 @@ import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
 import { useCoachStore } from '../../store/coachStore';
 import {
-  addComment,
-  ensureSession,
-  fetchCoachNamesForMessages,
-  fetchGeneralThreadMessages,
   fetchInboxThreads,
-  fetchSessionMessages,
   fetchSessionRowForSlot,
   fetchSessionSlotRefs,
   fetchWeekOverview,
-  markGeneralThreadRead,
-  markMessagesRead,
-  sendGeneralMessage,
   defaultSlotLabel,
   type InboxThread,
   type SessionSlotRef,
 } from '../../lib/trainingLogService';
+import { useThreadChat, type ThreadChatUnit } from '../../hooks/useThreadChat';
 import {
   formatDateShort,
   formatDateTimeShort,
@@ -59,13 +52,7 @@ import type { TrainingLogMessage } from '../../lib/database.types';
 
 /** A unit thread target. sessionId is null until the first message
  *  creates the session row (attach flow on a not-yet-logged unit). */
-interface UnitTarget {
-  sessionId: string | null;
-  weekStart: string;
-  dayIndex: number;
-  label: string;
-  date: string;
-}
+type UnitTarget = ThreadChatUnit;
 
 type View = { kind: 'general' } | { kind: 'unit'; unit: UnitTarget };
 
@@ -365,108 +352,37 @@ function ThreadChat({
   onMessagesChanged: () => Promise<void>;
   onAttach: (() => void) | null;
 }) {
-  const [messages, setMessages] = useState<TrainingLogMessage[]>([]);
-  const [coachNames, setCoachNames] = useState<Map<string, string>>(new Map());
-  const [sessionId, setSessionId] = useState<string | null>(unit?.sessionId ?? null);
-  const [loading, setLoading] = useState(true);
-  const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const m = unit
-        ? sessionId
-          ? await fetchSessionMessages(sessionId)
-          : []
-        : await fetchGeneralThreadMessages(athleteId, ownerId);
-      setMessages(m);
-      setCoachNames(await fetchCoachNamesForMessages(m));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [unit, sessionId, athleteId, ownerId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Mark the other party's messages read on open, like every other
-  // inbox surface. Failure is non-fatal — the next open retries.
-  //
-  // unreadHint is a dep on purpose — same reason as CoachInbox and the
-  // athlete app's CoachThreadScreen: threads load async, so the general
-  // view's first render sees a hint of 0 and bails, and without this the
-  // effect would never re-run once the real count arrives, leaving the
-  // messages unread forever. Re-running is safe (the update only touches
-  // rows whose read column is still null).
-  useEffect(() => {
-    if (unreadHint === 0) return;
-    const p = unit
-      ? sessionId
-        ? markMessagesRead(sessionId, null, 'coach')
-        : Promise.resolve()
-      : markGeneralThreadRead(athleteId, ownerId, 'coach');
-    void p.then(onMessagesChanged).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unit?.sessionId, sessionId, athleteId, unreadHint]);
+  // Thread state/logic is shared with the desktop inbox and the athlete app —
+  // see useThreadChat. This screen only renders it. Note the field app's
+  // discriminator is `unit == null`, mapped to the hook's kind here.
+  const {
+    messages,
+    coachNames,
+    loading,
+    sending,
+    error,
+    draft: body,
+    setDraft: setBody,
+    send: handleSend,
+  } = useThreadChat({
+    kind: unit ? 'session' : 'general',
+    initialSessionId: unit?.sessionId ?? null,
+    unit,
+    athleteId,
+    ownerId,
+    sessionOwnerId: athleteOwnerId,
+    role: 'coach',
+    senderCoachId: activeCoachId,
+    unreadCount: unreadHint,
+    onMessagesChanged,
+  });
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, loading]);
-
-  const handleSend = async () => {
-    const text = body.trim();
-    if (!text || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      if (unit) {
-        // First message on a not-yet-logged unit: create the session
-        // row now so the message has its anchor.
-        let sid = sessionId;
-        if (!sid) {
-          const session = await ensureSession({
-            athleteId,
-            ownerId: athleteOwnerId,
-            date: unit.date,
-            weekStart: unit.weekStart,
-            dayIndex: unit.dayIndex,
-          });
-          sid = session.id;
-          setSessionId(sid);
-        }
-        const sent = await addComment({
-          sessionId: sid,
-          exerciseId: null,
-          message: text,
-          senderType: 'coach',
-          senderCoachId: activeCoachId,
-        });
-        setMessages(prev => [...prev, sent]);
-      } else {
-        const sent = await sendGeneralMessage({
-          athleteId,
-          ownerId,
-          message: text,
-          senderType: 'coach',
-          senderCoachId: activeCoachId,
-        });
-        setMessages(prev => [...prev, sent]);
-      }
-      setBody('');
-      await onMessagesChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <>

@@ -19,6 +19,81 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#One thread implementation, not three (done 16/07/2026, v0.24.2)
+**Wrong:** the coach inbox, the athlete app and the coach field app each carried
+their own copy of the same thread logic — load, mark-read, send, the
+session-born-mid-conversation lifecycle. Copy-pasted, comments and all. That
+duplication was the defect generator behind the whole 0.24.1 batch: the same two
+bugs existed in every copy, fixing them took three separate edits, and the third
+(the field app) was missed on the first pass and only caught by the adversarial
+review. Every copy also carried an `eslint-disable react-hooks/exhaustive-deps`,
+which is precisely what let the stale-deps bug hide in all three.
+
+**Changed:** the logic moved to `src/hooks/useThreadChat.ts` and all three
+surfaces now consume it; each keeps its own presentation. The surfaces differ
+only in parameters — `role` ('coach'/'athlete'), `kind`, `ownerId`,
+`sessionOwnerId` (the athlete's host env, which a coach-created session must be
+stamped with), `senderCoachId` — not in branches, so they became arguments
+rather than forks. **No eslint-disable survives**: every effect dep is a
+primitive or a ref, so the dep arrays are honest.
+
+The hook also **owns the per-thread state reset** (React's adjust-state-during-
+render pattern) instead of relying on callers to pass a `key`. That is the exact
+bug from 0.24.1 — the session id was seeded once at mount and one call site had
+no key — so a caller can no longer reintroduce it by forgetting.
+
+**Deliberately NOT one `<ThreadChat>` component.** Investigation showed why:
+the desktop pane is styled entirely with inline CSS-var tokens, the two mobile
+views entirely with Tailwind over a hardcoded dark palette, and they own
+different chrome (the field app renders only list+composer as a fragment; its
+parent owns the header and panel). One component serving all three would need
+~20 config props and a styling fork on ~40 nodes — a switch statement wearing a
+component costume. The logic was one thing pretending to be three; the
+presentation is genuinely three things. Merging the two *mobile* views'
+presentation is a sound follow-up (their class strings are near-identical) and
+is now cheap, since it would touch zero logic.
+
+Verified live on all three surfaces: desktop sub-thread renders + badge 3→2;
+athlete badge "COACH 1"→"COACH"; field general thread writes `coach_read_at`
+(it never did before). 707/707 tests pass.
+
+#Source maps no longer published (done 16/07/2026, v0.24.2)
+**Wrong:** `vite.config.ts` used `sourcemap: 'hidden'`, which omits the
+`//# sourceMappingURL` comment but still *writes* the `.map` — and Netlify
+published `dist` wholesale, so the complete EMOS source sat at
+`/assets/index-*.js.map` (~15 MB) for anyone who guessed the URL. The intent
+was to keep production stacks mappable (it works — it is how the "Script error."
+logger bug was diagnosed); the exposure was the unintended half.
+**Changed:** the Netlify build now deletes `dist/**/*.map` after building.
+Nothing fetches them at runtime, so the deploy loses nothing. Local builds keep
+the map, and building the SHA the error log reports reproduces the same bundle
+offsets — so a production stack is still one command from being mapped, without
+shipping the source. Verified the strip command against a real `dist`: the
+14.9 MB map goes, the bundle stays, 0 maps left.
+
+#Duplicate names get a real message (done 16/07/2026, v0.24.2)
+**Wrong:** adding a category whose name already existed showed the coach
+**nothing at all** — `ExerciseCategoryNav` fired `onAdd`/`onRename` without
+awaiting or catching, so the modal silently failed and cleared the typed name
+anyway, while the raw `duplicate key value violates unique constraint
+"categories_owner_name_unique"` escaped as an unhandled rejection into
+`error_logs`. That is why these were in the log at all. Two supporting defects:
+`useExercises` caught with `err instanceof Error`, which is always false for a
+postgrest error object, so the real reason was replaced by a generic string —
+into an `error` channel `/library` never renders anyway; and `describeError`
+*appended* the Postgres detail, making the leak worse.
+**Changed:** `describeError` now maps Postgres `23505` to coach-facing copy via
+a constraint→message table (every entry verified against the live schema — the
+first draft invented three constraints that don't exist). Add/rename/reorder/
+recolor await and catch into an inline banner mirroring the existing delete
+error, and **keep the typed name** on failure so it can be corrected.
+`ExerciseForm` dropped its hand-rolled copy of `describeError` for the shared
+one. Covered by `src/lib/__tests__/errorMessage.test.ts`. Verified live: adding
+"Squat" now says "A category with that name already exists." with no
+`constraint`/`owner_id` leak, no unhandled rejection, and no duplicate row.
+
+**Error log now fully triaged: 0 unresolved of 86.**
+
 #Inbox: stuck unread badges, invisible session threads (done 16/07/2026, v0.24.1)
 All three messaging items traced to **two defects duplicated in both inboxes**
 (`CoachInbox.tsx` and the athlete app's `CoachThreadScreen.tsx` are the same

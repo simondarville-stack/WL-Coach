@@ -2,8 +2,18 @@
 # The production branch (main) is selected in the Netlify UI; this file pins
 # the build itself so deploys stay reproducible regardless of dashboard drift.
 
+# The strip step is deliberate. vite builds with sourcemap: 'hidden', which
+# omits the //# sourceMappingURL comment but still WRITES the .map — and
+# publishing dist wholesale put a ~15 MB map at /assets/index-*.js.map, i.e.
+# the complete EMOS source, readable by anyone. Nothing fetches it at runtime
+# (that's what 'hidden' means), so deleting it from the deploy costs nothing.
+#
+# Production stacks are still mappable: check out the SHA the error log
+# reports (the app records "0.24.1 (8e9748c)") and run `npm run build` — the
+# local build reproduces the same bundle offsets, so the map is always one
+# command away without shipping the source to the public.
 [build]
-  command = "npm run build"
+  command = "npm run build && find dist -name '*.map' -type f -delete"
   publish = "dist"
 
 [build.environment]
