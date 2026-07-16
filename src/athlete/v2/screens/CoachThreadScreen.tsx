@@ -16,9 +16,9 @@
  * unit's session thread — the log session row is created on demand
  * with the first message, never by just browsing the picker.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import {
   defaultSlotLabel,
@@ -29,8 +29,9 @@ import {
   type InboxThread,
   type SessionSlotRef,
 } from '../../../lib/trainingLogService';
-import { useThreadChat, type ThreadChatUnit } from '../../../hooks/useThreadChat';
-import { formatWeekdayDateShort, formatTime24, formatDateTimeShort } from '../../../lib/dateUtils';
+import { type ThreadChatUnit } from '../../../hooks/useThreadChat';
+import { MobileThreadPane } from '../../../components/chat/MobileThreadPane';
+import { formatWeekdayDateShort } from '../../../lib/dateUtils';
 import { describeError } from '../../../lib/errorMessage';
 import { UnitPickerSheet, type PickedUnit } from '../components/UnitPickerSheet';
 import type { TrainingLogMessage } from '../../../lib/database.types';
@@ -339,36 +340,6 @@ function ChatView({
   onAttach?: (() => void) | null;
 }) {
   const navigate = useNavigate();
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // Thread state/logic is shared with the coach inbox and the field app —
-  // see useThreadChat. This screen only renders it.
-  const {
-    messages,
-    coachNames,
-    loading,
-    sending,
-    error,
-    draft: reply,
-    setDraft: setReply,
-    send: handleSend,
-  } = useThreadChat({
-    kind: thread.kind,
-    initialSessionId: thread.sessionId,
-    unit,
-    athleteId,
-    // The athlete is in their own owner env, so a session created here
-    // inherits it — no separate sessionOwnerId needed.
-    ownerId,
-    role: 'athlete',
-    unreadCount: thread.unreadCount,
-    onMessagesChanged,
-  });
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
 
   const jumpTarget = unit
     ? { week: unit.weekStart, slot: unit.dayIndex }
@@ -435,101 +406,29 @@ function ChatView({
         />
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-gray-500 text-xs gap-1.5">
-            <Loader2 size={14} className="animate-spin" />
-            Loading…
-          </div>
-        ) : error ? (
-          <div className="text-[11px] text-red-400 px-2 py-3">{error}</div>
-        ) : messages.length === 0 ? (
-          <EmptyChat kind={thread.kind} />
-        ) : (
-          messages.map(m => (
-            <Bubble
-              key={m.id}
-              message={m}
-              senderLabel={coachLabelForAthlete(m, coachNames)}
-            />
-          ))
-        )}
-      </div>
-
-      <div className="border-t border-gray-800 px-3 py-2.5 flex gap-2">
-        {onAttach && (
-          <button
-            type="button"
-            onClick={onAttach}
-            className="self-end h-9 w-9 inline-flex items-center justify-center rounded-md bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-200"
-            aria-label="Ask about a training day"
-            title="Ask about a training day"
-          >
-            <Paperclip size={14} />
-          </button>
-        )}
-        <textarea
-          value={reply}
-          onChange={e => setReply(e.target.value)}
-          onKeyDown={e => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          rows={2}
-          placeholder={thread.kind === 'session' ? 'Ask about this unit…' : 'Write a message…'}
-          className="flex-1 resize-none rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
-        />
-        <button
-          type="button"
-          onClick={() => void handleSend()}
-          disabled={!reply.trim() || sending}
-          className="self-end h-9 px-3 inline-flex items-center gap-1 rounded-md bg-blue-600 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Bubble({ message, senderLabel }: { message: TrainingLogMessage; senderLabel: string | null }) {
-  const fromAthlete = message.sender_type === 'athlete';
-  return (
-    <div className={`flex ${fromAthlete ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[78%] px-3 py-2 rounded-lg text-[12.5px] leading-snug whitespace-pre-wrap break-words ${
-          fromAthlete
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-800 text-gray-100 border border-gray-700'
-        }`}
-      >
-        {senderLabel && !fromAthlete && (
-          <div className="text-[10px] font-semibold opacity-90 mb-1 text-blue-300">
-            {senderLabel}
-          </div>
-        )}
-        {message.message}
-        <div className="text-[9px] mt-1 opacity-60 text-right">
-          {formatStamp(message.created_at)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyChat({ kind }: { kind: 'general' | 'session' }) {
-  return (
-    <div className="px-6 py-16 text-center text-gray-500 flex flex-col items-center gap-3">
-      <MessageCircle size={28} className="text-gray-700" />
-      <div className="text-sm">No messages yet</div>
-      <div className="text-[11px] text-gray-600 max-w-xs">
-        {kind === 'general'
-          ? 'Say hi to your coach or ask a general question.'
-          : 'Ask a question about this specific session.'}
-      </div>
+      <MobileThreadPane
+        chat={{
+          kind: thread.kind,
+          initialSessionId: thread.sessionId,
+          unit,
+          athleteId,
+          // The athlete is in their own owner env, so a session created
+          // here inherits it — no separate sessionOwnerId needed.
+          ownerId,
+          role: 'athlete',
+          unreadCount: thread.unreadCount,
+          onMessagesChanged,
+        }}
+        senderLabelFor={coachLabelForAthlete}
+        emptyHint={
+          thread.kind === 'general'
+            ? 'Say hi to your coach or ask a general question.'
+            : 'Ask a question about this specific session.'
+        }
+        placeholder={thread.kind === 'session' ? 'Ask about this unit…' : 'Write a message…'}
+        onAttach={onAttach}
+        attachLabel="Ask about a training day"
+      />
     </div>
   );
 }
@@ -592,16 +491,4 @@ function formatSessionDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return iso;
   return formatWeekdayDateShort(iso);
-}
-
-function formatStamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  // Same-day: just the 24h time; otherwise day-first date + 24h time.
-  return sameDay ? formatTime24(d) : formatDateTimeShort(d);
 }
