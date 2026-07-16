@@ -15,17 +15,13 @@
  * Unit threads are labelled with the unit's slot label + date and carry
  * an "Open unit" jump into the field drill-in screen for context.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Loader2,
-  MessageCircle,
-  Paperclip,
-  Send,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getOwnerId } from '../../lib/ownerContext';
@@ -39,11 +35,10 @@ import {
   type InboxThread,
   type SessionSlotRef,
 } from '../../lib/trainingLogService';
-import { useThreadChat, type ThreadChatUnit } from '../../hooks/useThreadChat';
+import { type ThreadChatUnit } from '../../hooks/useThreadChat';
+import { MobileThreadPane } from '../../components/chat/MobileThreadPane';
 import {
   formatDateShort,
-  formatDateTimeShort,
-  formatTime24,
   formatWeekdayDateShort,
 } from '../../lib/dateUtils';
 import { UnitPickerSheet, type PickedUnit } from '../../athlete/v2/components/UnitPickerSheet';
@@ -352,132 +347,31 @@ function ThreadChat({
   onMessagesChanged: () => Promise<void>;
   onAttach: (() => void) | null;
 }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  // Thread state/logic is shared with the desktop inbox and the athlete app —
-  // see useThreadChat. This screen only renders it. Note the field app's
-  // discriminator is `unit == null`, mapped to the hook's kind here.
-  const {
-    messages,
-    coachNames,
-    loading,
-    sending,
-    error,
-    draft: body,
-    setDraft: setBody,
-    send: handleSend,
-  } = useThreadChat({
-    kind: unit ? 'session' : 'general',
-    initialSessionId: unit?.sessionId ?? null,
-    unit,
-    athleteId,
-    ownerId,
-    sessionOwnerId: athleteOwnerId,
-    role: 'coach',
-    senderCoachId: activeCoachId,
-    unreadCount: unreadHint,
-    onMessagesChanged,
-  });
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, loading]);
-
   return (
-    <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-gray-500 text-xs gap-1.5">
-            <Loader2 size={14} className="animate-spin" />
-            Loading…
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="px-6 py-12 text-center text-gray-500 flex flex-col items-center gap-3">
-            <MessageCircle size={26} className="text-gray-700" />
-            <div className="text-sm">No messages yet</div>
-            <div className="text-[11px] text-gray-600 max-w-xs">
-              {unit
-                ? `Start the discussion about ${unit.label} — the athlete sees it attached to that unit.`
-                : `Message ${athleteName}, or attach a training unit to ask about a specific session.`}
-            </div>
-          </div>
-        ) : (
-          messages.map(m => (
-            <Bubble
-              key={m.id}
-              message={m}
-              senderLabel={coachLabelFor(m, coachNames, activeCoachId, athleteName)}
-            />
-          ))
-        )}
-      </div>
-
-      {error && <p className="text-[11px] text-red-400 px-4 pb-1">{error}</p>}
-
-      <div className="border-t border-gray-800 px-3 py-2.5 flex gap-2 shrink-0 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-        {onAttach && (
-          <button
-            type="button"
-            onClick={onAttach}
-            className="self-end h-9 w-9 inline-flex items-center justify-center rounded-md bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-200"
-            aria-label="Attach a training unit"
-            title="Attach a training unit"
-          >
-            <Paperclip size={14} />
-          </button>
-        )}
-        <textarea
-          value={body}
-          onChange={e => setBody(e.target.value)}
-          onKeyDown={e => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          rows={2}
-          placeholder={unit ? `Ask about ${unit.label}…` : 'Write a message…'}
-          className="flex-1 resize-none rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
-        />
-        <button
-          type="button"
-          onClick={() => void handleSend()}
-          disabled={!body.trim() || sending}
-          className="self-end h-9 px-3 inline-flex items-center gap-1 rounded-md bg-blue-600 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-          Send
-        </button>
-      </div>
-    </>
-  );
-}
-
-function Bubble({
-  message,
-  senderLabel,
-}: {
-  message: TrainingLogMessage;
-  senderLabel: string | null;
-}) {
-  const fromCoach = message.sender_type === 'coach';
-  return (
-    <div className={`flex ${fromCoach ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[78%] px-3 py-2 rounded-lg text-[12.5px] leading-snug whitespace-pre-wrap break-words ${
-          fromCoach
-            ? 'bg-blue-600 text-white'
-            : 'bg-gray-800 text-gray-100 border border-gray-700'
-        }`}
-      >
-        {senderLabel && (
-          <div className="text-[10px] font-semibold opacity-90 mb-1">{senderLabel}</div>
-        )}
-        {message.message}
-        <div className="text-[9px] mt-1 opacity-60 text-right">{formatStamp(message.created_at)}</div>
-      </div>
-    </div>
+    <MobileThreadPane
+      chat={{
+        kind: unit ? 'session' : 'general',
+        initialSessionId: unit?.sessionId ?? null,
+        unit,
+        athleteId,
+        ownerId,
+        sessionOwnerId: athleteOwnerId,
+        role: 'coach',
+        senderCoachId: activeCoachId,
+        unreadCount: unreadHint,
+        onMessagesChanged,
+      }}
+      senderLabelFor={(m, names) => coachLabelFor(m, names, activeCoachId, athleteName)}
+      emptyHint={
+        unit
+          ? `Start the discussion about ${unit.label} — the athlete sees it attached to that unit.`
+          : `Message ${athleteName}, or attach a training unit to ask about a specific session.`
+      }
+      placeholder={unit ? `Ask about ${unit.label}…` : 'Write a message…'}
+      onAttach={onAttach}
+      attachLabel="Attach a training unit"
+      safeArea
+    />
   );
 }
 
@@ -497,16 +391,4 @@ function coachLabelFor(
   if (!m.sender_coach_id) return null;
   if (m.sender_coach_id === viewingCoachId) return 'You';
   return names.get(m.sender_coach_id) ?? null;
-}
-
-/** Same-day: 24h time only; otherwise day-first date + 24h time. */
-function formatStamp(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear()
-    && d.getMonth() === now.getMonth()
-    && d.getDate() === now.getDate();
-  return sameDay ? formatTime24(d) : formatDateTimeShort(d);
 }

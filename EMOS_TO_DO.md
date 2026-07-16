@@ -19,6 +19,32 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Two mobile chat views share one component (done 16/07/2026, v0.24.3)
+Follow-up to the 0.24.2 `useThreadChat` consolidation, which unified the thread
+*logic* but left three copies of the *presentation*. The two mobile views —
+the athlete app's coach thread (`CoachThreadScreen`) and the coach field app
+(`FieldConversationScreen`) — had near-identical Tailwind for the message list,
+loading spinner, empty state, bubble, error strip and composer, plus their own
+copies of `Bubble` and `formatStamp`.
+**Changed:** extracted `src/components/chat/MobileThreadPane.tsx` — the shared
+list + composer (it calls `useThreadChat` itself; the surface passes the hook
+config plus a few presentation props: `senderLabelFor`, `emptyHint`,
+`placeholder`, `onAttach`/`attachLabel`, `safeArea`). Each surface keeps only
+its own chrome: the athlete app wraps the pane with a header + session-
+discussions panel, the field app's parent renders those above it. `Bubble`,
+`EmptyChat` and `formatStamp` now exist once. Net −~300 duplicated lines across
+the two screens for +164 shared.
+Two small unifications settled in the shared version: the error now renders as a
+strip **below** the list rather than replacing it (a failed send no longer
+blanks the athlete's conversation, matching the field app), and left-bubble
+(other-party) name labels are accent-coloured on both surfaces (previously only
+the athlete app tinted them). The desktop coach inbox stays separate — it is
+inline-token styled, a different rendering system, as decided in 0.24.2.
+Verified live on both surfaces: athlete sees coach bubbles left + blue "Simon",
+own right; field coach sees athlete bubbles left + blue "Ida Mørck", own "You"
+right with safe-area padding; send blanks neither. typecheck + 707/707 tests +
+eslint clean.
+
 #One thread implementation, not three (done 16/07/2026, v0.24.2)
 **Wrong:** the coach inbox, the athlete app and the coach field app each carried
 their own copy of the same thread logic — load, mark-read, send, the
