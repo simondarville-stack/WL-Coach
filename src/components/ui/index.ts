@@ -2,6 +2,7 @@ export { Button } from './Button';
 export { Input } from './Input';
 export { Select } from './Select';
 export { Textarea } from './Textarea';
+export { AutoGrowTextarea } from './AutoGrowTextarea';
 export { Badge } from './Badge';
 export { ColorDot } from './ColorDot';
 export { Ribbon } from './Ribbon';

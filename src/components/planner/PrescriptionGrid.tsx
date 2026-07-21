@@ -8,6 +8,7 @@ import {
 } from '../../lib/prescriptionParser';
 import type { ParsedSetLine } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
+import { AutoGrowTextarea } from '../ui';
 
 interface GridColumn {
   id: string;
@@ -402,7 +403,7 @@ export function PrescriptionGrid({
 
   if (isFreeText) {
     return (
-      <textarea
+      <AutoGrowTextarea
         defaultValue={prescriptionRaw ?? ''}
         onBlur={e => onSave(e.target.value)}
         placeholder="Free text…"
@@ -410,7 +411,7 @@ export function PrescriptionGrid({
         style={{
           width: '100%', fontSize: 11, color: 'var(--color-text-secondary)',
           border: '1px solid var(--color-border-secondary)', borderRadius: 'var(--radius-sm)',
-          padding: '4px 8px', resize: 'none', outline: 'none',
+          padding: '4px 8px', outline: 'none',
           background: 'var(--color-bg-primary)', boxSizing: 'border-box',
         }}
       />

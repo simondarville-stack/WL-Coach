@@ -19,6 +19,66 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Text-type exercise no longer shows a "0%" done label (done 20/07/2026, v0.26.1)
+**Wrong:** the athlete day-preview badge (`SessionPreview`) showed a compliance
+`%` next to "Did" computed as performed-reps ÷ planned-reps. A "Text"-type
+exercise (unit `free_text` / `other`, or any exercise whose prescription parses
+to no numeric reps) has **zero** planned reps, so the ratio was always 0 — once
+the athlete logged/marked it done it rendered a **green "0%"** on fully-done
+work. **Changed:** the `%` badge is now gated on `plannedReps > 0` — with no
+numeric target there is nothing to compute a compliance ratio against, so no
+badge is shown (completion is already signalled by the DoneChip by the exercise
+name). Legitimate numeric exercises are unaffected. Verified live: real
+compliance badges still render (108%, 100%…) and no "0%" appears; no current
+data has a non-numeric plan *with* logged sets to show the exact before/after,
+but the guard is correct by construction and causes no regression.
+
+#Exercise note shows before the prescription (done 20/07/2026, v0.26.1)
+**Wrong:** the coach's exercise note (`plannedNote` = `notes`/`variation_note`)
+rendered **below** the prescription on every surface. Athletes start on the
+numbers and read the note (which qualifies the variation) later. **Changed:**
+the note now renders **above** the prescription across the display/read
+surfaces: `SessionPreview` (athlete Today/Week + all field detail screens — one
+edit, 7 screens), `ExerciseLogCard` (athlete edit card, note also un-truncated
+so the full variation is readable), planner `DayCard` (both combo + normal
+branches), `PrintWeek`, `PrintWeekDesigner`, the coach `LogExerciseRow`, and the
+`TemplatePreviewDialog` / `ClipboardWeekPreviewDialog` previews. Verified live:
+DOM order is name → note → prescription in both the planner and the athlete
+view. **Left as-is (deliberate):** the editable forms `DayEditor` and
+`TemplateEditor` (moving an editable field changes authoring ergonomics) and
+`ExerciseDetail`, which already shows the note above. `CompactSessionTable` and
+`WeekCategoryTable` carry no note (would need a data-model change). Easy to
+extend to the editors if wanted.
+
+#Message notification badge clears when read in Log mode (done 20/07/2026, v0.26.1)
+**Wrong (re-report after 0.24.1):** the 0.24.1 fix wired the read-state channel
+into the two count-badge hooks and fixed the inbox threads, but the coach's
+**main** workflow — reading an athlete's session comment in the planner **Log
+view** — had **no mark-read path at all**. So `coach_read_at` stayed null, and
+the sidebar/Inbox "unread" badge never cleared no matter how many times the
+coach read the comment. **Changed:** `LogDayCard` now marks the session read
+(`markMessagesRead`, which emits `onInboxChanged`) the moment the coach opens
+the comment thread — so the badge clears immediately. Also subscribed the two
+inbox **list** views (`CoachInbox`, `FieldInboxScreen`) to `onInboxChanged` so
+their per-athlete unread counts stay in sync when read happens elsewhere.
+Verified live: opening Ida's Unit-2 comments in Log mode dropped the sidebar
+from "Inbox 3" → "Inbox 2" instantly and wrote `coach_read_at` (restored after,
+since it was a real unread message I only opened to test). The athlete side was
+left as-is: it marks read on entering a day's edit mode (deliberate, UF-10/E3)
+and currently has 0 unread; its session-message-vs-badge breadth is noted below
+as a follow-up.
+
+#Text prescription box grows as you type (done 20/07/2026, v0.26.1)
+**Wrong:** when a coach set an exercise's prescription to free text (unit
+`free_text`), the editor was a fixed 2-row `textarea` with `resize: none`, so a
+long note was clipped/scrolled and hidden. **Changed:** added a reusable
+`AutoGrowTextarea` (`src/components/ui`) that grows to fit its content (height =
+scrollHeight on every input/render, `overflow: hidden`), and applied it to the
+free-text prescription editor (`PrescriptionGrid`) and the related "Text
+content" editor (`ExerciseDetail`). Verified the growth mechanism live
+(42 px → 281 px as lines are added). Reusable for the other fixed textareas
+(media descriptions) if wanted.
+
 #Two mobile chat views share one component (done 16/07/2026, v0.24.3)
 Follow-up to the 0.24.2 `useThreadChat` consolidation, which unified the thread
 *logic* but left three copies of the *presentation*. The two mobile views —
