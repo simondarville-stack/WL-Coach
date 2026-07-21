@@ -311,6 +311,15 @@ function PreviewExerciseRow({
           </div>
         )}
 
+        {/* Coach note above the prescription: athletes start training, then
+            read the note (which often qualifies the variation) — so it must
+            come before the numbers, not after. */}
+        {planned.exercise.notes?.trim() && (
+          <p className="text-[11px] text-gray-400 italic whitespace-pre-wrap leading-snug">
+            {planned.exercise.notes}
+          </p>
+        )}
+
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
             Plan
@@ -330,7 +339,12 @@ function PreviewExerciseRow({
             {logged ? (
               <>
                 <LoggedStackedNotation sets={logged.sets} />
-                {delta.state !== 'pending' && (
+                {/* A compliance % only means something against a numeric
+                    target. A Text/free-text/RPE exercise has no planned reps,
+                    so the ratio is always 0 — it rendered a green "0%" on
+                    work that was fully done. Suppress it there; completion is
+                    shown by the DoneChip by the name instead. */}
+                {delta.state !== 'pending' && plannedReps > 0 && (
                   <span
                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                       delta.state === 'matched'
@@ -350,11 +364,6 @@ function PreviewExerciseRow({
           </div>
         )}
 
-        {planned.exercise.notes?.trim() && (
-          <p className="text-[11px] text-gray-400 italic whitespace-pre-wrap leading-snug">
-            {planned.exercise.notes}
-          </p>
-        )}
         {logged?.log.performed_notes?.trim() && (
           <p className="text-[11px] text-gray-300 italic whitespace-pre-wrap leading-snug">
             <span className="text-gray-500 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">

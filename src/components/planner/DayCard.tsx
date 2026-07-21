@@ -606,6 +606,9 @@ export function DayCard({
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
                           </div>
+                          {plannedNote(ex) && (
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
+                          )}
                           <div
                             onClick={e => e.stopPropagation()}
                             onMouseDown={e => e.stopPropagation()}
@@ -624,9 +627,6 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
-                          {plannedNote(ex) && (
-                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
-                          )}
                         </>
                       ) : (
                         <>
@@ -641,6 +641,9 @@ export function DayCard({
                               <span title="Individual override" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>I</span>
                             )}
                           </div>
+                          {plannedNote(ex) && (
+                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
+                          )}
                           <div
                             onClick={e => e.stopPropagation()}
                             onMouseDown={e => e.stopPropagation()}
@@ -658,9 +661,6 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
-                          {plannedNote(ex) && (
-                            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
-                          )}
                         </>
                       )}
                     </div>

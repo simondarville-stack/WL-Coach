@@ -761,6 +761,11 @@ function ExerciseRow({
           </p>
         )}
 
+        {/* Note above the prescription — athletes read the variation before the numbers */}
+        {options.showExerciseNotes && ex.notes && (
+          <p className="dz-ex-notes">{ex.notes}</p>
+        )}
+
         {ex.prescription_raw && (
           <div className="dz-prescription">
             <PrescriptionBlock prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
@@ -771,10 +776,6 @@ function ExerciseRow({
           <p className="dz-did">
             <span className="dz-did-label">Did:</span> {formatLoggedSets(loggedSets) || '—'}
           </p>
-        )}
-
-        {options.showExerciseNotes && ex.notes && (
-          <p className="dz-ex-notes">{ex.notes}</p>
         )}
       </div>
     </div>

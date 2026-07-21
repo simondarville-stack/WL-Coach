@@ -16,6 +16,7 @@ import { LogCommentsThread } from './LogCommentsThread';
 import { computeDaySummary, computeExerciseSummary, countsTowardsTotals } from './logSummary';
 import { PlanActual } from './PlanActual';
 import { formatWeekdayDateShort } from '../../../lib/dateUtils';
+import { markMessagesRead } from '../../../lib/trainingLogService';
 
 interface LogDayCardProps {
   dayName: string;
@@ -86,6 +87,22 @@ export function LogDayCard({
 
   const sessionMessages = (dayLog?.messages ?? []).filter(m => !m.exercise_id);
   const sessionCommentCount = sessionMessages.length;
+
+  // The coach's main workflow is Log mode, not the Inbox — but reading an
+  // athlete's comment here never marked it read, so the sidebar/Inbox unread
+  // badge stuck forever. Mark the session read once the coach opens the
+  // comment thread (where the messages are actually shown). markMessagesRead
+  // only touches still-unread rows and emits onInboxChanged, so the badges
+  // clear immediately. Keyed on sessionId (stable) so it fires once per open,
+  // not on every re-render.
+  const sessionId = session?.id ?? null;
+  const hasUnreadFromAthlete = sessionMessages.some(
+    m => m.sender_type === 'athlete' && m.coach_read_at == null,
+  );
+  useEffect(() => {
+    if (!threadOpen || !sessionId || !hasUnreadFromAthlete) return;
+    markMessagesRead(sessionId, null, 'coach').catch(() => undefined);
+  }, [threadOpen, sessionId, hasUnreadFromAthlete]);
 
   const performedDate = session?.date ?? null;
   const performedLabel = performedDate

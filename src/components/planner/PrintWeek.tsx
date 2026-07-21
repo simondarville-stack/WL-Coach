@@ -521,12 +521,13 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                               {members.map((m, i) => <span key={m.position}>{i > 0 && ' + '}{m.exercise.name}</span>)}
                             </p>
                           )}
+                          {/* Note prints above the prescription so the athlete reads the variation before the numbers */}
+                          {ex.notes && <p className="text-[10px] text-gray-600 italic leading-tight">{ex.notes}</p>}
                           {ex.prescription_raw && (
                             <div className="leading-tight">
                               <InlinePrescription prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
                             </div>
                           )}
-                          {ex.notes && <p className="text-[10px] text-gray-600 italic leading-tight">{ex.notes}</p>}
                         </div>
                       </div>
                     </div>

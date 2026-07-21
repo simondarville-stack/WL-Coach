@@ -14,6 +14,7 @@ import { ChevronDown, ChevronRight, Edit3, Loader2, RefreshCw } from 'lucide-rea
 import { getOwnerId } from '../../lib/ownerContext';
 import { fetchAccessibleAthletes } from '../../lib/accessScope';
 import { fetchInboxThreads, type InboxThread } from '../../lib/trainingLogService';
+import { onInboxChanged } from '../../lib/inboxEvents';
 import { formatDateShort, formatTime24 } from '../../lib/dateUtils';
 import { EnvironmentSwitcher } from '../components/EnvironmentSwitcher';
 import type { Athlete } from '../../lib/database.types';
@@ -76,9 +77,13 @@ export function FieldInboxScreen() {
     const onVis = () => { if (!document.hidden) void load(); };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onVis);
+    // Also refresh when read-state changes elsewhere (e.g. reading the same
+    // athlete's comment in Log mode), so the per-athlete unread badges sync.
+    const unsubscribe = onInboxChanged(() => void load());
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onVis);
+      unsubscribe();
     };
   }, [load]);
 

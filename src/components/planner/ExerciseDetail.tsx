@@ -10,6 +10,7 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { plannedNote } from '../../lib/plannedNote';
+import { AutoGrowTextarea } from '../ui';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { DEFAULT_UNITS } from '../../lib/constants';
@@ -396,7 +397,7 @@ export function ExerciseDetail({
         {plannedExercise && sentinel === 'text' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={sectionHeaderStyle}>Text content</span>
-            <textarea
+            <AutoGrowTextarea
               value={notes}
               onChange={e => {
                 notesRef.current = e.target.value;
@@ -410,7 +411,7 @@ export function ExerciseDetail({
               rows={6}
               placeholder="Type your notes or instructions…"
               className="planner-week-notes"
-              style={{ ...inputStyle, resize: 'none', fontStyle: 'italic', lineHeight: 1.55 }}
+              style={{ ...inputStyle, fontStyle: 'italic', lineHeight: 1.55 }}
             />
           </div>
         )}

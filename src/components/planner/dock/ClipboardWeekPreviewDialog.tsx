@@ -102,11 +102,11 @@ export function ClipboardWeekPreviewDialog({ week, onClose }: ClipboardWeekPrevi
                               <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{s.variation_note}</span>
                             )}
                           </div>
-                          {lines.length > 0 && (
-                            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{lines.join('  ·  ')}</span>
-                          )}
                           {s.notes && (
                             <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>{s.notes}</span>
+                          )}
+                          {lines.length > 0 && (
+                            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>{lines.join('  ·  ')}</span>
                           )}
                         </div>
                       );

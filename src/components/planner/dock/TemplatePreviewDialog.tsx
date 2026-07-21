@@ -189,14 +189,15 @@ function ExercisePreview({ ex }: { ex: ProgramTemplateFull['days'][number]['exer
           </span>
         )}
       </div>
-      {lines.length > 0 && (
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-          {lines.join('  ·  ')}
-        </span>
-      )}
+      {/* Note above the prescription lines */}
       {ex.notes && (
         <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
           {ex.notes}
+        </span>
+      )}
+      {lines.length > 0 && (
+        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
+          {lines.join('  ·  ')}
         </span>
       )}
     </div>

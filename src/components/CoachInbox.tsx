@@ -54,6 +54,7 @@ import {
   toLocalISO,
 } from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
+import { onInboxChanged } from '../lib/inboxEvents';
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import type { TrainingLogMessage } from '../lib/database.types';
@@ -103,14 +104,18 @@ export function CoachInbox() {
   }, [loadThreads]);
 
   // Refresh on tab focus — coaches often leave inbox in a background
-  // tab while waiting for athletes to log.
+  // tab while waiting for athletes to log — and whenever read-state changes
+  // anywhere (e.g. the coach reads the same athlete's comment in Log mode),
+  // so the per-athlete unread counts here stay in sync.
   useEffect(() => {
     const onVis = () => { if (!document.hidden) void loadThreads(); };
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('focus', onVis);
+    const unsubscribe = onInboxChanged(() => void loadThreads());
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('focus', onVis);
+      unsubscribe();
     };
   }, [loadThreads]);
 

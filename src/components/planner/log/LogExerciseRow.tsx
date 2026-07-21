@@ -344,6 +344,15 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
           </div>
         )}
 
+        {/* Coach note above the Plan/Did comparison — it qualifies the
+            variation, so it reads before the numbers here too. */}
+        {planned?.notes?.trim() && (
+          <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap">
+            <span className="text-gray-400 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">Note</span>
+            {planned.notes}
+          </p>
+        )}
+
         {/* Planned row */}
         {planned ? (
           <div className="mt-1 flex items-baseline gap-2 flex-wrap">
@@ -393,13 +402,6 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
               </>
             )}
           </div>
-        )}
-
-        {planned?.notes?.trim() && (
-          <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap">
-            <span className="text-gray-400 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">Note</span>
-            {planned.notes}
-          </p>
         )}
 
         {logged?.log.performed_notes && (

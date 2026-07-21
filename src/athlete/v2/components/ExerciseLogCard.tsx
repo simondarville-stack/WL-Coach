@@ -324,6 +324,13 @@ export function ExerciseLogCard({
               ))}
             </div>
           )}
+          {/* Note above the prescription — athletes start on the numbers
+              then read the note (often the variation) later, so it leads. */}
+          {plannedNote(planned.exercise) && (
+            <p className="text-[10px] text-gray-500 italic mt-1 whitespace-pre-wrap leading-snug">
+              {plannedNote(planned.exercise)}
+            </p>
+          )}
           <div className="mt-1">
             <StackedNotation
               raw={planned.exercise.prescription_raw}
@@ -331,11 +338,6 @@ export function ExerciseLogCard({
               isCombo={planned.exercise.is_combo}
             />
           </div>
-          {plannedNote(planned.exercise) && (
-            <p className="text-[10px] text-gray-500 italic mt-0.5 truncate">
-              {plannedNote(planned.exercise)}
-            </p>
-          )}
         </div>
         <div className="text-[10px] text-gray-500 flex-shrink-0 mt-0.5">
           {completedCount}/{rows.length || '—'}
