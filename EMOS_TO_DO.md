@@ -166,6 +166,17 @@ remaps every FK (`planned_exercises`, logs, `athlete_prs`,
 diverged, with a dry-run report first. Alternatives (a `canonical_exercise_id`
 mapping, a global system catalogue, a first-class `exercise_libraries` table)
 are compared in the doc, with three open questions for the coach at the end.
+**Revised same day** with the coach's answers — core + personal catalogues, and
+a **club-level** catalogue object rather than one coach's library borrowed by
+the other. The doc is now a decided design: `exercise_libraries` (every
+catalogue is a row, including each coach's personal one) +
+`exercise_library_members`, `getVisibleLibraryIds()` replacing the single-owner
+read, and a 4-phase rollout whose Phase 1 lands as a **no-op**. Key finding
+from the live data: moving an exercise between libraries **preserves its id**,
+so seeding the club catalogue costs zero FK rewrites — only the coaches who
+*adopt* pay (Toke alone is ~1 250 foreign keys). Simon and Toke already share
+15 same-named exercises, so this is not greenfield. Four follow-up questions at
+the end of the doc; **nothing is built** — execution is gated on approval.
 
 #Text-type exercise no longer shows a "0%" done label (done 20/07/2026, v0.26.1)
 **Wrong:** the athlete day-preview badge (`SessionPreview`) showed a compliance
