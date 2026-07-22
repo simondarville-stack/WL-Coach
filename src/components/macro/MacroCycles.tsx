@@ -15,7 +15,7 @@ import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
-import { generateMacroWeeks, getMondayOfWeekISO } from '../../lib/weekUtils';
+import { generateMacroWeeks, getMondayOfWeekISO, findCurrentMacroWeek } from '../../lib/weekUtils';
 import { formatDateToDDMMYYYY, addDaysToISO } from '../../lib/dateUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS, STRUCTURAL_MACRO_COLUMNS } from './MacroTableV2';
 import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
@@ -41,7 +41,9 @@ import { EventFormModal } from '../calendar/EventFormModal';
 import { MacroTimeline } from '../planning';
 import { resolveScopeAthleteIds, fetchTimelineMarkers } from '../../lib/macroTimelineData';
 import type { TimelineMarker } from '../../lib/macroTimelineData';
-import { StandardPage } from '../ui';
+import { StandardPage, AdaptiveDialog } from '../ui';
+import { MacroExerciseDetail } from './MacroExerciseDetail';
+import type { MacroContext } from '../planner/WeeklyPlanner';
 
 
 export function MacroCycles() {
@@ -116,6 +118,8 @@ export function MacroCycles() {
   const [showPhasesPanel, setShowPhasesPanel] = useState(false);
   const [phasePanelInitialEdit, setPhasePanelInitialEdit] = useState<import('../../lib/database.types').MacroPhase | null>(null);
   const [showAddExercise, setShowAddExercise] = useState(false);
+  /** Tracked-exercise id whose PR/history panel is open (null = closed). */
+  const [detailTrackedExId, setDetailTrackedExId] = useState<string | null>(null);
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
 
   // Group mode state — members come from useTrainingGroups
@@ -687,14 +691,35 @@ export function MacroCycles() {
 
   // ─── Import from Excel ────────────────────────────────────────────────────────
 
+  /**
+   * Write imported targets. Rows arrive one FIELD at a time (5 per exercise
+   * per week), so a 12-week × 6-exercise file is ~360 rows. Writing them one
+   * at a time was ~360 sequential round-trips; folding the fields of one
+   * (week, exercise) into a single row makes it a handful of bulk upserts.
+   */
   const handleImportTargets = useCallback(async (
     rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[],
   ) => {
+    const merged = new Map<string, { macro_week_id: string; tracked_exercise_id: string; fields: Partial<MacroTarget> }>();
     for (const row of rows) {
-      const existing = targets.find(t => t.macro_week_id === row.weekId && t.tracked_exercise_id === row.trackedExId);
-      await upsertTarget(row.weekId, row.trackedExId, row.field, row.value, existing);
+      const key = `${row.weekId}|${row.trackedExId}`;
+      const entry = merged.get(key) ?? {
+        macro_week_id: row.weekId,
+        tracked_exercise_id: row.trackedExId,
+        fields: {},
+      };
+      (entry.fields as Record<string, number>)[row.field] = row.value;
+      merged.set(key, entry);
     }
-  }, [targets, upsertTarget]);
+    await bulkUpsertTargets(Array.from(merged.values()));
+  }, [bulkUpsertTargets]);
+
+  /** Week-level import (a template's week type + weekly Σreps target). */
+  const handleImportWeeks = useCallback(async (
+    rows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }>,
+  ) => {
+    await bulkUpdateWeeks(rows);
+  }, [bulkUpdateWeeks]);
 
   // ─── Exercise management ──────────────────────────────────────────────────────
 
@@ -903,6 +928,30 @@ export function MacroCycles() {
   // Decide which actuals to show in views
   const displayedActuals = (isGroupMode && individualViewAthleteId) ? individualActuals : actuals;
 
+  // ── Exercise detail panel (PRs + load history) ──────────────────────────
+  // Opened from the table's exercise header / toggle chip. The chart wants a
+  // MacroContext so it can draw this cycle's SOLL line and mark the current
+  // week; we anchor on the live macro week (or week 1 for a past/future cycle).
+  const detailExercise = trackedExercises.find(te => te.id === detailTrackedExId)?.exercise ?? null;
+  const detailAthleteId = individualViewAthleteId ?? selectedAthlete?.id ?? null;
+  const detailAthleteName =
+    allAthletes.find(a => a.id === detailAthleteId)?.name ?? selectedAthlete?.name ?? null;
+  const detailAnchorWeek = findCurrentMacroWeek(macroWeeks) ?? macroWeeks[0] ?? null;
+  const detailMacroContext: MacroContext | null = selectedCycle && detailAnchorWeek
+    ? {
+        macroId: selectedCycle.id,
+        macroName: selectedCycle.name,
+        weekType: detailAnchorWeek.week_type,
+        weekTypeText: detailAnchorWeek.week_type_text,
+        weekNumber: detailAnchorWeek.week_number,
+        totalWeeks: macroWeeks.length,
+        phaseName: null,
+        phaseColor: null,
+        totalRepsTarget: detailAnchorWeek.total_reps_target,
+        weekNotes: '',
+      }
+    : null;
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Error banner — outside the cycle/wheel branch so load failures are
@@ -951,6 +1000,8 @@ export function MacroCycles() {
         onEditCycle={() => setShowEditModal(true)}
         onDeleteCycle={handleDeleteCycle}
         onImportTargets={handleImportTargets}
+        onImportWeeks={handleImportWeeks}
+        weekTypes={settings?.week_types ?? []}
         fillGuideOpen={showFillGuide}
         onFillGuideToggle={() => setShowFillGuide(v => !v)}
         canUndoFill={!!fillUndo}
@@ -1025,6 +1076,7 @@ export function MacroCycles() {
                 exercises={trackedExercises}
                 visible={visibleExercises}
                 onToggle={toggleExercise}
+                onOpenDetail={setDetailTrackedExId}
                 onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
                 generalMetrics={['k', 'tonnage', 'avg']}
                 visibleMetrics={visibleGeneralMetrics}
@@ -1078,6 +1130,7 @@ export function MacroCycles() {
               onRemoveExercise={handleRemoveExercise}
               onPasteTargets={handlePasteTargets}
               onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
+              onOpenExerciseDetail={setDetailTrackedExId}
               onSwapWeeks={handleSwapWeeks}
               competitionTotal={selectedAthlete?.competition_total ?? null}
               visibleExercises={visibleExercises}
@@ -1238,6 +1291,23 @@ export function MacroCycles() {
           onDelete={handleDeletePhase}
           onClose={() => { setShowPhasesPanel(false); setPhasePanelInitialEdit(null); }}
         />
+      )}
+
+      {detailExercise && (
+        <AdaptiveDialog
+          mode={settings?.dialog_mode ?? 'center'}
+          maxWidth={640}
+          onClose={() => setDetailTrackedExId(null)}
+        >
+          <MacroExerciseDetail
+            exercise={detailExercise}
+            athleteId={detailAthleteId}
+            athleteName={detailAthleteName}
+            macroContext={detailMacroContext}
+            anchorWeekStart={detailAnchorWeek?.week_start}
+            onClose={() => setDetailTrackedExId(null)}
+          />
+        </AdaptiveDialog>
       )}
     </div>
   );

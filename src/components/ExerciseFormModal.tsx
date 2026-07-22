@@ -8,6 +8,8 @@ interface ExerciseFormModalProps {
   editingExercise: Exercise | null;
   onSave: (exercise: Partial<Exercise>) => Promise<void>;
   allExercises?: Exercise[];
+  /** Preselect a category when creating (e.g. "add to this empty category"). */
+  initialCategory?: string | null;
 }
 
 export function ExerciseFormModal({
@@ -16,6 +18,7 @@ export function ExerciseFormModal({
   editingExercise,
   onSave,
   allExercises = [],
+  initialCategory = null,
 }: ExerciseFormModalProps) {
   if (!isOpen) return null;
 
@@ -41,6 +44,7 @@ export function ExerciseFormModal({
             onSave={onSave}
             onCancelEdit={onClose}
             allExercises={allExercises}
+            initialCategory={initialCategory}
           />
         </div>
       </div>

@@ -26,6 +26,9 @@ export function ExerciseLibrary() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  // Category preselected when the coach starts the create form from a
+  // specific section (e.g. "Add an exercise here" on an empty category).
+  const [createInCategory, setCreateInCategory] = useState<string | null>(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [athletePRMap, setAthletePRMap] = useState<Map<string, { pr_value_kg: number | null; pr_date: string | null }>>(new Map());
 
@@ -165,7 +168,11 @@ export function ExerciseLibrary() {
         onSelectExercise={setSelectedExerciseId}
         onOpenCategoryModal={() => setShowCategoryModal(true)}
         onOpenBulkImport={() => setShowBulkImport(true)}
-        onCreateExercise={() => { setEditingExercise(null); setShowCreateModal(true); }}
+        onCreateExercise={(category) => {
+          setEditingExercise(null);
+          setCreateInCategory(category ?? null);
+          setShowCreateModal(true);
+        }}
         onMoveExercise={handleMoveExercise}
         hasSidePanel={selectedExerciseId !== null}
       />
@@ -196,7 +203,7 @@ export function ExerciseLibrary() {
               athlete={selectedAthlete}
               allAthletes={athletes}
               onClose={() => setSelectedExerciseId(null)}
-              onEdit={ex => { setEditingExercise(ex); setShowCreateModal(true); }}
+              onEdit={ex => { setEditingExercise(ex); setCreateInCategory(null); setShowCreateModal(true); }}
               onArchive={handleArchive}
               onSelectExercise={setSelectedExerciseId}
               relatedExercises={relatedExercises}
@@ -222,10 +229,11 @@ export function ExerciseLibrary() {
 
       <ExerciseFormModal
         isOpen={showCreateModal}
-        onClose={() => { setShowCreateModal(false); setEditingExercise(null); }}
+        onClose={() => { setShowCreateModal(false); setEditingExercise(null); setCreateInCategory(null); }}
         editingExercise={editingExercise}
         onSave={handleSave}
         allExercises={exercises}
+        initialCategory={createInCategory}
       />
 
       {showBulkImport && (

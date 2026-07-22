@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Calendar } from 'lucide-react';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
+import { CalendarPopover } from './CalendarPopover';
 
 interface DateInputProps {
   /** Internal value in YYYY-MM-DD format (what the DB uses). */
@@ -34,13 +35,18 @@ function formatEU(iso: string): string {
 /**
  * Text input that shows dates in dd/mm/yyyy and emits YYYY-MM-DD via onChange.
  * Auto-inserts slashes after day and month digits.
- * A calendar icon opens the native browser date picker.
+ *
+ * The calendar icon opens EMOS's own Monday-first CalendarPopover rather than
+ * the native browser picker — the native one follows the BROWSER's locale, so
+ * on an en-US profile it rendered a Sunday-first grid with US date order.
  */
 export function DateInput({ value, onChange, className, id, snapToMonday = false }: DateInputProps) {
   const [display, setDisplay] = useState(formatEU(value));
   const [error, setError] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [flipUp, setFlipUp] = useState(false);
   const prevIso = useRef(value);
-  const nativeDateRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   /** Snap an ISO date to the Monday of its week when snapToMonday is on. */
   const maybeSnap = (iso: string): string =>
@@ -97,31 +103,29 @@ export function DateInput({ value, onChange, className, id, snapToMonday = false
     }
   };
 
-  const handleNativePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const iso = maybeSnap(e.target.value); // YYYY-MM-DD, snapped to Monday if enabled
-    if (iso) {
-      prevIso.current = iso;
-      setDisplay(formatEU(iso));
-      setError(false);
-      onChange(iso);
-    }
+  /** Commit a date chosen in the calendar grid. */
+  const handleCalendarPick = (picked: string) => {
+    const iso = maybeSnap(picked);
+    if (!iso) return;
+    prevIso.current = iso;
+    setDisplay(formatEU(iso));
+    setError(false);
+    onChange(iso);
   };
 
   const openPicker = () => {
-    const el = nativeDateRef.current;
-    if (!el) return;
-    try {
-      el.showPicker();
-    } catch {
-      el.click();
-    }
+    // Flip above the field when there isn't room for the grid below it
+    // (the calendar is ~250 px tall).
+    const rect = wrapRef.current?.getBoundingClientRect();
+    setFlipUp(!!rect && window.innerHeight - rect.bottom < 260 && rect.top > 260);
+    setPickerOpen(open => !open);
   };
 
   const baseClass = className ?? 'w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
   const borderClass = error ? 'border-red-400' : 'border-gray-300';
 
   return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+    <div ref={wrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <input
         id={id}
         type="text"
@@ -152,27 +156,19 @@ export function DateInput({ value, onChange, className, id, snapToMonday = false
           alignItems: 'center',
         }}
         aria-label="Open date picker"
+        aria-expanded={pickerOpen}
       >
         <Calendar size={13} />
       </button>
-      {/* Hidden native date input — used only to show the browser calendar */}
-      <input
-        ref={nativeDateRef}
-        type="date"
-        value={value}
-        onChange={handleNativePick}
-        tabIndex={-1}
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          pointerEvents: 'none',
-          width: 0,
-          height: 0,
-          right: 0,
-          top: 0,
-        }}
-      />
+      {pickerOpen && (
+        <CalendarPopover
+          value={value}
+          onSelect={handleCalendarPick}
+          onClose={() => setPickerOpen(false)}
+          snapToMonday={snapToMonday}
+          flipUp={flipUp}
+        />
+      )}
     </div>
   );
 }

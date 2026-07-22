@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BarChart3, BookmarkPlus, CalendarPlus, ChevronDown, Layers, Pencil, PieChart, Plus, RefreshCw, Tent, Trash2, Trophy, Undo2, Users, Wand2 } from 'lucide-react';
 import { Button } from '../ui';
 import { ExerciseSearch } from '../planner/ExerciseSearch';
-import type { MacroCycle, Exercise, TrainingGroup, EventType } from '../../lib/database.types';
+import type { MacroCycle, Exercise, TrainingGroup, EventType, WeekTypeConfig } from '../../lib/database.types';
 import type { GroupMemberWithAthlete } from '../../lib/database.types';
 import type { MacroTrackedExerciseWithExercise } from '../../lib/database.types';
 import { MacroExcelIO } from './MacroExcelIO';
@@ -46,6 +46,9 @@ interface MacroCycleToolbarProps {
   onEditCycle: () => void;
   onDeleteCycle: () => void;
   onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
+  onImportWeeks: (rows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }>) => Promise<void>;
+  /** Coach's week-type definitions — gates which types a template may import. */
+  weekTypes: WeekTypeConfig[];
   fillGuideOpen: boolean;
   onFillGuideToggle: () => void;
   canUndoFill: boolean;
@@ -92,6 +95,8 @@ export function MacroCycleToolbar({
   onEditCycle,
   onDeleteCycle,
   onImportTargets,
+  onImportWeeks,
+  weekTypes,
   fillGuideOpen,
   onFillGuideToggle,
   canUndoFill,
@@ -348,7 +353,9 @@ export function MacroCycleToolbar({
               cycleDateRange={cycleDateRange}
               athleteName={athleteName}
               athleteId={athleteId}
+              weekTypes={weekTypes}
               onImportTargets={onImportTargets}
+              onImportWeeks={onImportWeeks}
             />
           )}
 
