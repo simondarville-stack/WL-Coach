@@ -13,6 +13,7 @@ import type {
   PlannedExercise,
   Exercise,
   TrainingLogMessage,
+  ComboMemberEntry,
 } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { Trash2, Pencil, MessageSquare } from 'lucide-react';
@@ -26,6 +27,10 @@ import { PlanActual } from './PlanActual';
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
   logged: LoggedExerciseFull | null;
+  /** Members of a coach-planned combo (`planned.is_combo`). Without them the
+   *  row can only name the anchor exercise, which is what a combo used to
+   *  render as here. Unsorted is fine — we sort by position. */
+  plannedComboMembers?: ComboMemberEntry[];
   /** All session-level messages; the row picks out the ones whose
    *  exercise_id matches its logged.log.id and renders a small comment
    *  badge. Optional because not every caller needs the badge. */
@@ -42,7 +47,15 @@ interface LogExerciseRowProps {
   onEditGpp?: () => void;
 }
 
-export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, onEditGpp }: LogExerciseRowProps) {
+export function LogExerciseRow({
+  planned,
+  logged,
+  plannedComboMembers,
+  messages,
+  onDelete,
+  onEdit,
+  onEditGpp,
+}: LogExerciseRowProps) {
   const exerciseMessages = logged
     ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
     : [];
@@ -50,10 +63,19 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
   // Athlete-authored off-plan combination: members + name + colour live on
   // the logged row's metadata.combo (the log schema has no combo columns).
   const offPlanCombo = !planned ? logged?.log.metadata?.combo ?? null : null;
+  // Coach-planned combination: same resolution the planner's DayCard uses —
+  // the coach's own notation first, else the member names joined.
+  const plannedMembers = planned?.is_combo
+    ? (plannedComboMembers ?? []).slice().sort((a, b) => a.position - b.position)
+    : [];
   const comboName = offPlanCombo
     ? offPlanCombo.name?.trim() ||
       offPlanCombo.members.map(m => m.name).filter(Boolean).join(' + ') ||
       '(combination)'
+    : planned?.is_combo
+    ? planned.combo_notation?.trim() ||
+      plannedMembers.map(m => m.exercise.name).filter(Boolean).join(' + ') ||
+      null
     : null;
 
   // Detect substitution: planned slot exists, athlete logged a
@@ -74,9 +96,16 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
   const variationNote = planned && !planned.notes?.trim() ? planned.variation_note ?? null : null;
   const accentColor =
     offPlanCombo?.color ??
+    (planned?.is_combo ? planned.combo_color ?? plannedMembers[0]?.exercise.color ?? null : null) ??
     (isSubstituted
       ? logged!.exercise!.color
       : planned?.exercise?.color ?? logged?.exercise?.color ?? null);
+
+  // Member chips under the name — one shape for both combo sources so the
+  // coach reads a planned and an athlete-added combination the same way.
+  const comboDots: Array<{ key: string; name: string; color: string | null }> = offPlanCombo
+    ? offPlanCombo.members.map((m, idx) => ({ key: m.exerciseId + idx, name: m.name, color: m.color ?? null }))
+    : plannedMembers.map((m, idx) => ({ key: m.exerciseId + idx, name: m.exercise.name, color: m.exercise.color }));
 
   // Sentinel exercises (free-text blocks, video links, image references)
   // are informational. Their content lives in `notes`, not in
@@ -326,12 +355,13 @@ export function LogExerciseRow({ planned, logged, messages, onDelete, onEdit, on
           </div>
         </div>
 
-        {/* Off-plan combo member dots (the log has no combo join, so read
-            them from metadata.combo). */}
-        {offPlanCombo && offPlanCombo.members.length > 0 && (
+        {/* Combo member dots. Off-plan combos read them from the log's
+            metadata.combo (the log schema has no combo join); coach-planned
+            combos get them from planned_exercise_combo_members. */}
+        {comboDots.length > 0 && (
           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-            {offPlanCombo.members.map((m, idx) => (
-              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-600">
+            {comboDots.map((m, idx) => (
+              <span key={m.key} className="inline-flex items-center gap-1 text-[10px] text-gray-600">
                 {idx > 0 && <span className="text-gray-400">+</span>}
                 <span
                   className="w-1.5 h-1.5 rounded-full flex-shrink-0"

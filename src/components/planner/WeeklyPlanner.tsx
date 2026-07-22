@@ -40,6 +40,7 @@ import {
 import { getSentinelType } from './sentinelUtils';
 import { ResolvePercentagesModal, type ResolveCandidate, type ResolveRoundingOptions, type ResolveDirection } from './ResolvePercentagesModal';
 import { AthleteCardPicker } from '../AthleteCardPicker';
+import { AdaptiveDialog } from '../ui';
 import { ArrowLeft } from 'lucide-react';
 import {
   applyTemplateDayToPlanDay,
@@ -205,7 +206,9 @@ export function WeeklyPlanner() {
     return !urlWeekStart;
   });
   // `?mode=log` (e.g. from a dashboard activity click) opens straight into Log;
-  // `?day=<n>` highlights that day in the Log.
+  // `?day=<n>` highlights that day in the Log; `?comments=1` (the Inbox's
+  // "Open unit") also opens that day's comment thread, so the coach lands on
+  // the message they clicked rather than next to it.
   const [viewMode, setViewMode] = useState<'plan' | 'log'>(
     searchParams.get('mode') === 'log' ? 'log' : 'plan',
   );
@@ -214,6 +217,7 @@ export function WeeklyPlanner() {
   }, [searchParams]);
   const logDayParam = searchParams.get('day');
   const logHighlightDay = logDayParam != null && logDayParam !== '' ? Number(logDayParam) : null;
+  const logOpenCommentsDay = searchParams.get('comments') === '1' ? logHighlightDay : null;
 
   // Keep internal view in sync with URL on subsequent navigations.
   // useState initializers only run once; this effect handles the
@@ -1596,8 +1600,10 @@ export function WeeklyPlanner() {
                 weekStart={selectedDate}
                 visibleDays={visibleDays}
                 plannedExercises={plannedExercises}
+                comboMembers={comboMembers}
                 dayLabels={currentWeekPlan?.day_labels ?? null}
                 highlightDayIndex={logHighlightDay}
+                openCommentsDayIndex={logOpenCommentsDay}
               />
             ) : viewMode === 'log' && planSelection.group ? (
               <GroupLogView
@@ -1643,28 +1649,13 @@ export function WeeklyPlanner() {
             )}
 
             {/* ── Day Editor dialog ── */}
-            {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (() => {
-              const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
-              return (
-              <div
-                className="animate-backdrop-in"
-                style={isSidebar
-                  ? { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }
-                  : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
-                    e.preventDefault();
-                    await closeDialog();
-                  }
-                }}
+            {panelView === 'day' && currentWeekPlan && selectedDayIndex !== null && (
+              <AdaptiveDialog
+                mode={settings?.dialog_mode ?? 'center'}
+                maxWidth={896}
+                onClose={() => void closeDialog()}
+                onEnter={() => void closeDialog()}
               >
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }} onClick={() => void closeDialog()} />
-                <div
-                  className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
-                  style={isSidebar
-                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 896, maxHeight: '85vh', background: 'var(--color-bg-primary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border-secondary)' }}
-                  tabIndex={-1}>
                   <DayEditor
                     weekPlan={currentWeekPlan}
                     dayIndex={selectedDayIndex}
@@ -1690,34 +1681,17 @@ export function WeeklyPlanner() {
                     moveExercise={moveExercise}
                     normalizePositions={normalizePositions}
                   />
-                </div>
-              </div>
-              );
-            })()}
+              </AdaptiveDialog>
+            )}
 
             {/* ── Exercise Detail dialog ── */}
-            {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (() => {
-              const isSidebar = (settings?.dialog_mode ?? 'center') === 'sidebar';
-              return (
-              <div
-                className="animate-backdrop-in"
-                style={isSidebar
-                  ? { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }
-                  : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
-                    e.preventDefault();
-                    await closeDialog();
-                  }
-                }}
+            {panelView === 'exercise' && currentWeekPlan && selectedDayIndex !== null && selectedExercise && (
+              <AdaptiveDialog
+                mode={settings?.dialog_mode ?? 'center'}
+                maxWidth={768}
+                onClose={() => void closeDialog()}
+                onEnter={() => void closeDialog()}
               >
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }} onClick={() => void closeDialog()} />
-                <div
-                  className={isSidebar ? 'animate-sidebar-in' : 'animate-dialog-in'}
-                  style={isSidebar
-                    ? { position: 'relative', zIndex: 10, width: '100%', maxWidth: 512, height: '100%', background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)', borderLeft: '1px solid var(--color-border-secondary)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }
-                    : { position: 'relative', zIndex: 10, width: '100%', maxWidth: 768, maxHeight: '85vh', background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-secondary)', display: 'flex', flexDirection: 'column', overflowY: 'auto', borderRadius: 'var(--radius-xl)' }}
-                  tabIndex={-1}>
                   <ExerciseDetail
                     plannedExercise={selectedExercise}
                     comboMembers={comboMembers}
@@ -1741,10 +1715,8 @@ export function WeeklyPlanner() {
                     updateComboExercise={updateComboExercise}
                     fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
                   />
-                </div>
-              </div>
-              );
-            })()}
+              </AdaptiveDialog>
+            )}
           </>
         )}
 

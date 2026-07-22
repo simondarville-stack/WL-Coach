@@ -86,6 +86,9 @@ interface MacroTableV2Props {
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
+  /** Click the exercise name in the header band → the athlete's PRs and
+   *  load history for that exercise. */
+  onOpenExerciseDetail?: (trackedExId: string) => void;
   onSwapWeeks?: (weekId1: string, weekId2: string) => Promise<void>;
   competitionTotal?: number | null;
   visibleExercises?: Set<string>;
@@ -146,6 +149,7 @@ export function MacroTableV2({
   onMoveExerciseRight,
   onRemoveExercise,
   onExerciseDoubleClick,
+  onOpenExerciseDetail,
   onSwapWeeks,
   competitionTotal,
   visibleExercises,
@@ -462,12 +466,20 @@ export function MacroTableV2({
                     >
                       <ChevronLeft size={10} />
                     </button>
-                    <div className="flex items-center gap-1 min-w-0">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 min-w-0 hover:underline"
+                      onClick={(e) => { e.stopPropagation(); onOpenExerciseDetail?.(te.id); }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      title={onOpenExerciseDetail
+                        ? `${te.exercise.name} — click for the athlete's PRs & load history`
+                        : te.exercise.name}
+                    >
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, displayed) }} />
                       <span className="text-[10px] font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
                         {te.exercise.exercise_code || te.exercise.name}
                       </span>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-0 flex-shrink-0">
                       {onToggleCollapse && (
                         <button

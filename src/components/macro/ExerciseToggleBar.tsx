@@ -21,6 +21,9 @@ interface ExerciseToggleBarProps {
   exercises: MacroTrackedExerciseWithExercise[];
   visible: Set<string>;
   onToggle: (id: string) => void;
+  /** Opens the athlete's PRs + load history for this tracked exercise.
+   *  Wired to the chip's colour dot so the label keeps toggling. */
+  onOpenDetail?: (trackedExerciseId: string) => void;
   onShowAll: () => void;
   generalMetrics?: GeneralMetricKey[];
   visibleMetrics?: Set<GeneralMetricKey>;
@@ -31,6 +34,7 @@ export function ExerciseToggleBar({
   exercises,
   visible,
   onToggle,
+  onOpenDetail,
   onShowAll,
   generalMetrics,
   visibleMetrics,
@@ -67,25 +71,42 @@ export function ExerciseToggleBar({
         <span className="text-gray-200 text-[11px] select-none">|</span>
       )}
 
-      {/* Exercise toggles */}
+      {/* Exercise toggles. The dot opens the athlete's PRs + history, the
+          label keeps its long-standing show/hide behaviour — so the chip
+          gains a detail affordance without retraining the toggle. */}
       {exercises.map(te => {
         const isVisible = visible.has(te.id);
         return (
-          <button
+          <span
             key={te.id}
-            onClick={() => onToggle(te.id)}
-            className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
+            className={`inline-flex items-center pr-2.5 pl-1.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
               isVisible
                 ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : 'bg-gray-50 text-gray-400 border-gray-200 line-through'
+                : 'bg-gray-50 text-gray-400 border-gray-200'
             }`}
           >
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle"
-              style={{ backgroundColor: isVisible ? getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, exercises) : '#9ca3af' }}
-            />
-            {te.exercise.exercise_code || te.exercise.name}
-          </button>
+            <button
+              type="button"
+              onClick={() => onOpenDetail?.(te.id)}
+              disabled={!onOpenDetail}
+              title={onOpenDetail ? `${te.exercise.name} — PRs & load history` : undefined}
+              aria-label={onOpenDetail ? `Open PRs and history for ${te.exercise.name}` : undefined}
+              className={`p-1 -m-0.5 mr-0.5 rounded-full leading-none ${onOpenDetail ? 'cursor-pointer hover:ring-2 hover:ring-blue-200' : 'cursor-default'}`}
+            >
+              <span
+                className="block w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: isVisible ? getExerciseCategoryShade(te.exercise.id, te.exercise.color, te.exercise.category, exercises) : '#9ca3af' }}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggle(te.id)}
+              title={isVisible ? 'Hide from chart & table' : 'Show in chart & table'}
+              className={isVisible ? '' : 'line-through'}
+            >
+              {te.exercise.exercise_code || te.exercise.name}
+            </button>
+          </span>
         );
       })}
       {hasHidden && (

@@ -1,11 +1,12 @@
 import { useRef, useState, useEffect } from 'react';
 import { Download, Upload, X, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise } from '../../lib/database.types';
+import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise, WeekTypeConfig } from '../../lib/database.types';
 import { formatDateShort } from '../../lib/dateUtils';
 import { supabase } from '../../lib/supabase';
 import { getContextOwnerId } from '../../lib/ownerContext';
 import { PlanningPRPanel } from './PlanningPRPanel';
+import { splitExerciseHeader } from './macroExcelHeaders';
 import { Button } from '../ui';
 
 interface MacroExcelIOProps {
@@ -18,8 +19,16 @@ interface MacroExcelIOProps {
   cycleDateRange?: { start: string; end: string };   // for summary sheet
   athleteName?: string;            // for summary sheet
   athleteId?: string | null;       // for fetching PRs (null for group macros)
+  /** Coach's configured week types — a template's week_type is only applied
+   *  when the abbreviation exists here, so an import can't inject a type the
+   *  cycle has no definition (or colour) for. */
+  weekTypes?: WeekTypeConfig[];
   onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
+  /** Week-level import (template week rhythm). Optional: without it the
+   *  Type / Total Reps columns are parsed but not offered for import. */
+  onImportWeeks?: (rows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }>) => Promise<void>;
 }
+
 
 const TARGET_FIELDS: Array<{ field: keyof MacroTarget; label: string }> = [
   { field: 'target_reps', label: 'Target Reps' },
@@ -90,7 +99,9 @@ export function MacroExcelIO({
   cycleDateRange,
   athleteName,
   athleteId,
+  weekTypes = [],
   onImportTargets,
+  onImportWeeks,
 }: MacroExcelIOProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const templateFileInputRef = useRef<HTMLInputElement>(null);
@@ -118,6 +129,9 @@ export function MacroExcelIO({
 
   // Template import options
   const [updatePRsAfterImport, setUpdatePRsAfterImport] = useState(false);
+  /** A template's week rhythm (type + weekly Σreps) is half of what it
+   *  encodes; it used to be parsed and then thrown away. */
+  const [importWeekRhythm, setImportWeekRhythm] = useState(true);
   const [templateImporting, setTemplateImporting] = useState(false);
   const [templateImportDone, setTemplateImportDone] = useState(false);
 
@@ -242,10 +256,14 @@ export function MacroExcelIO({
           fieldDefs.forEach(f => {
             let val = target?.[f.field] as number | null ?? null;
             if (asTemplate && f.isPercent && val !== null) {
+              // Resolve through pr_reference_exercise_id exactly as the import
+              // side does, so a derived exercise (e.g. a variation anchored on
+              // the competition lift) converts against the same PR both ways.
               const pr = athletePRs?.get(te.exercise_id);
-              if (pr && pr > 0) {
-                val = Math.round((val / pr) * 100);
-              }
+              // A "%" column must never carry kilograms: with no PR to divide
+              // by, the value is dropped (and the exercise reported below)
+              // rather than exported as if it were a percentage.
+              val = pr && pr > 0 ? Math.round((val / pr) * 100) : null;
             }
             row.push(val);
           });
@@ -292,21 +310,55 @@ export function MacroExcelIO({
   };
 
   const handleExportTemplate = async () => {
-    let athletePRs: Map<string, number> | undefined;
-
-    if (athleteId) {
-      const exerciseIds = trackedExercises.map(te => te.exercise_id);
-      const { data: prs } = await supabase
-        .from('athlete_prs')
-        .select('exercise_id, pr_value_kg')
-        .eq('athlete_id', athleteId)
-        .in('exercise_id', exerciseIds);
-
-      athletePRs = new Map<string, number>();
-      (prs || []).forEach(pr => {
-        if (pr.pr_value_kg) athletePRs!.set(pr.exercise_id, pr.pr_value_kg);
-      });
+    // A % template is kg ÷ PR. Without an athlete there are no PRs at all, so
+    // every load column would come out empty — say so instead of shipping a
+    // silently gutted file.
+    if (!athleteId) {
+      alert(
+        'A "Template (%)" export converts each planned kg to a percentage of the athlete\'s PR, ' +
+        'so it needs an individual athlete. Open an athlete\'s macrocycle, or use "Excel (with actuals)" for a group.',
+      );
+      return;
     }
+
+    const exerciseIds = trackedExercises.map(te => te.exercise_id);
+    // Resolve through pr_reference_exercise_id: a tracked exercise that
+    // derives its PR from another lift converts against THAT lift's PR — the
+    // same rule the import side applies.
+    const { data: exRows } = await supabase
+      .from('exercises')
+      .select('id, pr_reference_exercise_id')
+      .in('id', exerciseIds);
+    const refById = new Map<string, string>();
+    (exRows ?? []).forEach(ex => {
+      if (ex.pr_reference_exercise_id) refById.set(ex.id, ex.pr_reference_exercise_id);
+    });
+    const lookupIds = Array.from(new Set([...exerciseIds, ...refById.values()]));
+
+    const { data: prs } = await supabase
+      .from('athlete_prs')
+      .select('exercise_id, pr_value_kg')
+      .eq('athlete_id', athleteId)
+      .in('exercise_id', lookupIds);
+
+    const prByExercise = new Map<string, number>();
+    (prs || []).forEach(pr => {
+      if (pr.pr_value_kg) prByExercise.set(pr.exercise_id, pr.pr_value_kg);
+    });
+
+    const athletePRs = new Map<string, number>();
+    const missing: string[] = [];
+    for (const te of trackedExercises) {
+      const pr = prByExercise.get(refById.get(te.exercise_id) ?? te.exercise_id);
+      if (pr && pr > 0) athletePRs.set(te.exercise_id, pr);
+      else if (targets.some(t => t.tracked_exercise_id === te.id && (t.target_max != null || t.target_avg != null))) {
+        missing.push(te.exercise.exercise_code || te.exercise.name);
+      }
+    }
+    if (missing.length > 0 && !confirm(
+      `No PR for: ${missing.join(', ')}.\n\n` +
+      'Their load columns will be left empty rather than exported as kilograms in a % column. Continue?',
+    )) return;
 
     const wb = buildExportWorkbook(true, athletePRs);
     const filename = `${cycleNameForFile.replace(/[^a-z0-9_-]/gi, '_')}_template.xlsx`;
@@ -340,6 +392,8 @@ export function MacroExcelIO({
         ]));
 
         wb.SheetNames.forEach(sheetName => {
+          // The Summary sheet is a report, never a target grid.
+          if (sheetName === 'Summary') return;
           const ws = wb.Sheets[sheetName];
           const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { header: 1 }) as unknown as unknown[][];
           if (rows.length < 3) return;
@@ -349,11 +403,18 @@ export function MacroExcelIO({
 
           const colMap = new Map<number, { te: MacroTrackedExerciseWithExercise; field: keyof MacroTarget }>();
           let currentTe: MacroTrackedExerciseWithExercise | null = null;
+          // "(Actual)" blocks are derived values (what the athlete did) — they
+          // are exported for reading, never imported back over the plan.
+          let inActualBlock = false;
           exHeaderRow.forEach((cell, colIdx) => {
             if (colIdx < 5) return;
             const cellStr = String(cell ?? '').trim();
-            if (cellStr) currentTe = teByExCode.get(cellStr.toLowerCase()) ?? null;
-            if (currentTe) {
+            if (cellStr) {
+              const { name, block } = splitExerciseHeader(cellStr);
+              currentTe = teByExCode.get(name.toLowerCase()) ?? null;
+              inActualBlock = block === 'actual';
+            }
+            if (currentTe && !inActualBlock) {
               const fieldLabel = String(fieldHeaderRow[colIdx] ?? '').trim();
               const fieldDef = TARGET_FIELDS.find(f => f.label === fieldLabel);
               if (fieldDef) colMap.set(colIdx, { te: currentTe, field: fieldDef.field });
@@ -536,12 +597,23 @@ export function MacroExcelIO({
           }
         });
 
+        // The column headers in the data sheets are the authoritative list of
+        // exercises — the "Exercises:" line in Template Info is a comma-joined
+        // summary, so a name containing a comma splits into nonsense codes
+        // that map to nothing. Take the sheet codes first, then append any
+        // Info-only codes that actually appear as data keys.
+        const sheetCodes: string[] = [];
+        for (const w of parsedWeeks) {
+          for (const code of Object.keys(w.exerciseData)) {
+            if (!sheetCodes.includes(code)) sheetCodes.push(code);
+          }
+        }
+        const infoOnly = templateExerciseCodes.filter(c => !sheetCodes.includes(c));
+
         const template: TemplateData = {
           name: templateName,
           unit: templateUnit,
-          exercises: templateExerciseCodes.length > 0
-            ? templateExerciseCodes
-            : Object.keys(parsedWeeks[0]?.exerciseData ?? {}),
+          exercises: sheetCodes.length > 0 ? [...sheetCodes, ...infoOnly] : templateExerciseCodes,
           weeks: parsedWeeks,
         };
 
@@ -597,6 +669,7 @@ export function MacroExcelIO({
 
         setTemplateImportDone(false);
         setUpdatePRsAfterImport(false);
+        setImportWeekRhythm(true);
         setShowTemplateModal(true);
       } catch (err) {
         alert(`Failed to parse template: ${err instanceof Error ? err.message : String(err)}`);
@@ -688,6 +761,25 @@ export function MacroExcelIO({
         await onImportTargets(rows);
       }
 
+      // Week rhythm: the type chip and the weekly Σreps target. Both were
+      // parsed and dropped before. A week_type is only applied when the
+      // coach's settings define that abbreviation — an unknown type would
+      // render as a chip with no definition behind it.
+      if (importWeekRhythm && onImportWeeks) {
+        const knownTypes = new Set(weekTypes.map(t => t.abbreviation));
+        const weekRows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }> = [];
+        for (const week of templateData.weeks) {
+          const macroWeek = macroWeeks.find(w => w.week_number === week.weekNumber);
+          if (!macroWeek) continue;
+          const patch: { id: string; week_type?: string; total_reps_target?: number | null } = { id: macroWeek.id };
+          const type = week.weekType?.trim();
+          if (type && knownTypes.has(type)) patch.week_type = type;
+          if (week.totalReps != null && !isNaN(week.totalReps)) patch.total_reps_target = week.totalReps;
+          if (patch.week_type !== undefined || patch.total_reps_target !== undefined) weekRows.push(patch);
+        }
+        if (weekRows.length > 0) await onImportWeeks(weekRows);
+      }
+
       // Optionally update athlete PRs
       if (updatePRsAfterImport && athleteId && planningPRs.size > 0) {
         for (const [exerciseId, prValue] of planningPRs.entries()) {
@@ -776,7 +868,12 @@ export function MacroExcelIO({
                 <Download size={11} /> Excel (with actuals)
               </button>
               <button
-                onClick={() => { handleExportTemplate(); setExportOpen(false); }}
+                onClick={() => {
+                  setExportOpen(false);
+                  void handleExportTemplate().catch(err => {
+                    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+                  });
+                }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"
               >
                 <Download size={11} /> Template (%)
@@ -1039,6 +1136,19 @@ export function MacroExcelIO({
                         })}
                       </div>
                     </div>
+                  )}
+
+                  {/* Week rhythm checkbox */}
+                  {onImportWeeks && (
+                    <label className="flex items-center gap-2 text-xs text-[color:var(--color-text-secondary)] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={importWeekRhythm}
+                        onChange={e => setImportWeekRhythm(e.target.checked)}
+                        className="rounded border-[color:var(--color-border-tertiary)]"
+                      />
+                      Also import the week rhythm (week type + weekly Σreps target)
+                    </label>
                   )}
 
                   {/* Update PRs checkbox */}

@@ -9,7 +9,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, MessageSquare, Trash2, Ban } from 'lucide-react';
-import type { PlannedExercise, Exercise } from '../../../lib/database.types';
+import type { PlannedExercise, Exercise, ComboMemberEntry } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
@@ -23,7 +23,12 @@ interface LogDayCardProps {
   /** When true (deep-linked from a dashboard activity), this day starts
    *  expanded, scrolls into view, and blinks once. */
   highlight?: boolean;
+  /** When true (deep-linked from the Inbox's "Open unit"), the session
+   *  comment thread starts open — the comment IS what was clicked. */
+  openComments?: boolean;
   plannedExercises: (PlannedExercise & { exercise: Exercise })[];
+  /** planned_exercise_id → combo members, for naming planned combinations. */
+  comboMembers?: Record<string, ComboMemberEntry[]>;
   dayLog: DayLog | null;
   /** Returns true when the post succeeded so callers can refresh data. */
   onPostSessionComment?: (sessionId: string, body: string) => Promise<void>;
@@ -46,7 +51,9 @@ interface LogDayCardProps {
 export function LogDayCard({
   dayName,
   highlight = false,
+  openComments = false,
   plannedExercises,
+  comboMembers,
   dayLog,
   onPostSessionComment,
   onDeleteLogExercise,
@@ -55,21 +62,25 @@ export function LogDayCard({
   onEditGppExercise,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
-  const [threadOpen, setThreadOpen] = useState(false);
+  const [threadOpen, setThreadOpen] = useState(openComments);
   // Default collapsed so the week list scans easily for a roster. The coach
   // clicks any header to drill into a day. A deep-linked day starts expanded.
   const [collapsed, setCollapsed] = useState(!highlight);
 
   // Scroll a deep-linked day into view on mount; the .log-day-blink class
-  // (applied below) plays the attention pulse.
+  // (applied below) plays the attention pulse. When the link was about a
+  // comment ("Open unit"), scroll to the thread itself — on a long day the
+  // card top leaves the comments below the fold.
   const cardRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!highlight) return;
+    if (!highlight && !openComments) return;
     const id = window.setTimeout(() => {
-      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const target = openComments ? threadRef.current ?? cardRef.current : cardRef.current;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 60);
     return () => window.clearTimeout(id);
-  }, [highlight]);
+  }, [highlight, openComments]);
 
   const loggedByPlannedId = new Map<string, LoggedExerciseFull>();
   const offPlan: LoggedExerciseFull[] = [];
@@ -209,6 +220,7 @@ export function LogDayCard({
               key={ex.id}
               planned={ex}
               logged={ledg}
+              plannedComboMembers={comboMembers?.[ex.id]}
               messages={dayLog?.messages}
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
               onDelete={
@@ -268,7 +280,7 @@ export function LogDayCard({
       )}
 
       {canComment && (
-        <div className="border-t border-gray-100">
+        <div ref={threadRef} className="border-t border-gray-100">
           <button
             onClick={() => setThreadOpen(o => !o)}
             className="w-full flex items-center justify-between px-3 py-2 text-[11px] text-gray-600 hover:bg-gray-50"

@@ -11,6 +11,7 @@ import { RefreshCw, AlertCircle } from 'lucide-react';
 import type {
   PlannedExercise,
   Exercise,
+  ComboMemberEntry,
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
 } from '../../../lib/database.types';
@@ -40,10 +41,16 @@ interface LogModeViewProps {
   weekStart: string;
   visibleDays: Array<{ index: number; name: string }>;
   plannedExercises: Record<number, (PlannedExercise & { exercise: Exercise })[]>;
+  /** planned_exercise_id → combo members, so a planned combination is named
+   *  with the coach's notation / member list instead of its anchor exercise. */
+  comboMembers?: Record<string, ComboMemberEntry[]>;
   /** day_labels from the week plan, used to label bonus athlete-added days. */
   dayLabels?: Record<number, string> | null;
   /** Day to auto-expand, scroll to and blink (deep-link from an activity). */
   highlightDayIndex?: number | null;
+  /** Day whose session comment thread should start open (the Inbox's
+   *  "Open unit" jump, which is about a specific comment). */
+  openCommentsDayIndex?: number | null;
 }
 
 export function LogModeView({
@@ -51,8 +58,10 @@ export function LogModeView({
   weekStart,
   visibleDays,
   plannedExercises,
+  comboMembers,
   dayLabels,
   highlightDayIndex,
+  openCommentsDayIndex,
 }: LogModeViewProps) {
   const [weekLog, setWeekLog] = useState<Record<number, DayLog>>({});
   // Coach view preference (device-local): show all 7 weekdays vs only days
@@ -300,7 +309,9 @@ export function LogModeView({
           key={day.index}
           dayName={day.name}
           highlight={highlightDayIndex != null && day.index === highlightDayIndex}
+          openComments={openCommentsDayIndex != null && day.index === openCommentsDayIndex}
           plannedExercises={plannedExercises[day.index] ?? []}
+          comboMembers={comboMembers}
           dayLog={weekLog[day.index] ?? null}
           onPostSessionComment={postSessionComment}
           onDeleteLogExercise={onDeleteLogExercise}
@@ -332,6 +343,7 @@ export function LogModeView({
                   key={`extra-${idx}`}
                   dayName={label}
                   highlight={highlightDayIndex != null && idx === highlightDayIndex}
+                  openComments={openCommentsDayIndex != null && idx === openCommentsDayIndex}
                   plannedExercises={[]}
                   dayLog={weekLog[idx] ?? null}
                   onPostSessionComment={postSessionComment}
@@ -343,23 +355,34 @@ export function LogModeView({
         );
       })()}
 
-      {editingLogged && (
-        <CoachSetEditModal
-          open
-          exerciseName={editingLogged.exercise?.name ?? '(unknown exercise)'}
-          logExerciseId={editingLogged.log.id}
-          loggedSets={editingLogged.sets}
-          onClose={() => setEditingLogged(null)}
-          onChanged={reload}
-          plannedExercise={
-            editingLogged.log.planned_exercise_id
-              ? Object.values(plannedExercises)
-                  .flat()
-                  .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
-              : null
-          }
-        />
-      )}
+      {editingLogged && (() => {
+        const plannedForEdit = editingLogged.log.planned_exercise_id
+          ? Object.values(plannedExercises)
+              .flat()
+              .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
+          : null;
+        // A combo's log row points at the anchor exercise, so the raw
+        // logged.exercise.name would title the modal with one member.
+        const comboTitle = plannedForEdit?.is_combo
+          ? plannedForEdit.combo_notation?.trim() ||
+            (comboMembers?.[plannedForEdit.id] ?? [])
+              .slice()
+              .sort((a, b) => a.position - b.position)
+              .map(m => m.exercise.name)
+              .join(' + ')
+          : null;
+        return (
+          <CoachSetEditModal
+            open
+            exerciseName={comboTitle || editingLogged.exercise?.name || '(unknown exercise)'}
+            logExerciseId={editingLogged.log.id}
+            loggedSets={editingLogged.sets}
+            onClose={() => setEditingLogged(null)}
+            onChanged={reload}
+            plannedExercise={plannedForEdit}
+          />
+        );
+      })()}
 
       {editingGpp && (
         <GppBlockEditor

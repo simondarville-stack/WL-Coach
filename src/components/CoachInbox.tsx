@@ -604,6 +604,7 @@ function AthleteConversation({
       <ChatPane
         key={`session:${view.thread.sessionId ?? 'none'}`}
         thread={view.thread}
+        slotRef={view.thread.sessionId ? slotRefs.get(view.thread.sessionId) ?? null : null}
         athleteId={athleteId}
         athleteName={athleteName}
         athletePhotoUrl={athletePhotoUrl}
@@ -760,6 +761,7 @@ function SubThreadsPanel({
 function ChatPane({
   thread,
   unit = null,
+  slotRef = null,
   athleteId,
   athleteName,
   athletePhotoUrl,
@@ -776,6 +778,10 @@ function ChatPane({
   /** Attach-flow target. When set (and the unit has no session row
    *  yet), the session is created with the first message. */
   unit?: UnitTarget | null;
+  /** The session's planned slot (week + day index). Drives "Open unit" —
+   *  without it we can only guess the week from the performed date and
+   *  have no day at all, so the jump lands on the plan view. */
+  slotRef?: SessionSlotRef | null;
   athleteId: string;
   athleteName: string;
   athletePhotoUrl: string | null;
@@ -820,16 +826,27 @@ function ChatPane({
     onMessagesChanged,
   });
 
-  const openWeekStart = unit?.weekStart
+  // Prefer the session's own slot (week_start + day_index): the performed
+  // date can fall in a different week than the unit was planned for.
+  const openWeekStart = unit?.weekStart ?? slotRef?.weekStart
     ?? (thread.kind === 'session' && thread.performedOn
       ? mondayOfDate(thread.performedOn)
       : null);
+  const openDayIndex = unit?.dayIndex ?? slotRef?.dayIndex ?? null;
   const onOpenSession = thread.kind === 'session' && openWeekStart
     ? () => {
         // Set planner context to this athlete first, then navigate.
         const target = accessibleAthletes.find(a => a.id === thread.athleteId);
         if (target) setSelectedAthlete(target);
-        navigate(`/planner/${openWeekStart}`);
+        // mode=log opens the Log view, day=<n> expands + scrolls to the unit,
+        // comments=1 opens its comment thread — so the coach lands on the
+        // message they clicked, not on the week's plan.
+        const params = new URLSearchParams({ mode: 'log' });
+        if (openDayIndex != null) {
+          params.set('day', String(openDayIndex));
+          params.set('comments', '1');
+        }
+        navigate(`/planner/${openWeekStart}?${params.toString()}`);
       }
     : null;
 

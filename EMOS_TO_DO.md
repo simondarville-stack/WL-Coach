@@ -19,6 +19,154 @@ _(empty — everything below is done; new items go here.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Combination exercises are named in the coach's Log (done 22/07/2026, v0.27.0)
+**Wrong:** in the weekly planner's **Log** mode a coach-planned combination
+rendered as the name of its **first member** only ("Push press" for
+`Push press + Knickstød`). `LogExerciseRow` had a combo-name branch, but only
+for **athlete-added** combos, which carry their members in
+`training_log_exercises.metadata.combo`. A coach-planned combo keeps its
+members in `planned_exercise_combo_members` — a table the whole Log chain
+never received, so the row fell back to `planned.exercise.name`, which is the
+anchor member. The `Combo` chip was there; the name was wrong.
+**Changed:** `comboMembers` (already loaded by `useWeekPlans` for Plan mode) is
+threaded `WeeklyPlanner → LogModeView → LogDayCard → LogExerciseRow`, and the
+row resolves the name with the planner's own rule —
+`combo_notation || members.join(' + ')` — so Plan and Log can't disagree. The
+member dots that off-plan combos already showed now render for planned combos
+too, and the coach's set-edit modal is titled with the combo name instead of
+the anchor. Verified live: Log mode shows "Træk PP + trækbalance + overhead
+squat" and "Push press + Knickstød" with their member chips.
+
+#The date picker is European, not the browser's (done 22/07/2026, v0.27.0)
+**Wrong:** `DateInput`'s calendar button opened the **native**
+`<input type="date">` picker, which renders in the **browser's** locale — on an
+en-US profile that is a Sunday-first grid in US date order. So the calendar a
+coach saw when creating a macrocycle depended on their machine, not on the
+product, and contradicted CLAUDE.md (European standards, weeks start Monday).
+**Changed:** new `CalendarPopover` (`src/components/ui`) — EMOS's own month
+grid, **Monday-first and DD/MM/YYYY regardless of locale**, with the **ISO week
+number** in a leading `W` column (the unit coaches actually plan in), today
+outlined, month paging and a "This week" shortcut. `DateInput` uses it instead
+of the native picker; with `snapToMonday` (macro start/end) the whole week row
+highlights and any day resolves to that week's Monday. All date maths goes
+through the UTC-consistent `isoMonday`/`isoAddDays` helpers. Verified live in
+Create Macrocycle: header reads `W Mo Tu We Th Fr Sa Su`, weeks 27–32 for July
+2026, and clicking Wed 22/07 filled `20/07/2026`.
+**Note:** the item said the calendar "starts on a monday … wrong for european
+standards", but Monday-first *is* the European convention, so this was read as
+the locale-dependent picker being the defect. If something else was meant, say
+so — the four remaining native `type="date"` inputs (event form, athlete PR
+form, session header, analysis date range) are still browser-rendered and can
+be moved onto the same component.
+
+#Macro exercises open their PRs and history (done 22/07/2026, v0.27.0)
+**Wrong (missing capability):** while writing macro targets there was no way to
+see what the athlete actually lifts. Clicking a tracked exercise in the table's
+top banner did nothing; the PR table and the load-history chart existed but only
+elsewhere (`/prs`, the planner's exercise dialog).
+**Changed:** new `MacroExerciseDetail` — the athlete's PR grid (1RM–10RM, real
+values with dates, estimates in italic, e1RM, the Weighted / 1RM-only toggle and
+its Δ column) plus the planner's `ExerciseHistoryChart`, which already draws
+planned / performed / **SOLL** against this cycle's targets. Both are the
+existing modules (`lib/prTable`, `ExerciseHistoryChart`), reused rather than
+rebuilt. It opens from **two** places: the exercise name in the macro table's
+header band, and the colour dot on its toggle chip (the chip label keeps
+toggling visibility — the existing behaviour is untouched). It honours the
+coach's **Layout preference**: centered dialog or side panel. Group macros
+without an athlete in view say so instead of rendering an empty table.
+Extracted `AdaptiveDialog` (`src/components/ui`) for the dialog-vs-side-panel
+decision and moved the planner's two hand-rolled copies onto it, so
+`dialog_mode` is now honoured in one place. Verified live on Emma Munch's
+"Sommer 26": header → panel with e1RM 70 kg, real 1RM on 20/07, and the W1–W11
+history with the "This week" marker.
+
+#Macro import/export reviewed — 6 fixes (done 22/07/2026, v0.27.0)
+Reviewed both Excel paths end to end. Findings, all fixed:
+* **The round trip imported nothing (the headline bug).** Export writes
+  `"<code> (Target)"` / `"<code> (Actual)"` over each exercise's column block;
+  import matched that whole cell against the exercise code, so `"SN (Target)"`
+  never found `SN`, `currentTe` stayed null and **every** column was skipped —
+  a file EMOS had just exported imported **0 rows**, silently. Now a shared
+  `splitExerciseHeader` (`macroExcelHeaders.ts`, unit-tested) splits code from
+  suffix, and the `(Actual)` block is explicitly skipped: those are derived
+  values, never plan input. The Summary sheet is skipped too.
+* **`Template (%)` could export kilograms in a `%` column.** The conversion
+  divided by the exercise's own `athlete_prs` row and, when there was none —
+  no PR, or a **group** macro with no athlete at all — silently left the raw
+  **kg** in the cell. Re-importing that as kg multiplied it by PR/100. It also
+  ignored `pr_reference_exercise_id`, which the *import* side honours, so a
+  derived exercise round-tripped against the wrong anchor. Now export resolves
+  through the PR reference exactly as import does, blocks the group case with an
+  explanation, lists the exercises with no PR for confirmation, and writes an
+  **empty cell** rather than a wrong number.
+* **Template import silently dropped the week rhythm.** `weekType`, `weekLabel`
+  and `totalReps` were parsed into `TemplateWeekData` and then never used — so
+  the exported "Type" and "Total Reps" columns round-tripped to nothing. Now
+  imported (opt-out checkbox) via `bulkUpdateWeeks`; a `week_type` is only
+  applied when the abbreviation exists in the coach's own week-type settings, so
+  an import can't inject a type the cycle has no definition or colour for.
+  `week_type_text` is deliberately **not** written — `week_type` has been the
+  single source of truth since 0.24.0.
+* **Import was one HTTP round-trip per field.** Rows arrive one field at a time
+  (5 per exercise per week), so a 12-week × 6-exercise file was ~360 sequential
+  upserts against a stale `targets` snapshot. Now folded to one row per
+  (week, exercise) and written with the existing `bulkUpsertTargets` — a handful
+  of requests.
+* **`Exercises:` parsing broke on commas.** The template's exercise list is
+  comma-joined in Template Info, so a name containing a comma split into codes
+  that mapped to nothing. The data sheets' column headers are now the
+  authoritative list, with Info-only codes appended.
+* **Unhandled rejection.** `handleExportTemplate` is async and was called
+  un-awaited from `onClick`; a failure escaped into `error_logs` instead of
+  telling the coach. Now caught and surfaced.
+  *(Verified: `splitExerciseHeader` covered by `macroExcelIO.test.ts`, 5 cases;
+  the other fixes are typechecked and build-clean but were not driven through a
+  real file upload in the browser.)*
+
+#Empty exercise categories are visible (done 22/07/2026, v0.27.0)
+**Wrong:** in the exercise library's List and Grid views, categories with no
+exercises were hidden behind a "N empty categories hidden · Show" link that
+defaulted to **hidden** — so a category the coach had *just created* was
+invisible, and there was no way to put the first exercise into it. (Tree view
+already showed them as drop targets.)
+**Changed:** empty categories are shown by **default** (the toggle still hides
+them for coaches who want a tight list), and an empty section now renders
+"Empty category. **Add an exercise here** or drag one in from Tree view" — the
+link opens the create form with **that category preselected** (new optional
+`initialCategory` on `ExerciseForm` / `ExerciseFormModal`). Verified live on a
+real empty category ("K3: Hiv"): it now appears with count 0, and the link opens
+the form with Category = K3: Hiv.
+
+#"Open unit" lands on the unit, with the comment open (done 22/07/2026, v0.27.0)
+**Wrong:** the Inbox's "Open unit" navigated to `/planner/<week>` — plan mode,
+no day, no comment. Two causes: `ChatPane` never received the session's slot, so
+it had **no day index at all** and guessed the week from the *performed* date
+(which can fall outside the week the unit was planned for), and it passed none
+of the deep-link params the planner already supports.
+**Changed:** the resolved `SessionSlotRef` (`week_start` + `day_index`, already
+fetched for the thread labels) is passed into `ChatPane`, and the jump is now
+`/planner/<week_start>?mode=log&day=<n>&comments=1`. The new `comments` param
+opens that day's session thread and scrolls to it (a long day would otherwise
+leave the comment below the fold). Verified live: from Asger Søderberg's session
+thread, "Open unit" landed on `2026-05-25?mode=log&day=5&comments=1` with Unit 5
+expanded and "Session comments (2)" open on the message that was clicked.
+
+#Plan: one exercise catalogue shared by two coaches (done 22/07/2026, v0.27.0)
+Written to `docs/SHARED_EXERCISE_CATALOGUE_PLAN.md`. Summary: catalogues are
+per-coach today (`exercises.owner_id`), so "Snatch" has a different `id` per
+coach and cross-coach analysis can't group. Recommended path is to share a
+catalogue the same way athletes are already shared — a
+`exercise_catalogue_collaborators` table mirroring `athlete_collaborators`, plus
+`getCatalogueOwnerId()` next to the two existing owner resolvers — which makes
+the ids identical **by construction** and needs no change to the analysis layer.
+Phase 2 is the risky part: a transactional `adopt_exercise_catalogue` RPC that
+remaps every FK (`planned_exercises`, logs, `athlete_prs`,
+`macro_tracked_exercises`, templates) **and** the two self-references
+(`parent_exercise_id`, `pr_reference_exercise_id`) for coaches who already
+diverged, with a dry-run report first. Alternatives (a `canonical_exercise_id`
+mapping, a global system catalogue, a first-class `exercise_libraries` table)
+are compared in the doc, with three open questions for the coach at the end.
+
 #Text-type exercise no longer shows a "0%" done label (done 20/07/2026, v0.26.1)
 **Wrong:** the athlete day-preview badge (`SessionPreview`) showed a compliance
 `%` next to "Did" computed as performed-reps ÷ planned-reps. A "Text"-type

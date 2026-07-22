@@ -10,6 +10,10 @@ interface ExerciseFormProps {
   onSave: (exercise: Partial<Exercise>) => Promise<void>;
   onCancelEdit: () => void;
   allExercises?: Exercise[];
+  /** Preselected category for a new exercise — set when the coach starts
+   *  from a specific category section (e.g. an empty one). Ignored when
+   *  editing, where the exercise's own category wins. */
+  initialCategory?: string | null;
 }
 
 const PRESET_COLORS = [
@@ -27,7 +31,7 @@ function isProtectedCategory(name: string): boolean {
   return name.toLowerCase().includes('system');
 }
 
-export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [] }: ExerciseFormProps) {
+export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [], initialCategory = null }: ExerciseFormProps) {
   const { categories, fetchCategories } = useExercises();
 
   const [name, setName] = useState('');
@@ -66,13 +70,16 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     } else {
       resetForm();
     }
-  }, [editingExercise, categories]);
+  }, [editingExercise, categories, initialCategory]);
 
   const resetForm = () => {
     setName('');
     setExerciseCode('');
+    const preset = initialCategory && categories.some(c => c.name === initialCategory)
+      ? initialCategory
+      : null;
     const firstVisible = categories.find(c => !isProtectedCategory(c.name));
-    setCategory(firstVisible?.name ?? '');
+    setCategory(preset ?? firstVisible?.name ?? '');
     setIsCompetitionLift(false);
     setDefaultUnit('percentage');
     setColor('#3B82F6');

@@ -538,7 +538,9 @@ interface ExerciseListPanelProps {
   onSelectExercise: (id: string | null) => void;
   onOpenCategoryModal: () => void;
   onOpenBulkImport: () => void;
-  onCreateExercise: () => void;
+  /** `category` preselects it in the create form — used by the per-section
+   *  "Add exercise" affordance so a fresh, empty category is fillable. */
+  onCreateExercise: (category?: string) => void;
   onMoveExercise: (
     exerciseId: string,
     parentId: string | null,
@@ -568,7 +570,11 @@ export function ExerciseListPanel({
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  const [showEmptyCategories, setShowEmptyCategories] = useState(false);
+  // Shown by default: a category the coach just created is empty by
+  // definition, and hiding it made it invisible — and unfillable — right
+  // when they wanted to put exercises in it. The toggle below still hides
+  // them for coaches who want a tight list.
+  const [showEmptyCategories, setShowEmptyCategories] = useState(true);
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const filterButtonRef = useRef<HTMLDivElement>(null);
@@ -763,7 +769,7 @@ export function ExerciseListPanel({
         <Button variant="secondary" size="sm" icon={<Upload size={12} />} onClick={onOpenBulkImport}>
           Import
         </Button>
-        <Button variant="primary" size="md" icon={<Plus size={14} />} onClick={onCreateExercise}>
+        <Button variant="primary" size="md" icon={<Plus size={14} />} onClick={() => onCreateExercise()}>
           Add exercise
         </Button>
       </div>
@@ -795,7 +801,33 @@ export function ExerciseListPanel({
                   isCollapsed={isCollapsed}
                   onToggle={() => toggleCollapse(cat.id)}
                 />
-                {!isCollapsed && renderExercises(catExercises)}
+                {!isCollapsed && (
+                  catExercises.length === 0 ? (
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                        padding: 'var(--space-md) var(--space-lg)',
+                        borderBottom: '0.5px solid var(--color-border-tertiary)',
+                        fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+                      }}
+                    >
+                      <span>Empty category.</span>
+                      <button
+                        type="button"
+                        onClick={() => onCreateExercise(cat.name)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                          fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+                          color: 'var(--color-accent)',
+                        }}
+                      >
+                        <Plus size={11} /> Add an exercise here
+                      </button>
+                      <span>or drag one in from Tree view.</span>
+                    </div>
+                  ) : renderExercises(catExercises)
+                )}
               </div>
             );
           })}
