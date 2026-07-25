@@ -197,7 +197,7 @@ export function UpcomingScreen() {
                   <div key={gc.group.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                     <div className="flex items-stretch">
                       <button
-                        onClick={() => navigate(`/field/g/${gc.group.id}?w=${weekStart}`)}
+                        onClick={() => navigate(`/Coach-overview/g/${gc.group.id}?w=${weekStart}`)}
                         className="flex-1 min-w-0 px-3 pt-2.5 pb-2 text-left"
                       >
                         <span className="flex items-center justify-between gap-2">
@@ -226,7 +226,7 @@ export function UpcomingScreen() {
                     {hasTable && !collapsed && (
                       <button
                         onClick={() =>
-                          navigate(`/field/g/${gc.group.id}/d/${gc.next.day!.dayIndex}?w=${weekStart}`)
+                          navigate(`/Coach-overview/g/${gc.group.id}/d/${gc.next.day!.dayIndex}?w=${weekStart}`)
                         }
                         className="w-full text-left active:bg-gray-800/50"
                         aria-label={`Open ${gc.group.name}'s group programme for ${gc.next.day!.label}`}
@@ -257,7 +257,7 @@ export function UpcomingScreen() {
             return (
               <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                 <button
-                  onClick={() => navigate(`/field/a/${card.athlete.id}?w=${weekStart}`)}
+                  onClick={() => navigate(`/Coach-overview/a/${card.athlete.id}?w=${weekStart}`)}
                   className="w-full px-3 pt-2.5 pb-2 text-left"
                 >
                   <span className="flex items-center justify-between gap-2">
@@ -291,7 +291,7 @@ export function UpcomingScreen() {
                 {hasTable && (
                   <button
                     onClick={() =>
-                      navigate(`/field/a/${card.athlete.id}/d/${card.next.day!.dayIndex}?w=${weekStart}`)
+                      navigate(`/Coach-overview/a/${card.athlete.id}/d/${card.next.day!.dayIndex}?w=${weekStart}`)
                     }
                     className="w-full text-left active:bg-gray-800/50"
                     aria-label={`Open ${card.athlete.name}'s programme for ${card.next.day!.label}`}

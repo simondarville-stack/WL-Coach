@@ -136,9 +136,14 @@ function AppRouter() {
       </Routes>
     );
   }
-  // Coach field view — coach-facing, so it sits behind the same gate as
-  // the desktop coach app rather than the athlete-side access codes.
-  if (location.pathname === '/field' || location.pathname.startsWith('/field/')) {
+  // Coach overview (formerly /field) — coach-facing, so it sits behind the
+  // same gate as the desktop coach app rather than the athlete-side access
+  // codes. Legacy /field paths still route here and redirect inside FieldApp.
+  const lowerPath = location.pathname.toLowerCase();
+  if (
+    lowerPath === '/coach-overview' || lowerPath.startsWith('/coach-overview/') ||
+    lowerPath === '/field' || lowerPath.startsWith('/field/')
+  ) {
     return (
       <CoachGate>
         <FieldApp />

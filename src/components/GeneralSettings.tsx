@@ -656,7 +656,7 @@ export function GeneralSettings() {
       <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
         <div>
           <h2 className="text-lg font-medium text-gray-900 mb-1">Field view</h2>
-          <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach field view (/field)</p>
+          <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach overview (/Coach-overview)</p>
         </div>
 
         <div>
