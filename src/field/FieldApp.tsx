@@ -1,5 +1,5 @@
 /**
- * FieldApp — coach-facing mobile field view (/field).
+ * FieldApp — coach-facing mobile coach-overview view (/Coach-overview).
  *
  * "What are my athletes going to train today?" on the gym floor: the
  * Upcoming screen shows each athlete's next open session as a compact
@@ -9,7 +9,7 @@
  * mounted behind the same CoachGate as the desktop coach app.
  */
 import { useEffect, useState } from 'react';
-import { NavLink, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { Calculator, ListChecks, Mail, Users } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
@@ -28,10 +28,10 @@ import { FieldInboxScreen } from './screens/FieldInboxScreen';
 import { FieldConversationScreen } from './screens/FieldConversationScreen';
 
 const TABS = [
-  { to: '/field', icon: ListChecks, label: 'Upcoming', end: true },
-  { to: '/field/athletes', icon: Users, label: 'Athletes', end: false },
-  { to: '/field/inbox', icon: Mail, label: 'Inbox', end: false },
-  { to: '/field/tools', icon: Calculator, label: 'Tools', end: false },
+  { to: '/Coach-overview', icon: ListChecks, label: 'Upcoming', end: true },
+  { to: '/Coach-overview/athletes', icon: Users, label: 'Athletes', end: false },
+  { to: '/Coach-overview/inbox', icon: Mail, label: 'Inbox', end: false },
+  { to: '/Coach-overview/tools', icon: Calculator, label: 'Tools', end: false },
 ] as const;
 
 function FieldLayout() {
@@ -76,6 +76,14 @@ function FieldLayout() {
   );
 }
 
+// Old /field/* URL → new /Coach-overview/* URL, keeping the sub-path and
+// query string intact so a bookmarked group/athlete deep link still lands.
+function LegacyFieldRedirect() {
+  const { pathname, search } = useLocation();
+  const target = pathname.replace(/^\/field/i, '/Coach-overview') + search;
+  return <Navigate to={target} replace />;
+}
+
 function FieldRoutes() {
   const { activeCoach, setCoaches } = useCoachStore();
   const { fetchCoaches } = useCoachProfiles();
@@ -118,17 +126,19 @@ function FieldRoutes() {
   return (
     <Routes>
       <Route element={<FieldLayout />}>
-        <Route path="/field" element={<UpcomingScreen />} />
-        <Route path="/field/athletes" element={<AthletesScreen />} />
-        <Route path="/field/inbox" element={<FieldInboxScreen />} />
-        <Route path="/field/tools" element={<ToolsScreen />} />
+        <Route path="/Coach-overview" element={<UpcomingScreen />} />
+        <Route path="/Coach-overview/athletes" element={<AthletesScreen />} />
+        <Route path="/Coach-overview/inbox" element={<FieldInboxScreen />} />
+        <Route path="/Coach-overview/tools" element={<ToolsScreen />} />
       </Route>
-      <Route path="/field/inbox/:athleteId" element={<FieldConversationScreen />} />
-      <Route path="/field/a/:athleteId" element={<AthleteWeekScreen />} />
-      <Route path="/field/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
-      <Route path="/field/g/:groupId" element={<GroupWeekScreen />} />
-      <Route path="/field/g/:groupId/d/:dayIndex" element={<GroupDayScreen />} />
-      <Route path="*" element={<Navigate to="/field" replace />} />
+      <Route path="/Coach-overview/inbox/:athleteId" element={<FieldConversationScreen />} />
+      <Route path="/Coach-overview/a/:athleteId" element={<AthleteWeekScreen />} />
+      <Route path="/Coach-overview/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
+      <Route path="/Coach-overview/g/:groupId" element={<GroupWeekScreen />} />
+      <Route path="/Coach-overview/g/:groupId/d/:dayIndex" element={<GroupDayScreen />} />
+      {/* Legacy /field bookmarks — preserve deep links by remapping the prefix */}
+      <Route path="/field/*" element={<LegacyFieldRedirect />} />
+      <Route path="*" element={<Navigate to="/Coach-overview" replace />} />
     </Routes>
   );
 }

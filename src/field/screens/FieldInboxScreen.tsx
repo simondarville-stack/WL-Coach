@@ -1,5 +1,5 @@
 /**
- * FieldInboxScreen — the coach inbox, Field View flavour (/field/inbox).
+ * FieldInboxScreen — the coach inbox, Field View flavour (/Coach-overview/inbox).
  *
  * One row per athlete with message activity (unread first, then most
  * recent), mirroring the desktop CoachInbox's athlete-rooted model on
@@ -162,7 +162,7 @@ export function FieldInboxScreen() {
             {active.map(s => (
               <button
                 key={s.athleteId}
-                onClick={() => navigate(`/field/inbox/${s.athleteId}`)}
+                onClick={() => navigate(`/Coach-overview/inbox/${s.athleteId}`)}
                 className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2.5 flex items-center gap-3 text-left active:bg-gray-800/60"
               >
                 <InitialsAvatar name={s.athleteName} photoUrl={s.athletePhotoUrl} />
@@ -220,7 +220,7 @@ export function FieldInboxScreen() {
                   {other.map(a => (
                     <button
                       key={a.id}
-                      onClick={() => navigate(`/field/inbox/${a.id}`)}
+                      onClick={() => navigate(`/Coach-overview/inbox/${a.id}`)}
                       className="w-full bg-gray-900/60 border border-gray-800/70 rounded-lg px-3 py-2 flex items-center gap-3 text-left active:bg-gray-800/60"
                     >
                       <InitialsAvatar name={a.name} photoUrl={a.photo_url} size={26} />
