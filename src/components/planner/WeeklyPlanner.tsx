@@ -135,13 +135,25 @@ export function WeeklyPlanner() {
     syncGroupPlanToAthletes,
   } = useWeekPlans();
 
+  // Origin to stamp on every row this surface creates. On an individual plan
+  // that is 'individual' — it earns the I badge and pins the row against the
+  // next group sync. Group plans stay null (the sync stamps 'group' on the
+  // copies it pushes to athletes).
+  const plannedSource: 'individual' | null = planSelection.type === 'individual' ? 'individual' : null;
+
   // Wrap addExerciseToDay so manually-added exercises on individual plans get source='individual',
   // giving them the I badge and protecting them from being overwritten on group sync.
   const addExerciseToDayWrapped: typeof addExerciseToDay = (weekPlanId, dayIndex, exerciseId, position, unit, extras) =>
     addExerciseToDay(weekPlanId, dayIndex, exerciseId, position, unit, {
       ...extras,
-      source: planSelection.type === 'individual' ? 'individual' : (extras?.source ?? null),
+      source: plannedSource ?? extras?.source ?? null,
     });
+
+  // Same for combos — they used to be written with source NULL, so a combo the
+  // coach added to a synced athlete showed no badge and the sync neither kept
+  // nor replaced it (the group's copy landed next to it).
+  const createComboExerciseWrapped: typeof createComboExercise = (weekPlanId, dayIndex, position, data) =>
+    createComboExercise(weekPlanId, dayIndex, position, { ...data, source: data.source ?? plannedSource });
 
   const [macroContext, setMacroContext] = useState<MacroContext | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -537,7 +549,7 @@ export function WeeklyPlanner() {
     const destPosition = isReplace ? 0 : (plannedExercises[toDay] || []).length;
     let newExId: string | null = null;
     if (isCopy) {
-      newExId = await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition);
+      newExId = await copyExerciseWithSetLines(sourceEx, currentWeekPlan.id, toDay, destPosition, plannedSource);
     } else {
       await moveExercise(currentWeekPlan.id, plannedExId, fromDay, toDay);
       newExId = plannedExId;
@@ -563,7 +575,7 @@ export function WeeklyPlanner() {
     }
     const basePosition = isReplace ? 0 : (plannedExercises[destDay] || []).length;
     if (srcExercises.length > 0) {
-      await copyDayExercises(srcExercises, currentWeekPlan.id, destDay, basePosition);
+      await copyDayExercises(srcExercises, currentWeekPlan.id, destDay, basePosition, plannedSource);
       if (!isCopy) {
         await deleteDayExercises(srcExercises.map(ex => ex.id));
       }
@@ -587,7 +599,7 @@ export function WeeklyPlanner() {
   const handleDockTemplateDayDrop = async (templateDayId: string, dayIndex: number, isReplace: boolean) => {
     if (!currentWeekPlan) return;
     try {
-      await applyTemplateDayToPlanDay(templateDayId, currentWeekPlan.id, dayIndex, { replace: isReplace });
+      await applyTemplateDayToPlanDay(templateDayId, currentWeekPlan.id, dayIndex, { replace: isReplace, source: plannedSource });
       await handleRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply template day');
@@ -607,7 +619,7 @@ export function WeeklyPlanner() {
         setImportTarget({ templateId, startDayIndex: dayIndex });
         return;
       }
-      await applyTemplateDayToPlanDay(template.days[0].id, currentWeekPlan.id, dayIndex, { replace: isReplace });
+      await applyTemplateDayToPlanDay(template.days[0].id, currentWeekPlan.id, dayIndex, { replace: isReplace, source: plannedSource });
       await handleRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply template');
@@ -1353,6 +1365,11 @@ export function WeeklyPlanner() {
     setError(null);
     try {
       await syncGroupPlanToAthletes(currentWeekPlan.id, planSelection.group.id, selectedDate);
+      // The sync normalises the GROUP plan's own positions before copying it
+      // (so every athlete gets the same order), which means the plan on screen
+      // can now differ from the database. Refresh so the coach sees what was
+      // actually synced.
+      await handleRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sync group plan to athletes');
     } finally {
@@ -1384,7 +1401,13 @@ export function WeeklyPlanner() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg-secondary)', padding: 16 }}>
-      <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+      {/* No max-width (and so no centring): the day grid is
+          `auto-fill, minmax(360px, 1fr)`, so the old 1600 px cap was what
+          pinned a wide monitor to 4 unit cards per row. The planner is a dense
+          expert surface — let it use the window. The macro page and Analysis
+          were checked and already span the full width; this was the only
+          artificial cap on a dense surface. */}
+      <div>
 
         {error && (
           <div style={{ marginBottom: 16, padding: 12, background: 'var(--color-danger-bg)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-md)', color: 'var(--color-danger-text)', fontSize: 13 }}>
@@ -1628,7 +1651,7 @@ export function WeeklyPlanner() {
                 onNavigateToDay={handleNavigateToDay}
                 onNavigateToExercise={handleNavigateToExercise}
                 addExerciseToDay={addExerciseToDayWrapped}
-                createComboExercise={createComboExercise}
+                createComboExercise={createComboExerciseWrapped}
                 onRefresh={handleRefresh}
                 onReorderInDay={handleReorderInDay}
                 onDeleteExercise={handleDeleteExercise}
@@ -1672,7 +1695,7 @@ export function WeeklyPlanner() {
                     }
                     onRefresh={handleRefresh}
                     addExerciseToDay={addExerciseToDayWrapped}
-                    createComboExercise={createComboExercise}
+                    createComboExercise={createComboExerciseWrapped}
                     savePrescription={savePrescription}
                     saveNotes={saveNotes}
                     saveGppSection={saveGppSection}

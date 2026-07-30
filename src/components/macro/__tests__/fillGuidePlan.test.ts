@@ -37,7 +37,6 @@ function mkWeek(n: number, type = 'm', totalReps: number | null = null): MacroWe
     total_reps_target: totalReps,
     tonnage_target: null,
     avg_intensity_target: null,
-    phase_id: null,
     volume_multiplier: 1,
     created_at: '',
     updated_at: '',

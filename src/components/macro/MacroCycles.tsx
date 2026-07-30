@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { Users } from 'lucide-react';
 import type { MacroCycle, MacroTarget, MacroTableLayout, WeekType, PhaseTypePreset, RhythmPreset, EventType, Athlete, Exercise } from '../../lib/database.types';
@@ -15,12 +15,12 @@ import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useExercises } from '../../hooks/useExercises';
-import { generateMacroWeeks, getMondayOfWeekISO, findCurrentMacroWeek } from '../../lib/weekUtils';
-import { formatDateToDDMMYYYY, addDaysToISO } from '../../lib/dateUtils';
+import { generateMacroWeeks, findCurrentMacroWeek } from '../../lib/weekUtils';
+import { formatDateToDDMMYYYY, addDaysToISO, isoMonday } from '../../lib/dateUtils';
 import { MacroTableV2, DEFAULT_MACRO_TABLE_COLUMNS, DEFAULT_EXERCISE_METRICS, STRUCTURAL_MACRO_COLUMNS } from './MacroTableV2';
 import type { MacroTableColumnKey, ExerciseMetricConfig, ExerciseColumnState } from './MacroTableV2';
 import { MacroViewMenu } from './MacroViewMenu';
-import { ExerciseToggleBar } from './ExerciseToggleBar';
+import { ExerciseToggleBar, GENERAL_METRIC_KEYS } from './ExerciseToggleBar';
 import type { GeneralMetricKey } from './ExerciseToggleBar';
 import { useSettings } from '../../hooks/useSettings';
 import { useTrainingGroups } from '../../hooks/useTrainingGroups';
@@ -101,6 +101,9 @@ export function MacroCycles() {
   const [showDistribution, setShowDistribution] = useState(false);
   const [distKey, setDistKey] = useState(0);
   const [showReps, setShowReps] = useState(true);
+  // Chart series toggles — persisted per macro via table_layout.graph.
+  const [avgLines, setAvgLines] = useState(true);
+  const [linkMaxAvg, setLinkMaxAvg] = useState(false);
   const [focusedExerciseId, setFocusedExerciseId] = useState<string | null>(null);
   const [actuals, setActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -127,15 +130,24 @@ export function MacroCycles() {
   const [individualViewAthleteId, setIndividualViewAthleteId] = useState<string | null>(null);
   const [individualActuals, setIndividualActuals] = useState<import('../../hooks/useMacroCycles').MacroActualsMap>({});
 
-  // Shared exercise visibility state (lifted here so table and graph share the same state)
-  const [visibleExercises, setVisibleExercises] = useState<Set<string>>(new Set());
+  // Chart/table series visibility (lifted here so table and graph share it).
+  // Stored as the HIDDEN sets — that is what persists in table_layout.graph, so
+  // an exercise tracked later shows by default and a removed one leaves no
+  // stale entry. The visible sets the children consume are derived below.
+  const [hiddenExercises, setHiddenExercises] = useState<Set<string>>(new Set());
+  const [hiddenGeneral, setHiddenGeneral] = useState<Set<GeneralMetricKey>>(new Set());
   // Macro table column visibility — loaded from settings
   const [visibleColumns, setVisibleColumns] = useState<Set<MacroTableColumnKey>>(
     new Set(DEFAULT_MACRO_TABLE_COLUMNS)
   );
-  // General metric visibility in the chart
-  const [visibleGeneralMetrics, setVisibleGeneralMetrics] = useState<Set<GeneralMetricKey>>(
-    new Set<GeneralMetricKey>(['k', 'tonnage', 'avg'])
+
+  const visibleExercises = useMemo(
+    () => new Set(trackedExercises.filter(te => !hiddenExercises.has(te.id)).map(te => te.id)),
+    [trackedExercises, hiddenExercises],
+  );
+  const visibleGeneralMetrics = useMemo(
+    () => new Set(GENERAL_METRIC_KEYS.filter(k => !hiddenGeneral.has(k))),
+    [hiddenGeneral],
   );
 
   const [highlightedPhaseId, setHighlightedPhaseId] = useState<string | null>(null);
@@ -185,11 +197,36 @@ export function MacroCycles() {
       // baseColumns and the coach's hidden columns would spring back on reload.
       baseColumns: Array.from(visibleColumns),
       viewToggles: { consistency: consistencyTint, heatmap: collapsedHeatmap, notesCollapsed },
+      // Same rule for the chart block: every persist carries the full current
+      // graph state so a table-only change can't wipe the series selection.
+      graph: {
+        avg: avgLines,
+        repsBars: showReps,
+        linkDrag: linkMaxAvg,
+        hiddenExercises: Array.from(hiddenExercises),
+        hiddenGeneral: Array.from(hiddenGeneral),
+      },
       v: 1, // stamp current layout version (see MacroTableLayout.v)
       ...overrides,
     };
     void updateMacrocycleLayout(selectedCycle.id, layout);
-  }, [selectedCycle, exColStates, exerciseMetrics, visibleColumns, consistencyTint, collapsedHeatmap, notesCollapsed, updateMacrocycleLayout]);
+  }, [selectedCycle, exColStates, exerciseMetrics, visibleColumns, consistencyTint, collapsedHeatmap, notesCollapsed,
+      avgLines, showReps, linkMaxAvg, hiddenExercises, hiddenGeneral, updateMacrocycleLayout]);
+
+  /** Persist a change to the chart block, passing the NEXT values explicitly so
+   *  we never write a stale snapshot of the state we just set. */
+  const persistGraph = useCallback((next: Partial<NonNullable<MacroTableLayout['graph']>>) => {
+    persistLayout({
+      graph: {
+        avg: avgLines,
+        repsBars: showReps,
+        linkDrag: linkMaxAvg,
+        hiddenExercises: Array.from(hiddenExercises),
+        hiddenGeneral: Array.from(hiddenGeneral),
+        ...next,
+      },
+    });
+  }, [persistLayout, avgLines, showReps, linkMaxAvg, hiddenExercises, hiddenGeneral]);
 
   const applyMetrics = useCallback((m: ExerciseMetricConfig[]) => {
     setExerciseMetrics(m);
@@ -235,22 +272,34 @@ export function MacroCycles() {
   }, [phases, searchParams, setSearchParams, scrollToPhase]);
 
   const toggleExercise = (teId: string) => {
-    setVisibleExercises(prev => {
-      const next = new Set(prev);
-      if (next.has(teId)) next.delete(teId);
-      else next.add(teId);
-      return next;
-    });
+    const next = new Set(hiddenExercises);
+    if (next.has(teId)) next.delete(teId);
+    else next.add(teId);
+    setHiddenExercises(next);
+    persistGraph({ hiddenExercises: Array.from(next) });
+  };
+
+  const showAllExercises = () => {
+    setHiddenExercises(new Set());
+    persistGraph({ hiddenExercises: [] });
   };
 
   const toggleGeneralMetric = (metric: GeneralMetricKey) => {
-    setVisibleGeneralMetrics(prev => {
-      const next = new Set(prev);
-      if (next.has(metric)) next.delete(metric);
-      else next.add(metric);
-      return next;
-    });
+    const next = new Set(hiddenGeneral);
+    if (next.has(metric)) next.delete(metric);
+    else next.add(metric);
+    setHiddenGeneral(next);
+    persistGraph({ hiddenGeneral: Array.from(next) });
   };
+
+  const toggleShowReps = () => {
+    const next = !showReps;
+    setShowReps(next);
+    persistGraph({ repsBars: next });
+  };
+
+  const handleAvgLinesChange = (v: boolean) => { setAvgLines(v); persistGraph({ avg: v }); };
+  const handleLinkMaxAvgChange = (v: boolean) => { setLinkMaxAvg(v); persistGraph({ linkDrag: v }); };
 
   // Determine current target (group or individual)
   const macroTarget: MacroOwnerTarget | null = selectedGroup
@@ -363,6 +412,13 @@ export function MacroCycles() {
     setConsistencyTint(layout?.viewToggles?.consistency ?? true);
     setCollapsedHeatmap(layout?.viewToggles?.heatmap ?? true);
     setNotesCollapsed(layout?.viewToggles?.notesCollapsed ?? false);
+    // Chart settings. Visibility is stored as the hidden set, so anything the
+    // coach hasn't explicitly hidden (including a just-added exercise) shows.
+    setAvgLines(layout?.graph?.avg ?? true);
+    setShowReps(layout?.graph?.repsBars ?? true);
+    setLinkMaxAvg(layout?.graph?.linkDrag ?? false);
+    setHiddenGeneral(new Set((layout?.graph?.hiddenGeneral ?? []) as GeneralMetricKey[]));
+    setHiddenExercises(new Set(layout?.graph?.hiddenExercises ?? []));
     // Base columns: per-macro override → coach settings → app defaults.
     // Layouts (and the global default) saved before the Training Week / Dates /
     // Events columns existed get them unioned in so they aren't silently hidden;
@@ -391,10 +447,9 @@ export function MacroCycles() {
     }
   }, [macroWeeks.length]);
 
-  // Initialize visibleExercises when tracked exercises load
-  useEffect(() => {
-    setVisibleExercises(new Set(trackedExercises.map(t => t.id)));
-  }, [trackedExercises.length]);
+  // No init effect for visibility: `visibleExercises` is derived from the
+  // tracked list minus the persisted hidden set, so a newly tracked exercise
+  // appears without resetting the coach's choices (which the old effect did).
 
   // Load actuals when weeks + tracked exercises are ready
   useEffect(() => {
@@ -728,28 +783,37 @@ export function MacroCycles() {
   // drop out of availableExercises automatically).
   const handleAddExerciseDirect = async (exercise: Exercise) => {
     if (!selectedCycle) return;
-    const nextPosition = trackedExercises.length > 0
-      ? Math.max(...trackedExercises.map(te => te.position)) + 1
-      : 0;
-    await addTrackedExercise(selectedCycle.id, exercise.id, nextPosition);
+    // Position is resolved inside addTrackedExercise from the DB — deriving it
+    // here from `trackedExercises` reused the same number on a second, quick
+    // add and violated UNIQUE(macrocycle_id, position).
+    await addTrackedExercise(selectedCycle.id, exercise.id);
     await fetchTrackedExercises(selectedCycle.id);
   };
 
-  const handleMoveExerciseLeft = async (trackedExId: string) => {
+  // A second click landing while a swap is in flight would compute from the
+  // pre-swap list (this render's closure) and write a position that no longer
+  // matches the database — exactly what rapid/double clicking an arrow did.
+  const movingExerciseRef = useRef(false);
+
+  const moveExercise = async (trackedExId: string, direction: -1 | 1) => {
+    if (movingExerciseRef.current) return;
     const idx = trackedExercises.findIndex(te => te.id === trackedExId);
-    if (idx <= 0) return;
-    const prev = trackedExercises[idx - 1];
-    await swapTrackedExercisePositions(trackedExId, prev.position, prev.id, trackedExercises[idx].position);
-    await fetchTrackedExercises(selectedCycle!.id);
+    const neighbour = trackedExercises[idx + direction];
+    if (idx < 0 || !neighbour) return;
+    movingExerciseRef.current = true;
+    try {
+      await swapTrackedExercisePositions(
+        trackedExId, neighbour.position,
+        neighbour.id, trackedExercises[idx].position,
+      );
+      await fetchTrackedExercises(selectedCycle!.id);
+    } finally {
+      movingExerciseRef.current = false;
+    }
   };
 
-  const handleMoveExerciseRight = async (trackedExId: string) => {
-    const idx = trackedExercises.findIndex(te => te.id === trackedExId);
-    if (idx < 0 || idx >= trackedExercises.length - 1) return;
-    const next = trackedExercises[idx + 1];
-    await swapTrackedExercisePositions(trackedExId, next.position, next.id, trackedExercises[idx].position);
-    await fetchTrackedExercises(selectedCycle!.id);
-  };
+  const handleMoveExerciseLeft = (trackedExId: string) => moveExercise(trackedExId, -1);
+  const handleMoveExerciseRight = (trackedExId: string) => moveExercise(trackedExId, 1);
 
   const handleRemoveExercise = async (trackedExId: string) => {
     if (!confirm('Remove this exercise from tracking? Targets will be deleted.')) return;
@@ -771,8 +835,8 @@ export function MacroCycles() {
     // Monday-of-old (always a multiple of 7). When only the start moved, the
     // end slides by the same amount so the week count is preserved; an explicit
     // end edit wins.
-    const oldStartMonday = getMondayOfWeekISO(new Date(selectedCycle.start_date + 'T00:00:00'));
-    const newStartMonday = getMondayOfWeekISO(new Date(data.startDate + 'T00:00:00'));
+    const oldStartMonday = isoMonday(selectedCycle.start_date);
+    const newStartMonday = isoMonday(data.startDate);
     const shiftDays = Math.round((Date.parse(newStartMonday) - Date.parse(oldStartMonday)) / 86400000);
     const endChangedByUser = data.endDate !== selectedCycle.end_date;
     const slidEnd = shiftDays !== 0 ? addDaysToISO(selectedCycle.end_date, shiftDays) : selectedCycle.end_date;
@@ -1077,14 +1141,14 @@ export function MacroCycles() {
                 visible={visibleExercises}
                 onToggle={toggleExercise}
                 onOpenDetail={setDetailTrackedExId}
-                onShowAll={() => setVisibleExercises(new Set(trackedExercises.map(t => t.id)))}
-                generalMetrics={['k', 'tonnage', 'avg']}
+                onShowAll={showAllExercises}
+                generalMetrics={GENERAL_METRIC_KEYS}
                 visibleMetrics={visibleGeneralMetrics}
                 onToggleMetric={toggleGeneralMetric}
               />
               {/* Reps toggle chip */}
               <button
-                onClick={() => setShowReps(v => !v)}
+                onClick={toggleShowReps}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors flex-shrink-0 ${
                   showReps
                     ? 'bg-gray-700 border-gray-700 text-white'
@@ -1166,6 +1230,10 @@ export function MacroCycles() {
                 showReps={showReps}
                 fillPreview={fillPreview}
                 visibleGeneralSeries={visibleGeneralMetrics}
+                avgLines={avgLines}
+                onAvgLinesChange={handleAvgLinesChange}
+                linkDrag={linkMaxAvg}
+                onLinkDragChange={handleLinkMaxAvgChange}
                 onDragWeekTarget={async (weekId, field, value) => { await updateMacroWeek(weekId, { [field]: value }); }}
                 onDragAnchor={(which, kg) => anchorSetterRef.current?.(which, kg)}
               />

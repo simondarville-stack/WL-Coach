@@ -3,6 +3,9 @@ import { getExerciseCategoryShade } from '../../lib/colorUtils';
 
 export type GeneralMetricKey = 'k' | 'tonnage' | 'avg';
 
+/** The closed set of general metrics, in display order. */
+export const GENERAL_METRIC_KEYS: GeneralMetricKey[] = ['k', 'tonnage', 'avg'];
+
 export const GENERAL_METRIC_LABELS: Record<GeneralMetricKey, string> = {
   k: 'Σreps',
   tonnage: 'Tonnage',

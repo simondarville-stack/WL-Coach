@@ -5,6 +5,12 @@ import {
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { parsePrescription } from '../../lib/prescriptionParser';
+import {
+  formatKg as fmtKg,
+  formatLoadReps,
+  groupLoadReps,
+  joinLoadRepsDetails as joinDetails,
+} from '../../lib/loadRepsFormat';
 import type { MacroContext } from './WeeklyPlanner';
 
 interface WeekPoint {
@@ -17,7 +23,12 @@ interface WeekPoint {
   perf_avg: number | null;
   soll_max:  number | null;
   soll_avg: number | null;
+  /** Stacked prescription behind the point: "80×3, 85×2×3" (load × reps × sets).
+   *  Null when the week has nothing planned / logged for this exercise. */
+  plan_detail: string | null;
+  perf_detail: string | null;
 }
+
 
 interface ExerciseHistoryChartProps {
   exerciseId: string;
@@ -49,6 +60,49 @@ function addWeeksUTC(dateStr: string, weeks: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Hover card for one week. Beyond the plotted kg it shows the *stacked
+ * prescription* behind that point — load × reps (× sets) for what was written
+ * and what was actually lifted — so the coach can see, e.g., that a 100 kg max
+ * was a single, while the week before 95 kg was 95×2×3.
+ */
+function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: WeekPoint }> }) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+
+  const row = (label: string, value: string, color: string) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{ color, fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+  const detail = (label: string, text: string) => (
+    <div style={{ marginTop: 3 }}>
+      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+      <div style={{ color: 'var(--color-text-primary)', fontSize: 11 }}>{text}</div>
+    </div>
+  );
+
+  return (
+    <div style={{
+      background: 'var(--color-bg-primary)', border: '1px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--radius-md)', padding: '6px 8px', fontSize: 11,
+      boxShadow: '0 4px 14px rgba(0,0,0,0.12)', minWidth: 150, maxWidth: 260,
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 3, color: 'var(--color-text-primary)' }}>
+        Week {point.label}
+      </div>
+      {point.soll_max != null && row('SOLL max', `${fmtKg(point.soll_max)} kg`, '#fb923c')}
+      {point.plan_max != null && row('Planned max', `${fmtKg(point.plan_max)} kg`, '#94a3b8')}
+      {point.plan_avg != null && row('Planned avg', `${fmtKg(point.plan_avg)} kg`, '#94a3b8')}
+      {point.plan_detail && detail('Planned', point.plan_detail)}
+      {point.perf_max != null && row('Performed max', `${fmtKg(point.perf_max)} kg`, '#3b82f6')}
+      {point.perf_avg != null && row('Performed avg', `${fmtKg(point.perf_avg)} kg`, '#3b82f6')}
+      {point.perf_detail && detail('Performed', point.perf_detail)}
+    </div>
+  );
+}
+
 export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart }: ExerciseHistoryChartProps) {
   const [data, setData]     = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +130,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         .lte('week_start', lookAhead);
 
       const planByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
+      // Per week: the prescription(s) behind the plotted point, so the tooltip
+      // can show what load was written for how many reps — not just the max.
+      const planDetailByWeek = new Map<string, string | null>();
 
       if (weekPlans?.length) {
         const wpIds = weekPlans.map(w => w.id);
@@ -83,9 +140,10 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
         const { data: planRows } = await supabase
           .from('planned_exercises')
-          .select('weekplan_id, summary_highest_load, summary_avg_load, summary_total_reps')
+          .select('weekplan_id, prescription_raw, summary_highest_load, summary_avg_load, summary_total_reps')
           .eq('exercise_id', exerciseId)
-          .in('weekplan_id', wpIds);
+          .in('weekplan_id', wpIds)
+          .order('day_index');
 
         for (const row of planRows ?? []) {
           const ws = wpStartById.get(row.weekplan_id);
@@ -100,6 +158,14 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
             totalLoad: prev.totalLoad + avg * reps,
             totalReps: prev.totalReps + reps,
           });
+          // parsePrescription is the canonical grammar (lib/prescriptionParser);
+          // re-formatting through it normalises "80x5x3" / "80 × 5 × 3" alike.
+          const detail = formatLoadReps(
+            parsePrescription(row.prescription_raw ?? '')
+              .filter(l => l.load > 0)
+              .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
+          );
+          planDetailByWeek.set(ws, joinDetails(planDetailByWeek.get(ws) ?? null, detail));
         }
       }
 
@@ -138,6 +204,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       }
 
       const perfByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
+      const perfDetailByWeek = new Map<string, string | null>();
       for (const row of logRows ?? []) {
         const session = row.session as unknown as { date: string } | null;
         if (!session) continue;
@@ -157,6 +224,14 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
               totalReps: prev.totalReps + reps,
             });
           }
+          // One row per set → collapse consecutive equal (load, reps) pairs.
+          perfDetailByWeek.set(ws, joinDetails(
+            perfDetailByWeek.get(ws) ?? null,
+            formatLoadReps(groupLoadReps(setsForRow.map(s => ({
+              load: s.performed_load ?? 0,
+              reps: s.performed_reps ?? 0,
+            })))),
+          ));
         } else if (row.performed_raw) {
           // v1 fallback: parse the summary string the old client wrote.
           const lines = parsePrescription(row.performed_raw);
@@ -169,6 +244,13 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
               totalReps: prev.totalReps + line.reps * line.sets,
             });
           }
+          perfDetailByWeek.set(ws, joinDetails(
+            perfDetailByWeek.get(ws) ?? null,
+            formatLoadReps(
+              lines.filter(l => l.load > 0)
+                .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
+            ),
+          ));
         }
       }
 
@@ -229,6 +311,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           perf_avg: perf && perf.totalReps > 0 ? Math.round(perf.totalLoad / perf.totalReps) : null,
           soll_max:  soll?.max ?? null,
           soll_avg: soll?.avg ?? null,
+          plan_detail: planDetailByWeek.get(ws) ?? null,
+          perf_detail: perfDetailByWeek.get(ws) ?? null,
         };
       });
 
@@ -313,20 +397,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} interval="preserveStartEnd" />
           <YAxis domain={[minY, maxY]} tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} width={32} />
-          <Tooltip
-            contentStyle={{ fontSize: 11, padding: '4px 8px', borderColor: '#e5e7eb' }}
-            formatter={((value: number, name: string) => [
-              `${value} kg`,
-              name === 'plan_max'  ? 'Planned max'
-              : name === 'plan_avg' ? 'Planned avg'
-              : name === 'perf_max'  ? 'Performed max'
-              : name === 'perf_avg' ? 'Performed avg'
-              : name === 'soll_max'  ? 'SOLL max'
-              : 'SOLL avg',
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ]) as any}
-            labelFormatter={((label: string) => `Week: ${label}`) as unknown as (l: unknown) => string}
-          />
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          <Tooltip content={HistoryTooltip as any} />
           {nowLabel && (
             <ReferenceLine x={nowLabel} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
               label={{ value: 'This week', position: 'top', fontSize: 9, fill: '#f97316' }} />

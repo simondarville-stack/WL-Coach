@@ -63,4 +63,45 @@ describe('generateMacroWeeks', () => {
     const weeks = generateMacroWeeks('2026-03-30', '2026-04-13');
     expect(weeks.map(w => w.week_number)).toEqual([1, 2, 3]);
   });
+
+  it('includes the whole week holding the start date', () => {
+    // Wednesday start → the cycle still opens on that week's Monday
+    const weeks = generateMacroWeeks('2026-04-01', '2026-04-19');
+    expect(weeks[0].week_start).toBe('2026-03-30');
+  });
+
+  it('includes the whole week holding the end date, on any weekday', () => {
+    // Mon 30/03 … the week of 20–26/04 is the last one, whichever day of it
+    // the coach picks as the end date.
+    for (const end of [
+      '2026-04-20', '2026-04-22', '2026-04-24', '2026-04-26',
+    ]) {
+      const weeks = generateMacroWeeks('2026-03-30', end);
+      expect(weeks.length).toBe(4);
+      expect(weeks[weeks.length - 1].week_start).toBe('2026-04-20');
+    }
+  });
+
+  it('keeps the last week across the autumn DST change', () => {
+    // Summer-time start, winter-time end (EU clocks go back Sun 25/10/2026).
+    // Local Date stepping drifted past UTC midnight here and dropped W5.
+    const weeks = generateMacroWeeks('2026-09-28', '2026-11-01');
+    expect(weeks.map(w => w.week_start)).toEqual([
+      '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26',
+    ]);
+  });
+
+  it('keeps the last week across the spring DST change', () => {
+    // EU clocks go forward Sun 29/03/2026.
+    const weeks = generateMacroWeeks('2026-03-09', '2026-04-05');
+    expect(weeks.map(w => w.week_start)).toEqual([
+      '2026-03-09', '2026-03-16', '2026-03-23', '2026-03-30',
+    ]);
+  });
+
+  it('returns a single week when start and end share one week', () => {
+    expect(generateMacroWeeks('2026-04-01', '2026-04-03')).toEqual([
+      { week_start: '2026-03-30', week_number: 1 },
+    ]);
+  });
 });

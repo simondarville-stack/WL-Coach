@@ -158,6 +158,15 @@ export function isoMonday(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * UTC-consistent Sunday (last day) of the week containing the given date.
+ * The counterpart to `isoMonday`: a week is Mon…Sun, so a date range that
+ * should cover WHOLE weeks runs isoMonday(from) … isoSunday(to).
+ */
+export function isoSunday(dateStr: string): string {
+  return isoAddDays(isoMonday(dateStr), 6);
+}
+
 /** Add (or subtract) days from a YYYY-MM-DD date, UTC-consistent. */
 export function isoAddDays(dateStr: string, days: number): string {
   const d = new Date(dateStr.slice(0, 10) + 'T00:00:00Z');

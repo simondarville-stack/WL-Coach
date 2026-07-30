@@ -2,8 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
-import { addDaysToISO } from '../lib/dateUtils';
-import { getMondayOfWeekISO } from '../lib/weekUtils';
+import { addDaysToISO, isoMonday, isoSunday } from '../lib/dateUtils';
 import { resolveScopeAthleteIds } from '../lib/macroTimelineData';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
@@ -313,29 +312,72 @@ export function useMacroCycles() {
     }
   };
 
-  const addTrackedExercise = async (macrocycleId: string, exerciseId: string, position: number) => {
+  /**
+   * Append an exercise to a cycle's tracked list.
+   *
+   * The position is resolved from the DATABASE, not from a caller's snapshot:
+   * the picker stays open to add several exercises in a row, so a caller-side
+   * `max(position) + 1` reuses the same number for the second add and trips
+   * UNIQUE(macrocycle_id, position). One retry covers a genuine race with a
+   * co-coach adding at the same moment.
+   */
+  const addTrackedExercise = async (macrocycleId: string, exerciseId: string) => {
+    const nextPosition = async (): Promise<number> => {
+      const { data } = await supabase
+        .from('macro_tracked_exercises')
+        .select('position')
+        .eq('macrocycle_id', macrocycleId)
+        .order('position', { ascending: false })
+        .limit(1);
+      return ((data?.[0]?.position as number | undefined) ?? -1) + 1;
+    };
     try {
       const { error } = await supabase
         .from('macro_tracked_exercises')
-        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position });
-      if (error) throw error;
+        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition() });
+      if (!error) return;
+      if (error.code !== '23505') throw error;
+      const { error: retryError } = await supabase
+        .from('macro_tracked_exercises')
+        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition() });
+      if (retryError) throw retryError;
     } catch (err) {
       setError(errMsg(err, 'Failed to add tracked exercise'));
       throw err;
     }
   };
 
+  /**
+   * Swap two tracked exercises' positions.
+   *
+   * `macro_tracked_exercises` has UNIQUE(macrocycle_id, position), so writing
+   * id1 straight to id2's position collides while id2 still holds it — that is
+   * the "duplicate key value violates unique constraint
+   * macro_tracked_exercises_macrocycle_id_position_key" the coach saw on every
+   * move. Park id1 on a negative sentinel first (positions are non-negative and
+   * the column has no CHECK), then move id2, then land id1. The sentinel is
+   * derived from the row id so two concurrent swaps can't share it.
+   */
   const swapTrackedExercisePositions = async (id1: string, newPos1: number, id2: string, newPos2: number) => {
+    const park = -1 - (parseInt(id1.slice(0, 8), 16) % 1_000_000);
+    const write = async (id: string, position: number) => {
+      const { error } = await supabase
+        .from('macro_tracked_exercises')
+        .update({ position })
+        .eq('id', id);
+      if (error) throw error;
+    };
     try {
-      const { error: e1 } = await supabase
-        .from('macro_tracked_exercises')
-        .update({ position: newPos1 })
-        .eq('id', id1);
-      const { error: e2 } = await supabase
-        .from('macro_tracked_exercises')
-        .update({ position: newPos2 })
-        .eq('id', id2);
-      if (e1 || e2) throw e1 || e2;
+      await write(id1, park);
+      try {
+        await write(id2, newPos2);
+        await write(id1, newPos1);
+      } catch (inner) {
+        // Never leave a row parked on the sentinel — put id1 back where it was
+        // (id2's target slot is the position id1 came from).
+        await write(id1, newPos2).catch(() => {});
+        throw inner;
+      }
     } catch (err) {
       setError(errMsg(err, 'Failed to move tracked exercise'));
       throw err;
@@ -653,7 +695,10 @@ export function useMacroCycles() {
     const weeks: { week_start: string; week_number: number; week_type: string; week_type_text: string; notes: string; macrocycle_id: string }[] = [];
     let cur = addDaysToISO(lastWeekStart, 7);
     let weekNum = lastWeekNumber + 1;
-    while (cur <= newEndDate) {
+    // Monday-to-Monday compare: the week HOLDING the new end date is part of
+    // the cycle, whichever weekday that date falls on.
+    const lastMonday = isoMonday(newEndDate);
+    while (cur <= lastMonday) {
       weeks.push({
         macrocycle_id: cycleId,
         week_start: cur,
@@ -671,11 +716,13 @@ export function useMacroCycles() {
   };
 
   const trimCycle = async (cycleId: string, newEndDate: string): Promise<void> => {
+    // Only weeks starting AFTER the new end date's own week are dropped — the
+    // week holding the end date survives.
     const { error } = await supabase
       .from('macro_weeks')
       .delete()
       .eq('macrocycle_id', cycleId)
-      .gt('week_start', newEndDate);
+      .gt('week_start', isoMonday(newEndDate));
     if (error) throw error;
   };
 
@@ -735,7 +782,19 @@ export function useMacroCycles() {
 
   const createPhase = async (phase: Omit<MacroPhase, 'id' | 'created_at' | 'updated_at' | 'owner_id'>): Promise<MacroPhase> => {
     try {
-      const phaseWithOwner = { ...phase, owner_id: getOwnerId() };
+      // Resolve the ordering slot from the DB rather than trusting the form's
+      // `phases.length + 1`. macro_phases has no unique index on
+      // (macrocycle_id, position), so a stale count wouldn't fail — it would
+      // silently tie, and tied rows come back in arbitrary order. Same defect
+      // class as the planned-exercise appends; cheap to close here.
+      const { data: last } = await supabase
+        .from('macro_phases')
+        .select('position')
+        .eq('macrocycle_id', phase.macrocycle_id)
+        .order('position', { ascending: false })
+        .limit(1);
+      const position = ((last?.[0]?.position as number | undefined) ?? 0) + 1;
+      const phaseWithOwner = { ...phase, position, owner_id: getOwnerId() };
       const { data, error } = await supabase
         .from('macro_phases')
         .insert(phaseWithOwner)
@@ -800,8 +859,8 @@ export function useMacroCycles() {
         .eq('event_type', 'competition')
         // Week-aligned range (Mon of the first week … Sun of the last week) so the
         // header chips match the table Events column and the timeline strip.
-        .gte('event_date', getMondayOfWeekISO(new Date(m.start_date + 'T00:00:00')))
-        .lte('event_date', addDaysToISO(getMondayOfWeekISO(new Date(m.end_date + 'T00:00:00')), 6))
+        .gte('event_date', isoMonday(m.start_date))
+        .lte('event_date', isoSunday(m.end_date))
         .order('event_date');
       const comps: MacroCompetition[] = (evs || []).map((e: { id: string; name: string; event_date: string }) => ({
         id: e.id,

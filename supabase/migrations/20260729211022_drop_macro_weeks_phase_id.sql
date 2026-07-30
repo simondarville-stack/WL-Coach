@@ -1,0 +1,16 @@
+-- macro_weeks.phase_id: a parallel representation of an assignment that is
+-- actually made by macro_phases' week-number range (start_week_number …
+-- end_week_number), which is what the coach's phase panel writes and drags.
+--
+-- Nothing ever wrote this column: 0 of 158 rows were populated at the time of
+-- this migration. Three readers resolved a week's phase through it and so got
+-- NULL every time, which is what left the phase dimension empty in Analysis.
+-- Those readers now resolve through the range (src/lib/macroPhases.ts).
+--
+-- Dropping rather than backfilling: keeping both would mean the phase panel
+-- has to fan every range edit out to the member weeks forever, i.e. two places
+-- encoding one decision — the exact shape of the bug this removes.
+--
+-- No data is lost (the column is entirely NULL). No DB function, view or
+-- trigger references it.
+ALTER TABLE macro_weeks DROP COLUMN IF EXISTS phase_id;

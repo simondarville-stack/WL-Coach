@@ -15,6 +15,7 @@ import {
   type UpcomingEvent,
 } from './useCoachDashboard';
 import type { BodyweightEntry, MacroPhase, TrainingGroup } from '../lib/database.types';
+import { findPhaseInCycle } from '../lib/macroPhases';
 import {
   DEFAULT_DASHBOARD_FLAGS,
   loadDashboardFlagSettings,
@@ -315,22 +316,16 @@ export function useCoachDashboardV2() {
         const phases = (data || []) as MacroPhase[];
         phases.forEach(p => { (phasesByCycle[p.macrocycle_id] ||= []).push(p); });
       }
+      // Week-number range is the only assignment there is (lib/macroPhases).
+      // This used to try macro_weeks.phase_id first — a column nothing writes,
+      // so that branch never fired; the range fallback was doing all the work.
       const resolvePhase = (status: AthleteStatus): MacroPhase | null => {
         const macroId = status.currentMacrocycle?.id;
-        const weekNumber = status.currentMacroWeek?.week_number;
-        if (!macroId || weekNumber === undefined || weekNumber === null) return null;
-        const phases = phasesByCycle[macroId];
-        if (!phases) return null;
-        // Prefer the direct FK if it happens to be populated; otherwise resolve
-        // by week-number range.
-        const directId = status.currentMacroWeek?.phase_id;
-        if (directId) {
-          const direct = phases.find(p => p.id === directId);
-          if (direct) return direct;
-        }
-        return phases.find(
-          p => p.start_week_number <= weekNumber && p.end_week_number >= weekNumber,
-        ) || null;
+        if (!macroId) return null;
+        return findPhaseInCycle(
+          phasesByCycle[macroId] ?? [],
+          status.currentMacroWeek?.week_number,
+        );
       };
 
       // 5a) Group memberships per athlete — the v2 dashboard uses this for the

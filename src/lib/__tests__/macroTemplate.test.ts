@@ -11,7 +11,7 @@ function mkWeek(n: number, type = 'm', totalReps: number | null = null): MacroWe
   return {
     id: `week-${n}`, macrocycle_id: 'mc', week_start: '2026-07-06', week_number: n,
     week_type: type, week_type_text: '', notes: '', total_reps_target: totalReps,
-    tonnage_target: null, avg_intensity_target: null, phase_id: null,
+    tonnage_target: null, avg_intensity_target: null,
     volume_multiplier: 1, created_at: '', updated_at: '',
   };
 }

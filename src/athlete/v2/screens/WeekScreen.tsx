@@ -14,7 +14,7 @@
  * for one chosen day.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchWeekOverview,
@@ -39,7 +39,23 @@ function todayISO(): string {
 export function WeekScreen() {
   const { athlete } = useAuth();
   const navigate = useNavigate();
-  const [weekStart, setWeekStart] = useState<string>(() => getMondayOfWeekISO(new Date()));
+  const [searchParams] = useSearchParams();
+  // Seed from ?week= so a tap on the Macro tab lands on that training week —
+  // same convention TodayScreen already uses for ?week=&slot=. Snapped to
+  // Monday so a mid-week value still resolves to a real week.
+  const urlWeek = searchParams.get('week');
+  const [weekStart, setWeekStart] = useState<string>(
+    () => (urlWeek && /^\d{4}-\d{2}-\d{2}$/.test(urlWeek)
+      ? getMondayOfWeekISO(new Date(`${urlWeek}T00:00:00`))
+      : getMondayOfWeekISO(new Date())),
+  );
+
+  // Arriving again from Macro with a different week must move the view — the
+  // tab stays mounted, so the initial-state seed above only fires once.
+  useEffect(() => {
+    if (!urlWeek || !/^\d{4}-\d{2}-\d{2}$/.test(urlWeek)) return;
+    setWeekStart(getMondayOfWeekISO(new Date(`${urlWeek}T00:00:00`)));
+  }, [urlWeek]);
   const [overview, setOverview] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,17 +142,24 @@ export function WeekScreen() {
     setBonusSaving(true);
     setError(null);
     try {
+      // The name goes on the SESSION first — that write always lands. The
+      // day_labels write below is what surfaces it in the coach's planner, but
+      // it is a no-op when the athlete has no week plan for this week, which is
+      // the common bonus-day case; without session_label the name was simply
+      // lost and the coach saw a generic "Unit N".
       await createBonusSession({
         athleteId: athlete.id,
         ownerId: athlete.owner_id,
         weekStart,
         dayIndex: dayIdx,
         date: todayISO(),
+        label: name,
       });
       try {
         await setAthleteDayLabel({ athleteId: athlete.id, weekStart, dayIndex: dayIdx, label: name });
       } catch (e) {
-        // Non-fatal: session was created; show the error but continue.
+        // Non-fatal: session was created and already carries the name; show
+        // the error but continue.
         setError(`Session created, but label could not be saved: ${e instanceof Error ? e.message : String(e)}`);
       }
       setShowBonusName(false);

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { DateInput, TimeInput } from '../ui';
 import type { EventType } from '../../lib/database.types';
 import type { EventWithAthletes } from '../../hooks/useEvents';
 import type { Athlete } from '../../lib/database.types';
@@ -72,8 +73,15 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
       ? formData.athlete_ids.filter(x => x !== id)
       : [...formData.athlete_ids, id]);
 
+  // DateInput is a text field, so the native `required` / `min` guards the
+  // date inputs used to carry are enforced here instead.
+  const endBeforeStart = !!formData.end_date && !!formData.event_date
+    && formData.end_date < formData.event_date;
+  const canSubmit = !!formData.name.trim() && !!formData.event_date && !endBeforeStart;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!canSubmit) return;
     setSaving(true);
     try {
       await onSave(formData);
@@ -133,27 +141,28 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
             </div>
           </div>
 
-          {/* Dates */}
+          {/* Dates — EMOS's own Monday-first, day-first picker (DateInput), not
+              the native one: that renders in the BROWSER's locale, so an en-US
+              profile gave a Sunday-first grid and MM/DD/YYYY. */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                required
+              <DateInput
                 value={formData.event_date}
-                onChange={e => set('event_date', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={v => set('event_date', v)}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input
-                type="date"
+              <DateInput
                 value={formData.end_date}
-                onChange={e => set('end_date', e.target.value)}
-                min={formData.event_date}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={v => set('end_date', v)}
               />
+              {endBeforeStart && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--color-danger-text)' }}>
+                  End date must not be before the start date.
+                </p>
+              )}
             </div>
           </div>
 
@@ -170,22 +179,20 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
             </label>
             {!formData.is_all_day && (
               <div className="grid grid-cols-2 gap-4">
+                {/* 24-hour fields (TimeInput), not the native picker: that
+                    renders 12-hour AM/PM on an en-US browser profile. */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
-                  <input
-                    type="time"
+                  <TimeInput
                     value={formData.start_time}
-                    onChange={e => set('start_time', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={v => set('start_time', v)}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
-                  <input
-                    type="time"
+                  <TimeInput
                     value={formData.end_time}
-                    onChange={e => set('end_time', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={v => set('end_time', v)}
                   />
                 </div>
               </div>
@@ -274,7 +281,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !canSubmit}
               className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Saving...' : (editing ? 'Update Event' : 'Create Event')}

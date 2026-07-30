@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../ui';
 import { DateInput } from '../ui/DateInput';
+import { isoAddDays, isoMonday } from '../../lib/dateUtils';
 import type { MacroTemplateRow } from '../../lib/macroTemplate';
 
 interface CompetitionRow {
@@ -30,17 +31,10 @@ interface MacroCreateModalProps {
   }) => Promise<void>;
 }
 
-/** End date that yields exactly `weekCount` Monday-based weeks from a start date. */
+/** End date that yields exactly `weekCount` whole weeks from a start date:
+ *  the Sunday closing the last of them (weeks run Mon–Sun). */
 function endDateForWeeks(startDate: string, weekCount: number): string {
-  const d = new Date(startDate);
-  const day = d.getDay();
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - ((day + 6) % 7)); // back to Monday (weeks start Monday)
-  monday.setDate(monday.getDate() + weekCount * 7 - 1);
-  const y = monday.getFullYear();
-  const m = String(monday.getMonth() + 1).padStart(2, '0');
-  const dd = String(monday.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
+  return isoAddDays(isoMonday(startDate), weekCount * 7 - 1);
 }
 
 export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, onClose, onCreate }: MacroCreateModalProps) {
@@ -179,7 +173,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start date *</label>
-              <DateInput value={startDate} onChange={setStartDate} snapToMonday />
+              <DateInput value={startDate} onChange={setStartDate} snapWeek="start" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End date *</label>
@@ -188,7 +182,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
                   {endDate || '— pick a start date'}
                 </p>
               ) : (
-                <DateInput value={endDate} onChange={setEndDate} snapToMonday />
+                <DateInput value={endDate} onChange={setEndDate} snapWeek="end" />
               )}
               {startDate && endDate && startDate > endDate && (
                 <p className="text-[11px] mt-1" style={{ color: 'var(--color-danger-text)' }}>End date must be after start date.</p>

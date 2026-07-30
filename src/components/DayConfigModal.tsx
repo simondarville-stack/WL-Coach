@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { ModalShell } from './ModalShell';
+import { TimeInput } from './ui';
 
 const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 // 24-hour European time presets. 10:00 and 16:00 are very common training
@@ -171,16 +172,20 @@ export function DayConfigModal({
                         ))}
                       </select>
 
-                      {/* Time input — only shown when weekday is assigned */}
+                      {/* Time input — only shown when weekday is assigned.
+                          24-hour TimeInput, not the native picker: that renders
+                          12-hour AM/PM on an en-US browser profile, which would
+                          contradict the 24-hour presets right below it. */}
                       {hasWeekday && (
-                        <input
-                          type="time"
+                        <TimeInput
                           value={entry?.time ?? ''}
-                          onChange={e => {
-                            onScheduleChange(dayIndex, { weekday: entry!.weekday, time: e.target.value || null });
+                          onChange={v => {
+                            onScheduleChange(dayIndex, { weekday: entry!.weekday, time: v || null });
                           }}
+                          invalid={needsTime}
+                          aria-label="Session time"
                           className={`text-sm border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-shrink-0 ${
-                            needsTime ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'
+                            needsTime ? 'ring-1 ring-red-300' : ''
                           }`}
                           style={{ width: 110 }}
                         />

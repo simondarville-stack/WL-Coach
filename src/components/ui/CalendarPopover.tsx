@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { getISOWeek, isoAddDays, isoMonday, toLocalISO } from '../../lib/dateUtils';
+import { getISOWeek, isoAddDays, isoMonday, isoSunday, toLocalISO } from '../../lib/dateUtils';
 
 /** Monday-first weekday initials. Fixed, not locale-derived. */
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -29,12 +29,21 @@ interface CalendarPopoverProps {
   value: string;
   onSelect: (isoDate: string) => void;
   onClose: () => void;
-  /** Clicking any day selects that week's Monday, and the whole week
-   *  highlights — for Monday-aligned fields like macro start/end. */
-  snapToMonday?: boolean;
+  /** Week-aligned mode: clicking any day selects that week's boundary and the
+   *  whole week highlights. 'start' → the Monday, 'end' → the Sunday, so a
+   *  macro's range always covers whole weeks at both ends. */
+  snapWeek?: 'start' | 'end';
   /** Render above the input instead of below (near the viewport bottom). */
   flipUp?: boolean;
+  /** Anchor the grid to the field's RIGHT edge instead of its left — used when
+   *  a left-anchored popover would spill out of a narrow scrolling container
+   *  (e.g. the analysis rail) and get clipped. */
+  alignRight?: boolean;
 }
+
+/** Rendered width of the grid, in px. Callers measure against this to decide
+ *  which edge to anchor to; keep it in sync with the `width` style below. */
+export const CALENDAR_POPOVER_WIDTH = 236;
 
 /** ISO date of the 1st of the month containing `iso`. */
 function firstOfMonth(iso: string): string {
@@ -53,8 +62,9 @@ export function CalendarPopover({
   value,
   onSelect,
   onClose,
-  snapToMonday = false,
+  snapWeek,
   flipUp = false,
+  alignRight = false,
 }: CalendarPopoverProps) {
   const today = toLocalISO(new Date());
   const [cursor, setCursor] = useState(() => firstOfMonth(value || today));
@@ -99,7 +109,7 @@ export function CalendarPopover({
   const cursorMonth = cursor.slice(0, 7);
 
   const pick = (iso: string) => {
-    onSelect(snapToMonday ? isoMonday(iso) : iso);
+    onSelect(snapWeek === 'start' ? isoMonday(iso) : snapWeek === 'end' ? isoSunday(iso) : iso);
     onClose();
   };
 
@@ -117,14 +127,14 @@ export function CalendarPopover({
       style={{
         position: 'absolute',
         zIndex: 60,
-        left: 0,
+        ...(alignRight ? { right: 0 } : { left: 0 }),
         ...(flipUp ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' }),
         background: 'var(--color-bg-primary)',
         border: '0.5px solid var(--color-border-secondary)',
         borderRadius: 'var(--radius-lg)',
         boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
         padding: 8,
-        width: 236,
+        width: CALENDAR_POPOVER_WIDTH,
         userSelect: 'none',
       }}
     >
@@ -163,7 +173,7 @@ export function CalendarPopover({
       <div style={{ display: 'grid', gridTemplateColumns: '22px repeat(7, 1fr)', gap: 1 }}>
         {weeks.map(week => {
           const weekActive =
-            snapToMonday && (hoverWeek === week.monday || selectedMonday === week.monday);
+            !!snapWeek && (hoverWeek === week.monday || selectedMonday === week.monday);
           return (
             <div key={week.monday} style={{ display: 'contents' }}>
               <button
@@ -183,7 +193,7 @@ export function CalendarPopover({
                 {week.weekNumber}
               </button>
               {week.days.map(day => {
-                const isSelected = snapToMonday ? false : day === value;
+                const isSelected = snapWeek ? false : day === value;
                 const isToday = day === today;
                 const inMonth = day.slice(0, 7) === cursorMonth;
                 return (
@@ -231,10 +241,12 @@ export function CalendarPopover({
             color: 'var(--color-accent)', padding: 0,
           }}
         >
-          {snapToMonday ? 'This week' : 'Today'}
+          {snapWeek ? 'This week' : 'Today'}
         </button>
-        {snapToMonday && (
-          <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>snaps to Monday</span>
+        {snapWeek && (
+          <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+            {snapWeek === 'start' ? 'snaps to Monday' : 'snaps to Sunday'}
+          </span>
         )}
       </div>
     </div>

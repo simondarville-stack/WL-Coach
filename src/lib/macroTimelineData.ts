@@ -10,6 +10,7 @@ import { getMondayOfWeekISO } from './weekUtils';
 import { addDaysToISO } from './dateUtils';
 import { expandForCounting } from './comboExpansion';
 import { CAL_EVENT_COLORS } from './eventTypes';
+import { findPhaseForWeek } from './macroPhases';
 import type {
   MacroCycle,
   MacroPhase,
@@ -758,20 +759,8 @@ function finalizeAcc(weekMap: Map<string, AccStats> | undefined): Map<string, Pr
 
 // ── Pure builders ────────────────────────────────────────────────────────────
 
-function findPhaseForWeek(
-  phases: MacroPhase[],
-  macroId: string,
-  weekNumber: number
-): MacroPhase | null {
-  return (
-    phases.find(
-      p =>
-        p.macrocycle_id === macroId &&
-        weekNumber >= p.start_week_number &&
-        weekNumber <= p.end_week_number
-    ) ?? null
-  );
-}
+// findPhaseForWeek now lives in lib/macroPhases — one rule shared by the
+// timeline, analysis, the dashboard and the athlete app.
 
 function resolveWeekType(
   abbr: string | null | undefined,

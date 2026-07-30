@@ -16,6 +16,7 @@ export { Modal } from './Modal';
 export { SidePanel } from './SidePanel';
 export { AdaptiveDialog } from './AdaptiveDialog';
 export { DateInput } from './DateInput';
+export { TimeInput, parseTimeInput } from './TimeInput';
 export { CalendarPopover } from './CalendarPopover';
 export { Card } from './Card';
 export { StandardPage } from './StandardPage';

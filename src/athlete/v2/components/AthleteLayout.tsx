@@ -1,13 +1,13 @@
 /**
  * AthleteLayout — shell for the v2 athlete app.
  *
- * Bottom-tab navigation: Today / Week / Coach / Profile. Renders the
- * active screen via <Outlet>. Pads the bottom of the page so content
+ * Bottom-tab navigation: Today / Week / Macro / Coach / Profile. Renders
+ * the active screen via <Outlet>. Pads the bottom of the page so content
  * isn't hidden behind the fixed nav. The Coach tab shows an unread
  * badge that polls every 60 s while the tab is visible.
  */
 import { NavLink, Outlet } from 'react-router-dom';
-import { Calendar, CalendarDays, MessageCircle, User } from 'lucide-react';
+import { Calendar, CalendarDays, CalendarRange, MessageCircle, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { fetchAthleteInboxUnreadCount } from '../../../lib/trainingLogService';
@@ -16,6 +16,7 @@ import { onInboxChanged } from '../../../lib/inboxEvents';
 const TABS = [
   { to: '/athlete/today', icon: Calendar, label: 'Today' },
   { to: '/athlete/week', icon: CalendarDays, label: 'Week' },
+  { to: '/athlete/macro', icon: CalendarRange, label: 'Macro' },
   { to: '/athlete/coach', icon: MessageCircle, label: 'Coach', badge: 'coach' as const },
   { to: '/athlete/profile', icon: User, label: 'Profile' },
 ] as const;
@@ -37,7 +38,8 @@ export function AthleteLayout() {
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `relative flex flex-col items-center gap-0.5 px-4 py-1.5 rounded text-[10px] uppercase tracking-wide font-semibold transition-colors ${
+                // px-2, not px-4: five tabs have to fit a 320 px phone.
+                `relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded text-[10px] uppercase tracking-wide font-semibold transition-colors ${
                   isActive
                     ? 'text-blue-400'
                     : 'text-gray-500 hover:text-gray-300'
@@ -49,7 +51,7 @@ export function AthleteLayout() {
               {'badge' in tab && tab.badge === 'coach' && unread > 0 && (
                 <span
                   aria-label={`${unread} unread message${unread === 1 ? '' : 's'}`}
-                  className="absolute top-0.5 right-2 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center"
+                  className="absolute top-0.5 right-0 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center"
                 >
                   {unread > 9 ? '9+' : unread}
                 </span>

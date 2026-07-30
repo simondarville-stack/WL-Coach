@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Macro Fill Guide v4</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2FA;
+    --text-1: #1a202c;
+    --text-2: #4a5568;
+    --text-3: #94a3b8;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --bg-page: #f7f8fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg-page); color: var(--text-1);
+    font-size: 13px; padding: 16px 20px 60px;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .sub { color: var(--text-2); margin-bottom: 10px; font-size: 12px; max-width: 1100px; line-height: 1.45; }
+  .sub b { color: var(--text-1); }
+
+  .settings-card {
+    background: #fff; border: 1px dashed var(--border-strong); border-radius: 6px;
+    padding: 6px 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    max-width: fit-content; font-size: 12px;
+  }
+  .settings-card .slabel { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
+  .wt-pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 4px; padding: 2px 8px; color: #fff; font-size: 11.5px; font-weight: 600; }
+  .wt-pill .rm { cursor: pointer; opacity: .7; font-weight: 400; }
+  .settings-card input[type=text] { border: 1px solid var(--border-strong); border-radius: 4px; padding: 2px 6px; font-size: 12px; }
+  .settings-card input.wname { width: 70px; }
+  .settings-card input.wabbr { width: 32px; }
+  .settings-card input[type=color] { width: 26px; height: 22px; border: none; padding: 0; background: none; cursor: pointer; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 8px; background: #fff;
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+    margin-bottom: 10px; max-width: fit-content; position: relative;
+  }
+  .btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 4px;
+    padding: 5px 12px; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn.secondary { background: #fff; color: var(--text-2); border: 1px solid var(--border-strong); }
+  .btn.secondary:hover { filter: none; background: #f8fafc; }
+  .btn.active-tool { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); }
+  .toolbar .sep { width: 1px; height: 20px; background: var(--border); }
+
+  /* dropdown menus */
+  .menu {
+    position: absolute; top: 100%; left: 0; margin-top: 4px; z-index: 60;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px;
+    box-shadow: 0 6px 20px rgba(15,40,70,.14); padding: 8px; min-width: 210px; display: none;
+  }
+  .menu.open { display: block; }
+  .menu .mrow { display: flex; align-items: center; gap: 7px; padding: 3px 4px; font-size: 12.5px; color: var(--text-2); border-radius: 4px; }
+  .menu .mrow:hover { background: #f8fafc; }
+  .menu .mactions { display: flex; gap: 6px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 7px; }
+  .menu .mactions button { font-size: 11px; padding: 3px 8px; }
+  .menu input.search { width: 100%; border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 7px; font-size: 12px; margin-bottom: 6px; }
+  .menu .mitem { padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 12.5px; display: flex; align-items: center; gap: 6px; }
+  .menu .mitem:hover { background: var(--accent-light); }
+
+  .split { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; max-width: 720px; background: #fff; border: 1px solid var(--border); border-radius: 6px; }
+  table.main { border-collapse: collapse; background: #fff; }
+  table.main th, table.main td { border: 1px solid var(--border); padding: 3px 7px; text-align: left; white-space: nowrap; }
+  table.main th { background: #f1f5f9; font-size: 10.5px; font-weight: 600; color: var(--text-2); letter-spacing: .02em; vertical-align: bottom; }
+  th.exh { min-width: 104px; }
+  th.exh .exname { display: flex; align-items: center; gap: 5px; text-transform: uppercase; }
+  th.exh .hicon { cursor: pointer; font-size: 11px; color: var(--text-3); user-select: none; }
+  th.exh .hicon:hover { color: var(--text-1); }
+  th.exh .gdot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--border-strong); cursor: pointer; display: inline-block; flex-shrink: 0; }
+  th.exh .sublabel { font-weight: 400; color: var(--text-3); font-size: 9.5px; text-transform: none; }
+  th.exh-collapsed, td.ex-collapsed { width: 30px; min-width: 30px; max-width: 30px; padding: 2px 3px; }
+  th.exh-collapsed { cursor: pointer; }
+  th.exh-collapsed .vert {
+    writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9.5px;
+    color: var(--text-3); max-height: 76px; overflow: hidden; text-transform: uppercase;
+  }
+  td.ex-collapsed { text-align: right; font-size: 9.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .wk { color: var(--text-2); font-size: 12px; }
+  .wk b { color: var(--text-1); font-weight: 600; }
+  .wt-chip {
+    display: inline-block; min-width: 22px; text-align: center; padding: 1px 5px;
+    border-radius: 3px; color: #fff; font-size: 10px; font-weight: 700; cursor: pointer; user-select: none;
+  }
+  .wt-chip.stamp-ghost { outline: 2px dashed var(--accent); outline-offset: 1px; }
+  td.cell { min-width: 104px; text-align: right; font-variant-numeric: tabular-nums; }
+  td.cell.gen { min-width: 72px; }
+  .vmax { font-weight: 600; }
+  .vavg { color: var(--text-3); font-size: 11.5px; }
+  .vavg.detached { color: #B45309; }
+  .vreps { color: var(--text-2); font-size: 11px; }
+  td.cell.ghost { background: var(--accent-light); }
+  td.cell.ghost .vmax, td.cell.ghost .vavg, td.cell.ghost .vreps { color: var(--accent); font-style: italic; }
+  td.cell.empty { color: var(--text-3); }
+  td.cell.kept::after { content: "kept"; font-size: 9px; color: var(--text-3); margin-left: 4px; }
+  .cdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 5px; vertical-align: 1px; }
+
+  /* Popups */
+  .popup {
+    position: fixed; z-index: 50; background: #fff; border: 1px solid var(--border-strong);
+    border-radius: 8px; box-shadow: 0 8px 28px rgba(15, 40, 70, .18); width: 396px; display: none;
+  }
+  .popup.open { display: block; }
+  .popup .phead {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 14px; border-bottom: 1px solid var(--border); cursor: grab;
+    background: #f8fafc; border-radius: 8px 8px 0 0; user-select: none;
+  }
+  .popup .phead:active { cursor: grabbing; }
+  .popup .phead .ptitle { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-2); }
+  .popup .phead .x { cursor: pointer; color: var(--text-3); font-size: 14px; }
+  .popup .pbody { padding: 10px 14px 12px; }
+  .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .frow label { width: 88px; color: var(--text-2); font-size: 12px; flex-shrink: 0; }
+  .frow input[type=number], .frow select { border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 6px; font-size: 13px; }
+  .frow input[type=number] { width: 64px; }
+  .frow .eq { color: var(--text-3); }
+  .frow .mini { font-size: 11px; color: var(--text-3); }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 4px; overflow: hidden; }
+  .seg button { border: none; background: #fff; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--text-2); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .section-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); margin: 11px 0 5px; }
+  .pattern-edit { display: flex; gap: 4px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 4px; }
+  .pchip { display: flex; flex-direction: column; align-items: center; border: 1px solid var(--border-strong); border-radius: 5px; padding: 2px 2px; background: #fafbfc; }
+  .pchip input { width: 46px; border: none; background: none; text-align: center; font-size: 12px; outline: none; }
+  .pchip input.pload { font-weight: 700; }
+  .pchip input.preps { color: var(--text-2); border-top: 1px dotted var(--border); }
+  .pchip .plabel { font-size: 9px; color: #fff; border-radius: 2px; padding: 0 5px; margin-top: 1px; font-weight: 700; }
+  .pchip .plabel.none { color: var(--text-3); background: none !important; font-weight: 400; }
+  .pchip-btn { border: 1px dashed var(--border-strong); background: none; border-radius: 5px; width: 24px; height: 44px; cursor: pointer; color: var(--text-3); font-size: 14px; }
+  .legendrow { display: flex; gap: 8px; font-size: 10px; color: var(--text-3); margin-bottom: 6px; }
+  .hint { font-size: 11px; color: var(--text-3); line-height: 1.4; margin: 3px 0 7px; }
+  .hint.warn { color: #B45309; }
+  .check-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); margin: 5px 0; }
+  .check-row input[type=number] { width: 50px; border: 1px solid var(--border-strong); border-radius: 3px; padding: 1px 4px; text-align: right; font-size: 12px; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* Graph */
+  .graph-card { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; position: relative; }
+  .graph-card h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-2); margin-bottom: 6px; }
+  .gchips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 5px; }
+  .gchip {
+    display: inline-flex; align-items: center; gap: 5px; border-radius: 4px; padding: 2px 8px;
+    color: #fff; font-size: 11.5px; font-weight: 600;
+  }
+  .gchip .rm { cursor: pointer; opacity: .75; font-weight: 400; }
+  .gchip .rm:hover { opacity: 1; }
+  .gadd { position: relative; }
+  .gopts { display: flex; gap: 12px; font-size: 11.5px; color: var(--text-2); margin-bottom: 4px; }
+  .graph-card .ghint { font-size: 11px; color: var(--text-3); margin-bottom: 4px; max-width: 560px; }
+  .graph-card svg { display: block; touch-action: none; }
+  .gpt { cursor: ns-resize; }
+  .ganchor { cursor: ns-resize; }
+
+  .footnote { margin-top: 16px; max-width: 1100px; color: var(--text-2); font-size: 12px; line-height: 1.55; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+  .footnote b { color: var(--text-1); }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--text-1); color: #fff; padding: 7px 16px; border-radius: 6px;
+    font-size: 12.5px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 90;
+  }
+  .toast.show { opacity: .93; }
+</style>
+</head>
+<body>
+
+<h1>Macro fill guide — v4</h1>
+<div class="sub">
+  New: <b>graph selection by chips + picker</b> (scales to 20 exercises — no checkbox wall; the ● dot in each table header is the same toggle) · <b>collapse / hide exercise columns</b> (chevron in header, Columns menu in toolbar) · <b>%-of-reference anchors</b> incl. proportional fill of <b>all exercises at once</b> · <b>↻ re-modulate</b> after repainting week types · <b>Σreps consistency dot</b> (general target vs sum of exercise reps).
+</div>
+
+<div class="settings-card">
+  <span class="slabel">Coach week types (Settings mock)</span>
+  <span id="wt-pills"></span>
+  <input type="text" class="wname" id="wt-name" placeholder="Name">
+  <input type="text" class="wabbr" id="wt-abbr" placeholder="ab" maxlength="3">
+  <input type="color" id="wt-color" value="#0E7490">
+  <button class="btn secondary" id="wt-add">+ add</button>
+</div>
+
+<div class="toolbar">
+  <button class="btn secondary">+ Exercise</button>
+  <div style="position:relative">
+    <button class="btn secondary" id="tb-columns">Columns ▾</button>
+    <div class="menu" id="columns-menu"></div>
+  </div>
+  <div class="sep"></div>
+  <button class="btn" id="tb-guide">◆ Fill guide</button>
+  <button class="btn secondary" id="tb-remod" style="display:none" title="Re-apply the last fill's anchors + rhythm using the current week types">↻ Re-modulate</button>
+  <button class="btn secondary" id="tb-undo" style="display:none">↺ Undo</button>
+  <div class="sep"></div>
+  <button class="btn secondary" id="tb-template">Save as template…</button>
+</div>
+
+<div class="split">
+  <div class="table-wrap"><table class="main" id="table"></table></div>
+  <div class="graph-card">
+    <h3>Graph — drag points to write into the table</h3>
+    <div class="gchips" id="g-chips"></div>
+    <div class="gopts">
+      <label><input type="checkbox" id="lg-avg" checked> avg lines</label>
+      <label><input type="checkbox" id="lg-link"> <b>link drag</b> (graphed exercises move together)</label>
+    </div>
+    <div class="ghint">Graphed exercises are the colored chips above — add via the picker or the ● dot in a table column header. Drag ◆ anchor handles while the guide is open to reshape the ramp.</div>
+    <svg id="graph" width="560" height="300"></svg>
+  </div>
+</div>
+
+<!-- Fill guide popup -->
+<div class="popup" id="popup" style="top:150px; right:30px;">
+  <div class="phead" id="pp-drag"><span class="ptitle">Fill guide</span><span class="x" id="pp-close">✕</span></div>
+  <div class="pbody">
+    <div class="frow">
+      <label>Target</label>
+      <select id="pp-target" style="max-width:230px"></select>
+    </div>
+    <div class="frow" id="pp-unitrow">
+      <label>Anchors in</label>
+      <span class="seg">
+        <button id="pp-unit-kg" class="on">kg</button>
+        <button id="pp-unit-pct">% of reference</button>
+      </span>
+    </div>
+    <div class="frow" id="pp-refrow" style="display:none">
+      <label>Reference</label>
+      <input type="number" id="pp-ref" value="145" step="2.5">
+      <span class="mini" id="pp-refhint">kg — e.g. PR or competition target</span>
+    </div>
+    <div class="frow" id="pp-loadrow">
+      <label id="pp-loadlabel">Max, week</label>
+      <input type="number" id="pp-w1" value="1" min="1" max="12" style="width:48px">
+      <span class="eq">=</span>
+      <input type="number" id="pp-v1" value="110" step="2.5">
+      <span class="eq">→</span>
+      <input type="number" id="pp-w2" value="12" min="1" max="12" style="width:48px">
+      <span class="eq">=</span>
+      <input type="number" id="pp-v2" value="142.5" step="2.5">
+    </div>
+    <div class="frow" id="pp-repsrow">
+      <label><input type="checkbox" id="pp-fillreps" checked style="margin-right:4px">Reps</label>
+      <input type="number" id="pp-r1" value="28" style="width:56px">
+      <span class="eq">→</span>
+      <input type="number" id="pp-r2" value="12" style="width:56px">
+      <span class="mini">per week, same anchor weeks</span>
+    </div>
+    <div class="check-row" id="pp-mirrorrow">
+      <input type="checkbox" id="pp-mirror" checked>
+      <label for="pp-mirror" style="width:auto">Mirror avg at</label>
+      <input type="number" id="pp-mirrorpct" value="20">
+      <span class="mini">% below max</span>
+    </div>
+
+    <div class="section-label">Rhythm</div>
+    <div class="frow">
+      <label>Preset</label>
+      <select id="pp-rhythm" style="width:216px"></select>
+    </div>
+    <div class="legendrow"><span>top = load %</span><span>bottom = reps %</span><span>of trend · repeats</span></div>
+    <div class="pattern-edit" id="pp-pattern"></div>
+    <div class="hint" id="pp-rhythm-hint"></div>
+    <div class="check-row" id="pp-stamp-row">
+      <input type="checkbox" id="pp-stamp" checked>
+      <label for="pp-stamp" style="width:auto">Also stamp week types onto weeks</label>
+    </div>
+    <div class="hint warn" id="pp-stamp-warn" style="display:none"></div>
+    <div class="check-row">
+      <input type="checkbox" id="pp-overwrite">
+      <label for="pp-overwrite" style="width:auto">Overwrite existing values</label>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="pp-apply">Apply → table</button>
+      <button class="btn secondary" id="pp-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Template popup (unchanged sketch from v3) -->
+<div class="popup" id="tpl-popup" style="top:180px; left:340px; width:420px;">
+  <div class="phead" id="tpl-drag"><span class="ptitle">Save macro as template</span><span class="x" id="tpl-close">✕</span></div>
+  <div class="pbody">
+    <div class="frow"><label>Name</label><input type="text" style="border:1px solid var(--border-strong);border-radius:4px;padding:3px 8px;font-size:13px;width:220px" value="Comp prep 12w — m/h/h/g"></div>
+    <div class="hint">Captures: week-type rhythm (sequence) · phases (fractions of length) · tracked exercises · target shapes relative to each exercise's reference · general targets. On a longer/shorter destination: rhythm repeats as a block (default) or stretches; phases scale; values re-interpolate through the fill engine.</div>
+    <div class="btn-row">
+      <button class="btn" onclick="toast('Mock — template saved'); document.getElementById('tpl-popup').classList.remove('open')">Save template</button>
+      <button class="btn secondary" id="tpl-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  <b>Scale test:</b> the graph model is chips + a searchable picker — with 20 tracked exercises you'd graph 2–4 and pick the rest on demand; nothing renders 20 checkboxes. The same graphed-state shows as the ● dot in each table column header, so table and graph stay one mental model. <b>Oversight:</b> the « chevron collapses a column to a 30-px strip that still whispers its max values; the Columns menu hides columns entirely. <b>Proportional fill:</b> pick "All exercises" as target (auto-switches to % of reference) — anchors like 75&nbsp;% → 98&nbsp;% fill every exercise from its own reference with one apply; this is the only multi-exercise write besides link drag. <b>Re-modulate</b> re-runs the last apply's anchors + rhythm against the <i>current</i> week types (explicit action, so the table stays plain values). <b>Σreps dot:</b> green = general target within 10&nbsp;% of the sum of exercise reps that week, amber = drifted; hover for numbers.
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ================= coach week types (sandbox) =================
+let weekTypes = [
+  { abbr: 'h', name: 'High', color: '#E24B4A' },
+  { abbr: 'm', name: 'Medium', color: '#EF9F27' },
+  { abbr: 'g', name: 'Low', color: '#1D9E75' },
+  { abbr: 'dl', name: 'Deload', color: '#7C3AED' },
+];
+function wtByAbbr(a) { return weekTypes.find(t => t.abbr === a); }
+function wtColor(a) { return wtByAbbr(a)?.color ?? '#94a3b8'; }
+
+// ================= exercises + weeks + values (source of truth) =================
+const PALETTE = ['#185FA5', '#C2410C', '#0F766E', '#7C3AED', '#BE185D', '#4D7C0F', '#B45309', '#334155'];
+const EXES = [
+  { id: 'sn',  label: 'Snatch',        ref: 145 },
+  { id: 'cj',  label: 'Clean & Jerk',  ref: 175 },
+  { id: 'bs',  label: 'Back Squat',    ref: 210 },
+  { id: 'fs',  label: 'Front Squat',   ref: 185 },
+  { id: 'psn', label: 'Power Snatch',  ref: 120 },
+  { id: 'pcl', label: 'Power Clean',   ref: 145 },
+  { id: 'snp', label: 'Snatch Pull',   ref: 170 },
+  { id: 'clp', label: 'Clean Pull',    ref: 200 },
+];
+EXES.forEach((e, i) => e.color = PALETTE[i % PALETTE.length]);
+function exById(id) { return EXES.find(e => e.id === id); }
+
+const WEEKS = [];
+(function () {
+  let d = new Date(2026, 6, 6);
+  const types = ['m','h','h','g','m','h','h','g','m','h','h','dl'];
+  for (let i = 0; i < 12; i++) {
+    WEEKS.push({ n: i + 1, date: String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0'), type: types[i] });
+    d = new Date(d.getTime() + 7 * 86400000);
+  }
+})();
+
+const values = {};   // exId -> week -> {max, avg, avgLinked, reps}
+EXES.forEach(e => values[e.id] = {});
+const general = {};  // week -> { sreps }
+
+function roundTo(v, step) { return Math.round(v / step) * step; }
+// seed data so collapse/hide/graph-picker have something to show
+(function seedAll() {
+  const seedMult = { h: 1.0, m: 0.95, g: 0.88, dl: 0.8 };
+  const plan = [
+    ['sn', 0.75, 0.98, 28, 12], ['cj', 0.75, 0.97, 26, 10], ['bs', 0.78, 0.95, 36, 18],
+    ['fs', 0.74, 0.90, 30, 15], ['psn', 0.72, 0.90, 24, 12],
+  ];
+  for (const [id, f1, f2, r1, r2] of plan) {
+    const ref = exById(id).ref;
+    WEEKS.forEach((wk, i) => {
+      const t = i / (WEEKS.length - 1);
+      const m = seedMult[wk.type] ?? 1;
+      const max = roundTo(ref * (f1 + (f2 - f1) * t) * m, 2.5);
+      values[id][wk.n] = { max, avg: roundTo(max * 0.8, 2.5), avgLinked: true, reps: Math.max(1, Math.round((r1 + (r2 - r1) * t) * (2 - m))) };
+    });
+  }
+  // general Σreps: correct for W1-5, drifted for W6-8, empty after
+  WEEKS.forEach(wk => {
+    const sum = EXES.reduce((s, e) => s + (values[e.id][wk.n]?.reps ?? 0), 0);
+    if (wk.n <= 5) general[wk.n] = { sreps: roundTo(sum, 5) };
+    else if (wk.n <= 8) general[wk.n] = { sreps: roundTo(sum * 1.28, 5) };
+  });
+})();
+
+// per-exercise UI state
+const exState = {};
+EXES.forEach(e => exState[e.id] = { graphed: e.id === 'sn' || e.id === 'cj', collapsed: false, hidden: false });
+exState.snp.hidden = false;
+const gOpts = { avg: true, linkDrag: false };
+let undoSnapshot = null;
+let lastFill = null; // { params, rhythm }
+
+// ================= rhythm presets =================
+const RHYTHMS = [
+  { id: 'weektype', name: 'Week-type wave (uses coach types)', mode: 'weektype',
+    mult: { h: { load: 100, reps: 100 }, m: { load: 95, reps: 100 }, g: { load: 88, reps: 105 }, dl: { load: 80, reps: 70 } },
+    hint: 'One load-% and reps-% per configured week type. New coach types appear automatically (at 100/100).' },
+  { id: 'step31', name: '3:1 step build', mode: 'pattern',
+    pattern: [{ load: 94, reps: 105 }, { load: 98, reps: 100 }, { load: 102, reps: 92 }, { load: 86, reps: 70 }],
+    stampTypes: ['m','h','h','g'],
+    hint: 'Repeating 4-week block; stamps its week-type labels if they exist in the coach\'s config.' },
+  { id: 'undulate', name: 'Undulating (volume mirrors intensity)', mode: 'pattern',
+    pattern: [{ load: 100, reps: 95 }, { load: 88, reps: 118 }, { load: 106, reps: 82 }, { load: 92, reps: 108 }],
+    stampTypes: null,
+    hint: 'Load and reps oscillate in opposition around their trends. Leaves week types untouched.' },
+  { id: 'flat', name: 'Flat (trend only)', mode: 'pattern',
+    pattern: [{ load: 100, reps: 100 }], stampTypes: null,
+    hint: 'Pure interpolation between anchors.' },
+];
+let currentRhythm = JSON.parse(JSON.stringify(RHYTHMS[0]));
+
+// ================= helpers =================
+function fmt(n) {
+  if (n === null || n === undefined) return '';
+  return (Math.round(n * 10) / 10).toString().replace('.', ',');
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ================= settings pills =================
+function renderWtPills() {
+  document.getElementById('wt-pills').innerHTML = weekTypes.map(t =>
+    `<span class="wt-pill" style="background:${t.color}">${t.name} <span class="rm" data-a="${t.abbr}">✕</span></span>`).join(' ');
+  document.querySelectorAll('#wt-pills .rm').forEach(el => el.addEventListener('click', () => {
+    if (weekTypes.length <= 1) { toast('Keep at least one week type'); return; }
+    weekTypes = weekTypes.filter(t => t.abbr !== el.dataset.a);
+    renderWtPills(); renderRhythmEditor(); renderAll();
+  }));
+}
+document.getElementById('wt-add').addEventListener('click', () => {
+  const name = document.getElementById('wt-name').value.trim();
+  const abbr = document.getElementById('wt-abbr').value.trim().toLowerCase();
+  if (!name || !abbr || wtByAbbr(abbr)) { toast('Give the type a name and a unique abbreviation'); return; }
+  weekTypes.push({ abbr, name, color: document.getElementById('wt-color').value });
+  document.getElementById('wt-name').value = ''; document.getElementById('wt-abbr').value = '';
+  renderWtPills(); renderRhythmEditor(); renderAll();
+});
+
+// ================= fill guide params =================
+function guideOpen() { return document.getElementById('popup').classList.contains('open'); }
+let anchorUnit = 'kg'; // 'kg' | 'pct'
+function guideParams() {
+  return {
+    target: document.getElementById('pp-target').value, // exId | 'all' | 'gen'
+    unit: anchorUnit,
+    ref: +document.getElementById('pp-ref').value || 100,
+    w1: +document.getElementById('pp-w1').value, v1: +document.getElementById('pp-v1').value,
+    w2: +document.getElementById('pp-w2').value, v2: +document.getElementById('pp-v2').value,
+    r1: +document.getElementById('pp-r1').value, r2: +document.getElementById('pp-r2').value,
+    fillReps: document.getElementById('pp-fillreps').checked,
+    mirror: document.getElementById('pp-mirror').checked,
+    mirrorPct: +document.getElementById('pp-mirrorpct').value || 20,
+    overwrite: document.getElementById('pp-overwrite').checked,
+    stamp: document.getElementById('pp-stamp').checked,
+  };
+}
+function stampAllowed(rhythm) {
+  const r = rhythm ?? currentRhythm;
+  return !!r.stampTypes && r.stampTypes.every(a => !!wtByAbbr(a));
+}
+// core engine — pure function of (params, rhythm, current week types)
+// -> { cells: {exId|'gen': {week: cell}}, stamps: {week:type} }
+function computeFill(p, rhythm) {
+  const out = { cells: {}, stamps: {} };
+  if (p.w1 === p.w2) return out;
+  const lo = Math.min(p.w1, p.w2), hi = Math.max(p.w1, p.w2);
+  const doStamp = p.stamp && stampAllowed(rhythm);
+  const targets = p.target === 'all' ? EXES.map(e => e.id) : [p.target];
+  // resolve rhythm % per week once
+  const weekPct = {};
+  let patIdx = 0;
+  for (const wk of WEEKS) {
+    if (wk.n < lo || wk.n > hi) continue;
+    if (rhythm.mode === 'weektype') {
+      const m = rhythm.mult[wk.type] ?? { load: 100, reps: 100 };
+      weekPct[wk.n] = { load: m.load, reps: m.reps };
+    } else {
+      const st = rhythm.pattern[patIdx % rhythm.pattern.length];
+      weekPct[wk.n] = { load: st.load, reps: st.reps };
+      if (doStamp) out.stamps[wk.n] = rhythm.stampTypes[patIdx % rhythm.stampTypes.length];
+      patIdx++;
+    }
+  }
+  for (const target of targets) {
+    const cells = {};
+    for (const wk of WEEKS) {
+      if (weekPct[wk.n] === undefined) continue;
+      const t = (wk.n - p.w1) / (p.w2 - p.w1);
+      const pct = weekPct[wk.n];
+      if (target === 'gen') {
+        if (general[wk.n]?.sreps !== undefined && !p.overwrite) continue;
+        const trend = p.v1 + (p.v2 - p.v1) * t;
+        cells[wk.n] = { sreps: Math.max(0, roundTo(trend * pct.reps / 100, 5)) };
+      } else {
+        if (values[target][wk.n] !== undefined && !p.overwrite) continue;
+        const trend = p.v1 + (p.v2 - p.v1) * t; // kg or % depending on unit
+        const ref = p.target === 'all' ? exById(target).ref : p.ref;
+        const maxKg = p.unit === 'pct' ? ref * (trend * pct.load / 100) / 100 : trend * pct.load / 100;
+        const cell = { max: roundTo(maxKg, 2.5) };
+        if (p.mirror) cell.avg = roundTo(cell.max * (1 - p.mirrorPct / 100), 2.5);
+        if (p.fillReps) {
+          const repsTrend = p.r1 + (p.r2 - p.r1) * t;
+          cell.reps = Math.max(0, Math.round(repsTrend * pct.reps / 100));
+        }
+        cells[wk.n] = cell;
+      }
+    }
+    out.cells[target] = cells;
+  }
+  return out;
+}
+function computePreview() {
+  if (!guideOpen()) return { cells: {}, stamps: {} };
+  return computeFill(guideParams(), currentRhythm);
+}
+function writeFill(fill, p) {
+  for (const [target, cells] of Object.entries(fill.cells)) {
+    for (const [w, cell] of Object.entries(cells)) {
+      if (target === 'gen') general[w] = { ...(general[w] ?? {}), sreps: cell.sreps };
+      else values[target][w] = {
+        max: cell.max,
+        avg: cell.avg ?? roundTo(cell.max * (1 - p.mirrorPct / 100), 2.5),
+        avgLinked: cell.avg !== undefined,
+        reps: cell.reps,
+      };
+    }
+  }
+  for (const [w, t] of Object.entries(fill.stamps)) WEEKS[w - 1].type = t;
+}
+function snapshot() {
+  undoSnapshot = {
+    values: JSON.parse(JSON.stringify(values)),
+    general: JSON.parse(JSON.stringify(general)),
+    types: WEEKS.map(w => w.type),
+  };
+  document.getElementById('tb-undo').style.display = '';
+}
+
+// ================= render: table =================
+function visibleExes() { return EXES.filter(e => !exState[e.id].hidden); }
+function renderTable() {
+  const preview = computePreview();
+  const p = guideOpen() ? guideParams() : null;
+  const vex = visibleExes();
+  let head = `<tr><th>Week</th><th>Type</th><th>Σreps</th>`;
+  for (const e of vex) {
+    const st = exState[e.id];
+    if (st.collapsed) {
+      head += `<th class="exh-collapsed" data-ex="${e.id}" title="${e.label} — click to expand"><span class="vert">${e.label}</span></th>`;
+    } else {
+      head += `<th class="exh"><span class="exname">
+        <span class="gdot" data-ex="${e.id}" style="${st.graphed ? `background:${e.color};border-color:${e.color}` : ''}" title="${st.graphed ? 'Shown in graph — click to remove' : 'Click to show in graph'}"></span>
+        ${e.label}
+        <span class="hicon collapse" data-ex="${e.id}" title="Collapse column">«</span>
+      </span><span class="sublabel">max (avg) ×reps · ref ${e.ref}</span></th>`;
+    }
+  }
+  head += `</tr>`;
+
+  let body = '';
+  for (const wk of WEEKS) {
+    const stampType = preview.stamps[wk.n];
+    const typeCell = stampType && stampType !== wk.type
+      ? `<span class="wt-chip stamp-ghost" data-w="${wk.n}" style="background:${wtColor(stampType)}" title="Will be stamped on apply">${stampType}</span>`
+      : `<span class="wt-chip" data-w="${wk.n}" style="background:${wtColor(wk.type)}" title="${wtByAbbr(wk.type)?.name ?? wk.type} — click to cycle">${wk.type}</span>`;
+
+    // Σreps + consistency dot
+    let genCell;
+    const gPrev = preview.cells.gen?.[wk.n];
+    const gVal = gPrev ? gPrev.sreps : general[wk.n]?.sreps;
+    if (gVal !== undefined) {
+      const sum = EXES.reduce((s, e) => s + (values[e.id][wk.n]?.reps ?? 0), 0);
+      let dot = '';
+      if (sum > 0) {
+        const ok = Math.abs(gVal - sum) / sum <= 0.10;
+        dot = `<span class="cdot" style="background:${ok ? '#1D9E75' : '#EF9F27'}" title="General target ${gVal} vs Σ exercise reps ${sum} (${ok ? 'within' : 'outside'} 10 %)"></span>`;
+      }
+      genCell = `<td class="cell gen${gPrev ? ' ghost' : ''}"><span class="vmax">${gVal}</span>${dot}</td>`;
+    } else genCell = `<td class="cell gen empty">—</td>`;
+
+    let exCells = '';
+    for (const e of vex) {
+      const st = exState[e.id];
+      const v = values[e.id][wk.n];
+      const pv = preview.cells[e.id]?.[wk.n];
+      if (st.collapsed) {
+        exCells += `<td class="ex-collapsed" title="${e.label} W${wk.n}${v ? ': ' + fmt(v.max) + ' kg' : ''}">${pv ? '<i style="color:var(--accent)">' + fmt(pv.max) + '</i>' : v ? fmt(v.max) : ''}</td>`;
+        continue;
+      }
+      if (pv) {
+        exCells += `<td class="cell ghost"><span class="vmax">${fmt(pv.max)}</span> ${pv.avg !== undefined ? `<span class="vavg">(${fmt(pv.avg)})</span>` : ''} ${pv.reps !== undefined ? `<span class="vreps">×${pv.reps}</span>` : ''}</td>`;
+      } else if (v) {
+        const inRange = p && (preview.cells[e.id] !== undefined) && wk.n >= Math.min(p.w1, p.w2) && wk.n <= Math.max(p.w1, p.w2) && !p.overwrite;
+        exCells += `<td class="cell${inRange ? ' kept' : ''}"><span class="vmax">${fmt(v.max)}</span> <span class="vavg${v.avgLinked ? '' : ' detached'}" title="${v.avgLinked ? 'Mirrored from max' : 'Detached — set manually'}">(${fmt(v.avg)})</span> ${v.reps !== undefined ? `<span class="vreps">×${v.reps}</span>` : ''}</td>`;
+      } else {
+        exCells += `<td class="cell empty">—</td>`;
+      }
+    }
+    body += `<tr><td class="wk"><b>W${wk.n}</b> ${wk.date}</td><td>${typeCell}</td>${genCell}${exCells}</tr>`;
+  }
+  document.getElementById('table').innerHTML = head + body;
+
+  document.querySelectorAll('#table .wt-chip').forEach(el => el.addEventListener('click', () => {
+    const wk = WEEKS[+el.dataset.w - 1];
+    const idx = weekTypes.findIndex(t => t.abbr === wk.type);
+    wk.type = weekTypes[(idx + 1) % weekTypes.length].abbr;
+    renderAll();
+  }));
+  document.querySelectorAll('#table .gdot').forEach(el => el.addEventListener('click', () => {
+    exState[el.dataset.ex].graphed = !exState[el.dataset.ex].graphed;
+    renderAll();
+  }));
+  document.querySelectorAll('#table .collapse').forEach(el => el.addEventListener('click', () => {
+    exState[el.dataset.ex].collapsed = true; renderAll();
+  }));
+  document.querySelectorAll('#table .exh-collapsed').forEach(el => el.addEventListener('click', () => {
+    exState[el.dataset.ex].collapsed = false; renderAll();
+  }));
+}
+
+// ================= columns menu =================
+function renderColumnsMenu() {
+  const m = document.getElementById('columns-menu');
+  m.innerHTML = EXES.map(e => `
+    <label class="mrow"><input type="checkbox" data-ex="${e.id}" ${exState[e.id].hidden ? '' : 'checked'}>
+    <span class="swatch" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${e.color}"></span>${e.label}</label>`).join('') +
+    `<div class="mactions">
+      <button class="btn secondary" id="cm-showall">Show all</button>
+      <button class="btn secondary" id="cm-collall">Collapse all</button>
+      <button class="btn secondary" id="cm-expall">Expand all</button>
+    </div>`;
+  m.querySelectorAll('input[data-ex]').forEach(inp => inp.addEventListener('change', () => {
+    exState[inp.dataset.ex].hidden = !inp.checked; renderAll();
+  }));
+  document.getElementById('cm-showall').addEventListener('click', () => { EXES.forEach(e => exState[e.id].hidden = false); renderColumnsMenu(); renderAll(); });
+  document.getElementById('cm-collall').addEventListener('click', () => { EXES.forEach(e => exState[e.id].collapsed = true); renderAll(); });
+  document.getElementById('cm-expall').addEventListener('click', () => { EXES.forEach(e => exState[e.id].collapsed = false); renderAll(); });
+}
+document.getElementById('tb-columns').addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('columns-menu').classList.toggle('open');
+  document.getElementById('gpicker-menu')?.classList.remove('open');
+});
+
+// ================= graph chips + picker =================
+function renderChips() {
+  const box = document.getElementById('g-chips');
+  const graphed = EXES.filter(e => exState[e.id].graphed);
+  box.innerHTML = graphed.map(e =>
+    `<span class="gchip" style="background:${e.color}">${e.label} <span class="rm" data-ex="${e.id}">✕</span></span>`).join('') +
+    `<span class="gadd"><button class="btn secondary" id="g-addbtn">+ Add exercise ▾</button>
+      <div class="menu" id="gpicker-menu" style="left:auto"></div></span>`;
+  box.querySelectorAll('.gchip .rm').forEach(el => el.addEventListener('click', () => {
+    exState[el.dataset.ex].graphed = false; renderAll();
+  }));
+  document.getElementById('g-addbtn').addEventListener('click', e => {
+    e.stopPropagation();
+    const menu = document.getElementById('gpicker-menu');
+    menu.classList.toggle('open');
+    document.getElementById('columns-menu').classList.remove('open');
+    if (menu.classList.contains('open')) renderPicker('');
+  });
+}
+function renderPicker(query) {
+  const menu = document.getElementById('gpicker-menu');
+  const candidates = EXES.filter(e => !exState[e.id].graphed && e.label.toLowerCase().includes(query.toLowerCase()));
+  menu.innerHTML = `<input class="search" id="g-search" placeholder="Search exercises…" value="${query}">` +
+    (candidates.length ? candidates.map(e =>
+      `<div class="mitem" data-ex="${e.id}"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${e.color}"></span>${e.label}${values[e.id][1] ? '' : ' <span style="color:var(--text-3);font-size:10px">(no data)</span>'}</div>`).join('')
+    : `<div class="hint" style="margin:2px 4px">No matches</div>`);
+  const s = document.getElementById('g-search');
+  s.focus(); s.setSelectionRange(query.length, query.length);
+  s.addEventListener('input', () => renderPicker(s.value));
+  s.addEventListener('click', e => e.stopPropagation());
+  menu.querySelectorAll('.mitem').forEach(el => el.addEventListener('click', () => {
+    exState[el.dataset.ex].graphed = true; renderAll();
+  }));
+}
+document.addEventListener('click', () => {
+  document.getElementById('columns-menu').classList.remove('open');
+  document.getElementById('gpicker-menu')?.classList.remove('open');
+});
+
+// ================= render: graph =================
+const G = { W: 560, H: 300, padL: 40, padR: 12, padT: 12, padB: 24, min: 40, max: 220 };
+function gx(i) { return G.padL + i * (G.W - G.padL - G.padR) / (WEEKS.length - 1); }
+function gy(v) { return G.padT + (G.max - v) / (G.max - G.min) * (G.H - G.padT - G.padB); }
+function gyInv(y) { return G.max - (y - G.padT) / (G.H - G.padT - G.padB) * (G.max - G.min); }
+let drag = null;
+
+function renderGraph() {
+  const preview = computePreview();
+  const p = guideOpen() ? guideParams() : null;
+  const svg = document.getElementById('graph');
+  const graphed = EXES.filter(e => exState[e.id].graphed);
+  let s = '';
+  WEEKS.forEach((wk, i) => {
+    const x0 = i === 0 ? G.padL : (gx(i - 1) + gx(i)) / 2;
+    const x1 = i === WEEKS.length - 1 ? G.W - G.padR : (gx(i) + gx(i + 1)) / 2;
+    s += `<rect x="${x0}" y="${G.padT}" width="${x1 - x0}" height="${G.H - G.padT - G.padB}" fill="${wtColor(wk.type)}" opacity="0.07"/>`;
+  });
+  for (let v = G.min + 20; v <= G.max; v += 30) {
+    s += `<line x1="${G.padL}" y1="${gy(v)}" x2="${G.W - G.padR}" y2="${gy(v)}" stroke="#e2e8f0"/>`;
+    s += `<text x="${G.padL - 5}" y="${gy(v) + 4}" text-anchor="end" font-size="10" fill="#94a3b8">${v}</text>`;
+  }
+  WEEKS.forEach((wk, i) => { s += `<text x="${gx(i)}" y="${G.H - 8}" text-anchor="middle" font-size="10" fill="#94a3b8">W${wk.n}</text>`; });
+
+  for (const e of graphed) {
+    const pts = WEEKS.map((wk, i) => values[e.id][wk.n] ? { i, c: values[e.id][wk.n] } : null).filter(Boolean);
+    if (gOpts.avg) {
+      const apts = pts.filter(pt => pt.c.avg !== undefined);
+      if (apts.length > 1) s += `<polyline points="${apts.map(pt => `${gx(pt.i)},${gy(pt.c.avg)}`).join(' ')}" fill="none" stroke="${e.color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>`;
+      for (const pt of apts) s += `<circle class="gpt" data-ex="${e.id}" data-w="${WEEKS[pt.i].n}" data-part="avg" cx="${gx(pt.i)}" cy="${gy(pt.c.avg)}" r="3.5" fill="#fff" stroke="${e.color}" stroke-width="1.4" ${pt.c.avgLinked ? '' : 'stroke-dasharray="2 2"'}><title>${e.label} W${WEEKS[pt.i].n} avg: ${fmt(pt.c.avg)} ${pt.c.avgLinked ? '(mirrored — drag to detach)' : '(detached)'}</title></circle>`;
+    }
+    if (pts.length > 1) s += `<polyline points="${pts.map(pt => `${gx(pt.i)},${gy(pt.c.max)}`).join(' ')}" fill="none" stroke="${e.color}" stroke-width="1.8"/>`;
+    for (const pt of pts) s += `<circle class="gpt" data-ex="${e.id}" data-w="${WEEKS[pt.i].n}" data-part="max" cx="${gx(pt.i)}" cy="${gy(pt.c.max)}" r="5.5" fill="${e.color}" stroke="#fff" stroke-width="1.5"><title>${e.label} W${WEEKS[pt.i].n} max: ${fmt(pt.c.max)} kg</title></circle>`;
+  }
+
+  // preview overlays for graphed target exercises
+  if (p && p.target !== 'gen') {
+    for (const e of graphed) {
+      const cells = preview.cells[e.id];
+      if (!cells) continue;
+      const ppts = WEEKS.map((wk, i) => cells[wk.n] ? { i, v: cells[wk.n].max } : null).filter(Boolean);
+      if (ppts.length > 1) s += `<polyline points="${ppts.map(pt => `${gx(pt.i)},${gy(pt.v)}`).join(' ')}" fill="none" stroke="${e.color}" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.6"/>`;
+      for (const pt of ppts) s += `<circle cx="${gx(pt.i)}" cy="${gy(pt.v)}" r="3.5" fill="#fff" stroke="${e.color}" stroke-width="1.3" opacity="0.75"/>`;
+    }
+    // anchor handles for single-exercise target
+    if (p.target !== 'all') {
+      const ref = p.ref;
+      for (const [wkNum, val, key] of [[p.w1, p.v1, 'v1'], [p.w2, p.v2, 'v2']]) {
+        if (wkNum < 1 || wkNum > 12) continue;
+        const kg = p.unit === 'pct' ? ref * val / 100 : val;
+        const x = gx(wkNum - 1), y = gy(kg);
+        s += `<path class="ganchor" data-anchor="${key}" d="M ${x} ${y - 8} L ${x + 8} ${y} L ${x} ${y + 8} L ${x - 8} ${y} Z" fill="#185FA5" stroke="#fff" stroke-width="1.5"><title>Anchor: W${wkNum} = ${p.unit === 'pct' ? fmt(val) + ' %' : fmt(val) + ' kg'} — drag to reshape</title></path>`;
+      }
+    }
+  }
+  svg.innerHTML = s;
+
+  svg.querySelectorAll('.gpt').forEach(c => c.addEventListener('pointerdown', e => {
+    drag = { kind: 'pt', ex: c.dataset.ex, week: +c.dataset.w, part: c.dataset.part };
+    c.setPointerCapture(e.pointerId); e.preventDefault();
+  }));
+  svg.querySelectorAll('.ganchor').forEach(a => a.addEventListener('pointerdown', e => {
+    drag = { kind: 'anchor', anchor: a.dataset.anchor };
+    a.setPointerCapture(e.pointerId); e.preventDefault();
+  }));
+  svg.onpointermove = e => {
+    if (!drag) return;
+    const rect = svg.getBoundingClientRect();
+    const kg = roundTo(Math.max(G.min, Math.min(G.max, gyInv(e.clientY - rect.top))), 2.5);
+    if (drag.kind === 'anchor') {
+      const pp = guideParams();
+      const v = pp.unit === 'pct' ? Math.round(kg / pp.ref * 200) / 2 : kg;
+      document.getElementById('pp-' + drag.anchor).value = v;
+      renderAll();
+      return;
+    }
+    const cell = values[drag.ex][drag.week];
+    if (!cell) return;
+    if (drag.part === 'avg') {
+      if (cell.avgLinked) { cell.avgLinked = false; toast(`${exById(drag.ex).label} W${drag.week}: avg detached from mirror`); }
+      cell.avg = Math.min(kg, cell.max);
+    } else {
+      const delta = kg - cell.max;
+      cell.max = kg;
+      const mp = +document.getElementById('pp-mirrorpct').value || 20;
+      if (cell.avgLinked) cell.avg = roundTo(cell.max * (1 - mp / 100), 2.5);
+      if (gOpts.linkDrag) {
+        for (const other of EXES) {
+          if (other.id === drag.ex || !exState[other.id].graphed) continue;
+          const oc = values[other.id][drag.week];
+          if (!oc) continue;
+          oc.max = roundTo(oc.max + delta, 2.5);
+          if (oc.avgLinked) oc.avg = roundTo(oc.max * (1 - mp / 100), 2.5);
+        }
+      }
+    }
+    renderAll();
+  };
+  svg.onpointerup = () => { drag = null; };
+}
+document.getElementById('lg-avg').addEventListener('change', e => { gOpts.avg = e.target.checked; renderGraph(); });
+document.getElementById('lg-link').addEventListener('change', e => { gOpts.linkDrag = e.target.checked; renderGraph(); });
+
+function renderAll() { renderTable(); renderChips(); renderGraph(); }
+
+// ================= movable popups =================
+function makeMovable(popupId, headId) {
+  const pop = document.getElementById(popupId), head = document.getElementById(headId);
+  head.addEventListener('pointerdown', e => {
+    if (e.target.classList.contains('x')) return;
+    const r = pop.getBoundingClientRect();
+    pop.style.left = r.left + 'px'; pop.style.top = r.top + 'px'; pop.style.right = 'auto';
+    const offX = e.clientX - r.left, offY = e.clientY - r.top;
+    head.setPointerCapture(e.pointerId);
+    function move(ev) {
+      pop.style.left = Math.max(4, ev.clientX - offX) + 'px';
+      pop.style.top = Math.max(4, ev.clientY - offY) + 'px';
+    }
+    function up() { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); }
+    head.addEventListener('pointermove', move);
+    head.addEventListener('pointerup', up);
+  });
+}
+makeMovable('popup', 'pp-drag');
+makeMovable('tpl-popup', 'tpl-drag');
+
+// ================= fill guide wiring =================
+const popup = document.getElementById('popup');
+document.getElementById('tb-guide').addEventListener('click', () => {
+  popup.classList.toggle('open');
+  document.getElementById('tb-guide').classList.toggle('active-tool', popup.classList.contains('open'));
+  renderAll();
+});
+document.getElementById('pp-close').addEventListener('click', closeGuide);
+document.getElementById('pp-cancel').addEventListener('click', closeGuide);
+function closeGuide() {
+  popup.classList.remove('open');
+  document.getElementById('tb-guide').classList.remove('active-tool');
+  renderAll();
+}
+
+// target options
+const targetSel = document.getElementById('pp-target');
+(function () {
+  for (const e of EXES) { const o = document.createElement('option'); o.value = e.id; o.textContent = e.label + ' (exercise)'; targetSel.appendChild(o); }
+  const all = document.createElement('option'); all.value = 'all'; all.textContent = 'All exercises (proportional, % of reference)'; targetSel.appendChild(all);
+  const gen = document.createElement('option'); gen.value = 'gen'; gen.textContent = 'Week · Σreps (general)'; targetSel.appendChild(gen);
+})();
+function setUnit(u) {
+  anchorUnit = u;
+  document.getElementById('pp-unit-kg').classList.toggle('on', u === 'kg');
+  document.getElementById('pp-unit-pct').classList.toggle('on', u === 'pct');
+  const t = targetSel.value;
+  document.getElementById('pp-refrow').style.display = (u === 'pct' && t !== 'all' && t !== 'gen') ? 'flex' : 'none';
+  if (u === 'pct' && t !== 'gen') {
+    document.getElementById('pp-v1').value = 75; document.getElementById('pp-v2').value = 98;
+  } else if (t !== 'gen') {
+    document.getElementById('pp-v1').value = 110; document.getElementById('pp-v2').value = 142.5;
+  }
+  renderAll();
+}
+document.getElementById('pp-unit-kg').addEventListener('click', () => {
+  if (targetSel.value === 'all') { toast('"All exercises" needs % of reference — pick a single exercise for kg'); return; }
+  setUnit('kg');
+});
+document.getElementById('pp-unit-pct').addEventListener('click', () => setUnit('pct'));
+targetSel.addEventListener('change', () => {
+  const t = targetSel.value;
+  const gen = t === 'gen';
+  document.getElementById('pp-loadlabel').textContent = gen ? 'Σreps, week' : 'Max, week';
+  document.getElementById('pp-repsrow').style.display = gen ? 'none' : 'flex';
+  document.getElementById('pp-mirrorrow').style.display = gen ? 'none' : 'flex';
+  document.getElementById('pp-unitrow').style.display = gen ? 'none' : 'flex';
+  if (gen) { document.getElementById('pp-v1').value = 380; document.getElementById('pp-v2').value = 220; }
+  else if (t === 'all') { setUnit('pct'); toast('Proportional fill: each exercise anchors to its own reference'); }
+  else {
+    document.getElementById('pp-ref').value = exById(t).ref;
+    setUnit(anchorUnit); // refresh values/ref row
+    if (exState[t] && !exState[t].graphed) { exState[t].graphed = true; }
+  }
+  renderAll();
+});
+
+const rhythmSel = document.getElementById('pp-rhythm');
+RHYTHMS.forEach(r => { const o = document.createElement('option'); o.value = r.id; o.textContent = r.name; rhythmSel.appendChild(o); });
+rhythmSel.addEventListener('change', () => {
+  currentRhythm = JSON.parse(JSON.stringify(RHYTHMS.find(r => r.id === rhythmSel.value)));
+  renderRhythmEditor(); renderAll();
+});
+function renderRhythmEditor() {
+  const box = document.getElementById('pp-pattern');
+  document.getElementById('pp-rhythm-hint').textContent = currentRhythm.hint;
+  const warn = document.getElementById('pp-stamp-warn');
+  const stampRow = document.getElementById('pp-stamp-row');
+  if (currentRhythm.stampTypes) {
+    stampRow.style.display = 'flex';
+    if (!stampAllowed()) {
+      const missing = currentRhythm.stampTypes.filter(a => !wtByAbbr(a));
+      warn.style.display = 'block';
+      warn.textContent = `Stamp disabled — preset uses week type(s) "${[...new Set(missing)].join(', ')}" not in your configuration.`;
+      document.getElementById('pp-stamp').disabled = true;
+    } else { warn.style.display = 'none'; document.getElementById('pp-stamp').disabled = false; }
+  } else { stampRow.style.display = 'none'; warn.style.display = 'none'; }
+
+  let html = '';
+  if (currentRhythm.mode === 'weektype') {
+    for (const t of weekTypes) {
+      const m = currentRhythm.mult[t.abbr] ?? (currentRhythm.mult[t.abbr] = { load: 100, reps: 100 });
+      html += `<div class="pchip" style="border-color:${t.color}">
+        <input type="number" class="pload" data-wt="${t.abbr}" data-k="load" value="${m.load}">
+        <input type="number" class="preps" data-wt="${t.abbr}" data-k="reps" value="${m.reps}">
+        <span class="plabel" style="background:${t.color}">${t.name}</span>
+      </div>`;
+    }
+  } else {
+    currentRhythm.pattern.forEach((st, i) => {
+      const t = currentRhythm.stampTypes ? currentRhythm.stampTypes[i % currentRhythm.stampTypes.length] : null;
+      const tc = t ? wtColor(t) : null;
+      html += `<div class="pchip" ${tc ? `style="border-color:${tc}"` : ''}>
+        <input type="number" class="pload" data-pi="${i}" data-k="load" value="${st.load}">
+        <input type="number" class="preps" data-pi="${i}" data-k="reps" value="${st.reps}">
+        ${t ? `<span class="plabel" style="background:${tc}">${t}</span>` : `<span class="plabel none">·</span>`}
+      </div>`;
+    });
+    html += `<button class="pchip-btn" id="pp-addchip">+</button>`;
+    if (currentRhythm.pattern.length > 1) html += `<button class="pchip-btn" id="pp-delchip">−</button>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('input[data-wt]').forEach(inp =>
+    inp.addEventListener('input', () => { currentRhythm.mult[inp.dataset.wt][inp.dataset.k] = +inp.value || 100; renderAll(); }));
+  box.querySelectorAll('input[data-pi]').forEach(inp =>
+    inp.addEventListener('input', () => { currentRhythm.pattern[+inp.dataset.pi][inp.dataset.k] = +inp.value || 100; renderAll(); }));
+  const add = document.getElementById('pp-addchip');
+  if (add) add.addEventListener('click', () => { currentRhythm.pattern.push({ load: 100, reps: 100 }); renderRhythmEditor(); renderAll(); });
+  const del = document.getElementById('pp-delchip');
+  if (del) del.addEventListener('click', () => { currentRhythm.pattern.pop(); renderRhythmEditor(); renderAll(); });
+}
+renderRhythmEditor();
+
+['pp-w1','pp-v1','pp-w2','pp-v2','pp-r1','pp-r2','pp-ref','pp-fillreps','pp-mirror','pp-mirrorpct','pp-overwrite','pp-stamp'].forEach(id =>
+  document.getElementById(id).addEventListener('input', renderAll));
+
+// APPLY
+document.getElementById('pp-apply').addEventListener('click', () => {
+  const p = guideParams();
+  const fill = computeFill(p, currentRhythm);
+  const n = Object.values(fill.cells).reduce((s, c) => s + Object.keys(c).length, 0);
+  if (!n) { toast('Nothing to fill — check the anchors'); return; }
+  snapshot();
+  writeFill(fill, p);
+  lastFill = { params: JSON.parse(JSON.stringify(p)), rhythm: JSON.parse(JSON.stringify(currentRhythm)) };
+  document.getElementById('tb-remod').style.display = '';
+  closeGuide();
+  toast(`${n} cells written — plain table values now`);
+});
+
+// RE-MODULATE — explicit re-run of the last fill against current week types
+document.getElementById('tb-remod').addEventListener('click', () => {
+  if (!lastFill) return;
+  const p = { ...JSON.parse(JSON.stringify(lastFill.params)), overwrite: true };
+  const fill = computeFill(p, lastFill.rhythm);
+  const n = Object.values(fill.cells).reduce((s, c) => s + Object.keys(c).length, 0);
+  if (!n) { toast('Nothing to re-modulate'); return; }
+  snapshot();
+  writeFill(fill, p);
+  renderAll();
+  toast(`Re-modulated ${n} cells against current week types (overwrote previous fill)`);
+});
+
+// UNDO
+document.getElementById('tb-undo').addEventListener('click', () => {
+  if (!undoSnapshot) return;
+  for (const e of EXES) values[e.id] = JSON.parse(JSON.stringify(undoSnapshot.values[e.id]));
+  for (const k of Object.keys(general)) delete general[k];
+  Object.assign(general, JSON.parse(JSON.stringify(undoSnapshot.general)));
+  undoSnapshot.types.forEach((t, i) => { WEEKS[i].type = t; });
+  undoSnapshot = null;
+  document.getElementById('tb-undo').style.display = 'none';
+  renderAll();
+  toast('Undone');
+});
+
+// template popup
+document.getElementById('tb-template').addEventListener('click', () => document.getElementById('tpl-popup').classList.add('open'));
+document.getElementById('tpl-close').addEventListener('click', () => document.getElementById('tpl-popup').classList.remove('open'));
+document.getElementById('tpl-cancel').addEventListener('click', () => document.getElementById('tpl-popup').classList.remove('open'));
+
+renderWtPills();
+renderColumnsMenu();
+renderAll();
+</script>
+</body>
+</html>

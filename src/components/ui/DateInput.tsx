@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { Calendar } from 'lucide-react';
-import { getMondayOfWeekISO } from '../../lib/weekUtils';
-import { CalendarPopover } from './CalendarPopover';
+import { isoMonday, isoSunday } from '../../lib/dateUtils';
+import { CalendarPopover, CALENDAR_POPOVER_WIDTH } from './CalendarPopover';
 
 interface DateInputProps {
   /** Internal value in YYYY-MM-DD format (what the DB uses). */
   value: string;
   onChange: (isoDate: string) => void;
   className?: string;
+  /** Inline styles for the text field (the calendar button positions itself
+   *  against it, so `paddingRight` is reserved unless you override it). */
+  style?: React.CSSProperties;
   id?: string;
-  /** When true, any chosen date snaps to the Monday of its week (EMOS weeks
-   *  start Monday). Used for macro start/end dates so cycles stay Monday-aligned. */
-  snapToMonday?: boolean;
+  /** Snap any chosen date to a boundary of its week (EMOS weeks run Mon–Sun):
+   *  'start' → that week's Monday, 'end' → that week's Sunday. Used for the
+   *  macro date range so a cycle always spans whole weeks — the week holding
+   *  the picked start AND the week holding the picked end are both covered. */
+  snapWeek?: 'start' | 'end';
 }
 
 /** Parse dd/mm/yyyy → YYYY-MM-DD. Returns '' if invalid. */
@@ -40,17 +45,20 @@ function formatEU(iso: string): string {
  * the native browser picker — the native one follows the BROWSER's locale, so
  * on an en-US profile it rendered a Sunday-first grid with US date order.
  */
-export function DateInput({ value, onChange, className, id, snapToMonday = false }: DateInputProps) {
+export function DateInput({ value, onChange, className, style, id, snapWeek }: DateInputProps) {
   const [display, setDisplay] = useState(formatEU(value));
   const [error, setError] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [flipUp, setFlipUp] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const prevIso = useRef(value);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  /** Snap an ISO date to the Monday of its week when snapToMonday is on. */
-  const maybeSnap = (iso: string): string =>
-    snapToMonday && iso ? getMondayOfWeekISO(new Date(iso + 'T00:00:00')) : iso;
+  /** Snap an ISO date to its week's Monday / Sunday when snapWeek is set. */
+  const maybeSnap = (iso: string): string => {
+    if (!iso || !snapWeek) return iso;
+    return snapWeek === 'start' ? isoMonday(iso) : isoSunday(iso);
+  };
 
   // Sync when the parent changes the ISO value externally
   useEffect(() => {
@@ -113,11 +121,30 @@ export function DateInput({ value, onChange, className, id, snapToMonday = false
     onChange(iso);
   };
 
+  /**
+   * Right edge the popover has to stay inside: the nearest ancestor that
+   * clips (a scroll container such as the analysis rail), else the viewport.
+   * A left-anchored grid inside a 264 px rail spills ~110 px past the rail and
+   * is silently cut off, so narrow containers need the right-edge anchor.
+   */
+  const clipRight = (): number => {
+    let el = wrapRef.current?.parentElement ?? null;
+    while (el && el !== document.body) {
+      const cs = getComputedStyle(el);
+      if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+        return Math.min(el.getBoundingClientRect().right, window.innerWidth);
+      }
+      el = el.parentElement;
+    }
+    return window.innerWidth;
+  };
+
   const openPicker = () => {
+    const rect = wrapRef.current?.getBoundingClientRect();
     // Flip above the field when there isn't room for the grid below it
     // (the calendar is ~250 px tall).
-    const rect = wrapRef.current?.getBoundingClientRect();
     setFlipUp(!!rect && window.innerHeight - rect.bottom < 260 && rect.top > 260);
+    setAlignRight(!!rect && rect.left + CALENDAR_POPOVER_WIDTH > clipRight());
     setPickerOpen(open => !open);
   };
 
@@ -136,7 +163,7 @@ export function DateInput({ value, onChange, className, id, snapToMonday = false
         placeholder="dd/mm/yyyy"
         maxLength={10}
         className={`${baseClass} ${borderClass}`}
-        style={{ paddingRight: '2rem' }}
+        style={{ paddingRight: '2rem', ...style }}
       />
       <button
         type="button"
@@ -165,8 +192,9 @@ export function DateInput({ value, onChange, className, id, snapToMonday = false
           value={value}
           onSelect={handleCalendarPick}
           onClose={() => setPickerOpen(false)}
-          snapToMonday={snapToMonday}
+          snapWeek={snapWeek}
           flipUp={flipUp}
+          alignRight={alignRight}
         />
       )}
     </div>

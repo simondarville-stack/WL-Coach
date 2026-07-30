@@ -13,6 +13,7 @@ import { ProgrammeGate } from './components/ProgrammeGate';
 import { AthleteLayout } from './components/AthleteLayout';
 import { TodayScreen } from './screens/TodayScreen';
 import { WeekScreen } from './screens/WeekScreen';
+import { MacroScreen } from './screens/MacroScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { GroupViewerScreen } from './screens/GroupViewerScreen';
 import { CoachThreadScreen } from './screens/CoachThreadScreen';
@@ -64,6 +65,7 @@ function AthleteRoutes() {
       <Route element={<AthleteLayout />}>
         <Route path="today" element={<TodayScreen />} />
         <Route path="week" element={<WeekScreen />} />
+        <Route path="macro" element={<MacroScreen />} />
         <Route path="coach" element={<CoachThreadScreen />} />
         <Route path="profile" element={<ProfileScreen />} />
         <Route path="prs" element={<PRsScreen />} />

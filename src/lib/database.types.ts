@@ -81,7 +81,19 @@ export interface MacroTableLayout {
   /** visible base/general columns (MacroTableColumnKey[]); absent = settings default */
   baseColumns?: string[];
   viewToggles?: { consistency?: boolean; heatmap?: boolean; notesCollapsed?: boolean };
-  graph?: { avg?: boolean; repsBars?: boolean; linkDrag?: boolean };
+  /** Chart settings — persisted with the macro so a coach's series selection
+   *  survives navigation and is the same on every device. Visibility is stored
+   *  as the HIDDEN sets: a newly tracked exercise then shows by default and a
+   *  removed one leaves no stale entry behind. */
+  graph?: {
+    avg?: boolean;
+    repsBars?: boolean;
+    linkDrag?: boolean;
+    /** tracked-exercise ids hidden from the chart & table */
+    hiddenExercises?: string[];
+    /** general-metric keys ('k' | 'tonnage' | 'avg') hidden from the chart */
+    hiddenGeneral?: string[];
+  };
   /** Layout schema version. Absent = pre-versioning (predates the Training
    *  Week / Dates / Events columns); such layouts get those columns unioned in
    *  on load so they aren't silently hidden. Stamped to the current version on
@@ -361,7 +373,10 @@ export interface MacroWeek {
   total_reps_target: number | null;
   tonnage_target: number | null;
   avg_intensity_target: number | null;
-  phase_id: string | null;
+  /* phase_id was dropped in 20260729_drop_macro_weeks_phase_id — a week's
+   * phase is resolved from macro_phases' week-number range via
+   * lib/macroPhases.findPhaseForWeek, which is the only assignment the coach
+   * ever makes. */
   volume_multiplier: number;
   created_at: string;
   updated_at: string;
@@ -1165,6 +1180,12 @@ export interface Database {
       shift_macro_weeks: {
         Args: { p_cycle_id: string; p_shift_days: number };
         Returns: undefined;
+      };
+      /** Renumber a week plan's exercises densely (1..n) per training unit.
+       *  p_day_index null = every unit. Returns how many rows moved. */
+      normalize_planned_exercise_positions: {
+        Args: { p_weekplan_id: string; p_day_index: number | null };
+        Returns: number;
       };
     };
     Enums: {
