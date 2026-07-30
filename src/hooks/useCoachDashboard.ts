@@ -94,6 +94,46 @@ export function useCoachDashboard() {
     return data;
   }
 
+  /**
+   * The macrocycle to show as "current" for an athlete. Several cycles can
+   * carry is_active=true at once (creating a new cycle doesn't deactivate the
+   * old one), so a naive maybeSingle() on is_active errors out and the
+   * dashboard shows no macro at all. Pick the active cycle whose weeks cover
+   * today; if none does, fall back to the most recently created active one.
+   */
+  async function resolveCurrentMacro(athleteId: string): Promise<{
+    macrocycle: MacroCycle;
+    macroWeeks: MacroWeek[];
+    currentMacroWeek: MacroWeek | null;
+  } | null> {
+    const { data: actives } = await supabase
+      .from('macrocycles')
+      .select('*')
+      .eq('athlete_id', athleteId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+    if (!actives || actives.length === 0) return null;
+
+    let fallback: {
+      macrocycle: MacroCycle;
+      macroWeeks: MacroWeek[];
+      currentMacroWeek: MacroWeek | null;
+    } | null = null;
+
+    for (const macrocycle of actives as MacroCycle[]) {
+      const { data: weeks } = await supabase
+        .from('macro_weeks')
+        .select('*')
+        .eq('macrocycle_id', macrocycle.id)
+        .order('week_start');
+      const macroWeeks = (weeks ?? []) as MacroWeek[];
+      const currentMacroWeek = findCurrentMacroWeek(macroWeeks);
+      if (currentMacroWeek) return { macrocycle, macroWeeks, currentMacroWeek };
+      if (!fallback) fallback = { macrocycle, macroWeeks, currentMacroWeek: null };
+    }
+    return fallback;
+  }
+
   async function loadAthleteStatuses(settingsData: GeneralSettingsType | null) {
     // Owned + shared (direct and via group cascade), active only.
     const { athletes } = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
@@ -104,27 +144,10 @@ export function useCoachDashboard() {
     const statuses: AthleteStatus[] = [];
 
     for (const athlete of athletes) {
-      const { data: macrocycle } = await supabase
-        .from('macrocycles')
-        .select('*')
-        .eq('athlete_id', athlete.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      let currentMacroWeek: MacroWeek | null = null;
-      let totalMacroWeeks: number | null = null;
-      if (macrocycle) {
-        const { data: macroWeeks } = await supabase
-          .from('macro_weeks')
-          .select('*')
-          .eq('macrocycle_id', macrocycle.id)
-          .order('week_start');
-
-        if (macroWeeks) {
-          totalMacroWeeks = macroWeeks.length;
-          currentMacroWeek = findCurrentMacroWeek(macroWeeks);
-        }
-      }
+      const currentMacro = await resolveCurrentMacro(athlete.id);
+      const macrocycle = currentMacro?.macrocycle ?? null;
+      const currentMacroWeek = currentMacro?.currentMacroWeek ?? null;
+      const totalMacroWeeks = currentMacro ? currentMacro.macroWeeks.length : null;
 
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - rawAverageDays);
@@ -305,23 +328,10 @@ export function useCoachDashboard() {
     const { weekStartISO } = getCurrentAndNextWeekStart();
 
     for (const athlete of athletes) {
-      const { data: macrocycle } = await supabase
-        .from('macrocycles')
-        .select('*')
-        .eq('athlete_id', athlete.id)
-        .eq('is_active', true)
-        .maybeSingle();
+      const currentMacro = await resolveCurrentMacro(athlete.id);
+      if (!currentMacro) continue;
 
-      if (!macrocycle) continue;
-
-      const { data: macroWeeks } = await supabase
-        .from('macro_weeks')
-        .select('*')
-        .eq('macrocycle_id', macrocycle.id);
-
-      if (!macroWeeks) continue;
-
-      const currentWeek = findCurrentMacroWeek(macroWeeks);
+      const { macrocycle, currentMacroWeek: currentWeek } = currentMacro;
 
       if (!currentWeek) continue;
 

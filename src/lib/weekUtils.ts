@@ -1,5 +1,5 @@
 // Pure week/cycle utility functions — no React dependencies
-import { getMondayOfWeek, addDaysToISO, toLocalISO } from './dateUtils';
+import { getMondayOfWeek, addDaysToISO, isoMonday, isoAddWeeks } from './dateUtils';
 
 export function getCurrentAndNextWeekStart(): { weekStartISO: string; nextWeekStartISO: string } {
   // Serialise via local-component formatting (getMondayOfWeekISO / addDaysToISO),
@@ -52,24 +52,32 @@ export function findCurrentMacroWeek<T extends { week_start: string }>(macroWeek
   }) ?? null;
 }
 
+/**
+ * Mondays of every week a cycle covers, WHOLE weeks at both ends: the week
+ * holding `startDate` and the week holding `endDate` are both included, no
+ * matter which weekday those dates fall on (weeks run Mon–Sun).
+ *
+ * The end bound is compared Monday-to-Monday, so any end date inside the
+ * final week keeps that week — the earlier `weekMonday <= endDate` compare
+ * dropped it whenever the stored end date was mid-week.
+ *
+ * Pure ISO string math (isoMonday / isoAddWeeks), never local Date stepping:
+ * `setDate(+7)` preserves the local wall clock, so a cycle that crossed the
+ * October DST change drifted an hour past UTC midnight and silently lost its
+ * last week for positive-UTC coaches.
+ */
 export function generateMacroWeeks(
   startDate: string,
   endDate: string,
 ): Array<{ week_start: string; week_number: number }> {
   const weeks: Array<{ week_start: string; week_number: number }> = [];
-  const start = getMondayOfWeek(new Date(startDate));
-  const end = new Date(endDate);
-  const current = new Date(start);
+  const lastMonday = isoMonday(endDate);
+  let current = isoMonday(startDate);
   let weekNumber = 1;
 
-  while (current <= end) {
-    weeks.push({
-      // Local-component serialisation (toLocalISO), not `.toISOString()`, so a
-      // Monday stays a Monday for positive-UTC coaches. See DD-01/02.
-      week_start: toLocalISO(current),
-      week_number: weekNumber,
-    });
-    current.setDate(current.getDate() + 7);
+  while (current <= lastMonday) {
+    weeks.push({ week_start: current, week_number: weekNumber });
+    current = isoAddWeeks(current, 1);
     weekNumber++;
   }
 

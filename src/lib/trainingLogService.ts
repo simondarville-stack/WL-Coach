@@ -1073,6 +1073,13 @@ export async function createBonusSession(args: {
   weekStart: string;
   dayIndex: number;
   date: string;
+  /** Name the athlete gave this extra session. Stored ON THE SESSION, which is
+   *  the only place it is guaranteed to survive: the parallel write into
+   *  week_plans.day_labels is silently dropped when the athlete has no week
+   *  plan for that week (see setAthleteDayLabel), which is exactly the
+   *  bonus-day case. session_label is what the coach's week-review strip falls
+   *  back to — it had a reader and no writer until now. */
+  label?: string | null;
 }): Promise<TrainingLogSession> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
   const insertRow: any = {
@@ -1084,6 +1091,7 @@ export async function createBonusSession(args: {
     session_notes: '',
     status: 'pending',
     started_at: new Date().toISOString(),
+    session_label: args.label?.trim() || null,
   };
   const { data, error } = await supabase
     .from('training_log_sessions')

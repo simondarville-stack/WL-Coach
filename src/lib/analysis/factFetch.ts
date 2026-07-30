@@ -26,6 +26,7 @@ import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
 import { parsePrescription, parseComboPrescription } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
 import { buildParentIndex, resolveRootId } from '../exerciseHierarchy';
+import { findPhaseForWeek } from '../macroPhases';
 import { resolveScopeWindow, type ResolvedScope } from './scopeResolver';
 import type { AnalysisQuery, FactRow } from './types';
 
@@ -768,22 +769,30 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   const cycleIds = cycles.map((c) => c.id);
   const cycleById = new Map(cycles.map((c) => [c.id, c]));
 
-  const macroWeekByCycleStart = new Map<string, { week_number: number; week_type: string; week_type_text: string; phase_id: string | null }>();
-  const phaseById = new Map<string, { name: string }>();
+  const macroWeekByCycleStart = new Map<string, { week_number: number; week_type: string; week_type_text: string }>();
+  // Phases claim a week-number range; there is no per-week FK to look up (see
+  // lib/macroPhases). Reading the never-written macro_weeks.phase_id is what
+  // made phaseId/phaseName null on every fact row.
+  type PhaseRow = { id: string; name: string; color: string | null; macrocycle_id: string; start_week_number: number; end_week_number: number };
+  let phaseRanges: PhaseRow[] = [];
   const phaseColors: Record<string, string> = {}; // phase name → colour
   if (cycleIds.length > 0) {
     const [{ data: mwRows }, { data: phaseRows }] = await Promise.all([
       supabase
         .from('macro_weeks')
-        .select('macrocycle_id, week_start, week_number, week_type, week_type_text, phase_id')
+        .select('macrocycle_id, week_start, week_number, week_type, week_type_text')
         .in('macrocycle_id', cycleIds),
-      supabase.from('macro_phases').select('id, name, color').in('macrocycle_id', cycleIds),
+      supabase
+        .from('macro_phases')
+        .select('id, name, color, macrocycle_id, start_week_number, end_week_number')
+        .in('macrocycle_id', cycleIds)
+        .order('position'),
     ]);
-    for (const mw of (mwRows ?? []) as Array<{ macrocycle_id: string; week_start: string; week_number: number; week_type: string; week_type_text: string; phase_id: string | null }>) {
+    for (const mw of (mwRows ?? []) as Array<{ macrocycle_id: string; week_start: string; week_number: number; week_type: string; week_type_text: string }>) {
       macroWeekByCycleStart.set(`${mw.macrocycle_id}:${snapToMonday(mw.week_start)}`, mw);
     }
-    for (const p of (phaseRows ?? []) as Array<{ id: string; name: string; color: string | null }>) {
-      phaseById.set(p.id, p);
+    phaseRanges = (phaseRows ?? []) as PhaseRow[];
+    for (const p of phaseRanges) {
       if (p.color && p.name) phaseColors[p.name] = p.color;
     }
   }
@@ -800,6 +809,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     for (const c of cyclesByAthlete[athleteId] ?? []) {
       const mw = macroWeekByCycleStart.get(`${c.id}:${weekStart}`);
       if (mw) {
+        const phase = findPhaseForWeek(phaseRanges, c.id, mw.week_number);
         return {
           relativeWeek: mw.week_number,
           // week_type (abbreviation) is the single source of truth for a week's
@@ -807,8 +817,8 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
           weekType: mw.week_type || mw.week_type_text || null,
           macroId: c.id,
           macroName: cycleById.get(c.id)?.name ?? null,
-          phaseId: mw.phase_id,
-          phaseName: mw.phase_id ? phaseById.get(mw.phase_id)?.name ?? null : null,
+          phaseId: phase?.id ?? null,
+          phaseName: phase?.name ?? null,
         };
       }
     }

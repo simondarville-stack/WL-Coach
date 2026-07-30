@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isoMonday,
+  isoSunday,
   snapToMonday,
   isoAddDays,
   isoAddWeeks,
@@ -17,6 +18,21 @@ describe('isoMonday (UTC-consistent week start)', () => {
   });
   it('maps Sunday back to the Monday that started its week', () => {
     expect(isoMonday('2026-05-31')).toBe('2026-05-25'); // Sun belongs to prior Mon
+  });
+});
+
+describe('isoSunday (UTC-consistent week end)', () => {
+  it('returns the Sunday closing a mid-week date', () => {
+    expect(isoSunday('2026-06-03')).toBe('2026-06-07'); // Wed → Sun
+  });
+  it('returns a Sunday unchanged', () => {
+    expect(isoSunday('2026-06-07')).toBe('2026-06-07');
+  });
+  it('closes the week a Monday opens', () => {
+    expect(isoSunday('2026-06-01')).toBe('2026-06-07');
+  });
+  it('crosses a month boundary', () => {
+    expect(isoSunday('2026-10-29')).toBe('2026-11-01');
   });
 });
 

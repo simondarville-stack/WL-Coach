@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Macro Fill-Guide Concepts</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2FA;
+    --text-1: #1a202c;
+    --text-2: #4a5568;
+    --text-3: #94a3b8;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --bg-page: #f7f8fa;
+    --wt-h: #E24B4A;
+    --wt-m: #EF9F27;
+    --wt-g: #1D9E75;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--bg-page); color: var(--text-1);
+    font-size: 13px; padding: 16px 20px 60px;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  .sub { color: var(--text-2); margin-bottom: 14px; font-size: 12px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 14px; }
+  .tab {
+    padding: 7px 14px; cursor: pointer; border: none; background: none;
+    font-size: 13px; font-weight: 500; color: var(--text-2);
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .concept { display: none; }
+  .concept.active { display: block; }
+  .concept-desc {
+    background: #fff; border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; margin-bottom: 12px; color: var(--text-2); line-height: 1.45;
+    max-width: 980px;
+  }
+  .concept-desc b { color: var(--text-1); }
+
+  /* Layout */
+  .split { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* Table */
+  table { border-collapse: collapse; background: #fff; }
+  th, td { border: 1px solid var(--border); padding: 3px 8px; text-align: left; white-space: nowrap; }
+  th { background: #f1f5f9; font-size: 11px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .02em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .wk { color: var(--text-2); font-size: 12px; }
+  .wk b { color: var(--text-1); font-weight: 600; }
+  .wt-chip {
+    display: inline-block; min-width: 20px; text-align: center; padding: 1px 5px;
+    border-radius: 3px; color: #fff; font-size: 10px; font-weight: 700; cursor: default;
+  }
+  td.cell { min-width: 86px; text-align: right; font-variant-numeric: tabular-nums; cursor: pointer; position: relative; }
+  td.cell .reps { color: var(--text-3); font-size: 11px; margin-left: 5px; }
+  td.cell.ghost { color: var(--accent); background: var(--accent-light); font-style: italic; }
+  td.cell.ghost::after { content: ""; }
+  td.cell.existing { font-weight: 600; }
+  td.cell.anchor { background: #fff8e6; font-weight: 700; }
+  td.cell.anchor .pin { color: #b45309; font-size: 10px; margin-right: 4px; font-style: normal; }
+  td.cell.empty { color: var(--text-3); }
+  td.cell input {
+    width: 60px; border: 1px solid var(--accent); border-radius: 3px;
+    padding: 1px 4px; font-size: 13px; text-align: right; outline: none;
+  }
+
+  /* Panel */
+  .panel {
+    background: #fff; border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px; width: 320px; flex-shrink: 0;
+  }
+  .panel h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--text-2); margin-bottom: 10px; }
+  .frow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .frow label { width: 92px; color: var(--text-2); font-size: 12px; flex-shrink: 0; }
+  .frow input[type=number], .frow select {
+    border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 6px;
+    font-size: 13px; width: 70px;
+  }
+  .frow select { width: auto; }
+  .frow .arrow { color: var(--text-3); }
+  .mult-row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .mult-box { flex: 1; border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; text-align: center; }
+  .mult-box .mlabel { font-size: 10px; font-weight: 700; margin-bottom: 3px; }
+  .mult-box input { width: 52px; border: 1px solid var(--border-strong); border-radius: 3px; padding: 2px 4px; text-align: right; font-size: 12px; }
+  .mult-box .pct { font-size: 11px; color: var(--text-3); }
+  .hint { font-size: 11px; color: var(--text-3); line-height: 1.4; margin: 6px 0 10px; }
+  .btn {
+    background: var(--accent); color: #fff; border: none; border-radius: 4px;
+    padding: 5px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn.secondary { background: #fff; color: var(--text-2); border: 1px solid var(--border-strong); }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .check-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+
+  /* Sparkline */
+  .spark { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+  .spark svg { display: block; }
+
+  /* Toolbar strip (Concept B) */
+  .strip {
+    display: flex; align-items: center; gap: 10px; background: #fff;
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px;
+    margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .strip .sep { width: 1px; height: 20px; background: var(--border); }
+  .strip label { font-size: 12px; color: var(--text-2); }
+  .strip input[type=number] { width: 52px; border: 1px solid var(--border-strong); border-radius: 3px; padding: 2px 4px; text-align: right; font-size: 12px; }
+  .strip select { border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+  .badge-wt { display:inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
+
+  /* Concept C pattern painter */
+  .pattern-strip { display: flex; gap: 3px; margin: 8px 0; flex-wrap: wrap; }
+  .pat-week {
+    width: 44px; border-radius: 4px; text-align: center; padding: 4px 0 3px; cursor: pointer;
+    color: #fff; font-weight: 700; font-size: 11px; user-select: none;
+    border: 2px solid transparent;
+  }
+  .pat-week .pwn { display: block; font-weight: 400; font-size: 9px; opacity: .85; }
+  .pat-week:hover { border-color: rgba(0,0,0,.25); }
+  .seed-table td input { width: 64px; border: 1px solid var(--border-strong); border-radius: 3px; padding: 2px 5px; text-align: right; font-size: 12.5px; }
+  .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); margin: 14px 0 6px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; max-width: 980px; }
+  .pattern-input { display: flex; align-items: center; gap: 8px; }
+  .pattern-input input { border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 8px; font-size: 13px; width: 140px; font-family: ui-monospace, monospace; }
+
+  .footnote { margin-top: 18px; max-width: 980px; color: var(--text-2); font-size: 12px; line-height: 1.5; background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+  .footnote b { color: var(--text-1); }
+</style>
+</head>
+<body>
+
+<h1>Macro fill-guide — interaction concepts</h1>
+<div class="sub">EMOS mockup · 12-week macro, week types High <span class="wt-chip" style="background:var(--wt-h)">h</span> / Medium <span class="wt-chip" style="background:var(--wt-m)">m</span> / Low <span class="wt-chip" style="background:var(--wt-g)">g</span> · all three concepts are live — click around</div>
+
+<div class="tabs">
+  <button class="tab active" data-c="a">A — Fill-guide panel</button>
+  <button class="tab" data-c="b">B — Anchors in the grid</button>
+  <button class="tab" data-c="c">C — Rhythm-first creation</button>
+</div>
+
+<!-- ============ CONCEPT A ============ -->
+<div class="concept active" id="concept-a">
+  <div class="concept-desc">
+    <b>Per-exercise guide panel.</b> Open from the exercise column header. Set a start value at one week and an end value at another; the trend is interpolated between them and each week is modulated by its week type (High = 100&nbsp;% of trend, Medium/Low a configurable % below). Preview values appear as <span style="color:var(--accent);font-style:italic">blue italics</span> in the column, live, before you commit. Existing entered values (bold) are kept unless you tick overwrite.
+  </div>
+  <div class="split">
+    <table id="table-a"></table>
+    <div class="panel">
+      <h3>Fill guide — Snatch · max</h3>
+      <div class="frow">
+        <label>Metric</label>
+        <select id="a-metric">
+          <option value="max">Max load (kg)</option>
+          <option value="avg">Avg load (kg)</option>
+          <option value="reps">Reps</option>
+        </select>
+      </div>
+      <div class="frow">
+        <label>From week</label>
+        <input type="number" id="a-w1" value="1" min="1" max="12" style="width:52px">
+        <span class="arrow">=</span>
+        <input type="number" id="a-v1" value="110" step="2.5">
+        <span class="pct">kg</span>
+      </div>
+      <div class="frow">
+        <label>To week</label>
+        <input type="number" id="a-w2" value="11" min="1" max="12" style="width:52px">
+        <span class="arrow">=</span>
+        <input type="number" id="a-v2" value="140" step="2.5">
+        <span class="pct">kg</span>
+      </div>
+      <div class="frow">
+        <label>Shape</label>
+        <select id="a-shape">
+          <option value="linear">Linear</option>
+          <option value="accel">Accelerating (ease-in)</option>
+          <option value="decel">Front-loaded (ease-out)</option>
+        </select>
+      </div>
+      <div class="section-label" style="margin-top:10px">Week-type modulation (% of trend)</div>
+      <div class="mult-row">
+        <div class="mult-box" style="border-color:var(--wt-h)">
+          <div class="mlabel" style="color:var(--wt-h)">High</div>
+          <input type="number" id="a-mh" value="100"> <span class="pct">%</span>
+        </div>
+        <div class="mult-box" style="border-color:var(--wt-m)">
+          <div class="mlabel" style="color:var(--wt-m)">Medium</div>
+          <input type="number" id="a-mm" value="95"> <span class="pct">%</span>
+        </div>
+        <div class="mult-box" style="border-color:var(--wt-g)">
+          <div class="mlabel" style="color:var(--wt-g)">Low</div>
+          <input type="number" id="a-mg" value="88"> <span class="pct">%</span>
+        </div>
+      </div>
+      <div class="frow">
+        <label>Round loads to</label>
+        <select id="a-round">
+          <option value="2.5">2,5 kg</option>
+          <option value="1">1 kg</option>
+          <option value="5">5 kg</option>
+        </select>
+      </div>
+      <div class="check-row"><input type="checkbox" id="a-overwrite"> <label for="a-overwrite" style="width:auto">Overwrite existing values</label></div>
+      <div class="spark"><svg id="a-spark" width="290" height="70"></svg></div>
+      <div class="btn-row">
+        <button class="btn" id="a-apply">Apply to column</button>
+        <button class="btn secondary" id="a-reset">Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONCEPT B ============ -->
+<div class="concept" id="concept-b">
+  <div class="concept-desc">
+    <b>Anchors live in the grid — no panel.</b> Click any empty cell in the Snatch column and type a value: it becomes an <span style="background:#fff8e6;padding:0 4px;border-radius:3px;font-weight:700">📌 anchor</span>. Set two or more anchors anywhere, then press <b>Fill between anchors</b> — every gap is interpolated and modulated by week type using the strip settings above the table. More than two anchors gives you piecewise control (e.g. slow build, then a steep comp push). Click an anchor to remove it.
+  </div>
+  <div class="strip">
+    <label>Modulation:</label>
+    <label><span class="badge-wt" style="background:var(--wt-h)"></span>H <input type="number" id="b-mh" value="100">%</label>
+    <label><span class="badge-wt" style="background:var(--wt-m)"></span>M <input type="number" id="b-mm" value="95">%</label>
+    <label><span class="badge-wt" style="background:var(--wt-g)"></span>L <input type="number" id="b-mg" value="88">%</label>
+    <div class="sep"></div>
+    <label>Round <select id="b-round"><option value="2.5">2,5 kg</option><option value="1">1 kg</option><option value="5">5 kg</option></select></label>
+    <div class="sep"></div>
+    <button class="btn" id="b-fill">Fill between anchors</button>
+    <button class="btn secondary" id="b-clear">Clear fills</button>
+  </div>
+  <table id="table-b"></table>
+</div>
+
+<!-- ============ CONCEPT C ============ -->
+<div class="concept" id="concept-c">
+  <div class="concept-desc">
+    <b>Rhythm-first, at creation time.</b> The create-macro flow gains one step: paint the week-type rhythm (type a repeating pattern or click weeks to cycle their type), set the modulation once, and seed each tracked exercise with a start&nbsp;→&nbsp;end value. The macro is born with the whole table prefilled — the grid is then for refinement, not data entry.
+  </div>
+  <div class="card">
+    <div class="section-label" style="margin-top:0">1 · Rhythm</div>
+    <div class="pattern-input">
+      <label>Repeating pattern</label>
+      <input id="c-pattern" value="m h h g" spellcheck="false">
+      <button class="btn secondary" id="c-applypattern">Paint pattern</button>
+      <span class="hint" style="margin:0">…or click a week below to cycle its type</span>
+    </div>
+    <div class="pattern-strip" id="c-strip"></div>
+    <div class="section-label">2 · Modulation (% of trend)</div>
+    <div style="display:flex; gap:14px; align-items:center;">
+      <label><span class="badge-wt" style="background:var(--wt-h)"></span>High <input type="number" id="c-mh" value="100" style="width:52px;border:1px solid var(--border-strong);border-radius:3px;padding:2px 4px;text-align:right">%</label>
+      <label><span class="badge-wt" style="background:var(--wt-m)"></span>Medium <input type="number" id="c-mm" value="95" style="width:52px;border:1px solid var(--border-strong);border-radius:3px;padding:2px 4px;text-align:right">%</label>
+      <label><span class="badge-wt" style="background:var(--wt-g)"></span>Low <input type="number" id="c-mg" value="88" style="width:52px;border:1px solid var(--border-strong);border-radius:3px;padding:2px 4px;text-align:right">%</label>
+    </div>
+    <div class="section-label">3 · Exercise seeds (start → end of cycle)</div>
+    <table class="seed-table" id="c-seeds">
+      <tr><th>Exercise</th><th>Start max (kg)</th><th>End max (kg)</th></tr>
+      <tr><td>Snatch</td><td class="num"><input value="110" data-ex="0" data-k="v1"></td><td class="num"><input value="140" data-ex="0" data-k="v2"></td></tr>
+      <tr><td>Clean &amp; Jerk</td><td class="num"><input value="135" data-ex="1" data-k="v1"></td><td class="num"><input value="170" data-ex="1" data-k="v2"></td></tr>
+      <tr><td>Back Squat</td><td class="num"><input value="160" data-ex="2" data-k="v1"></td><td class="num"><input value="195" data-ex="2" data-k="v2"></td></tr>
+    </table>
+    <div class="btn-row"><button class="btn" id="c-generate">Generate macro</button></div>
+  </div>
+  <div class="section-label">Generated table preview</div>
+  <table id="table-c"></table>
+</div>
+
+<div class="footnote">
+  <b>Recommendation:</b> B is the most EMOS-shaped interaction (dense, inline, zero ceremony) and A's explicit controls are the most discoverable place for the modulation percentages. They combine naturally: <b>anchors in the grid + a slim modulation strip above the table</b> — Concept A's panel becomes unnecessary. C is complementary rather than competing: the same generator invoked once at creation. The modulation percentages and default rhythm would live in general_settings alongside the existing coach-configurable week types.
+</div>
+
+<script>
+// ---------- shared ----------
+const WT = {
+  h: { name: 'High', color: 'var(--wt-h)' },
+  m: { name: 'Medium', color: 'var(--wt-m)' },
+  g: { name: 'Low', color: 'var(--wt-g)' },
+};
+const WT_ORDER = ['m', 'h', 'g'];
+// 12 weeks, Monday starts from 06/07/2026, rhythm m h h g
+const WEEKS = [];
+(function () {
+  const types = ['m','h','h','g','m','h','h','g','m','h','h','g'];
+  let d = new Date(2026, 6, 6);
+  for (let i = 0; i < 12; i++) {
+    WEEKS.push({
+      n: i + 1,
+      date: String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0'),
+      type: types[i],
+    });
+    d = new Date(d.getTime() + 7 * 86400000);
+  }
+})();
+function fmt(n) {
+  if (n === null || n === undefined) return '';
+  const s = (Math.round(n * 10) / 10).toString().replace('.', ',');
+  return s;
+}
+function roundTo(v, step) { return Math.round(v / step) * step; }
+function chip(t) { return `<span class="wt-chip" style="background:${WT[t].color}">${t}</span>`; }
+function ease(t, shape) {
+  if (shape === 'accel') return t * t;
+  if (shape === 'decel') return 1 - (1 - t) * (1 - t);
+  return t;
+}
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.concept').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('concept-' + tab.dataset.c).classList.add('active');
+  });
+});
+
+// ---------- Concept A ----------
+// existing coach-entered values (kept unless overwrite)
+const A_EXISTING = { 4: 118, 8: 128 };   // week -> snatch max
+let aApplied = null; // once applied, ghosts become solid
+function aParams() {
+  return {
+    w1: +document.getElementById('a-w1').value,
+    v1: +document.getElementById('a-v1').value,
+    w2: +document.getElementById('a-w2').value,
+    v2: +document.getElementById('a-v2').value,
+    shape: document.getElementById('a-shape').value,
+    metric: document.getElementById('a-metric').value,
+    mult: { h: +document.getElementById('a-mh').value / 100,
+            m: +document.getElementById('a-mm').value / 100,
+            g: +document.getElementById('a-mg').value / 100 },
+    round: +document.getElementById('a-round').value,
+    overwrite: document.getElementById('a-overwrite').checked,
+  };
+}
+function aCompute() {
+  const p = aParams();
+  const out = {};
+  if (p.w2 === p.w1) return out;
+  const lo = Math.min(p.w1, p.w2), hi = Math.max(p.w1, p.w2);
+  for (const wk of WEEKS) {
+    if (wk.n < lo || wk.n > hi) continue;
+    const t = ease((wk.n - p.w1) / (p.w2 - p.w1), p.shape);
+    const trend = p.v1 + (p.v2 - p.v1) * t;
+    const step = p.metric === 'reps' ? 1 : p.round;
+    out[wk.n] = roundTo(trend * p.mult[wk.type], step);
+  }
+  return out;
+}
+function renderA() {
+  const preview = aCompute();
+  const p = aParams();
+  let html = `<tr><th>Week</th><th>Type</th><th>Snatch · max</th><th>C&amp;J · max</th></tr>`;
+  for (const wk of WEEKS) {
+    const existing = A_EXISTING[wk.n];
+    const applied = aApplied ? aApplied[wk.n] : undefined;
+    let cell = '<td class="cell empty">—</td>';
+    if (applied !== undefined && !(existing && !p.overwrite)) {
+      cell = `<td class="cell">${fmt(applied)}<span class="reps">kg</span></td>`;
+    } else if (existing !== undefined && (!p.overwrite || !preview[wk.n])) {
+      cell = `<td class="cell existing" title="Coach-entered — kept">${fmt(existing)}<span class="reps">kg</span></td>`;
+    } else if (preview[wk.n] !== undefined) {
+      cell = `<td class="cell ghost" title="Preview — not saved yet">${fmt(preview[wk.n])}<span class="reps">kg</span></td>`;
+    }
+    html += `<tr>
+      <td class="wk"><b>W${wk.n}</b> ${wk.date}</td>
+      <td>${chip(wk.type)}</td>
+      ${cell}
+      <td class="cell empty">—</td>
+    </tr>`;
+  }
+  document.getElementById('table-a').innerHTML = html;
+  // sparkline
+  const svg = document.getElementById('a-spark');
+  const vals = WEEKS.map(w => preview[w.n] ?? null);
+  const present = vals.filter(v => v !== null);
+  if (present.length < 2) { svg.innerHTML = ''; return; }
+  const min = Math.min(...present) * 0.97, max = Math.max(...present) * 1.03;
+  const W = 290, H = 70, pad = 4;
+  const x = i => pad + i * (W - 2 * pad) / (WEEKS.length - 1);
+  const y = v => H - pad - (v - min) / (max - min) * (H - 2 * pad);
+  let bars = '', pts = [];
+  WEEKS.forEach((w, i) => {
+    if (vals[i] === null) return;
+    const col = getComputedStyle(document.documentElement).getPropertyValue('--wt-' + w.type).trim();
+    bars += `<rect x="${x(i)-3}" y="${y(vals[i])}" width="6" height="${H - pad - y(vals[i])}" fill="${col}" opacity="0.75"><title>W${w.n}: ${fmt(vals[i])} kg</title></rect>`;
+    pts.push(`${x(i)},${y(vals[i])}`);
+  });
+  svg.innerHTML = bars + `<polyline points="${pts.join(' ')}" fill="none" stroke="#185FA5" stroke-width="1.5" opacity="0.85"/>`;
+}
+['a-w1','a-v1','a-w2','a-v2','a-shape','a-metric','a-mh','a-mm','a-mg','a-round','a-overwrite'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => { aApplied = null; renderA(); }));
+document.getElementById('a-apply').addEventListener('click', () => { aApplied = aCompute(); renderA(); });
+document.getElementById('a-reset').addEventListener('click', () => { aApplied = null; renderA(); });
+renderA();
+
+// ---------- Concept B ----------
+const bAnchors = { 1: 110, 12: 142.5 };  // week -> value; start with two example anchors
+let bFills = {};
+let bEditingWeek = null;
+function bMult() {
+  return { h: +document.getElementById('b-mh').value / 100,
+           m: +document.getElementById('b-mm').value / 100,
+           g: +document.getElementById('b-mg').value / 100 };
+}
+function bDoFill() {
+  const keys = Object.keys(bAnchors).map(Number).sort((a, b) => a - b);
+  const mult = bMult();
+  const step = +document.getElementById('b-round').value;
+  bFills = {};
+  for (let s = 0; s < keys.length - 1; s++) {
+    const w1 = keys[s], w2 = keys[s + 1];
+    for (const wk of WEEKS) {
+      if (wk.n <= w1 || wk.n >= w2) continue;
+      const t = (wk.n - w1) / (w2 - w1);
+      const trend = bAnchors[w1] + (bAnchors[w2] - bAnchors[w1]) * t;
+      bFills[wk.n] = roundTo(trend * mult[wk.type], step);
+    }
+  }
+  renderB();
+}
+function renderB() {
+  let html = `<tr><th>Week</th><th>Type</th><th>Snatch · max</th><th>C&amp;J · max</th></tr>`;
+  for (const wk of WEEKS) {
+    let cell;
+    if (bEditingWeek === wk.n) {
+      cell = `<td class="cell"><input id="b-input" type="number" step="2.5" placeholder="kg"></td>`;
+    } else if (bAnchors[wk.n] !== undefined) {
+      cell = `<td class="cell anchor" data-w="${wk.n}" title="Anchor — click to remove"><span class="pin">📌</span>${fmt(bAnchors[wk.n])}<span class="reps">kg</span></td>`;
+    } else if (bFills[wk.n] !== undefined) {
+      cell = `<td class="cell ghost" data-w="${wk.n}" title="Generated — click to promote to anchor">${fmt(bFills[wk.n])}<span class="reps">kg</span></td>`;
+    } else {
+      cell = `<td class="cell empty" data-w="${wk.n}" title="Click to set an anchor">—</td>`;
+    }
+    html += `<tr>
+      <td class="wk"><b>W${wk.n}</b> ${wk.date}</td>
+      <td>${chip(wk.type)}</td>
+      ${cell}
+      <td class="cell empty">—</td>
+    </tr>`;
+  }
+  document.getElementById('table-b').innerHTML = html;
+  document.querySelectorAll('#table-b td.cell[data-w]').forEach(td => {
+    td.addEventListener('click', () => {
+      const w = +td.dataset.w;
+      if (bAnchors[w] !== undefined) { delete bAnchors[w]; renderB(); return; }
+      if (bFills[w] !== undefined) { bAnchors[w] = bFills[w]; delete bFills[w]; renderB(); return; }
+      bEditingWeek = w; renderB();
+      const inp = document.getElementById('b-input');
+      inp.focus();
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && inp.value) { bAnchors[w] = +inp.value; bEditingWeek = null; renderB(); }
+        if (e.key === 'Escape') { bEditingWeek = null; renderB(); }
+      });
+      inp.addEventListener('blur', () => {
+        if (inp.value) bAnchors[w] = +inp.value;
+        bEditingWeek = null; renderB();
+      });
+    });
+  });
+}
+document.getElementById('b-fill').addEventListener('click', bDoFill);
+document.getElementById('b-clear').addEventListener('click', () => { bFills = {}; renderB(); });
+renderB();
+
+// ---------- Concept C ----------
+const cTypes = WEEKS.map(w => w.type);
+const cSeeds = [
+  { name: 'Snatch', v1: 110, v2: 140 },
+  { name: 'Clean & Jerk', v1: 135, v2: 170 },
+  { name: 'Back Squat', v1: 160, v2: 195 },
+];
+let cGenerated = false;
+function renderCStrip() {
+  const strip = document.getElementById('c-strip');
+  strip.innerHTML = WEEKS.map((w, i) =>
+    `<div class="pat-week" data-i="${i}" style="background:${WT[cTypes[i]].color}">${cTypes[i]}<span class="pwn">W${w.n} · ${w.date}</span></div>`
+  ).join('');
+  strip.querySelectorAll('.pat-week').forEach(el => {
+    el.addEventListener('click', () => {
+      const i = +el.dataset.i;
+      cTypes[i] = WT_ORDER[(WT_ORDER.indexOf(cTypes[i]) + 1) % WT_ORDER.length];
+      renderCStrip();
+      if (cGenerated) renderCTable();
+    });
+  });
+}
+document.getElementById('c-applypattern').addEventListener('click', () => {
+  const pat = document.getElementById('c-pattern').value.trim().toLowerCase().split(/[\s,]+/).filter(x => WT[x]);
+  if (!pat.length) return;
+  for (let i = 0; i < cTypes.length; i++) cTypes[i] = pat[i % pat.length];
+  renderCStrip();
+  if (cGenerated) renderCTable();
+});
+document.querySelectorAll('#c-seeds input').forEach(inp => {
+  inp.addEventListener('input', () => {
+    cSeeds[+inp.dataset.ex][inp.dataset.k] = +inp.value || 0;
+    if (cGenerated) renderCTable();
+  });
+});
+['c-mh','c-mm','c-mg'].forEach(id => document.getElementById(id).addEventListener('input', () => { if (cGenerated) renderCTable(); }));
+function renderCTable() {
+  const mult = { h: +document.getElementById('c-mh').value / 100,
+                 m: +document.getElementById('c-mm').value / 100,
+                 g: +document.getElementById('c-mg').value / 100 };
+  let html = `<tr><th>Week</th><th>Type</th>${cSeeds.map(s => `<th>${s.name} · max</th>`).join('')}</tr>`;
+  for (let i = 0; i < WEEKS.length; i++) {
+    const t = i / (WEEKS.length - 1);
+    html += `<tr>
+      <td class="wk"><b>W${WEEKS[i].n}</b> ${WEEKS[i].date}</td>
+      <td>${chip(cTypes[i])}</td>
+      ${cSeeds.map(s => {
+        const trend = s.v1 + (s.v2 - s.v1) * t;
+        return `<td class="cell ghost">${fmt(roundTo(trend * mult[cTypes[i]], 2.5))}<span class="reps">kg</span></td>`;
+      }).join('')}
+    </tr>`;
+  }
+  document.getElementById('table-c').innerHTML = html;
+}
+document.getElementById('c-generate').addEventListener('click', () => { cGenerated = true; renderCTable(); });
+renderCStrip();
+</script>
+</body>
+</html>

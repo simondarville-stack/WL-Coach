@@ -1008,9 +1008,23 @@ export function TodayScreen() {
 
   const handleFinishSession = async () => {
     if (!data?.log?.session) return;
+    const completedAt = new Date();
+    // Derive the session duration on finish. Both the athlete's session preview
+    // and the coach's Log-mode day card render a "⏱ Nm" chip from
+    // duration_minutes, but nothing had written the column since the v1 hook was
+    // deleted — so the chip could never appear. started_at is always stamped at
+    // session creation and is athlete-editable, so the value is computable here.
+    // Guarded: a missing start, or clock skew producing a negative or
+    // absurd span, writes null rather than a nonsense number.
+    const startedAt = data.log.session.started_at ? new Date(data.log.session.started_at) : null;
+    const minutes = startedAt && !Number.isNaN(startedAt.getTime())
+      ? Math.round((completedAt.getTime() - startedAt.getTime()) / 60_000)
+      : null;
+    const durationMinutes = minutes != null && minutes > 0 && minutes <= 24 * 60 ? minutes : null;
     await patchSession({
       status: 'completed',
-      completed_at: new Date().toISOString(),
+      completed_at: completedAt.toISOString(),
+      duration_minutes: durationMinutes,
     });
     setMode('preview');
     // The chip row reads status from `overview` (a separate query), so

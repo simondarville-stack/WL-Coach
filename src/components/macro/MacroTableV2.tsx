@@ -459,9 +459,16 @@ export function MacroTableV2({
                   title="Double-click to focus chart"
                 >
                   <div className="flex items-center justify-between gap-0.5">
+                    {/* The reorder arrows sit inside the header cell, whose
+                        double-click focuses the chart. Without stopPropagation
+                        a double-click on an arrow fires BOTH — two reorders and
+                        a focus — which is how "double-click to focus" ended up
+                        reporting a position-collision error. */}
                     <button
-                      onClick={() => onMoveExerciseLeft(te.id)}
+                      onClick={(e) => { e.stopPropagation(); onMoveExerciseLeft(te.id); }}
+                      onDoubleClick={(e) => e.stopPropagation()}
                       disabled={idx === 0}
+                      title="Move column left"
                       className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 flex-shrink-0 p-0.5"
                     >
                       <ChevronLeft size={10} />
@@ -484,6 +491,7 @@ export function MacroTableV2({
                       {onToggleCollapse && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onToggleCollapse(te.id); }}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] p-0.5"
                           title="Collapse column"
                         >
@@ -492,6 +500,7 @@ export function MacroTableV2({
                       )}
                       {onToggleExpand && (
                         <button
+                          onDoubleClick={(e) => e.stopPropagation()}
                           onClick={(e) => { e.stopPropagation(); onToggleExpand(te.id); }}
                           className={`p-0.5 ${st.expanded ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)]'}`}
                           title={st.expanded ? 'Hide weekly notes' : 'Show weekly notes'}
@@ -500,14 +509,17 @@ export function MacroTableV2({
                         </button>
                       )}
                       <button
-                        onClick={() => onMoveExerciseRight(te.id)}
+                        onClick={(e) => { e.stopPropagation(); onMoveExerciseRight(te.id); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         disabled={idx === displayed.length - 1}
+                        title="Move column right"
                         className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 p-0.5"
                       >
                         <ChevronRight size={10} />
                       </button>
                       <button
-                        onClick={() => onRemoveExercise(te.id)}
+                        onClick={(e) => { e.stopPropagation(); onRemoveExercise(te.id); }}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-danger-text)] p-0.5"
                         title="Remove exercise"
                       >

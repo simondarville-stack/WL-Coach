@@ -11,6 +11,7 @@ import { ExerciseFormModal } from '../ExerciseFormModal';
 import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
+import { SourceBadge } from './SourceBadge';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { expandForCounting } from '../../lib/comboExpansion';
@@ -33,13 +34,13 @@ interface DayCardProps {
     weekPlanId: string,
     dayIndex: number,
     exerciseId: string,
-    position: number,
+    position: number | null,
     unit: DefaultUnit,
   ) => Promise<unknown>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
-    position: number,
+    position: number | null,
     data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
   ) => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -141,7 +142,7 @@ export function DayCard({
   async function handleAddExercise(exercise: Exercise) {
     setAdding(true);
     try {
-      await addExerciseToDay(weekPlanId, dayIndex, exercise.id, exercises.length + 1, exercise.default_unit);
+      await addExerciseToDay(weekPlanId, dayIndex, exercise.id, null, exercise.default_unit);
     } finally {
       setAdding(false);
     }
@@ -163,7 +164,7 @@ export function DayCard({
     try {
       const sentinel = await getOrCreateSentinel(code);
       if (!sentinel) return;
-      await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, exercises.length + 1, 'free_text');
+      await addExerciseToDay(weekPlanId, dayIndex, sentinel.id, null, 'free_text');
       await onRefresh();
     } finally {
       setAdding(false);
@@ -174,7 +175,7 @@ export function DayCard({
     const data = await createExercise(exerciseData);
     setShowNewExerciseModal(false);
     if (data) {
-      await addExerciseToDay(weekPlanId, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);
+      await addExerciseToDay(weekPlanId, dayIndex, data.id, null, data.default_unit as DefaultUnit);
       await onRefresh();
     }
   }
@@ -185,7 +186,7 @@ export function DayCard({
     comboName: string;
     color: string;
   }) {
-    await createComboExercise(weekPlanId, dayIndex, exercises.length + 1, data);
+    await createComboExercise(weekPlanId, dayIndex, null, data);
     await onRefresh();
     setShowComboModal(false);
   }
@@ -197,7 +198,7 @@ export function DayCard({
     if (members.length < 2) return;
     setAdding(true);
     try {
-      await createComboExercise(weekPlanId, dayIndex, exercises.length + 1, {
+      await createComboExercise(weekPlanId, dayIndex, null, {
         exercises: members.map((exercise, i) => ({ exercise, position: i + 1 })),
         unit: members[0].default_unit,
         comboName: '',
@@ -525,9 +526,12 @@ export function DayCard({
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                       {sentinel === 'text' ? (
-                        <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0 }}>
-                          {ex.notes || 'Free text…'}
-                        </p>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, minWidth: 0 }}>
+                          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0, flex: 1, minWidth: 0 }}>
+                            {ex.notes || 'Free text…'}
+                          </p>
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                        </div>
                       ) : sentinel === 'video' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <Video size={11} style={{ color: '#6366F1', flexShrink: 0 }} />
@@ -536,6 +540,7 @@ export function DayCard({
                             const thumb = getYouTubeThumbnail(ex.notes);
                             return thumb ? <img src={thumb} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} /> : null;
                           })()}
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                         </div>
                       ) : sentinel === 'image' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -544,6 +549,7 @@ export function DayCard({
                           {ex.notes && (
                             <img src={ex.notes} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                         </div>
                       ) : sentinel === 'gpp' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
@@ -557,6 +563,7 @@ export function DayCard({
                                 ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
                                 : 'click to edit'}
                             </span>
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
                           {ex.metadata?.gpp?.rows?.length ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 17 }}>
@@ -605,6 +612,7 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
                           {plannedNote(ex) && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
@@ -634,12 +642,7 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.exercise.name}
                             </span>
-                            {isLinkedToGroupPlan && ex.source === 'group' && (
-                              <span title="Group exercise" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(99,102,241,0.08)', color: '#6366F1', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>G</span>
-                            )}
-                            {isLinkedToGroupPlan && ex.source === 'individual' && (
-                              <span title="Individual override" style={{ fontSize: 'var(--text-caption)', padding: '2px 6px', background: 'rgba(245,158,11,0.08)', color: '#D97706', borderRadius: 'var(--radius-sm)', fontWeight: 600, flexShrink: 0 }}>I</span>
-                            )}
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
                           {plannedNote(ex) && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>

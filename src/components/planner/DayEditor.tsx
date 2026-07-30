@@ -14,6 +14,7 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { GppBlockEditor } from './GppBlockEditor';
+import { SourceBadge } from './SourceBadge';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { Button } from '../ui';
@@ -39,8 +40,9 @@ interface DayEditorProps {
   onClose: () => void;
   onNavigateToExercise: (exerciseId: string) => void;
   onRefresh: () => Promise<void>;
-  addExerciseToDay: (weekPlanId: string, dayIndex: number, exerciseId: string, position: number, unit: DefaultUnit) => Promise<unknown>;
-  createComboExercise: (weekPlanId: string, dayIndex: number, position: number, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
+  /** `position: null` appends (resolved from the DB); a number places explicitly. */
+  addExerciseToDay: (weekPlanId: string, dayIndex: number, exerciseId: string, position: number | null, unit: DefaultUnit) => Promise<unknown>;
+  createComboExercise: (weekPlanId: string, dayIndex: number, position: number | null, data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string }) => Promise<void>;
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   saveNotes: (id: string, notes: string) => Promise<unknown>;
   /** Persist a GPP block payload on a planned_exercise row (mirrors DayCard). */
@@ -96,6 +98,10 @@ export function DayEditor({
   const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const pendingSaveRef = useRef<Promise<unknown> | null>(null);
 
+  // Same rule as the day card: an individual plan that carries a source group
+  // plan shows the G / I origin markers.
+  const isLinkedToGroupPlan = !weekPlan.is_group_plan && !!weekPlan.source_group_plan_id;
+
   useEffect(() => {
     if (!macroContext) return;
     void loadMacroTargets();
@@ -149,7 +155,7 @@ export function DayEditor({
   async function handleAddExercise(exercise: Exercise) {
     setAdding(true);
     try {
-      await addExerciseToDay(weekPlan.id, dayIndex, exercise.id, exercises.length + 1, exercise.default_unit);
+      await addExerciseToDay(weekPlan.id, dayIndex, exercise.id, null, exercise.default_unit);
       await onRefresh();
     } finally {
       setAdding(false);
@@ -162,7 +168,7 @@ export function DayEditor({
     comboName: string;
     color: string;
   }) {
-    await createComboExercise(weekPlan.id, dayIndex, exercises.length + 1, data);
+    await createComboExercise(weekPlan.id, dayIndex, null, data);
     await onRefresh();
     setShowComboModal(false);
   }
@@ -174,7 +180,7 @@ export function DayEditor({
     if (members.length < 2) return;
     setAdding(true);
     try {
-      await createComboExercise(weekPlan.id, dayIndex, exercises.length + 1, {
+      await createComboExercise(weekPlan.id, dayIndex, null, {
         exercises: members.map((exercise, i) => ({ exercise, position: i + 1 })),
         unit: members[0].default_unit,
         comboName: '',
@@ -227,7 +233,7 @@ export function DayEditor({
     try {
       const sentinel = await getOrCreateSentinel(code);
       if (!sentinel) return;
-      await addExerciseToDay(weekPlan.id, dayIndex, sentinel.id, exercises.length + 1, 'free_text');
+      await addExerciseToDay(weekPlan.id, dayIndex, sentinel.id, null, 'free_text');
       await onRefresh();
     } finally {
       setAdding(false);
@@ -238,7 +244,7 @@ export function DayEditor({
     const data = await createExercise(exerciseData);
     setShowNewExerciseModal(false);
     if (data) {
-      await addExerciseToDay(weekPlan.id, dayIndex, data.id, exercises.length + 1, data.default_unit as DefaultUnit);
+      await addExerciseToDay(weekPlan.id, dayIndex, data.id, null, data.default_unit as DefaultUnit);
       await onRefresh();
     }
   }
@@ -414,6 +420,9 @@ export function DayEditor({
                       )}
                     </>
                   )}
+                  {/* One placement covers every row kind above — exercise,
+                      combo, GPP and the text/video/image sentinels. */}
+                  <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
                     {!sentinel && (ex.summary_total_sets != null && ex.summary_total_sets > 0) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-text-secondary)' }}>

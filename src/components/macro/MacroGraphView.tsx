@@ -16,6 +16,10 @@ interface MacroGraphViewProps {
   showReps: boolean;
   fillPreview?: FillGuidePreview | null;
   visibleGeneralSeries?: Set<string>;
+  avgLines: boolean;
+  onAvgLinesChange: (v: boolean) => void;
+  linkDrag: boolean;
+  onLinkDragChange: (v: boolean) => void;
   onDragWeekTarget?: (
     weekId: string,
     field: 'total_reps_target' | 'tonnage_target' | 'avg_intensity_target',
@@ -37,6 +41,10 @@ export function MacroGraphView({
   showReps,
   fillPreview,
   visibleGeneralSeries,
+  avgLines,
+  onAvgLinesChange,
+  linkDrag,
+  onLinkDragChange,
   onDragWeekTarget,
   onDragAnchor,
 }: MacroGraphViewProps) {
@@ -65,6 +73,10 @@ export function MacroGraphView({
       showReps={showReps}
       fillPreview={fillPreview}
       visibleGeneralSeries={visibleGeneralSeries}
+      avgLines={avgLines}
+      onAvgLinesChange={onAvgLinesChange}
+      linkDrag={linkDrag}
+      onLinkDragChange={onLinkDragChange}
       onDragWeekTarget={onDragWeekTarget}
       onDragAnchor={onDragAnchor}
     />

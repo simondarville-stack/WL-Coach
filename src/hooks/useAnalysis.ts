@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { weekState, type WeekState } from '../lib/weekUtils';
+import { findPhaseForWeek } from '../lib/macroPhases';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -189,14 +190,18 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       .order('week_start'),
     supabase
       .from('macro_weeks')
-      .select('week_start, week_number, week_type, week_type_text, total_reps_target, phase_id, macrocycle_id, macrocycles!inner(owner_id)')
+      .select('week_start, week_number, week_type, week_type_text, total_reps_target, macrocycle_id, macrocycles!inner(owner_id)')
       .eq('macrocycles.owner_id', hostOwnerId)
       .gte('week_start', startDate)
       .lte('week_start', endDate),
     supabase
       .from('macro_phases')
-      .select('id, name, color, macrocycle_id')
-      .eq('owner_id', hostOwnerId),
+      // start/end week numbers are what actually assigns a week to a phase —
+      // see lib/macroPhases. Ordered by position so overlapping ranges resolve
+      // in the coach's own order.
+      .select('id, name, color, macrocycle_id, start_week_number, end_week_number')
+      .eq('owner_id', hostOwnerId)
+      .order('position'),
     supabase
       .from('training_log_sessions')
       .select('id, date, week_start, raw_total, session_rpe, status')
@@ -336,7 +341,10 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
 
   // Macro week lookup
   const macroWeekByStart = new Map(macroWeeks.map(mw => [mw.week_start, mw]));
-  const macroPhaseMap = new Map((macroPhases as Array<{ id: string; name: string; color: string; macrocycle_id: string }>).map(p => [p.id, p]));
+  const phaseRanges = macroPhases as Array<{
+    id: string; name: string; color: string; macrocycle_id: string;
+    start_week_number: number; end_week_number: number;
+  }>;
 
   // Bodyweight by week
   const bwByWeek = new Map<string, number[]>();
@@ -358,7 +366,12 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
 
   return weeks.map(weekStart => {
     const macroWeek = macroWeekByStart.get(weekStart);
-    const phase = macroWeek?.phase_id ? macroPhaseMap.get(macroWeek.phase_id) : undefined;
+    // Resolve through the phase's week-number RANGE. This used to read
+    // macro_weeks.phase_id, which nothing writes — so `phase` was always
+    // undefined and the phase dimension came back empty for every week.
+    const phase = macroWeek
+      ? findPhaseForWeek(phaseRanges, macroWeek.macrocycle_id, macroWeek.week_number) ?? undefined
+      : undefined;
 
     const weekPlanId = weekPlanByWeekStart.get(weekStart);
     const pes = weekPlanId ? (plannedByWeekPlan.get(weekPlanId) ?? []) : [];

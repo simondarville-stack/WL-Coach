@@ -23,13 +23,13 @@ interface WeekOverviewProps {
     weekPlanId: string,
     dayIndex: number,
     exerciseId: string,
-    position: number,
+    position: number | null,
     unit: DefaultUnit,
   ) => Promise<unknown>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
-    position: number,
+    position: number | null,
     data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
   ) => Promise<void>;
   onRefresh: () => Promise<void>;

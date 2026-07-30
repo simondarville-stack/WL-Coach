@@ -38,6 +38,47 @@ export function useWeekPlans() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * The training-unit setup (which units exist, their names, order and
+   * calendar slots) of the latest week BEFORE `selectedDate` for the same
+   * athlete-or-group. Returns null when there is no earlier week — a first-ever
+   * week keeps the DB defaults.
+   *
+   * Only structure travels: no exercises, no week description. A week with an
+   * empty `active_days` is skipped so a deliberately blanked week doesn't
+   * propagate emptiness forward.
+   */
+  const fetchPreviousWeekRhythm = async (
+    selectedDate: string,
+    { type, athlete, group }: PlanSelection,
+  ): Promise<Pick<WeekPlan, 'active_days' | 'day_labels' | 'day_display_order' | 'day_schedule'> | null> => {
+    let query = supabase
+      .from('week_plans')
+      .select('active_days, day_labels, day_display_order, day_schedule')
+      .lt('week_start', selectedDate)
+      .order('week_start', { ascending: false })
+      .limit(1);
+
+    if (type === 'individual' && athlete) {
+      query = query.eq('athlete_id', athlete.id).is('group_id', null);
+    } else if (type === 'group' && group) {
+      query = query.eq('group_id', group.id).is('athlete_id', null);
+    } else {
+      return null;
+    }
+
+    const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    const prev = data as Pick<WeekPlan, 'active_days' | 'day_labels' | 'day_display_order' | 'day_schedule'>;
+    if (!prev.active_days?.length) return null;
+    return {
+      active_days: prev.active_days,
+      day_labels: prev.day_labels ?? null,
+      day_display_order: prev.day_display_order ?? null,
+      day_schedule: prev.day_schedule ?? null,
+    };
+  };
+
   const fetchOrCreateWeekPlan = async (selectedDate: string, planSelection: PlanSelection): Promise<WeekPlan | null> => {
     const { type, athlete, group } = planSelection;
     if (!athlete && !group) return null;
@@ -88,6 +129,14 @@ export function useWeekPlans() {
           insertData.group_id = group.id;
           insertData.athlete_id = null;
         }
+
+        // Inherit the training rhythm from the most recent earlier week of the
+        // same target. Without this every unplanned week fell back to the
+        // column default ARRAY[1,2,3,4,5], so a 3- or 9-unit athlete had to
+        // re-configure the units on every new week. The coach can still change
+        // it afterwards — that write simply overwrites these seeds.
+        const rhythm = await fetchPreviousWeekRhythm(selectedDate, planSelection);
+        if (rhythm) Object.assign(insertData, rhythm);
 
         const { data: newPlan, error: createError } = await supabase
           .from('week_plans')
@@ -364,18 +413,24 @@ export function useWeekPlans() {
     );
   };
 
-  const normalizePositions = async (weekPlanId: string, dayIndex: number) => {
-    const { data: exData } = await supabase
-      .from('planned_exercises')
-      .select('id, position')
-      .eq('weekplan_id', weekPlanId)
-      .eq('day_index', dayIndex)
-      .order('position');
-
-    const items = (exData || []).sort((a, b) => a.position - b.position);
-    await Promise.all(
-      items.map((item, i) => supabase.from('planned_exercises').update({ position: i + 1 }).eq('id', item.id))
-    );
+  /**
+   * Renumber a unit's exercises densely (1..n), preserving order.
+   *
+   * Runs as one atomic statement in the database (`normalize_planned_exercise_positions`)
+   * rather than a SELECT plus one UPDATE per row: the group sync calls this for
+   * every athlete × every day, and the old shape meant ~100 round trips and a
+   * half-renumbered day if any of them failed. Only rows whose number actually
+   * changes are written, so a clean day costs nothing.
+   *
+   * `dayIndex` omitted = every unit in the plan.
+   */
+  const normalizePositions = async (weekPlanId: string, dayIndex?: number): Promise<number> => {
+    const { data, error } = await supabase.rpc('normalize_planned_exercise_positions', {
+      p_weekplan_id: weekPlanId,
+      p_day_index: dayIndex ?? null,
+    });
+    if (error) throw error;
+    return data ?? 0;
   };
 
   // --- Set line operations ---
@@ -704,11 +759,34 @@ export function useWeekPlans() {
 
   // --- Day-level exercise operations (used by DayColumn) ---
 
+  /**
+   * Next free position at the end of a day, read from the DATABASE.
+   *
+   * Every append call site used to compute `exercises.length + 1` from the
+   * render's snapshot, so adding two exercises before the refetch landed gave
+   * both the same position. `planned_exercises` has no unique index on
+   * (weekplan_id, day_index, position), so that failed silently and left the
+   * day's order undefined — 19 such collisions existed in production, and the
+   * group sync faithfully copied the group plan's ones out to every athlete.
+   */
+  const nextPositionInDay = async (weekPlanId: string, dayIndex: number): Promise<number> => {
+    const { data } = await supabase
+      .from('planned_exercises')
+      .select('position')
+      .eq('weekplan_id', weekPlanId)
+      .eq('day_index', dayIndex)
+      .order('position', { ascending: false })
+      .limit(1);
+    return ((data?.[0]?.position as number | undefined) ?? 0) + 1;
+  };
+
   const addExerciseToDay = async (
     weekPlanId: string,
     dayIndex: number,
     exerciseId: string,
-    position: number,
+    /** null = append (position resolved from the DB — prefer this). An explicit
+     *  number is for the copy/paste/sync paths that place rows deliberately. */
+    position: number | null,
     unit: DefaultUnit,
     extras?: {
       prescription_raw?: string | null;
@@ -734,7 +812,7 @@ export function useWeekPlans() {
         weekplan_id: weekPlanId,
         day_index: dayIndex,
         exercise_id: exerciseId,
-        position,
+        position: position ?? await nextPositionInDay(weekPlanId, dayIndex),
         unit,
         summary_total_sets: extras?.summary_total_sets ?? 0,
         summary_total_reps: extras?.summary_total_reps ?? 0,
@@ -763,8 +841,12 @@ export function useWeekPlans() {
     weekPlanId: string,
     dayIndex: number,
     position: number,
+    /** Origin to stamp on the copy. A copy is a coach-placed row, so on an
+     *  individual plan it is 'individual' — not the source row's origin. */
+    source: 'group' | 'individual' | null = null,
   ): Promise<string> => {
     const newEx = await addExerciseToDay(weekPlanId, dayIndex, sourceEx.exercise_id, position, sourceEx.unit as DefaultUnit, {
+      source,
       prescription_raw: sourceEx.prescription_raw,
       notes: sourceEx.notes,
       variation_note: sourceEx.variation_note,
@@ -826,12 +908,17 @@ export function useWeekPlans() {
   const createComboExercise = async (
     weekPlanId: string,
     dayIndex: number,
-    position: number,
+    /** null = append; see addExerciseToDay. */
+    position: number | null,
     data: {
       exercises: { exercise: Exercise; position: number }[];
       unit: DefaultUnit;
       comboName: string;
       color: string;
+      /** 'individual' on an athlete plan — without it the combo is stamped
+       *  NULL, so it shows no G/I badge and the group sync neither protects
+       *  nor replaces it. */
+      source?: 'group' | 'individual' | null;
     },
   ): Promise<void> => {
     const autoNotation = data.exercises.map(e => e.exercise.name).join(' + ');
@@ -841,13 +928,14 @@ export function useWeekPlans() {
         weekplan_id: weekPlanId,
         day_index: dayIndex,
         exercise_id: data.exercises[0].exercise.id,
-        position,
+        position: position ?? await nextPositionInDay(weekPlanId, dayIndex),
         unit: data.unit,
         is_combo: true,
         combo_notation: data.comboName || autoNotation,
         combo_color: data.color,
         summary_total_sets: 0,
         summary_total_reps: 0,
+        source: data.source ?? null,
       })
       .select()
       .single();
@@ -924,9 +1012,10 @@ export function useWeekPlans() {
     targetWeekPlanId: string,
     targetDayIndex: number,
     basePosition: number,
+    source: 'group' | 'individual' | null = null,
   ): Promise<void> => {
     for (let i = 0; i < sourceExercises.length; i++) {
-      await copyExerciseWithSetLines(sourceExercises[i], targetWeekPlanId, targetDayIndex, basePosition + i);
+      await copyExerciseWithSetLines(sourceExercises[i], targetWeekPlanId, targetDayIndex, basePosition + i, source);
     }
   };
 
@@ -1119,6 +1208,20 @@ export function useWeekPlans() {
     // (see ownerByAthleteId below) — never as the active (possibly co-coach)
     // owner, which is what previously caused cross-owner duplicate-key aborts.
     const hostOwnerId: string = groupPlanMeta?.owner_id ?? getOwnerId();
+
+    // 0. Normalise the SOURCE before copying it.
+    //
+    // Per-athlete normalisation (step 4e) cannot repair a tie that exists in
+    // the GROUP plan: the copies are written in one batch insert, so they all
+    // share a single created_at (verified — 23 rows, 1 distinct timestamp).
+    // With position and created_at both equal, the tiebreak falls through to
+    // the row id, which is a random uuid per athlete — so the same group day
+    // would come out in a DIFFERENT order for each athlete. Fixing the source
+    // first is what makes the copies deterministic.
+    //
+    // Must run before the fetch below, or the in-memory copy carries the
+    // pre-normalisation positions.
+    await normalizePositions(groupPlanId);
 
     // 1. Fetch group plan exercises
     const { data: groupExercises, error: exError } = await supabase
@@ -1409,6 +1512,29 @@ export function useWeekPlans() {
           if (membersError) throw membersError;
         }
       }
+
+      // 4e. Renumber the athlete's units.
+      //
+      // The merge above mixes three sources of position numbers: individual
+      // overrides keep the athlete's own, logged-protected rows keep theirs,
+      // and fresh copies arrive carrying the GROUP plan's. Those are unrelated
+      // sequences, so they collide — and planned_exercises has no unique index
+      // on (weekplan_id, day_index, position), so a collision doesn't fail, it
+      // just makes the day's order arbitrary. Measured against real data, the
+      // next sync would have created 5 such ties.
+      //
+      // Two classes produce them. Logged-protected rows are the bigger one:
+      // they are deliberately left in place, at whatever number they had, while
+      // the rest of the day is rebuilt from the group's numbering. The second is
+      // a `source` of NULL — those rows survive the delete (which filters
+      // source='group') AND fail to suppress the incoming copy (the override
+      // check filters source='individual'), so a group row lands on top of them.
+      //
+      // Normalising here is the cheap, non-destructive fix — it never drops a
+      // row and never reorders against the intent, it only breaks ties
+      // deterministically. One statement per athlete, a no-op when the plan is
+      // already dense.
+      await normalizePositions(athletePlanId);
     }
   };
 

@@ -480,7 +480,7 @@ export async function applyTemplateDayToPlanDay(
   templateDayId: string,
   weekPlanId: string,
   targetDayIndex: number,
-  opts?: { replace?: boolean },
+  opts?: { replace?: boolean; source?: 'group' | 'individual' | null },
 ): Promise<void> {
   const { data: dayData, error: dayErr } = await supabase
     .from('program_template_days')
@@ -517,14 +517,23 @@ export async function applyTemplateDayToPlanDay(
     }
   }
 
-  // Compute base position after any clearing.
-  const { count, error: countErr } = await supabase
+  // Compute the base position after any clearing.
+  //
+  // This used to be `count ?? 0`, which was wrong twice over: positions are
+  // 1-based everywhere else, so applying to a CLEARED day produced a 0-based
+  // day (25 such rows existed in production), and appending to a day of n rows
+  // started at n — colliding with the row already there. Take the highest
+  // position actually present and go one past it, so both modes are correct
+  // and a gap in the existing numbering can't cause a collision either.
+  const { data: last, error: posErr } = await supabase
     .from('planned_exercises')
-    .select('id', { count: 'exact', head: true })
+    .select('position')
     .eq('weekplan_id', weekPlanId)
-    .eq('day_index', targetDayIndex);
-  if (countErr) throw countErr;
-  let nextPosition = count ?? 0;
+    .eq('day_index', targetDayIndex)
+    .order('position', { ascending: false })
+    .limit(1);
+  if (posErr) throw posErr;
+  let nextPosition = ((last?.[0]?.position as number | undefined) ?? 0) + 1;
 
   for (const ex of sortedExercises) {
     const { data: inserted, error: insErr } = await supabase
@@ -545,7 +554,12 @@ export async function applyTemplateDayToPlanDay(
         is_combo: ex.is_combo,
         combo_notation: ex.combo_notation,
         combo_color: ex.combo_color,
-        source: null,
+        // Stamped by the caller. Hardcoding null here meant a template applied
+        // to a group-synced athlete produced rows the sync neither deletes
+        // (it filters source='group') nor treats as an override (it filters
+        // source='individual') — so the group's copy landed beside them and
+        // the athlete saw the exercise twice, unbadged.
+        source: opts?.source ?? null,
       }])
       .select('id')
       .single();

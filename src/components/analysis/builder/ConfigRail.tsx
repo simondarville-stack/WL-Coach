@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { X, ChevronDown } from 'lucide-react';
-import { Select, SegmentedControl } from '../../ui';
+import { Select, SegmentedControl, DateInput } from '../../ui';
 import type { Agg, Dimension, Filter, MeasureState, MetricDef, Normalization, VizType } from '../../../lib/analysis';
 import { DIMENSIONS, dimLabel } from './dimensions';
 import type { BuilderState, ScopeMode } from './builderState';
@@ -103,11 +103,28 @@ export function ConfigRail({ state, set, metrics, athletes, groups, availableVal
             set({ scopeMode: mode as ScopeMode, windowDays: w ? Number(w) : state.windowDays });
           }}
         />
+        {/* EMOS's own Monday-first, day-first picker — the native date input
+            renders in the BROWSER's locale (Sunday-first, MM/DD/YYYY on an
+            en-US profile), which is wrong for this product. */}
         {state.scopeMode === 'custom' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-            <input type="date" value={state.from} onChange={(e) => set({ from: e.target.value })} className="emos-input" style={dateInput} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <DateInput
+                value={state.from}
+                onChange={(v) => set({ from: v })}
+                className="emos-input"
+                style={{ ...dateInput, paddingRight: 22 }}
+              />
+            </div>
             <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--text-caption)' }}>to</span>
-            <input type="date" value={state.to} onChange={(e) => set({ to: e.target.value })} className="emos-input" style={dateInput} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <DateInput
+                value={state.to}
+                onChange={(v) => set({ to: v })}
+                className="emos-input"
+                style={{ ...dateInput, paddingRight: 22 }}
+              />
+            </div>
           </div>
         )}
       </Section>

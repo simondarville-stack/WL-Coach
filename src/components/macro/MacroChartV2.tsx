@@ -4,7 +4,7 @@
  *
  * Core difference from the retired Recharts chart: dragging is POSITION-based.
  * The dragged point sits under the cursor — value = yInverse(pointerY),
- * snapped (2,5 kg loads, integer reps, 0,1 t tonnage) — instead of mapping a
+ * snapped (1 kg loads, integer reps, 0,1 t tonnage) — instead of mapping a
  * mouse delta onto a scaled range. Axis domains freeze while a drag is live so
  * the chart never shifts under the pointer, and re-fit on release.
  *
@@ -13,11 +13,16 @@
  * callbacks the table uses.
  *
  * Series: per-exercise Max (solid, draggable) and Avg (dashed, hollow dots,
- * draggable; Ctrl+drag on Max moves both by the same delta), grouped reps bars
- * on the right axis (draggable tops), faded actuals, the week-level general
- * targets (Σreps / tonnage in t / avg intensity — draggable, exercise-
- * independent), the fill-guide ghost overlay, and the guide's ◆ ramp anchors
- * (dragging them reshapes the pending fill live).
+ * draggable), grouped reps bars on the right axis (draggable tops), faded
+ * actuals, the week-level general targets (Σreps / tonnage in t / avg
+ * intensity — draggable, exercise-independent), the fill-guide ghost overlay,
+ * and the guide's ◆ ramp anchors (dragging them reshapes the pending fill
+ * live).
+ *
+ * "link drag" couples the Max and Avg of the SAME exercise: whichever of the
+ * two you drag, the other moves by the same delta so the exercise's spread is
+ * preserved. It never touches another exercise. Ctrl/⌘+drag does the same
+ * ad-hoc while the toggle is off.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
@@ -44,6 +49,12 @@ interface MacroChartV2Props {
   visibleGeneralSeries?: Set<string>;
   fillPreview?: FillGuidePreview | null;
   focusedExerciseId?: string | null;
+  /** Avg-line visibility — owned by the page so it persists with the macro. */
+  avgLines: boolean;
+  onAvgLinesChange: (v: boolean) => void;
+  /** Couple Max & Avg of the dragged exercise — persisted with the macro. */
+  linkDrag: boolean;
+  onLinkDragChange: (v: boolean) => void;
   onDragTarget: (weekId: string, trackedExId: string, field: keyof MacroTarget, value: number) => Promise<void>;
   onDragWeekTarget?: (
     weekId: string,
@@ -67,7 +78,8 @@ const GENERAL = {
 type GeneralKey = keyof typeof GENERAL;
 
 const fmt = (n: number): string => (Math.round(n * 10) / 10).toString().replace('.', ',');
-const snapKg = (v: number) => Math.round(v / 2.5) * 2.5;
+/** Loads snap to whole kilograms — coaches write plans in 1 kg steps. */
+const snapKg = (v: number) => Math.round(v);
 
 type SeriesKind = 'max' | 'avg' | 'reps';
 
@@ -79,10 +91,10 @@ interface DragInfo {
   genKey?: GeneralKey;
   anchorWhich?: 'from' | 'to';
   startValue?: number;
-  /** Ctrl+drag on Max: avg start value, moved by the same delta. */
-  ctrlAvgStart?: number | null;
-  /** Link drag: teId → start value for every other visible exercise at this week. */
-  linkStarts?: Record<string, number>;
+  /** Coupled series of the SAME exercise ('avg' when dragging Max and vice
+   *  versa) and its start value — moved by the same delta as the dragged one. */
+  partnerSeries?: 'max' | 'avg';
+  partnerStart?: number;
   frozen: { kgMin: number; kgMax: number; repsMax: number };
 }
 
@@ -97,6 +109,10 @@ export function MacroChartV2({
   visibleGeneralSeries,
   fillPreview,
   focusedExerciseId,
+  avgLines,
+  onAvgLinesChange,
+  linkDrag,
+  onLinkDragChange,
   onDragTarget,
   onDragWeekTarget,
   onDragAnchor,
@@ -104,8 +120,6 @@ export function MacroChartV2({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(720);
-  const [avgLines, setAvgLines] = useState(true);
-  const [linkDrag, setLinkDrag] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const dragRef = useRef<DragInfo | null>(null);
@@ -263,15 +277,19 @@ export function MacroChartV2({
       const kg = snapKg(yToKg(ev.clientY));
       next[oKey(drag.weekId!, `${drag.series}:${drag.teId}`)] = kg;
       const delta = kg - (drag.startValue ?? kg);
-      if (drag.series === 'max' && drag.ctrlAvgStart != null) {
-        next[oKey(drag.weekId!, `avg:${drag.teId}`)] = Math.max(0, snapKg(drag.ctrlAvgStart + delta));
+      // Coupled partner — the OTHER series of the same exercise, never another
+      // exercise. Keeps the max↔avg spread while the pair moves together.
+      if (drag.partnerSeries && drag.partnerStart != null) {
+        next[oKey(drag.weekId!, `${drag.partnerSeries}:${drag.teId}`)] =
+          Math.max(0, snapKg(drag.partnerStart + delta));
       }
-      if (drag.series === 'max' && drag.linkStarts) {
-        for (const [otherId, start] of Object.entries(drag.linkStarts)) {
-          next[oKey(drag.weekId!, `max:${otherId}`)] = Math.max(0, snapKg(start + delta));
-        }
-      }
-      setTooltip({ x: ev.clientX, y: ev.clientY, text: `${fmt(kg)} kg` });
+      setTooltip({
+        x: ev.clientX,
+        y: ev.clientY,
+        text: drag.partnerStart != null
+          ? `${fmt(kg)} kg · ${drag.partnerSeries} ${fmt(Math.max(0, snapKg(drag.partnerStart + delta)))} kg`
+          : `${fmt(kg)} kg`,
+      });
       return next;
     };
 
@@ -345,19 +363,21 @@ export function MacroChartV2({
 
   const startExerciseDrag = (e: React.PointerEvent, weekId: string, teId: string, series: SeriesKind) => {
     const startValue = getExValue(weekId, teId, series) ?? 0;
-    const ctrlAvgStart = series === 'max' && (e.ctrlKey || e.metaKey)
-      ? getExValue(weekId, teId, 'avg')
-      : null;
-    const linkStarts: Record<string, number> | undefined =
-      series === 'max' && linkDrag
-        ? Object.fromEntries(
-            trackedExercises
-              .filter(te => te.id !== teId)
-              .map(te => [te.id, getExValue(weekId, te.id, 'max')] as const)
-              .filter((entry): entry is [string, number] => entry[1] != null),
-          )
-        : undefined;
-    beginDrag(e, { kind: 'exercise', series, weekId, teId, startValue, ctrlAvgStart, linkStarts });
+    // Max and Avg of THIS exercise move together when "link drag" is on (or
+    // Ctrl/⌘ is held ad-hoc). Reps bars have no partner.
+    const coupled = (series === 'max' || series === 'avg') && (linkDrag || e.ctrlKey || e.metaKey);
+    const partnerSeries: 'max' | 'avg' | undefined = coupled
+      ? (series === 'max' ? 'avg' : 'max')
+      : undefined;
+    const partnerValue = partnerSeries ? getExValue(weekId, teId, partnerSeries) : null;
+    beginDrag(e, {
+      kind: 'exercise',
+      series,
+      weekId,
+      teId,
+      startValue,
+      ...(partnerSeries && partnerValue != null ? { partnerSeries, partnerStart: partnerValue } : {}),
+    });
   };
 
   // ── geometry helpers for series paths ───────────────────────────────────────
@@ -439,17 +459,17 @@ export function MacroChartV2({
         </div>
         <div className="flex items-center gap-3 text-[11px] text-gray-600">
           <label className="flex items-center gap-1 cursor-pointer select-none">
-            <input type="checkbox" checked={avgLines} onChange={e => setAvgLines(e.target.checked)} />
+            <input type="checkbox" checked={avgLines} onChange={e => onAvgLinesChange(e.target.checked)} />
             avg lines
           </label>
-          <label className="flex items-center gap-1 cursor-pointer select-none" title="Dragging a Max point moves every visible exercise by the same delta at that week">
-            <input type="checkbox" checked={linkDrag} onChange={e => setLinkDrag(e.target.checked)} />
-            <span className="font-medium">link drag</span>
+          <label className="flex items-center gap-1 cursor-pointer select-none" title="Dragging Max or Avg moves the other one of the SAME exercise by the same delta — other exercises are never touched">
+            <input type="checkbox" checked={linkDrag} onChange={e => onLinkDragChange(e.target.checked)} />
+            <span className="font-medium">link max &amp; avg</span>
           </label>
         </div>
       </div>
       <div className="px-3 pt-1 text-[10px] text-gray-400">
-        Drag points to write into the table — snaps to 2,5 kg · Ctrl+drag moves Max &amp; Avg together{fillPreview?.anchors ? ' · drag the ◆ anchors to reshape the pending fill' : ''}
+        Drag points to write into the table — snaps to 1 kg · Ctrl+drag links Max &amp; Avg of that exercise{fillPreview?.anchors ? ' · drag the ◆ anchors to reshape the pending fill' : ''}
       </div>
 
       <svg ref={svgRef} width={width} height={H} className="block select-none" style={{ touchAction: 'none' }}>
@@ -551,7 +571,7 @@ export function MacroChartV2({
                   style={{ cursor: 'ns-resize' }}
                   onPointerDown={e => startExerciseDrag(e, w.id, te.id, 'avg')}
                 >
-                  <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} avg: ${fmt(vals[i]!)} kg — drag to adjust`}</title>
+                  <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} avg: ${fmt(vals[i]!)} kg — drag (Ctrl = with max)`}</title>
                 </circle>
               ))}
             </g>
