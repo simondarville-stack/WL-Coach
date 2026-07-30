@@ -56,7 +56,7 @@ export function AthletesScreen() {
                 {groups.map((g, i) => (
                   <button
                     key={g.id}
-                    onClick={() => navigate(`/field/g/${g.id}?w=${weekStart}`)}
+                    onClick={() => navigate(`/Coach-overview/g/${g.id}?w=${weekStart}`)}
                     className={`w-full flex items-center justify-between px-3 py-2.5 text-left active:bg-gray-800/50 ${
                       i > 0 ? 'border-t border-gray-800/80' : ''
                     }`}
@@ -79,7 +79,7 @@ export function AthletesScreen() {
               {athletes.map((a, i) => (
                 <button
                   key={a.id}
-                  onClick={() => navigate(`/field/a/${a.id}?w=${weekStart}`)}
+                  onClick={() => navigate(`/Coach-overview/a/${a.id}?w=${weekStart}`)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 text-left active:bg-gray-800/50 ${
                     i > 0 ? 'border-t border-gray-800/80' : ''
                   }`}
