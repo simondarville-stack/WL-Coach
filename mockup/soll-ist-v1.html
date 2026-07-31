@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Soll–Ist Analysis (Prototype v1)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --success: #1c7c3c;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .muted { color: var(--text-3); }
+  .panel {
+    background: var(--bg-1); border: 1px solid var(--border-2);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px;
+  }
+
+  /* ---------- toolbar ---------- */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+  select, input[type=number], input[type=text] {
+    font: inherit; padding: 4px 7px; border: 1px solid var(--border-1);
+    border-radius: 4px; background: var(--bg-1); color: var(--text-1);
+  }
+  input[type=number] { width: 74px; text-align: right; }
+  select:focus, input:focus { outline: 2px solid var(--accent-light); border-color: var(--accent); }
+  .btn {
+    font: inherit; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--border-1); background: var(--bg-1); color: var(--text-1);
+  }
+  .btn:hover { background: var(--bg-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #134d87; }
+  .btn.small { padding: 3px 9px; font-size: 12px; }
+  .toggles { display: flex; gap: 12px; align-items: center; margin-left: auto; }
+  .toggles label { display: flex; gap: 5px; align-items: center; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+
+  .refbox { display: flex; gap: 10px; align-items: flex-end; padding: 8px 10px; background: var(--bg-2); border-radius: var(--radius); }
+  .refbox .sep { width: 1px; align-self: stretch; background: var(--border-1); margin: 0 4px; }
+  .pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; letter-spacing: .03em; }
+  .pill.sn { background: #e3ecf6; color: #185FA5; }
+  .pill.cj { background: #f3e8f0; color: #8d3b6e; }
+
+  /* ---------- table ---------- */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 4px 8px; border-bottom: 1px solid var(--border-2); text-align: right; white-space: nowrap; }
+  th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); font-weight: 600; border-bottom: 1px solid var(--border-1); }
+  th.grp { text-align: center; border-bottom: none; padding-bottom: 0; color: var(--text-2); }
+  td:first-child, th:first-child { text-align: left; }
+  td.ref-col, th.ref-col { text-align: center; }
+  tr.ref-row td { background: var(--accent-light); font-weight: 600; }
+  tbody tr:hover td { background: #f2f6fa; }
+  tr.ref-row:hover td { background: var(--accent-light); }
+  .est { color: var(--text-3); font-style: italic; }
+  .num-pos { color: var(--success); }
+  .num-neg { color: var(--danger); }
+  td input.ist {
+    width: 64px; text-align: right; border: 1px solid transparent; background: transparent;
+    font: inherit; padding: 1px 4px; border-radius: 3px;
+  }
+  td input.ist:hover { border-color: var(--border-1); }
+  td input.ist:focus { border-color: var(--accent); background: var(--bg-1); }
+  td input.ist.est-val { color: var(--text-3); font-style: italic; }
+  .colsep { border-left: 1px solid var(--border-1); }
+
+  .legend { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--text-3); flex-wrap: wrap; }
+  .legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+
+  /* ---------- wizard ---------- */
+  .overlay { position: fixed; inset: 0; background: rgba(20,28,40,.45); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .overlay.open { display: flex; }
+  .wizard { background: var(--bg-1); border-radius: 8px; width: 620px; max-width: 94vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  .wizard header { padding: 12px 16px; border-bottom: 1px solid var(--border-2); display: flex; justify-content: space-between; align-items: center; }
+  .wizard .steps { display: flex; gap: 4px; padding: 10px 16px 0; }
+  .wizard .step-chip { font-size: 11px; padding: 3px 10px; border-radius: 12px; background: var(--bg-2); color: var(--text-3); }
+  .wizard .step-chip.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .wizard .step-chip.done { background: var(--accent-light); color: var(--accent); }
+  .wizard .body { padding: 14px 16px; overflow-y: auto; flex: 1; }
+  .wizard footer { padding: 10px 16px; border-top: 1px solid var(--border-2); display: flex; justify-content: space-between; }
+  .cardrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .selcard { border: 1px solid var(--border-1); border-radius: var(--radius); padding: 8px 12px; cursor: pointer; min-width: 150px; }
+  .selcard:hover { border-color: var(--accent); }
+  .selcard.sel { border-color: var(--accent); background: var(--accent-light); }
+  .selcard .t { font-weight: 600; font-size: 12.5px; }
+  .selcard .d { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+  .wtable td, .wtable th { padding: 3px 6px; font-size: 12px; }
+  .wtable input[type=number] { width: 56px; padding: 2px 4px; font-size: 12px; }
+  .wtable input[type=checkbox] { accent-color: var(--accent); }
+
+  .toast {
+    position: fixed; bottom: 18px; right: 18px; background: var(--text-1); color: #fff;
+    padding: 8px 14px; border-radius: 6px; font-size: 12.5px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 99;
+  }
+  .toast.show { opacity: .93; }
+
+  .savedbar { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .no-print { display: none !important; }
+    .panel { border: none; padding: 0; }
+    th, td { padding: 3px 6px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="panel no-print" style="display:flex; align-items:center; gap:14px;">
+  <h1>Soll–Ist Analysis</h1>
+  <span class="muted">Analysis › Soll–Ist &nbsp;·&nbsp; prototype v1 &nbsp;·&nbsp; 31/07/2026</span>
+  <div class="savedbar" style="margin-left:auto;">
+    <span class="muted">Saved:</span>
+    <select id="savedSel">
+      <option>Anna — season goals 2026/27 (saved 28/07/2026)</option>
+      <option>Marcus — strength screen (saved 14/07/2026)</option>
+    </select>
+    <button class="btn small" onclick="toast('Prototype: would load the saved analysis')">Load</button>
+    <button class="btn small" onclick="toast('Analysis saved (prototype)')">Save</button>
+    <button class="btn small" onclick="window.print()">Print</button>
+    <button class="btn small primary" onclick="openWizard()">New analysis…</button>
+  </div>
+</div>
+
+<div class="panel no-print">
+  <div class="toolbar">
+    <div class="field">
+      <label>Athlete</label>
+      <select id="athleteSel" onchange="onAthleteChange()">
+        <option value="">— none (index 100) —</option>
+        <option value="anna" selected>Anna Jensen</option>
+        <option value="marcus">Marcus Lund</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <select id="modelSel" onchange="render()">
+        <option value="bvdg_senior" selected>BVDG Trainingsmittelkatalog — Senior</option>
+        <option value="bvdg_u23">BVDG Trainingsmittelkatalog — U23</option>
+        <option value="indiv_anna">Individual — Anna (saved 12/03/2026)</option>
+      </select>
+    </div>
+    <div class="refbox">
+      <div class="field"><label><span class="pill sn">SN</span> current</label><input type="number" id="curSn" step="0.5" onchange="render()"></div>
+      <div class="field"><label><span class="pill cj">C&amp;J</span> current</label><input type="number" id="curCj" step="0.5" onchange="render()"></div>
+      <div class="sep"></div>
+      <div class="field"><label><span class="pill sn">SN</span> goal</label><input type="number" id="goalSn" step="0.5" onchange="render()"></div>
+      <div class="field"><label><span class="pill cj">C&amp;J</span> goal</label><input type="number" id="goalCj" step="0.5" onchange="render()"></div>
+    </div>
+    <div class="toggles">
+      <label><input type="checkbox" id="tglHeat" checked onchange="render()"> Heatmap</label>
+      <label><input type="checkbox" id="tglDiff" checked onchange="render()"> Diff columns</label>
+      <label><input type="checkbox" id="tglSide" onchange="render()"> Side-by-side: textbook vs individual</label>
+      <button class="btn small" onclick="toast('Saved current ratios as “Individual — Anna (31/07/2026)” (prototype)')">Save Ist as individual model</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div id="tableWrap"></div>
+  <div class="legend no-print" id="legend"></div>
+</div>
+
+<!-- ================= wizard ================= -->
+<div class="overlay" id="wizOverlay">
+  <div class="wizard">
+    <header>
+      <strong>New Soll–Ist analysis</strong>
+      <button class="btn small" onclick="closeWizard()">✕</button>
+    </header>
+    <div class="steps" id="wizSteps"></div>
+    <div class="body" id="wizBody"></div>
+    <footer>
+      <button class="btn" id="wizBack" onclick="wizNav(-1)">Back</button>
+      <button class="btn primary" id="wizNext" onclick="wizNav(1)">Next</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================= sample data ======================= */
+// A model row: exercise, reference lift ('sn'|'cj'), index (% of ref), reps.
+const MODELS = {
+  bvdg_senior: {
+    name: 'BVDG Senior', kind: 'textbook',
+    rows: [
+      { ex: 'Snatch',                 ref: 'sn', index: 100, reps: 1, isRef: true },
+      { ex: 'Clean & Jerk',           ref: 'cj', index: 100, reps: 1, isRef: true },
+      { ex: 'Power snatch',           ref: 'sn', index: 80,  reps: 1 },
+      { ex: 'Power clean',            ref: 'cj', index: 80,  reps: 1 },
+      { ex: 'Snatch pull',            ref: 'sn', index: 108, reps: 1 },
+      { ex: 'Clean pull',             ref: 'cj', index: 105, reps: 1 },
+      { ex: 'Snatch-grip deadlift',   ref: 'sn', index: 130, reps: 1 },
+      { ex: 'Clean-grip deadlift',    ref: 'cj', index: 125, reps: 1 },
+      { ex: 'Snatch balance',         ref: 'sn', index: 110, reps: 1 },
+      { ex: 'Front squat',            ref: 'cj', index: 105, reps: 3 },
+      { ex: 'Back squat',             ref: 'cj', index: 120, reps: 3 },
+      { ex: 'Push press',             ref: 'cj', index: 65,  reps: 1 },
+    ],
+  },
+  bvdg_u23: {
+    name: 'BVDG U23', kind: 'textbook',
+    rows: [
+      { ex: 'Snatch',                 ref: 'sn', index: 100, reps: 1, isRef: true },
+      { ex: 'Clean & Jerk',           ref: 'cj', index: 100, reps: 1, isRef: true },
+      { ex: 'Power snatch',           ref: 'sn', index: 90,  reps: 1 },
+      { ex: 'Power clean',            ref: 'cj', index: 85,  reps: 1 },
+      { ex: 'Snatch pull',            ref: 'sn', index: 108, reps: 1 },
+      { ex: 'Clean pull',             ref: 'cj', index: 105, reps: 1 },
+      { ex: 'Snatch-grip deadlift',   ref: 'sn', index: 125, reps: 1 },
+      { ex: 'Clean-grip deadlift',    ref: 'cj', index: 125, reps: 1 },
+      { ex: 'Snatch balance',         ref: 'sn', index: 110, reps: 1 },
+      { ex: 'Front squat',            ref: 'cj', index: 105, reps: 3 },
+      { ex: 'Back squat',             ref: 'cj', index: 120, reps: 3 },
+      { ex: 'Push press',             ref: 'cj', index: 65,  reps: 1 },
+    ],
+  },
+  indiv_anna: {
+    name: 'Individual — Anna', kind: 'individual',
+    rows: [
+      { ex: 'Snatch',                 ref: 'sn', index: 100, reps: 1, isRef: true },
+      { ex: 'Clean & Jerk',           ref: 'cj', index: 100, reps: 1, isRef: true },
+      { ex: 'Power snatch',           ref: 'sn', index: 85,  reps: 1 },
+      { ex: 'Power clean',            ref: 'cj', index: 82,  reps: 1 },
+      { ex: 'Snatch pull',            ref: 'sn', index: 114, reps: 1 },
+      { ex: 'Clean pull',             ref: 'cj', index: 104, reps: 1 },
+      { ex: 'Snatch-grip deadlift',   ref: 'sn', index: 135, reps: 1 },
+      { ex: 'Clean-grip deadlift',    ref: 'cj', index: 122, reps: 1 },
+      { ex: 'Snatch balance',         ref: 'sn', index: 103, reps: 1 },
+      { ex: 'Front squat',            ref: 'cj', index: 102, reps: 3 },
+      { ex: 'Back squat',             ref: 'cj', index: 113, reps: 3 },
+      { ex: 'Push press',             ref: 'cj', index: 62,  reps: 1 },
+    ],
+  },
+};
+
+// Athlete PRs per (exercise, reps): { v: kg, est: bool } — est = estimated
+// rep-max (phantom) from the PR table, not an actual lift.
+const ATHLETES = {
+  anna: {
+    name: 'Anna Jensen', sn: 92, cj: 113,
+    prs: {
+      'Snatch|1': { v: 92, est: false },  'Clean & Jerk|1': { v: 113, est: false },
+      'Power snatch|1': { v: 78, est: false }, 'Power clean|1': { v: 93, est: true },
+      'Snatch pull|1': { v: 105, est: false }, 'Clean pull|1': { v: 118, est: false },
+      'Snatch-grip deadlift|1': { v: 122, est: true }, 'Clean-grip deadlift|1': { v: 138, est: false },
+      'Snatch balance|1': { v: 95, est: false }, 'Front squat|3': { v: 115, est: true },
+      'Back squat|3': { v: 128, est: false }, 'Push press|1': { v: 70, est: false },
+    },
+  },
+  marcus: {
+    name: 'Marcus Lund', sn: 121, cj: 148,
+    prs: {
+      'Snatch|1': { v: 121, est: false }, 'Clean & Jerk|1': { v: 148, est: false },
+      'Power snatch|1': { v: 104, est: false }, 'Power clean|1': { v: 121, est: true },
+      'Snatch pull|1': { v: 128, est: true }, 'Clean pull|1': { v: 152, est: false },
+      'Snatch-grip deadlift|1': { v: 150, est: true }, 'Clean-grip deadlift|1': { v: 175, est: true },
+      'Snatch balance|1': { v: 125, est: false }, 'Front squat|3': { v: 155, est: false },
+      'Back squat|3': { v: 170, est: false }, 'Push press|1': { v: 92, est: true },
+    },
+  },
+};
+
+// Coach overrides typed into the Ist column: key -> kg
+let istOverrides = {};
+
+/* ======================= helpers ======================= */
+const $ = (id) => document.getElementById(id);
+const round05 = (x) => Math.round(x * 2) / 2;
+const fmt = (x, d = 1) => x == null ? '–' :
+  round05(x).toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: d });
+
+function heatColor(pct) {
+  // pct = Ist as % of Soll. 100+ = green, fades to red at 85.
+  if (pct == null) return '';
+  const t = Math.max(0, Math.min(1, (pct - 85) / 15)); // 85% → 0, 100% → 1
+  if (pct >= 100) return 'rgba(28,124,60,.16)';
+  const r = 200 - 60 * t, g = 60 + 120 * t;
+  return `rgba(${r|0}, ${g|0}, 60, ${0.22 - 0.10 * t})`;
+}
+
+function currentAthlete() { const id = $('athleteSel').value; return id ? ATHLETES[id] : null; }
+
+function istFor(athlete, row) {
+  const key = row.ex + '|' + row.reps;
+  if (istOverrides[key] != null) return { v: istOverrides[key], est: false, edited: true };
+  if (!athlete) return null;
+  const pr = athlete.prs[key];
+  return pr ? { ...pr, edited: false } : null;
+}
+
+/* ======================= render ======================= */
+function onAthleteChange() {
+  istOverrides = {};
+  const a = currentAthlete();
+  $('curSn').value = a ? a.sn : 100;
+  $('curCj').value = a ? a.cj : 100;
+  $('goalSn').value = a ? round05(a.sn * 1.03) : 105;
+  $('goalCj').value = a ? round05(a.cj * 1.03) : 105;
+  render();
+}
+
+function render() {
+  const model = MODELS[$('modelSel').value];
+  const athlete = currentAthlete();
+  const heat = $('tglHeat').checked, diff = $('tglDiff').checked, side = $('tglSide').checked;
+  const curSn = +$('curSn').value || 0, curCj = +$('curCj').value || 0;
+  const goalSn = +$('goalSn').value || 0, goalCj = +$('goalCj').value || 0;
+
+  // side-by-side pairs the chosen textbook model with the individual model
+  const model2 = side ? MODELS['indiv_anna'] : null;
+
+  let h = '<table><thead>';
+  if (side) {
+    h += `<tr>
+      <th colspan="4"></th>
+      <th colspan="${diff ? 3 : 2}" class="grp colsep">${model.name}</th>
+      <th colspan="${diff ? 3 : 2}" class="grp colsep">${model2.name}</th>
+      <th colspan="2" class="grp colsep">Goal (${model.name})</th></tr>`;
+  }
+  h += '<tr><th>Exercise</th><th class="ref-col">Ref</th><th>Reps</th>';
+  if (side) {
+    h += '<th>Ist kg</th>';
+    h += `<th class="colsep">Index %</th><th>Soll kg</th>`;
+    if (diff) h += '<th>Δ %</th>';
+    h += `<th class="colsep">Index %</th><th>Soll kg</th>`;
+    if (diff) h += '<th>Δ %</th>';
+  } else {
+    h += `<th class="colsep">Index %</th><th>Soll kg</th><th>Ist kg</th>`;
+    if (diff) h += '<th>Δ kg</th><th>Δ %</th>';
+  }
+  h += `<th class="colsep">Target kg</th><th>To go</th></tr></thead><tbody>`;
+
+  for (const row of model.rows) {
+    const ref = row.ref === 'sn' ? curSn : curCj;
+    const goalRef = row.ref === 'sn' ? goalSn : goalCj;
+    const soll = ref * row.index / 100;
+    const target = goalRef * row.index / 100;
+    const ist = istFor(athlete, row);
+    const istV = ist ? ist.v : (athlete ? null : soll); // no athlete → pure index sheet
+    const dKg = istV != null ? istV - soll : null;
+    const dPct = istV != null && soll > 0 ? istV / soll * 100 : null;
+    const togo = istV != null ? target - istV : null;
+
+    const heatStyle = heat && athlete && dPct != null && !row.isRef ? ` style="background:${heatColor(dPct)}"` : '';
+
+    // shared: editable Ist cell (input when an athlete is selected)
+    const istCell = (style) => {
+      if (athlete && !row.isRef) {
+        const key = row.ex + '|' + row.reps;
+        const cls = ist && ist.est && !ist.edited ? 'ist est-val' : 'ist';
+        const pref = ist && ist.est && !ist.edited ? '≈' : '';
+        return `<td${style}><input class="${cls}" type="text" value="${ist ? pref + fmt(ist.v) : ''}" placeholder="–"
+                 onchange="editIst('${key.replace(/'/g, "\\'")}', this.value)" title="${ist && ist.est ? 'Estimated from PR table (no real ' + row.reps + 'RM logged) — click to override' : 'From PR table — click to override'}"></td>`;
+      }
+      return `<td${style}>${row.isRef ? fmt(ref) : fmt(istV)}</td>`;
+    };
+    const dPctCell = (pct) =>
+      `<td class="${pct >= 100 ? 'num-pos' : 'num-neg'}">${pct == null || row.isRef ? '–' : fmt(pct, 0) + ' %'}</td>`;
+
+    h += `<tr class="${row.isRef ? 'ref-row' : ''}">`;
+    h += `<td>${row.ex}</td>`;
+    h += `<td class="ref-col"><span class="pill ${row.ref}">${row.ref === 'sn' ? 'SN' : 'C&J'}</span></td>`;
+    h += `<td>${row.reps > 1 ? '×' + row.reps : '1'}</td>`;
+    if (side) {
+      const r2 = model2.rows.find(r => r.ex === row.ex);
+      const soll2 = r2 ? ref * r2.index / 100 : null;
+      const dPct2 = istV != null && soll2 ? istV / soll2 * 100 : null;
+      const heat2 = heat && athlete && dPct2 != null && !row.isRef ? ` style="background:${heatColor(dPct2)}"` : '';
+      h += istCell('');
+      h += `<td class="colsep">${fmt(row.index, 0)}</td><td${heatStyle}>${fmt(soll)}</td>`;
+      if (diff) h += dPctCell(dPct);
+      h += `<td class="colsep">${r2 ? fmt(r2.index, 0) : '–'}</td><td${heat2}>${fmt(soll2)}</td>`;
+      if (diff) h += dPctCell(dPct2);
+    } else {
+      h += `<td class="colsep">${fmt(row.index, 0)}</td>`;
+      h += `<td>${fmt(soll)}</td>`;
+      h += istCell(heatStyle);
+      if (diff) {
+        h += `<td class="${dKg > 0.25 ? 'num-pos' : dKg < -0.25 ? 'num-neg' : ''}">${dKg == null || row.isRef ? '–' : (dKg > 0 ? '+' : '') + fmt(dKg)}</td>`;
+        h += dPctCell(dPct);
+      }
+    }
+    h += `<td class="colsep">${fmt(target)}</td>`;
+    h += `<td class="${togo != null && togo <= 0 ? 'num-pos' : ''}">${togo == null ? '–' : togo <= 0 ? '✓ done' : '+' + fmt(togo)}</td>`;
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  $('tableWrap').innerHTML = h;
+
+  $('legend').innerHTML = athlete
+    ? `<span><span class="sw" style="background:rgba(28,124,60,.16)"></span>Ist ≥ Soll (strength)</span>
+       <span><span class="sw" style="background:rgba(200,60,60,.18)"></span>Ist &lt; Soll (weakness, redder = larger gap)</span>
+       <span><em>≈ italic</em> = estimated rep-max from the PR table (no real ${''}entry at that rep count) — click any Ist cell to override</span>
+       <span><strong>Target</strong> = index × goal reference · <strong>To go</strong> = Target − Ist</span>`
+    : `<span>No athlete selected — sheet shows the pure model with reference = 100. Select an athlete to compare against PRs.</span>`;
+}
+
+function editIst(key, raw) {
+  const v = parseFloat(String(raw).replace('≈', '').replace(',', '.'));
+  if (isNaN(v)) delete istOverrides[key]; else istOverrides[key] = v;
+  render();
+}
+
+/* ======================= wizard ======================= */
+const WIZ_STEPS = ['Athlete', 'Model', 'Exercises', 'References & goals'];
+let wizStep = 0;
+let wiz = { athlete: 'anna', model: 'bvdg_senior' };
+
+function openWizard() { wizStep = 0; $('wizOverlay').classList.add('open'); renderWizard(); }
+function closeWizard() { $('wizOverlay').classList.remove('open'); }
+function wizNav(dir) {
+  if (wizStep + dir >= WIZ_STEPS.length) {
+    // finish → apply selections to the sheet
+    $('athleteSel').value = wiz.athlete || '';
+    $('modelSel').value = wiz.model;
+    onAthleteChange();
+    closeWizard();
+    toast('Analysis created from wizard');
+    return;
+  }
+  wizStep = Math.max(0, wizStep + dir);
+  renderWizard();
+}
+
+function renderWizard() {
+  $('wizSteps').innerHTML = WIZ_STEPS.map((s, i) =>
+    `<span class="step-chip ${i === wizStep ? 'active' : i < wizStep ? 'done' : ''}">${i + 1} · ${s}</span>`).join('');
+  $('wizBack').style.visibility = wizStep === 0 ? 'hidden' : 'visible';
+  $('wizNext').textContent = wizStep === WIZ_STEPS.length - 1 ? 'Create analysis' : 'Next';
+
+  let b = '';
+  if (wizStep === 0) {
+    b = `<p class="muted" style="margin-top:0">Who is this analysis for? Without an athlete the sheet is a pure model table (reference = 100).</p>
+      <div class="cardrow">
+        ${card('athlete', '', 'No athlete', 'Index sheet — reference = 100')}
+        ${card('athlete', 'anna', 'Anna Jensen', 'SN 92 · C&J 113 · 14 PRs')}
+        ${card('athlete', 'marcus', 'Marcus Lund', 'SN 121 · C&J 148 · 9 PRs')}
+      </div>`;
+  } else if (wizStep === 1) {
+    b = `<p class="muted" style="margin-top:0">Pick the reference model. Textbook models ship with EMOS; individual models are saved from an athlete's actual ratios. You can also import a template (CSV) or start blank.</p>
+      <div class="cardrow">
+        ${card('model', 'bvdg_senior', 'BVDG — Senior', 'Trainingsmittelkatalog, 12 exercises')}
+        ${card('model', 'bvdg_u23', 'BVDG — U23', 'Trainingsmittelkatalog, 12 exercises')}
+        ${card('model', 'indiv_anna', 'Individual — Anna', 'Saved 12/03/2026 from actual ratios')}
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="btn small" onclick="toast('Prototype: CSV template import')">Import template (CSV)…</button>
+        <button class="btn small" onclick="toast('Prototype: start from empty model')">Start blank</button>
+      </div>`;
+  } else if (wizStep === 2) {
+    const rows = MODELS[wiz.model].rows.filter(r => !r.isRef);
+    b = `<p class="muted" style="margin-top:0">Choose the exercises to compare and adjust index / reps / reference lift per row.</p>
+      <table class="wtable"><thead><tr><th></th><th style="text-align:left">Exercise</th><th>Ref</th><th>Index %</th><th>Reps</th></tr></thead><tbody>
+      ${rows.map(r => `<tr>
+        <td><input type="checkbox" checked></td>
+        <td style="text-align:left">${r.ex}</td>
+        <td><select style="font-size:12px;padding:1px 3px"><option ${r.ref === 'sn' ? 'selected' : ''}>SN</option><option ${r.ref === 'cj' ? 'selected' : ''}>C&J</option></select></td>
+        <td><input type="number" value="${r.index}"></td>
+        <td><input type="number" value="${r.reps}" style="width:44px"></td>
+      </tr>`).join('')}
+      </tbody></table>
+      <button class="btn small" style="margin-top:8px" onclick="toast('Prototype: add exercise from catalogue')">+ Add exercise from catalogue…</button>`;
+  } else {
+    const a = wiz.athlete ? ATHLETES[wiz.athlete] : null;
+    b = `<p class="muted" style="margin-top:0">Current reference values are suggested from the athlete's PR table — override if the coach knows better. Goals drive the Target column.</p>
+      <table class="wtable" style="width:auto"><tbody>
+        <tr><td style="text-align:left"><span class="pill sn">SN</span> current</td><td><input type="number" value="${a ? a.sn : 100}"></td>
+            <td style="text-align:left; padding-left:18px"><span class="pill sn">SN</span> goal</td><td><input type="number" value="${a ? round05(a.sn * 1.03) : 105}"></td></tr>
+        <tr><td style="text-align:left"><span class="pill cj">C&J</span> current</td><td><input type="number" value="${a ? a.cj : 100}"></td>
+            <td style="text-align:left; padding-left:18px"><span class="pill cj">C&J</span> goal</td><td><input type="number" value="${a ? round05(a.cj * 1.03) : 105}"></td></tr>
+      </tbody></table>
+      ${a ? `<p class="muted">Suggested from PRs: SN ${fmt(a.sn)} (real 1RM) · C&J ${fmt(a.cj)} (real 1RM).</p>` : ''}`;
+  }
+  $('wizBody').innerHTML = b;
+}
+
+function card(field, val, title, desc) {
+  const sel = (wiz[field] ?? '') === val;
+  return `<div class="selcard ${sel ? 'sel' : ''}" onclick="wiz['${field}']='${val}';renderWizard()">
+    <div class="t">${title}</div><div class="d">${desc}</div></div>`;
+}
+
+/* ======================= misc ======================= */
+let toastTimer;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+onAthleteChange();
+</script>
+</body>
+</html>

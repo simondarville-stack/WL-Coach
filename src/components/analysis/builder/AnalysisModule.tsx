@@ -19,6 +19,7 @@ import { DrillPanel } from './DrillPanel';
 import { MetricsModal } from './MetricsModal';
 import { SaveViewModal } from './SaveViewModal';
 import { MonitoringView } from './MonitoringView';
+import { SollIstView } from '../sollist/SollIstView';
 import { useRunQuery } from './useRunQuery';
 import { buildQuery, defaultBuilderState, isMultiSubject, normalizeMetrics, previousScope, VIZ_LABEL, type BuilderState } from './builderState';
 import type { Normalization, VizType } from '../../../lib/analysis';
@@ -53,7 +54,7 @@ export function AnalysisModule() {
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
   const [saveOpen, setSaveOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [mode, setMode] = useState<'build' | 'monitor'>('build');
+  const [mode, setMode] = useState<'build' | 'monitor' | 'sollist'>('build');
   // "Pristine" until the coach touches the builder — drives the quick-start strip.
   const [touched, setTouched] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -203,23 +204,26 @@ export function AnalysisModule() {
                 <Badge variant="info">Normalized · {NORM_LABEL[state.normalization]}</Badge>
               )}
               <div style={{ display: 'flex', gap: 2, marginLeft: 'var(--space-sm)' }}>
-                {(['build', 'monitor'] as const).map((m) => (
+                {([
+                  { id: 'build', label: 'Build' },
+                  { id: 'monitor', label: 'Monitor' },
+                  { id: 'sollist', label: 'Soll–Ist' },
+                ] as const).map((m) => (
                   <button
-                    key={m}
-                    onClick={() => setMode(m)}
+                    key={m.id}
+                    onClick={() => setMode(m.id)}
                     className="emos-btn"
                     style={{
                       padding: '4px 10px',
                       fontSize: 'var(--text-caption)',
                       borderRadius: 'var(--radius-md)',
-                      background: mode === m ? 'var(--color-accent)' : 'transparent',
-                      color: mode === m ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
-                      border: mode === m ? 'none' : '0.5px solid var(--color-border-secondary)',
-                      fontWeight: mode === m ? 500 : 400,
-                      textTransform: 'capitalize',
+                      background: mode === m.id ? 'var(--color-accent)' : 'transparent',
+                      color: mode === m.id ? 'var(--color-text-on-accent)' : 'var(--color-text-secondary)',
+                      border: mode === m.id ? 'none' : '0.5px solid var(--color-border-secondary)',
+                      fontWeight: mode === m.id ? 500 : 400,
                     }}
                   >
-                    {m}
+                    {m.label}
                   </button>
                 ))}
               </div>
@@ -302,6 +306,8 @@ export function AnalysisModule() {
 
           {mode === 'monitor' ? (
             <MonitoringView baseQuery={query} enabled={hasSubject} />
+          ) : mode === 'sollist' ? (
+            <SollIstView athletes={athletes} initialAthleteId={state.athleteIds.length === 1 ? state.athleteIds[0] : null} />
           ) : (
           <div ref={resultRef} className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
             {!touched && (

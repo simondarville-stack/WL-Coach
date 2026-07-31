@@ -917,6 +917,48 @@ export interface TrainingGroupCollaborator {
   created_at: string;
 }
 
+/* ---- Soll–Ist analysis (sollist_*). Domain-facing shapes live in
+ * src/lib/sollIst.ts; these are the raw table rows. ---- */
+export interface SollIstModelDbRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  kind: 'individual' | 'custom';
+  athlete_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SollIstModelRowDbRow {
+  id: string;
+  model_id: string;
+  exercise_id: string;
+  ref_slot: 'snatch' | 'clean_and_jerk';
+  index_pct: number;
+  reps: number;
+  display_order: number | null;
+}
+
+export interface SollIstAnalysisDbRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  athlete_id: string | null;
+  model_id: string | null;
+  preset_key: string | null;
+  ref_sn_exercise_id: string | null;
+  ref_cj_exercise_id: string | null;
+  current_sn: number | null;
+  current_cj: number | null;
+  goal_sn: number | null;
+  goal_cj: number | null;
+  ist_overrides: Record<string, number>;
+  options: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -1014,6 +1056,24 @@ export interface Database {
         Row: MacroTemplateDbRow & Record<string, unknown>;
         Insert: Partial<Omit<MacroTemplateDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Update: Partial<Omit<MacroTemplateDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      sollist_models: {
+        Row: SollIstModelDbRow & Record<string, unknown>;
+        Insert: Partial<Omit<SollIstModelDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<SollIstModelDbRow, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      sollist_model_rows: {
+        Row: SollIstModelRowDbRow & Record<string, unknown>;
+        Insert: Partial<Omit<SollIstModelRowDbRow, 'id'>> & Record<string, unknown>;
+        Update: Partial<Omit<SollIstModelRowDbRow, 'id'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      sollist_analyses: {
+        Row: SollIstAnalysisDbRow & Record<string, unknown>;
+        Insert: Partial<Omit<SollIstAnalysisDbRow, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<SollIstAnalysisDbRow, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       general_settings: {
