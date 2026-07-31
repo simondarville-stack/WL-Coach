@@ -30,8 +30,10 @@ import {
   type SollIstRow,
 } from '../../../lib/sollIst';
 import { modelToCsv } from '../../../lib/sollIstCsv';
+import { addExerciseAlias, isKnownAs } from '../../../lib/exerciseAliases';
 import { formatDateToDDMMYYYY, toLocalISO } from '../../../lib/dateUtils';
 import { downloadText } from '../builder/exportUtils';
+import { ExerciseSearch } from '../../planner/ExerciseSearch';
 import { SollIstTable } from './SollIstTable';
 import { SollIstWizard, type WizardResult } from './SollIstWizard';
 import {
@@ -69,7 +71,7 @@ const capStyle: React.CSSProperties = {
 };
 
 export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
-  const { exercises, categories, fetchExercises, fetchCategories } = useExerciseStore();
+  const { exercises, categories, fetchExercises, fetchCategories, setExercises } = useExerciseStore();
   const [sheet, setSheet] = useState<SheetState>(() => ({ ...emptySheet(), athleteId: initialAthleteId }));
   const [models, setModels] = useState<SollIstModel[]>([]);
   const [analyses, setAnalyses] = useState<SollIstAnalysisRecord[]>([]);
@@ -222,11 +224,34 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     });
   }, []);
 
+  // Alias memory: repointing a previously-unmapped row teaches the source
+  // label (the preset's/CSV's name) to the chosen exercise, so the same
+  // label resolves automatically next time. Fire-and-forget: an alias write
+  // failure never blocks the repoint itself.
+  const learnAlias = useCallback(
+    (exerciseId: string, sourceLabel: string) => {
+      const ex = exercises.find((e) => e.id === exerciseId);
+      if (!ex || isKnownAs(ex, sourceLabel)) return;
+      void addExerciseAlias(ex, sourceLabel)
+        .then((aliases) => {
+          const current = useExerciseStore.getState().exercises;
+          setExercises(current.map((e) => (e.id === ex.id ? { ...e, aliases } : e)));
+          flash(`Alias remembered: “${sourceLabel}” → ${ex.name}`);
+        })
+        .catch(() => undefined);
+    },
+    [exercises, setExercises],
+  );
+
   // Inline model editing: rows are identified by object reference — computed
   // rows wrap the exact objects held in sheet.rows.
-  const onEditRow = useCallback((row: SollIstRow, patch: Partial<SollIstRow>) => {
-    setSheet((s) => ({ ...s, rows: s.rows.map((r) => (r === row ? { ...r, ...patch } : r)) }));
-  }, []);
+  const onEditRow = useCallback(
+    (row: SollIstRow, patch: Partial<SollIstRow>) => {
+      if (row.exerciseId == null && patch.exerciseId != null) learnAlias(patch.exerciseId, row.label);
+      setSheet((s) => ({ ...s, rows: s.rows.map((r) => (r === row ? { ...r, ...patch } : r)) }));
+    },
+    [learnAlias],
+  );
 
   const onRemoveRow = useCallback((row: SollIstRow) => {
     setSheet((s) => ({ ...s, rows: s.rows.filter((r) => r !== row) }));
@@ -610,15 +635,11 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
             </Select>
           </div>
         </label>
-        <div style={{ width: 200 }}>
-          <Select value="" onChange={(e) => e.target.value && addRow(e.target.value)} title="Append an exercise to the sheet (index 100 on the first reference — adjust inline)">
-            <option value="">+ Add exercise…</option>
-            {sortedExercises.map((ex) => (
-              <option key={ex.id} value={ex.id}>
-                {ex.name}
-              </option>
-            ))}
-          </Select>
+        <div
+          style={{ width: 230, border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-primary)' }}
+          title="Append an exercise to the sheet (index 100 on the first reference — adjust inline)"
+        >
+          <ExerciseSearch exercises={exercises} onAdd={(ex) => addRow(ex.id)} disableSlashCommands dropUp={false} placeholder="Add exercise…" />
         </div>
         {viewActive && (
           <Button variant="ghost" size="sm" onClick={() => setView(defaultView())} title="Clear search, filters, grouping and sorting">
@@ -736,6 +757,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         exercises={exercises}
         models={models}
         onCreate={onWizardCreate}
+        onRemap={learnAlias}
       />
 
       <Modal

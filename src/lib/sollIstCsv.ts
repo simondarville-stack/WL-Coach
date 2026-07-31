@@ -40,6 +40,7 @@ function matchExercise(name: string, exercises: Exercise[]): Exercise | null {
   if (!n) return null;
   return (
     exercises.find((e) => e.name.toLowerCase() === n) ??
+    exercises.find((e) => (e.aliases ?? []).some((a) => a.toLowerCase() === n)) ??
     exercises.find((e) => e.name.toLowerCase().startsWith(n)) ??
     exercises.find((e) => e.name.toLowerCase().includes(n)) ??
     null
@@ -62,10 +63,13 @@ export function parseModelCsv(text: string, exercises: Exercise[]): CsvParseResu
     const lower = label.toLowerCase();
     const existing = refByLabel.get(lower);
     if (existing) return existing;
-    // References bind by EXACT name only — a loosely-bound anchor (e.g.
-    // "Snatch" grabbing "Snatch pull") would corrupt every row pointing at
-    // it. An unbound ref is still fully usable as a manual reference.
-    const ex = exercises.find((e) => e.name.toLowerCase() === lower) ?? null;
+    // References bind by EXACT name or alias only — a loosely-bound anchor
+    // (e.g. "Snatch" grabbing "Snatch pull") would corrupt every row
+    // pointing at it. An unbound ref is still usable as a manual reference.
+    const ex =
+      exercises.find((e) => e.name.toLowerCase() === lower) ??
+      exercises.find((e) => (e.aliases ?? []).some((a) => a.toLowerCase() === lower)) ??
+      null;
     const ref: SollIstRef = {
       key: newRefKey(label, refs.map((r) => r.key)),
       label: ex?.name ?? label,

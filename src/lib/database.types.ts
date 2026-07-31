@@ -170,6 +170,10 @@ export interface Exercise {
   is_archived: boolean;
   pr_reference_exercise_id: string | null;  // derives % from this exercise's PR
   track_pr: boolean;                         // false = excluded from PR table
+  /** Alternative names this exercise is known by (BVDG German names, local
+   *  Danish names …). Written by Soll–Ist repointing; read by preset/CSV
+   *  resolution so the same source label maps automatically next time. */
+  aliases: string[];
   /** Optional self-FK to the parent exercise for catalogue trees. NULL = root.
    *  A child (e.g. "Snatch from low hang") rolls its reps/tonnage/metrics up
    *  into its parent for analysis + planner totals, while still being planned

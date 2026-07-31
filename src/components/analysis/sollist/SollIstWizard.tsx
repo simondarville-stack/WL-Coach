@@ -10,6 +10,7 @@ import type { Exercise } from '../../../lib/database.types';
 import { newRefKey, type SollIstModel, type SollIstRef, type SollIstRow } from '../../../lib/sollIst';
 import { parseModelCsv } from '../../../lib/sollIstCsv';
 import { formatDateToDDMMYYYY, toLocalISO } from '../../../lib/dateUtils';
+import { ExerciseSearch } from '../../planner/ExerciseSearch';
 import { modelOptions, resolveModelRef } from './sollIstState';
 
 interface NamedEntity {
@@ -32,6 +33,9 @@ interface SollIstWizardProps {
   exercises: Exercise[];
   models: SollIstModel[];
   onCreate: (result: WizardResult) => void;
+  /** Called when an unmapped row is repointed to a catalogue exercise —
+   *  the view uses it to teach the alias (see exerciseAliases.ts). */
+  onRemap?: (exerciseId: string, sourceLabel: string) => void;
 }
 
 const STEPS = ['Athlete', 'Model', 'References & exercises', 'Create'] as const;
@@ -47,7 +51,7 @@ const thStyle: React.CSSProperties = {
   textAlign: 'left',
 };
 
-export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, onCreate }: SollIstWizardProps) {
+export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, onCreate, onRemap }: SollIstWizardProps) {
   const [step, setStep] = useState(0);
   const [athleteId, setAthleteId] = useState<string | null>(null);
   const [modelRef, setModelRef] = useState<string | null>(null);
@@ -341,6 +345,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
                         value={r.exerciseId ?? ''}
                         onChange={(e) => {
                           const ex = exercises.find((x) => x.id === e.target.value);
+                          if (r.exerciseId == null && ex) onRemap?.(ex.id, r.label);
                           updateRow(i, { exerciseId: ex?.id ?? null, label: ex?.name ?? r.label });
                         }}
                       >
@@ -392,19 +397,19 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
                 ))}
               </tbody>
             </table>
-            <Button
-              variant="ghost"
-              size="sm"
-              style={{ marginTop: 4 }}
-              onClick={() =>
-                setRows((rs) => [
-                  ...rs,
-                  { exerciseId: null, label: 'New exercise', refKey: refs[0]?.key ?? 'ref', indexPct: 100, reps: 1 },
-                ])
-              }
+            <div
+              style={{ marginTop: 6, maxWidth: 280, border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-md)', background: 'var(--color-bg-primary)' }}
+              title="Append an exercise (index 100 on the first reference — adjust in the row)"
             >
-              + Add exercise
-            </Button>
+              <ExerciseSearch
+                exercises={exercises}
+                onAdd={(ex) =>
+                  setRows((rs) => [...rs, { exerciseId: ex.id, label: ex.name, refKey: refs[0]?.key ?? 'ref', indexPct: 100, reps: 1 }])
+                }
+                disableSlashCommands
+                placeholder="Add exercise…"
+              />
+            </div>
           </div>
         </div>
       )}

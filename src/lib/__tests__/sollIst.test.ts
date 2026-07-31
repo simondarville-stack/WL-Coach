@@ -13,8 +13,8 @@ import { modelToCsv, parseModelCsv } from '../sollIstCsv';
 import { SOLLIST_PRESETS, resolvePreset } from '../sollIstPresets';
 import type { AthletePRHistory, Exercise } from '../database.types';
 
-const ex = (id: string, name: string, lift_slot: Exercise['lift_slot'] = null): Exercise =>
-  ({ id, name, lift_slot } as unknown as Exercise);
+const ex = (id: string, name: string, lift_slot: Exercise['lift_slot'] = null, aliases: string[] = []): Exercise =>
+  ({ id, name, lift_slot, aliases } as unknown as Exercise);
 
 const pr = (exercise_id: string, rep_count: number, value_kg: number): AthletePRHistory =>
   ({
@@ -174,6 +174,48 @@ describe('CSV round-trip', () => {
     expect(second.warnings).toEqual([]);
     expect(second.rows).toEqual(first.rows);
     expect(second.refs).toEqual(first.refs);
+  });
+});
+
+describe('alias resolution', () => {
+  it('maps preset rows via coach-taught aliases (exact, before loose matching)', () => {
+    // The coach once repointed "Snatch-grip deadlift" → "Træk Dødløft";
+    // the alias now resolves automatically. The decoy would win a loose
+    // includes-match, so this also proves aliases outrank loose matching.
+    const exercises = [
+      ex('decoy', 'Snatch-grip deadlift with pause'),
+      ex('dl', 'Træk Dødløft', null, ['Snatch-grip deadlift', 'Lastheben breit']),
+    ];
+    const senior = SOLLIST_PRESETS.find((p) => p.key === 'bvdg_senior')!;
+    const { rows } = resolvePreset(senior, exercises);
+    const dlRow = rows.find((r) => r.exerciseId === 'dl');
+    expect(dlRow).toBeDefined();
+    expect(dlRow!.indexPct).toBe(130);
+  });
+
+  it('CSV rows and references resolve via aliases too', () => {
+    const exercises = [ex('dl', 'Træk Dødløft', null, ['Snatch-grip deadlift']), ex('bsq', 'Ben Bagpå', null, ['Back squat'])];
+    const { refs, rows, warnings } = parseModelCsv('Snatch-grip deadlift;Back squat;65;1', exercises);
+    expect(warnings).toEqual([]);
+    expect(rows[0].exerciseId).toBe('dl');
+    expect(refs[0].exerciseId).toBe('bsq'); // ref bound via exact alias
+  });
+
+  it('never maps two preset rows onto the same exercise (first claim wins)', () => {
+    const preset = {
+      key: 't',
+      name: 't',
+      description: '',
+      refs: [{ key: 'r', label: 'R', match: ['nope'] }],
+      rows: [
+        { label: 'A', refKey: 'r', indexPct: 100, reps: 1, match: ['back squat'] },
+        { label: 'B', refKey: 'r', indexPct: 90, reps: 1, match: ['back squat'] },
+      ],
+    };
+    const { rows } = resolvePreset(preset, [ex('bsq', 'Back squat')]);
+    expect(rows[0].exerciseId).toBe('bsq');
+    expect(rows[1].exerciseId).toBeNull(); // stays unmapped for manual repoint
+    expect(rows[1].label).toBe('B');
   });
 });
 
