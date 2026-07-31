@@ -14,6 +14,7 @@ import { useExerciseStore } from '../../store/exerciseStore';
 import { defaultUnitLabel } from '../../lib/constants';
 import { formatDateRange } from '../../lib/dateUtils';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
+import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
@@ -110,7 +111,6 @@ export function WeeklyPlanner() {
     fetchOrCreateWeekPlan,
     fetchPlannedExercises,
     fetchWeekCombos,
-    fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
     deleteWeekPrescription,
@@ -289,15 +289,14 @@ export function WeeklyPlanner() {
   useEffect(() => {
     if (planSelection.athlete || planSelection.group) {
       loadWeekPlan();
+      // Macro context resolves for both selections — an individual athlete
+      // (own macro, falling back to a group macro they inherit) and a group
+      // (the group's macro). PRs stay athlete-only.
+      loadMacroContext(planSelection.athlete?.id ?? null, planSelection.group?.id ?? null, selectedDate);
       if (planSelection.athlete) {
-        loadMacroWeekTarget();
-        loadMacroContext(planSelection.athlete.id, selectedDate);
         loadAthletePRs(planSelection.athlete.id);
       } else {
-        setMacroWeekTarget(null);
-        setMacroWeekTypeText(null);
         setAthletePRs([]);
-        setMacroContext(null);
       }
     } else {
       setCurrentWeekPlan(null);
@@ -351,7 +350,7 @@ export function WeeklyPlanner() {
         loadExercises();
         if (selectedAthlete && currentWeekPlan) {
           loadPlannedExercises(currentWeekPlan.id);
-          loadMacroWeekTarget();
+          loadMacroContext(selectedAthlete.id, null, selectedDate);
         }
       }
     };
@@ -359,7 +358,7 @@ export function WeeklyPlanner() {
       loadExercises();
       if (selectedAthlete && currentWeekPlan) {
         loadPlannedExercises(currentWeekPlan.id);
-        loadMacroWeekTarget();
+        loadMacroContext(selectedAthlete.id, null, selectedDate);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -388,65 +387,51 @@ export function WeeklyPlanner() {
     }
   };
 
-  const loadMacroWeekTarget = async () => {
-    if (!planSelection.athlete) return;
-    await fetchMacroWeekTarget(planSelection.athlete.id, selectedDate);
-  };
-
-  const loadMacroContext = async (athleteId: string, date: string) => {
+  // Also feeds the ΣR target + week-type badge state (macroWeekTarget /
+  // macroWeekTypeText) that used to come from a separate athlete-only query —
+  // one resolution, one source of truth, group macros included.
+  const loadMacroContext = async (athleteId: string | null, groupId: string | null, date: string) => {
     try {
-      const { data: mwRaw } = await supabase
-        .from('macro_weeks')
-        .select(`
-          id, macrocycle_id, week_number, week_type, week_type_text, total_reps_target, notes,
-          macrocycles!inner(id, athlete_id, start_date, end_date, name)
-        `)
-        .eq('macrocycles.athlete_id', athleteId)
-        .eq('week_start', date)
-        .lte('macrocycles.start_date', date)
-        .gte('macrocycles.end_date', date)
-        .limit(1)
-        .maybeSingle();
-
-      type MacroWeekWithJoin = {
-        id: string; macrocycle_id: string; week_number: number;
-        week_type: string | null; week_type_text: string | null; total_reps_target: number | null;
-        notes: string | null;
-        macrocycles: { id: string; name: string } | null;
-      };
-      const mw = mwRaw as MacroWeekWithJoin | null;
-      if (!mw) { setMacroContext(null); return; }
-
-      const macro = mw.macrocycles;
+      const mw = await resolveMacroWeek(athleteId, groupId, date);
+      if (!mw) {
+        setMacroContext(null);
+        setMacroWeekTarget(null);
+        setMacroWeekTypeText(null);
+        return;
+      }
 
       const [phaseResult, countResult] = await Promise.all([
         supabase
           .from('macro_phases')
           .select('name, color')
-          .eq('macrocycle_id', mw.macrocycle_id)
-          .lte('start_week_number', mw.week_number)
-          .gte('end_week_number', mw.week_number)
+          .eq('macrocycle_id', mw.macroId)
+          .lte('start_week_number', mw.weekNumber)
+          .gte('end_week_number', mw.weekNumber)
           .maybeSingle(),
         supabase
           .from('macro_weeks')
           .select('id', { count: 'exact', head: true })
-          .eq('macrocycle_id', mw.macrocycle_id),
+          .eq('macrocycle_id', mw.macroId),
       ]);
 
       setMacroContext({
-        macroId: mw.macrocycle_id,
-        macroName: macro?.name ?? 'Macrocycle',
-        weekType: mw.week_type ?? '',
-        weekTypeText: mw.week_type_text,
-        weekNumber: mw.week_number,
+        macroId: mw.macroId,
+        macroName: mw.macroName,
+        weekType: mw.weekType,
+        weekTypeText: mw.weekTypeText,
+        weekNumber: mw.weekNumber,
         totalWeeks: countResult.count ?? 0,
         phaseName: phaseResult.data?.name ?? null,
         phaseColor: phaseResult.data?.color ?? null,
-        totalRepsTarget: mw.total_reps_target,
-        weekNotes: mw.notes ?? '',
+        totalRepsTarget: mw.totalRepsTarget,
+        weekNotes: mw.notes,
       });
+      setMacroWeekTarget(mw.totalRepsTarget);
+      setMacroWeekTypeText(mw.weekType || mw.weekTypeText);
     } catch {
       setMacroContext(null);
+      setMacroWeekTarget(null);
+      setMacroWeekTypeText(null);
     }
   };
 

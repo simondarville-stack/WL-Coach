@@ -10,6 +10,8 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { getOrCreateSentinel } from './sentinelService';
+import { targetMaxRaw } from '../../lib/plannerMacro';
+import { StackedNotation } from './StackedNotation';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
@@ -25,6 +27,8 @@ interface MacroTargetData {
   maxReps: number | null;
   maxSets: number | null;
   avg: number | null;
+  /** Coach's macro note for this exercise+week ('' / null = none). */
+  note: string | null;
 }
 
 interface DayEditorProps {
@@ -60,12 +64,6 @@ const UNIT_BADGE: Record<string, string> = {
   free_text: 'text',
 };
 
-
-function maxLabel(maxVal: number | null, rhi: number | null, shi: number | null): string {
-  if (maxVal == null) return '';
-  if (rhi != null && shi != null) return `${maxVal}/${rhi}/${shi}`;
-  return `${maxVal}`;
-}
 
 export function DayEditor({
   weekPlan,
@@ -119,7 +117,7 @@ export function DayEditor({
       if (!trackedExs?.length) return;
       const { data: targets } = await supabase
         .from('macro_targets')
-        .select('tracked_exercise_id, target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
+        .select('tracked_exercise_id, target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg, note')
         .eq('macro_week_id', mw.id).in('tracked_exercise_id', trackedExs.map(te => te.id));
       const map = new Map<string, MacroTargetData>();
       for (const tgt of targets || []) {
@@ -128,6 +126,7 @@ export function DayEditor({
           map.set(te.exercise_id, {
             reps: tgt.target_reps, max: tgt.target_max,
             maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
+            note: tgt.note,
           });
         }
       }
@@ -431,13 +430,20 @@ export function DayEditor({
                         {ex.summary_highest_load && <span>Hi <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_highest_load}</strong></span>}
                         {ex.summary_avg_load && <span>Avg <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{Math.round(ex.summary_avg_load)}</strong></span>}
                         {macroTgt && (
-                          <span style={{ color: 'var(--color-text-tertiary)', borderLeft: '1px solid var(--color-border-secondary)', paddingLeft: 6, marginLeft: 2 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-tertiary)', borderLeft: '1px solid var(--color-border-secondary)', paddingLeft: 6, marginLeft: 2 }}>
                             Macro: R <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.reps ?? '—'}</span>
-                            {macroTgt.max && (
-                              <> Max <span style={{ color: 'var(--color-danger-text)', fontWeight: 500 }}>{maxLabel(macroTgt.max, macroTgt.maxReps, macroTgt.maxSets)}</span></>
+                            {macroTgt.max != null && (
+                              <>
+                                {' '}Max
+                                {/* Canonical stacked visual, same as the prescription grid. */}
+                                <StackedNotation raw={targetMaxRaw(macroTgt.max, macroTgt.maxReps, macroTgt.maxSets)} unit="absolute_kg" />
+                              </>
                             )}
                             {macroTgt.avg && (
                               <> Avg <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.avg}</span></>
+                            )}
+                            {macroTgt.note?.trim() && (
+                              <span title={macroTgt.note} style={{ color: 'var(--color-text-secondary)', cursor: 'help' }}>✎</span>
                             )}
                           </span>
                         )}

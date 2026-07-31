@@ -15,6 +15,8 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
 import { DEFAULT_UNITS } from '../../lib/constants';
 import { SollIstChart } from './SollIstChart';
+import { StackedNotation } from './StackedNotation';
+import { targetMaxRaw } from '../../lib/plannerMacro';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 import { ExercisePrescriptionHistory } from './ExercisePrescriptionHistory';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -33,6 +35,8 @@ interface SollTarget {
   maxReps: number | null;
   maxSets: number | null;
   avg: number | null;
+  /** Coach's macro note for this exercise+week ('' / null = none). */
+  note: string | null;
 }
 
 interface ExerciseDetailProps {
@@ -164,11 +168,12 @@ export function ExerciseDetail({
       .eq('macrocycle_id', macroContext.macroId).eq('week_number', macroContext.weekNumber).maybeSingle();
     if (!mw) { setSollTarget(null); return; }
     const { data: tgt } = await supabase.from('macro_targets')
-      .select('target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg')
+      .select('target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg, note')
       .eq('macro_week_id', mw.id).eq('tracked_exercise_id', te.id).maybeSingle();
     setSollTarget(tgt ? {
       reps: tgt.target_reps, max: tgt.target_max,
       maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
+      note: tgt.note,
     } : null);
   }
 
@@ -267,12 +272,6 @@ export function ExerciseDetail({
       void onSaved();
     }
     onClose();
-  }
-
-  function maxFormat(maxVal: number | null, maxReps: number | null, maxSets: number | null) {
-    if (maxVal == null) return '—';
-    if (maxReps != null && maxSets != null) return `${maxVal}/${maxReps}/${maxSets}`;
-    return `${maxVal}`;
   }
 
   const exerciseName = sentinel === 'text' ? 'Free text'
@@ -669,12 +668,26 @@ export function ExerciseDetail({
               padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 13,
               display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12,
             }}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>SOLL</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.reps ?? '—'}</strong></span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.avg ?? '—'}</strong></span>
-                <span style={{ color: 'var(--color-text-secondary)' }}>Max <strong style={{ color: 'var(--color-text-primary)' }}>{maxFormat(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)}</strong></span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)' }}>
+                  Max{' '}
+                  {sollTarget.max != null
+                    // Canonical stacked visual — same as the prescription grid.
+                    ? <StackedNotation raw={targetMaxRaw(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)} unit="absolute_kg" />
+                    : <strong style={{ color: 'var(--color-text-primary)' }}>—</strong>}
+                </span>
               </div>
+              {sollTarget.note?.trim() && (
+                <div style={{
+                  fontSize: 11, fontFamily: 'var(--font-sans)', fontStyle: 'italic',
+                  color: 'var(--color-text-secondary)',
+                }}>
+                  ✎ {sollTarget.note}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
                 <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>IST</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_total_reps ?? '—'}</strong></span>

@@ -234,42 +234,9 @@ export function useWeekPlans() {
   // Kept for backward compat — combo members are now loaded in fetchPlannedExercises
   const fetchWeekCombos = async (_weekPlanId: string) => { /* no-op */ };
 
-  const fetchMacroWeekTarget = async (athleteId: string, selectedDate: string) => {
-    try {
-      const { data: macrocycles, error: macroError } = await supabase
-        .from('macrocycles')
-        .select('id, start_date, end_date')
-        .eq('athlete_id', athleteId)
-        .lte('start_date', selectedDate)
-        .gte('end_date', selectedDate);
-
-      if (macroError) throw macroError;
-
-      if (!macrocycles || macrocycles.length === 0) {
-        setMacroWeekTarget(null);
-        return;
-      }
-
-      const { data: macroWeeks, error: weekError } = await supabase
-        .from('macro_weeks')
-        .select('id, total_reps_target, week_type, week_type_text')
-        .eq('macrocycle_id', macrocycles[0].id)
-        .lte('week_start', selectedDate)
-        .gte('week_start', new Date(new Date(selectedDate).getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .order('week_start', { ascending: false })
-        .limit(1);
-
-      const macroWeek = macroWeeks && macroWeeks.length > 0 ? macroWeeks[0] : null;
-      if (weekError) throw weekError;
-
-      setMacroWeekTarget(macroWeek?.total_reps_target || null);
-      // week_type (abbreviation) is canonical; week_type_text is a legacy fallback.
-      setMacroWeekTypeText(macroWeek?.week_type || macroWeek?.week_type_text || null);
-    } catch (err) {
-      setMacroWeekTarget(null);
-      setMacroWeekTypeText(null);
-    }
-  };
+  // Macro week target/type now load through the planner's macro context
+  // (lib/plannerMacro.resolveMacroWeek) — one resolution covers athlete AND
+  // group macros; this hook only holds the state.
 
   const fetchAthletePRs = async (athleteId: string) => {
     try {
@@ -1569,7 +1536,6 @@ export function useWeekPlans() {
     fetchOrCreateWeekPlan,
     fetchPlannedExercises,
     fetchWeekCombos,
-    fetchMacroWeekTarget,
     fetchAthletePRs,
     deletePlannedExercise,
     deleteWeekPrescription,

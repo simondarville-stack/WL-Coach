@@ -4,10 +4,12 @@
 // (stacked notation), the weighted average load and the week's total reps.
 //
 // When the week is covered by a macro, each tracked exercise also shows its
-// macro_targets row underneath (max × reps/sets · avg · Σreps), each value
+// macro_targets row underneath — the target top set in stacked notation
+// (matching the planned top set above it) plus avg · Σreps — each value
 // green when the plan meets it and red when the plan comes in short or too
 // high — the design-time "am I on the macro?" check. Tracked exercises with a
-// target but nothing planned appear as target-only rows (all red).
+// target but nothing planned appear as target-only rows (all red). A target's
+// coach note ("Go for a 3RM") renders as an italic ✎ line under the row.
 
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
@@ -15,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import type { Exercise, PlannedExercise, ComboMemberEntry } from '../../lib/database.types';
 import { parsePrescription, parseComboPrescription } from '../../lib/prescriptionParser';
 import { expandForCounting } from '../../lib/comboExpansion';
+import { targetMaxRaw } from '../../lib/plannerMacro';
 import { StackedNotation } from './StackedNotation';
 import type { MacroContext } from './WeeklyPlanner';
 
@@ -46,6 +49,8 @@ interface Target {
   max: number | null;
   repsAtMax: number | null;
   setsAtMax: number | null;
+  /** Coach's macro note for this exercise+week ('' / null = none). */
+  note: string | null;
 }
 
 interface ExRow {
@@ -129,7 +134,7 @@ export function WeekCategoryTable({
           (tracked as Array<{ id: string; exercise_id: string }>).map(t => [t.id, t.exercise_id]),
         );
         const { data: tgts } = await supabase.from('macro_targets')
-          .select('tracked_exercise_id, target_reps, target_avg, target_max, target_reps_at_max, target_sets_at_max')
+          .select('tracked_exercise_id, target_reps, target_avg, target_max, target_reps_at_max, target_sets_at_max, note')
           .eq('macro_week_id', (mw as { id: string }).id)
           .in('tracked_exercise_id', [...exByTracked.keys()]);
         if (cancelled) return;
@@ -139,13 +144,16 @@ export function WeekCategoryTable({
         for (const t of (tgts ?? []) as Array<{
           tracked_exercise_id: string; target_reps: number | null; target_avg: number | string | null;
           target_max: number | string | null; target_reps_at_max: number | null; target_sets_at_max: number | null;
+          note: string | null;
         }>) {
           const exId = exByTracked.get(t.tracked_exercise_id);
           if (!exId) continue;
-          if (t.target_reps == null && t.target_avg == null && t.target_max == null) continue;
+          // A row may hold only a note — that still deserves a row.
+          if (t.target_reps == null && t.target_avg == null && t.target_max == null && !t.note?.trim()) continue;
           map.set(exId, {
             reps: t.target_reps, avg: num(t.target_avg), max: num(t.target_max),
             repsAtMax: t.target_reps_at_max, setsAtMax: t.target_sets_at_max,
+            note: t.note,
           });
         }
         setTargets(map);
@@ -343,34 +351,49 @@ export function WeekCategoryTable({
                             {r.reps > 0 ? r.reps : '—'}
                           </td>
                         </tr>
-                        {t && (
-                          <tr title="Macro target — green: plan on target, red: short or over">
-                            <td style={{ ...cellBase, paddingTop: 0, fontSize: 9, color: 'var(--color-text-tertiary)' }}>↳ target</td>
-                            <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              {t.max != null && (
-                                <span style={{ color: statusColor(statusOf(plannedMaxLoad, t.max)) }}>{fmtNum(t.max)}</span>
-                              )}
-                              {t.repsAtMax != null && (
-                                <span
-                                  title="Target reps/sets at max"
-                                  style={{
-                                    color: statusColor(
-                                      r.maxSet
-                                        ? (r.maxSet.reps === t.repsAtMax && (t.setsAtMax == null || r.maxSet.sets === t.setsAtMax) ? 'on' : 'off')
-                                        : 'off',
-                                    ),
-                                  }}
-                                >
-                                  {' '}×{t.repsAtMax}{t.setsAtMax != null ? `/${t.setsAtMax}` : ''}
-                                </span>
-                              )}
-                              {t.max == null && t.repsAtMax == null && '—'}
-                            </td>
-                            <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(avgKg, t.avg)) }}>
-                              {t.avg != null ? fmtNum(t.avg) : ''}
-                            </td>
-                            <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(r.reps || null, t.reps)) }}>
-                              {t.reps != null ? t.reps : ''}
+                        {t && (t.max != null || t.repsAtMax != null || t.avg != null || t.reps != null) && (() => {
+                          const targetRaw = targetMaxRaw(t.max, t.repsAtMax, t.setsAtMax);
+                          const loadStatus = statusOf(plannedMaxLoad, t.max);
+                          const repsStatus = t.repsAtMax == null ? null
+                            : r.maxSet && r.maxSet.reps === t.repsAtMax && (t.setsAtMax == null || r.maxSet.sets === t.setsAtMax) ? 'on' : 'off';
+                          const topSetStatus: TargetStatus | null =
+                            loadStatus == null && repsStatus == null ? null
+                            : loadStatus !== 'off' && repsStatus !== 'off' ? 'on' : 'off';
+                          return (
+                            <tr title="Macro target — green: plan on target, red: short or over">
+                              <td style={{ ...cellBase, paddingTop: 0, fontSize: 9, color: 'var(--color-text-tertiary)' }}>↳ target</td>
+                              <td style={{ ...cellBase, paddingTop: 0 }}>
+                                {targetRaw ? (
+                                  // Same stacked visual as the planned top set above it;
+                                  // the text token carries the on/off-target colour (data,
+                                  // not chrome — StackedNotation reads --color-text-primary).
+                                  <div style={{
+                                    display: 'flex', justifyContent: 'flex-end',
+                                    '--color-text-primary': statusColor(topSetStatus),
+                                  } as React.CSSProperties}>
+                                    <StackedNotation raw={targetRaw} unit="absolute_kg" />
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', display: 'block', textAlign: 'right' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(avgKg, t.avg)) }}>
+                                {t.avg != null ? fmtNum(t.avg) : ''}
+                              </td>
+                              <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(r.reps || null, t.reps)) }}>
+                                {t.reps != null ? t.reps : ''}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                        {t?.note?.trim() && (
+                          <tr title={t.note}>
+                            <td colSpan={4} style={{
+                              ...cellBase, paddingTop: 0, fontSize: 9, fontStyle: 'italic',
+                              color: 'var(--color-text-secondary)',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 0,
+                            }}>
+                              ✎ {t.note}
                             </td>
                           </tr>
                         )}
