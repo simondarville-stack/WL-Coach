@@ -4,6 +4,7 @@
 // sort on click, and rows arrive pre-grouped (by reference or category)
 // from the view state. Reference lines stay pinned on top.
 
+import type { Exercise } from '../../../lib/database.types';
 import type { ComputedSollIstRow, SollIstRow } from '../../../lib/sollIst';
 import { istKey } from '../../../lib/sollIst';
 import { fmtKg, heatColor, type RowGroup, type SheetRef, type SheetView, type SortKey } from './sollIstState';
@@ -14,6 +15,8 @@ interface SollIstTableProps {
   side: { name: string; computed: ComputedSollIstRow[] } | null;
   modelName: string;
   refs: SheetRef[];
+  /** Catalogue (sorted by name) for the inline exercise remap select. */
+  exercises: Exercise[];
   hasAthlete: boolean;
   heatmap: boolean;
   diff: boolean;
@@ -82,6 +85,7 @@ export function SollIstTable({
   side,
   modelName,
   refs,
+  exercises,
   hasAthlete,
   heatmap,
   diff,
@@ -288,9 +292,34 @@ export function SollIstTable({
 
               return (
                 <tr key={key} className="sollist-row">
-                  <td style={{ ...td, ...leftAlign, color: unmapped ? 'var(--color-text-tertiary)' : undefined }}>
-                    {c.row.label}
-                    {unmapped && <span title="Not mapped to a catalogue exercise"> ⚠</span>}
+                  <td style={{ ...td, ...leftAlign, padding: '2px 8px' }}>
+                    <select
+                      value={c.row.exerciseId ?? ''}
+                      onChange={(e) => {
+                        const ex = exercises.find((x) => x.id === e.target.value);
+                        onEditRow(c.row, { exerciseId: ex?.id ?? null, label: ex?.name ?? c.row.label });
+                      }}
+                      title={unmapped ? `"${c.row.label}" is not mapped to a catalogue exercise — pick the right one here` : 'Repoint this row to a different catalogue exercise'}
+                      className="sollist-inline-select"
+                      style={{
+                        font: 'inherit',
+                        fontWeight: 'inherit',
+                        color: unmapped ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)',
+                        background: 'transparent',
+                        border: '0.5px solid transparent',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '1px 2px',
+                        maxWidth: 220,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {unmapped && <option value="">⚠ {c.row.label} (unmapped)</option>}
+                      {exercises.map((ex) => (
+                        <option key={ex.id} value={ex.id}>
+                          {ex.name}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   {showRefCol && (
                     <td style={{ ...td, ...leftAlign, padding: '2px 8px' }}>

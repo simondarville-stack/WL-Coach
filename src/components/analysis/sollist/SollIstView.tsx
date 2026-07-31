@@ -7,8 +7,8 @@
 // by reference or category. All math comes from src/lib/sollIst.ts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, FilePlus2, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
-import { Button, ErrorState, Input, Select, Spinner } from '../../ui';
+import { Download, FilePlus2, Layers, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
+import { Button, ErrorState, Input, Modal, Select, Spinner } from '../../ui';
 import { useExerciseStore } from '../../../store/exerciseStore';
 import type { AthletePRHistory } from '../../../lib/database.types';
 import { fetchPRHistory } from '../../../lib/prTable';
@@ -76,6 +76,8 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refsOpen, setRefsOpen] = useState(false);
+  const [saveModelOpen, setSaveModelOpen] = useState(false);
+  const [modelName, setModelName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -348,6 +350,42 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     }
   };
 
+  // "Save model": persist the sheet's refs + rows as a reusable model — the
+  // no-round-trip way to correct a preset's exercise mapping or tweak its
+  // numbers. Presets stay immutable (textbook source); the coach's version
+  // lands under Saved models. A stored model can also be updated in place.
+  const storedModel = useMemo(() => models.find((m) => m.id === sheet.modelRef) ?? null, [models, sheet.modelRef]);
+  const unmappedCount = sheet.rows.filter((r) => r.exerciseId == null).length;
+
+  const openSaveModel = () => {
+    setModelName(storedModel?.name ?? `${mainModelName} — my version`);
+    setSaveModelOpen(true);
+  };
+
+  const doSaveModel = async (updateExisting: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const name = modelName.trim() || `${mainModelName} — my version`;
+      const id = await saveSollIstModel({
+        id: updateExisting && storedModel ? storedModel.id : null,
+        name,
+        kind: updateExisting && storedModel && storedModel.kind !== 'textbook' ? storedModel.kind : 'custom',
+        athleteId: updateExisting && storedModel ? storedModel.athleteId : null,
+        refs: sheet.refs.map(({ key, label, exerciseId }) => ({ key, label, exerciseId })),
+        rows: sheet.rows,
+      });
+      setModels(await fetchSollIstModels(exercises));
+      set({ modelRef: id });
+      setSaveModelOpen(false);
+      flash(`Model “${name}” saved`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Saving the model failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportCsv = () => {
     downloadText(
       `sollist-${(sheet.name || mainModelName).replace(/[^a-zA-Z0-9-_]+/g, '_')}.csv`,
@@ -500,6 +538,16 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
               Delete
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="md"
+            icon={<Layers size={14} />}
+            onClick={openSaveModel}
+            disabled={busy || sheet.rows.length === 0}
+            title="Save the sheet's references, exercises and indices as a reusable model — e.g. a corrected BVDG mapping"
+          >
+            Save model
+          </Button>
           {hasAthlete && (
             <Button
               variant="ghost"
@@ -644,6 +692,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           side={side}
           modelName={mainModelName}
           refs={sheet.refs}
+          exercises={sortedExercises}
           hasAthlete={hasAthlete}
           heatmap={sheet.heatmap}
           diff={sheet.diff}
@@ -688,6 +737,46 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         models={models}
         onCreate={onWizardCreate}
       />
+
+      <Modal
+        isOpen={saveModelOpen}
+        onClose={() => setSaveModelOpen(false)}
+        size="md"
+        title="Save model"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)', width: '100%' }}>
+            <Button variant="ghost" onClick={() => setSaveModelOpen(false)}>
+              Cancel
+            </Button>
+            {storedModel && (
+              <Button variant="secondary" disabled={busy} onClick={() => void doSaveModel(true)} title={`Overwrite “${storedModel.name}” with the current sheet`}>
+                Update “{storedModel.name}”
+              </Button>
+            )}
+            <Button variant="primary" disabled={busy} onClick={() => void doSaveModel(false)}>
+              Save as new
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+          <p style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)', margin: 0 }}>
+            Saves the sheet's references, exercises and indices as a reusable model under <em>Saved models</em>.
+            Textbook presets themselves stay unchanged — your version becomes its own entry.
+          </p>
+          <div style={{ maxWidth: 340 }}>
+            <label style={{ ...capStyle, display: 'block', marginBottom: 4 }}>Model name</label>
+            <Input value={modelName} onChange={(e) => setModelName(e.target.value)} autoFocus />
+          </div>
+          {unmappedCount > 0 && (
+            <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', margin: 0 }}>
+              ⚠ {unmappedCount} row{unmappedCount === 1 ? ' is' : 's are'} not mapped to a catalogue exercise and will
+              be skipped — repoint {unmappedCount === 1 ? 'it' : 'them'} in the Exercise column first to keep{' '}
+              {unmappedCount === 1 ? 'it' : 'them'}.
+            </p>
+          )}
+        </div>
+      </Modal>
 
       <style>{`
         .sollist-inline-input:hover, .sollist-inline-select:hover { border-color: var(--color-border-secondary) !important; }
