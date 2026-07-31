@@ -10,7 +10,7 @@ import type { Exercise } from '../../../lib/database.types';
 import { newRefKey, type SollIstModel, type SollIstRef, type SollIstRow } from '../../../lib/sollIst';
 import { parseModelCsv } from '../../../lib/sollIstCsv';
 import { formatDateToDDMMYYYY, toLocalISO } from '../../../lib/dateUtils';
-import { modelOptions, refAbbrev, refPillStyle, resolveModelRef } from './sollIstState';
+import { modelOptions, resolveModelRef } from './sollIstState';
 
 interface NamedEntity {
   id: string;
@@ -269,7 +269,6 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Tag</th>
                   <th style={thStyle}>Label</th>
                   <th style={thStyle}>Catalogue exercise</th>
                   <th style={thStyle} />
@@ -277,15 +276,9 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
               </thead>
               <tbody>
                 {refs.map((r, i) => {
-                  const { bg, fg } = refPillStyle(i);
                   const inUse = rows.some((row) => row.refKey === r.key);
                   return (
                     <tr key={r.key}>
-                      <td style={{ padding: '2px 6px' }}>
-                        <span style={{ fontSize: 'var(--text-caption)', fontWeight: 700, padding: '1px 6px', borderRadius: 8, background: bg, color: fg }}>
-                          {refAbbrev(r.label)}
-                        </span>
-                      </td>
                       <td style={{ padding: '2px 6px', width: 200 }}>
                         <Input value={r.label} onChange={(e) => updateRef(i, { label: e.target.value })} />
                       </td>

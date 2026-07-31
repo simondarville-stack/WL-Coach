@@ -1,8 +1,10 @@
 // Soll–Ist analysis surface (Analysis › Soll–Ist mode). Orchestrates the
 // sheet: model/athlete selection, generic references (any exercise — or
 // typed numbers — can anchor the index), PR-fed Ist values, save/load
-// against sollist_analyses, CSV export and print. All math comes from
-// src/lib/sollIst.ts.
+// against sollist_analyses, CSV export and print. The sheet is a live data
+// view: the model is edited inline in the table (swap references, adjust
+// index/reps, remove rows), and rows can be searched, filtered and grouped
+// by reference or category. All math comes from src/lib/sollIst.ts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, FilePlus2, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
@@ -33,11 +35,11 @@ import { downloadText } from '../builder/exportUtils';
 import { SollIstTable } from './SollIstTable';
 import { SollIstWizard, type WizardResult } from './SollIstWizard';
 import {
+  buildRowGroups,
+  defaultView,
   emptySheet,
   modelOptions,
   parseKgInput,
-  refAbbrev,
-  refPillStyle,
   refValuesMap,
   resolveModelRef,
   sheetFromRecord,
@@ -45,6 +47,7 @@ import {
   toSheetRefs,
   type SheetRef,
   type SheetState,
+  type SheetView,
 } from './sollIstState';
 
 interface NamedEntity {
@@ -66,7 +69,7 @@ const capStyle: React.CSSProperties = {
 };
 
 export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
-  const { exercises, fetchExercises } = useExerciseStore();
+  const { exercises, categories, fetchExercises, fetchCategories } = useExerciseStore();
   const [sheet, setSheet] = useState<SheetState>(() => ({ ...emptySheet(), athleteId: initialAthleteId }));
   const [models, setModels] = useState<SollIstModel[]>([]);
   const [analyses, setAnalyses] = useState<SollIstAnalysisRecord[]>([]);
@@ -79,7 +82,8 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
   useEffect(() => {
     void fetchExercises();
-  }, [fetchExercises]);
+    void fetchCategories();
+  }, [fetchExercises, fetchCategories]);
 
   // Models + saved analyses, once the catalogue is there (model rows need names).
   useEffect(() => {
@@ -150,6 +154,25 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
   const computed = useMemo(() => computeSollIst(sheet.rows, refValues, istMap), [sheet.rows, refValues, istMap]);
 
+  const categoryOf = useCallback(
+    (exerciseId: string | null): string | null => {
+      if (!exerciseId) return null;
+      const cat = exercises.find((e) => e.id === exerciseId)?.category;
+      return cat ? String(cat) : null;
+    },
+    [exercises],
+  );
+
+  const categoryOrder = useMemo(
+    () => [...categories].sort((a, b) => a.display_order - b.display_order).map((c) => c.name),
+    [categories],
+  );
+
+  const groups = useMemo(
+    () => buildRowGroups(computed, sheet.view, sheet.refs, categoryOf, categoryOrder),
+    [computed, sheet.view, sheet.refs, categoryOf, categoryOrder],
+  );
+
   const mainModelName = useMemo(
     () => resolveModelRef(sheet.modelRef, models, exercises)?.name ?? 'Custom',
     [sheet.modelRef, models, exercises],
@@ -177,6 +200,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const athleteName = athletes.find((a) => a.id === sheet.athleteId)?.name ?? null;
 
   const set = useCallback((patch: Partial<SheetState>) => setSheet((s) => ({ ...s, ...patch })), []);
+  const setView = useCallback((patch: Partial<SheetView>) => setSheet((s) => ({ ...s, view: { ...s.view, ...patch } })), []);
 
   const flash = (msg: string) => {
     setNotice(msg);
@@ -195,6 +219,25 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       return { ...s, overrides };
     });
   }, []);
+
+  // Inline model editing: rows are identified by object reference — computed
+  // rows wrap the exact objects held in sheet.rows.
+  const onEditRow = useCallback((row: SollIstRow, patch: Partial<SollIstRow>) => {
+    setSheet((s) => ({ ...s, rows: s.rows.map((r) => (r === row ? { ...r, ...patch } : r)) }));
+  }, []);
+
+  const onRemoveRow = useCallback((row: SollIstRow) => {
+    setSheet((s) => ({ ...s, rows: s.rows.filter((r) => r !== row) }));
+  }, []);
+
+  const addRow = (exerciseId: string) => {
+    const ex = exercises.find((e) => e.id === exerciseId);
+    if (!ex) return;
+    setSheet((s) => ({
+      ...s,
+      rows: [...s.rows, { exerciseId: ex.id, label: ex.name, refKey: s.refs[0]?.key ?? 'ref', indexPct: 100, reps: 1 }],
+    }));
+  };
 
   const updateRef = (i: number, patch: Partial<SheetRef>) => {
     setSheet((s) => ({ ...s, refs: s.refs.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
@@ -323,10 +366,19 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const options = modelOptions(models);
   const sortedExercises = useMemo(() => [...exercises].sort((a, b) => a.name.localeCompare(b.name)), [exercises]);
 
+  // Categories present in the sheet (for the filter dropdown), catalogue order.
+  const sheetCategories = useMemo(() => {
+    const present = new Set(sheet.rows.map((r) => categoryOf(r.exerciseId) ?? '—'));
+    return [...categoryOrder.filter((c) => present.has(c)), ...(present.has('—') ? ['—'] : [])];
+  }, [sheet.rows, categoryOf, categoryOrder]);
+
+  const viewActive =
+    sheet.view.search.trim() !== '' || sheet.view.refFilter != null || sheet.view.categoryFilter != null || sheet.view.sort != null || sheet.view.groupBy !== 'none';
+
   return (
     <div className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
-      {/* toolbar */}
-      <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)', alignItems: 'flex-end', marginBottom: 'var(--space-md)' }}>
+      {/* toolbar: subject + model + reference values + actions */}
+      <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)', alignItems: 'flex-end', marginBottom: 'var(--space-sm)' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={capStyle}>Athlete</span>
           <div style={{ width: 180 }}>
@@ -365,43 +417,40 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           </div>
         </label>
 
-        {/* per-reference current/goal inputs */}
+        {/* per-reference current/goal inputs — full names, no chips */}
         <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', padding: '6px 10px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
-          {sheet.refs.map((r, i) => {
-            const { bg, fg } = refPillStyle(i);
-            return (
-              <div key={r.key} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={r.exerciseId == null ? `${r.label} — manual reference` : `${r.label} — current, suggested from the PR table`}>
-                  <span style={capStyle}>
-                    <span style={{ fontWeight: 700, padding: '1px 5px', borderRadius: 8, background: bg, color: fg, marginRight: 4 }}>{refAbbrev(r.label)}</span>
-                    current
-                  </span>
-                  <Input
-                    type="number"
-                    mono
-                    step={0.5}
-                    min={0}
-                    style={{ width: 80, textAlign: 'right' }}
-                    value={r.current ?? ''}
-                    onChange={(e) => updateRef(i, { current: e.target.value === '' ? null : parseFloat(e.target.value) })}
-                  />
-                </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Target column`}>
-                  <span style={capStyle}>goal</span>
-                  <Input
-                    type="number"
-                    mono
-                    step={0.5}
-                    min={0}
-                    style={{ width: 80, textAlign: 'right' }}
-                    value={r.goal ?? ''}
-                    onChange={(e) => updateRef(i, { goal: e.target.value === '' ? null : parseFloat(e.target.value) })}
-                  />
-                </label>
-                {i < sheet.refs.length - 1 && <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border-secondary)' }} />}
-              </div>
-            );
-          })}
+          {sheet.refs.map((r, i) => (
+            <div key={r.key} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={r.exerciseId == null ? `${r.label} — manual reference` : `${r.label} — current, suggested from the PR table`}>
+                <span style={{ ...capStyle, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.label}
+                  {r.exerciseId == null && ' ✎'} · current
+                </span>
+                <Input
+                  type="number"
+                  mono
+                  step={0.5}
+                  min={0}
+                  style={{ width: 80, textAlign: 'right' }}
+                  value={r.current ?? ''}
+                  onChange={(e) => updateRef(i, { current: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Target column`}>
+                <span style={capStyle}>goal</span>
+                <Input
+                  type="number"
+                  mono
+                  step={0.5}
+                  min={0}
+                  style={{ width: 80, textAlign: 'right' }}
+                  value={r.goal ?? ''}
+                  onChange={(e) => updateRef(i, { goal: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                />
+              </label>
+              {i < sheet.refs.length - 1 && <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border-secondary)' }} />}
+            </div>
+          ))}
           <Button variant="ghost" size="sm" icon={<Settings2 size={13} />} onClick={() => setRefsOpen((o) => !o)} title="Edit references — add, remove, rename, or bind to a catalogue exercise">
             Refs
           </Button>
@@ -472,6 +521,64 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         </div>
       </div>
 
+      {/* view bar: search / group / filter / add — the data-view controls */}
+      <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+        <div style={{ width: 180 }}>
+          <Input placeholder="Search exercises…" value={sheet.view.search} onChange={(e) => setView({ search: e.target.value })} />
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
+          Group by
+          <div style={{ width: 130 }}>
+            <Select value={sheet.view.groupBy} onChange={(e) => setView({ groupBy: e.target.value as SheetView['groupBy'] })}>
+              <option value="none">— none —</option>
+              <option value="ref">Reference</option>
+              <option value="category">Category</option>
+            </Select>
+          </div>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
+          Reference
+          <div style={{ width: 160 }}>
+            <Select value={sheet.view.refFilter ?? ''} onChange={(e) => setView({ refFilter: e.target.value || null })}>
+              <option value="">— all —</option>
+              {sheet.refs.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
+          Category
+          <div style={{ width: 160 }}>
+            <Select value={sheet.view.categoryFilter ?? ''} onChange={(e) => setView({ categoryFilter: e.target.value || null })}>
+              <option value="">— all —</option>
+              {sheetCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c === '—' ? 'No category' : c}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </label>
+        <div style={{ width: 200 }}>
+          <Select value="" onChange={(e) => e.target.value && addRow(e.target.value)} title="Append an exercise to the sheet (index 100 on the first reference — adjust inline)">
+            <option value="">+ Add exercise…</option>
+            {sortedExercises.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                {ex.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {viewActive && (
+          <Button variant="ghost" size="sm" onClick={() => setView(defaultView())} title="Clear search, filters, grouping and sorting">
+            Reset view
+          </Button>
+        )}
+      </div>
+
       {/* inline reference editor (structure: label / binding / add / remove) */}
       {refsOpen && (
         <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--space-md)', padding: '8px 10px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
@@ -529,17 +636,22 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
       {sheet.rows.length === 0 ? (
         <p style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
-          No exercises yet — pick a model above or build one with <strong>New…</strong>
+          No exercises yet — pick a model above, add exercises with <strong>+ Add exercise…</strong>, or build a sheet with <strong>New…</strong>
         </p>
       ) : (
         <SollIstTable
-          computed={computed}
+          groups={groups}
           side={side}
           modelName={mainModelName}
           refs={sheet.refs}
           hasAthlete={hasAthlete}
           heatmap={sheet.heatmap}
           diff={sheet.diff}
+          groupBy={sheet.view.groupBy}
+          sort={sheet.view.sort}
+          onSortChange={(sort) => setView({ sort })}
+          onEditRow={onEditRow}
+          onRemoveRow={onRemoveRow}
           onEditIst={onEditIst}
         />
       )}
@@ -578,8 +690,11 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       />
 
       <style>{`
-        .sollist-ist-input:hover { border-color: var(--color-border-secondary) !important; }
-        .sollist-ist-input:focus { border-color: var(--color-accent) !important; background: var(--color-bg-primary) !important; outline: none; }
+        .sollist-inline-input:hover, .sollist-inline-select:hover { border-color: var(--color-border-secondary) !important; }
+        .sollist-inline-input:focus, .sollist-inline-select:focus { border-color: var(--color-accent) !important; background: var(--color-bg-primary) !important; outline: none; }
+        .sollist-row .sollist-row-remove { visibility: hidden; }
+        .sollist-row:hover .sollist-row-remove { visibility: visible; }
+        .sollist-row-remove:hover { color: var(--color-danger-text, #b3261e) !important; background: var(--color-bg-secondary) !important; }
         .sollist-row:hover td { background: var(--color-bg-secondary); }
         @media print { .print-only { display: block !important; } }
       `}</style>

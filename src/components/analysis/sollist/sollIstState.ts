@@ -2,7 +2,7 @@
 // all Supabase access lives in src/lib/sollIst.ts.
 
 import type { Exercise } from '../../../lib/database.types';
-import type { RefValuesMap, SavedRef, SollIstAnalysisRecord, SollIstModel, SollIstRef, SollIstRow } from '../../../lib/sollIst';
+import type { ComputedSollIstRow, RefValuesMap, SavedRef, SollIstAnalysisRecord, SollIstModel, SollIstRef, SollIstRow } from '../../../lib/sollIst';
 import { roundKg } from '../../../lib/sollIst';
 import { SOLLIST_PRESETS, isPresetId, presetId, presetKeyFromId, resolvePreset } from '../../../lib/sollIstPresets';
 
@@ -11,6 +11,24 @@ export interface SheetRef extends SollIstRef {
   current: number | null;
   goal: number | null;
 }
+
+/* ---------- data-view state (group / filter / sort) ---------- */
+
+export type GroupBy = 'none' | 'ref' | 'category';
+
+export type SortKey = 'exercise' | 'index' | 'reps' | 'soll' | 'ist' | 'deltaKg' | 'deltaPct' | 'target' | 'toGo';
+
+export interface SheetView {
+  groupBy: GroupBy;
+  /** Show only rows pointing at this reference key (null = all). */
+  refFilter: string | null;
+  /** Show only rows whose exercise has this category name (null = all). */
+  categoryFilter: string | null;
+  search: string;
+  sort: { key: SortKey; dir: 1 | -1 } | null;
+}
+
+export const defaultView = (): SheetView => ({ groupBy: 'none', refFilter: null, categoryFilter: null, search: '', sort: null });
 
 export interface SheetState {
   analysisId: string | null;
@@ -28,6 +46,7 @@ export interface SheetState {
   diff: boolean;
   /** Second model shown side-by-side, or null for single-model view. */
   sideModelRef: string | null;
+  view: SheetView;
 }
 
 export function emptySheet(): SheetState {
@@ -42,6 +61,7 @@ export function emptySheet(): SheetState {
     heatmap: true,
     diff: true,
     sideModelRef: null,
+    view: defaultView(),
   };
 }
 
@@ -105,7 +125,7 @@ export function sheetToRecord(sheet: SheetState): Omit<SollIstAnalysisRecord, 'i
     presetKey: isPreset ? presetKeyFromId(sheet.modelRef!) : null,
     refs,
     istOverrides: sheet.overrides,
-    options: { heatmap: sheet.heatmap, diff: sheet.diff, sideModelRef: sheet.sideModelRef, rows: sheet.rows },
+    options: { heatmap: sheet.heatmap, diff: sheet.diff, sideModelRef: sheet.sideModelRef, rows: sheet.rows, view: sheet.view },
   };
 }
 
@@ -135,31 +155,109 @@ export function sheetFromRecord(
     heatmap: rec.options.heatmap ?? true,
     diff: rec.options.diff ?? true,
     sideModelRef: rec.options.sideModelRef ?? null,
+    view: { ...defaultView(), ...((rec.options.view as Partial<SheetView> | undefined) ?? {}) },
   };
 }
 
-/* ---------- reference pill styling (generic palette by position) ---------- */
+/* ---------- data-view derivation (filter → sort → group) ---------- */
 
-/** Short tag for a reference pill: initials for multi-word labels
- *  ("Clean & Jerk" → CJ, "Back squat" → BS), first two letters otherwise. */
-export function refAbbrev(label: string): string {
-  const words = label.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  if (words.length >= 2) return words.map((w) => w[0]).join('').slice(0, 3).toUpperCase();
-  return label.slice(0, 2).toUpperCase();
+export interface RowGroup {
+  key: string;
+  /** Header text; null for the single ungrouped section. */
+  label: string | null;
+  rows: ComputedSollIstRow[];
 }
 
-/** Data-driven pill colours, cycled by reference position in the sheet. */
-const PILL_PALETTE: Array<{ bg: string; fg: string }> = [
-  { bg: 'rgba(24, 95, 165, 0.12)', fg: '#185FA5' },
-  { bg: 'rgba(141, 59, 110, 0.12)', fg: '#8d3b6e' },
-  { bg: 'rgba(28, 124, 60, 0.12)', fg: '#1c7c3c' },
-  { bg: 'rgba(148, 98, 0, 0.14)', fg: '#946200' },
-  { bg: 'rgba(91, 78, 163, 0.12)', fg: '#5b4ea3' },
-  { bg: 'rgba(163, 69, 47, 0.12)', fg: '#a3452f' },
-];
+function sortValue(c: ComputedSollIstRow, key: SortKey): string | number | null {
+  switch (key) {
+    case 'exercise':
+      return c.row.label.toLowerCase();
+    case 'index':
+      return c.row.indexPct;
+    case 'reps':
+      return c.row.reps;
+    case 'soll':
+      return c.soll;
+    case 'ist':
+      return c.ist?.valueKg ?? null;
+    case 'deltaKg':
+      return c.deltaKg;
+    case 'deltaPct':
+      return c.deltaPct;
+    case 'target':
+      return c.target;
+    case 'toGo':
+      return c.toGo;
+  }
+}
 
-export function refPillStyle(index: number): { bg: string; fg: string } {
-  return PILL_PALETTE[((index % PILL_PALETTE.length) + PILL_PALETTE.length) % PILL_PALETTE.length];
+/**
+ * Apply the view to computed rows: filter (search / reference / category),
+ * sort (nulls always last), then group ('ref' by sheet-reference order,
+ * 'category' by the catalogue's category order, alphabetical fallback).
+ */
+export function buildRowGroups(
+  computed: ComputedSollIstRow[],
+  view: SheetView,
+  refs: SheetRef[],
+  categoryOf: (exerciseId: string | null) => string | null,
+  categoryOrder: string[],
+): RowGroup[] {
+  const q = view.search.trim().toLowerCase();
+  let rows = computed.filter((c) => {
+    if (q && !c.row.label.toLowerCase().includes(q)) return false;
+    if (view.refFilter && c.row.refKey !== view.refFilter) return false;
+    if (view.categoryFilter && (categoryOf(c.row.exerciseId) ?? '—') !== view.categoryFilter) return false;
+    return true;
+  });
+
+  if (view.sort) {
+    const { key, dir } = view.sort;
+    rows = rows
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => {
+        const va = sortValue(a.c, key);
+        const vb = sortValue(b.c, key);
+        if (va == null && vb == null) return a.i - b.i;
+        if (va == null) return 1; // nulls last regardless of direction
+        if (vb == null) return -1;
+        const cmp = typeof va === 'string' && typeof vb === 'string' ? va.localeCompare(vb) : (va as number) - (vb as number);
+        return cmp !== 0 ? cmp * dir : a.i - b.i;
+      })
+      .map((x) => x.c);
+  }
+
+  if (view.groupBy === 'ref') {
+    const groups = refs
+      .map((r) => ({ key: r.key, label: r.label, rows: rows.filter((c) => c.row.refKey === r.key) }))
+      .filter((g) => g.rows.length > 0);
+    const orphans = rows.filter((c) => !refs.some((r) => r.key === c.row.refKey));
+    if (orphans.length > 0) groups.push({ key: '·orphan', label: 'Unknown reference', rows: orphans });
+    return groups;
+  }
+
+  if (view.groupBy === 'category') {
+    const byCat = new Map<string, ComputedSollIstRow[]>();
+    for (const c of rows) {
+      const cat = categoryOf(c.row.exerciseId) ?? '—';
+      const list = byCat.get(cat) ?? [];
+      list.push(c);
+      byCat.set(cat, list);
+    }
+    const names = [...byCat.keys()].sort((a, b) => {
+      // Catalogue order first, then unknown categories alphabetically,
+      // "No category" ('—') always last.
+      if (a === '—') return 1;
+      if (b === '—') return -1;
+      const ia = categoryOrder.indexOf(a);
+      const ib = categoryOrder.indexOf(b);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+      return a.localeCompare(b);
+    });
+    return names.map((n) => ({ key: n, label: n === '—' ? 'No category' : n, rows: byCat.get(n)! }));
+  }
+
+  return [{ key: 'all', label: null, rows }];
 }
 
 /* ---------- formatting (European convention, CLAUDE.md) ---------- */

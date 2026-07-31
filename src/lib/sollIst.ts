@@ -350,6 +350,9 @@ export interface SollIstAnalysisRecord {
     diff?: boolean;
     sideModelRef?: string | null;
     rows?: SollIstRow[];
+    /** Data-view state (group/filter/sort) — shape owned by the UI layer
+     *  (SheetView in sollIstState.ts); opaque here. */
+    view?: unknown;
   };
   updatedAt: string | null;
 }
