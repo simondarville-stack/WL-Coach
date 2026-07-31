@@ -6,22 +6,32 @@
  * wizard before an analysis is created, so a transcription correction never
  * needs a code change — the coach just adjusts and saves a custom model.
  *
- * Preset rows carry catalogue-*matching* hints instead of exercise ids: at
- * load time each row is resolved against the coach's exercise catalogue
+ * Preset refs and rows carry catalogue-*matching* hints instead of exercise
+ * ids: at load time each is resolved against the coach's exercise catalogue
  * (lift_slot first, then name matching — English, Danish and German aliases).
- * Unresolved rows surface in the wizard for manual mapping.
+ * Unresolved rows surface in the wizard for manual mapping. References are
+ * generic (any exercise, or none) — these presets just happen to use the
+ * classic snatch / clean & jerk pair.
  */
 import type { Exercise } from './database.types';
-import type { RefSlot, SollIstRow } from './sollIst';
+import type { SollIstRef, SollIstRow } from './sollIst';
 
-export interface SollIstPresetRow {
-  /** Canonical English display name (used when no catalogue match exists). */
-  label: string;
+interface MatchSpec {
   /** Preferred resolution: the catalogue exercise holding this lift_slot. */
   liftSlot?: NonNullable<Exercise['lift_slot']>;
   /** Fallback resolution: lowercase name candidates, tried exact → includes. */
   match: string[];
-  refSlot: RefSlot;
+}
+
+export interface SollIstPresetRef extends MatchSpec {
+  key: string;
+  label: string;
+}
+
+export interface SollIstPresetRow extends MatchSpec {
+  /** Canonical English display name (used when no catalogue match exists). */
+  label: string;
+  refKey: string;
   indexPct: number;
   reps: number;
 }
@@ -30,20 +40,23 @@ export interface SollIstPreset {
   key: string;
   name: string;
   description: string;
+  refs: SollIstPresetRef[];
   rows: SollIstPresetRow[];
 }
 
 const row = (
   label: string,
-  refSlot: RefSlot,
+  refKey: string,
   indexPct: number,
   reps: number,
   match: string[],
-  liftSlot?: SollIstPresetRow['liftSlot'],
-): SollIstPresetRow => ({ label, refSlot, indexPct, reps, match, liftSlot });
+  liftSlot?: MatchSpec['liftSlot'],
+): SollIstPresetRow => ({ label, refKey, indexPct, reps, match, liftSlot });
 
 /* Name aliases per movement (English / Danish / German). */
 const M = {
+  snatch: ['snatch', 'træk'],
+  cleanJerk: ['clean & jerk', 'clean and jerk', 'stød'],
   powerSnatch: ['power snatch', 'styrketræk', 'kraftreißen'],
   powerClean: ['power clean', 'frivend'],
   snatchPull: ['snatch pull', 'trækhiv', 'zug breit'],
@@ -56,56 +69,65 @@ const M = {
   pushPress: ['push press', 'push-pres', 'schwungdrücken'],
 };
 
+/** The classic Kategorie 1 / 2 reference pair used by all BVDG presets. */
+const BVDG_REFS: SollIstPresetRef[] = [
+  { key: 'sn', label: 'Snatch', liftSlot: 'snatch', match: M.snatch },
+  { key: 'cj', label: 'Clean & Jerk', liftSlot: 'clean_and_jerk', match: M.cleanJerk },
+];
+
 export const SOLLIST_PRESETS: SollIstPreset[] = [
   {
     key: 'bvdg_senior',
     name: 'BVDG — Senior',
     description: 'Trainingsmittelkatalog, Senioren (HT) column',
+    refs: BVDG_REFS,
     rows: [
-      row('Power snatch', 'snatch', 80, 1, M.powerSnatch),
-      row('Power clean', 'clean_and_jerk', 80, 1, M.powerClean),
-      row('Snatch pull', 'snatch', 108, 1, M.snatchPull, 'snatch_pull'),
-      row('Clean pull', 'clean_and_jerk', 105, 1, M.cleanPull, 'clean_pull'),
-      row('Snatch-grip deadlift', 'snatch', 130, 1, M.snatchDeadlift),
-      row('Clean-grip deadlift', 'clean_and_jerk', 125, 1, M.cleanDeadlift),
-      row('Snatch balance', 'snatch', 110, 1, M.snatchBalance),
-      row('Front squat', 'clean_and_jerk', 105, 3, M.frontSquat, 'front_squat'),
-      row('Back squat', 'clean_and_jerk', 120, 3, M.backSquat, 'back_squat'),
-      row('Push press', 'clean_and_jerk', 65, 1, M.pushPress),
+      row('Power snatch', 'sn', 80, 1, M.powerSnatch),
+      row('Power clean', 'cj', 80, 1, M.powerClean),
+      row('Snatch pull', 'sn', 108, 1, M.snatchPull, 'snatch_pull'),
+      row('Clean pull', 'cj', 105, 1, M.cleanPull, 'clean_pull'),
+      row('Snatch-grip deadlift', 'sn', 130, 1, M.snatchDeadlift),
+      row('Clean-grip deadlift', 'cj', 125, 1, M.cleanDeadlift),
+      row('Snatch balance', 'sn', 110, 1, M.snatchBalance),
+      row('Front squat', 'cj', 105, 3, M.frontSquat, 'front_squat'),
+      row('Back squat', 'cj', 120, 3, M.backSquat, 'back_squat'),
+      row('Push press', 'cj', 65, 1, M.pushPress),
     ],
   },
   {
     key: 'bvdg_u23',
     name: 'BVDG — U23',
     description: 'Trainingsmittelkatalog, U23 (HT) column',
+    refs: BVDG_REFS,
     rows: [
-      row('Power snatch', 'snatch', 80, 1, M.powerSnatch),
-      row('Power clean', 'clean_and_jerk', 80, 1, M.powerClean),
-      row('Snatch pull', 'snatch', 108, 1, M.snatchPull, 'snatch_pull'),
-      row('Clean pull', 'clean_and_jerk', 105, 1, M.cleanPull, 'clean_pull'),
-      row('Snatch-grip deadlift', 'snatch', 125, 1, M.snatchDeadlift),
-      row('Clean-grip deadlift', 'clean_and_jerk', 125, 1, M.cleanDeadlift),
-      row('Snatch balance', 'snatch', 110, 1, M.snatchBalance),
-      row('Front squat', 'clean_and_jerk', 105, 3, M.frontSquat, 'front_squat'),
-      row('Back squat', 'clean_and_jerk', 120, 3, M.backSquat, 'back_squat'),
-      row('Push press', 'clean_and_jerk', 65, 1, M.pushPress),
+      row('Power snatch', 'sn', 80, 1, M.powerSnatch),
+      row('Power clean', 'cj', 80, 1, M.powerClean),
+      row('Snatch pull', 'sn', 108, 1, M.snatchPull, 'snatch_pull'),
+      row('Clean pull', 'cj', 105, 1, M.cleanPull, 'clean_pull'),
+      row('Snatch-grip deadlift', 'sn', 125, 1, M.snatchDeadlift),
+      row('Clean-grip deadlift', 'cj', 125, 1, M.cleanDeadlift),
+      row('Snatch balance', 'sn', 110, 1, M.snatchBalance),
+      row('Front squat', 'cj', 105, 3, M.frontSquat, 'front_squat'),
+      row('Back squat', 'cj', 120, 3, M.backSquat, 'back_squat'),
+      row('Push press', 'cj', 65, 1, M.pushPress),
     ],
   },
   {
     key: 'bvdg_junior',
     name: 'BVDG — Junior',
     description: 'Trainingsmittelkatalog, Junioren (LT) column',
+    refs: BVDG_REFS,
     rows: [
-      row('Power snatch', 'snatch', 65, 2, M.powerSnatch),
-      row('Power clean', 'clean_and_jerk', 75, 2, M.powerClean),
-      row('Snatch pull', 'snatch', 103, 3, M.snatchPull, 'snatch_pull'),
-      row('Clean pull', 'clean_and_jerk', 100, 3, M.cleanPull, 'clean_pull'),
-      row('Snatch-grip deadlift', 'snatch', 113, 3, M.snatchDeadlift),
-      row('Clean-grip deadlift', 'clean_and_jerk', 118, 3, M.cleanDeadlift),
-      row('Snatch balance', 'snatch', 105, 1, M.snatchBalance),
-      row('Front squat', 'clean_and_jerk', 103, 3, M.frontSquat, 'front_squat'),
-      row('Back squat', 'clean_and_jerk', 117, 3, M.backSquat, 'back_squat'),
-      row('Push press', 'clean_and_jerk', 65, 1, M.pushPress),
+      row('Power snatch', 'sn', 65, 2, M.powerSnatch),
+      row('Power clean', 'cj', 75, 2, M.powerClean),
+      row('Snatch pull', 'sn', 103, 3, M.snatchPull, 'snatch_pull'),
+      row('Clean pull', 'cj', 100, 3, M.cleanPull, 'clean_pull'),
+      row('Snatch-grip deadlift', 'sn', 113, 3, M.snatchDeadlift),
+      row('Clean-grip deadlift', 'cj', 118, 3, M.cleanDeadlift),
+      row('Snatch balance', 'sn', 105, 1, M.snatchBalance),
+      row('Front squat', 'cj', 103, 3, M.frontSquat, 'front_squat'),
+      row('Back squat', 'cj', 117, 3, M.backSquat, 'back_squat'),
+      row('Push press', 'cj', 65, 1, M.pushPress),
     ],
   },
 ];
@@ -117,9 +139,9 @@ export const isPresetId = (id: string): boolean => id.startsWith(PRESET_ID_PREFI
 export const presetKeyFromId = (id: string): string | null =>
   isPresetId(id) ? id.slice(PRESET_ID_PREFIX.length) : null;
 
-/** Resolve one preset row against the coach's catalogue.
+/** Resolve a match spec against the coach's catalogue.
  *  Order: lift_slot → exact name → name startsWith → name includes. */
-export function resolvePresetRow(spec: SollIstPresetRow, exercises: Exercise[]): SollIstRow {
+export function matchCatalogueExercise(spec: MatchSpec, exercises: Exercise[]): Exercise | null {
   let ex: Exercise | undefined;
   if (spec.liftSlot) ex = exercises.find((e) => e.lift_slot === spec.liftSlot);
   if (!ex) {
@@ -135,15 +157,26 @@ export function resolvePresetRow(spec: SollIstPresetRow, exercises: Exercise[]):
       }
     }
   }
-  return {
-    exerciseId: ex?.id ?? null,
-    label: ex?.name ?? spec.label,
-    refSlot: spec.refSlot,
-    indexPct: spec.indexPct,
-    reps: spec.reps,
-  };
+  return ex ?? null;
 }
 
-export function resolvePreset(preset: SollIstPreset, exercises: Exercise[]): SollIstRow[] {
-  return preset.rows.map((r) => resolvePresetRow(r, exercises));
+export function resolvePreset(
+  preset: SollIstPreset,
+  exercises: Exercise[],
+): { refs: SollIstRef[]; rows: SollIstRow[] } {
+  const refs = preset.refs.map((r) => {
+    const ex = matchCatalogueExercise(r, exercises);
+    return { key: r.key, label: ex?.name ?? r.label, exerciseId: ex?.id ?? null };
+  });
+  const rows = preset.rows.map((spec) => {
+    const ex = matchCatalogueExercise(spec, exercises);
+    return {
+      exerciseId: ex?.id ?? null,
+      label: ex?.name ?? spec.label,
+      refKey: spec.refKey,
+      indexPct: spec.indexPct,
+      reps: spec.reps,
+    };
+  });
+  return { refs, rows };
 }

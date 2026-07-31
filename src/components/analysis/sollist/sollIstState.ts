@@ -2,9 +2,15 @@
 // all Supabase access lives in src/lib/sollIst.ts.
 
 import type { Exercise } from '../../../lib/database.types';
-import type { SollIstAnalysisRecord, SollIstModel, SollIstRow } from '../../../lib/sollIst';
+import type { RefValuesMap, SavedRef, SollIstAnalysisRecord, SollIstModel, SollIstRef, SollIstRow } from '../../../lib/sollIst';
 import { roundKg } from '../../../lib/sollIst';
 import { SOLLIST_PRESETS, isPresetId, presetId, presetKeyFromId, resolvePreset } from '../../../lib/sollIstPresets';
+
+/** A reference as held by the sheet: identity + the coach's numbers. */
+export interface SheetRef extends SollIstRef {
+  current: number | null;
+  goal: number | null;
+}
 
 export interface SheetState {
   analysisId: string | null;
@@ -12,14 +18,10 @@ export interface SheetState {
   athleteId: string | null;
   /** `preset:<key>` or a sollist_models uuid. */
   modelRef: string | null;
+  /** Working references — editable, any exercise (or none) can anchor. */
+  refs: SheetRef[];
   /** Working rows — a resolved, editable copy of the model/preset. */
   rows: SollIstRow[];
-  refSnExerciseId: string | null;
-  refCjExerciseId: string | null;
-  currentSn: number | null;
-  currentCj: number | null;
-  goalSn: number | null;
-  goalCj: number | null;
   /** Coach-typed Ist values, istKey → kg. */
   overrides: Record<string, number>;
   heatmap: boolean;
@@ -34,13 +36,8 @@ export function emptySheet(): SheetState {
     name: '',
     athleteId: null,
     modelRef: null,
+    refs: [],
     rows: [],
-    refSnExerciseId: null,
-    refCjExerciseId: null,
-    currentSn: 100,
-    currentCj: 100,
-    goalSn: 105,
-    goalCj: 105,
     overrides: {},
     heatmap: true,
     diff: true,
@@ -62,37 +59,51 @@ export function modelOptions(models: SollIstModel[]): ModelOption[] {
   ];
 }
 
-/** Resolve a model reference (preset or stored) to display name + rows. */
+/** Resolve a model reference (preset or stored) to name + refs + rows. */
 export function resolveModelRef(
   ref: string | null,
   models: SollIstModel[],
   exercises: Exercise[],
-): { name: string; rows: SollIstRow[] } | null {
+): { name: string; refs: SollIstRef[]; rows: SollIstRow[] } | null {
   if (!ref) return null;
   if (isPresetId(ref)) {
     const key = presetKeyFromId(ref);
     const preset = SOLLIST_PRESETS.find((p) => p.key === key);
-    return preset ? { name: preset.name, rows: resolvePreset(preset, exercises) } : null;
+    if (!preset) return null;
+    const resolved = resolvePreset(preset, exercises);
+    return { name: preset.name, refs: resolved.refs, rows: resolved.rows };
   }
   const model = models.find((m) => m.id === ref);
-  return model ? { name: model.name, rows: model.rows.map((r) => ({ ...r })) } : null;
+  return model ? { name: model.name, refs: model.refs.map((r) => ({ ...r })), rows: model.rows.map((r) => ({ ...r })) } : null;
+}
+
+/** Turn plain refs into sheet refs, carrying over current/goal values from
+ *  the previous sheet where the key (or bound exercise) matches — switching
+ *  models shouldn't wipe the numbers the coach already typed. */
+export function toSheetRefs(refs: SollIstRef[], previous: SheetRef[]): SheetRef[] {
+  return refs.map((r) => {
+    const prev =
+      previous.find((p) => p.key === r.key) ??
+      (r.exerciseId != null ? previous.find((p) => p.exerciseId === r.exerciseId) : undefined);
+    return { ...r, current: prev?.current ?? null, goal: prev?.goal ?? null };
+  });
+}
+
+export function refValuesMap(refs: SheetRef[]): RefValuesMap {
+  return Object.fromEntries(refs.map((r) => [r.key, { current: r.current, goal: r.goal }]));
 }
 
 /** Serialize the sheet for sollist_analyses. */
 export function sheetToRecord(sheet: SheetState): Omit<SollIstAnalysisRecord, 'id' | 'updatedAt'> & { id?: string | null } {
   const isPreset = sheet.modelRef != null && isPresetId(sheet.modelRef);
+  const refs: SavedRef[] = sheet.refs.map((r) => ({ key: r.key, label: r.label, exerciseId: r.exerciseId, current: r.current, goal: r.goal }));
   return {
     id: sheet.analysisId,
     name: sheet.name,
     athleteId: sheet.athleteId,
     modelId: isPreset ? null : sheet.modelRef,
     presetKey: isPreset ? presetKeyFromId(sheet.modelRef!) : null,
-    refSnExerciseId: sheet.refSnExerciseId,
-    refCjExerciseId: sheet.refCjExerciseId,
-    currentSn: sheet.currentSn,
-    currentCj: sheet.currentCj,
-    goalSn: sheet.goalSn,
-    goalCj: sheet.goalCj,
+    refs,
     istOverrides: sheet.overrides,
     options: { heatmap: sheet.heatmap, diff: sheet.diff, sideModelRef: sheet.sideModelRef, rows: sheet.rows },
   };
@@ -107,24 +118,48 @@ export function sheetFromRecord(
   exercises: Exercise[],
 ): SheetState {
   const modelRef = rec.presetKey ? presetId(rec.presetKey) : rec.modelId;
-  const rows = rec.options.rows ?? resolveModelRef(modelRef, models, exercises)?.rows ?? [];
+  const resolved = resolveModelRef(modelRef, models, exercises);
+  const rows = rec.options.rows ?? resolved?.rows ?? [];
+  const refs: SheetRef[] =
+    rec.refs.length > 0
+      ? rec.refs.map((r) => ({ ...r }))
+      : (resolved?.refs ?? []).map((r) => ({ ...r, current: null, goal: null }));
   return {
     analysisId: rec.id,
     name: rec.name,
     athleteId: rec.athleteId,
     modelRef,
+    refs,
     rows,
-    refSnExerciseId: rec.refSnExerciseId,
-    refCjExerciseId: rec.refCjExerciseId,
-    currentSn: rec.currentSn,
-    currentCj: rec.currentCj,
-    goalSn: rec.goalSn,
-    goalCj: rec.goalCj,
     overrides: rec.istOverrides,
     heatmap: rec.options.heatmap ?? true,
     diff: rec.options.diff ?? true,
     sideModelRef: rec.options.sideModelRef ?? null,
   };
+}
+
+/* ---------- reference pill styling (generic palette by position) ---------- */
+
+/** Short tag for a reference pill: initials for multi-word labels
+ *  ("Clean & Jerk" → CJ, "Back squat" → BS), first two letters otherwise. */
+export function refAbbrev(label: string): string {
+  const words = label.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length >= 2) return words.map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+  return label.slice(0, 2).toUpperCase();
+}
+
+/** Data-driven pill colours, cycled by reference position in the sheet. */
+const PILL_PALETTE: Array<{ bg: string; fg: string }> = [
+  { bg: 'rgba(24, 95, 165, 0.12)', fg: '#185FA5' },
+  { bg: 'rgba(141, 59, 110, 0.12)', fg: '#8d3b6e' },
+  { bg: 'rgba(28, 124, 60, 0.12)', fg: '#1c7c3c' },
+  { bg: 'rgba(148, 98, 0, 0.14)', fg: '#946200' },
+  { bg: 'rgba(91, 78, 163, 0.12)', fg: '#5b4ea3' },
+  { bg: 'rgba(163, 69, 47, 0.12)', fg: '#a3452f' },
+];
+
+export function refPillStyle(index: number): { bg: string; fg: string } {
+  return PILL_PALETTE[((index % PILL_PALETTE.length) + PILL_PALETTE.length) % PILL_PALETTE.length];
 }
 
 /* ---------- formatting (European convention, CLAUDE.md) ---------- */

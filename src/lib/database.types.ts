@@ -926,6 +926,9 @@ export interface SollIstModelDbRow {
   kind: 'individual' | 'custom';
   athlete_id: string | null;
   notes: string | null;
+  /** jsonb list of references: { key, label, exercise_id } (generic — any
+   *  exercise or none can anchor the index; see src/lib/sollIst.ts). */
+  refs: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -934,7 +937,8 @@ export interface SollIstModelRowDbRow {
   id: string;
   model_id: string;
   exercise_id: string;
-  ref_slot: 'snatch' | 'clean_and_jerk';
+  /** Points at a reference key in the owning model's `refs` jsonb. */
+  ref_key: string;
   index_pct: number;
   reps: number;
   display_order: number | null;
@@ -947,12 +951,8 @@ export interface SollIstAnalysisDbRow {
   athlete_id: string | null;
   model_id: string | null;
   preset_key: string | null;
-  ref_sn_exercise_id: string | null;
-  ref_cj_exercise_id: string | null;
-  current_sn: number | null;
-  current_cj: number | null;
-  goal_sn: number | null;
-  goal_cj: number | null;
+  /** jsonb list of { key, label, exercise_id, current, goal }. */
+  refs: unknown;
   ist_overrides: Record<string, number>;
   options: Record<string, unknown>;
   created_at: string;

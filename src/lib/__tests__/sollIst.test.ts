@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { computeSollIst, buildIstMap, captureIndividualRows, istKey, suggestReference, type SollIstRow, type RefValues } from '../sollIst';
-import { parseModelCsv, modelToCsv } from '../sollIstCsv';
-import { resolvePreset, SOLLIST_PRESETS } from '../sollIstPresets';
+import {
+  buildIstMap,
+  captureIndividualRows,
+  computeSollIst,
+  istKey,
+  newRefKey,
+  suggestReference,
+  type RefValuesMap,
+  type SollIstRow,
+} from '../sollIst';
+import { modelToCsv, parseModelCsv } from '../sollIstCsv';
+import { SOLLIST_PRESETS, resolvePreset } from '../sollIstPresets';
 import type { AthletePRHistory, Exercise } from '../database.types';
 
 const ex = (id: string, name: string, lift_slot: Exercise['lift_slot'] = null): Exercise =>
@@ -17,10 +26,13 @@ const pr = (exercise_id: string, rep_count: number, value_kg: number): AthletePR
     created_at: '2026-07-01T10:00:00Z',
   } as unknown as AthletePRHistory);
 
-const REFS: RefValues = { currentSn: 100, currentCj: 120, goalSn: 105, goalCj: 125 };
+const REFS: RefValuesMap = {
+  sn: { current: 100, goal: 105 },
+  cj: { current: 120, goal: 125 },
+};
 
-const BSQ: SollIstRow = { exerciseId: 'bsq', label: 'Back squat', refSlot: 'clean_and_jerk', indexPct: 120, reps: 3 };
-const PULL: SollIstRow = { exerciseId: 'pull', label: 'Snatch pull', refSlot: 'snatch', indexPct: 108, reps: 1 };
+const BSQ: SollIstRow = { exerciseId: 'bsq', label: 'Back squat', refKey: 'cj', indexPct: 120, reps: 3 };
+const PULL: SollIstRow = { exerciseId: 'pull', label: 'Snatch pull', refKey: 'sn', indexPct: 108, reps: 1 };
 
 describe('computeSollIst', () => {
   it('derives Soll, Δ, Target and To-go from index × reference', () => {
@@ -35,6 +47,17 @@ describe('computeSollIst', () => {
     expect(row.toGo).toBeCloseTo(0);
   });
 
+  it('supports arbitrary references — a squat-family sheet anchored on back squat', () => {
+    // Sandbox case: back squat is the index-100 anchor, front squat is 85 %.
+    const refs: RefValuesMap = { bsq: { current: 200, goal: 210 } };
+    const fsq: SollIstRow = { exerciseId: 'fsq', label: 'Front squat', refKey: 'bsq', indexPct: 85, reps: 1 };
+    const ist = new Map([[istKey('fsq', 1), { valueKg: 165, source: 'real' as const }]]);
+    const [row] = computeSollIst([fsq], refs, ist);
+    expect(row.soll).toBeCloseTo(170);
+    expect(row.deltaKg).toBeCloseTo(-5);
+    expect(row.target).toBeCloseTo(178.5);
+  });
+
   it('keeps Ist empty (index sheet) when no Ist map entries exist', () => {
     const [row] = computeSollIst([PULL], REFS, new Map());
     expect(row.soll).toBeCloseTo(108);
@@ -43,10 +66,11 @@ describe('computeSollIst', () => {
     expect(row.target).toBeCloseTo(113.4);
   });
 
-  it('returns null Soll when the reference value is missing', () => {
-    const [row] = computeSollIst([PULL], { ...REFS, currentSn: null }, new Map());
-    expect(row.soll).toBeNull();
-    expect(row.deltaPct).toBeNull();
+  it('returns null Soll for a missing or valueless reference', () => {
+    const [pullRow] = computeSollIst([PULL], { sn: { current: null, goal: null } }, new Map());
+    expect(pullRow.soll).toBeNull();
+    const [orphan] = computeSollIst([{ ...PULL, refKey: 'nope' }], REFS, new Map());
+    expect(orphan.soll).toBeNull();
   });
 });
 
@@ -78,6 +102,7 @@ describe('suggestReference', () => {
     expect(implied?.source).toBe('estimated');
     expect(implied!.valueKg).toBeGreaterThan(92);
     expect(suggestReference(sn, [])).toBeNull();
+    expect(suggestReference(null, [pr('sn', 1, 100)])).toBeNull(); // manual ref
   });
 });
 
@@ -93,54 +118,78 @@ describe('captureIndividualRows', () => {
   });
 });
 
+describe('newRefKey', () => {
+  it('slugs the label and de-duplicates against taken keys', () => {
+    expect(newRefKey('Back squat', [])).toBe('back_squat');
+    expect(newRefKey('Back squat', ['back_squat'])).toBe('back_squat_2');
+    expect(newRefKey('###', [])).toBe('ref');
+  });
+});
+
 describe('CSV round-trip', () => {
-  const exercises = [ex('bsq', 'Back squat'), ex('pull', 'Snatch pull')];
+  const exercises = [ex('bsq', 'Back squat'), ex('pull', 'Snatch pull'), ex('fsq', 'Front squat')];
 
   it('parses semicolon CSV with decimal commas and Kategorie refs', () => {
-    const { rows, warnings } = parseModelCsv(
+    const { refs, rows, warnings } = parseModelCsv(
       'exercise;ref;index;reps\nBack squat;2;117,5;3\nSnatch pull;SN;108;1\n',
       exercises,
     );
     expect(warnings).toEqual([]);
+    expect(refs.map((r) => r.label)).toEqual(['Clean & Jerk', 'Snatch']);
     expect(rows).toEqual([
-      { exerciseId: 'bsq', label: 'Back squat', refSlot: 'clean_and_jerk', indexPct: 117.5, reps: 3 },
-      { exerciseId: 'pull', label: 'Snatch pull', refSlot: 'snatch', indexPct: 108, reps: 1 },
+      { exerciseId: 'bsq', label: 'Back squat', refKey: refs[0].key, indexPct: 117.5, reps: 3 },
+      { exerciseId: 'pull', label: 'Snatch pull', refKey: refs[1].key, indexPct: 108, reps: 1 },
     ]);
   });
 
-  it('keeps unmatched exercises as unmapped rows with a warning', () => {
-    const { rows, warnings } = parseModelCsv('Mystery lift,SN,90,1', exercises);
-    expect(rows[0].exerciseId).toBeNull();
-    expect(rows[0].label).toBe('Mystery lift');
-    expect(warnings).toHaveLength(1);
+  it('creates arbitrary references on the fly and binds them to the catalogue', () => {
+    const { refs, rows, warnings } = parseModelCsv('Front squat;Back squat;85;1', exercises);
+    expect(warnings).toEqual([]);
+    expect(refs).toHaveLength(1);
+    expect(refs[0].label).toBe('Back squat');
+    expect(refs[0].exerciseId).toBe('bsq'); // bound → PR suggestions work
+    expect(rows[0]).toEqual({ exerciseId: 'fsq', label: 'Front squat', refKey: refs[0].key, indexPct: 85, reps: 1 });
   });
 
-  it('rejects bad refs and reps with line-numbered warnings', () => {
-    const { rows, warnings } = parseModelCsv('Back squat;XX;120;3\nBack squat;CJ;120;12', exercises);
+  it('keeps unmatched exercises and references as unbound with a warning', () => {
+    const { refs, rows, warnings } = parseModelCsv('Mystery lift,Made-up ref,90,1', exercises);
+    expect(rows[0].exerciseId).toBeNull();
+    expect(rows[0].label).toBe('Mystery lift');
+    expect(refs[0].label).toBe('Made-up ref');
+    expect(refs[0].exerciseId).toBeNull(); // manual reference
+    expect(warnings).toHaveLength(1); // only the exercise warns; a manual ref is legal
+  });
+
+  it('rejects bad indices and reps with line-numbered warnings', () => {
+    const { rows, warnings } = parseModelCsv('Back squat;CJ;abc;3\nBack squat;CJ;120;12', exercises);
     expect(rows).toHaveLength(0);
     expect(warnings.some((w) => w.includes('Line 1'))).toBe(true);
     expect(warnings.some((w) => w.includes('Line 2'))).toBe(true);
   });
 
   it('round-trips through modelToCsv', () => {
-    const rows: SollIstRow[] = [
-      { exerciseId: 'bsq', label: 'Back squat', refSlot: 'clean_and_jerk', indexPct: 117.5, reps: 3 },
-    ];
-    const { rows: parsed, warnings } = parseModelCsv(modelToCsv(rows), exercises);
-    expect(warnings).toEqual([]);
-    expect(parsed).toEqual(rows);
+    const src = 'exercise;ref;index;reps\nFront squat;Back squat;85,5;2';
+    const first = parseModelCsv(src, exercises);
+    const second = parseModelCsv(modelToCsv(first.refs, first.rows), exercises);
+    expect(second.warnings).toEqual([]);
+    expect(second.rows).toEqual(first.rows);
+    expect(second.refs).toEqual(first.refs);
   });
 });
 
 describe('preset resolution', () => {
-  it('resolves via lift_slot first, then name, leaving the rest unmapped', () => {
+  it('resolves refs and rows via lift_slot first, then names, leaving the rest unmapped', () => {
     const exercises = [
+      ex('snx', 'Træk', 'snatch'),
+      ex('cjx', 'Stød', 'clean_and_jerk'),
       ex('bs', 'Squat variation X', 'back_squat'), // lift_slot beats name
       ex('sp', 'Snatch Pull'),
       ex('pp', 'Push Press behind neck'),
     ];
     const senior = SOLLIST_PRESETS.find((p) => p.key === 'bvdg_senior')!;
-    const rows = resolvePreset(senior, exercises);
+    const { refs, rows } = resolvePreset(senior, exercises);
+    expect(refs.find((r) => r.key === 'sn')).toEqual({ key: 'sn', label: 'Træk', exerciseId: 'snx' });
+    expect(refs.find((r) => r.key === 'cj')?.exerciseId).toBe('cjx');
     const byLabel = (l: string) => rows.find((r) => r.label.toLowerCase().includes(l));
     expect(byLabel('squat variation x')?.exerciseId).toBe('bs');
     expect(byLabel('snatch pull')?.exerciseId).toBe('sp');
@@ -148,5 +197,8 @@ describe('preset resolution', () => {
     // Something with no counterpart stays unmapped but keeps its label.
     const unmapped = rows.find((r) => r.exerciseId === null);
     expect(unmapped).toBeDefined();
+    // Every row points at a defined reference.
+    const refKeys = new Set(refs.map((r) => r.key));
+    expect(rows.every((r) => refKeys.has(r.refKey))).toBe(true);
   });
 });

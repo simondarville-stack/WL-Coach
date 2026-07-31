@@ -1,11 +1,14 @@
 /**
  * sollIst — domain logic for the Soll–Ist analysis (Analysis › Soll–Ist).
  *
- * A Soll–Ist sheet relates assistance exercises to the two reference lifts
- * (snatch / clean & jerk, "Kategorie 1 / 2" in the Trainingsmittelkatalog).
- * Each model row says: at reference = 100, the athlete should manage
- * `index_pct` % of the reference for `reps` repetitions (back squat → C&J →
- * 120 → ×3). From that we derive:
+ * A Soll–Ist sheet relates exercises to one or more *references*. Classic
+ * use is the Trainingsmittelkatalog pairing (snatch = Kategorie 1, clean &
+ * jerk = Kategorie 2), but references are fully generic: any catalogue
+ * exercise can act as one (back squat as the index for a squat-family
+ * sheet), and a reference can also be a plain typed number with no
+ * catalogue binding at all. Each model row says: at reference = 100, the
+ * athlete should manage `indexPct` % of that reference for `reps`
+ * repetitions. From that we derive:
  *
  *   Soll   = index × current reference        (what the model expects today)
  *   Ist    = the athlete's PR at that rep count (real, estimated, or typed)
@@ -14,9 +17,10 @@
  *   To go  = Target − Ist
  *
  * Textbook models ship as code presets (sollIstPresets.ts); individual and
- * custom models live in `sollist_models` / `sollist_model_rows`. Saved sheets
- * live in `sollist_analyses`. All math is pure; Supabase access is confined
- * to the service functions at the bottom (API-first, CLAUDE.md).
+ * custom models live in `sollist_models` / `sollist_model_rows` (+ a `refs`
+ * jsonb). Saved sheets live in `sollist_analyses`. All math is pure;
+ * Supabase access is confined to the service functions at the bottom
+ * (API-first, CLAUDE.md).
  */
 import { supabase } from './supabase';
 import { getOwnerId } from './ownerContext';
@@ -24,16 +28,24 @@ import { buildPRRows, REP_COUNTS, type RepCount } from './prTable';
 import { roundToHalf } from './xrmUtils';
 import type { AthletePRHistory, Exercise } from './database.types';
 
-export type RefSlot = 'snatch' | 'clean_and_jerk';
+/** One reference of a model/sheet. `exerciseId` binds it to the catalogue
+ *  (enables PR suggestions); null means the coach types the numbers. */
+export interface SollIstRef {
+  /** Stable identity within the model/sheet (rows point at this). */
+  key: string;
+  label: string;
+  exerciseId: string | null;
+}
 
-/** One line of a reference model. `exerciseId` is null while a preset row is
- *  still unmapped to the coach's catalogue (the wizard surfaces those). */
+/** One line of a reference model. `exerciseId` is null while a preset/CSV row
+ *  is still unmapped to the coach's catalogue (the wizard surfaces those). */
 export interface SollIstRow {
   exerciseId: string | null;
-  /** Display name — the catalogue name once mapped, the preset label before. */
+  /** Display name — the catalogue name once mapped, the source label before. */
   label: string;
-  refSlot: RefSlot;
-  /** % of the reference lift at reference = 100 (e.g. back squat 120). */
+  /** Which reference the index is relative to (SollIstRef.key). */
+  refKey: string;
+  /** % of the reference at reference = 100 (e.g. back squat 120). */
   indexPct: number;
   reps: number;
 }
@@ -47,16 +59,17 @@ export interface SollIstModel {
   kind: SollIstModelKind;
   athleteId: string | null;
   notes: string | null;
+  refs: SollIstRef[];
   rows: SollIstRow[];
   updatedAt: string | null;
 }
 
-export interface RefValues {
-  currentSn: number | null;
-  currentCj: number | null;
-  goalSn: number | null;
-  goalCj: number | null;
+/** Current + goal value of one reference, keyed by SollIstRef.key. */
+export interface RefValue {
+  current: number | null;
+  goal: number | null;
 }
+export type RefValuesMap = Record<string, RefValue>;
 
 export type IstSource = 'real' | 'estimated' | 'override';
 
@@ -80,25 +93,19 @@ export interface ComputedSollIstRow {
 /** Key for Ist lookups and coach overrides: `<exerciseId>|<reps>`. */
 export const istKey = (exerciseId: string, reps: number): string => `${exerciseId}|${reps}`;
 
-const refFor = (slot: RefSlot, current: RefValues): number | null =>
-  slot === 'snatch' ? current.currentSn : current.currentCj;
-
-const goalFor = (slot: RefSlot, current: RefValues): number | null =>
-  slot === 'snatch' ? current.goalSn : current.goalCj;
-
 /**
- * Pure sheet computation. `ist` maps istKey → IstValue; pass an empty map for
- * the no-athlete "index 100" sheet (Soll/Target still computed, Ist columns
- * stay empty).
+ * Pure sheet computation. `refValues` maps ref key → current/goal; `ist`
+ * maps istKey → IstValue (pass an empty map for the no-athlete "index 100"
+ * sheet — Soll/Target still compute, Ist columns stay empty).
  */
 export function computeSollIst(
   rows: SollIstRow[],
-  refs: RefValues,
+  refValues: RefValuesMap,
   ist: Map<string, IstValue>,
 ): ComputedSollIstRow[] {
   return rows.map((row) => {
-    const ref = refFor(row.refSlot, refs);
-    const goal = goalFor(row.refSlot, refs);
+    const ref = refValues[row.refKey]?.current ?? null;
+    const goal = refValues[row.refKey]?.goal ?? null;
     const soll = ref != null ? (ref * row.indexPct) / 100 : null;
     const target = goal != null ? (goal * row.indexPct) / 100 : null;
     const istVal = row.exerciseId ? ist.get(istKey(row.exerciseId, row.reps)) ?? null : null;
@@ -139,8 +146,9 @@ export function buildIstMap(
   return map;
 }
 
-/** Suggested current reference value for a ref exercise: the real 1RM when
- *  logged, otherwise the PR table's implied 1RM. Null when no PRs exist. */
+/** Suggested current value for a reference bound to an exercise: the real 1RM
+ *  when logged, otherwise the PR table's implied 1RM. Null when no PRs exist
+ *  (or the reference is manual, i.e. unbound). */
 export function suggestReference(
   refExercise: Exercise | null,
   history: AthletePRHistory[],
@@ -160,32 +168,13 @@ export function suggestReference(
  */
 export function captureIndividualRows(
   computed: ComputedSollIstRow[],
-  refs: RefValues,
+  refValues: RefValuesMap,
 ): SollIstRow[] {
   return computed.map(({ row, ist }) => {
-    const ref = refFor(row.refSlot, refs);
+    const ref = refValues[row.refKey]?.current ?? null;
     if (ist == null || ref == null || ref <= 0) return { ...row };
     return { ...row, indexPct: Math.round((ist.valueKg / ref) * 1000) / 10 };
   });
-}
-
-/** Resolve the coach's catalogue exercise acting as a reference lift.
- *  Primary: lift_slot; fallback: name heuristic (same as LiftRatios). */
-export function resolveRefExercise(slot: RefSlot, exercises: Exercise[]): Exercise | null {
-  const bySlot = exercises.find((e) => e.lift_slot === slot);
-  if (bySlot) return bySlot;
-  if (slot === 'snatch') {
-    return (
-      exercises.find((e) => {
-        const n = e.name.toLowerCase();
-        return n.includes('snatch') && !n.includes('pull') && !n.includes('press') && !n.includes('power') && !n.includes('balance');
-      }) ?? null
-    );
-  }
-  return exercises.find((e) => {
-    const n = e.name.toLowerCase();
-    return n.includes('clean') && n.includes('jerk');
-  }) ?? null;
 }
 
 /** Round kg values for display/storage the way the PR table does. */
@@ -194,9 +183,33 @@ export const roundKg = roundToHalf;
 /** Valid rep counts for model rows (mirrors the PR table). */
 export const SOLLIST_REP_COUNTS: readonly RepCount[] = REP_COUNTS;
 
+/** Stable-enough key for a new reference (sheet-local uniqueness suffices). */
+export function newRefKey(label: string, taken: Iterable<string>): string {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'ref';
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  let i = 2;
+  while (used.has(`${base}_${i}`)) i++;
+  return `${base}_${i}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Persistence — sollist_models / sollist_model_rows                   */
 /* ------------------------------------------------------------------ */
+
+interface RefsJson {
+  key: string;
+  label: string;
+  exercise_id: string | null;
+}
+
+const refsFromJson = (json: unknown): SollIstRef[] =>
+  Array.isArray(json)
+    ? (json as RefsJson[]).map((r) => ({ key: r.key, label: r.label, exerciseId: r.exercise_id ?? null }))
+    : [];
+
+const refsToJson = (refs: SollIstRef[]): RefsJson[] =>
+  refs.map((r) => ({ key: r.key, label: r.label, exercise_id: r.exerciseId }));
 
 interface ModelDbRow {
   id: string;
@@ -205,10 +218,11 @@ interface ModelDbRow {
   kind: 'individual' | 'custom';
   athlete_id: string | null;
   notes: string | null;
+  refs: unknown;
   updated_at: string;
   sollist_model_rows: Array<{
     exercise_id: string;
-    ref_slot: RefSlot;
+    ref_key: string;
     index_pct: number;
     reps: number;
     display_order: number | null;
@@ -218,7 +232,7 @@ interface ModelDbRow {
 export async function fetchSollIstModels(exercises: Exercise[]): Promise<SollIstModel[]> {
   const { data, error } = await supabase
     .from('sollist_models')
-    .select('id, owner_id, name, kind, athlete_id, notes, updated_at, sollist_model_rows(exercise_id, ref_slot, index_pct, reps, display_order)')
+    .select('id, owner_id, name, kind, athlete_id, notes, refs, updated_at, sollist_model_rows(exercise_id, ref_key, index_pct, reps, display_order)')
     .eq('owner_id', getOwnerId())
     .order('updated_at', { ascending: false });
   if (error) throw error;
@@ -229,6 +243,7 @@ export async function fetchSollIstModels(exercises: Exercise[]): Promise<SollIst
     kind: m.kind,
     athleteId: m.athlete_id,
     notes: m.notes,
+    refs: refsFromJson(m.refs),
     updatedAt: m.updated_at,
     rows: m.sollist_model_rows
       .slice()
@@ -236,7 +251,7 @@ export async function fetchSollIstModels(exercises: Exercise[]): Promise<SollIst
       .map((r) => ({
         exerciseId: r.exercise_id,
         label: nameOf.get(r.exercise_id) ?? 'Unknown exercise',
-        refSlot: r.ref_slot,
+        refKey: r.ref_key,
         indexPct: Number(r.index_pct),
         reps: r.reps,
       })),
@@ -250,6 +265,7 @@ export async function saveSollIstModel(model: {
   kind: 'individual' | 'custom';
   athleteId: string | null;
   notes?: string | null;
+  refs: SollIstRef[];
   rows: SollIstRow[];
 }): Promise<string> {
   const persistable = model.rows.filter((r) => r.exerciseId != null);
@@ -262,6 +278,7 @@ export async function saveSollIstModel(model: {
         kind: model.kind,
         athlete_id: model.athleteId,
         notes: model.notes ?? null,
+        refs: refsToJson(model.refs),
         updated_at: new Date().toISOString(),
       } as never)
       .eq('id', modelId);
@@ -278,6 +295,7 @@ export async function saveSollIstModel(model: {
         kind: model.kind,
         athlete_id: model.athleteId,
         notes: model.notes ?? null,
+        refs: refsToJson(model.refs),
       } as any)
       .select('id')
       .single();
@@ -289,7 +307,7 @@ export async function saveSollIstModel(model: {
       persistable.map((r, i) => ({
         model_id: modelId,
         exercise_id: r.exerciseId,
-        ref_slot: r.refSlot,
+        ref_key: r.refKey,
         index_pct: r.indexPct,
         reps: r.reps,
         display_order: i,
@@ -310,6 +328,12 @@ export async function deleteSollIstModel(id: string): Promise<void> {
 /* Persistence — sollist_analyses                                      */
 /* ------------------------------------------------------------------ */
 
+/** A reference as stored on a saved analysis: identity + values. */
+export interface SavedRef extends SollIstRef {
+  current: number | null;
+  goal: number | null;
+}
+
 export interface SollIstAnalysisRecord {
   id: string;
   name: string;
@@ -317,12 +341,7 @@ export interface SollIstAnalysisRecord {
   /** DB model id, mutually exclusive with presetKey. */
   modelId: string | null;
   presetKey: string | null;
-  refSnExerciseId: string | null;
-  refCjExerciseId: string | null;
-  currentSn: number | null;
-  currentCj: number | null;
-  goalSn: number | null;
-  goalCj: number | null;
+  refs: SavedRef[];
   istOverrides: Record<string, number>;
   /** UI state incl. the working rows snapshot so a reload is faithful even
    *  after the source model/preset changed. */
@@ -335,18 +354,18 @@ export interface SollIstAnalysisRecord {
   updatedAt: string | null;
 }
 
+interface SavedRefJson extends RefsJson {
+  current: number | null;
+  goal: number | null;
+}
+
 interface AnalysisDbRow {
   id: string;
   name: string;
   athlete_id: string | null;
   model_id: string | null;
   preset_key: string | null;
-  ref_sn_exercise_id: string | null;
-  ref_cj_exercise_id: string | null;
-  current_sn: number | null;
-  current_cj: number | null;
-  goal_sn: number | null;
-  goal_cj: number | null;
+  refs: unknown;
   ist_overrides: Record<string, number>;
   options: SollIstAnalysisRecord['options'];
   updated_at: string;
@@ -365,12 +384,15 @@ export async function fetchSollIstAnalyses(): Promise<SollIstAnalysisRecord[]> {
     athleteId: a.athlete_id,
     modelId: a.model_id,
     presetKey: a.preset_key,
-    refSnExerciseId: a.ref_sn_exercise_id,
-    refCjExerciseId: a.ref_cj_exercise_id,
-    currentSn: a.current_sn != null ? Number(a.current_sn) : null,
-    currentCj: a.current_cj != null ? Number(a.current_cj) : null,
-    goalSn: a.goal_sn != null ? Number(a.goal_sn) : null,
-    goalCj: a.goal_cj != null ? Number(a.goal_cj) : null,
+    refs: Array.isArray(a.refs)
+      ? (a.refs as SavedRefJson[]).map((r) => ({
+          key: r.key,
+          label: r.label,
+          exerciseId: r.exercise_id ?? null,
+          current: r.current != null ? Number(r.current) : null,
+          goal: r.goal != null ? Number(r.goal) : null,
+        }))
+      : [],
     istOverrides: a.ist_overrides ?? {},
     options: a.options ?? {},
     updatedAt: a.updated_at,
@@ -386,12 +408,7 @@ export async function saveSollIstAnalysis(
     athlete_id: rec.athleteId,
     model_id: rec.modelId,
     preset_key: rec.presetKey,
-    ref_sn_exercise_id: rec.refSnExerciseId,
-    ref_cj_exercise_id: rec.refCjExerciseId,
-    current_sn: rec.currentSn,
-    current_cj: rec.currentCj,
-    goal_sn: rec.goalSn,
-    goal_cj: rec.goalCj,
+    refs: rec.refs.map((r) => ({ key: r.key, label: r.label, exercise_id: r.exerciseId, current: r.current, goal: r.goal })),
     ist_overrides: rec.istOverrides,
     options: rec.options,
     updated_at: new Date().toISOString(),

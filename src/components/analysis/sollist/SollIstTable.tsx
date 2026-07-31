@@ -1,24 +1,17 @@
 // The Soll–Ist sheet table. Presentational: receives computed rows and
-// renders reference rows on top, one line per model row below. Ist cells are
-// inline-editable (dense tables over modals, CLAUDE.md).
+// renders one pinned line per reference on top, one line per model row
+// below. Ist cells are inline-editable (dense tables over modals, CLAUDE.md).
 
-import type { ComputedSollIstRow, RefSlot, SollIstRow } from '../../../lib/sollIst';
+import type { ComputedSollIstRow, SollIstRow } from '../../../lib/sollIst';
 import { istKey } from '../../../lib/sollIst';
-import { fmtKg, heatColor } from './sollIstState';
-
-export interface RefLine {
-  slot: RefSlot;
-  label: string;
-  current: number | null;
-  goal: number | null;
-}
+import { fmtKg, heatColor, refAbbrev, refPillStyle, type SheetRef } from './sollIstState';
 
 interface SollIstTableProps {
   computed: ComputedSollIstRow[];
   /** Second model rendered side-by-side, or null. */
   side: { name: string; computed: ComputedSollIstRow[] } | null;
   modelName: string;
-  refLines: RefLine[];
+  refs: SheetRef[];
   hasAthlete: boolean;
   heatmap: boolean;
   diff: boolean;
@@ -46,27 +39,29 @@ const td: React.CSSProperties = {
 const leftAlign: React.CSSProperties = { textAlign: 'left' };
 const colSep: React.CSSProperties = { borderLeft: '0.5px solid var(--color-border-secondary)' };
 
-function RefPill({ slot }: { slot: RefSlot }) {
-  const sn = slot === 'snatch';
+function RefPill({ refs, refKey }: { refs: SheetRef[]; refKey: string }) {
+  const idx = refs.findIndex((r) => r.key === refKey);
+  const ref = refs[idx];
+  const { bg, fg } = refPillStyle(idx);
   return (
     <span
-      title={sn ? 'Referenced to snatch (Kategorie 1)' : 'Referenced to clean & jerk (Kategorie 2)'}
+      title={ref ? `Referenced to ${ref.label} (= 100)` : `Unknown reference "${refKey}"`}
       style={{
         fontSize: 'var(--text-caption)',
         fontWeight: 700,
         padding: '1px 6px',
         borderRadius: 8,
-        background: sn ? 'rgba(24, 95, 165, 0.12)' : 'rgba(141, 59, 110, 0.12)',
-        color: sn ? '#185FA5' : '#8d3b6e',
+        background: ref ? bg : 'var(--color-bg-secondary)',
+        color: ref ? fg : 'var(--color-text-tertiary)',
       }}
     >
-      {sn ? 'SN' : 'C&J'}
+      {ref ? refAbbrev(ref.label) : '?'}
     </span>
   );
 }
 
-function DeltaPct({ value, isRef }: { value: number | null; isRef?: boolean }) {
-  if (value == null || isRef) return <span>–</span>;
+function DeltaPct({ value }: { value: number | null }) {
+  if (value == null) return <span>–</span>;
   return (
     <span style={{ color: value >= 100 ? 'var(--color-success-text, #1c7c3c)' : 'var(--color-danger-text, #b3261e)' }}>
       {Math.round(value).toLocaleString('de-DE')} %
@@ -85,7 +80,7 @@ function sideRowFor(main: ComputedSollIstRow, side: ComputedSollIstRow[]): Compu
   );
 }
 
-export function SollIstTable({ computed, side, modelName, refLines, hasAthlete, heatmap, diff, onEditIst }: SollIstTableProps) {
+export function SollIstTable({ computed, side, modelName, refs, hasAthlete, heatmap, diff, onEditIst }: SollIstTableProps) {
   const modelCols = diff ? 3 : 2; // Index, Soll, (Δ%)
 
   return (
@@ -133,11 +128,14 @@ export function SollIstTable({ computed, side, modelName, refLines, hasAthlete, 
         </tr>
       </thead>
       <tbody>
-        {refLines.map((ref) => (
-          <tr key={ref.slot} style={{ background: 'var(--color-accent-bg, rgba(24, 95, 165, 0.07))' }}>
-            <td style={{ ...td, ...leftAlign, fontWeight: 600 }}>{ref.label}</td>
+        {refs.map((ref) => (
+          <tr key={ref.key} style={{ background: 'var(--color-accent-bg, rgba(24, 95, 165, 0.07))' }}>
+            <td style={{ ...td, ...leftAlign, fontWeight: 600 }} title={ref.exerciseId == null ? 'Manual reference — numbers typed by the coach' : undefined}>
+              {ref.label}
+              {ref.exerciseId == null && <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> ✎</span>}
+            </td>
             <td style={{ ...td, textAlign: 'center' }}>
-              <RefPill slot={ref.slot} />
+              <RefPill refs={refs} refKey={ref.key} />
             </td>
             <td style={td}>1</td>
             {side ? (
@@ -221,7 +219,7 @@ export function SollIstTable({ computed, side, modelName, refLines, hasAthlete, 
                 {unmapped && <span title="Not mapped to a catalogue exercise"> ⚠</span>}
               </td>
               <td style={{ ...td, textAlign: 'center' }}>
-                <RefPill slot={c.row.refSlot} />
+                <RefPill refs={refs} refKey={c.row.refKey} />
               </td>
               <td style={td}>{c.row.reps > 1 ? `×${c.row.reps}` : '1'}</td>
               {side ? (

@@ -1,10 +1,11 @@
 // Soll–Ist analysis surface (Analysis › Soll–Ist mode). Orchestrates the
-// sheet: model/athlete selection, reference + goal values, PR-fed Ist values,
-// save/load against sollist_analyses, CSV export and print. All math comes
-// from src/lib/sollIst.ts.
+// sheet: model/athlete selection, generic references (any exercise — or
+// typed numbers — can anchor the index), PR-fed Ist values, save/load
+// against sollist_analyses, CSV export and print. All math comes from
+// src/lib/sollIst.ts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, FilePlus2, Printer, Save, Trash2, UserRoundPlus } from 'lucide-react';
+import { Download, FilePlus2, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
 import { Button, ErrorState, Input, Select, Spinner } from '../../ui';
 import { useExerciseStore } from '../../../store/exerciseStore';
 import type { AthletePRHistory } from '../../../lib/database.types';
@@ -17,7 +18,7 @@ import {
   fetchSollIstAnalyses,
   fetchSollIstModels,
   istKey,
-  resolveRefExercise,
+  newRefKey,
   roundKg,
   saveSollIstAnalysis,
   saveSollIstModel,
@@ -29,9 +30,22 @@ import {
 import { modelToCsv } from '../../../lib/sollIstCsv';
 import { formatDateToDDMMYYYY, toLocalISO } from '../../../lib/dateUtils';
 import { downloadText } from '../builder/exportUtils';
-import { SollIstTable, type RefLine } from './SollIstTable';
+import { SollIstTable } from './SollIstTable';
 import { SollIstWizard, type WizardResult } from './SollIstWizard';
-import { emptySheet, fmtKg, modelOptions, parseKgInput, resolveModelRef, sheetFromRecord, sheetToRecord, type SheetState } from './sollIstState';
+import {
+  emptySheet,
+  modelOptions,
+  parseKgInput,
+  refAbbrev,
+  refPillStyle,
+  refValuesMap,
+  resolveModelRef,
+  sheetFromRecord,
+  sheetToRecord,
+  toSheetRefs,
+  type SheetRef,
+  type SheetState,
+} from './sollIstState';
 
 interface NamedEntity {
   id: string;
@@ -43,6 +57,14 @@ interface SollIstViewProps {
   initialAthleteId: string | null;
 }
 
+const capStyle: React.CSSProperties = {
+  fontSize: 'var(--text-caption)',
+  color: 'var(--color-text-tertiary)',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
+
 export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const { exercises, fetchExercises } = useExerciseStore();
   const [sheet, setSheet] = useState<SheetState>(() => ({ ...emptySheet(), athleteId: initialAthleteId }));
@@ -50,6 +72,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const [analyses, setAnalyses] = useState<SollIstAnalysisRecord[]>([]);
   const [history, setHistory] = useState<AthletePRHistory[]>([]);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [refsOpen, setRefsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -74,21 +97,14 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     };
   }, [exercises]);
 
-  // Default reference exercises + default model once the catalogue is loaded.
+  // Default model (BVDG Senior) once the catalogue is loaded and the sheet is empty.
   useEffect(() => {
     if (exercises.length === 0) return;
     setSheet((s) => {
-      const patch: Partial<SheetState> = {};
-      if (!s.refSnExerciseId) patch.refSnExerciseId = resolveRefExercise('snatch', exercises)?.id ?? null;
-      if (!s.refCjExerciseId) patch.refCjExerciseId = resolveRefExercise('clean_and_jerk', exercises)?.id ?? null;
-      if (!s.modelRef && s.rows.length === 0) {
-        const def = resolveModelRef('preset:bvdg_senior', models, exercises);
-        if (def) {
-          patch.modelRef = 'preset:bvdg_senior';
-          patch.rows = def.rows;
-        }
-      }
-      return Object.keys(patch).length > 0 ? { ...s, ...patch } : s;
+      if (s.modelRef || s.rows.length > 0 || s.refs.length > 0) return s;
+      const def = resolveModelRef('preset:bvdg_senior', models, exercises);
+      if (!def) return s;
+      return { ...s, modelRef: 'preset:bvdg_senior', refs: toSheetRefs(def.refs, []), rows: def.rows };
     });
   }, [exercises, models]);
 
@@ -107,38 +123,32 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     };
   }, [sheet.athleteId]);
 
-  const refSnExercise = useMemo(() => exercises.find((e) => e.id === sheet.refSnExerciseId) ?? null, [exercises, sheet.refSnExerciseId]);
-  const refCjExercise = useMemo(() => exercises.find((e) => e.id === sheet.refCjExerciseId) ?? null, [exercises, sheet.refCjExerciseId]);
-
-  // Suggest current references from PRs when the athlete (or history) changes.
-  // Only auto-fill untouched sheets: a loaded analysis keeps its stored values.
-  const [autofillFor, setAutofillFor] = useState<string | null>(null);
+  // Fill empty current/goal values of exercise-bound references from the PR
+  // table. Only fills nulls, so loaded analyses and typed values are never
+  // clobbered; switching athletes nulls the bound refs first (below).
   useEffect(() => {
-    if (!sheet.athleteId || sheet.analysisId || history.length === 0) return;
-    if (autofillFor === sheet.athleteId) return;
-    const sn = suggestReference(refSnExercise, history);
-    const cj = suggestReference(refCjExercise, history);
-    setAutofillFor(sheet.athleteId);
-    setSheet((s) => ({
-      ...s,
-      currentSn: sn ? sn.valueKg : s.currentSn,
-      currentCj: cj ? cj.valueKg : s.currentCj,
-      goalSn: sn ? roundKg(sn.valueKg * 1.025) : s.goalSn,
-      goalCj: cj ? roundKg(cj.valueKg * 1.025) : s.goalCj,
-    }));
-  }, [sheet.athleteId, sheet.analysisId, history, refSnExercise, refCjExercise, autofillFor]);
+    if (!sheet.athleteId || history.length === 0) return;
+    setSheet((s) => {
+      let changed = false;
+      const refs = s.refs.map((r) => {
+        if (r.exerciseId == null || r.current != null) return r;
+        const sug = suggestReference(exercises.find((e) => e.id === r.exerciseId) ?? null, history);
+        if (!sug) return r;
+        changed = true;
+        return { ...r, current: sug.valueKg, goal: r.goal ?? roundKg(sug.valueKg * 1.025) };
+      });
+      return changed ? { ...s, refs } : s;
+    });
+  }, [sheet.athleteId, history, exercises, sheet.refs]);
 
-  const refs = useMemo(
-    () => ({ currentSn: sheet.currentSn, currentCj: sheet.currentCj, goalSn: sheet.goalSn, goalCj: sheet.goalCj }),
-    [sheet.currentSn, sheet.currentCj, sheet.goalSn, sheet.goalCj],
-  );
+  const refValues = useMemo(() => refValuesMap(sheet.refs), [sheet.refs]);
 
   const istMap = useMemo(
     () => (sheet.athleteId ? buildIstMap(sheet.rows, exercises, history, sheet.overrides) : buildIstMap(sheet.rows, [], [], sheet.overrides)),
     [sheet.athleteId, sheet.rows, exercises, history, sheet.overrides],
   );
 
-  const computed = useMemo(() => computeSollIst(sheet.rows, refs, istMap), [sheet.rows, refs, istMap]);
+  const computed = useMemo(() => computeSollIst(sheet.rows, refValues, istMap), [sheet.rows, refValues, istMap]);
 
   const mainModelName = useMemo(
     () => resolveModelRef(sheet.modelRef, models, exercises)?.name ?? 'Custom',
@@ -149,16 +159,22 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     if (!sheet.sideModelRef || sheet.sideModelRef === sheet.modelRef) return null;
     const resolved = resolveModelRef(sheet.sideModelRef, models, exercises);
     if (!resolved) return null;
-    return { name: resolved.name, computed: computeSollIst(resolved.rows, refs, istMap) };
-  }, [sheet.sideModelRef, sheet.modelRef, models, exercises, refs, istMap]);
+    // The side model's rows are read against the sheet's reference values:
+    // refs are matched by key, then by bound exercise (so a stored model's
+    // "sn" still finds the sheet's snatch reference).
+    const keyMap = new Map<string, string>();
+    for (const r of resolved.refs) {
+      const target =
+        sheet.refs.find((s) => s.key === r.key) ??
+        (r.exerciseId != null ? sheet.refs.find((s) => s.exerciseId === r.exerciseId) : undefined);
+      if (target) keyMap.set(r.key, target.key);
+    }
+    const rows = resolved.rows.map((r) => ({ ...r, refKey: keyMap.get(r.refKey) ?? r.refKey }));
+    return { name: resolved.name, computed: computeSollIst(rows, refValues, istMap) };
+  }, [sheet.sideModelRef, sheet.modelRef, sheet.refs, models, exercises, refValues, istMap]);
 
   const hasAthlete = sheet.athleteId != null;
   const athleteName = athletes.find((a) => a.id === sheet.athleteId)?.name ?? null;
-
-  const refLines: RefLine[] = [
-    { slot: 'snatch', label: refSnExercise?.name ?? 'Snatch', current: sheet.currentSn, goal: sheet.goalSn },
-    { slot: 'clean_and_jerk', label: refCjExercise?.name ?? 'Clean & Jerk', current: sheet.currentCj, goal: sheet.goalCj },
-  ];
 
   const set = useCallback((patch: Partial<SheetState>) => setSheet((s) => ({ ...s, ...patch })), []);
 
@@ -167,41 +183,63 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     window.setTimeout(() => setNotice(null), 3000);
   };
 
-  const onEditIst = useCallback(
-    (row: SollIstRow, raw: string) => {
-      if (!row.exerciseId) return;
-      const key = istKey(row.exerciseId, row.reps);
-      const parsed = parseKgInput(raw);
-      setSheet((s) => {
-        const overrides = { ...s.overrides };
-        // The ≈-prefixed estimate blurring back unchanged is not an override.
-        if (parsed == null || raw.trim().startsWith('≈')) delete overrides[key];
-        else overrides[key] = parsed;
-        return { ...s, overrides };
-      });
-    },
-    [],
-  );
+  const onEditIst = useCallback((row: SollIstRow, raw: string) => {
+    if (!row.exerciseId) return;
+    const key = istKey(row.exerciseId, row.reps);
+    const parsed = parseKgInput(raw);
+    setSheet((s) => {
+      const overrides = { ...s.overrides };
+      // The ≈-prefixed estimate blurring back unchanged is not an override.
+      if (parsed == null || raw.trim().startsWith('≈')) delete overrides[key];
+      else overrides[key] = parsed;
+      return { ...s, overrides };
+    });
+  }, []);
+
+  const updateRef = (i: number, patch: Partial<SheetRef>) => {
+    setSheet((s) => ({ ...s, refs: s.refs.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
+  };
+
+  const addRef = () => {
+    setSheet((s) => ({
+      ...s,
+      refs: [...s.refs, { key: newRefKey('reference', s.refs.map((r) => r.key)), label: 'Reference', exerciseId: null, current: 100, goal: null }],
+    }));
+  };
+
+  const removeRef = (i: number) => {
+    setSheet((s) => (s.rows.some((r) => r.refKey === s.refs[i]?.key) ? s : { ...s, refs: s.refs.filter((_, j) => j !== i) }));
+  };
 
   const onAthleteChange = (athleteId: string | null) => {
-    setAutofillFor(null);
-    set({ athleteId, overrides: {}, analysisId: null, name: '' });
+    setSheet((s) => ({
+      ...s,
+      athleteId,
+      overrides: {},
+      analysisId: null,
+      name: '',
+      // Null the bound refs so the PR autofill refills them for the new
+      // athlete; manual (unbound) references keep their typed numbers.
+      refs: s.refs.map((r) => (r.exerciseId != null ? { ...r, current: athleteId ? null : 100, goal: athleteId ? null : 105 } : r)),
+    }));
   };
 
   const onModelChange = (ref: string | null) => {
     const resolved = resolveModelRef(ref, models, exercises);
-    set({ modelRef: ref, rows: resolved?.rows ?? sheet.rows });
+    if (!resolved) {
+      set({ modelRef: ref });
+      return;
+    }
+    setSheet((s) => ({ ...s, modelRef: ref, refs: toSheetRefs(resolved.refs, s.refs), rows: resolved.rows }));
   };
 
   const onWizardCreate = (result: WizardResult) => {
     setWizardOpen(false);
-    setAutofillFor(null);
     setSheet((s) => ({
       ...emptySheet(),
-      refSnExerciseId: s.refSnExerciseId,
-      refCjExerciseId: s.refCjExerciseId,
       athleteId: result.athleteId,
       modelRef: result.modelRef,
+      refs: toSheetRefs(result.refs, result.athleteId === s.athleteId ? s.refs : []),
       rows: result.rows,
       name: result.name,
     }));
@@ -226,7 +264,6 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const loadAnalysis = (id: string) => {
     const rec = analyses.find((a) => a.id === id);
     if (!rec) return;
-    setAutofillFor(rec.athleteId); // don't clobber stored refs with PR suggestions
     setSheet(sheetFromRecord(rec, models, exercises));
   };
 
@@ -250,9 +287,15 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     setBusy(true);
     setError(null);
     try {
-      const rows = captureIndividualRows(computed, refs);
+      const rows = captureIndividualRows(computed, refValues);
       const name = `Individual — ${athleteName} (${formatDateToDDMMYYYY(toLocalISO(new Date()))})`;
-      await saveSollIstModel({ name, kind: 'individual', athleteId: sheet.athleteId, rows });
+      await saveSollIstModel({
+        name,
+        kind: 'individual',
+        athleteId: sheet.athleteId,
+        refs: sheet.refs.map(({ key, label, exerciseId }) => ({ key, label, exerciseId })),
+        rows,
+      });
       setModels(await fetchSollIstModels(exercises));
       flash(`Saved “${name}”`);
     } catch (e) {
@@ -263,25 +306,12 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   };
 
   const exportCsv = () => {
-    downloadText(`sollist-${(sheet.name || mainModelName).replace(/[^a-zA-Z0-9-_]+/g, '_')}.csv`, modelToCsv(sheet.rows), 'text/csv;charset=utf-8');
+    downloadText(
+      `sollist-${(sheet.name || mainModelName).replace(/[^a-zA-Z0-9-_]+/g, '_')}.csv`,
+      modelToCsv(sheet.refs, sheet.rows),
+      'text/csv;charset=utf-8',
+    );
   };
-
-  const numInput = (label: string, value: number | null, onChange: (v: number | null) => void, title?: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={title}>
-      <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        {label}
-      </span>
-      <Input
-        type="number"
-        mono
-        step={0.5}
-        min={0}
-        style={{ width: 84, textAlign: 'right' }}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value === '' ? null : parseFloat(e.target.value))}
-      />
-    </label>
-  );
 
   const toggle = (label: string, checked: boolean, onChange: (v: boolean) => void) => (
     <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -291,13 +321,14 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   );
 
   const options = modelOptions(models);
+  const sortedExercises = useMemo(() => [...exercises].sort((a, b) => a.name.localeCompare(b.name)), [exercises]);
 
   return (
     <div className="analysis-print-area" style={{ flex: 1, overflow: 'auto', padding: 'var(--space-lg)' }}>
       {/* toolbar */}
       <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)', alignItems: 'flex-end', marginBottom: 'var(--space-md)' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Athlete</span>
+          <span style={capStyle}>Athlete</span>
           <div style={{ width: 180 }}>
             <Select value={sheet.athleteId ?? ''} onChange={(e) => onAthleteChange(e.target.value || null)}>
               <option value="">— none (index 100) —</option>
@@ -310,7 +341,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           </div>
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Model</span>
+          <span style={capStyle}>Model</span>
           <div style={{ width: 220 }}>
             <Select value={sheet.modelRef ?? ''} onChange={(e) => onModelChange(e.target.value || null)}>
               {sheet.modelRef == null && <option value="">Custom rows</option>}
@@ -334,12 +365,46 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           </div>
         </label>
 
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end', padding: '6px 10px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)' }}>
-          {numInput('SN current', sheet.currentSn, (v) => set({ currentSn: v }), 'Current snatch reference — suggested from the PR table')}
-          {numInput('C&J current', sheet.currentCj, (v) => set({ currentCj: v }), 'Current clean & jerk reference — suggested from the PR table')}
-          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border-secondary)' }} />
-          {numInput('SN goal', sheet.goalSn, (v) => set({ goalSn: v }), 'Season goal for the snatch — drives the Target column')}
-          {numInput('C&J goal', sheet.goalCj, (v) => set({ goalCj: v }), 'Season goal for the clean & jerk — drives the Target column')}
+        {/* per-reference current/goal inputs */}
+        <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', padding: '6px 10px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
+          {sheet.refs.map((r, i) => {
+            const { bg, fg } = refPillStyle(i);
+            return (
+              <div key={r.key} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'flex-end' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={r.exerciseId == null ? `${r.label} — manual reference` : `${r.label} — current, suggested from the PR table`}>
+                  <span style={capStyle}>
+                    <span style={{ fontWeight: 700, padding: '1px 5px', borderRadius: 8, background: bg, color: fg, marginRight: 4 }}>{refAbbrev(r.label)}</span>
+                    current
+                  </span>
+                  <Input
+                    type="number"
+                    mono
+                    step={0.5}
+                    min={0}
+                    style={{ width: 80, textAlign: 'right' }}
+                    value={r.current ?? ''}
+                    onChange={(e) => updateRef(i, { current: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Target column`}>
+                  <span style={capStyle}>goal</span>
+                  <Input
+                    type="number"
+                    mono
+                    step={0.5}
+                    min={0}
+                    style={{ width: 80, textAlign: 'right' }}
+                    value={r.goal ?? ''}
+                    onChange={(e) => updateRef(i, { goal: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                  />
+                </label>
+                {i < sheet.refs.length - 1 && <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border-secondary)' }} />}
+              </div>
+            );
+          })}
+          <Button variant="ghost" size="sm" icon={<Settings2 size={13} />} onClick={() => setRefsOpen((o) => !o)} title="Edit references — add, remove, rename, or bind to a catalogue exercise">
+            Refs
+          </Button>
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
@@ -407,6 +472,47 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         </div>
       </div>
 
+      {/* inline reference editor (structure: label / binding / add / remove) */}
+      {refsOpen && (
+        <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 'var(--space-md)', padding: '8px 10px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--radius-md)' }}>
+          <span style={capStyle}>References — each is index 100; bind to a catalogue exercise for PR suggestions, or keep it manual</span>
+          {sheet.refs.map((r, i) => {
+            const inUse = sheet.rows.some((row) => row.refKey === r.key);
+            return (
+              <div key={r.key} style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                <div style={{ width: 180 }}>
+                  <Input value={r.label} onChange={(e) => updateRef(i, { label: e.target.value })} />
+                </div>
+                <div style={{ width: 240 }}>
+                  <Select
+                    value={r.exerciseId ?? ''}
+                    onChange={(e) => {
+                      const ex = exercises.find((x) => x.id === e.target.value);
+                      updateRef(i, { exerciseId: ex?.id ?? null, label: ex?.name ?? r.label, current: null, goal: null });
+                    }}
+                  >
+                    <option value="">— manual (type numbers) —</option>
+                    {sortedExercises.map((ex) => (
+                      <option key={ex.id} value={ex.id}>
+                        {ex.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <Button variant="ghost" size="sm" disabled={inUse} title={inUse ? 'Rows still point at this reference' : 'Remove reference'} onClick={() => removeRef(i)}>
+                  ✕
+                </Button>
+              </div>
+            );
+          })}
+          <div>
+            <Button variant="ghost" size="sm" onClick={addRef}>
+              + Add reference
+            </Button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div style={{ marginBottom: 'var(--space-md)' }}>
           <ErrorState message={error} />
@@ -430,7 +536,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           computed={computed}
           side={side}
           modelName={mainModelName}
-          refLines={refLines}
+          refs={sheet.refs}
           hasAthlete={hasAthlete}
           heatmap={sheet.heatmap}
           diff={sheet.diff}
@@ -458,7 +564,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
             </span>
           </>
         ) : (
-          <span>No athlete selected — pure model sheet at reference = 100 ({fmtKg(sheet.currentSn)} / {fmtKg(sheet.currentCj)}). Ist values can still be typed per cell after selecting an athlete.</span>
+          <span>No athlete selected — pure model sheet with each reference at 100 (or the numbers you type). Select an athlete to compare against PRs.</span>
         )}
       </div>
 
