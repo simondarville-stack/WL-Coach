@@ -41,6 +41,24 @@ interface MacroWeekRow {
   } | null;
 }
 
+/**
+ * PostgREST OR-filter over `macrocycles` rows for an individual athlete:
+ * their own macros plus macros of training groups they are an active member
+ * of. Apply with `.or(filter)` (or `.or(filter, { referencedTable })` on an
+ * embedded join).
+ */
+export async function athleteMacroScopeFilter(athleteId: string): Promise<string> {
+  const { data: memberships } = await supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('athlete_id', athleteId)
+    .is('left_at', null);
+  const groupIds = [...new Set(((memberships ?? []) as { group_id: string }[]).map(m => m.group_id))];
+  return groupIds.length > 0
+    ? `athlete_id.eq.${athleteId},group_id.in.(${groupIds.join(',')})`
+    : `athlete_id.eq.${athleteId}`;
+}
+
 export async function resolveMacroWeek(
   athleteId: string | null,
   groupId: string | null,
@@ -59,16 +77,7 @@ export async function resolveMacroWeek(
   if (groupId) {
     query = query.eq('macrocycles.group_id', groupId);
   } else if (athleteId) {
-    const { data: memberships } = await supabase
-      .from('group_members')
-      .select('group_id')
-      .eq('athlete_id', athleteId)
-      .is('left_at', null);
-    const groupIds = [...new Set(((memberships ?? []) as { group_id: string }[]).map(m => m.group_id))];
-    const orFilter = groupIds.length > 0
-      ? `athlete_id.eq.${athleteId},group_id.in.(${groupIds.join(',')})`
-      : `athlete_id.eq.${athleteId}`;
-    query = query.or(orFilter, { referencedTable: 'macrocycles' });
+    query = query.or(await athleteMacroScopeFilter(athleteId), { referencedTable: 'macrocycles' });
   } else {
     return null;
   }

@@ -423,14 +423,27 @@ export function DayEditor({
                       combo, GPP and the text/video/image sentinels. */}
                   <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
-                    {!sentinel && (ex.summary_total_sets != null && ex.summary_total_sets > 0) && (
+                    {/* Stats render once a prescription exists; the macro chip
+                        renders as soon as the exercise is tracked — the target
+                        should be in view BEFORE the coach types the numbers. */}
+                    {!sentinel && ((ex.summary_total_sets != null && ex.summary_total_sets > 0) || macroTgt) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-text-secondary)' }}>
-                        <span>S <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_sets}</strong></span>
-                        <span>R <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_reps}</strong></span>
-                        {ex.summary_highest_load && <span>Hi <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_highest_load}</strong></span>}
-                        {ex.summary_avg_load && <span>Avg <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{Math.round(ex.summary_avg_load)}</strong></span>}
+                        {ex.summary_total_sets != null && ex.summary_total_sets > 0 && (
+                          <>
+                            <span>S <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_sets}</strong></span>
+                            <span>R <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_total_reps}</strong></span>
+                            {ex.summary_highest_load && <span>Hi <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{ex.summary_highest_load}</strong></span>}
+                            {ex.summary_avg_load && <span>Avg <strong style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{Math.round(ex.summary_avg_load)}</strong></span>}
+                          </>
+                        )}
                         {macroTgt && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-tertiary)', borderLeft: '1px solid var(--color-border-secondary)', paddingLeft: 6, marginLeft: 2 }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-tertiary)',
+                            // The divider only makes sense when stats sit to the left.
+                            ...(ex.summary_total_sets != null && ex.summary_total_sets > 0
+                              ? { borderLeft: '1px solid var(--color-border-secondary)', paddingLeft: 6, marginLeft: 2 }
+                              : {}),
+                          }}>
                             Macro: R <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.reps ?? '—'}</span>
                             {macroTgt.max != null && (
                               <>

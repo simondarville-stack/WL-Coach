@@ -62,7 +62,11 @@ export interface ReviewPair {
 }
 
 /** All metric pairs for one lift-row × week. */
-export type ReviewCell = Record<ReviewMetric, ReviewPair>;
+export type ReviewCell = Record<ReviewMetric, ReviewPair> & {
+  /** Coach's macro note for this exercise+week — shown as a dot on the cell
+   *  with the text in the tooltip (mirrors the week-note dot in the header). */
+  note?: string;
+};
 
 /** One guiding-metric row of the general table. */
 export interface GeneralRow {
@@ -145,7 +149,20 @@ function liftCellTooltip(row: ReviewRow, week: ReviewWeek, cell: ReviewCell): st
     }
     parts.push(`${REVIEW_METRIC_LABELS[m]} ${p.planned != null ? fmtValue(p.planned) : '–'}∕${p.target != null ? fmtValue(p.target) : '–'}${pct}`);
   });
+  if (cell.note) parts.push(`✎ ${cell.note}`);
   return parts.join(' · ');
+}
+
+/** Same dot the week header uses for week notes. */
+function NoteDot() {
+  return (
+    <span style={{
+      display: 'inline-block', verticalAlign: 'middle',
+      width: 3.5, height: 3.5, borderRadius: '50%',
+      background: 'var(--color-text-secondary)',
+      marginLeft: 3, marginTop: -1,
+    }} />
+  );
 }
 
 // ── Pure view ────────────────────────────────────────────────────────────────
@@ -226,7 +243,7 @@ export function MacroReviewTableView({
     if (i === selectedIdx) {
       const shown = detailMetrics.length > 0 ? detailMetrics : [metric];
       const nonEmpty = shown.filter(m => !pairEmpty(cell[m]));
-      if (nonEmpty.length === 0) return '';
+      if (nonEmpty.length === 0) return cell.note ? <NoteDot /> : '';
       return (
         <span style={{ display: 'inline-flex', gap: 8, justifyContent: 'center' }}>
           {nonEmpty.map(m => (
@@ -242,12 +259,18 @@ export function MacroReviewTableView({
               <Pair pair={cell[m]} bold={row.kind === 'category'} threshold={complianceThreshold} />
             </span>
           ))}
+          {cell.note && <NoteDot />}
         </span>
       );
     }
     const p = cell[metric];
-    if (pairEmpty(p)) return '';
-    return <Pair pair={p} bold={row.kind === 'category'} threshold={complianceThreshold} />;
+    if (pairEmpty(p)) return cell.note ? <NoteDot /> : '';
+    return (
+      <>
+        <Pair pair={p} bold={row.kind === 'category'} threshold={complianceThreshold} />
+        {cell.note && <NoteDot />}
+      </>
+    );
   };
 
   return (
@@ -661,6 +684,7 @@ export function MacroReviewTable({
               reps: { planned: stats?.reps ?? null, target: t?.target_reps ?? null, done: done?.reps ?? null },
               max: { planned: stats?.maxLoad ?? null, target: t?.target_max ?? null, done: done?.maxLoad ?? null },
               avg: { planned: stats?.avgLoad ?? null, target: t?.target_avg ?? null, done: done?.avgLoad ?? null },
+              note: t?.note?.trim() ? t.note : undefined,
             };
           }),
         });

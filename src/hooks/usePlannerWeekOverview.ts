@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { athleteMacroScopeFilter } from '../lib/plannerMacro';
 import { getOwnerId } from '../lib/ownerContext';
 import { computeMetrics, type ComputedMetrics } from '../lib/metrics';
 import { expandForCounting } from '../lib/comboExpansion';
@@ -270,17 +271,19 @@ export function usePlannerWeekOverview() {
       }
 
       // 5. Fetch macro context. Same access pattern as week plans —
-      // a shared athlete's macrocycle is owned by the host.
+      // a shared athlete's macrocycle is owned by the host. An individual
+      // athlete inherits macros of groups they belong to (same scoping as
+      // the planner's macro context, lib/plannerMacro).
       let macroQuery = supabase
         .from('macrocycles')
-        .select('id, name, start_date, end_date')
+        .select('id, name, start_date, end_date, athlete_id')
         .lte('start_date', rangeEnd)
         .gte('end_date', rangeStart);
 
       if (targetGroupId) {
         macroQuery = macroQuery.eq('group_id', targetGroupId);
       } else if (targetId) {
-        macroQuery = macroQuery.eq('athlete_id', targetId);
+        macroQuery = macroQuery.or(await athleteMacroScopeFilter(targetId));
       }
 
       const { data: macros } = await macroQuery;
@@ -301,9 +304,12 @@ export function usePlannerWeekOverview() {
           .in('macrocycle_id', macroIds)
           .order('week_number');
 
-        // Build weekStart → macro targets map
+        // Build weekStart → macro targets map. Where an athlete's own macro
+        // and an inherited group macro cover the same week, the own macro wins.
+        const ownedMacroIds = new Set(macros.filter(m => m.athlete_id != null).map(m => m.id));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (macroWeeks || []).forEach((mw: any) => {
+          if (!ownedMacroIds.has(mw.macrocycle_id) && macroWeekTargetMap.has(mw.week_start)) return;
           macroWeekTargetMap.set(mw.week_start, {
             reps: mw.total_reps_target ?? null,
             tonnage: mw.tonnage_target ?? null,
