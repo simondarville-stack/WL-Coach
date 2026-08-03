@@ -287,7 +287,7 @@ export function DayEditor({
     borderBottom: '1px solid var(--color-border-tertiary)',
     borderRadius: '4px 4px 0 0',
     background: deleteHeld
-      ? 'rgba(240,149,149,0.06)'
+      ? 'var(--color-danger-bg)'
       : isDragging ? 'var(--color-bg-tertiary)' : 'var(--color-bg-secondary)',
     cursor: deleteHeld ? 'pointer' : 'grab',
     opacity: isDragging ? 0.5 : 1,
@@ -350,12 +350,15 @@ export function DayEditor({
                   border: isDraggingOver ? '1px solid var(--color-accent-border)' : '1px solid var(--color-border-secondary)',
                   borderLeft: `3px solid ${borderColor}`,
                   boxShadow: isDraggingOver ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
-                  background: deleteHeld ? 'rgba(240,149,149,0.04)' : 'var(--color-bg-primary)',
+                  background: deleteHeld ? 'var(--color-danger-bg)' : 'var(--color-bg-primary)',
                   opacity: isDragging ? 0.5 : 1,
                   transition: 'border-color 0.1s, opacity 0.1s',
                 }}
                 onDragOver={e => handleExerciseDragOver(e, ex.id)}
-                onDrop={() => void handleExerciseDrop(ex.id)}
+                // preventDefault matters: the dragover above already advertises
+                // this row as a drop target, so a drop that doesn't consume the
+                // event would fall through to whatever is listening above.
+                onDrop={e => { e.preventDefault(); void handleExerciseDrop(ex.id); }}
               >
                 {/* Item header */}
                 <div
@@ -455,8 +458,23 @@ export function DayEditor({
                             {macroTgt.avg && (
                               <> Avg <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.avg}</span></>
                             )}
+                            {/* The coach's macro note for this exercise+week.
+                                It used to be a bare hover-only ✎ with no text —
+                                a note you have to discover by hovering is a
+                                note nobody reads. Now truncated inline, full
+                                text on hover, matching the Category Table. */}
                             {macroTgt.note?.trim() && (
-                              <span title={macroTgt.note} style={{ color: 'var(--color-text-secondary)', cursor: 'help' }}>✎</span>
+                              <span
+                                title={macroTgt.note}
+                                style={{
+                                  color: 'var(--color-text-secondary)', fontStyle: 'italic',
+                                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap', display: 'inline-block',
+                                  verticalAlign: 'bottom',
+                                }}
+                              >
+                                ✎ {macroTgt.note}
+                              </span>
                             )}
                           </span>
                         )}
@@ -538,8 +556,14 @@ export function DayEditor({
                   </div>
                 ) : sentinel === 'gpp' ? (
                   <div
-                    onClick={() => setEditingGpp(ex)}
-                    title="Click to edit GPP block"
+                    // Delete-held (or Shift) + click deletes, matching the item
+                    // header above and DayCard's row. Without this guard, arming
+                    // delete and clicking the GPP body opened the editor instead.
+                    onClick={e => {
+                      if (deleteHeld || e.shiftKey) { void handleDeleteExercise(ex.id); return; }
+                      setEditingGpp(ex);
+                    }}
+                    title={deleteHeld ? 'Click to delete this GPP block' : 'Click to edit GPP block'}
                     style={{ padding: '8px 12px', cursor: 'pointer' }}
                   >
                     {ex.metadata?.gpp?.rows?.length ? (
@@ -549,20 +573,20 @@ export function DayEditor({
                           const repsSets = [row.reps || '', row.sets > 1 ? `×${row.sets}` : ''].filter(Boolean).join('');
                           const suffix = [repsSets, row.load].filter(Boolean).join(' · ');
                           return (
-                            <div key={i} style={{ fontSize: 11, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
-                              <span style={{ color: 'var(--color-text-primary)' }}>{label}</span>
-                              {suffix && <span style={{ color: 'var(--color-text-tertiary)' }}> {suffix}</span>}
+                            <div key={i} style={{ fontSize: 11, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+                              <span style={{ color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-primary)' }}>{label}</span>
+                              {suffix && <span style={{ color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}> {suffix}</span>}
                             </div>
                           );
                         })}
                         {ex.metadata.gpp.rows.length > 6 && (
-                          <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                          <div style={{ fontSize: 10, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                             +{ex.metadata.gpp.rows.length - 6} more
                           </div>
                         )}
                       </div>
                     ) : (
-                      <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>
+                      <p style={{ fontSize: 11, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0 }}>
                         Empty GPP block — click to add rows
                       </p>
                     )}
@@ -636,8 +660,14 @@ export function DayEditor({
           onClose={() => setEditingGpp(null)}
           onSave={async section => {
             if (!saveGppSection) return;
-            await saveGppSection(editingGpp.id, section);
-            await onRefresh();
+            // The editor autosaves, so there is NO success-path refetch — it
+            // would re-render this card (and remount the editor) on every
+            // keystroke. saveGppSection patches the in-memory row instead, so
+            // the preview stays live. Resync only when a write actually fails.
+            await saveGppSection(editingGpp.id, section).catch(err => {
+              void onRefresh();
+              throw err;
+            });
           }}
         />
       )}

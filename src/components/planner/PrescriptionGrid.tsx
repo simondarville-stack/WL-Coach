@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
+import { resolveFormulaCell } from '../../lib/formulaEval';
 import {
   parsePrescription, formatPrescription,
   parseFreeTextPrescription, formatFreeTextPrescription,
@@ -148,6 +149,15 @@ export function PrescriptionGrid({
     }
   }, [editing?.colId, editing?.field]);
 
+  /** Live "= 40" bubble above the cell being edited, so a coach sees what the
+   *  formula resolves to before committing it. '!' means it doesn't evaluate
+   *  (yet) — the edit will be discarded rather than written as 0. */
+  const formulaPreview = useMemo(() => {
+    if (!editing || !editing.value.trim().startsWith('=')) return null;
+    const r = resolveFormulaCell(editing.value, editing.field === 'load' ? 'decimal' : 'integer');
+    return r.error ? '!' : r.text;
+  }, [editing]);
+
   const save = useCallback((cols: GridColumn[]) => {
     let raw: string;
     if (isCombo) {
@@ -253,12 +263,26 @@ export function PrescriptionGrid({
     const col = columns.find(c => c.id === editing.colId);
     if (!col) { setEditing(null); return; }
 
+    // Excel-style "=": resolve the arithmetic BEFORE anything else reads the
+    // cell, so every downstream branch (unit detection, interval parsing, the
+    // combo tuple test) sees a plain number and needs no formula awareness.
+    // A load resolves with decimals, a rep / set / multiplier to a whole number.
+    // A broken formula discards the edit rather than committing 0 or NaN —
+    // commit also fires on blur, and clicking away from a half-typed "=80/"
+    // must not silently zero the load.
+    const resolved = resolveFormulaCell(
+      editing.value,
+      editing.field === 'load' ? 'decimal' : 'integer',
+    );
+    if (resolved.error) { setEditing(null); return; }
+    const value = resolved.text;
+
     // Auto-switch unit when the coach signals one via the load cell.
     // "80%" → percentage, "Heavy" → free_text_reps, "80x5" → absolute_kg.
     // Combos use the same detection but format through formatComboPrescription
     // so the tuple reps_text ("2+1") survives the switch.
     if (editing.field === 'load') {
-      const text = editing.value.trim();
+      const text = value.trim();
       const detected = detectIntendedUnit(text);
       if (detected && detected !== unit) {
         const switchedCols: GridColumn[] = columns.map(c => {
@@ -316,7 +340,7 @@ export function PrescriptionGrid({
 
     if (editing.field === 'reps') {
       if (isCombo) {
-        const raw = editing.value.trim();
+        const raw = value.trim();
         const isTuple = /^\d+(\+\d+)*$/.test(raw);
         if (isTuple && raw.includes('+')) {
           const parts = raw.split('+').map(p => parseInt(p, 10) || 1);
@@ -326,15 +350,15 @@ export function PrescriptionGrid({
           updateColumn(editing.colId, { repsText: String(val), reps: val });
         }
       } else {
-        const val = Math.max(0, parseInt(editing.value, 10));
+        const val = Math.max(0, parseInt(value, 10));
         updateColumn(editing.colId, { reps: val, repsText: String(val) });
       }
     } else if (editing.field === 'load') {
       if (isFreeTextReps) {
-        const text = editing.value.trim();
+        const text = value.trim();
         updateColumn(editing.colId, { loadText: text, load: parseFloat(text) || 0 });
       } else {
-        const text = editing.value.trim();
+        const text = value.trim();
         const dashIdx = text.indexOf('-', 1);
         if (dashIdx !== -1) {
           const minVal = parseFloat(text.slice(0, dashIdx));
@@ -348,10 +372,10 @@ export function PrescriptionGrid({
         }
       }
     } else if (editing.field === 'multiplier') {
-      const val = Math.max(1, parseInt(editing.value, 10) || (col.multiplier ?? 1));
+      const val = Math.max(1, parseInt(value, 10) || (col.multiplier ?? 1));
       updateColumn(editing.colId, { multiplier: val });
     } else {
-      const val = Math.max(1, parseInt(editing.value, 10) || col.sets);
+      const val = Math.max(1, parseInt(value, 10) || col.sets);
       updateColumn(editing.colId, { sets: val });
     }
     setEditing(null);
@@ -427,18 +451,23 @@ export function PrescriptionGrid({
 
     if (isEditingThis) {
       return (
-        <input
-          ref={inputRef}
-          value={editing!.value}
-          size={1}
-          onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-          onBlur={commitEdit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-          }}
-          className="pgrid-editing"
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={editing!.value}
+            size={1}
+            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
+            onBlur={commitEdit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
+            }}
+            className="pgrid-editing"
+          />
+          {formulaPreview != null && (
+            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
+          )}
+        </>
       );
     }
 
@@ -536,18 +565,23 @@ export function PrescriptionGrid({
 
     if (isEditingThis) {
       return (
-        <input
-          ref={inputRef}
-          value={editing!.value}
-          size={1}
-          onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-          onBlur={commitEdit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-          }}
-          className="pgrid-editing"
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={editing!.value}
+            size={1}
+            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
+            onBlur={commitEdit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
+            }}
+            className="pgrid-editing"
+          />
+          {formulaPreview != null && (
+            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
+          )}
+        </>
       );
     }
 
@@ -629,18 +663,23 @@ export function PrescriptionGrid({
 
     if (isEditingThis) {
       return (
-        <input
-          ref={inputRef}
-          value={editing!.value}
-          size={1}
-          onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-          onBlur={commitEdit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-          }}
-          className="pgrid-editing"
-        />
+        <>
+          <input
+            ref={inputRef}
+            value={editing!.value}
+            size={1}
+            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
+            onBlur={commitEdit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
+            }}
+            className="pgrid-editing"
+          />
+          {formulaPreview != null && (
+            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
+          )}
+        </>
       );
     }
 

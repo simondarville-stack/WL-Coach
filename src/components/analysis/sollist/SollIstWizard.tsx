@@ -11,7 +11,7 @@ import { newRefKey, type SollIstModel, type SollIstRef, type SollIstRow } from '
 import { parseModelCsv } from '../../../lib/sollIstCsv';
 import { formatDateToDDMMYYYY, toLocalISO } from '../../../lib/dateUtils';
 import { ExerciseSearch } from '../../planner/ExerciseSearch';
-import { modelOptions, resolveModelRef } from './sollIstState';
+import { exerciseOptionLabel, modelOptions, resolveModelRef } from './sollIstState';
 
 interface NamedEntity {
   id: string;
@@ -62,7 +62,8 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
   const fileRef = useRef<HTMLInputElement>(null);
 
   const options = modelOptions(models);
-  const sortedExercises = [...exercises].sort((a, b) => a.name.localeCompare(b.name));
+  // Sentinels can never carry a PR, so they are not valid Soll-Ist rows.
+  const sortedExercises = exercises.filter((e) => e.category !== '— System').sort((a, b) => a.name.localeCompare(b.name));
 
   const reset = () => {
     setStep(0);
@@ -297,7 +298,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
                           <option value="">— manual (type numbers) —</option>
                           {sortedExercises.map((ex) => (
                             <option key={ex.id} value={ex.id}>
-                              {ex.name}
+                              {exerciseOptionLabel(ex)}
                             </option>
                           ))}
                         </Select>
@@ -352,7 +353,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
                         <option value="">⚠ {r.label} (unmapped)</option>
                         {sortedExercises.map((ex) => (
                           <option key={ex.id} value={ex.id}>
-                            {ex.name}
+                            {exerciseOptionLabel(ex)}
                           </option>
                         ))}
                       </Select>

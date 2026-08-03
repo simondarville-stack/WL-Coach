@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, ChevronsLeft, StickyNote, X } from 'lucide-react';
+import { ChevronsLeft, GripVertical, StickyNote, X } from 'lucide-react';
 import { getEventTypeIcon } from '../../lib/eventTypeIcons';
 import { CAL_EVENT_COLORS } from '../../lib/eventTypes';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, WeekType, WeekTypeConfig } from '../../lib/database.types';
@@ -81,8 +81,10 @@ interface MacroTableV2Props {
   onUpdateTonnageTarget: (weekId: string, value: string) => Promise<void>;
   onUpdateAvgTarget: (weekId: string, value: string) => Promise<void>;
   onUpdateNotes: (weekId: string, notes: string) => Promise<void>;
-  onMoveExerciseLeft: (trackedExId: string) => Promise<void>;
-  onMoveExerciseRight: (trackedExId: string) => Promise<void>;
+  /** Drag-reorder: put `sourceTeId` on the given side of `targetTeId`. */
+  onReorderExercise: (sourceTeId: string, targetTeId: string, side: 'left' | 'right') => Promise<void>;
+  /** Ctrl/⌘+drag one exercise column onto another: copy its whole prescription. */
+  onCopyExercisePrescription?: (sourceTeId: string, targetTeId: string) => Promise<void>;
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
@@ -126,6 +128,11 @@ function getWeekTypeAbbr(wt: string, weekTypes: WeekTypeConfig[]): string {
 // 'week' (Training Week) is user-resizable; the value here is only its default
 // starting width. The others are fixed.
 const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'dates', 'events', 'weektype', 'notes'];
+/** Marker MIME so week-row drop targets can tell a column drag apart
+ *  during dragover, where getData() is blocked. Lowercase: Chrome and Safari
+ *  lowercase custom type names. */
+const MARK_MACRO_EXERCISE = 'application/x-emos-macro-exercise';
+
 const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, dates: 76, events: 44, weektype: 44, notes: 100 };
 
 // Week helpers delegate to dateUtils — one ISO-week implementation, one
@@ -145,8 +152,8 @@ export function MacroTableV2({
   onUpdateTonnageTarget,
   onUpdateAvgTarget,
   onUpdateNotes,
-  onMoveExerciseLeft,
-  onMoveExerciseRight,
+  onReorderExercise,
+  onCopyExercisePrescription,
   onRemoveExercise,
   onExerciseDoubleClick,
   onOpenExerciseDetail,
@@ -176,6 +183,11 @@ export function MacroTableV2({
   const [editingAvgTargetId, setEditingAvgTargetId] = useState<string | null>(null);
   const [dragWeekId, setDragWeekId] = useState<string | null>(null);
   const [dropWeekId, setDropWeekId] = useState<string | null>(null);
+  // Exercise-column drag: which column is in the air, and where it would land.
+  // `mode: 'copy'` is the Ctrl/⌘ variant — drop ONTO a column to copy its
+  // prescription, rather than BETWEEN columns to reorder.
+  const [dragTeId, setDragTeId] = useState<string | null>(null);
+  const [dropEx, setDropEx] = useState<{ teId: string; side: 'left' | 'right'; mode: 'move' | 'copy' } | null>(null);
 
   // Notes column width (session-local): a right-edge drag handle on the Notes
   // header widens/narrows the whole column. Notes wrap and each row auto-grows
@@ -233,6 +245,68 @@ export function MacroTableV2({
     if (!weekColDrag.current) return;
     try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     weekColDrag.current = null;
+  };
+
+  // ── exercise-column drag ───────────────────────────────────────────────────
+  // Replaces the ← / → arrows: drag a column header onto another column to move
+  // it there, or Ctrl/⌘+drag to copy that column's whole prescription onto the
+  // one you drop on.
+  //
+  // The marker MIME type is what lets the WEEK-row drop targets tell a column
+  // drag apart without reading data — `getData()` is blocked during dragover.
+  const exerciseDragProps = (teId: string) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.stopPropagation();
+      e.dataTransfer.setData('text/plain', `MACROEX:${teId}`);
+      e.dataTransfer.setData(MARK_MACRO_EXERCISE, '1');
+      e.dataTransfer.effectAllowed = 'copyMove';
+      setDragTeId(teId);
+    },
+    onDragEnd: () => { setDragTeId(null); setDropEx(null); },
+    onDragOver: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes(MARK_MACRO_EXERCISE)) return;
+      if (!dragTeId || dragTeId === teId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Read the modifier HERE, not at dragstart — the state at dragstart is
+      // stale, and the copy cursor has to track the key while the drag is live.
+      const copy = (e.ctrlKey || e.metaKey) && !!onCopyExercisePrescription;
+      e.dataTransfer.dropEffect = copy ? 'copy' : 'move';
+      const r = e.currentTarget.getBoundingClientRect();
+      const side: 'left' | 'right' = e.clientX < r.left + r.width / 2 ? 'left' : 'right';
+      const mode: 'move' | 'copy' = copy ? 'copy' : 'move';
+      // dragover fires at ~60 Hz — only touch state on a real change.
+      setDropEx(prev =>
+        prev && prev.teId === teId && prev.side === side && prev.mode === mode
+          ? prev
+          : { teId, side, mode });
+    },
+    onDragLeave: () => setDropEx(prev => (prev?.teId === teId ? null : prev)),
+    onDrop: (e: React.DragEvent) => {
+      if (!dragTeId || dragTeId === teId) { setDropEx(null); return; }
+      e.preventDefault();
+      e.stopPropagation();
+      const source = dragTeId;
+      const side = dropEx?.side ?? 'right';
+      const copy = (e.ctrlKey || e.metaKey) && !!onCopyExercisePrescription;
+      setDragTeId(null);
+      setDropEx(null);
+      if (copy) void onCopyExercisePrescription!(source, teId);
+      else void onReorderExercise(source, teId, side);
+    },
+  });
+
+  /** Drop feedback: an insertion bar for a move, a filled tint for a copy. */
+  const exerciseDropStyle = (teId: string): React.CSSProperties => {
+    if (dragTeId === teId) return { opacity: 0.45 };
+    if (dropEx?.teId !== teId) return {};
+    if (dropEx.mode === 'copy') return { backgroundColor: 'var(--color-accent-muted)' };
+    return {
+      boxShadow: dropEx.side === 'left'
+        ? 'inset 2px 0 0 var(--color-accent)'
+        : 'inset -2px 0 0 var(--color-accent)',
+    };
   };
 
   const displayed = visibleExercises
@@ -428,17 +502,18 @@ export function MacroTableV2({
               </th>
             )}
             {/* Exercise section headers */}
-            {displayed.map((te, idx) => {
+            {displayed.map(te => {
               const st = colState(te.id);
               if (st.collapsed) {
                 return (
                   <th
                     key={te.id}
                     rowSpan={2}
+                    {...exerciseDragProps(te.id)}
                     className="px-0 py-1 border-l-2 border-[color:var(--color-border-tertiary)] text-center cursor-pointer select-none align-bottom"
-                    style={{ width: 30, minWidth: 30, maxWidth: 30 }}
+                    style={{ width: 30, minWidth: 30, maxWidth: 30, ...exerciseDropStyle(te.id) }}
                     onClick={() => onToggleCollapse?.(te.id)}
-                    title={`${te.exercise.exercise_code || te.exercise.name} — click to expand`}
+                    title={`${te.exercise.exercise_code || te.exercise.name} — click to expand · drag to reorder`}
                   >
                     <span
                       className="inline-block text-[9px] font-medium text-[color:var(--color-text-tertiary)]"
@@ -453,26 +528,27 @@ export function MacroTableV2({
                 <th
                   key={te.id}
                   colSpan={exSpan(te.id)}
+                  {...exerciseDragProps(te.id)}
                   className="px-1 py-1 border-l-2 border-[color:var(--color-border-tertiary)] text-center cursor-pointer select-none"
-                  style={{ minWidth: 44 * activeMetrics.length + (st.expanded ? 100 : 0) }}
+                  style={{
+                    minWidth: 44 * activeMetrics.length + (st.expanded ? 100 : 0),
+                    ...exerciseDropStyle(te.id),
+                  }}
                   onDoubleClick={() => onExerciseDoubleClick(te.id)}
-                  title="Double-click to focus chart"
+                  title={onCopyExercisePrescription
+                    ? 'Drag to reorder · Ctrl+drag onto another exercise to copy its prescription · double-click to focus chart'
+                    : 'Drag to reorder · double-click to focus chart'}
                 >
                   <div className="flex items-center justify-between gap-0.5">
-                    {/* The reorder arrows sit inside the header cell, whose
-                        double-click focuses the chart. Without stopPropagation
-                        a double-click on an arrow fires BOTH — two reorders and
-                        a focus — which is how "double-click to focus" ended up
-                        reporting a position-collision error. */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onMoveExerciseLeft(te.id); }}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                      disabled={idx === 0}
-                      title="Move column left"
-                      className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 flex-shrink-0 p-0.5"
-                    >
-                      <ChevronLeft size={10} />
-                    </button>
+                    {/* Grip carries the affordance the ← / → arrows used to.
+                        Every button inside this header still stops the
+                        double-click, which focuses the chart — that is the
+                        combination behind the historical double-fire bug. */}
+                    <GripVertical
+                      size={10}
+                      className="text-[color:var(--color-text-tertiary)] flex-shrink-0"
+                      aria-hidden
+                    />
                     <button
                       type="button"
                       className="flex items-center gap-1 min-w-0 hover:underline"
@@ -508,15 +584,6 @@ export function MacroTableV2({
                           <StickyNote size={10} />
                         </button>
                       )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onMoveExerciseRight(te.id); }}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                        disabled={idx === displayed.length - 1}
-                        title="Move column right"
-                        className="text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-text-secondary)] disabled:opacity-20 p-0.5"
-                      >
-                        <ChevronRight size={10} />
-                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onRemoveExercise(te.id); }}
                         onDoubleClick={(e) => e.stopPropagation()}
@@ -634,7 +701,28 @@ export function MacroTableV2({
                         color: phase.color,
                       }}
                     >
-                      {phase.name} (W{phase.start_week_number}–{phase.end_week_number})
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="flex-shrink-0">
+                          {phase.name} (W{phase.start_week_number}–{phase.end_week_number})
+                        </span>
+                        {/* The coach's phase note. It was written in the phase
+                            panel and rendered nowhere — the ribbon that separates
+                            the phases is where it belongs. One line with a
+                            tooltip for the rest: this is the densest table in the
+                            app, so the row must not grow. Same ✎ convention as
+                            the week and target notes; opacity rather than a new
+                            colour, so the ribbon keeps its phase-colour
+                            identity. */}
+                        {phase.notes?.trim() && (
+                          <span
+                            className="italic font-normal truncate"
+                            style={{ flex: 1, minWidth: 0, opacity: 0.85 }}
+                            title={phase.notes}
+                          >
+                            ✎ {phase.notes}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -670,10 +758,19 @@ export function MacroTableV2({
                   key={week.id}
                   className={`transition-colors ${dropWeekId === week.id && dragWeekId !== week.id ? 'outline outline-2 outline-blue-400 outline-offset-[-1px]' : ''}`}
                   style={phaseColor ? { backgroundColor: phaseColor + '0D' } : undefined}
-                  onDragOver={e => { e.preventDefault(); setDropWeekId(week.id); }}
+                  // Gated on dragWeekId: this used to preventDefault
+                  // unconditionally, so dragging an exercise COLUMN painted the
+                  // blue drop outline on every week row it passed over.
+                  onDragOver={e => {
+                    if (!dragWeekId) return;
+                    e.preventDefault();
+                    setDropWeekId(prev => (prev === week.id ? prev : week.id));
+                  }}
                   onDragLeave={() => setDropWeekId(null)}
-                  onDrop={() => {
-                    if (dragWeekId && dragWeekId !== week.id) onSwapWeeks?.(dragWeekId, week.id);
+                  onDrop={e => {
+                    if (!dragWeekId) return;
+                    e.preventDefault();
+                    if (dragWeekId !== week.id) onSwapWeeks?.(dragWeekId, week.id);
                     setDragWeekId(null); setDropWeekId(null);
                   }}
                   onMouseEnter={e => { if (dragWeekId) return; (e.currentTarget as HTMLTableRowElement).style.backgroundColor = phaseColor ? phaseColor + '26' : '#f9fafb'; }}

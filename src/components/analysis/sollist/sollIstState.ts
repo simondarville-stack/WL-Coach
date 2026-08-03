@@ -202,10 +202,17 @@ export function buildRowGroups(
   refs: SheetRef[],
   categoryOf: (exerciseId: string | null) => string | null,
   categoryOrder: string[],
+  /** Exercise code lookup, so the search box matches codes too. Defaulted so
+   *  existing callers (and tests) keep the old name-only behaviour. */
+  codeOf: (exerciseId: string | null) => string | null = () => null,
 ): RowGroup[] {
   const q = view.search.trim().toLowerCase();
   let rows = computed.filter((c) => {
-    if (q && !c.row.label.toLowerCase().includes(q)) return false;
+    // Match the code as well as the name: the add-exercise field already
+    // ranks on code, so searching "bsq" and getting nothing was inconsistent.
+    if (q
+      && !c.row.label.toLowerCase().includes(q)
+      && !(codeOf(c.row.exerciseId) ?? '').toLowerCase().includes(q)) return false;
     if (view.refFilter && c.row.refKey !== view.refFilter) return false;
     if (view.categoryFilter && (categoryOf(c.row.exerciseId) ?? '—') !== view.categoryFilter) return false;
     return true;
@@ -263,6 +270,15 @@ export function buildRowGroups(
 /* ---------- formatting (European convention, CLAUDE.md) ---------- */
 
 /** kg for table cells: rounded to 0,5 kg, comma decimal. */
+/**
+ * How an exercise reads in a Soll-Ist `<select>`: "SN - Snatch" when it has a
+ * code, the bare name when it does not. A `<select>` cannot hold styled markup,
+ * so the code goes into the option's plain text.
+ */
+export const exerciseOptionLabel = (
+  ex: { name: string; exercise_code: string | null },
+): string => (ex.exercise_code ? `${ex.exercise_code} \u00b7 ${ex.name}` : ex.name);
+
 export function fmtKg(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v)) return '–';
   return roundKg(v).toLocaleString('de-DE', { maximumFractionDigits: 1 });

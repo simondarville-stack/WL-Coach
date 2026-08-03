@@ -35,9 +35,118 @@ export interface FillAnchors {
   toValue: number;
 }
 
+/**
+ * Shape of the trend between the two anchors.
+ *
+ * The rhythm still modulates every week on top of this — the trend is the
+ * *underlying* progression the rhythm oscillates around. A straight ramp is
+ * only one of the models a coach writes: a block that sits low and jumps late
+ * is `accelerate`, a block that takes the step early and consolidates is
+ * `decelerate`, and a classic build-peak-hold is the `scurve`.
+ */
+export type TrendShape = 'linear' | 'accelerate' | 'decelerate' | 'scurve';
+
+/** One intermediate anchor of a multi-point (piecewise-linear) trend. */
+export interface TrendWaypoint {
+  week: number;
+  value: number;
+}
+
+export interface TrendModel {
+  shape: TrendShape;
+  /**
+   * 0–100: how far the shape bends away from a straight line. 0 is linear
+   * whatever the shape, so the coach can dial a curve back to nothing without
+   * changing the model. Ignored by `linear`.
+   */
+  bend: number;
+  /**
+   * Intermediate anchors, in the same unit as `FillAnchors.fromValue/toValue`.
+   * When any waypoint falls inside the anchor range the trend becomes
+   * piecewise-linear through start → waypoints → end and `shape` is ignored —
+   * "make it a multi-point linear model" is exactly this.
+   */
+  waypoints?: TrendWaypoint[];
+}
+
+export const DEFAULT_TREND: TrendModel = { shape: 'linear', bend: 50 };
+
+export const TREND_SHAPE_LABELS: Record<TrendShape, string> = {
+  linear: 'Linear',
+  accelerate: 'Late jump',
+  decelerate: 'Early step',
+  scurve: 'S-curve',
+};
+
+const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/**
+ * Map the linear progress t∈[0,1] through the chosen shape. Every shape is
+ * anchored — ease(0) === 0 and ease(1) === 1 — so the coach's two endpoints are
+ * always hit exactly, whatever the bend.
+ */
+export function easeTrend(t: number, model: TrendModel): number {
+  const x = clamp01(t);
+  const bend = Math.max(0, Math.min(100, model.bend));
+  if (model.shape === 'linear' || bend === 0) return x;
+  switch (model.shape) {
+    case 'accelerate': {
+      // Stay low, jump late. bend 50 ⇒ quadratic, bend 100 ⇒ cubic.
+      const k = 1 + bend / 50;
+      return Math.pow(x, k);
+    }
+    case 'decelerate': {
+      // Take the step early, then flatten out.
+      const k = 1 + bend / 50;
+      return 1 - Math.pow(1 - x, k);
+    }
+    case 'scurve': {
+      // Blend linear toward smoothstep so bend controls how pronounced the S is.
+      const smooth = x * x * (3 - 2 * x);
+      return x + (bend / 100) * (smooth - x);
+    }
+  }
+}
+
+/**
+ * Value of a piecewise-linear trend through start → waypoints → end.
+ * Waypoints outside the anchor range are ignored; duplicates on the same week
+ * collapse to the last one written.
+ */
+function piecewiseTrendAt(
+  anchors: FillAnchors,
+  waypoints: TrendWaypoint[],
+  weekNumber: number,
+): number {
+  const lo = Math.min(anchors.fromWeek, anchors.toWeek);
+  const hi = Math.max(anchors.fromWeek, anchors.toWeek);
+  const byWeek = new Map<number, number>([
+    [anchors.fromWeek, anchors.fromValue],
+    [anchors.toWeek, anchors.toValue],
+  ]);
+  for (const wp of waypoints) {
+    if (wp.week <= lo || wp.week >= hi) continue; // endpoints are the coach's anchors
+    byWeek.set(wp.week, wp.value);
+  }
+  const pts = [...byWeek.entries()].sort((a, b) => a[0] - b[0]);
+  if (weekNumber <= pts[0][0]) return pts[0][1];
+  const last = pts[pts.length - 1];
+  if (weekNumber >= last[0]) return last[1];
+  for (let i = 1; i < pts.length; i++) {
+    const [w1, v1] = pts[i];
+    if (weekNumber > w1) continue;
+    const [w0, v0] = pts[i - 1];
+    const span = w1 - w0;
+    return span === 0 ? v1 : v0 + ((v1 - v0) * (weekNumber - w0)) / span;
+  }
+  return last[1];
+}
+
 export interface ExerciseFillOptions {
   /** Load anchors — kg when unit is 'kg', % of referenceKg when 'pct'. */
   anchors: FillAnchors;
+  /** Shape of the progression between the anchors; omitted = linear ramp. */
+  trend?: TrendModel | null;
   unit: 'kg' | 'pct';
   /** Required when unit is 'pct'; ignored for 'kg'. */
   referenceKg?: number | null;
@@ -69,6 +178,8 @@ export interface ExerciseFillResult {
 export interface GeneralFillOptions {
   /** Anchors in the metric's own unit (e.g. Σreps). Modulated by the rhythm's reps %. */
   anchors: FillAnchors;
+  /** Shape of the progression between the anchors; omitted = linear ramp. */
+  trend?: TrendModel | null;
   overwrite?: boolean;
   stamp?: boolean;
   /** Rounding step (default 5 — Σreps granularity). */
@@ -140,9 +251,28 @@ function resolveWeeks(
   return out;
 }
 
-function trendAt(anchors: FillAnchors, weekNumber: number): number {
-  const t = (weekNumber - anchors.fromWeek) / (anchors.toWeek - anchors.fromWeek);
-  return anchors.fromValue + (anchors.toValue - anchors.fromValue) * t;
+/**
+ * The underlying progression at one week. `model` selects the shape between
+ * the anchors — omitted / null keeps the historical straight ramp, so every
+ * existing caller and test is unaffected.
+ */
+export function trendAt(
+  anchors: FillAnchors,
+  weekNumber: number,
+  model?: TrendModel | null,
+): number {
+  const span = anchors.toWeek - anchors.fromWeek;
+  if (span === 0) return anchors.toValue;
+  if (model?.waypoints?.length) {
+    const lo = Math.min(anchors.fromWeek, anchors.toWeek);
+    const hi = Math.max(anchors.fromWeek, anchors.toWeek);
+    if (model.waypoints.some(wp => wp.week > lo && wp.week < hi)) {
+      return piecewiseTrendAt(anchors, model.waypoints, weekNumber);
+    }
+  }
+  const t = (weekNumber - anchors.fromWeek) / span;
+  const eased = model ? easeTrend(t, model) : clamp01(t);
+  return anchors.fromValue + (anchors.toValue - anchors.fromValue) * eased;
 }
 
 /**
@@ -175,7 +305,7 @@ export function computeExerciseFill(
     const week = byNumber.get(weekNumber);
     if (week?.hasExisting && !(opts.overwrite ?? false)) continue;
 
-    const loadTrend = trendAt(anchors, weekNumber);
+    const loadTrend = trendAt(anchors, weekNumber, opts.trend);
     const kgTrend = opts.unit === 'pct' ? (opts.referenceKg as number) * loadTrend / 100 : loadTrend;
     const max = Math.max(0, roundToStep(kgTrend * step.load / 100, rounding));
     const cell: FillCell = { max };
@@ -192,6 +322,8 @@ export function computeExerciseFill(
           toValue: opts.repsAnchors.toValue,
         },
         weekNumber,
+        // Same shape, no waypoints — those carry load values, not reps.
+        opts.trend ? { shape: opts.trend.shape, bend: opts.trend.bend } : null,
       );
       cell.reps = Math.max(0, Math.round(repsTrend * step.reps / 100));
     }
@@ -224,7 +356,7 @@ export function computeGeneralFill(
     if (canStamp && stamp) stamps.set(weekNumber, stamp);
     const week = byNumber.get(weekNumber);
     if (week?.hasExisting && !(opts.overwrite ?? false)) continue;
-    const trend = trendAt(anchors, weekNumber);
+    const trend = trendAt(anchors, weekNumber, opts.trend);
     values.set(weekNumber, Math.max(0, roundToStep(trend * step.reps / 100, rounding)));
   }
   return { values, stamps };

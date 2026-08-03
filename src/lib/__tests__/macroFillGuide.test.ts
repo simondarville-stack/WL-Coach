@@ -5,6 +5,7 @@ import {
   mirroredAvg,
   roundToStep,
   stampAllowed,
+  trendAt,
   type FillWeek,
 } from '../macroFillGuide';
 import type { RhythmPreset, WeekTypeConfig } from '../database.types';
@@ -291,5 +292,124 @@ describe('DEFAULT_RHYTHM_PRESETS integrity', () => {
   it('the default step preset can stamp against the default week types', () => {
     const step = DEFAULT_RHYTHM_PRESETS.find(r => r.id === 'step-3-1')!;
     expect(stampAllowed(step, WEEK_TYPES)).toBe(true);
+  });
+});
+
+describe('trendAt — progression shapes between the anchors', () => {
+  const A = { fromWeek: 1, fromValue: 100, toWeek: 11, toValue: 150 };
+
+  it('is linear by default and hits both anchors exactly', () => {
+    expect(trendAt(A, 1)).toBe(100);
+    expect(trendAt(A, 6)).toBe(125);
+    expect(trendAt(A, 11)).toBe(150);
+  });
+
+  it('every shape still hits both anchors exactly', () => {
+    for (const shape of ['linear', 'accelerate', 'decelerate', 'scurve'] as const) {
+      for (const bend of [0, 50, 100]) {
+        expect(trendAt(A, 1, { shape, bend })).toBeCloseTo(100, 9);
+        expect(trendAt(A, 11, { shape, bend })).toBeCloseTo(150, 9);
+      }
+    }
+  });
+
+  it('bend 0 collapses any shape back to linear', () => {
+    for (const shape of ['accelerate', 'decelerate', 'scurve'] as const) {
+      expect(trendAt(A, 6, { shape, bend: 0 })).toBeCloseTo(125, 9);
+    }
+  });
+
+  it('accelerate stays below the ramp, decelerate stays above it', () => {
+    expect(trendAt(A, 6, { shape: 'accelerate', bend: 50 })).toBeLessThan(125);
+    expect(trendAt(A, 6, { shape: 'decelerate', bend: 50 })).toBeGreaterThan(125);
+  });
+
+  it('the s-curve is symmetric about the midpoint', () => {
+    const m = { shape: 'scurve' as const, bend: 100 };
+    expect(trendAt(A, 6, m)).toBeCloseTo(125, 9);
+    // equal distance either side of the middle ⇒ equal deviation from the ramp
+    const below = 125 - trendAt(A, 3.5, m);
+    const above = trendAt(A, 8.5, m) - 125;
+    expect(below).toBeCloseTo(above, 9);
+  });
+
+  it('is monotonic for every shape on a rising ramp', () => {
+    for (const shape of ['linear', 'accelerate', 'decelerate', 'scurve'] as const) {
+      let prev = -Infinity;
+      for (let w = 1; w <= 11; w++) {
+        const v = trendAt(A, w, { shape, bend: 100 });
+        expect(v).toBeGreaterThanOrEqual(prev);
+        prev = v;
+      }
+    }
+  });
+
+  it('waypoints make the trend piecewise linear and override the shape', () => {
+    const model = { shape: 'accelerate' as const, bend: 100, waypoints: [{ week: 6, value: 140 }] };
+    expect(trendAt(A, 6, model)).toBe(140);
+    expect(trendAt(A, 3.5, model)).toBeCloseTo(120, 9);   // midway 1→6 on 100→140
+    expect(trendAt(A, 8.5, model)).toBeCloseTo(145, 9);   // midway 6→11 on 140→150
+    expect(trendAt(A, 1, model)).toBe(100);
+    expect(trendAt(A, 11, model)).toBe(150);
+  });
+
+  it('ignores waypoints outside the anchor range', () => {
+    const model = { shape: 'linear' as const, bend: 0, waypoints: [{ week: 20, value: 999 }] };
+    expect(trendAt(A, 6, model)).toBe(125);
+  });
+
+  it('a falling ramp works the same way', () => {
+    const D = { fromWeek: 1, fromValue: 150, toWeek: 11, toValue: 100 };
+    expect(trendAt(D, 6, { shape: 'decelerate', bend: 50 })).toBeLessThan(125);
+    expect(trendAt(D, 1, { shape: 'scurve', bend: 100 })).toBeCloseTo(150, 9);
+    expect(trendAt(D, 11, { shape: 'scurve', bend: 100 })).toBeCloseTo(100, 9);
+  });
+});
+
+describe('computeExerciseFill — trend model', () => {
+  it('a curved trend changes the middle weeks but not the anchors', () => {
+    const linear = computeExerciseFill(twelveWeeks(), FLAT, WEEK_TYPES, {
+      anchors: { fromWeek: 1, fromValue: 100, toWeek: 11, toValue: 150 },
+      unit: 'kg',
+    }).cells;
+    const curved = computeExerciseFill(twelveWeeks(), FLAT, WEEK_TYPES, {
+      anchors: { fromWeek: 1, fromValue: 100, toWeek: 11, toValue: 150 },
+      trend: { shape: 'accelerate', bend: 100 },
+      unit: 'kg',
+    }).cells;
+    expect(curved.get(1)!.max).toBe(linear.get(1)!.max);
+    expect(curved.get(11)!.max).toBe(linear.get(11)!.max);
+    expect(curved.get(6)!.max).toBeLessThan(linear.get(6)!.max);
+  });
+
+  it('an omitted trend is byte-identical to the historical linear fill', () => {
+    const opts = { anchors: { fromWeek: 1, fromValue: 100, toWeek: 11, toValue: 150 }, unit: 'kg' as const };
+    const a = computeExerciseFill(twelveWeeks(), STEP_31, WEEK_TYPES, opts).cells;
+    const b = computeExerciseFill(twelveWeeks(), STEP_31, WEEK_TYPES, { ...opts, trend: { shape: 'linear', bend: 50 } }).cells;
+    for (const [w, cell] of a) expect(b.get(w)!.max).toBe(cell.max);
+  });
+
+  it('waypoints drive the exercise fill', () => {
+    const { cells } = computeExerciseFill(twelveWeeks(), FLAT, WEEK_TYPES, {
+      anchors: { fromWeek: 1, fromValue: 100, toWeek: 11, toValue: 150 },
+      trend: { shape: 'linear', bend: 0, waypoints: [{ week: 6, value: 140 }] },
+      unit: 'kg',
+      loadRoundingKg: 2.5,
+    });
+    expect(cells.get(6)!.max).toBe(140);
+    expect(cells.get(11)!.max).toBe(150);
+  });
+});
+
+describe('computeGeneralFill — trend model', () => {
+  it('applies the shape to a general Σreps fill', () => {
+    const base = { anchors: { fromWeek: 1, fromValue: 200, toWeek: 11, toValue: 400 } };
+    const linear = computeGeneralFill(twelveWeeks(), FLAT, WEEK_TYPES, base).values;
+    const curved = computeGeneralFill(twelveWeeks(), FLAT, WEEK_TYPES, {
+      ...base, trend: { shape: 'decelerate', bend: 100 },
+    }).values;
+    expect(curved.get(1)).toBe(linear.get(1));
+    expect(curved.get(11)).toBe(linear.get(11));
+    expect(curved.get(6)!).toBeGreaterThan(linear.get(6)!);
   });
 });

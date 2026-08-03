@@ -1,15 +1,19 @@
 /**
- * GppBlockEditor — modal the coach uses to fill in a GPP / circuit
+ * GppBlockEditor — the sheet the coach uses to fill in a GPP / circuit
  * section: title, optional description, and rows of
  * (Exercise, Reps, Sets, Load).
  *
- * Local state holds the in-flight edits; "Save" commits via the
- * onSave callback (which the parent wires to useWeekPlans.saveGppSection).
- * "Cancel" discards. Reads default-empty rows when no GPP payload
- * exists yet on the planned_exercise.
+ * **Autosaves.** It used to be the only editing surface in the coach app with
+ * a Save button — prescriptions save on every cell interaction, notes on a
+ * debounce, templates on a 350 ms debounce, and the athlete's own GPP card
+ * persists every keystroke. Now this one does too: text edits debounce,
+ * structural edits (add / remove row, tick done) commit immediately, and
+ * closing flushes whatever is still pending. There is no Cancel, for the same
+ * reason there isn't one on a prescription — nothing is held back to discard.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { useSaveQueue } from '../../hooks/useSaveQueue';
 import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
 
 /** Supabase errors are plain objects (not Error). Pull the useful
@@ -52,6 +56,36 @@ interface GppBlockEditorProps {
 
 const EMPTY_ROW: GppRow = { exercise: '', reps: '', sets: 1, load: '' };
 
+/** Text edits coalesce over this window; structural edits bypass it. */
+const DEBOUNCE_MS = 350;
+
+/**
+ * The payload shape that actually gets persisted.
+ *
+ * The Exercise cell is the canonical "is this a real row?" signal — everything
+ * else is metadata — so rows without a name are dropped. With the auto-grow
+ * flow there is always a trailing blank row the coach hasn't filled, plus
+ * possibly skipped rows in the middle. The trash button still removes filled
+ * rows deliberately.
+ */
+function cleanSection(section: GppSection, includeDone: boolean): GppSection {
+  return {
+    title: (section.title ?? '').trim() || 'GPP',
+    description: (section.description ?? '').trim(),
+    rows: (section.rows ?? [])
+      .map(r => ({
+        exercise: (r.exercise ?? '').trim(),
+        reps: (r.reps ?? '').trim(),
+        sets: Math.max(1, Math.round(r.sets || 1)),
+        load: (r.load ?? '').trim(),
+        // Round-trip the done flag when the editor is in log-fix mode so a
+        // coach un-ticking a row doesn't get clobbered on save.
+        ...(includeDone ? { done: !!r.done } : {}),
+      }))
+      .filter(r => r.exercise.length > 0),
+  };
+}
+
 const DEFAULT_SECTION: GppSection = {
   title: 'GPP',
   description: '',
@@ -72,8 +106,11 @@ export function GppBlockEditor({
   onSave,
 }: GppBlockEditorProps) {
   const [section, setSection] = useState<GppSection>(initial ?? DEFAULT_SECTION);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const sectionRef = useRef(section);
+  sectionRef.current = section;
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { enqueue, flush, status, error } = useSaveQueue<GppSection>(onSave, describeError);
 
   /** Filter the catalogue down to '— System' free exercises, sorted
    *  by name so the suggestion list is predictable. Sentinels (TEXT /
@@ -87,74 +124,73 @@ export function GppBlockEditor({
     [exerciseCatalogue],
   );
 
+  // Seed only on a closed → open transition. Re-seeding whenever `initial`
+  // changes identity would, under autosave, stomp characters the coach is
+  // still typing every time the parent refetches — the same trap GppLogCard
+  // documents on the athlete side.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
-      setSection(initial ?? DEFAULT_SECTION);
-      setError(null);
-    }
+    if (open && !wasOpenRef.current) setSection(initial ?? DEFAULT_SECTION);
+    wasOpenRef.current = open;
   }, [open, initial]);
+
+  const commit = useCallback((next: GppSection, immediate: boolean) => {
+    setSection(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (immediate) {
+      enqueue(cleanSection(next, showDoneColumn));
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      enqueue(cleanSection(sectionRef.current, showDoneColumn));
+    }, DEBOUNCE_MS);
+  }, [enqueue, showDoneColumn]);
+
+  /** Flush anything pending, then hand control back to the parent. */
+  const handleClose = useCallback(() => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    enqueue(cleanSection(sectionRef.current, showDoneColumn));
+    void flush().finally(onClose);
+  }, [enqueue, flush, onClose, showDoneColumn]);
+
+  // Escape closes (and therefore flushes), matching the app's other sheets.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, handleClose]);
+
+  // Last-resort flush: an unmount that isn't routed through handleClose (a
+  // navigation, the parent dropping the modal) must not lose the debounced tick.
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
 
   if (!open) return null;
 
   const updateRow = (i: number, patch: Partial<GppRow>) => {
-    setSection(s => {
-      const nextRows = s.rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
-      // Auto-grow: if the last row just got an Exercise name, append a
-      // blank row so the coach can keep typing without reaching for
-      // "+ Add row". Empty trailing rows are dropped on save.
-      const isLast = i === s.rows.length - 1;
-      const gainedName =
-        !s.rows[i].exercise.trim() &&
-        typeof patch.exercise === 'string' &&
-        patch.exercise.trim().length > 0;
-      if (isLast && gainedName) {
-        nextRows.push({ ...EMPTY_ROW });
-      }
-      return { ...s, rows: nextRows };
-    });
+    const nextRows = section.rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+    // Auto-grow: if the last row just got an Exercise name, append a
+    // blank row so the coach can keep typing without reaching for
+    // "+ Add row". Empty trailing rows are dropped on save.
+    const isLast = i === section.rows.length - 1;
+    const gainedName =
+      !section.rows[i].exercise.trim() &&
+      typeof patch.exercise === 'string' &&
+      patch.exercise.trim().length > 0;
+    if (isLast && gainedName) nextRows.push({ ...EMPTY_ROW });
+    // Ticking done is a structural act, not typing — commit it at once.
+    commit({ ...section, rows: nextRows }, 'done' in patch);
   };
-  const addRow = () => setSection(s => ({ ...s, rows: [...s.rows, { ...EMPTY_ROW }] }));
+  const addRow = () => commit({ ...section, rows: [...section.rows, { ...EMPTY_ROW }] }, true);
   const removeRow = (i: number) =>
-    setSection(s => ({ ...s, rows: s.rows.filter((_, idx) => idx !== i) }));
-
-  const save = async () => {
-    // Drop rows that have no Exercise name. With the auto-grow flow we
-    // always end up with a trailing blank row the coach hasn't filled,
-    // and possibly skipped rows in the middle they didn't want. The
-    // Exercise cell is the canonical "is this a real row?" signal —
-    // everything else is metadata. Trash button still works for
-    // intentionally removing filled rows.
-    const cleaned: GppSection = {
-      title: (section.title ?? '').trim() || 'GPP',
-      description: (section.description ?? '').trim(),
-      rows: (section.rows ?? [])
-        .map(r => ({
-          exercise: (r.exercise ?? '').trim(),
-          reps: (r.reps ?? '').trim(),
-          sets: Math.max(1, Math.round(r.sets || 1)),
-          load: (r.load ?? '').trim(),
-          // Round-trip the done flag when the editor is in log-fix mode so
-          // a coach un-ticking a row doesn't get clobbered on save.
-          ...(showDoneColumn ? { done: !!r.done } : {}),
-        }))
-        .filter(r => r.exercise.length > 0),
-    };
-    setSaving(true);
-    setError(null);
-    try {
-      await onSave(cleaned);
-      onClose();
-    } catch (e) {
-      setError(describeError(e));
-    } finally {
-      setSaving(false);
-    }
-  };
+    commit({ ...section, rows: section.rows.filter((_, idx) => idx !== i) }, true);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="w-full max-w-xl bg-white rounded-lg shadow-xl flex flex-col max-h-[85vh]"
@@ -163,7 +199,7 @@ export function GppBlockEditor({
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="text-sm font-bold text-gray-900">{titleProp ?? 'GPP block'}</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-gray-700"
             aria-label="Close"
           >
@@ -178,7 +214,7 @@ export function GppBlockEditor({
             </label>
             <input
               value={section.title}
-              onChange={e => setSection(s => ({ ...s, title: e.target.value }))}
+              onChange={e => commit({ ...section, title: e.target.value }, false)}
               placeholder="Conditioning, Mobility, Warm-up…"
               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
             />
@@ -189,7 +225,7 @@ export function GppBlockEditor({
             </label>
             <textarea
               value={section.description}
-              onChange={e => setSection(s => ({ ...s, description: e.target.value }))}
+              onChange={e => commit({ ...section, description: e.target.value }, false)}
               placeholder="e.g. 3 rounds for time, EMOM 10 min, …"
               rows={2}
               className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm resize-none"
@@ -256,13 +292,9 @@ export function GppBlockEditor({
                     placeholder="10"
                     className="border border-gray-300 rounded px-2 py-1 text-[12px] tabular-nums"
                   />
-                  <input
-                    type="number"
-                    min={1}
-                    value={row.sets || ''}
-                    onChange={e => updateRow(i, { sets: parseInt(e.target.value, 10) || 1 })}
-                    placeholder="3"
-                    className="border border-gray-300 rounded px-2 py-1 text-[12px] tabular-nums"
+                  <SetsInput
+                    value={row.sets}
+                    onCommit={next => updateRow(i, { sets: next })}
                   />
                   <input
                     value={row.load}
@@ -290,23 +322,59 @@ export function GppBlockEditor({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200">
+          {/* No Cancel: nothing is held back to discard — every edit is already
+              written, exactly like a prescription or a note. */}
+          <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
+            {status === 'saving' && (<><Loader2 size={11} className="animate-spin" /> Saving…</>)}
+            {status === 'saved' && (<><Check size={11} className="text-emerald-600" /> Saved</>)}
+            {status === 'error' && <span className="text-red-600">Not saved</span>}
+          </span>
           <button
-            onClick={onClose}
-            className="text-sm text-gray-700 hover:text-gray-900 px-3 py-1.5"
+            onClick={handleClose}
+            className="text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold px-3 py-1.5 rounded"
           >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 text-white font-semibold px-3 py-1.5 rounded"
-          >
-            {saving ? 'Saving…' : 'Save'}
+            Done
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * SetsInput — sets cell with a draft buffer.
+ *
+ * A bare controlled number input snaps back to 1 the moment the coach clears
+ * the box to retype it. That was merely irritating while the editor had a Save
+ * button; under autosave it would also *persist* the 1. So the box keeps its
+ * own text while focused and only commits a value on blur / Enter.
+ */
+function SetsInput({ value, onCommit }: { value: number; onCommit: (next: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Math.max(1, Math.round(parseInt(draft, 10) || 1));
+    setDraft(null);
+    if (parsed !== value) onCommit(parsed);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft ?? (value || '')}
+      onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setDraft(null);
+      }}
+      placeholder="3"
+      aria-label="Sets"
+      className="border border-gray-300 rounded px-2 py-1 text-[12px] tabular-nums"
+    />
   );
 }
 

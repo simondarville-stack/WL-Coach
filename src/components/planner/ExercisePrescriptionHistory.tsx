@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface HistoryRow {
@@ -16,8 +17,11 @@ interface ExercisePrescriptionHistoryProps {
   /** The week currently being planned (Monday-anchored), so its own row can
    *  be marked and ordered relative to past prescriptions. */
   weekStart: string;
-  /** How many prior prescriptions to show. */
+  /** How many prior prescriptions to show before the coach expands the table. */
   limit?: number;
+  /** How far back to fetch. Two years by default — the expanded table has to
+   *  have something to expand INTO. */
+  fetchWeeks?: number;
 }
 
 // European date: DD.MM (year omitted to stay compact; shown on hover via title).
@@ -41,9 +45,11 @@ export function ExercisePrescriptionHistory({
   athleteId,
   weekStart,
   limit = 6,
+  fetchWeeks = 104,
 }: ExercisePrescriptionHistoryProps) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +66,7 @@ export function ExercisePrescriptionHistory({
           .eq('athlete_id', athleteId)
           .lte('week_start', weekStart)
           .order('week_start', { ascending: false })
-          .limit(40);
+          .limit(fetchWeeks);
 
         if (!weekPlans?.length) {
           if (!cancelled) setRows([]);
@@ -90,8 +96,10 @@ export function ExercisePrescriptionHistory({
             } as HistoryRow;
           })
           .filter((r): r is HistoryRow => r !== null)
-          .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
-          .slice(0, limit);
+          .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+        // NOT truncated here any more — the fetch used to throw ~34 weeks of
+        // already-loaded history away before it reached state, with no
+        // affordance saying the list was cut. Slicing moved to render.
 
         if (!cancelled) setRows(collected);
       } catch {
@@ -102,7 +110,7 @@ export function ExercisePrescriptionHistory({
     }
     void load();
     return () => { cancelled = true; };
-  }, [exerciseId, athleteId, weekStart, limit]);
+  }, [exerciseId, athleteId, weekStart, fetchWeeks]);
 
   if (loading) {
     return (
@@ -123,17 +131,25 @@ export function ExercisePrescriptionHistory({
     );
   }
 
+  // Slice at RENDER, not in the fetch — everything collected stays available
+  // so "Show all" is instant and needs no second query.
+  const visible = expanded ? rows : rows.slice(0, limit);
+
   return (
     <div style={{ marginBottom: 16 }}>
       <span style={{
         display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em',
         color: 'var(--color-text-secondary)', marginBottom: 6,
       }}>
-        Recent prescriptions
+        Recent prescriptions{' '}
+        <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>{rows.length}</span>
       </span>
+      {/* Cap the expanded height so a long history cannot push past the
+          dialog's own 85vh and strand the content below it. */}
+      <div style={expanded ? { maxHeight: 260, overflowY: 'auto' } : undefined}>
       <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
         <tbody>
-          {rows.map((r, i) => (
+          {visible.map((r, i) => (
             <tr
               key={`${r.weekStart}-${i}`}
               style={{
@@ -166,12 +182,38 @@ export function ExercisePrescriptionHistory({
                 padding: '6px 0 6px 8px', textAlign: 'right', whiteSpace: 'nowrap',
                 color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums',
               }}>
+                {/* Sets and reps were fetched and stored but never rendered.
+                    Same S/R string as the "Other days this week" table above,
+                    so the two read identically. */}
+                {expanded && (r.totalSets != null || r.totalReps != null) && (
+                  <span style={{ marginRight: 8, fontSize: 10 }}>
+                    S{r.totalSets ?? 0} R{r.totalReps ?? 0}
+                  </span>
+                )}
                 {r.highestLoad != null && r.highestLoad > 0 ? `${r.highestLoad}` : ''}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
+      {rows.length > limit && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          // stopPropagation on Enter: the surrounding dialog closes on it, so
+          // keyboard-activating this would toggle AND close the panel.
+          onKeyDown={e => { if (e.key === 'Enter') e.stopPropagation(); }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', padding: '6px 0 0',
+            cursor: 'pointer', fontSize: 11, color: 'var(--color-text-tertiary)',
+          }}
+        >
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {expanded ? 'Show less' : `Show all ${rows.length}`}
+        </button>
+      )}
     </div>
   );
 }

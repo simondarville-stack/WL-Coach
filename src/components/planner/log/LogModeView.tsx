@@ -6,7 +6,7 @@
  * did. P4 adds coach reply support: post comments to either the session
  * (whole day) or one exercise (inline thread).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import type {
   PlannedExercise,
@@ -184,26 +184,39 @@ export function LogModeView({
    * exists (the athlete may never have opened the block), then writes
    * the full GppSection — rows, reps, load text, and done flags — to
    * training_log_exercises.metadata.gpp via the shared service helper.
-   * Requires a session row for the day; without one we silently no-op.
+   * Requires a session row for the day; without one the save cannot land, and
+   * since the editor autosaves that must be said out loud rather than silently
+   * dropped — a silent no-op here is silent data loss.
+   *
+   * The editor autosaves, so the ensured log_exercise id is cached for the life
+   * of the open editor (one ensureLogExercise, not one per keystroke) and the
+   * week-log reload happens once, on close, instead of per save.
    */
+  const ensuredLogExIdRef = useRef<string | null>(null);
+  useEffect(() => { ensuredLogExIdRef.current = null; }, [editingGpp]);
+
   const onSaveGppFromModal = useCallback(
     async (section: GppSection) => {
       if (!editingGpp) return;
       const { planned, logged } = editingGpp;
       const session = weekLog[planned.day_index]?.session;
-      if (!session) return;
-      const logEx =
-        logged?.log ??
-        (await ensureLogExercise({
+      if (!session) {
+        throw new Error('No training session for this unit yet — the athlete has to start it before the log can be edited.');
+      }
+      let logExId = ensuredLogExIdRef.current ?? logged?.log?.id ?? null;
+      if (!logExId) {
+        const logEx = await ensureLogExercise({
           sessionId: session.id,
           plannedExerciseId: planned.id,
           exerciseId: planned.exercise_id,
           position: planned.position,
-        }));
-      await setLogExerciseGppSection(logEx.id, section);
-      reload();
+        });
+        logExId = logEx.id;
+      }
+      ensuredLogExIdRef.current = logExId;
+      await setLogExerciseGppSection(logExId, section);
     },
-    [editingGpp, weekLog, reload],
+    [editingGpp, weekLog],
   );
 
   const onDeleteSession = useCallback(
@@ -394,7 +407,7 @@ export function LogModeView({
             editingGpp.planned.metadata?.gpp ??
             null
           }
-          onClose={() => setEditingGpp(null)}
+          onClose={() => { setEditingGpp(null); reload(); }}
           onSave={onSaveGppFromModal}
         />
       )}

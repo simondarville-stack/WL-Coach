@@ -13,11 +13,228 @@ from "solve everything" when the user names specific items to do (or explicitly
 defers others).
 
 ##TO DOs
+* Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
+  _(untouched on purpose — it says "ask me before doing it". See the note under
+  #Batch of 04/08/2026 for what I'd want to know before starting.)_
+* In the macro  planner it should also be possible to write percentages or free text. This should then show up in the category table in the week planner, and evaluate accordingly
+  _(not built — this one needs a schema decision and four product calls from you
+  before it is safe to write. Options and questions under
+  #Macro percentages & free text — scoped, not built, below.)_
 
-_(empty — everything below is done; new items go here.)_
+
+_(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Macro percentages & free text — scoped, not built (04/08/2026)
+Left OPEN deliberately. Every macro target cell is kilograms today: `macro_targets`
+has `target_max` / `target_avg` numerics and **no unit column anywhere**, so "kg"
+is implicit in 14 different readers (the chart and its drag write-back, the Ø and
+peak rows, the summary bar, tonnage, the collapsed heat strip, Excel export /
+import / template, `macroTemplate`, the fill guide, `SollIstChart`,
+`ExerciseHistoryChart`, `MacroReviewTable`, and `swapMacroWeeks`). Adding "80 %"
+or "Heavy" to a cell without deciding what every one of those does with it
+silently corrupts macro data — an 80 that means 80 % gets averaged, peaked,
+charted and exported as 80 kg.
+
+**The shape I'd build** (additive, no backfill — all 380 existing rows are
+genuine kg; I checked every `target_max` under 40 and they are all real light
+loads): `macro_targets.target_unit text CHECK IN ('absolute_kg','percentage',
+'free_text_reps')` with NULL meaning kg, plus `target_text` for the free-text
+load token. Reps and sets stay numeric, so "Heavy × 3 × 2" still renders in the
+stacked notation. One new `src/lib/macroTargetValue.ts` owns "what does this cell
+mean" so the rule exists once, and the union type makes `tsc` enumerate all 14
+consumers for me rather than my finding them by hand.
+
+**What I need from you first:**
+1. **Percent of what?** Three anchors exist in the code:
+   `macro_tracked_exercises.reference_kg` (coach-authored, macro-local, works for
+   group macros — but only **5 of 45** tracked rows have one), the athlete's PR
+   via `pr_reference_exercise_id` (good coverage, per-athlete, undefined for a
+   group macro), or nothing. I'd cascade reference → PR → unresolved. With
+   today's data most % cells would NOT resolve on first use, so the SOLL line
+   would develop gaps that read as "the chart broke" — worth knowing before you
+   see it.
+2. **Per cell or per exercise column?** Per cell reads the TODO literally
+   ("write percentages or free text" in the cell); a per-column default is the
+   denser authoring experience. They compose — column default seeding cell
+   values — but which is the source of truth?
+3. **Do % / free-text cells count in Ø, peak and tonnage?** Silently converting
+   is convenient, silently excluding is safer, and "Ø over 8 of 11 weeks" is the
+   dense expert answer. I'd do the third.
+4. **What does the fill guide do to a %-authored cell?** It writes kg today. If
+   it leaves `target_unit` alone it would leave a kg number stamped
+   "percentage" — a silent 120 % target. Either it always stamps kg, or it
+   converts to % first. Changes what Apply means.
+
+**Related, and currently a real defect:** Excel's *Import as %* mode writes the
+raw percentage straight into `target_max`, so the table renders "80" and every
+consumer treats it as 80 kg. I did NOT fix it, because the honest fix is the
+unit column above — anything else is either removing the mode or converting on
+import, and both are your call.
+
+#Batch of 04/08/2026 — 18 items (v0.33.0)
+Everything else in the list above, shipped across eight commits. What was wrong
+and what changed, per item.
+
+**Exercise history chart: zoom, pan, and an expandable entries table.** The
+chart fetched a hard 16 weeks and rendered all of it — nothing to navigate to
+and no way to navigate. Worse, its x-axis was the sparse *union* of weeks that
+had data, so two adjacent dots could be one week apart or nine and a training
+gap read as continuous progress. It now fetches three years and builds a dense
+contiguous Monday series, with an index viewport (`src/lib/chartViewport.ts`)
+deciding what is shown: **wheel zooms about the cursor, shift+wheel and drag
+pan**, plus buttons, arrow keys, +/− and 0, and a range readout. The chosen span
+persists per device. The wheel handler is a native `{ passive: false }` listener
+— React registers wheel passively, so `preventDefault()` in a JSX `onWheel` is a
+no-op and the dialog would have scrolled under the cursor instead. Trackpad
+pinch arrives as ctrl+wheel and works for free. The entries table fetched ~40
+weeks and threw all but 6 away with no affordance saying so; it now keeps them
+behind "Show all N". Both mounts (planner and macro) got this without a change.
+*True two-finger pinch on a touchscreen is NOT covered — that needs 2-pointer
+touchmove tracking; trackpad pinch and the +/− buttons cover the rest.*
+
+**GPP blocks autosave.** The GPP editor was the last surface in the coach app
+holding edits behind a Save button. Text edits now debounce at 350 ms,
+structural ones commit at once, and closing flushes. New shared
+`useSaveQueue` coalesces a burst of keystrokes into one round-trip. Cancel is
+gone — nothing is held back to discard, same as a prescription. Three supporting
+fixes were mandatory, not polish: `saveGppSection` patches the in-memory row so
+the call sites could drop their per-save full refetch; the seed effect now fires
+only on open (it would otherwise eat characters mid-typing); and Log mode's "no
+session for this day" case used to swallow the save silently, which under
+autosave is silent data loss.
+
+**GPP blocks turn red under held Delete.** Rows with a PrescriptionGrid recolour
+every cell while Delete is held; the gridless rows (GPP + the text/video/image
+sentinels) armed nothing, so half a day card lit up and half looked safe. Their
+content now takes the danger token on the same trigger. Content only — tinting
+the row background hover-independently would turn the whole week pink. *Found on
+the way:* in DayEditor the GPP body had no delete guard, so arming Delete and
+clicking a GPP block opened the editor instead of deleting it; and its two
+delete tints were hardcoded dark-theme pink at 4–6 % alpha, invisible in light
+mode.
+
+**Throw an item away.** Dropping an exercise, a whole training unit or a
+clipboard card outside every drop target deletes it, with a 4 s undo. The
+condition needs no geometry: a `drop` only fires where something
+`preventDefault()`ed the `dragover`, so "outside any receivable area" is exactly
+*a drop that reached the planner root with `defaultPrevented` still false*.
+Deliberately not `dragend` + `dropEffect === 'none'`, which also fires on Escape
+and on leaving the browser window — both would delete silently. Library and
+template drags carry no marker and are un-throwable by construction.
+
+**Group unit names reach every synced athlete.** The sync copied a unit's NAME
+only for days the athlete did not already have, so a rename reached nobody and
+in the common case (athlete already has days 1–5) it copied nothing at all —
+12 synced plans in production had NULL `day_labels` against a group plan with
+real Danish names. The merge moved into a pure `src/lib/groupPlanSync.ts` and is
+now unconditional: the group owns the identity of the units it trains, the
+athlete keeps everything else. Scoping to `active_days` is load-bearing — group
+plans carry 40 placeholder keys ("Unit 6") for days they don't train, and the
+old code would have pushed those over an athlete's bonus-day name. *Also fixed:*
+a plan the sync creates inherited the column default `[1,2,3,4,5]`, so a group
+training 3 units handed every athlete two permanently empty, unnamed cards no
+later sync could remove.
+
+**"=" evaluates a prescription cell.** `=140*0.85` commits 119. New
+`src/lib/formulaEval.ts` — a hand-rolled recursive-descent evaluator, no
+eval/Function/mathjs, because a prescription cell is a number and identifiers,
+calls and property access have no meaning there. It resolves before anything
+else reads the cell, so unit detection, interval parsing and the combo tuple
+test need no formula awareness. A broken formula discards the edit rather than
+committing 0 — commit also fires on blur.
+
+**Fill-guide trend shapes.** `trendAt` was hardcoded linear. It now takes a
+shape (linear / late jump / early step / S-curve) with a 0–100 bend, or
+intermediate waypoints for a multi-point piecewise-linear model. Every shape is
+anchored, so the two endpoints are hit exactly at any bend, and an omitted model
+reproduces the old ramp byte-for-byte.
+
+**Phase notes show in the ribbon.** Written in the phase panel, round-tripped
+correctly, and rendered by exactly one thing in the app: the Excel export.
+*The bug behind it:* `fetchPhases` filtered by `owner_id`, alone among the macro
+fetches — so a co-coach opening a shared athlete's or group's macro saw **no
+phases at all**: no band, no colours, no notes. Measured live on "2. Halvår
+2026".
+
+**Per-exercise week notes in the Category Table: already shipped** in 0.31.1
+(commit 3fb6fa4) — verified live on week 14/09, all three notes render. Two
+readability residuals fixed instead: the note was one nowrap line in a 240 px
+box (hover-only past ~30 characters) and now clamps to two, and DayEditor showed
+a bare hover-only ✎ glyph with no text.
+
+**Macro context in the exercise detail.** `macroContext` already carried the
+macro name, week n/N, week type, phase and week note — and ExerciseDetail read
+none of it. There is now a context strip with all of it plus the phase/week
+notes. `MacroCycles`'s own construction site hardcoded `phaseName: null`, which
+now resolves properly. Two gating defects went with it: a COMBO gets the
+week-level context (it is exercise-independent), and the Macro-targets section
+no longer hides the SollIstChart when an exercise is tracked but has no target
+that week — silence that read as a bug.
+
+**Drag-reorder macro exercise columns.** The ← / → arrows are gone. The hard
+part is `UNIQUE (macrocycle_id, position)`: the old arrows parked a row on a
+negative sentinel, which only covers a two-row swap, while a drag moves a column
+past several at once. New RPC `reorder_macro_tracked_exercises` parks the whole
+cycle and lands the caller's order in one transaction. Collapsed columns are
+draggable too — they had no move affordance at all before.
+
+**Permanent add-exercise search in the macro toolbar**, replacing a button that
+swapped itself for a search field.
+
+**Ctrl+drag copies a macro prescription** onto another exercise. It mirrors
+rather than merges (a week the source left empty clears the destination — a
+merge would leave stale numbers on exactly the weeks you deliberately blanked),
+and it **rescales by `reference_kg` when both exercises have one**, because
+copying a snatch's 120 kg column literally onto a squat is almost never what you
+mean. The confirm says which happened and how many weeks it would overwrite.
+
+**Soll–Ist: exercise codes, and a model manager.** Codes render inline before
+the name and the search box matches them — the add-exercise field right beside
+them already ranked on code, so searching "bsq" and getting nothing was
+inconsistent. New model manager lists the three textbook presets with a live
+"how many of the 23 rows resolve against YOUR catalogue" figure (16/23 on the
+real Danish one), opens a copy of any of them, and renames / duplicates /
+deletes saved models. *The bug it exposed:* `sollist_model_rows.exercise_id` was
+NOT NULL, so forking a preset **silently dropped 7 of 23 rows**. Migration
+`20260803230000` makes the fork lossless. **Not built — needs your call:**
+making a preset editable *in place*, so "BVDG — Senior" shows your corrected
+numbers from then on. That changes what a textbook reference means.
+
+**/Coach-overview renamed to /fieldcoach**, all 30 route literals, with both old
+prefixes still redirecting (query string intact). Nothing internal was renamed —
+"fieldcoach" re-embraces "field", and renaming the localStorage keys would have
+reset every coach's group filter and collapsed cards.
+
+**Read-only macro on the Fieldcoach surface.** New `/fieldcoach/a/:id/macro` and
+`/fieldcoach/g/:id/macro`, reached from a button in the athlete and group week
+headers. The athlete app's macro tab is deliberately number-free; the coach on
+the gym floor IS the numbers audience, so tapping a week expands its target
+table (code, top set in stacked notation, avg, Σreps, note). Two traps avoided
+by design: no `owner_id` filter on `macrocycles` (that would blank the macro for
+every shared athlete), and phases resolved through the week-number range rather
+than the dropped `macro_weeks.phase_id`.
+
+**No ghost on an unactivated macro cell.** An empty cell drew the previous
+week's load as faint italic text, so a mostly-empty cycle read as full and the
+real plan drowned. Click-to-seed is unchanged; the previous value moved into the
+tooltip.
+
+**Worth knowing — `npm run typecheck` is `tsc -p tsconfig.app.json`.** The root
+`tsconfig.json` is `{"files": [], "references": [...]}`, so
+`tsc --noEmit -p tsconfig.json` type-checks **nothing** and exits 0. I was using
+the wrong one for part of this batch; running the right one surfaced three real
+errors (including a missing import that made Soll–Ist model deletion a silent
+no-op). All fixed, and the whole `src` tree checks clean.
+
+**On the log-as-daycards question (the one that says "ask me first"):** before
+starting I'd want to know whether you mean the coach's Log mode in the weekly
+planner, the athlete app, or both; whether a day card should show plan and log
+in one card (today they are paired per exercise) or the log card should simply
+adopt the planner's visual grammar; and whether it replaces the current Log view
+or sits beside it as a toggle.
 
 #Group sync is self-healing; three position bugs behind it (done 29/07/2026, v0.28.0)
 Follow-up to the reorder audit. The proposal was "normalize positions after the

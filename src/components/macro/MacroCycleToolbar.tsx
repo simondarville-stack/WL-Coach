@@ -18,7 +18,6 @@ interface MacroCycleToolbarProps {
   selectedGroup: TrainingGroup | null;
   groupMembers: GroupMemberWithAthlete[];
   individualViewAthleteId: string | null;
-  showAddExercise: boolean;
   availableExercises: Exercise[];
   showChart: boolean;
   showDistribution: boolean;
@@ -38,8 +37,6 @@ interface MacroCycleToolbarProps {
   onChartToggle: () => void;
   onDistributionToggle: () => void;
   onIndividualViewChange: (athleteId: string | null) => void;
-  onShowAddExercise: () => void;
-  onCancelAddExercise: () => void;
   onAddExerciseDirect: (exercise: Exercise) => void;
   onAddPhase: () => void;
   onAddEvent: (type: EventType) => void;
@@ -67,7 +64,6 @@ export function MacroCycleToolbar({
   isGroupMode,
   groupMembers,
   individualViewAthleteId,
-  showAddExercise,
   availableExercises,
   showChart,
   showDistribution,
@@ -87,8 +83,6 @@ export function MacroCycleToolbar({
   onChartToggle,
   onDistributionToggle,
   onIndividualViewChange,
-  onShowAddExercise,
-  onCancelAddExercise,
   onAddExerciseDirect,
   onAddPhase,
   onAddEvent,
@@ -175,39 +169,23 @@ export function MacroCycleToolbar({
               NAV · BUILD (exercises · fill · phases · events) · VIEWS · REUSE · MANAGE. */}
           <div className="w-px h-5 bg-gray-200 mx-0.5" />
 
-          {/* Add exercise — the shared ranked ExerciseSearch (same as the
-              planner). Selecting a match adds it and keeps the field open so a
-              coach can add several in a row; Done closes it. */}
-          {showAddExercise ? (
-            <div className="flex items-center gap-1.5">
-              <div className="border border-gray-300 rounded-lg px-1" style={{ width: 240 }}>
-                <ExerciseSearch
-                  exercises={availableExercises}
-                  onAdd={onAddExerciseDirect}
-                  disableSlashCommands
-                  dropUp={false}
-                  autoFocus
-                  placeholder="Search exercise…"
-                />
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelAddExercise}
-              >
-                Done
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Plus size={13} />}
-              onClick={onShowAddExercise}
-            >
-              Track exercise
-            </Button>
-          )}
+          {/* Add exercise — the shared ranked ExerciseSearch, permanently
+              mounted, the same grammar the weekly planner uses. It used to hide
+              behind a "Track exercise" button that swapped itself for this
+              field: a click that bought nothing. Selecting a match adds it and
+              leaves the field ready for the next one.
+              Deliberately NOT autoFocus — a permanently mounted field must not
+              steal focus on mount or on every cycle switch, and it would
+              swallow the first keystroke of the c / d chart hotkeys. */}
+          <div className="border border-gray-300 rounded-lg px-1" style={{ width: 240 }}>
+            <ExerciseSearch
+              exercises={availableExercises}
+              onAdd={onAddExerciseDirect}
+              disableSlashCommands
+              dropUp={false}
+              placeholder="+ Track exercise…"
+            />
+          </div>
 
           {/* Fill guide */}
           <Button

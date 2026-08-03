@@ -17,6 +17,7 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
+import { MARK_DAY, MARK_EXERCISE } from './dragPayload';
 
 interface DayCardProps {
   dayIndex: number;
@@ -307,6 +308,9 @@ export function DayCard({
           draggable
           onDragStart={e => {
             e.dataTransfer.setData('text/plain', `DAY:${dayIndex}`);
+            // Marker so the throw-away zone can tell what is in the air during
+            // dragover, where getData() is blocked.
+            e.dataTransfer.setData(MARK_DAY, '1');
             e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
           }}
           style={{
@@ -395,6 +399,16 @@ export function DayCard({
                   ? (ex.combo_color || (members?.[0]?.exercise.color) || '#94a3b8')
                   : (ex.exercise.color || '#94a3b8');
                 const isHovered = hoveredExId === ex.id;
+                // Rows that carry a PrescriptionGrid arm themselves visibly while
+                // Delete is held (the grid recolours every cell — see
+                // .pgrid-btn-del). The gridless rows — GPP blocks and the text /
+                // video / image sentinels — render plain content instead and used
+                // to sit there looking untouched, so a coach holding Delete over a
+                // day card saw half the rows arm and half not. Recolour their
+                // content in the same danger token, hover-independently, so the
+                // whole card speaks one language. Content only: tinting the row
+                // BACKGROUND hover-independently would turn the entire week pink.
+                const dangerText = deleteHeld ? 'var(--color-danger-text)' : undefined;
 
                 return (
                   <div
@@ -407,7 +421,7 @@ export function DayCard({
                       // exercise (not a template/dock item) is being dragged,
                       // and accept the drop with a positional indicator. The
                       // value is ignored; only the presence in types matters.
-                      e.dataTransfer.setData('application/x-emos-exercise', '1');
+                      e.dataTransfer.setData(MARK_EXERCISE, '1');
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
                       setDraggingExId(ex.id);
                     }}
@@ -427,7 +441,7 @@ export function DayCard({
                       // marker because draggingExId is per-DayCard.
                       const isExerciseDrag =
                         draggingExId != null ||
-                        e.dataTransfer.types.includes('application/x-emos-exercise');
+                        e.dataTransfer.types.includes(MARK_EXERCISE);
                       if (!isExerciseDrag) return;
                       if (draggingExId === ex.id) return;
                       e.preventDefault();
@@ -508,6 +522,7 @@ export function DayCard({
                           : 'inset 0 -2px 0 0 var(--color-accent)'
                         : 'none',
                     }}
+                    title={deleteHeld ? 'Click to delete this row' : undefined}
                     onMouseEnter={() => setHoveredExId(ex.id)}
                     onMouseLeave={() => setHoveredExId(null)}
                     onClick={e => {
@@ -527,15 +542,15 @@ export function DayCard({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
                       {sentinel === 'text' ? (
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, minWidth: 0 }}>
-                          <p style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0, flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 11, color: dangerText ?? 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0, flex: 1, minWidth: 0 }}>
                             {ex.notes || 'Free text…'}
                           </p>
                           <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                         </div>
                       ) : sentinel === 'video' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Video size={11} style={{ color: '#6366F1', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Video</span>
+                          <Video size={11} style={{ color: dangerText ?? '#6366F1', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: dangerText ?? 'var(--color-text-secondary)' }}>Video</span>
                           {ex.notes && (() => {
                             const thumb = getYouTubeThumbnail(ex.notes);
                             return thumb ? <img src={thumb} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} /> : null;
@@ -544,8 +559,8 @@ export function DayCard({
                         </div>
                       ) : sentinel === 'image' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <ImageIcon size={11} style={{ color: '#EC4899', flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Image</span>
+                          <ImageIcon size={11} style={{ color: dangerText ?? '#EC4899', flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: dangerText ?? 'var(--color-text-secondary)' }}>Image</span>
                           {ex.notes && (
                             <img src={ex.notes} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
@@ -554,11 +569,11 @@ export function DayCard({
                       ) : sentinel === 'gpp' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Dumbbell size={11} style={{ color: '#10B981', flexShrink: 0 }} />
-                            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                            <Dumbbell size={11} style={{ color: dangerText ?? '#10B981', flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, fontWeight: 500, color: dangerText ?? 'var(--color-text-primary)' }}>
                               {ex.metadata?.gpp?.title || 'GPP'}
                             </span>
-                            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                            <span style={{ fontSize: 10, color: dangerText ?? 'var(--color-text-tertiary)' }}>
                               {ex.metadata?.gpp?.rows?.length
                                 ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
                                 : 'click to edit'}
@@ -580,21 +595,21 @@ export function DayCard({
                                 return (
                                   <div key={i} style={{
                                     fontSize: 10,
-                                    color: 'var(--color-text-secondary)',
+                                    color: dangerText ?? 'var(--color-text-secondary)',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                     whiteSpace: 'nowrap',
                                     lineHeight: 1.3,
                                   }}>
-                                    <span style={{ color: 'var(--color-text-primary)' }}>{label}</span>
+                                    <span style={{ color: dangerText ?? 'var(--color-text-primary)' }}>{label}</span>
                                     {suffix && (
-                                      <span style={{ color: 'var(--color-text-tertiary)' }}> {suffix}</span>
+                                      <span style={{ color: dangerText ?? 'var(--color-text-tertiary)' }}> {suffix}</span>
                                     )}
                                   </div>
                                 );
                               })}
                               {ex.metadata.gpp.rows.length > 4 && (
-                                <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+                                <div style={{ fontSize: 9, color: dangerText ?? 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                                   +{ex.metadata.gpp.rows.length - 4} more
                                 </div>
                               )}
@@ -715,8 +730,14 @@ export function DayCard({
           onClose={() => setEditingGpp(null)}
           onSave={async section => {
             if (!saveGppSection) return;
-            await saveGppSection(editingGpp.id, section);
-            await onRefresh();
+            // The editor autosaves, so there is NO success-path refetch — it
+            // would re-render this card (and remount the editor) on every
+            // keystroke. saveGppSection patches the in-memory row instead, so
+            // the preview stays live. Resync only when a write actually fails.
+            await saveGppSection(editingGpp.id, section).catch(err => {
+              void onRefresh();
+              throw err;
+            });
           }}
         />
       )}

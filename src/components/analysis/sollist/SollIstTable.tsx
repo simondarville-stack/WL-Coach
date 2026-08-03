@@ -4,10 +4,11 @@
 // sort on click, and rows arrive pre-grouped (by reference or category)
 // from the view state. Reference lines stay pinned on top.
 
+import { useMemo } from 'react';
 import type { Exercise } from '../../../lib/database.types';
 import type { ComputedSollIstRow, SollIstRow } from '../../../lib/sollIst';
 import { istKey } from '../../../lib/sollIst';
-import { fmtKg, heatColor, type RowGroup, type SheetRef, type SheetView, type SortKey } from './sollIstState';
+import { exerciseOptionLabel, fmtKg, heatColor, type RowGroup, type SheetRef, type SheetView, type SortKey } from './sollIstState';
 
 interface SollIstTableProps {
   groups: RowGroup[];
@@ -48,6 +49,15 @@ const td: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 const leftAlign: React.CSSProperties = { textAlign: 'left' };
+/** The exercise code, rendered inline before the name. minWidth keeps the
+ *  names aligned when some exercises have no code. */
+const monoCode: React.CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--text-caption)',
+  color: 'var(--color-text-secondary)',
+  flexShrink: 0,
+  minWidth: 26,
+};
 const colSep: React.CSSProperties = { borderLeft: '0.5px solid var(--color-border-secondary)' };
 
 const inlineInput: React.CSSProperties = {
@@ -97,6 +107,13 @@ export function SollIstTable({
   onEditIst,
 }: SollIstTableProps) {
   const modelCols = diff ? 3 : 2; // Index, Soll, (Δ%)
+
+  // Codes come from the CATALOGUE at render time, never copied onto the model
+  // row: a coach who re-codes an exercise must not have to re-save every model.
+  const codeById = useMemo(
+    () => new Map(exercises.map((e) => [e.id, e.exercise_code])),
+    [exercises],
+  );
   const showRefCol = groupBy !== 'ref';
 
   // Total column count for group-header colSpan.
@@ -179,7 +196,12 @@ export function SollIstTable({
         {refs.map((ref) => (
           <tr key={ref.key} style={{ background: 'var(--color-accent-bg, rgba(24, 95, 165, 0.07))' }}>
             <td style={{ ...td, ...leftAlign, fontWeight: 600 }} title={ref.exerciseId == null ? 'Manual reference — numbers typed by the coach' : undefined}>
-              {ref.label}
+              <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                {codeById.get(ref.exerciseId ?? '') && (
+                  <span style={monoCode} title="Exercise code">{codeById.get(ref.exerciseId ?? '')}</span>
+                )}
+                <span>{ref.label}</span>
+              </span>
               {ref.exerciseId == null && <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> ✎</span>}
             </td>
             {showRefCol && <td style={{ ...td, ...leftAlign, color: 'var(--color-text-tertiary)' }}>= 100</td>}
@@ -293,6 +315,10 @@ export function SollIstTable({
               return (
                 <tr key={key} className="sollist-row">
                   <td style={{ ...td, ...leftAlign, padding: '2px 8px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {codeById.get(c.row.exerciseId ?? '') && (
+                      <span style={monoCode} title="Exercise code">{codeById.get(c.row.exerciseId ?? '')}</span>
+                    )}
                     <select
                       value={c.row.exerciseId ?? ''}
                       onChange={(e) => {
@@ -316,10 +342,11 @@ export function SollIstTable({
                       {unmapped && <option value="">⚠ {c.row.label} (unmapped)</option>}
                       {exercises.map((ex) => (
                         <option key={ex.id} value={ex.id}>
-                          {ex.name}
+                          {exerciseOptionLabel(ex)}
                         </option>
                       ))}
                     </select>
+                    </span>
                   </td>
                   {showRefCol && (
                     <td style={{ ...td, ...leftAlign, padding: '2px 8px' }}>

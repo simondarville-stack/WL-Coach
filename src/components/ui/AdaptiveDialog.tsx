@@ -31,6 +31,8 @@ export function AdaptiveDialog({
   return (
     <div
       className="animate-backdrop-in"
+      // Never a bin for a dragged planner item (see ThrowAwayZone).
+      data-emos-no-throw
       style={isSidebar
         ? { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end' }
         : { position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}

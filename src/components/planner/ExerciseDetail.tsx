@@ -13,6 +13,7 @@ import { plannedNote } from '../../lib/plannedNote';
 import { AutoGrowTextarea } from '../ui';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
+import { expandFormulas } from '../../lib/formulaEval';
 import { DEFAULT_UNITS } from '../../lib/constants';
 import { SollIstChart } from './SollIstChart';
 import { StackedNotation } from './StackedNotation';
@@ -216,10 +217,13 @@ export function ExerciseDetail({
     if (!plannedExercise) return;
     setSaving(true);
     try {
-      const detected = detectIntendedUnit(textValue);
+      // Excel-style "=" tokens resolve before the unit is inferred, so
+      // "=160*0.5x3" both stores 80x3 and is still detected as kg.
+      const resolved = expandFormulas(textValue);
+      const detected = detectIntendedUnit(resolved);
       const effective = (detected ?? unit) as DefaultUnit;
       if (detected && detected !== unit) setUnit(detected);
-      await savePrescription(plannedExercise.id, { prescription: textValue, unit: effective || 'absolute_kg', isCombo });
+      await savePrescription(plannedExercise.id, { prescription: resolved, unit: effective || 'absolute_kg', isCombo });
       await onSaved();
       setTextMode(false);
     } finally { setSaving(false); }
@@ -290,6 +294,12 @@ export function ExerciseDetail({
 
   const labelStyle: React.CSSProperties = {
     display: 'block', fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 4,
+  };
+
+  /** Tiny eyebrow used to label the phase / week note lines. */
+  const labelStyle_inline: React.CSSProperties = {
+    fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em',
+    color: 'var(--color-text-tertiary)', fontStyle: 'normal', marginRight: 4,
   };
 
   const sectionHeaderStyle: React.CSSProperties = {
@@ -379,6 +389,66 @@ export function ExerciseDetail({
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Macro context — which cycle, which week of it, which phase, and the
+            coach's own phase / week notes. All of this was already in
+            `macroContext` and read by nothing but the two charts, so opening an
+            exercise in a macro-covered week told you nothing about the block it
+            sits in. Gated on `macroContext && !sentinel` only: week-level
+            context is exercise-independent, so a COMBO gets it too (its
+            per-exercise SOLL is genuinely undefined and stays hidden). */}
+        {macroContext && !sentinel && (
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 4,
+            padding: '8px 10px', borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-secondary)',
+            borderLeft: `3px solid ${macroContext.phaseColor || 'var(--color-border-secondary)'}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                {macroContext.macroName}
+              </span>
+              <span style={{
+                fontSize: 11, fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                color: 'var(--color-text-secondary)',
+              }}>
+                W{macroContext.weekNumber}/{macroContext.totalWeeks}
+              </span>
+              {(macroContext.weekType || macroContext.weekTypeText) && (
+                <span style={{
+                  fontSize: 10, padding: '1px 5px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)',
+                }}>
+                  {macroContext.weekType || macroContext.weekTypeText}
+                </span>
+              )}
+              {macroContext.phaseName && (
+                // Phase colour is coach-authored data — rendered as stored.
+                <span style={{ fontSize: 10, color: macroContext.phaseColor || 'var(--color-text-secondary)' }}>
+                  {macroContext.phaseName}
+                </span>
+              )}
+              {macroContext.totalRepsTarget != null && (
+                <span style={{
+                  fontSize: 10, marginLeft: 'auto', fontFamily: 'var(--font-mono)',
+                  color: 'var(--color-text-tertiary)',
+                }} title="The macro's Σreps target for this week">
+                  ΣR {macroContext.totalRepsTarget}
+                </span>
+              )}
+            </div>
+            {macroContext.phaseNotes.trim() && (
+              <div style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--color-text-secondary)' }} title={macroContext.phaseNotes}>
+                <span style={labelStyle_inline}>Phase</span> ✎ {macroContext.phaseNotes}
+              </div>
+            )}
+            {macroContext.weekNotes.trim() && (
+              <div style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--color-text-secondary)' }} title={macroContext.weekNotes}>
+                <span style={labelStyle_inline}>Week</span> ✎ {macroContext.weekNotes}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Combo: component exercise list */}
         {isCombo && members.length > 0 && (
@@ -571,7 +641,11 @@ export function ExerciseDetail({
                   rows={3}
                   style={{ ...inputStyle, fontFamily: 'var(--font-mono)', resize: 'none', lineHeight: 1.55 }}
                   placeholder={isCombo ? '80×2+1, 90×2+1×2' : '80x5, 85x3x2'}
+                  title={'Start a value with = to calculate it: "=160*0.5x3" stores 80x3.\nInside a formula write the set separator as x (not *), and decimals with a full stop.'}
                 />
+                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                  Tip: <code style={{ fontFamily: 'var(--font-mono)' }}>=160*0.5x3</code> → <code style={{ fontFamily: 'var(--font-mono)' }}>80x3</code>
+                </span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     onClick={() => void applyText()}
@@ -659,11 +733,20 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* SOLL / IST */}
-        {hasMacro && sollTarget && (
+        {/* SOLL / IST. The section used to be gated on `sollTarget`, which hid
+            the SollIstChart too whenever the exercise was tracked in the macro
+            but had no target row for THIS week — silence that reads as a bug. */}
+        {hasMacro && (
           <div style={{ borderTop: '1px solid var(--color-border-tertiary)', paddingTop: 16 }}>
             <span style={sectionHeaderStyle}>Macro targets</span>
-            <div style={{
+            {!sollTarget && (
+              <div style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--color-text-tertiary)', marginBottom: 12 }}>
+                {trackedExId === null
+                  ? 'Not tracked in this macro.'
+                  : 'Tracked, but no target set for this week.'}
+              </div>
+            )}
+            {sollTarget && <div style={{
               background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)',
               padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 13,
               display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12,
@@ -694,7 +777,7 @@ export function ExerciseDetail({
                 <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>Hi <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_highest_load ?? '—'}</strong></span>
               </div>
-            </div>
+            </div>}
             {trackedExId !== null && (
               <SollIstChart exerciseId={plannedExercise!.exercise_id} athleteId={athleteId} macroContext={macroContext!} />
             )}

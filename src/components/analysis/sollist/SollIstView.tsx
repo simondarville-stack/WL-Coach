@@ -7,7 +7,7 @@
 // by reference or category. All math comes from src/lib/sollIst.ts.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, FilePlus2, Layers, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
+import { Download, FilePlus2, Layers, Library, Printer, Save, Settings2, Trash2, UserRoundPlus } from 'lucide-react';
 import { Button, ErrorState, Input, Modal, Select, Spinner } from '../../ui';
 import { useExerciseStore } from '../../../store/exerciseStore';
 import type { AthletePRHistory } from '../../../lib/database.types';
@@ -17,6 +17,7 @@ import {
   captureIndividualRows,
   computeSollIst,
   deleteSollIstAnalysis,
+  deleteSollIstModel,
   fetchSollIstAnalyses,
   fetchSollIstModels,
   istKey,
@@ -28,6 +29,8 @@ import {
   type SollIstAnalysisRecord,
   type SollIstModel,
   type SollIstRow,
+  updateSollIstModelMeta,
+  duplicateSollIstModel,
 } from '../../../lib/sollIst';
 import { modelToCsv } from '../../../lib/sollIstCsv';
 import { addExerciseAlias, isKnownAs } from '../../../lib/exerciseAliases';
@@ -36,6 +39,7 @@ import { downloadText } from '../builder/exportUtils';
 import { ExerciseSearch } from '../../planner/ExerciseSearch';
 import { SollIstTable } from './SollIstTable';
 import { SollIstWizard, type WizardResult } from './SollIstWizard';
+import { SollIstModelManager } from './SollIstModelManager';
 import {
   buildRowGroups,
   defaultView,
@@ -50,6 +54,7 @@ import {
   type SheetRef,
   type SheetState,
   type SheetView,
+  exerciseOptionLabel,
 } from './sollIstState';
 
 interface NamedEntity {
@@ -82,6 +87,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const [modelName, setModelName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -167,14 +173,20 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     [exercises],
   );
 
+  const codeOf = useCallback(
+    (exerciseId: string | null): string | null =>
+      (exerciseId ? exercises.find((e) => e.id === exerciseId)?.exercise_code ?? null : null),
+    [exercises],
+  );
+
   const categoryOrder = useMemo(
     () => [...categories].sort((a, b) => a.display_order - b.display_order).map((c) => c.name),
     [categories],
   );
 
   const groups = useMemo(
-    () => buildRowGroups(computed, sheet.view, sheet.refs, categoryOf, categoryOrder),
-    [computed, sheet.view, sheet.refs, categoryOf, categoryOrder],
+    () => buildRowGroups(computed, sheet.view, sheet.refs, categoryOf, categoryOrder, codeOf),
+    [computed, sheet.view, sheet.refs, categoryOf, categoryOrder, codeOf],
   );
 
   const mainModelName = useMemo(
@@ -426,8 +438,50 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     </label>
   );
 
+  /** Reload the model list after a manager action. */
+  const refreshModels = async () => setModels(await fetchSollIstModels(exercises));
+
+  const renameModel = async (id: string, name: string) => {
+    setBusy(true);
+    try {
+      await updateSollIstModelMeta(id, { name });
+      await refreshModels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to rename the model');
+    } finally { setBusy(false); }
+  };
+
+  const duplicateModel = async (model: SollIstModel) => {
+    setBusy(true);
+    try {
+      await duplicateSollIstModel(model);
+      await refreshModels();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to duplicate the model');
+    } finally { setBusy(false); }
+  };
+
+  const removeModel = async (model: SollIstModel) => {
+    setBusy(true);
+    try {
+      await deleteSollIstModel(model.id);
+      await refreshModels();
+      // The sheet keeps its rows — only the link to the deleted model goes, so
+      // the coach does not lose what is on screen.
+      setSheet((sh) => (sh.modelRef === model.id ? { ...sh, modelRef: null } : sh));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete the model');
+    } finally { setBusy(false); }
+  };
+
   const options = modelOptions(models);
-  const sortedExercises = useMemo(() => [...exercises].sort((a, b) => a.name.localeCompare(b.name)), [exercises]);
+  // Sentinels (TEXT / GPP / VIDEO / IMAGE) can never carry a PR, so they are
+  // meaningless as a Soll-Ist row — and now that codes are printed, their codes
+  // would read as if they were lifts. Same filter ExerciseSearch already uses.
+  const sortedExercises = useMemo(
+    () => exercises.filter((e) => e.category !== '— System').sort((a, b) => a.name.localeCompare(b.name)),
+    [exercises],
+  );
 
   // Categories present in the sheet (for the filter dropdown), catalogue order.
   const sheetCategories = useMemo(() => {
@@ -479,6 +533,15 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
             </Select>
           </div>
         </label>
+        <Button
+          variant="ghost"
+          size="md"
+          icon={<Library size={14} />}
+          onClick={() => setManagerOpen(true)}
+          title="Open a copy of a textbook model, or rename / duplicate / delete your saved ones"
+        >
+          Models…
+        </Button>
 
         {/* per-reference current/goal inputs — full names, no chips */}
         <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-end', padding: '6px 10px', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
@@ -597,7 +660,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       {/* view bar: search / group / filter / add — the data-view controls */}
       <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
         <div style={{ width: 180 }}>
-          <Input placeholder="Search exercises…" value={sheet.view.search} onChange={(e) => setView({ search: e.target.value })} />
+          <Input placeholder="Search exercises or codes…" value={sheet.view.search} onChange={(e) => setView({ search: e.target.value })} />
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
           Group by
@@ -670,7 +733,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
                     <option value="">— manual (type numbers) —</option>
                     {sortedExercises.map((ex) => (
                       <option key={ex.id} value={ex.id}>
-                        {ex.name}
+                        {exerciseOptionLabel(ex)}
                       </option>
                     ))}
                   </Select>
@@ -809,6 +872,18 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         .sollist-row:hover td { background: var(--color-bg-secondary); }
         @media print { .print-only { display: block !important; } }
       `}</style>
+      <SollIstModelManager
+        open={managerOpen}
+        models={models}
+        exercises={sortedExercises}
+        athletes={athletes}
+        busy={busy}
+        onClose={() => setManagerOpen(false)}
+        onOpen={(ref) => onModelChange(ref)}
+        onRename={renameModel}
+        onDuplicate={duplicateModel}
+        onDelete={removeModel}
+      />
     </div>
   );
 }

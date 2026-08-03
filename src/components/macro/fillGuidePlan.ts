@@ -20,6 +20,7 @@ import {
   computeGeneralFill,
   type FillCell,
   type FillWeek,
+  type TrendModel,
 } from '../../lib/macroFillGuide';
 
 /** Special fill targets beside a tracked-exercise id. */
@@ -34,6 +35,8 @@ export interface FillGuideInputs {
   fromValue: number;
   toWeek: number;
   toValue: number;
+  /** Progression shape between the anchors; omitted = the historical straight ramp. */
+  trend?: TrendModel | null;
   fillReps: boolean;
   repsFrom: number;
   repsTo: number;
@@ -137,6 +140,7 @@ export function buildFillPlan(
     }
     const res = computeGeneralFill(weeks, inputs.rhythm, weekTypes, {
       anchors,
+      trend: inputs.trend,
       overwrite: inputs.overwrite,
       stamp: inputs.stamp,
     });
@@ -174,6 +178,7 @@ export function buildFillPlan(
       }
       const res = computeExerciseFill(weeks, inputs.rhythm, weekTypes, {
         anchors,
+        trend: inputs.trend,
         unit: usesPct ? 'pct' : 'kg',
         referenceKg: usesPct ? reference : undefined,
         repsAnchors: inputs.fillReps ? { fromValue: inputs.repsFrom, toValue: inputs.repsTo } : null,
