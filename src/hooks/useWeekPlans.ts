@@ -17,6 +17,11 @@ import type {
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { parsePrescription, parseComboPrescription, computePrescriptionSummary } from '../lib/prescriptionParser';
 import { recordPrescriptionDraft, clearPrescriptionDraft } from '../lib/prescriptionDraftStore';
+import {
+  mergeGroupStructureIntoAthlete,
+  seedStructureFromGroup,
+  type WeekStructure,
+} from '../lib/groupPlanSync';
 
 export interface PlanSelection {
   type: 'individual' | 'group';
@@ -1162,13 +1167,16 @@ export function useWeekPlans() {
     // athlete plan so that units like "Extra" are visible even if not previously in the athlete's plan.
     const { data: groupPlanMeta, error: metaError } = await supabase
       .from('week_plans')
-      .select('owner_id, active_days, day_labels, day_schedule')
+      .select('owner_id, active_days, day_labels, day_display_order, day_schedule')
       .eq('id', groupPlanId)
       .single();
     if (metaError) throw metaError;
-    const groupActiveDays: number[] = groupPlanMeta?.active_days ?? [];
-    const groupDayLabels: Record<string, string> = groupPlanMeta?.day_labels ?? {};
-    const groupDaySchedule: Record<string, { weekday: number; time: string | null }> = groupPlanMeta?.day_schedule ?? {};
+    const groupStructure: WeekStructure = {
+      active_days: groupPlanMeta?.active_days ?? [],
+      day_labels: groupPlanMeta?.day_labels ?? null,
+      day_display_order: groupPlanMeta?.day_display_order ?? null,
+      day_schedule: groupPlanMeta?.day_schedule ?? null,
+    };
 
     // The group plan's own owner_id is the group's host coach. Used only as a
     // fallback owner for member athletes whose own owner can't be resolved
@@ -1279,9 +1287,27 @@ export function useWeekPlans() {
       if (existingPlan) {
         athletePlanId = existingPlan.id;
       } else {
+        // Born with the GROUP's rhythm, not the column default [1,2,3,4,5].
+        // Otherwise a group training 3 units handed the athlete two extra,
+        // permanently empty, unnamed unit cards that no later sync could
+        // remove (step 4b only ever adds days).
+        const seed = seedStructureFromGroup(groupStructure);
         const { data: newPlan, error: createError } = await supabase
           .from('week_plans')
-          .insert([{ week_start: weekStart, athlete_id: athleteId, group_id: null, is_group_plan: false, owner_id: athleteOwnerId }])
+          .insert([{
+            week_start: weekStart,
+            athlete_id: athleteId,
+            group_id: null,
+            is_group_plan: false,
+            owner_id: athleteOwnerId,
+            source_group_plan_id: groupPlanId,
+            ...(seed ? {
+              active_days: seed.active_days,
+              day_labels: seed.day_labels,
+              day_schedule: seed.day_schedule,
+              ...(seed.day_display_order ? { day_display_order: seed.day_display_order } : {}),
+            } : {}),
+          }])
           .select('id')
           .single();
         if (createError) {
@@ -1304,37 +1330,39 @@ export function useWeekPlans() {
       }
 
       // 4b. Merge group plan structure into athlete plan.
-      // Fetch athlete's current active_days/labels/schedule so we can merge without overwriting their data.
+      //
+      // This used to run only when the group introduced a day the athlete did
+      // not have, so a unit NAME was copied at most once — the first time that
+      // day index appeared — and a later rename in the group reached nobody.
+      // In the common case (the athlete already has days 1–5) it copied
+      // nothing at all. The merge is now unconditional and idempotent: the
+      // group owns the identity of the units it trains, the athlete keeps
+      // everything else (see src/lib/groupPlanSync.ts for the exact rule).
       const { data: athletePlanMeta } = await supabase
         .from('week_plans')
-        .select('active_days, day_labels, day_schedule')
+        .select('active_days, day_labels, day_display_order, day_schedule')
         .eq('id', athletePlanId)
         .single();
-      const athleteActiveDays: number[] = athletePlanMeta?.active_days ?? [];
-      const athleteDayLabels: Record<string, string> = athletePlanMeta?.day_labels ?? {};
-      const athleteDaySchedule: Record<string, { weekday: number; time: string | null }> = athletePlanMeta?.day_schedule ?? {};
 
-      // Add any group training units the athlete plan doesn't already have
-      const newDays = groupActiveDays.filter(d => !athleteActiveDays.includes(d));
-      if (newDays.length > 0) {
-        const mergedActiveDays = [...athleteActiveDays, ...newDays];
-        const mergedLabels = { ...athleteDayLabels };
-        const mergedSchedule = { ...athleteDaySchedule };
-        for (const d of newDays) {
-          const key = String(d);
-          if (groupDayLabels[key]) mergedLabels[key] = groupDayLabels[key];
-          if (groupDaySchedule[key]) mergedSchedule[key] = groupDaySchedule[key];
-        }
-        await supabase.from('week_plans').update({
-          active_days: mergedActiveDays,
-          day_labels: mergedLabels,
-          day_schedule: mergedSchedule,
-          source_group_plan_id: groupPlanId,
-        }).eq('id', athletePlanId);
-      } else {
-        // No new units — still track source group plan
-        await supabase.from('week_plans').update({ source_group_plan_id: groupPlanId }).eq('id', athletePlanId);
-      }
+      const merged = mergeGroupStructureIntoAthlete(groupStructure, {
+        active_days: athletePlanMeta?.active_days ?? [],
+        day_labels: athletePlanMeta?.day_labels ?? null,
+        day_display_order: athletePlanMeta?.day_display_order ?? null,
+        day_schedule: athletePlanMeta?.day_schedule ?? null,
+      });
+
+      // Raw client on purpose — the hook's own updateWeekPlan writes through
+      // setWeekPlan, which would splatter each athlete's structure onto the
+      // GROUP plan currently on screen.
+      await supabase.from('week_plans').update({
+        active_days: merged.active_days,
+        day_labels: merged.day_labels,
+        day_schedule: merged.day_schedule,
+        // Only written when the athlete already had an explicit order — a null
+        // order means "use sorted active_days", which stays correct.
+        ...(merged.day_display_order ? { day_display_order: merged.day_display_order } : {}),
+        source_group_plan_id: groupPlanId,
+      }).eq('id', athletePlanId);
 
       // 4c. Decide which existing group-sourced exercises to delete.
       // We preserve any planned_exercise the athlete has already logged
