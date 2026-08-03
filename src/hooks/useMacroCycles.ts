@@ -418,10 +418,11 @@ export function useMacroCycles() {
       .filter((te): te is MacroTrackedExerciseWithExercise => te !== null);
     if (next.length === orderedIds.length) setTrackedExercises(next);
     try {
-      const { error } = await supabase.rpc('reorder_macro_tracked_exercises', {
-        p_macrocycle_id: macrocycleId,
-        p_ordered_ids: orderedIds,
-      });
+      const { error } = await supabase.rpc(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC not in the generated types yet
+        'reorder_macro_tracked_exercises' as any,
+        { p_macrocycle_id: macrocycleId, p_ordered_ids: orderedIds } as never,
+      );
       if (error) throw error;
     } catch (err) {
       setTrackedExercises(prev);

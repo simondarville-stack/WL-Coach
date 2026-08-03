@@ -226,13 +226,14 @@ interface ModelDbRow {
     index_pct: number;
     reps: number;
     display_order: number | null;
+    label: string | null;
   }>;
 }
 
 export async function fetchSollIstModels(exercises: Exercise[]): Promise<SollIstModel[]> {
   const { data, error } = await supabase
     .from('sollist_models')
-    .select('id, owner_id, name, kind, athlete_id, notes, refs, updated_at, sollist_model_rows(exercise_id, ref_key, index_pct, reps, display_order)')
+    .select('id, owner_id, name, kind, athlete_id, notes, refs, updated_at, sollist_model_rows(exercise_id, ref_key, index_pct, reps, display_order, label)')
     .eq('owner_id', getOwnerId())
     .order('updated_at', { ascending: false });
   if (error) throw error;
@@ -250,7 +251,11 @@ export async function fetchSollIstModels(exercises: Exercise[]): Promise<SollIst
       .sort((a, b) => (a.display_order ?? 1e9) - (b.display_order ?? 1e9))
       .map((r) => ({
         exerciseId: r.exercise_id,
-        label: nameOf.get(r.exercise_id) ?? 'Unknown exercise',
+        // A mapped row reads its label from the catalogue, so renaming an
+        // exercise keeps the model in sync. An unmapped row keeps the source
+        // label it came in with (a preset's movement name, or a CSV cell) so
+        // the coach can still tell what it was meant to be.
+        label: (r.exercise_id ? nameOf.get(r.exercise_id) : null) ?? r.label ?? 'Unknown exercise',
         refKey: r.ref_key,
         indexPct: Number(r.index_pct),
         reps: r.reps,
@@ -268,7 +273,11 @@ export async function saveSollIstModel(model: {
   refs: SollIstRef[];
   rows: SollIstRow[];
 }): Promise<string> {
-  const persistable = model.rows.filter((r) => r.exerciseId != null);
+  // Every row is persisted, including ones that have not been mapped to a
+  // catalogue exercise yet. This used to filter them out — because
+  // sollist_model_rows.exercise_id was NOT NULL — which silently DROPPED rows
+  // from a forked preset (see migration 20260803230000). An unmapped row now
+  // carries its source label instead, so the fork is lossless.
   let modelId = model.id ?? null;
   if (modelId) {
     const { error } = await supabase
@@ -286,39 +295,82 @@ export async function saveSollIstModel(model: {
     const { error: delError } = await supabase.from('sollist_model_rows').delete().eq('model_id', modelId);
     if (delError) throw delError;
   } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types yet
+    const insertRow: any = {
+      owner_id: getOwnerId(),
+      name: model.name,
+      kind: model.kind,
+      athlete_id: model.athleteId,
+      notes: model.notes ?? null,
+      refs: refsToJson(model.refs),
+    };
     const { data, error } = await supabase
       .from('sollist_models')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types yet
-      .insert({
-        owner_id: getOwnerId(),
-        name: model.name,
-        kind: model.kind,
-        athlete_id: model.athleteId,
-        notes: model.notes ?? null,
-        refs: refsToJson(model.refs),
-      } as any)
+      .insert(insertRow)
       .select('id')
       .single();
     if (error) throw error;
     modelId = (data as { id: string }).id;
   }
-  if (persistable.length > 0) {
-    const { error } = await supabase.from('sollist_model_rows').insert(
-      persistable.map((r, i) => ({
-        model_id: modelId,
-        exercise_id: r.exerciseId,
-        ref_key: r.refKey,
-        index_pct: r.indexPct,
-        reps: r.reps,
-        display_order: i,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types yet
-      })) as any,
-    );
+  if (model.rows.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table not in generated types yet
+    const rowsToInsert: any = model.rows.map((r, i) => ({
+      model_id: modelId,
+      exercise_id: r.exerciseId,
+      ref_key: r.refKey,
+      index_pct: r.indexPct,
+      reps: r.reps,
+      display_order: i,
+      // Only stored for an unmapped row; a mapped one takes its label from the
+      // catalogue on read, so renaming an exercise keeps the model in sync.
+      label: r.exerciseId ? null : r.label,
+    }));
+    const { error } = await supabase.from('sollist_model_rows').insert(rowsToInsert);
     if (error) throw error;
   }
   return modelId as string;
 }
 
+/**
+ * Rename / re-note / re-assign a model WITHOUT touching its rows.
+ *
+ * Deliberately not `saveSollIstModel`: that one deletes every
+ * `sollist_model_rows` row and re-inserts them, which is right for a full save
+ * and catastrophic for a rename.
+ */
+export async function updateSollIstModelMeta(
+  id: string,
+  patch: { name?: string; notes?: string | null; athleteId?: string | null },
+): Promise<void> {
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.name !== undefined) update.name = patch.name;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  if (patch.athleteId !== undefined) update.athlete_id = patch.athleteId;
+  const { error } = await supabase.from('sollist_models').update(update as never).eq('id', id);
+  if (error) throw error;
+}
+
+/** Save a copy of a model under a new name. Returns the new model's id. */
+export async function duplicateSollIstModel(model: SollIstModel): Promise<string> {
+  return saveSollIstModel({
+    id: null,
+    name: `${model.name} (copy)`,
+    kind: model.kind === 'individual' ? 'individual' : 'custom',
+    athleteId: model.athleteId,
+    notes: model.notes,
+    refs: model.refs,
+    rows: model.rows,
+  });
+}
+
+/**
+ * Delete a model and its rows.
+ *
+ * Safe by schema (verified against the live DB): `sollist_model_rows` cascades,
+ * and `sollist_analyses.model_id` is ON DELETE SET NULL — a saved analysis that
+ * pointed here survives and falls back to the row snapshot it stored in its own
+ * options, so deleting a model never destroys past analysis.
+ */
 export async function deleteSollIstModel(id: string): Promise<void> {
   const { error } = await supabase.from('sollist_models').delete().eq('id', id);
   if (error) throw error;

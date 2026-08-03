@@ -27,6 +27,9 @@ const CATEGORY: Record<string, string> = { bsq: 'Squats', fsq: 'Squats', pull: '
 const categoryOf = (id: string | null) => (id ? CATEGORY[id] ?? null : null);
 const ORDER = ['Pulls', 'Squats'];
 
+const CODE: Record<string, string> = { bsq: 'K4a', fsq: 'K4b', pull: 'K3a' }; // psn has no code
+const codeOf = (id: string | null) => (id ? CODE[id] ?? null : null);
+
 const computed = () => computeSollIst(ROWS, VALUES, new Map());
 const view = (patch: Partial<SheetView>): SheetView => ({ ...defaultView(), ...patch });
 
@@ -36,6 +39,19 @@ describe('buildRowGroups', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].label).toBeNull();
     expect(groups[0].rows.map((c) => c.row.label)).toEqual(['Back squat', 'Front squat', 'Snatch pull', 'Power snatch']);
+  });
+
+  it('searches exercise codes as well as names', () => {
+    const byCode = buildRowGroups(computed(), view({ search: 'k4' }), REFS, categoryOf, ORDER, codeOf);
+    expect(byCode[0].rows.map((c) => c.row.label)).toEqual(['Back squat', 'Front squat']);
+
+    const exact = buildRowGroups(computed(), view({ search: 'k3a' }), REFS, categoryOf, ORDER, codeOf);
+    expect(exact[0].rows.map((c) => c.row.label)).toEqual(['Snatch pull']);
+  });
+
+  it('omitting codeOf keeps the name-only behaviour', () => {
+    const groups = buildRowGroups(computed(), view({ search: 'k4' }), REFS, categoryOf, ORDER);
+    expect(groups.flatMap((g) => g.rows)).toHaveLength(0);
   });
 
   it('filters by search, reference and category', () => {
