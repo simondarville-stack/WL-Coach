@@ -680,6 +680,24 @@ export function useWeekPlans() {
       .eq('id', plannedExId);
     if (error) throw error;
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+
+    // Patch the in-memory row so the day card's GPP preview updates live.
+    // The editor autosaves, so a full refetch per save would be both wasteful
+    // and destructive (it re-renders the card under an open editor). Same
+    // optimistic-patch shape savePrescription uses.
+    setPlannedExercises(prev => {
+      let changed = false;
+      const next: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        next[day] = prev[day].map(ex => {
+          if (ex.id !== plannedExId) return ex;
+          changed = true;
+          return { ...ex, metadata: { ...(ex.metadata ?? {}), gpp } };
+        });
+      }
+      return changed ? next : prev;
+    });
   };
 
   /**
