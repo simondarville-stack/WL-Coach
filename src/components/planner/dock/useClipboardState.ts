@@ -178,6 +178,14 @@ export function useClipboardState() {
     setItems(prev => prev.filter(it => it.id !== id));
   }, []);
 
+  /** Put a removed item back exactly as it was — id and timestamp included, so
+   *  undoing a throw-away restores the card rather than minting a new one. */
+  const restore = useCallback((item: ClipboardItem) => {
+    setItems(prev => (prev.some(it => it.id === item.id)
+      ? prev
+      : [item, ...prev].sort((a, b) => b.added_at - a.added_at)));
+  }, []);
+
   const clear = useCallback(() => {
     setItems([]);
   }, []);
@@ -187,5 +195,5 @@ export function useClipboardState() {
     [items],
   );
 
-  return { items, addExercise, addDay, addWeek, remove, clear, findById };
+  return { items, addExercise, addDay, addWeek, remove, restore, clear, findById };
 }

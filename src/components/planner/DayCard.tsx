@@ -17,6 +17,7 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
+import { MARK_DAY, MARK_EXERCISE } from './dragPayload';
 
 interface DayCardProps {
   dayIndex: number;
@@ -307,6 +308,9 @@ export function DayCard({
           draggable
           onDragStart={e => {
             e.dataTransfer.setData('text/plain', `DAY:${dayIndex}`);
+            // Marker so the throw-away zone can tell what is in the air during
+            // dragover, where getData() is blocked.
+            e.dataTransfer.setData(MARK_DAY, '1');
             e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
           }}
           style={{
@@ -417,7 +421,7 @@ export function DayCard({
                       // exercise (not a template/dock item) is being dragged,
                       // and accept the drop with a positional indicator. The
                       // value is ignored; only the presence in types matters.
-                      e.dataTransfer.setData('application/x-emos-exercise', '1');
+                      e.dataTransfer.setData(MARK_EXERCISE, '1');
                       e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
                       setDraggingExId(ex.id);
                     }}
@@ -437,7 +441,7 @@ export function DayCard({
                       // marker because draggingExId is per-DayCard.
                       const isExerciseDrag =
                         draggingExId != null ||
-                        e.dataTransfer.types.includes('application/x-emos-exercise');
+                        e.dataTransfer.types.includes(MARK_EXERCISE);
                       if (!isExerciseDrag) return;
                       if (draggingExId === ex.id) return;
                       e.preventDefault();

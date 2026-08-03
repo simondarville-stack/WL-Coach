@@ -122,6 +122,9 @@ export function PlannerDock({
 
   return (
     <div
+      // Floating chrome: inside the planner's DOM, but never a bin for a
+      // thrown item (see ThrowAwayZone).
+      data-emos-no-throw
       style={{
         position: 'fixed',
         bottom: 0,

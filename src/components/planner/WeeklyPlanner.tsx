@@ -51,6 +51,9 @@ import {
 } from '../../lib/templateService';
 import { SaveAsTemplateModal, type SaveAsTemplateInput } from './SaveAsTemplateModal';
 import { ConfirmModal } from '../log/ConfirmModal';
+import { UndoToast } from '../log/UndoToast';
+import { ThrowAwayHint, useThrowAwayZone } from './ThrowAwayZone';
+import type { ThrowPayload } from './dragPayload';
 
 export interface MacroContext {
   macroId: string;
@@ -214,6 +217,13 @@ export function WeeklyPlanner() {
   const [editingDaySchedule, setEditingDaySchedule] = useState<Record<number, { weekday: number; time: string | null }>>({});
   const [draggedDayIndex, setDraggedDayIndex] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  /** The last thrown-away item, held for the undo window. The delete has
+   *  already committed; `undo` re-inserts from a snapshot. */
+  const [pendingThrow, setPendingThrow] = useState<{
+    throwId: string;
+    message: string;
+    undo: () => void | Promise<void>;
+  } | null>(null);
   const [showWeekList, setShowWeekList] = useState(() => {
     return !urlWeekStart;
   });
@@ -512,6 +522,115 @@ export function WeeklyPlanner() {
       // error already set in hook
     }
   };
+
+  /**
+   * Throw-away: an item released outside every receivable area is deleted.
+   *
+   * The delete commits immediately (so the planner never shows a phantom row)
+   * and `pendingThrow` holds a snapshot for the 4 s undo window. Undo is a
+   * re-insert, so the restored row gets a NEW planned_exercises id — the same
+   * property the existing delete-held gesture has.
+   */
+  const handleThrowAway = async (payload: ThrowPayload) => {
+    if (payload.kind === 'clipboard') {
+      const item = clipboard.findById(payload.itemId);
+      if (!item) return;
+      clipboard.remove(item.id);
+      setPendingThrow({
+        throwId: `clip-${item.id}`,
+        message: 'Removed from clipboard',
+        undo: () => { clipboard.restore(item); },
+      });
+      return;
+    }
+
+    if (!currentWeekPlan) return;
+
+    if (payload.kind === 'exercise') {
+      const list = plannedExercises[payload.fromDay] ?? [];
+      const index0 = list.findIndex(e => e.id === payload.plannedExId);
+      if (index0 < 0) return;
+      // Snapshot BEFORE the delete — it reads planned_set_lines and the live
+      // metadata blob, both of which are gone afterwards.
+      const built = await buildExerciseSnapshot(payload.plannedExId);
+      if (!built) return;
+      const dayIndex = payload.fromDay;
+      setPlannedExercises(prev => ({
+        ...prev,
+        [dayIndex]: (prev[dayIndex] ?? []).filter(e => e.id !== payload.plannedExId),
+      }));
+      try {
+        await deletePlannedExercise(payload.plannedExId);
+        await normalizePositions(currentWeekPlan.id, dayIndex);
+        await handleRefresh();
+      } catch {
+        await handleRefresh();
+        return;
+      }
+      setPendingThrow({
+        throwId: `ex-${payload.plannedExId}`,
+        message: `${built.display.label} removed`,
+        undo: async () => {
+          const newId = await insertExerciseSnapshot(
+            built.snapshot, currentWeekPlan.id, dayIndex, index0 + 1, { source: plannedSource },
+          );
+          // insertExerciseSnapshot writes a literal position without shifting
+          // siblings, so put it back where it was explicitly (0-based here).
+          if (newId) await reorderInDay(currentWeekPlan.id, dayIndex, newId, index0);
+          await handleRefresh();
+        },
+      });
+      return;
+    }
+
+    // A whole training unit.
+    const rows = plannedExercises[payload.dayIndex] ?? [];
+    if (rows.length === 0) return;
+    const snapshots: { display: ClipboardExerciseDisplay; snapshot: ClipboardExerciseSnapshot }[] = [];
+    for (const ex of rows) {
+      const built = await buildExerciseSnapshot(ex.id);
+      if (built) snapshots.push(built);
+    }
+    if (snapshots.length === 0) return;
+    const label = getDayLabel(payload.dayIndex);
+    try {
+      await deleteDayExercises(rows.map(r => r.id));
+      await handleRefresh();
+    } catch {
+      await handleRefresh();
+      return;
+    }
+    setPendingThrow({
+      throwId: `day-${payload.dayIndex}-${rows.length}`,
+      message: `${label} cleared — ${snapshots.length} exercise${snapshots.length === 1 ? '' : 's'}`,
+      undo: async () => {
+        for (let i = 0; i < snapshots.length; i++) {
+          await insertExerciseSnapshot(
+            snapshots[i].snapshot, currentWeekPlan.id, payload.dayIndex, i + 1, { source: plannedSource },
+          );
+        }
+        await handleRefresh();
+      },
+    });
+  };
+
+  const undoThrow = async () => {
+    const pending = pendingThrow;
+    if (!pending) return;
+    setPendingThrow(null);
+    try {
+      await pending.undo();
+    } catch {
+      await handleRefresh();
+    }
+  };
+
+  const throwZone = useThrowAwayZone({
+    // Only the plan overview is a bin. The week list, print modal, log mode and
+    // the open dialogs have no throwable drags of their own.
+    enabled: !showWeekList && viewMode === 'plan' && !!currentWeekPlan && panelView === 'overview',
+    onThrow: p => { void handleThrowAway(p); },
+  });
 
   const handleExerciseDrop = async (
     fromDay: number,
@@ -1385,7 +1504,12 @@ export function WeeklyPlanner() {
   const dayLabels: Record<number, string> = currentWeekPlan?.day_labels ?? {};
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-bg-secondary)', padding: 16 }}>
+    <div
+      style={{ minHeight: '100vh', background: 'var(--color-bg-secondary)', padding: 16 }}
+      // Throw-away bin: any drop that reaches here without an inner drop target
+      // having claimed it deletes the dragged item. See ThrowAwayZone.
+      {...throwZone.zoneProps}
+    >
       {/* No max-width (and so no centring): the day grid is
           `auto-fill, minmax(360px, 1fr)`, so the old 1600 px cap was what
           pinned a wide monitor to 4 unit cards per row. The planner is a dense
@@ -1857,6 +1981,17 @@ export function WeeklyPlanner() {
             />
           </>
         )}
+
+        <ThrowAwayHint kind={throwZone.armedKind} />
+        <UndoToast
+          message={pendingThrow?.message ?? ''}
+          visible={pendingThrow != null}
+          resetKey={pendingThrow?.throwId ?? null}
+          onUndo={() => { void undoThrow(); }}
+          // The delete already committed — the toast is the window to take it
+          // back, not a deferred commit. Dismissing just drops the snapshot.
+          onDismiss={() => setPendingThrow(null)}
+        />
 
         {importTarget && currentWeekPlan && (
           <TemplateImportDialog

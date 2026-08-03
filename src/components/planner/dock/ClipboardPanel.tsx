@@ -3,6 +3,7 @@ import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-r
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
 import { DockGroupCard } from './DockGroupCard';
 import { ClipboardWeekPreviewDialog } from './ClipboardWeekPreviewDialog';
+import { MARK_CLIPBOARD } from '../dragPayload';
 
 interface ClipboardPanelProps {
   items: ClipboardItem[];
@@ -189,6 +190,7 @@ function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
       draggable
       onDragStart={e => {
         e.dataTransfer.setData('text/plain', `CLIPBOARD:exercise:${item.id}`);
+        e.dataTransfer.setData(MARK_CLIPBOARD, '1');
         e.dataTransfer.effectAllowed = 'copy';
       }}
       title={display.label}
@@ -256,6 +258,7 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
       draggable
       onDragStart={e => {
         e.dataTransfer.setData('text/plain', `CLIPBOARD:day:${item.id}`);
+        e.dataTransfer.setData(MARK_CLIPBOARD, '1');
         e.dataTransfer.effectAllowed = 'copy';
       }}
       title={`${item.label} — ${item.exercises.length} exercise${item.exercises.length === 1 ? '' : 's'}`}
@@ -353,6 +356,7 @@ function WeekCard({ item, onRemove }: WeekCardItemProps) {
         onHeaderDragStart={e => {
           e.dataTransfer.setData('text/plain', `CLIPBOARD:week:${item.id}`);
           e.dataTransfer.setData('application/x-emos-week-paste', '1');
+          e.dataTransfer.setData(MARK_CLIPBOARD, '1');
           e.dataTransfer.effectAllowed = 'copy';
         }}
         headerAction={
