@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts';
+import { ChevronLeft, ChevronRight, Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { formatDateShort, isoMonday, isoAddWeeks, weekStartsBetween, snapToMonday } from '../../lib/dateUtils';
+import {
+  clampViewport, fitViewport, fullViewport, isFull, panViewport, spanOf, zoomViewport,
+  MIN_SPAN, type Viewport,
+} from '../../lib/chartViewport';
 import { parsePrescription } from '../../lib/prescriptionParser';
 import {
   formatKg as fmtKg,
@@ -40,24 +46,26 @@ interface ExerciseHistoryChartProps {
   currentWeekStart?: string;
 }
 
-const WINDOW_WEEKS = 16;
+/** How far back we FETCH. The coach can pan across all of it. */
+// COACH-CONFIG candidate — three years of history.
+const FETCH_BACK_WEEKS = 156;
+/** How many weeks are VISIBLE on first render. */
+// COACH-CONFIG candidate — the old fixed window, now just the default zoom.
+const DEFAULT_VISIBLE_WEEKS = 16;
+/** Guard against an absurd span if a plan exists far outside the fetch window. */
+const MAX_POINTS = 400;
+/** Device-local: a coach who prefers a 30-week look keeps it across exercises. */
+const SPAN_PREF_KEY = 'emos.exerciseHistory.spanWeeks';
 
-function getMondayUTC(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  const day = d.getUTCDay();
-  d.setUTCDate(d.getUTCDate() - (day === 0 ? 6 : day - 1));
-  return d.toISOString().slice(0, 10);
+function readSpanPref(): number | null {
+  try {
+    const raw = localStorage.getItem(SPAN_PREF_KEY);
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n >= MIN_SPAN ? n : null;
+  } catch { return null; }
 }
-
-function formatLabel(weekStart: string): string {
-  const d = new Date(weekStart + 'T00:00:00Z');
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-}
-
-function addWeeksUTC(dateStr: string, weeks: number): string {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() + weeks * 7);
-  return d.toISOString().slice(0, 10);
+function writeSpanPref(span: number): void {
+  try { localStorage.setItem(SPAN_PREF_KEY, String(span)); } catch { /* private mode */ }
 }
 
 /**
@@ -107,20 +115,27 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   const [data, setData]     = useState<WeekPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView]     = useState<'max' | 'avg'>('max');
+  /** Inclusive index window into `data`. null until the first data arrives. */
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{ pointerId: number; startX: number; startVp: Viewport; moved: boolean } | null>(null);
+  const cleanupPanRef = useRef<(() => void) | null>(null);
 
   // Anchor the window on the week being planned (falls back to today when the
   // planner didn't pass one, e.g. legacy call sites).
-  const anchorWeek = getMondayUTC(currentWeekStart ?? new Date().toISOString().slice(0, 10));
+  const anchorWeek = isoMonday(currentWeekStart ?? new Date().toISOString().slice(0, 10));
 
   useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId, anchorWeek]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const lookBack  = addWeeksUTC(anchorWeek, -WINDOW_WEEKS);
+      // Fetch WIDE (three years) so there is something to pan across; the
+      // viewport decides what is actually shown.
+      const lookBack  = isoAddWeeks(anchorWeek, -FETCH_BACK_WEEKS);
       const lookAhead = macroContext
-        ? addWeeksUTC(anchorWeek, macroContext.totalWeeks - macroContext.weekNumber + 2)
-        : addWeeksUTC(anchorWeek, 4);
+        ? isoAddWeeks(anchorWeek, macroContext.totalWeeks - macroContext.weekNumber + 2)
+        : isoAddWeeks(anchorWeek, 8);
 
       const { data: weekPlans } = await supabase
         .from('week_plans')
@@ -175,7 +190,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         .eq('exercise_id', exerciseId)
         .eq('session.athlete_id', athleteId)
         .eq('session.status', 'completed')
-        .gte('session.date', lookBack);
+        .gte('session.date', lookBack)
+        .lte('session.date', lookAhead);
 
       // v2 training log writes per-set data into training_log_sets and
       // leaves performed_raw empty, so we fetch both and prefer the set
@@ -208,7 +224,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       for (const row of logRows ?? []) {
         const session = row.session as unknown as { date: string } | null;
         if (!session) continue;
-        const ws = getMondayUTC(session.date);
+        const ws = isoMonday(session.date);
         const setsForRow = setsByLogEx.get(row.id) ?? [];
 
         if (setsForRow.length > 0) {
@@ -281,7 +297,9 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
             const targetMap = new Map((targets ?? []).map(t => [t.macro_week_id, t]));
             for (const mw of macroWeeks) {
               const t = targetMap.get(mw.id);
-              sollByWeekStart.set(mw.week_start, {
+              // Snap: some legacy week_start values were stored a day early
+              // (see dateUtils) and would miss the dense Monday grid entirely.
+              sollByWeekStart.set(snapToMonday(mw.week_start), {
                 max: t?.target_max ?? null,
                 avg: t?.target_avg ?? null,
                 weekNumber: mw.week_number,
@@ -291,19 +309,31 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         }
       }
 
-      const allWeeks = new Set<string>([
+      // A DENSE, contiguous Monday series — one point per week between the
+      // first and last week that has anything, plus the week being planned.
+      // The old sparse union made the x-axis non-proportional to time: two
+      // adjacent dots could be one week or nine weeks apart, so a gap in
+      // training read as continuous progress. It also gave zoom nothing
+      // meaningful to zoom.
+      const keys = [
         ...planByWeek.keys(),
         ...perfByWeek.keys(),
         ...sollByWeekStart.keys(),
-      ]);
+        anchorWeek,
+      ].sort();
+      if (keys.length === 0) { setData([]); return; }
+      let series = weekStartsBetween(keys[0], keys[keys.length - 1]);
+      if (series.length > MAX_POINTS) series = series.slice(-MAX_POINTS);
 
-      const points: WeekPoint[] = Array.from(allWeeks).sort().map(ws => {
+      const points: WeekPoint[] = series.map(ws => {
         const plan = planByWeek.get(ws);
         const perf = perfByWeek.get(ws);
         const soll = sollByWeekStart.get(ws);
         return {
           weekStart: ws,
-          label:      soll ? `W${soll.weekNumber}` : formatLabel(ws),
+          // DD/MM via dateUtils — the old toLocaleDateString('en-GB') flips to
+          // US month-first on some machines (see dateUtils' own warning).
+          label:      soll ? `W${soll.weekNumber}` : formatDateShort(ws),
           weekNumber: soll?.weekNumber ?? null,
           plan_max:  plan && plan.max > 0 ? plan.max : null,
           plan_avg: plan && plan.totalReps > 0 ? Math.round(plan.totalLoad / plan.totalReps) : null,
@@ -323,6 +353,91 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       setLoading(false);
     }
   }
+
+  // Frame the window on the week being planned: it sits ~80 % across, with the
+  // recent past behind it — the same look the old fixed 16-week window had.
+  useEffect(() => {
+    if (data.length === 0) { setViewport(null); return; }
+    const anchorIdx = data.findIndex(d => d.weekStart >= anchorWeek);
+    const endAt = anchorIdx < 0 ? data.length - 1 : Math.min(data.length - 1, anchorIdx + 3);
+    setViewport(fitViewport(data.length, readSpanPref() ?? DEFAULT_VISIBLE_WEEKS, endAt));
+  }, [data, anchorWeek]);
+
+  const vp = useMemo(
+    () => (viewport ? clampViewport(viewport, data.length) : fullViewport(data.length)),
+    [viewport, data.length],
+  );
+  const visible = useMemo(() => data.slice(vp.start, vp.end + 1), [data, vp]);
+
+  const applyZoom = (factor: number, anchorFraction = 0.5) => {
+    setViewport(v => {
+      const next = zoomViewport(v ?? fullViewport(data.length), data.length, factor, anchorFraction);
+      writeSpanPref(spanOf(next));
+      return next;
+    });
+  };
+  const applyPan = (deltaIndices: number) =>
+    setViewport(v => panViewport(v ?? fullViewport(data.length), data.length, deltaIndices));
+
+  // Wheel must be a NATIVE listener with { passive: false }. React registers
+  // wheel passively at the root, so preventDefault() inside a JSX onWheel is a
+  // no-op — the surrounding dialog would scroll under the cursor instead of
+  // zooming. Trackpad pinch arrives here as ctrl+wheel and falls through the
+  // same zoom branch, so pinch-to-zoom works with no extra code.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || data.length === 0) return;
+    const PLOT_L = 32;  // YAxis width
+    const PLOT_R = 8;   // chart margin.right
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const f = Math.min(1, Math.max(0, (e.clientX - r.left - PLOT_L) / Math.max(1, r.width - PLOT_L - PLOT_R)));
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const dir = (e.deltaX || e.deltaY) > 0 ? 1 : -1;
+        setViewport(v => {
+          const cur = v ?? fullViewport(data.length);
+          return panViewport(cur, data.length, dir * Math.max(1, Math.round(spanOf(cur) / 6)));
+        });
+      } else {
+        applyZoom(e.deltaY > 0 ? 1.25 : 0.8, f);
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.length]);
+
+  // Drag to pan. No setPointerCapture: Recharts rebuilds the SVG subtree on
+  // every viewport change, so the capture target can vanish mid-drag.
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (data.length === 0 || e.button !== 0) return;
+    panRef.current = { pointerId: e.pointerId, startX: e.clientX, startVp: vp, moved: false };
+    const move = (ev: PointerEvent) => {
+      const st = panRef.current;
+      if (!st || ev.pointerId !== st.pointerId) return;
+      if (ev.pointerType === 'mouse' && ev.buttons === 0) { up(); return; }
+      const dx = ev.clientX - st.startX;
+      // 3 px threshold so a plain click still reaches Recharts' tooltip.
+      if (!st.moved && Math.abs(dx) <= 3) return;
+      st.moved = true;
+      const w = wrapRef.current?.getBoundingClientRect().width ?? 300;
+      const pxPerIdx = Math.max(1, (w - 40) / Math.max(1, spanOf(st.startVp) - 1));
+      setViewport(panViewport(st.startVp, data.length, -Math.round(dx / pxPerIdx)));
+    };
+    const up = () => {
+      panRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      cleanupPanRef.current = null;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    cleanupPanRef.current = up;
+  };
+  useEffect(() => () => { cleanupPanRef.current?.(); }, []);
 
   if (loading) {
     return (
@@ -352,28 +467,67 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   const perfKey = view === 'max' ? 'perf_max'  : 'perf_avg';
   const sollKey = view === 'max' ? 'soll_max'  : 'soll_avg';
 
-  const allVals = data.flatMap(d => [
+  // Scale to what is ON SCREEN, so zooming in magnifies vertically too.
+  // Rounded to 5 kg, otherwise the axis jitters on every pan step.
+  const allVals = visible.flatMap(d => [
     d[planKey as keyof WeekPoint],
     d[perfKey as keyof WeekPoint],
     d[sollKey as keyof WeekPoint],
   ]).filter((v): v is number => typeof v === 'number');
 
-  const minY = allVals.length > 0 ? Math.max(0, Math.min(...allVals) - 10) : 0;
-  const maxY = allVals.length > 0 ? Math.max(...allVals) + 10 : 100;
+  const minY = allVals.length > 0 ? Math.max(0, Math.floor(Math.min(...allVals) / 5) * 5 - 5) : 0;
+  const maxY = allVals.length > 0 ? Math.ceil(Math.max(...allVals) / 5) * 5 + 5 : 100;
 
-  // "Now" marks the week being planned. With a macro we use its current week
-  // number; otherwise we match the anchor week's label in the data.
-  const nowLabel = macroContext
-    ? `W${macroContext.weekNumber}`
-    : data.find(d => d.weekStart === anchorWeek)?.label;
+  // "Now" marks the week being planned. The x-axis is keyed on weekStart
+  // because a dense multi-year series repeats labels ("03/02" in two different
+  // years), and a Recharts category axis with duplicate values mis-renders and
+  // breaks ReferenceLine matching.
+  const nowAnchor = visible.some(d => d.weekStart === anchorWeek) ? anchorWeek : null;
+
+  const labelByWeek = new Map(data.map(d => [d.weekStart, d.label]));
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', letterSpacing: '0.05em' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-secondary)', letterSpacing: '0.05em', flexShrink: 0 }}>
           Load history
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {/* Where in the history the coach currently is. */}
+        {visible.length > 0 && (
+          <span style={{
+            fontSize: 10, color: 'var(--color-text-tertiary)',
+            fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {formatDateShort(visible[0].weekStart)}-{formatDateShort(visible[visible.length - 1].weekStart)}
+            {' \u00b7 '}{visible.length} wk
+          </span>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+          {([
+            { key: 'left',  Icon: ChevronLeft,  title: 'Pan back',    onClick: () => applyPan(-Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.start <= 0 },
+            { key: 'out',   Icon: ZoomOut,      title: 'Zoom out',    onClick: () => applyZoom(1.4), disabled: isFull(vp, data.length) },
+            { key: 'in',    Icon: ZoomIn,       title: 'Zoom in',     onClick: () => applyZoom(0.7), disabled: spanOf(vp) <= MIN_SPAN },
+            { key: 'right', Icon: ChevronRight, title: 'Pan forward', onClick: () => applyPan(Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.end >= data.length - 1 },
+            { key: 'all',   Icon: Maximize2,    title: 'Show all',    onClick: () => { setViewport(fullViewport(data.length)); writeSpanPref(data.length); }, disabled: isFull(vp, data.length) },
+          ] as const).map(({ key, Icon, title, onClick, disabled }) => (
+            <button
+              key={key}
+              onClick={onClick}
+              disabled={disabled}
+              title={title}
+              aria-label={title}
+              style={{
+                display: 'inline-flex', alignItems: 'center', padding: '2px 4px',
+                borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent',
+                color: 'var(--color-text-tertiary)', cursor: disabled ? 'default' : 'pointer',
+                opacity: disabled ? 0.25 : 1,
+              }}
+            >
+              <Icon size={12} />
+            </button>
+          ))}
+          <span style={{ width: 1, height: 12, background: 'var(--color-border-tertiary)', margin: '0 2px' }} aria-hidden />
           {(['max', 'avg'] as const).map(v => (
             <button
               key={v}
@@ -392,15 +546,43 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         </div>
       </div>
 
+      {/* Wheel zooms, drag pans, shift+wheel pans. touchAction 'pan-y' keeps
+          vertical page scroll working on touch while claiming the horizontal
+          drag. Enter is deliberately NOT handled -- the surrounding dialog
+          closes on it. */}
+      <div
+        ref={wrapRef}
+        tabIndex={0}
+        role="group"
+        aria-label="Load history chart - arrow keys pan, plus and minus zoom, 0 shows all"
+        onPointerDown={onPointerDown}
+        onKeyDown={e => {
+          if (e.key === 'ArrowLeft') { e.preventDefault(); applyPan(-1); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); applyPan(1); }
+          else if (e.key === '+' || e.key === '=') { e.preventDefault(); applyZoom(0.7); }
+          else if (e.key === '-') { e.preventDefault(); applyZoom(1.4); }
+          else if (e.key === '0') { e.preventDefault(); setViewport(fullViewport(data.length)); }
+        }}
+        style={{
+          position: 'relative', outline: 'none',
+          touchAction: 'pan-y', userSelect: 'none',
+          cursor: data.length > spanOf(vp) ? 'grab' : 'default',
+        }}
+      >
       <ResponsiveContainer width="100%" height={180}>
-        <ComposedChart data={data} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
+        <ComposedChart data={visible} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} interval="preserveStartEnd" />
+          <XAxis
+            dataKey="weekStart"
+            tickFormatter={(ws: string) => labelByWeek.get(ws) ?? ws}
+            tick={{ fontSize: 10, fill: '#9ca3af' }}
+            stroke="#e5e7eb" tickLine={false} interval="preserveStartEnd"
+          />
           <YAxis domain={[minY, maxY]} tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} width={32} />
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Tooltip content={HistoryTooltip as any} />
-          {nowLabel && (
-            <ReferenceLine x={nowLabel} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
+          {nowAnchor && (
+            <ReferenceLine x={nowAnchor} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
               label={{ value: 'This week', position: 'top', fontSize: 9, fill: '#f97316' }} />
           )}
           {hasSoll && (
@@ -419,6 +601,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4, fontSize: 10, color: 'var(--color-text-secondary)' }}>
         {hasPlan && (
