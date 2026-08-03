@@ -475,6 +475,27 @@ samp {
   line-height: 1.25rem;
   box-sizing: border-box;
 }
+/* Excel-style "=" formula: live result above the cell being edited.
+   Absolutely positioned inside .pgrid-col so it costs no layout, and
+   pointer-events:none so it never eats a click meant for the input. */
+.pgrid-formula-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 2px;
+  z-index: 5;
+  padding: 0 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: 10px;
+  font-family: var(--font-stacked);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-sm);
+}
 
 /* Compact variant — used inside week-overview day cards */
 .pgrid-wrap.pgrid-compact { gap: 4px; }

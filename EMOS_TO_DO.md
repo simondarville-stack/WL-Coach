@@ -13,6 +13,27 @@ from "solve everything" when the user names specific items to do (or explicitly
 defers others).
 
 ##TO DOs
+* when opening an excercise in the weekly planner or in the macro planner, you get the module that allows you to see the progress of the excercise in a time graph. I want it to be possible to scroll in/out on this module and navigate sideways, so the coach can look for the look t* hat they want. It should also be possible to expand the table of entries 
+* When editing a GPP block, it should not be needed to press save. Every edit should auto-save like the behaviour in the rest of the environment
+* GPP blocks doesn't turn red when holding delete. 
+* It should also be possible to delete items from the weekly planner by dragging and dropping them outside of any "recievable" area. Like "throwing" them away.
+* Training unit names from a group plan should also sync to athletes recieving the plan when sync is pressed.
+* When writing a prescription, make it so, that if you type "=" and then writes something, it gets evaluated as a calculation. Eg. =80/2 will show up as 40. Like in excel
+* GPP blocks don't turn red when holding delete button.
+* When using the fill guide in the macro, you should be able to choose between different mathmatical regressions between the two points. Like making a multi-point linear model or a 'curved' model between the start and end point. 
+* Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
+* Macro notes for a phase are written but doesn't show up anywhere. They should show in the ribbon that seperates the phases.
+* Notes in the macro that is linked to a specific excercise for a specific week, should show up in the Category Table when planning for that excercise. 
+* Macro information should also show when an excercise is opened in detailed view in the weekly planner.
+* Instead of having arrows, it should be possible to rearrange the excercises in the macro planner.
+* In the macro planner you press add excercise, then a search field appears. This is stupid UI. There should just be a permeanent search field for adding excercises (like we know it from the weekly planner)
+* In the macro  planner it should also be possible to write percentages or free text. This should then show up in the category table in the week planner, and evaluate accordingly
+* It should be possible to copy a macro prescription onto another excercise. (i suggest holding down ctrl and then dragging the excercise on top of the other. This will work because we will make dynamic rearrangement of excercise columns)
+* The Soll-Ist analysis model should also show the codes for the excercises. It should be possible to open and edit the preset models in the application
+* It should be possible to open a read-only macro from the /coach-overview part of the app. So the coach can open them in the field
+* rename /coach-overview link to fieldcoach
+* Don't show the ghost for an unactivated cell. Keep the bahaviour, but the ghost is confusing because it drowns the picture. 
+
 
 _(empty — everything below is done; new items go here.)_
 

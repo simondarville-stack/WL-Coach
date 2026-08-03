@@ -13,6 +13,7 @@ import { plannedNote } from '../../lib/plannedNote';
 import { AutoGrowTextarea } from '../ui';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
+import { expandFormulas } from '../../lib/formulaEval';
 import { DEFAULT_UNITS } from '../../lib/constants';
 import { SollIstChart } from './SollIstChart';
 import { StackedNotation } from './StackedNotation';
@@ -216,10 +217,13 @@ export function ExerciseDetail({
     if (!plannedExercise) return;
     setSaving(true);
     try {
-      const detected = detectIntendedUnit(textValue);
+      // Excel-style "=" tokens resolve before the unit is inferred, so
+      // "=160*0.5x3" both stores 80x3 and is still detected as kg.
+      const resolved = expandFormulas(textValue);
+      const detected = detectIntendedUnit(resolved);
       const effective = (detected ?? unit) as DefaultUnit;
       if (detected && detected !== unit) setUnit(detected);
-      await savePrescription(plannedExercise.id, { prescription: textValue, unit: effective || 'absolute_kg', isCombo });
+      await savePrescription(plannedExercise.id, { prescription: resolved, unit: effective || 'absolute_kg', isCombo });
       await onSaved();
       setTextMode(false);
     } finally { setSaving(false); }
@@ -571,7 +575,11 @@ export function ExerciseDetail({
                   rows={3}
                   style={{ ...inputStyle, fontFamily: 'var(--font-mono)', resize: 'none', lineHeight: 1.55 }}
                   placeholder={isCombo ? '80×2+1, 90×2+1×2' : '80x5, 85x3x2'}
+                  title={'Start a value with = to calculate it: "=160*0.5x3" stores 80x3.\nInside a formula write the set separator as x (not *), and decimals with a full stop.'}
                 />
+                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>
+                  Tip: <code style={{ fontFamily: 'var(--font-mono)' }}>=160*0.5x3</code> → <code style={{ fontFamily: 'var(--font-mono)' }}>80x3</code>
+                </span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     onClick={() => void applyText()}

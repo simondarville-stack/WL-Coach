@@ -117,21 +117,28 @@ export function MacroGridCell({
 
   const setsIsOne = (sets ?? 1) <= 1;
 
-  // Empty cell — show ghost of previous week
+  // Empty (unactivated) cell.
+  //
+  // It used to *render* the previous week's load as a faint italic ghost. The
+  // behaviour is right — clicking seeds the cell from last week — but drawing
+  // the number made a mostly-empty cycle read as if it were full of values, so
+  // the actual plan drowned in ghosts. Now the cell is a neutral placeholder
+  // and the previous value lives in the tooltip instead, where it explains
+  // what the click will do without competing with real data.
   if (isEmpty) {
     return (
       <div
         className="group flex items-center justify-center cursor-pointer select-none rounded transition-colors hover:bg-[var(--color-accent-muted)]"
         style={{ minWidth: 52, height: 38 }}
-        title={hasPrev ? "Click to start from last week's value" : 'Click to start a max set · Ctrl+click to type'}
+        title={
+          hasPrev
+            ? `Click to start from last week's value (${prevLoad}) · Ctrl+click to type`
+            : 'Click to start a max set · Ctrl+click to type'
+        }
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
       >
-        {hasPrev ? (
-          <span className="text-[9px] italic font-mono" style={{ color: 'var(--color-text-tertiary)' }}>{prevLoad}</span>
-        ) : (
-          <span className="text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>-</span>
-        )}
+        <span className="text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>-</span>
       </div>
     );
   }

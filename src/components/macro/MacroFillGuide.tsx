@@ -11,7 +11,7 @@
  * rhythm manager's job).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import type {
   MacroTarget,
   MacroTrackedExerciseWithExercise,
@@ -19,7 +19,13 @@ import type {
   RhythmPreset,
   WeekTypeConfig,
 } from '../../lib/database.types';
-import { stampAllowed } from '../../lib/macroFillGuide';
+import {
+  stampAllowed,
+  trendAt,
+  TREND_SHAPE_LABELS,
+  type TrendShape,
+  type TrendWaypoint,
+} from '../../lib/macroFillGuide';
 import {
   buildFillPlan,
   FILL_TARGET_ALL,
@@ -70,6 +76,11 @@ export function MacroFillGuide({
   const [toWeek, setToWeek] = useState(lastWeek);
   const [fromValue, setFromValue] = useState(100);
   const [toValue, setToValue] = useState(140);
+  // Trend model between the two anchors. Linear + no waypoints reproduces the
+  // original straight ramp exactly, so the default fill is unchanged.
+  const [trendShape, setTrendShape] = useState<TrendShape>('linear');
+  const [trendBend, setTrendBend] = useState(50);
+  const [waypoints, setWaypoints] = useState<TrendWaypoint[]>([]);
   const [fillReps, setFillReps] = useState(true);
   const [repsFrom, setRepsFrom] = useState(28);
   const [repsTo, setRepsTo] = useState(12);
@@ -95,6 +106,21 @@ export function MacroFillGuide({
   }, [selectedTe?.id, selectedTe?.reference_kg]);
   const referenceKg = refDraft.trim() === '' ? null : parseFloat(refDraft);
 
+  // Waypoints carry values in the current target's unit, so they can't survive
+  // a change of target — drop them rather than silently re-interpreting them.
+  useEffect(() => { setWaypoints([]); }, [target]);
+
+  const inRangeWaypoints = useMemo(() => {
+    const lo = Math.min(fromWeek, toWeek);
+    const hi = Math.max(fromWeek, toWeek);
+    return waypoints.filter(wp => wp.week > lo && wp.week < hi);
+  }, [waypoints, fromWeek, toWeek]);
+
+  const trend = useMemo(
+    () => ({ shape: trendShape, bend: trendBend, waypoints: inRangeWaypoints }),
+    [trendShape, trendBend, inRangeWaypoints],
+  );
+
   const inputs: FillGuideInputs = useMemo(() => ({
     target,
     unit: effectiveUnit,
@@ -102,6 +128,7 @@ export function MacroFillGuide({
     fromValue,
     toWeek,
     toValue,
+    trend,
     fillReps: !isGeneral && fillReps,
     repsFrom,
     repsTo,
@@ -111,7 +138,7 @@ export function MacroFillGuide({
     stamp,
     loadRoundingKg,
     rhythm,
-  }), [target, effectiveUnit, fromWeek, fromValue, toWeek, toValue, fillReps, repsFrom,
+  }), [target, effectiveUnit, fromWeek, fromValue, toWeek, toValue, trend, fillReps, repsFrom,
        repsTo, mirror, mirrorPct, overwrite, stamp, loadRoundingKg, rhythm, isGeneral]);
 
   const plan = useMemo(() => {
@@ -219,13 +246,14 @@ export function MacroFillGuide({
     if (next === unit) return;
     const ref = referenceKg && referenceKg > 0 ? referenceKg : selectedTe?.reference_kg ?? null;
     if (ref && ref > 0) {
-      if (next === 'pct') {
-        setFromValue(Math.round((fromValue / ref) * 200) / 2);
-        setToValue(Math.round((toValue / ref) * 200) / 2);
-      } else {
-        setFromValue(Math.round((ref * fromValue) / 100 / 2.5) * 2.5);
-        setToValue(Math.round((ref * toValue) / 100 / 2.5) * 2.5);
-      }
+      // Waypoints live in the same value space as the anchors — convert them
+      // with exactly the same rule, or a multi-point model would silently warp.
+      const conv = next === 'pct'
+        ? (v: number) => Math.round((v / ref) * 200) / 2
+        : (v: number) => Math.round((ref * v) / 100 / 2.5) * 2.5;
+      setFromValue(conv(fromValue));
+      setToValue(conv(toValue));
+      setWaypoints(ws => ws.map(wp => ({ ...wp, value: conv(wp.value) })));
     }
     setUnit(next);
   };
@@ -253,6 +281,43 @@ export function MacroFillGuide({
   };
 
   const valueUnitLabel = isGeneral ? 'reps' : effectiveUnit === 'pct' ? '%' : 'kg';
+
+  // ── trend waypoints ─────────────────────────────────────────────────────────
+  const usesWaypoints = inRangeWaypoints.length > 0;
+  const lo = Math.min(fromWeek, toWeek);
+  const hi = Math.max(fromWeek, toWeek);
+  const canAddWaypoint = hi - lo >= 2 && waypoints.length < hi - lo - 1;
+
+  const setWaypoint = (i: number, patch: Partial<TrendWaypoint>) =>
+    setWaypoints(ws => ws.map((wp, j) => (j === i ? { ...wp, ...patch } : wp)));
+
+  /** Drop a point on the first free week, seeded at the value the current trend
+   *  already has there — so adding one is a no-op until the coach moves it. */
+  const addWaypoint = () => {
+    const used = new Set(waypoints.map(wp => wp.week));
+    let week = -1;
+    // Prefer the middle of the widest untouched gap, so repeated adds spread out.
+    const marks = [lo, ...[...used].filter(w => w > lo && w < hi).sort((a, b) => a - b), hi];
+    let widest = 0;
+    for (let i = 1; i < marks.length; i++) {
+      const gap = marks[i] - marks[i - 1];
+      if (gap > widest) { widest = gap; week = Math.round((marks[i] + marks[i - 1]) / 2); }
+    }
+    if (week <= lo || week >= hi || used.has(week)) {
+      week = -1;
+      for (let w = lo + 1; w < hi; w++) if (!used.has(w)) { week = w; break; }
+    }
+    if (week < 0) return;
+    const value = trendAt(
+      { fromWeek, fromValue, toWeek, toValue },
+      week,
+      { shape: trendShape, bend: trendBend, waypoints: inRangeWaypoints },
+    );
+    const rounded = isGeneral
+      ? Math.round(value / 5) * 5
+      : Math.round(value / (effectiveUnit === 'pct' ? 0.5 : loadRoundingKg)) * (effectiveUnit === 'pct' ? 0.5 : loadRoundingKg);
+    setWaypoints(ws => [...ws, { week, value: rounded }].sort((a, b) => a.week - b.week));
+  };
 
   return (
     <div
@@ -362,6 +427,79 @@ export function MacroFillGuide({
             onChange={e => setToValue(parseFloat(e.target.value) || 0)} className={`${inputCls} w-[62px]`} />
           <span className="text-[10px] text-gray-400">{valueUnitLabel}</span>
         </div>
+
+        {/* Trend between the anchors — the progression the rhythm oscillates
+            around. Waypoints win over the shape (a multi-point linear model). */}
+        <div className="flex items-center gap-1.5">
+          <label className={labelCls}>Trend</label>
+          <select
+            value={trendShape}
+            onChange={e => setTrendShape(e.target.value as TrendShape)}
+            disabled={usesWaypoints}
+            className={`${inputCls} w-[104px] disabled:opacity-40`}
+            title={usesWaypoints ? 'Ignored while the trend has intermediate points' : undefined}
+          >
+            {(Object.keys(TREND_SHAPE_LABELS) as TrendShape[]).map(s => (
+              <option key={s} value={s}>{TREND_SHAPE_LABELS[s]}</option>
+            ))}
+          </select>
+          {trendShape !== 'linear' && !usesWaypoints && (
+            <>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={trendBend}
+                onChange={e => setTrendBend(parseInt(e.target.value, 10))}
+                className="w-[76px] accent-[var(--color-accent)]"
+                title="How far the curve bends away from a straight line"
+              />
+              <span className="text-[10px] text-gray-400 tabular-nums w-[26px]">{trendBend}%</span>
+            </>
+          )}
+          <button
+            onClick={addWaypoint}
+            disabled={!canAddWaypoint}
+            className="ml-auto inline-flex items-center gap-0.5 text-[10px] text-[color:var(--color-accent)] hover:underline disabled:opacity-40 disabled:no-underline"
+            title="Add an intermediate point — the trend becomes piecewise linear through it"
+          >
+            <Plus size={10} /> point
+          </button>
+        </div>
+        {waypoints.length > 0 && (
+          <div className="space-y-1 pl-[94px]">
+            {waypoints.map((wp, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="text-[10px] text-gray-400">week</span>
+                <input
+                  type="number" min={1} max={lastWeek} value={wp.week}
+                  onChange={e => setWaypoint(i, { week: parseInt(e.target.value, 10) || 1 })}
+                  className={`${inputCls} w-[46px]`}
+                />
+                <span className="text-gray-400">=</span>
+                <input
+                  type="number" step={isGeneral ? 10 : 2.5} value={wp.value}
+                  onChange={e => setWaypoint(i, { value: parseFloat(e.target.value) || 0 })}
+                  className={`${inputCls} w-[62px]`}
+                />
+                <span className="text-[10px] text-gray-400">{valueUnitLabel}</span>
+                {wp.week <= Math.min(fromWeek, toWeek) || wp.week >= Math.max(fromWeek, toWeek) ? (
+                  <span className="text-[9px] text-amber-600" title="Only points strictly between the anchor weeks are used">
+                    outside range
+                  </span>
+                ) : null}
+                <button
+                  onClick={() => setWaypoints(ws => ws.filter((_, j) => j !== i))}
+                  className="text-gray-300 hover:text-red-600"
+                  title="Remove this point"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Reps + mirror (exercise targets only) */}
         {!isGeneral && (
