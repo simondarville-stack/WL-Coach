@@ -795,11 +795,18 @@ export function useMacroCycles() {
 
   const fetchPhases = async (macrocycleId: string) => {
     try {
+      // No owner_id filter: macrocycle_id is the access boundary, exactly as it
+      // is for macro_weeks, macro_tracked_exercises and macro_targets — and as
+      // fetchMacrocycles already documents for the cycle itself. Filtering by
+      // the active coach meant a co-coach opening a SHARED athlete's or group's
+      // macro got zero phases: no phase band, no phase colours on the week
+      // rows, and no phase notes. Measured live: the 3 phases of the group
+      // cycle "2. Halvår 2026" are owned by its host coach and were invisible
+      // to the other coach on the same cycle.
       const { data, error } = await supabase
         .from('macro_phases')
         .select('*')
         .eq('macrocycle_id', macrocycleId)
-        .eq('owner_id', getOwnerId())
         .order('position');
       if (error) throw error;
       setPhases(data || []);

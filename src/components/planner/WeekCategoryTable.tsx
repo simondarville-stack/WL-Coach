@@ -388,10 +388,17 @@ export function WeekCategoryTable({
                         })()}
                         {t?.note?.trim() && (
                           <tr title={t.note}>
+                            {/* Two lines rather than one. A coach note is
+                                exactly the actionable, non-obvious content that
+                                earns visual weight, and the old single nowrap
+                                line in a 240 px box made anything past ~30
+                                characters hover-only. The tooltip still carries
+                                the full text. */}
                             <td colSpan={4} style={{
                               ...cellBase, paddingTop: 0, fontSize: 9, fontStyle: 'italic',
-                              color: 'var(--color-text-secondary)',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 0,
+                              color: 'var(--color-text-secondary)', lineHeight: 1.35,
+                              overflow: 'hidden', display: '-webkit-box',
+                              WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                             }}>
                               ✎ {t.note}
                             </td>

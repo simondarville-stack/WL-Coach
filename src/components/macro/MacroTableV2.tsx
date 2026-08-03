@@ -701,7 +701,28 @@ export function MacroTableV2({
                         color: phase.color,
                       }}
                     >
-                      {phase.name} (W{phase.start_week_number}–{phase.end_week_number})
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="flex-shrink-0">
+                          {phase.name} (W{phase.start_week_number}–{phase.end_week_number})
+                        </span>
+                        {/* The coach's phase note. It was written in the phase
+                            panel and rendered nowhere — the ribbon that separates
+                            the phases is where it belongs. One line with a
+                            tooltip for the rest: this is the densest table in the
+                            app, so the row must not grow. Same ✎ convention as
+                            the week and target notes; opacity rather than a new
+                            colour, so the ribbon keeps its phase-colour
+                            identity. */}
+                        {phase.notes?.trim() && (
+                          <span
+                            className="italic font-normal truncate"
+                            style={{ flex: 1, minWidth: 0, opacity: 0.85 }}
+                            title={phase.notes}
+                          >
+                            ✎ {phase.notes}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

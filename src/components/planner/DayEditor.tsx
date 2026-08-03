@@ -458,8 +458,23 @@ export function DayEditor({
                             {macroTgt.avg && (
                               <> Avg <span style={{ color: 'var(--color-text-secondary)' }}>{macroTgt.avg}</span></>
                             )}
+                            {/* The coach's macro note for this exercise+week.
+                                It used to be a bare hover-only ✎ with no text —
+                                a note you have to discover by hovering is a
+                                note nobody reads. Now truncated inline, full
+                                text on hover, matching the Category Table. */}
                             {macroTgt.note?.trim() && (
-                              <span title={macroTgt.note} style={{ color: 'var(--color-text-secondary)', cursor: 'help' }}>✎</span>
+                              <span
+                                title={macroTgt.note}
+                                style={{
+                                  color: 'var(--color-text-secondary)', fontStyle: 'italic',
+                                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap', display: 'inline-block',
+                                  verticalAlign: 'bottom',
+                                }}
+                              >
+                                ✎ {macroTgt.note}
+                              </span>
                             )}
                           </span>
                         )}

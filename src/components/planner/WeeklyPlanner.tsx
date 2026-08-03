@@ -64,6 +64,8 @@ export interface MacroContext {
   totalWeeks: number;
   phaseName: string | null;
   phaseColor: string | null;
+  /** Coach's note on the phase this week sits in ('' = none). */
+  phaseNotes: string;
   totalRepsTarget: number | null;
   /** Coach's macro-level note for this week ('' = none). */
   weekNotes: string;
@@ -413,7 +415,7 @@ export function WeeklyPlanner() {
       const [phaseResult, countResult] = await Promise.all([
         supabase
           .from('macro_phases')
-          .select('name, color')
+          .select('name, color, notes')
           .eq('macrocycle_id', mw.macroId)
           .lte('start_week_number', mw.weekNumber)
           .gte('end_week_number', mw.weekNumber)
@@ -433,6 +435,7 @@ export function WeeklyPlanner() {
         totalWeeks: countResult.count ?? 0,
         phaseName: phaseResult.data?.name ?? null,
         phaseColor: phaseResult.data?.color ?? null,
+        phaseNotes: phaseResult.data?.notes ?? '',
         totalRepsTarget: mw.totalRepsTarget,
         weekNotes: mw.notes,
       });

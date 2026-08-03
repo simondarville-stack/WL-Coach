@@ -11,6 +11,7 @@ import { materializeTemplate } from '../../lib/macroTemplate';
 import type { MacroTemplateRow } from '../../lib/macroTemplate';
 import { buildFillPlan } from './fillGuidePlan';
 import { buildColumnCopyRows, countFilledWeeks } from '../../lib/macroColumnCopy';
+import { findPhaseInCycle } from '../../lib/macroPhases';
 import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
@@ -1045,6 +1046,12 @@ ${how}.${warn}`)) return;
   const detailAthleteName =
     allAthletes.find(a => a.id === detailAthleteId)?.name ?? selectedAthlete?.name ?? null;
   const detailAnchorWeek = findCurrentMacroWeek(macroWeeks) ?? macroWeeks[0] ?? null;
+  // Phase and week notes were hardcoded null/'' here; they are already in
+  // memory, so resolve them properly instead — the exercise detail is
+  // phase-aware for free.
+  const detailPhase = detailAnchorWeek && selectedCycle
+    ? findPhaseInCycle(phases.filter(ph => ph.macrocycle_id === selectedCycle.id), detailAnchorWeek.week_number)
+    : null;
   const detailMacroContext: MacroContext | null = selectedCycle && detailAnchorWeek
     ? {
         macroId: selectedCycle.id,
@@ -1053,10 +1060,11 @@ ${how}.${warn}`)) return;
         weekTypeText: detailAnchorWeek.week_type_text,
         weekNumber: detailAnchorWeek.week_number,
         totalWeeks: macroWeeks.length,
-        phaseName: null,
-        phaseColor: null,
+        phaseName: detailPhase?.name ?? null,
+        phaseColor: detailPhase?.color ?? null,
+        phaseNotes: detailPhase?.notes ?? '',
         totalRepsTarget: detailAnchorWeek.total_reps_target,
-        weekNotes: '',
+        weekNotes: detailAnchorWeek.notes ?? '',
       }
     : null;
 
