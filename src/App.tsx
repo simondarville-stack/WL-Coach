@@ -136,14 +136,15 @@ function AppRouter() {
       </Routes>
     );
   }
-  // Coach overview (formerly /field) — coach-facing, so it sits behind the
-  // same gate as the desktop coach app rather than the athlete-side access
-  // codes. Legacy /field paths still route here and redirect inside FieldApp.
+  // Fieldcoach (formerly /field, then /Coach-overview) — coach-facing, so it
+  // sits behind the same gate as the desktop coach app rather than the
+  // athlete-side access codes. Both legacy prefixes still route here and are
+  // redirected to the current one inside FieldApp, so existing bookmarks work.
   const lowerPath = location.pathname.toLowerCase();
-  if (
-    lowerPath === '/coach-overview' || lowerPath.startsWith('/coach-overview/') ||
-    lowerPath === '/field' || lowerPath.startsWith('/field/')
-  ) {
+  const isFieldcoachPath = ['/fieldcoach', '/coach-overview', '/field'].some(
+    prefix => lowerPath === prefix || lowerPath.startsWith(prefix + '/'),
+  );
+  if (isFieldcoachPath) {
     return (
       <CoachGate>
         <FieldApp />

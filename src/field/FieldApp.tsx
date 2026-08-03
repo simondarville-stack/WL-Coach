@@ -1,5 +1,5 @@
 /**
- * FieldApp — coach-facing mobile coach-overview view (/Coach-overview).
+ * FieldApp — coach-facing mobile fieldcoach view (/fieldcoach).
  *
  * "What are my athletes going to train today?" on the gym floor: the
  * Upcoming screen shows each athlete's next open session as a compact
@@ -23,15 +23,16 @@ import { AthleteWeekScreen } from './screens/AthleteWeekScreen';
 import { AthleteDayScreen } from './screens/AthleteDayScreen';
 import { GroupWeekScreen } from './screens/GroupWeekScreen';
 import { GroupDayScreen } from './screens/GroupDayScreen';
+import { FieldMacroScreen } from './screens/FieldMacroScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { FieldInboxScreen } from './screens/FieldInboxScreen';
 import { FieldConversationScreen } from './screens/FieldConversationScreen';
 
 const TABS = [
-  { to: '/Coach-overview', icon: ListChecks, label: 'Upcoming', end: true },
-  { to: '/Coach-overview/athletes', icon: Users, label: 'Athletes', end: false },
-  { to: '/Coach-overview/inbox', icon: Mail, label: 'Inbox', end: false },
-  { to: '/Coach-overview/tools', icon: Calculator, label: 'Tools', end: false },
+  { to: '/fieldcoach', icon: ListChecks, label: 'Upcoming', end: true },
+  { to: '/fieldcoach/athletes', icon: Users, label: 'Athletes', end: false },
+  { to: '/fieldcoach/inbox', icon: Mail, label: 'Inbox', end: false },
+  { to: '/fieldcoach/tools', icon: Calculator, label: 'Tools', end: false },
 ] as const;
 
 function FieldLayout() {
@@ -76,11 +77,16 @@ function FieldLayout() {
   );
 }
 
-// Old /field/* URL → new /Coach-overview/* URL, keeping the sub-path and
-// query string intact so a bookmarked group/athlete deep link still lands.
-function LegacyFieldRedirect() {
+// Either legacy prefix (/field, then /Coach-overview) → /fieldcoach, keeping
+// the sub-path and query string intact so a bookmarked group/athlete deep link
+// still lands.
+//
+// The `(?=\/|$)` boundary is load-bearing: '/fieldcoach' starts with '/field',
+// so without it this would rewrite '/fieldcoach' to '/fieldcoachcoach' and
+// loop.
+function LegacyPrefixRedirect() {
   const { pathname, search } = useLocation();
-  const target = pathname.replace(/^\/field/i, '/Coach-overview') + search;
+  const target = pathname.replace(/^\/(?:field|coach-overview)(?=\/|$)/i, '/fieldcoach') + search;
   return <Navigate to={target} replace />;
 }
 
@@ -126,19 +132,24 @@ function FieldRoutes() {
   return (
     <Routes>
       <Route element={<FieldLayout />}>
-        <Route path="/Coach-overview" element={<UpcomingScreen />} />
-        <Route path="/Coach-overview/athletes" element={<AthletesScreen />} />
-        <Route path="/Coach-overview/inbox" element={<FieldInboxScreen />} />
-        <Route path="/Coach-overview/tools" element={<ToolsScreen />} />
+        <Route path="/fieldcoach" element={<UpcomingScreen />} />
+        <Route path="/fieldcoach/athletes" element={<AthletesScreen />} />
+        <Route path="/fieldcoach/inbox" element={<FieldInboxScreen />} />
+        <Route path="/fieldcoach/tools" element={<ToolsScreen />} />
       </Route>
-      <Route path="/Coach-overview/inbox/:athleteId" element={<FieldConversationScreen />} />
-      <Route path="/Coach-overview/a/:athleteId" element={<AthleteWeekScreen />} />
-      <Route path="/Coach-overview/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
-      <Route path="/Coach-overview/g/:groupId" element={<GroupWeekScreen />} />
-      <Route path="/Coach-overview/g/:groupId/d/:dayIndex" element={<GroupDayScreen />} />
-      {/* Legacy /field bookmarks — preserve deep links by remapping the prefix */}
-      <Route path="/field/*" element={<LegacyFieldRedirect />} />
-      <Route path="*" element={<Navigate to="/Coach-overview" replace />} />
+      <Route path="/fieldcoach/inbox/:athleteId" element={<FieldConversationScreen />} />
+      <Route path="/fieldcoach/a/:athleteId" element={<AthleteWeekScreen />} />
+      <Route path="/fieldcoach/a/:athleteId/d/:dayIndex" element={<AthleteDayScreen />} />
+      <Route path="/fieldcoach/g/:groupId" element={<GroupWeekScreen />} />
+      <Route path="/fieldcoach/g/:groupId/d/:dayIndex" element={<GroupDayScreen />} />
+      <Route path="/fieldcoach/a/:athleteId/macro" element={<FieldMacroScreen />} />
+      <Route path="/fieldcoach/g/:groupId/macro" element={<FieldMacroScreen />} />
+      {/* Legacy bookmarks — preserve deep links by remapping the prefix.
+          Both patterns also match the bare prefix, and React Router ranks by
+          specificity, so they outrank the catch-all whatever the order. */}
+      <Route path="/field/*" element={<LegacyPrefixRedirect />} />
+      <Route path="/coach-overview/*" element={<LegacyPrefixRedirect />} />
+      <Route path="*" element={<Navigate to="/fieldcoach" replace />} />
     </Routes>
   );
 }

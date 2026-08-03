@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, TrendingUp, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
   buildGroupWeekOverview,
@@ -88,7 +88,17 @@ export function GroupWeekScreen() {
             <ArrowLeft size={18} />
           </button>
           <Users size={15} className="text-gray-500 shrink-0" />
-          <h1 className="text-base font-bold truncate">{groupName || 'Group'}</h1>
+          <h1 className="text-base font-bold truncate flex-1">{groupName || 'Group'}</h1>
+          {groupId && (
+            <button
+              onClick={() => navigate(`/fieldcoach/g/${groupId}/macro`)}
+              className="p-2 -mr-2 text-gray-400 hover:text-white"
+              aria-label="Macro cycle"
+              title="Macro cycle"
+            >
+              <TrendingUp size={17} />
+            </button>
+          )}
         </div>
 
         <div className="mb-4">

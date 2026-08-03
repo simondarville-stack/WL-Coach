@@ -1,6 +1,6 @@
 /**
  * FieldConversationScreen — one athlete's conversation in the Field
- * View inbox (/Coach-overview/inbox/:athleteId).
+ * View inbox (/fieldcoach/inbox/:athleteId).
  *
  * Same model as the desktop CoachInbox and the athlete app: the
  * general thread is the root view; messages attached to a specific
@@ -172,7 +172,7 @@ export function FieldConversationScreen() {
         {/* Header */}
         <header className="px-3 pt-3 pb-2 border-b border-gray-800 flex items-center gap-2 shrink-0">
           <button
-            onClick={() => (inUnit ? setView({ kind: 'general' }) : navigate('/Coach-overview/inbox'))}
+            onClick={() => (inUnit ? setView({ kind: 'general' }) : navigate('/fieldcoach/inbox'))}
             className="p-1.5 rounded hover:bg-gray-800 text-gray-400"
             aria-label={inUnit ? 'Back to general thread' : 'Back to inbox'}
           >
@@ -192,7 +192,7 @@ export function FieldConversationScreen() {
           {unit && (
             <button
               onClick={() =>
-                navigate(`/Coach-overview/a/${athleteId}/d/${unit.dayIndex}?w=${unit.weekStart}`)
+                navigate(`/fieldcoach/a/${athleteId}/d/${unit.dayIndex}?w=${unit.weekStart}`)
               }
               className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-gray-800 hover:bg-gray-700 text-blue-300 shrink-0"
               title="Open this training unit"
