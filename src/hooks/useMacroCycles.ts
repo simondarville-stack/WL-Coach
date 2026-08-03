@@ -394,12 +394,40 @@ export function useMacroCycles() {
     }
   };
 
-  const reorderTrackedExercise = async (id: string, newPosition: number) => {
-    const { error } = await supabase
-      .from('macro_tracked_exercises')
-      .update({ position: newPosition })
-      .eq('id', id);
-    if (error) throw error;
+  /**
+   * Renumber a cycle's tracked exercises to an explicit order, atomically.
+   *
+   * Drag-reorder moves a column past several others at once, which the two-row
+   * `swapTrackedExercisePositions` above cannot express — and a client-side
+   * loop of single UPDATEs would trip `UNIQUE (macrocycle_id, position)` the
+   * moment two rows pass each other. The `reorder_macro_tracked_exercises` RPC
+   * (migration 20260803224436) parks and lands the whole cycle in one
+   * transaction instead.
+   *
+   * `orderedIds` must be EVERY tracked exercise of the cycle, including ones
+   * the coach has hidden — the RPC rejects a partial list rather than
+   * renumbering the rest arbitrarily.
+   */
+  const reorderTrackedExercises = async (macrocycleId: string, orderedIds: string[]) => {
+    const prev = trackedExercises;
+    // Optimistic: the header order flips immediately, so the drop lands without
+    // waiting on a round trip. Rolled back below if the write fails.
+    const byId = new Map(prev.map(te => [te.id, te]));
+    const next = orderedIds
+      .map((id, i) => { const te = byId.get(id); return te ? { ...te, position: i } : null; })
+      .filter((te): te is MacroTrackedExerciseWithExercise => te !== null);
+    if (next.length === orderedIds.length) setTrackedExercises(next);
+    try {
+      const { error } = await supabase.rpc('reorder_macro_tracked_exercises', {
+        p_macrocycle_id: macrocycleId,
+        p_ordered_ids: orderedIds,
+      });
+      if (error) throw error;
+    } catch (err) {
+      setTrackedExercises(prev);
+      setError(errMsg(err, 'Failed to reorder tracked exercises'));
+      throw err;
+    }
   };
 
   const fetchTargets = async (weekIds: string[]) => {
@@ -1156,7 +1184,7 @@ export function useMacroCycles() {
     addTrackedExercise,
     swapTrackedExercisePositions,
     removeTrackedExercise,
-    reorderTrackedExercise,
+    reorderTrackedExercises,
     updateMacrocycleLayout,
     fetchTargets,
     upsertTarget,

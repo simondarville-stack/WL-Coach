@@ -10,6 +10,7 @@ import { useMacroTemplates } from '../../hooks/useMacroTemplates';
 import { materializeTemplate } from '../../lib/macroTemplate';
 import type { MacroTemplateRow } from '../../lib/macroTemplate';
 import { buildFillPlan } from './fillGuidePlan';
+import { buildColumnCopyRows, countFilledWeeks } from '../../lib/macroColumnCopy';
 import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
 import type { MacroOwnerTarget } from '../../hooks/useMacroCycles';
@@ -74,7 +75,7 @@ export function MacroCycles() {
     swapMacroWeeks,
     fetchTrackedExercises,
     addTrackedExercise,
-    swapTrackedExercisePositions,
+    reorderTrackedExercises,
     removeTrackedExercise,
     fetchTargets,
     upsertTarget,
@@ -120,7 +121,6 @@ export function MacroCycles() {
   const [weekMarkers, setWeekMarkers] = useState<Map<string, TimelineMarker[]>>(new Map());
   const [showPhasesPanel, setShowPhasesPanel] = useState(false);
   const [phasePanelInitialEdit, setPhasePanelInitialEdit] = useState<import('../../lib/database.types').MacroPhase | null>(null);
-  const [showAddExercise, setShowAddExercise] = useState(false);
   /** Tracked-exercise id whose PR/history panel is open (null = closed). */
   const [detailTrackedExId, setDetailTrackedExId] = useState<string | null>(null);
   const [cycleMenuOpen, setCycleMenuOpen] = useState(false);
@@ -778,9 +778,9 @@ export function MacroCycles() {
 
   // ─── Exercise management ──────────────────────────────────────────────────────
 
-  // Add a tracked exercise directly from the ranked ExerciseSearch. The search
-  // field stays open so the coach can add several in a row (already-tracked ones
-  // drop out of availableExercises automatically).
+  // Add a tracked exercise directly from the ranked ExerciseSearch, which is
+  // permanently mounted in the toolbar — adding several in a row is just typing
+  // the next name (already-tracked ones drop out of availableExercises).
   const handleAddExerciseDirect = async (exercise: Exercise) => {
     if (!selectedCycle) return;
     // Position is resolved inside addTrackedExercise from the DB — deriving it
@@ -790,30 +790,74 @@ export function MacroCycles() {
     await fetchTrackedExercises(selectedCycle.id);
   };
 
-  // A second click landing while a swap is in flight would compute from the
-  // pre-swap list (this render's closure) and write a position that no longer
-  // matches the database — exactly what rapid/double clicking an arrow did.
+  // A second drop landing while a reorder is in flight would compute from the
+  // pre-move list (this render's closure) and write an order that no longer
+  // matches the database — exactly what rapid clicking the old arrows did.
   const movingExerciseRef = useRef(false);
 
-  const moveExercise = async (trackedExId: string, direction: -1 | 1) => {
-    if (movingExerciseRef.current) return;
-    const idx = trackedExercises.findIndex(te => te.id === trackedExId);
-    const neighbour = trackedExercises[idx + direction];
-    if (idx < 0 || !neighbour) return;
+  /**
+   * Drag-reorder: put `sourceId` immediately left or right of `targetId`.
+   *
+   * The order is built from `trackedExercises` (the FULL list), never from the
+   * displayed subset — MacroTableV2 filters by `visibleExercises`, and a hidden
+   * exercise must keep its slot or the RPC would renumber it arbitrarily. The
+   * RPC also rejects a partial list outright, which is the backstop.
+   */
+  const handleReorderExercise = async (
+    sourceId: string, targetId: string, side: 'left' | 'right',
+  ) => {
+    if (movingExerciseRef.current || !selectedCycle || sourceId === targetId) return;
+    const ids = trackedExercises.map(te => te.id).filter(id => id !== sourceId);
+    const ti = ids.indexOf(targetId);
+    if (ti < 0) return;
+    ids.splice(side === 'left' ? ti : ti + 1, 0, sourceId);
     movingExerciseRef.current = true;
     try {
-      await swapTrackedExercisePositions(
-        trackedExId, neighbour.position,
-        neighbour.id, trackedExercises[idx].position,
-      );
-      await fetchTrackedExercises(selectedCycle!.id);
+      await reorderTrackedExercises(selectedCycle.id, ids);
+    } catch {
+      // The hook rolls the optimistic order back and surfaces the message.
     } finally {
       movingExerciseRef.current = false;
     }
   };
 
-  const handleMoveExerciseLeft = (trackedExId: string) => moveExercise(trackedExId, -1);
-  const handleMoveExerciseRight = (trackedExId: string) => moveExercise(trackedExId, 1);
+  /**
+   * Ctrl/⌘+drag one exercise column onto another: mirror its prescription.
+   *
+   * Scaled by the two `reference_kg` values when BOTH exist — copying a
+   * snatch's 120 kg column literally onto a squat is almost never what a coach
+   * means; the same shape at the destination's own level is. Raw when either
+   * reference is missing, because there is nothing to scale against. Either way
+   * the coach is told which happened before anything is written.
+   */
+  const handleCopyExercisePrescription = async (sourceTeId: string, targetTeId: string) => {
+    const source = trackedExercises.find(te => te.id === sourceTeId);
+    const target = trackedExercises.find(te => te.id === targetTeId);
+    if (!source || !target) return;
+
+    const fromRef = source.reference_kg != null ? Number(source.reference_kg) : 0;
+    const toRef = target.reference_kg != null ? Number(target.reference_kg) : 0;
+    const rescale = fromRef > 0 && toRef > 0 ? { fromRef, toRef } : null;
+
+    const rows = buildColumnCopyRows(sourceTeId, targetTeId, macroWeeks, targets, { rescale });
+    if (rows.length === 0) return;
+
+    const sourceName = source.exercise.exercise_code || source.exercise.name;
+    const targetName = target.exercise.exercise_code || target.exercise.name;
+    const filled = countFilledWeeks(targetTeId, targets);
+    const how = rescale
+      ? `scaled ${fromRef} kg → ${toRef} kg`
+      : 'copied as-is (no reference on both exercises)';
+    const warn = filled > 0
+      ? `
+
+This OVERWRITES ${filled} week${filled === 1 ? '' : 's'} already prescribed on ${targetName}.`
+      : '';
+    if (!confirm(`Copy ${sourceName}'s prescription onto ${targetName}?
+${how}.${warn}`)) return;
+
+    await bulkUpsertTargets(rows);
+  };
 
   const handleRemoveExercise = async (trackedExId: string) => {
     if (!confirm('Remove this exercise from tracking? Targets will be deleted.')) return;
@@ -1036,7 +1080,6 @@ export function MacroCycles() {
         selectedGroup={selectedGroup ?? null}
         groupMembers={groupMembers}
         individualViewAthleteId={individualViewAthleteId}
-        showAddExercise={showAddExercise}
         availableExercises={availableExercises}
         showChart={showChart}
         showDistribution={showDistribution}
@@ -1056,8 +1099,6 @@ export function MacroCycles() {
         onChartToggle={() => setShowChart(v => !v)}
         onDistributionToggle={() => setShowDistribution(v => { if (!v) setDistKey(k => k + 1); return !v; })}
         onIndividualViewChange={setIndividualViewAthleteId}
-        onShowAddExercise={() => setShowAddExercise(true)}
-        onCancelAddExercise={() => setShowAddExercise(false)}
         onAddExerciseDirect={handleAddExerciseDirect}
         onAddPhase={() => { setPhasePanelInitialEdit(null); setShowPhasesPanel(true); }}
         onAddEvent={(type) => setEventModalType(type)}
@@ -1189,8 +1230,8 @@ export function MacroCycles() {
               onUpdateTonnageTarget={handleUpdateTonnageTarget}
               onUpdateAvgTarget={handleUpdateAvgTarget}
               onUpdateNotes={handleUpdateNotes}
-              onMoveExerciseLeft={handleMoveExerciseLeft}
-              onMoveExerciseRight={handleMoveExerciseRight}
+              onReorderExercise={handleReorderExercise}
+              onCopyExercisePrescription={handleCopyExercisePrescription}
               onRemoveExercise={handleRemoveExercise}
               onPasteTargets={handlePasteTargets}
               onExerciseDoubleClick={(id) => { setFocusedExerciseId(id); setShowChart(true); }}
