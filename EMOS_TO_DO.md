@@ -27,6 +27,149 @@ _(everything below is done; new items go above this line.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#History points sit at the session, not the week (04/08/2026, v0.35.0 → 0.35.1)
+**Wrong:** every session in a week collapsed onto one data point at the week
+divider. An athlete who snatched twice that week showed as a single dot with the
+two sessions merged into one max and one average — which is exactly the
+comparison a load-history chart exists to make.
+
+**Changed:** the x-axis is numeric and continuous — the integer part is the
+week, the fraction is where in that week the session sits. Two sessions in a
+week are two points. The dense Monday grid is still there, but as the *ruler*
+rather than the list of points, so the axis stays proportional to time and the
+viewport keeps counting in weeks ("16 wk").
+
+Placement follows the two ways EMOS lets a week be written, in priority order
+(new pure `src/lib/weekTimeline.ts`):
+1. **It was actually logged** — use the real date. Beats every rule below,
+   because it is what happened.
+2. **Fixed time** — the unit's weekday (and clock time) from `day_schedule`.
+   A weekday with no time sits at midday of that day, not on its midnight edge.
+3. **Free sessions** — spread evenly and strictly INSIDE the week: session k of
+   n at k/(n+1), so three sessions sit at 1/4, 2/4, 3/4.
+4. A leftover row on a day since switched off has no ordinal; it sits mid-week
+   rather than being dropped.
+
+Sessions are keyed `<weekStart>|<dayIndex>`, so a planned unit and the session
+logged against it merge into ONE point carrying both numbers. The macro Target
+stays a week-level number on the divider, still drawn as a step.
+
+**On the k/(n+1) rule:** it shipped as k/n first — the literal reading of
+"session 2 of 3 sits 2/3 between the dividers" — but that put the LAST session
+of every week exactly on the next week's divider, where it collides with the
+gridline and reads as the wrong week. 0.35.1 changed it to k/(n+1): n sessions
+across n+1 equal gaps, so the gap at each end matches the gaps between sessions.
+
+**Verified by measuring the rendered geometry against the week dividers**, not
+by eye: Ida Mørck's Rygøvelse on units 1, 3, 5 of a five-unit free week landed
+at 0.2 / 0.6 / 1.0 under the first rule and at **0.167 / 0.5 / 0.833** (= 1/6,
+3/6, 5/6) after. Her earlier weeks of the same exercise sit on **Mon / Wed /
+Fri** instead — those sessions were logged, so the real date wins, which is the
+intended precedence. Caroline Gernsøe's scheduled week puts her Saturday 10:00
+unit at ~0.77. Zoom, pan, wheel-zoom and Show-all all still operate in weeks.
+**Not verified:** the tooltip's new position line ("Wed 16:00" / "Session 2 of
+3") was never driven by a real mouse hover — the Browser pane could not
+composite frames, the same limit noted when the tooltip was first built.
+
+#The planner's SOLL / IST renamed to Target / Planned (04/08/2026, v0.34.1)
+Follows the Ratio Analysis rename, but deliberately **not** with the same words.
+Checked what the two series actually are: `soll_*` comes from `macro_targets`
+and `ist_*` from `planned_exercises.summary_*`, so this is the macro's target
+against what the coach has WRITTEN INTO THE WEEK. Nothing in it is a logged
+lift, so calling it "Actual" would have been wrong in the more damaging
+direction — it would read as performance data.
+
+The planner's vocabulary is now **Target** (from the macro) vs **Planned**
+(written this week) vs **Performed** (logged), which is what
+`ExerciseHistoryChart` already called its other two series and what
+`WeekCategoryTable` already called its "↳ target" row. Changed in `SollIstChart`
+(legend + tooltip), `ExerciseHistoryChart` (the Target series and its tooltip
+row), `ExerciseDetail` (the Macro-targets block, label column widened 32 → 52 px
+because "Planned" does not fit where "IST" did), and the code comments that
+describe the series. Component and field names (`SollIstChart`, `soll_max`) are
+untouched — internal, and renaming them is churn with no user-visible payoff.
+No SOLL or IST string survives anywhere in `src`.
+
+#Ratio Analysis — renamed, measured-only mode, and it stops resetting (04/08/2026, v0.34.0)
+Five items in one pass.
+
+**Renamed from Soll–Ist.** The mode tab, sheet header, model manager, wizard and
+default analysis name all read "Ratio Analysis". The columns follow the English
+this codebase already used for the pair in `macroExcelHeaders`: **Soll → Target
+kg**, **Ist → Actual kg**. That collided with the existing "Target kg" column,
+which is a different quantity — `soll` is the ratio at the athlete's CURRENT
+reference, `target` the same ratio at their GOAL, and it already sat under a
+"Goal (model)" group header — so it is now **Goal kg**, which is what it always
+was. Internal identifiers (`sollist_*` tables, `SollIst*` components, `preset:`
+keys, the `'sollist'` mode id) are untouched: renaming them is schema surgery,
+and `sollist_analyses.preset_key` has no FK, so a preset rename orphans saved
+analyses silently.
+
+**"Measured only".** A toggle that builds Actual from xRM the athlete has
+actually hit, ignoring the PR table's estimates — a ratio between two estimates
+is a ratio between two guesses. Coach-typed overrides still win either way,
+since those are measurements too, just entered by hand. Persisted with the
+analysis. On Jon Herskind it moves the sheet from 12 resolved rows to 8.
+
+**"It fails to load Jon Herskind's PRs" — and the real defect behind it.**
+Jon had **0 PR rows** at the time (he has 18 now), so there was nothing to load.
+But chasing it exposed something worse: **the sheet could show one athlete's PRs
+under another athlete's name.** `fetchPRHistory` is async, so for a moment after
+switching athlete the sheet's `athleteId` is the new one while the loaded
+history is still the previous one's — and the reference autofill ran in that
+window. History is now stored together with the athlete it belongs to, and every
+consumer (autofill, the Actual map, the empty state) refuses rows that do not
+match. A `refsFilledFor` marker on the sheet clears bound references filled from
+someone else, closing the same hole for the paths that set the athlete WITHOUT
+going through `onAthleteChange` — the Analysis scope at mount, and the restored
+draft. Measured live: Jon 135/175, Ida 80/102, switching back and forth keeps
+each athlete's own; before the fix Ida → Jon left Jon showing Ida's 80/102. Both
+pairs confirmed against `athlete_pr_history`.
+Also added an explicit "<name> has no personal records yet" banner so an athlete
+with no PRs reads as empty rather than broken. **Not exercised against real
+data** — every athlete in the environment now has PRs.
+
+**The sheet survives navigation.** Walking to the PR page to look up a number
+unmounted the view and threw away the whole sheet — which is exactly when a
+coach walks over there. The in-flight sheet now mirrors to localStorage
+(`src/lib/ratioAnalysisDraft.ts`) and restores on mount; device-local for the
+same reason `logViewPrefs` is (unsaved working state, not athlete data). The
+draft wins over the Analysis scope's athlete, so arriving from a one-athlete
+scope cannot silently re-point a sheet already being built. `isSheetState`
+validates it, because JSON from localStorage is untrusted — a bad draft is
+discarded rather than crashing the surface. Verified: toggled Measured only,
+went to /prs, came back with athlete, model, 23 rows and the toggle intact.
+
+#Migration history closed; ghost training units repaired (04/08/2026, v0.33.0)
+Two loose ends from the 18-item batch below.
+
+**Three migrations existed in the remote DB with no local file** —
+`sollist_models_and_analyses`, `sollist_generic_references` and
+`exercise_aliases`, all applied 31/07 via the MCP server. Reconstructed from the
+live schema and captured under their original version stamps.
+They are a RECONSTRUCTION, not a transcript, and say so in their headers:
+`sollist_analyses` carries six dropped columns (attnum 7–12) whose names
+Postgres does not retain, so the original per-reference columns that `refs
+jsonb` replaced cannot be recovered. A database rebuilt from the folder lands on
+the CURRENT schema directly instead of re-walking the history. **Proved to be a
+no-op** by fingerprinting the three tables plus `exercises.aliases` before and
+after re-applying the whole reconstruction to production: identical hash, 29
+columns, 12 policies still anon-scoped.
+
+**The ghost training units** the old sync created (see the group-sync item in
+the batch below) — 0.33.0 fixed the creation path, but forward-only. Migration
+`20260804000000_repair_ghost_days_on_synced_plans` removes a day from a synced
+athlete's `active_days` only when the group does not train it AND it holds
+nothing at all: no planned rows, no logged session, no typed label, no schedule
+entry. Of 10 candidate slots, **9 were empty ghosts and 1 was real** — Asger
+Søderberg's "Friday" on 25/05 with 5 planned rows and a completed session, which
+the guard correctly left alone. Rehearsed in a rolled-back transaction first,
+which is how a null-handling bug in the predicate was caught: `NULL ? 'x'` is
+NULL, not false, so a null `day_schedule` made the whole condition NULL and
+matched nothing. After: the four 13/07 athletes went `{1,2,3,4,5}` → `{1,2,3}`,
+Carl lost only his empty day 5, Asger's week is untouched, and `planned_exercises`
+and `training_log_sessions` are unchanged at 2 059 / 262 rows.
+
 #Macro percentages & free text — scoped, not built (04/08/2026)
 Left OPEN deliberately. Every macro target cell is kilograms today: `macro_targets`
 has `target_max` / `target_avg` numerics and **no unit column anywhere**, so "kg"
