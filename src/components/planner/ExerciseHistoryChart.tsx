@@ -17,12 +17,28 @@ import {
   groupLoadReps,
   joinLoadRepsDetails as joinDetails,
 } from '../../lib/loadRepsFormat';
+import {
+  placeUnit, placeLoggedDate, orderedUnits, parseClockMinutes,
+  type DaySchedule,
+} from '../../lib/weekTimeline';
+import { weekdayShortFromMonday } from '../../lib/dateUtils';
 import type { MacroContext } from './WeeklyPlanner';
 
-interface WeekPoint {
+/**
+ * One plotted point. Sessions no longer collapse onto their week: `x` is a
+ * CONTINUOUS week position — the integer part is the week, the fraction is
+ * where in that week the session sits (see lib/weekTimeline). Two snatch
+ * sessions in the same week are now two points, which is the whole point of
+ * a history chart.
+ */
+interface ChartPoint {
+  /** weekIndex + fraction-of-week. The x-axis is numeric. */
+  x: number;
   weekStart: string;
   label: string;
   weekNumber: number | null;
+  /** "Wed 16:00" / "Session 2 of 3" — how the position was decided. */
+  when: string | null;
   plan_max:  number | null;
   plan_avg: number | null;
   perf_max:  number | null;
@@ -30,10 +46,15 @@ interface WeekPoint {
   soll_max:  number | null;
   soll_avg: number | null;
   /** Stacked prescription behind the point: "80×3, 85×2×3" (load × reps × sets).
-   *  Null when the week has nothing planned / logged for this exercise. */
+   *  Null when the session has nothing planned / logged for this exercise. */
   plan_detail: string | null;
   perf_detail: string | null;
 }
+
+/** Running totals while a session's sets are folded together. */
+interface Acc { max: number; totalLoad: number; totalReps: number }
+const accOf = (m: Map<string, Acc>, k: string): Acc =>
+  m.get(k) ?? { max: 0, totalLoad: 0, totalReps: 0 };
 
 
 interface ExerciseHistoryChartProps {
@@ -74,7 +95,7 @@ function writeSpanPref(span: number): void {
  * and what was actually lifted — so the coach can see, e.g., that a 100 kg max
  * was a single, while the week before 95 kg was 95×2×3.
  */
-function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: WeekPoint }> }) {
+function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ChartPoint }> }) {
   const point = payload?.[0]?.payload;
   if (!active || !point) return null;
 
@@ -99,6 +120,9 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
     }}>
       <div style={{ fontWeight: 600, marginBottom: 3, color: 'var(--color-text-primary)' }}>
         Week {point.label}
+        {point.when && (
+          <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> · {point.when}</span>
+        )}
       </div>
       {point.soll_max != null && row('Target max', `${fmtKg(point.soll_max)} kg`, '#fb923c')}
       {point.plan_max != null && row('Planned max', `${fmtKg(point.plan_max)} kg`, '#94a3b8')}
@@ -112,7 +136,10 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
 }
 
 export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart }: ExerciseHistoryChartProps) {
-  const [data, setData]     = useState<WeekPoint[]>([]);
+  const [data, setData]     = useState<ChartPoint[]>([]);
+  /** The dense Monday grid the x-axis is indexed on; the viewport counts WEEKS,
+   *  not points, so zoom still reads "16 wk" however many sessions that is. */
+  const [weeks, setWeeks]   = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView]     = useState<'max' | 'avg'>('max');
   /** Inclusive index window into `data`. null until the first data arrives. */
@@ -139,36 +166,54 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
       const { data: weekPlans } = await supabase
         .from('week_plans')
-        .select('id, week_start')
+        // active_days / day_display_order / day_schedule are what decide WHERE
+        // in the week a session sits — see lib/weekTimeline.
+        .select('id, week_start, active_days, day_display_order, day_schedule')
         .eq('athlete_id', athleteId)
         .gte('week_start', lookBack)
         .lte('week_start', lookAhead);
 
-      const planByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
-      // Per week: the prescription(s) behind the plotted point, so the tooltip
-      // can show what load was written for how many reps — not just the max.
-      const planDetailByWeek = new Map<string, string | null>();
+      // Keyed by SESSION — "<weekStart>|<dayIndex>" — not by week, so an
+      // exercise trained twice in one week produces two points.
+      const sessionKey = (ws: string, day: number) => `${ws}|${day}`;
+      type WeekShape = {
+        week_start: string;
+        active_days: number[] | null;
+        day_display_order: number[] | null;
+        day_schedule: DaySchedule;
+      };
+      const shapeById = new Map<string, WeekShape>(
+        (weekPlans ?? []).map(w => [w.id, w as unknown as WeekShape]),
+      );
+
+      const planBySession = new Map<string, Acc>();
+      const planDetailBySession = new Map<string, string | null>();
+      /** session key → { weekStart, dayIndex } so we can place it later. */
+      const sessionMeta = new Map<string, { weekStart: string; dayIndex: number }>();
 
       if (weekPlans?.length) {
         const wpIds = weekPlans.map(w => w.id);
-        const wpStartById = new Map(weekPlans.map(w => [w.id, w.week_start]));
 
         const { data: planRows } = await supabase
           .from('planned_exercises')
-          .select('weekplan_id, prescription_raw, summary_highest_load, summary_avg_load, summary_total_reps')
+          .select('weekplan_id, day_index, prescription_raw, summary_highest_load, summary_avg_load, summary_total_reps')
           .eq('exercise_id', exerciseId)
           .in('weekplan_id', wpIds)
           .order('day_index');
 
         for (const row of planRows ?? []) {
-          const ws = wpStartById.get(row.weekplan_id);
-          if (!ws) continue;
+          const shape = shapeById.get(row.weekplan_id);
+          if (!shape) continue;
+          const ws = shape.week_start;
+          const day = row.day_index ?? 1;
           const hi   = row.summary_highest_load ?? 0;
           const avg  = row.summary_avg_load ?? 0;
           const reps = row.summary_total_reps ?? 0;
           if (hi <= 0 && avg <= 0) continue;
-          const prev = planByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
-          planByWeek.set(ws, {
+          const key = sessionKey(ws, day);
+          sessionMeta.set(key, { weekStart: ws, dayIndex: day });
+          const prev = accOf(planBySession, key);
+          planBySession.set(key, {
             max: Math.max(prev.max, hi),
             totalLoad: prev.totalLoad + avg * reps,
             totalReps: prev.totalReps + reps,
@@ -180,13 +225,13 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
               .filter(l => l.load > 0)
               .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
           );
-          planDetailByWeek.set(ws, joinDetails(planDetailByWeek.get(ws) ?? null, detail));
+          planDetailBySession.set(key, joinDetails(planDetailBySession.get(key) ?? null, detail));
         }
       }
 
       const { data: logRows } = await supabase
         .from('training_log_exercises')
-        .select('id, performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
+        .select('id, performed_raw, session:training_log_sessions!inner(date, day_index, athlete_id, status)')
         .eq('exercise_id', exerciseId)
         .eq('session.athlete_id', athleteId)
         .eq('session.status', 'completed')
@@ -219,12 +264,18 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         setsByLogEx.set(s.log_exercise_id, list);
       }
 
-      const perfByWeek = new Map<string, { max: number; totalLoad: number; totalReps: number }>();
-      const perfDetailByWeek = new Map<string, string | null>();
+      const perfBySession = new Map<string, Acc>();
+      const perfDetailBySession = new Map<string, string | null>();
+      /** session key → the real date it happened, which beats any placement rule. */
+      const loggedDateBySession = new Map<string, string>();
       for (const row of logRows ?? []) {
-        const session = row.session as unknown as { date: string } | null;
+        const session = row.session as unknown as { date: string; day_index: number | null } | null;
         if (!session) continue;
         const ws = isoMonday(session.date);
+        const day = session.day_index ?? 1;
+        const key = sessionKey(ws, day);
+        sessionMeta.set(key, { weekStart: ws, dayIndex: day });
+        loggedDateBySession.set(key, session.date);
         const setsForRow = setsByLogEx.get(row.id) ?? [];
 
         if (setsForRow.length > 0) {
@@ -233,16 +284,16 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
             const load = s.performed_load ?? 0;
             const reps = s.performed_reps ?? 0;
             if (load <= 0 || reps <= 0) continue;
-            const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
-            perfByWeek.set(ws, {
+            const prev = accOf(perfBySession, key);
+            perfBySession.set(key, {
               max: Math.max(prev.max, load),
               totalLoad: prev.totalLoad + load * reps,
               totalReps: prev.totalReps + reps,
             });
           }
           // One row per set → collapse consecutive equal (load, reps) pairs.
-          perfDetailByWeek.set(ws, joinDetails(
-            perfDetailByWeek.get(ws) ?? null,
+          perfDetailBySession.set(key, joinDetails(
+            perfDetailBySession.get(key) ?? null,
             formatLoadReps(groupLoadReps(setsForRow.map(s => ({
               load: s.performed_load ?? 0,
               reps: s.performed_reps ?? 0,
@@ -253,15 +304,15 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           const lines = parsePrescription(row.performed_raw);
           for (const line of lines) {
             if (line.load <= 0) continue;
-            const prev = perfByWeek.get(ws) ?? { max: 0, totalLoad: 0, totalReps: 0 };
-            perfByWeek.set(ws, {
+            const prev = accOf(perfBySession, key);
+            perfBySession.set(key, {
               max: Math.max(prev.max, line.load),
               totalLoad: prev.totalLoad + line.load * line.reps * line.sets,
               totalReps: prev.totalReps + line.reps * line.sets,
             });
           }
-          perfDetailByWeek.set(ws, joinDetails(
-            perfDetailByWeek.get(ws) ?? null,
+          perfDetailBySession.set(key, joinDetails(
+            perfDetailBySession.get(key) ?? null,
             formatLoadReps(
               lines.filter(l => l.load > 0)
                 .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
@@ -309,45 +360,110 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         }
       }
 
-      // A DENSE, contiguous Monday series — one point per week between the
-      // first and last week that has anything, plus the week being planned.
-      // The old sparse union made the x-axis non-proportional to time: two
-      // adjacent dots could be one week or nine weeks apart, so a gap in
-      // training read as continuous progress. It also gave zoom nothing
-      // meaningful to zoom.
-      const keys = [
-        ...planByWeek.keys(),
-        ...perfByWeek.keys(),
+      // The DENSE, contiguous Monday grid the x-axis is indexed on. It is no
+      // longer the list of points — it is the ruler the points are measured
+      // against, so the axis stays proportional to time (a nine-week gap in
+      // training looks like a nine-week gap) and the viewport can keep counting
+      // in weeks.
+      const weekKeys = [
+        ...[...sessionMeta.values()].map(m => m.weekStart),
         ...sollByWeekStart.keys(),
         anchorWeek,
       ].sort();
-      if (keys.length === 0) { setData([]); return; }
-      let series = weekStartsBetween(keys[0], keys[keys.length - 1]);
-      if (series.length > MAX_POINTS) series = series.slice(-MAX_POINTS);
+      if (weekKeys.length === 0) { setWeeks([]); setData([]); return; }
+      let grid = weekStartsBetween(weekKeys[0], weekKeys[weekKeys.length - 1]);
+      if (grid.length > MAX_POINTS) grid = grid.slice(-MAX_POINTS);
+      const weekIndex = new Map(grid.map((ws, i) => [ws, i]));
 
-      const points: WeekPoint[] = series.map(ws => {
-        const plan = planByWeek.get(ws);
-        const perf = perfByWeek.get(ws);
+      const labelFor = (ws: string) => {
         const soll = sollByWeekStart.get(ws);
-        return {
-          weekStart: ws,
-          // DD/MM via dateUtils — the old toLocaleDateString('en-GB') flips to
-          // US month-first on some machines (see dateUtils' own warning).
-          label:      soll ? `W${soll.weekNumber}` : formatDateShort(ws),
-          weekNumber: soll?.weekNumber ?? null,
+        // DD/MM via dateUtils — the old toLocaleDateString('en-GB') flips to
+        // US month-first on some machines (see dateUtils' own warning).
+        return soll ? `W${soll.weekNumber}` : formatDateShort(ws);
+      };
+
+      const points: ChartPoint[] = [];
+
+      // ── one point per SESSION ────────────────────────────────────────────
+      for (const [key, meta] of sessionMeta) {
+        const wi = weekIndex.get(meta.weekStart);
+        if (wi === undefined) continue;           // outside the trimmed grid
+        const shape = [...shapeById.values()].find(w => w.week_start === meta.weekStart);
+        const loggedDate = loggedDateBySession.get(key);
+
+        // A session that was actually logged is placed on its real date — that
+        // beats both the schedule and the ordinal rule, because it is what
+        // happened. Otherwise the week's own planning mode decides.
+        let fraction: number;
+        let when: string | null;
+        if (loggedDate) {
+          fraction = placeLoggedDate(meta.weekStart, loggedDate);
+          when = `${weekdayShortFromMonday(Math.round(fraction * 7 - 0.5))} ${formatDateShort(loggedDate)}`;
+        } else {
+          const placed = placeUnit({
+            dayIndex: meta.dayIndex,
+            activeDays: shape?.active_days ?? null,
+            displayOrder: shape?.day_display_order ?? null,
+            schedule: shape?.day_schedule ?? null,
+          });
+          fraction = placed.fraction;
+          if (placed.basis === 'scheduled') {
+            const slot = shape?.day_schedule?.[String(meta.dayIndex)];
+            const t = parseClockMinutes(slot?.time ?? null);
+            when = `${weekdayShortFromMonday(slot?.weekday ?? 0)}${t != null ? ` ${slot!.time}` : ''}`;
+          } else if (placed.basis === 'ordinal') {
+            const ordered = orderedUnits(shape?.active_days ?? null, shape?.day_display_order ?? null);
+            when = `Session ${ordered.indexOf(meta.dayIndex) + 1} of ${ordered.length}`;
+          } else {
+            when = `Unit ${meta.dayIndex}`;
+          }
+        }
+
+        const plan = planBySession.get(key);
+        const perf = perfBySession.get(key);
+        points.push({
+          x: wi + fraction,
+          weekStart: meta.weekStart,
+          label: labelFor(meta.weekStart),
+          weekNumber: sollByWeekStart.get(meta.weekStart)?.weekNumber ?? null,
+          when,
           plan_max:  plan && plan.max > 0 ? plan.max : null,
           plan_avg: plan && plan.totalReps > 0 ? Math.round(plan.totalLoad / plan.totalReps) : null,
           perf_max:  perf && perf.max > 0 ? perf.max : null,
           perf_avg: perf && perf.totalReps > 0 ? Math.round(perf.totalLoad / perf.totalReps) : null,
-          soll_max:  soll?.max ?? null,
-          soll_avg: soll?.avg ?? null,
-          plan_detail: planDetailByWeek.get(ws) ?? null,
-          perf_detail: perfDetailByWeek.get(ws) ?? null,
-        };
-      });
+          soll_max: null,
+          soll_avg: null,
+          plan_detail: planDetailBySession.get(key) ?? null,
+          perf_detail: perfDetailBySession.get(key) ?? null,
+        });
+      }
 
+      // ── the macro Target is a WEEK-level number ──────────────────────────
+      // It is not a session, so it keeps sitting on the week divider and is
+      // drawn as a step that holds across the week.
+      for (const [ws, soll] of sollByWeekStart) {
+        const wi = weekIndex.get(ws);
+        if (wi === undefined) continue;
+        if (soll.max == null && soll.avg == null) continue;
+        points.push({
+          x: wi,
+          weekStart: ws,
+          label: labelFor(ws),
+          weekNumber: soll.weekNumber,
+          when: null,
+          plan_max: null, plan_avg: null, perf_max: null, perf_avg: null,
+          soll_max: soll.max, soll_avg: soll.avg,
+          plan_detail: null, perf_detail: null,
+        });
+      }
+
+      // Recharts needs a numeric axis dataset in x order.
+      points.sort((a, b) => a.x - b.x);
+
+      setWeeks(grid);
       setData(points);
     } catch {
+      setWeeks([]);
       setData([]);
     } finally {
       setLoading(false);
@@ -356,28 +472,40 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
   // Frame the window on the week being planned: it sits ~80 % across, with the
   // recent past behind it — the same look the old fixed 16-week window had.
+  // The viewport counts WEEKS (indices into `weeks`), not points, so "16 wk"
+  // still means sixteen weeks however many sessions fall inside them.
   useEffect(() => {
-    if (data.length === 0) { setViewport(null); return; }
-    const anchorIdx = data.findIndex(d => d.weekStart >= anchorWeek);
-    const endAt = anchorIdx < 0 ? data.length - 1 : Math.min(data.length - 1, anchorIdx + 3);
-    setViewport(fitViewport(data.length, readSpanPref() ?? DEFAULT_VISIBLE_WEEKS, endAt));
-  }, [data, anchorWeek]);
+    if (weeks.length === 0) { setViewport(null); return; }
+    const anchorIdx = weeks.findIndex(ws => ws >= anchorWeek);
+    const endAt = anchorIdx < 0 ? weeks.length - 1 : Math.min(weeks.length - 1, anchorIdx + 3);
+    setViewport(fitViewport(weeks.length, readSpanPref() ?? DEFAULT_VISIBLE_WEEKS, endAt));
+  }, [weeks, anchorWeek]);
 
   const vp = useMemo(
-    () => (viewport ? clampViewport(viewport, data.length) : fullViewport(data.length)),
-    [viewport, data.length],
+    () => (viewport ? clampViewport(viewport, weeks.length) : fullViewport(weeks.length)),
+    [viewport, weeks.length],
   );
-  const visible = useMemo(() => data.slice(vp.start, vp.end + 1), [data, vp]);
+  /** Points inside the window, with one week of margin either side so the
+   *  lines run to the edges instead of stopping short of them. */
+  const visible = useMemo(
+    () => data.filter(d => d.x >= vp.start - 1 && d.x <= vp.end + 2),
+    [data, vp],
+  );
+  /** Points strictly inside the window — what the Y scale should fit. */
+  const inWindow = useMemo(
+    () => data.filter(d => d.x >= vp.start && d.x <= vp.end + 1),
+    [data, vp],
+  );
 
   const applyZoom = (factor: number, anchorFraction = 0.5) => {
     setViewport(v => {
-      const next = zoomViewport(v ?? fullViewport(data.length), data.length, factor, anchorFraction);
+      const next = zoomViewport(v ?? fullViewport(weeks.length), weeks.length, factor, anchorFraction);
       writeSpanPref(spanOf(next));
       return next;
     });
   };
   const applyPan = (deltaIndices: number) =>
-    setViewport(v => panViewport(v ?? fullViewport(data.length), data.length, deltaIndices));
+    setViewport(v => panViewport(v ?? fullViewport(weeks.length), weeks.length, deltaIndices));
 
   // Wheel must be a NATIVE listener with { passive: false }. React registers
   // wheel passively at the root, so preventDefault() inside a JSX onWheel is a
@@ -386,7 +514,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   // same zoom branch, so pinch-to-zoom works with no extra code.
   useEffect(() => {
     const el = wrapRef.current;
-    if (!el || data.length === 0) return;
+    if (!el || weeks.length === 0) return;
     const PLOT_L = 32;  // YAxis width
     const PLOT_R = 8;   // chart margin.right
     const onWheel = (e: WheelEvent) => {
@@ -396,8 +524,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         const dir = (e.deltaX || e.deltaY) > 0 ? 1 : -1;
         setViewport(v => {
-          const cur = v ?? fullViewport(data.length);
-          return panViewport(cur, data.length, dir * Math.max(1, Math.round(spanOf(cur) / 6)));
+          const cur = v ?? fullViewport(weeks.length);
+          return panViewport(cur, weeks.length, dir * Math.max(1, Math.round(spanOf(cur) / 6)));
         });
       } else {
         applyZoom(e.deltaY > 0 ? 1.25 : 0.8, f);
@@ -406,12 +534,12 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.length]);
+  }, [weeks.length]);
 
   // Drag to pan. No setPointerCapture: Recharts rebuilds the SVG subtree on
   // every viewport change, so the capture target can vanish mid-drag.
   const onPointerDown = (e: React.PointerEvent) => {
-    if (data.length === 0 || e.button !== 0) return;
+    if (weeks.length === 0 || e.button !== 0) return;
     panRef.current = { pointerId: e.pointerId, startX: e.clientX, startVp: vp, moved: false };
     const move = (ev: PointerEvent) => {
       const st = panRef.current;
@@ -423,7 +551,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       st.moved = true;
       const w = wrapRef.current?.getBoundingClientRect().width ?? 300;
       const pxPerIdx = Math.max(1, (w - 40) / Math.max(1, spanOf(st.startVp) - 1));
-      setViewport(panViewport(st.startVp, data.length, -Math.round(dx / pxPerIdx)));
+      setViewport(panViewport(st.startVp, weeks.length, -Math.round(dx / pxPerIdx)));
     };
     const up = () => {
       panRef.current = null;
@@ -469,22 +597,27 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
   // Scale to what is ON SCREEN, so zooming in magnifies vertically too.
   // Rounded to 5 kg, otherwise the axis jitters on every pan step.
-  const allVals = visible.flatMap(d => [
-    d[planKey as keyof WeekPoint],
-    d[perfKey as keyof WeekPoint],
-    d[sollKey as keyof WeekPoint],
-  ]).filter((v): v is number => typeof v === 'number');
+  const allVals = inWindow.flatMap(d => [d[planKey], d[perfKey], d[sollKey]])
+    .filter((v): v is number => typeof v === 'number');
 
   const minY = allVals.length > 0 ? Math.max(0, Math.floor(Math.min(...allVals) / 5) * 5 - 5) : 0;
   const maxY = allVals.length > 0 ? Math.ceil(Math.max(...allVals) / 5) * 5 + 5 : 100;
 
-  // "Now" marks the week being planned. The x-axis is keyed on weekStart
-  // because a dense multi-year series repeats labels ("03/02" in two different
-  // years), and a Recharts category axis with duplicate values mis-renders and
-  // breaks ReferenceLine matching.
-  const nowAnchor = visible.some(d => d.weekStart === anchorWeek) ? anchorWeek : null;
+  // "Now" marks the week being planned, on the numeric axis: the index of that
+  // week in the grid. -1 when it is outside the fetched range.
+  const anchorIndex = weeks.indexOf(anchorWeek);
+  const nowAnchor = anchorIndex >= vp.start && anchorIndex <= vp.end + 1 ? anchorIndex : null;
 
-  const labelByWeek = new Map(data.map(d => [d.weekStart, d.label]));
+  /** Integer ticks — one per week divider in view. Thinned so the labels stay
+   *  readable when the coach zooms out to a year. */
+  const tickStep = Math.max(1, Math.ceil(spanOf(vp) / 12));
+  const weekTicks: number[] = [];
+  for (let i = vp.start; i <= vp.end + 1 && i < weeks.length; i += tickStep) weekTicks.push(i);
+  const labelForIndex = (i: number): string => {
+    const ws = weeks[Math.round(i)];
+    if (!ws) return '';
+    return data.find(d => d.weekStart === ws)?.label ?? formatDateShort(ws);
+  };
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -493,23 +626,24 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           Load history
         </span>
         {/* Where in the history the coach currently is. */}
-        {visible.length > 0 && (
+        {weeks.length > 0 && (
           <span style={{
             fontSize: 10, color: 'var(--color-text-tertiary)',
             fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
             overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
-            {formatDateShort(visible[0].weekStart)}-{formatDateShort(visible[visible.length - 1].weekStart)}
-            {' \u00b7 '}{visible.length} wk
+            {formatDateShort(weeks[vp.start])}-{formatDateShort(weeks[Math.min(vp.end, weeks.length - 1)])}
+            {' \u00b7 '}{spanOf(vp)} wk
+            {inWindow.length > 0 && `, ${inWindow.filter(d => d.when).length} sessions`}
           </span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           {([
             { key: 'left',  Icon: ChevronLeft,  title: 'Pan back',    onClick: () => applyPan(-Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.start <= 0 },
-            { key: 'out',   Icon: ZoomOut,      title: 'Zoom out',    onClick: () => applyZoom(1.4), disabled: isFull(vp, data.length) },
+            { key: 'out',   Icon: ZoomOut,      title: 'Zoom out',    onClick: () => applyZoom(1.4), disabled: isFull(vp, weeks.length) },
             { key: 'in',    Icon: ZoomIn,       title: 'Zoom in',     onClick: () => applyZoom(0.7), disabled: spanOf(vp) <= MIN_SPAN },
-            { key: 'right', Icon: ChevronRight, title: 'Pan forward', onClick: () => applyPan(Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.end >= data.length - 1 },
-            { key: 'all',   Icon: Maximize2,    title: 'Show all',    onClick: () => { setViewport(fullViewport(data.length)); writeSpanPref(data.length); }, disabled: isFull(vp, data.length) },
+            { key: 'right', Icon: ChevronRight, title: 'Pan forward', onClick: () => applyPan(Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.end >= weeks.length - 1 },
+            { key: 'all',   Icon: Maximize2,    title: 'Show all',    onClick: () => { setViewport(fullViewport(weeks.length)); writeSpanPref(weeks.length); }, disabled: isFull(vp, weeks.length) },
           ] as const).map(({ key, Icon, title, onClick, disabled }) => (
             <button
               key={key}
@@ -561,27 +695,34 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           else if (e.key === 'ArrowRight') { e.preventDefault(); applyPan(1); }
           else if (e.key === '+' || e.key === '=') { e.preventDefault(); applyZoom(0.7); }
           else if (e.key === '-') { e.preventDefault(); applyZoom(1.4); }
-          else if (e.key === '0') { e.preventDefault(); setViewport(fullViewport(data.length)); }
+          else if (e.key === '0') { e.preventDefault(); setViewport(fullViewport(weeks.length)); }
         }}
         style={{
           position: 'relative', outline: 'none',
           touchAction: 'pan-y', userSelect: 'none',
-          cursor: data.length > spanOf(vp) ? 'grab' : 'default',
+          cursor: weeks.length > spanOf(vp) ? 'grab' : 'default',
         }}
       >
       <ResponsiveContainer width="100%" height={180}>
         <ComposedChart data={visible} margin={{ top: 6, right: 8, bottom: 4, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          {/* Numeric, not category: a session sits at weekIndex + fraction-of-week,
+              so two sessions in one week are two points at their own positions
+              instead of one merged dot on the divider. */}
           <XAxis
-            dataKey="weekStart"
-            tickFormatter={(ws: string) => labelByWeek.get(ws) ?? ws}
+            type="number"
+            dataKey="x"
+            domain={[vp.start, vp.end + 1]}
+            allowDataOverflow
+            ticks={weekTicks}
+            tickFormatter={(i: number) => labelForIndex(i)}
             tick={{ fontSize: 10, fill: '#9ca3af' }}
-            stroke="#e5e7eb" tickLine={false} interval="preserveStartEnd"
+            stroke="#e5e7eb" tickLine={false}
           />
           <YAxis domain={[minY, maxY]} tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="#e5e7eb" tickLine={false} width={32} />
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
           <Tooltip content={HistoryTooltip as any} />
-          {nowAnchor && (
+          {nowAnchor != null && (
             <ReferenceLine x={nowAnchor} stroke="#f97316" strokeWidth={1.5} strokeDasharray="4 2"
               label={{ value: 'This week', position: 'top', fontSize: 9, fill: '#f97316' }} />
           )}
