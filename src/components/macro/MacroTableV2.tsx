@@ -1226,7 +1226,12 @@ export function MacroTableV2({
                             <td key={mk} className={`${firstBorder}text-center px-0 py-0`} style={{ backgroundColor: 'var(--color-accent-muted)' }} title={ghostTitle}>
                               <div className="flex items-center justify-center" style={{ minWidth: 52, height: 38 }}>
                                 <div className="flex flex-col items-center">
-                                  <span className="font-mono text-[11px] font-medium italic" style={{ color: 'var(--color-accent)' }}>{previewCell.max}</span>
+                                  {/* fmtNumber, not the raw JS number: a % fill lands
+                                      on a 0,5 grid, so 87.5 would print with a dot in
+                                      a table that is comma-decimal everywhere else. */}
+                                  <span className="font-mono text-[11px] font-medium italic" style={{ color: 'var(--color-accent)' }}>
+                                    {fmtNumber(previewCell.max)}{unitSuffix(unitOf(te))}
+                                  </span>
                                   <div className="w-[80%] border-t my-0.5" style={{ borderColor: 'var(--color-accent)', opacity: 0.4 }} />
                                   <span className="text-[9px] font-mono italic" style={{ color: 'var(--color-accent)' }}>{repsAtMax ?? 1}</span>
                                 </div>
@@ -1240,7 +1245,10 @@ export function MacroTableV2({
                         if (mk === 'avg') {
                           return (
                             <td key={mk} className={`${firstBorder}text-center font-mono text-[10px] italic px-1 py-0`} style={ghostStyle} title={ghostTitle}>
-                              {previewCell.avg ?? avgVal ?? ''}
+                              {(() => {
+                                const v = previewCell.avg ?? avgVal;
+                                return v == null ? '' : `${fmtNumber(Number(v))}${unitSuffix(unitOf(te))}`;
+                              })()}
                             </td>
                           );
                         }

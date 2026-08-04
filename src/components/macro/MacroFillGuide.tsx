@@ -11,6 +11,7 @@
  * rhythm manager's job).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { unitOf } from '../../lib/macroTargetUnit';
 import { Plus, X } from 'lucide-react';
 import type {
   MacroTarget,
@@ -97,7 +98,13 @@ export function MacroFillGuide({
   const isGeneral = target === FILL_TARGET_SREPS;
   const isAll = target === FILL_TARGET_ALL;
   const selectedTe = trackedExercises.find(te => te.id === target);
-  const effectiveUnit: 'kg' | 'pct' = isAll ? 'pct' : unit;
+  const selectedUnit = unitOf(selectedTe);
+  // A percentage column fills in percentages, so its anchors ARE percentages —
+  // there is nothing for a kg anchor to be converted into. An all-exercises
+  // fill is proportional by definition. Both lock the toggle rather than
+  // letting the coach type a number in a unit that will not land.
+  const lockedPct = isAll || selectedUnit === 'percentage';
+  const effectiveUnit: 'kg' | 'pct' = lockedPct ? 'pct' : unit;
 
   // Reference (single exercise, % mode) — draft persisted on blur.
   const [refDraft, setRefDraft] = useState<string>('');
@@ -144,14 +151,16 @@ export function MacroFillGuide({
   const plan = useMemo(() => {
     // Single-exercise % mode resolves against the DRAFT reference so the
     // preview tracks what the coach is typing before it's persisted.
-    const exList = !isAll && !isGeneral && effectiveUnit === 'pct'
+    // Only a fill that CONVERTS reads the reference, and a % column never
+    // does — its anchors are already in its own unit.
+    const exList = !isAll && !isGeneral && effectiveUnit === 'pct' && selectedUnit !== 'percentage'
       ? trackedExercises.map(te =>
           te.id === target
             ? { ...te, reference_kg: referenceKg && referenceKg > 0 ? referenceKg : null }
             : te)
       : trackedExercises;
     return buildFillPlan(inputs, macroWeeks, exList, targets, weekTypes);
-  }, [inputs, macroWeeks, trackedExercises, targets, weekTypes, isAll, isGeneral, effectiveUnit, referenceKg, target]);
+  }, [inputs, macroWeeks, trackedExercises, targets, weekTypes, isAll, isGeneral, effectiveUnit, selectedUnit, referenceKg, target]);
 
   // Push the live preview up for table ghosting; clear on unmount.
   useEffect(() => {
@@ -170,17 +179,23 @@ export function MacroFillGuide({
   // Chart anchor handles drive the guide's from/to values (kg → active unit).
   useEffect(() => {
     if (!registerAnchorSetter) return;
-    registerAnchorSetter((which, kg) => {
+    registerAnchorSetter((which, axisValue) => {
       const ref = referenceKg && referenceKg > 0 ? referenceKg : selectedTe?.reference_kg ?? null;
-      const value = effectiveUnit === 'pct'
-        ? (ref && ref > 0 ? Math.round((kg / ref) * 200) / 2 : null)
-        : Math.round(kg / 2.5) * 2.5;
+      const value = selectedUnit === 'percentage'
+        // The series is plotted in percent, so the height IS the anchor.
+        ? Math.round(axisValue * 2) / 2
+        : effectiveUnit === 'pct'
+        ? (ref && ref > 0 ? Math.round((axisValue / ref) * 200) / 2 : null)
+        : Math.round(axisValue / 2.5) * 2.5;
       if (value == null) return;
       if (which === 'from') setFromValue(value);
       else setToValue(value);
     });
     return () => registerAnchorSetter(null);
-  }, [registerAnchorSetter, effectiveUnit, referenceKg, selectedTe?.reference_kg]);
+    // selectedUnit belongs here: typing one character into a cell re-units the
+    // whole column, and a setter left over from the old unit would invert every
+    // later drag wrongly — with plausible numbers, so nothing would look broken.
+  }, [registerAnchorSetter, effectiveUnit, selectedUnit, referenceKg, selectedTe?.reference_kg]);
 
   // ── movable window ──────────────────────────────────────────────────────────
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -243,7 +258,10 @@ export function MacroFillGuide({
   // Switching anchor unit CONVERTS the values (via the reference) instead of
   // reinterpreting the raw numbers — 120 kg at ref 150 becomes 80 %, not 120 %.
   const switchUnit = (next: 'kg' | 'pct') => {
-    if (next === unit) return;
+    // Against `effectiveUnit`, not the raw state: when the toggle is locked to
+    // % the state can still say 'kg', and clicking the already-highlighted
+    // "% of reference" button would divide the anchors by the reference again.
+    if (next === effectiveUnit) return;
     const ref = referenceKg && referenceKg > 0 ? referenceKg : selectedTe?.reference_kg ?? null;
     if (ref && ref > 0) {
       // Waypoints live in the same value space as the anchors — convert them
@@ -363,9 +381,14 @@ export function MacroFillGuide({
             <label className={labelCls}>Anchors in</label>
             <div className="inline-flex border border-gray-300 rounded overflow-hidden">
               <button
-                onClick={() => !isAll && switchUnit('kg')}
-                className={`px-2.5 py-0.5 text-[11px] ${effectiveUnit === 'kg' ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-gray-600'} ${isAll ? 'opacity-40 cursor-not-allowed' : ''}`}
-                title={isAll ? 'All-exercises fills are always % of each reference' : undefined}
+                onClick={() => !lockedPct && switchUnit('kg')}
+                disabled={lockedPct}
+                className={`px-2.5 py-0.5 text-[11px] ${effectiveUnit === 'kg' ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-gray-600'} ${lockedPct ? 'opacity-40 cursor-not-allowed' : ''}`}
+                title={isAll
+                  ? 'All-exercises fills are always % of each reference'
+                  : selectedUnit === 'percentage'
+                  ? 'This column is written in %, so the fill writes % — the anchors are percentages'
+                  : undefined}
               >
                 kg
               </button>
@@ -373,24 +396,31 @@ export function MacroFillGuide({
                 onClick={() => switchUnit('pct')}
                 className={`px-2.5 py-0.5 text-[11px] ${effectiveUnit === 'pct' ? 'bg-[var(--color-accent)] text-white' : 'bg-white text-gray-600'}`}
               >
-                % of reference
+                {selectedUnit === 'percentage' && !isAll ? '%' : '% of reference'}
               </button>
             </div>
           </div>
         )}
 
         {/* Reference (single exercise, % mode) */}
-        {!isGeneral && !isAll && effectiveUnit === 'pct' && selectedTe && (
+        {!isGeneral && !isAll && effectiveUnit === 'pct' && selectedUnit !== 'percentage' && selectedTe && (
           <div className="flex items-center gap-2">
             <label className={labelCls}>Reference</label>
             <input
               type="number"
               step="2.5"
+              min="0"
               value={refDraft}
               onChange={e => setRefDraft(e.target.value)}
               onBlur={() => {
-                const v = refDraft.trim() === '' ? null : parseFloat(refDraft);
-                if (v !== selectedTe.reference_kg && (v === null || !isNaN(v))) {
+                // Every reader treats ≤ 0 as unset, so storing 0 makes a column
+                // that LOOKS anchored and behaves as if it were not — and a
+                // stored 0 pre-fills the convert modal with an invalid value
+                // that disables the whole dialog. Normalise it to null here.
+                const raw = refDraft.trim() === '' ? null : parseFloat(refDraft);
+                const v = raw != null && Number.isFinite(raw) && raw > 0 ? raw : null;
+                if (raw != null && v === null) setRefDraft('');
+                if (v !== (selectedTe.reference_kg == null ? null : Number(selectedTe.reference_kg))) {
                   void onUpdateReference(selectedTe.id, v);
                 }
               }}
@@ -402,17 +432,33 @@ export function MacroFillGuide({
             </span>
           </div>
         )}
-        {isAll && (
+        {!isGeneral && selectedUnit === 'percentage' && !isAll && (
           <div className="text-[10px] text-[color:var(--color-text-tertiary)] pl-[94px]">
-            Each exercise anchors to its own saved reference.
-            {plan.skippedNoReference.length > 0 && (
-              <span className="text-amber-600"> Skipped (no reference): {plan.skippedNoReference.join(', ')}</span>
+            This column is in % — the anchors are percentages and land as typed,
+            rounded to 0,5 %.
+          </div>
+        )}
+        {/* Outside the isAll block: a single-exercise fill can be skipped too,
+            and the footer's "check the anchors" was simply untrue then. */}
+        {!isGeneral && (plan.skippedNoReference.length > 0 || plan.skippedFreeText.length > 0) && (
+          <div className="text-[10px] pl-[94px]">
+            {isAll && (
+              <span className="text-[color:var(--color-text-tertiary)]">Each exercise anchors to its own saved reference. </span>
             )}
-            {plan.skippedNonKg.length > 0 && (
-              <span className="text-amber-600" title="The fill engine produces kilograms. Convert the column to kg first, or write it by hand.">
-                {' '}Skipped (not in kg): {plan.skippedNonKg.join(', ')}
+            {plan.skippedNoReference.length > 0 && (
+              <span className="text-amber-600">Skipped (no reference): {plan.skippedNoReference.join(', ')} </span>
+            )}
+            {plan.skippedFreeText.length > 0 && (
+              <span className="text-amber-600" title="A free-text column's load is words. Change it to kg or % to fill it.">
+                Skipped (free text): {plan.skippedFreeText.join(', ')}
               </span>
             )}
+          </div>
+        )}
+        {isAll && plan.skippedNoReference.length === 0 && plan.skippedFreeText.length === 0 && (
+          <div className="text-[10px] text-[color:var(--color-text-tertiary)] pl-[94px]">
+            Each exercise anchors to its own saved reference; % columns take the
+            anchors as typed.
           </div>
         )}
 
@@ -649,7 +695,9 @@ export function MacroFillGuide({
           </button>
           {plan.cellCount === 0 && (
             <span className="text-[10px] text-[color:var(--color-text-tertiary)]">
-              {!isAll && !isGeneral && effectiveUnit === 'pct' && !(referenceKg && referenceKg > 0)
+              {plan.skippedFreeText.length > 0
+                ? 'Free-text column — change it to kg or % to fill it'
+                : !isAll && !isGeneral && effectiveUnit === 'pct' && selectedUnit !== 'percentage' && !(referenceKg && referenceKg > 0)
                 ? 'No reference set — enter one above'
                 : plan.skippedExisting > 0
                 ? 'All weeks in range already have values — tick Overwrite'

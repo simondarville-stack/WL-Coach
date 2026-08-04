@@ -159,8 +159,13 @@ export function buildTemplatePayload(
         (best, t) => (t.target_max != null && t.target_max > (best ?? 0) ? t.target_max : best),
         null,
       );
-      const reference = te.reference_kg ?? peakMax;
       const unit = unitOf(te);
+      // `peakMax` is a kilogram level, so it may only stand in for a MISSING
+      // reference on a kilogram column. On a percentage column the peak is a
+      // PERCENT — storing 95 as reference_kg would come back through
+      // useMacroTemplates as "this column is written toward 95 kg" and be read
+      // that way by the fill guide, the heat strip and the copy rescale.
+      const reference = unit === 'absolute_kg' ? te.reference_kg ?? peakMax : te.reference_kg;
       const toStored = (kg: number | null): number | null => {
         if (kg == null) return null;
         // Only kilograms are level-dependent. A % column is already a shape and

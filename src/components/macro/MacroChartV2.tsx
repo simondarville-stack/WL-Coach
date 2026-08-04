@@ -186,6 +186,9 @@ export function MacroChartV2({
     return gk === 'tonnage' ? raw / 1000 : raw;
   }, [overrides]);
 
+  /** What the ◆ ramp anchors are measured in — the filled column's unit. */
+  const anchorUnitLabel = fillPreview?.anchors?.unit === 'pct' ? ' %' : ' kg';
+
   const generalKeys = (Object.keys(GENERAL) as GeneralKey[]).filter(k => visibleGeneralSeries?.has(k));
   const repsAxisOn = (showReps && trackedExercises.length > 0)
     || generalKeys.includes('k') || generalKeys.includes('tonnage');
@@ -266,9 +269,11 @@ export function MacroChartV2({
     const applyMove = (ev: PointerEvent): Record<string, number> => {
       const next: Record<string, number> = {};
       if (drag.kind === 'anchor') {
-        const kg = snapKg(yToKg(ev.clientY));
-        onDragAnchor?.(drag.anchorWhich!, kg);
-        setTooltip({ x: ev.clientX, y: ev.clientY, text: `${fmt(kg)} kg` });
+        // The value comes off the shared axis, so it is in the unit of the
+        // column being filled — kilograms, or percent for a % column.
+        const v = snapKg(yToKg(ev.clientY));
+        onDragAnchor?.(drag.anchorWhich!, v);
+        setTooltip({ x: ev.clientX, y: ev.clientY, text: `${fmt(v)}${anchorUnitLabel}` });
         return next;
       }
       if (drag.kind === 'general') {
@@ -370,7 +375,7 @@ export function MacroChartV2({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     dragCleanupRef.current = removeListeners;
-  }, [domains, plotH, onDragAnchor, onDragTarget, onDragWeekTarget]);
+  }, [domains, plotH, anchorUnitLabel, onDragAnchor, onDragTarget, onDragWeekTarget]);
 
   const startExerciseDrag = (e: React.PointerEvent, weekId: string, teId: string, series: SeriesKind) => {
     const startValue = getExValue(weekId, teId, series) ?? 0;
@@ -491,7 +496,7 @@ export function MacroChartV2({
         </div>
       </div>
       <div className="px-3 pt-1 text-[10px] text-gray-400">
-        Drag points to write into the table — snaps to 1 kg · Ctrl+drag links Max &amp; Avg of that exercise{fillPreview?.anchors ? ' · drag the ◆ anchors to reshape the pending fill' : ''}
+        Drag points to write into the table — snaps to 1 kg · Ctrl+drag links Max &amp; Avg of that exercise{fillPreview?.anchors ? ` · drag the ◆ anchors to reshape the pending fill (in${anchorUnitLabel})` : ''}
       </div>
 
       <svg ref={svgRef} width={width} height={H} className="block select-none" style={{ touchAction: 'none' }}>
@@ -706,7 +711,7 @@ export function MacroChartV2({
               style={{ cursor: 'ns-resize' }}
               onPointerDown={e => beginDrag(e, { kind: 'anchor', anchorWhich: which })}
             >
-              <title>{`Ramp anchor (${which === 'from' ? 'start' : 'end'}): W${weekNumber} = ${fmt(kg)} kg — drag to reshape`}</title>
+              <title>{`Ramp anchor (${which === 'from' ? 'start' : 'end'}): W${weekNumber} = ${fmt(kg)}${anchorUnitLabel} — drag to reshape`}</title>
             </path>
           );
         })}

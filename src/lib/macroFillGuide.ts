@@ -143,7 +143,15 @@ function piecewiseTrendAt(
 }
 
 export interface ExerciseFillOptions {
-  /** Load anchors — kg when unit is 'kg', % of referenceKg when 'pct'. */
+  /**
+   * Load anchors, in the unit named by `unit`.
+   *
+   * NOTE what `unit` does and does not mean: it is the unit of these ANCHORS,
+   * and the only thing it changes is whether they are divided through
+   * `referenceKg` on the way in. `'kg'` is a pure identity pass-through — so a
+   * caller whose anchors are already in the output unit (percentages into a
+   * percentage column) passes `'kg'` and gets percentages out.
+   */
   anchors: FillAnchors;
   /** Shape of the progression between the anchors; omitted = linear ramp. */
   trend?: TrendModel | null;
@@ -192,6 +200,19 @@ export interface GeneralFillResult {
 }
 
 export const DEFAULT_LOAD_ROUNDING_KG = 2.5;
+/**
+ * Rounding step for a fill whose OUTPUT is percentages.
+ *
+ * A 2,5 grid is a barbell fact and means nothing in percent — it would flatten
+ * an 85 / 87,5 / 90 progression into 85 / 87,5 / 90 by luck and a 3 % ramp into
+ * steps. 0,5 matches what the guide already snaps percentages to when it
+ * converts anchors (MacroFillGuide switchUnit / addWaypoint).
+ *
+ * The engine needs no percent-awareness to use it: with anchors already in the
+ * output unit, `unit: 'kg'` is an identity pass-through and this is simply the
+ * step it rounds on.
+ */
+export const DEFAULT_LOAD_ROUNDING_PCT = 0.5;
 export const DEFAULT_GENERAL_ROUNDING = 5;
 
 export function roundToStep(value: number, step: number): number {
