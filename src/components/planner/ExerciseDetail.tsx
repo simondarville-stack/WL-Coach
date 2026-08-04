@@ -1,4 +1,4 @@
-// TODO: Consider extracting Soll/Ist target section into SollIstTargetPanel sub-component
+// TODO: Consider extracting the Target/Planned section into its own sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, ArrowLeft, Video, Upload, Replace } from 'lucide-react';
@@ -396,7 +396,7 @@ export function ExerciseDetail({
             exercise in a macro-covered week told you nothing about the block it
             sits in. Gated on `macroContext && !sentinel` only: week-level
             context is exercise-independent, so a COMBO gets it too (its
-            per-exercise SOLL is genuinely undefined and stays hidden). */}
+            per-exercise macro target is genuinely undefined and stays hidden). */}
         {macroContext && !sentinel && (
           <div style={{
             display: 'flex', flexDirection: 'column', gap: 4,
@@ -733,7 +733,10 @@ export function ExerciseDetail({
           </div>
         )}
 
-        {/* SOLL / IST. The section used to be gated on `sollTarget`, which hid
+        {/* Target (from the macro) vs Planned (what is written into this week).
+            NOT "Actual" — nothing here is a logged lift; that lives in the
+            history chart's Performed series. The section used to be gated on
+            `sollTarget`, which hid
             the SollIstChart too whenever the exercise was tracked in the macro
             but had no target row for THIS week — silence that reads as a bug. */}
         {hasMacro && (
@@ -752,7 +755,7 @@ export function ExerciseDetail({
               display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12,
             }}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>SOLL</span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 52, flexShrink: 0 }}>Target</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.reps ?? '—'}</strong></span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.avg ?? '—'}</strong></span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)' }}>
@@ -772,7 +775,7 @@ export function ExerciseDetail({
                 </div>
               )}
               <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
-                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 32, flexShrink: 0 }}>IST</span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 52, flexShrink: 0 }}>Planned</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_total_reps ?? '—'}</strong></span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_avg_load != null ? Math.round(plannedExercise.summary_avg_load) : '—'}</strong></span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>Hi <strong style={{ color: 'var(--color-text-primary)' }}>{plannedExercise?.summary_highest_load ?? '—'}</strong></span>

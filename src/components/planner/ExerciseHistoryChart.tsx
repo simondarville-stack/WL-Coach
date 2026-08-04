@@ -100,7 +100,7 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
       <div style={{ fontWeight: 600, marginBottom: 3, color: 'var(--color-text-primary)' }}>
         Week {point.label}
       </div>
-      {point.soll_max != null && row('SOLL max', `${fmtKg(point.soll_max)} kg`, '#fb923c')}
+      {point.soll_max != null && row('Target max', `${fmtKg(point.soll_max)} kg`, '#fb923c')}
       {point.plan_max != null && row('Planned max', `${fmtKg(point.plan_max)} kg`, '#94a3b8')}
       {point.plan_avg != null && row('Planned avg', `${fmtKg(point.plan_avg)} kg`, '#94a3b8')}
       {point.plan_detail && detail('Planned', point.plan_detail)}
@@ -619,7 +619,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         {hasSoll && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ display: 'inline-block', width: 12, borderTop: '1.5px dashed #fb923c' }} />
-            SOLL
+            Target
           </span>
         )}
       </div>
