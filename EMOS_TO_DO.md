@@ -229,6 +229,31 @@ the wrong one for part of this batch; running the right one surfaced three real
 errors (including a missing import that made Soll–Ist model deletion a silent
 no-op). All fixed, and the whole `src` tree checks clean.
 
+**Migration history hole closed (04/08/2026).** Three migrations existed in the
+remote database with no local file — `sollist_models_and_analyses`,
+`sollist_generic_references` and `exercise_aliases`, all applied 31/07 via the
+MCP server without one being written. Reconstructed from the live schema and
+committed under their original version stamps, so the remote will not re-run
+them and a database rebuilt from the folder now lands on the right schema.
+They are **reconstructions, not transcripts**: `sollist_analyses` carries six
+dropped columns (attnum 7–12) whose names Postgres does not retain, so the
+per-reference columns that `sollist_generic_references` replaced with
+`refs jsonb` cannot be recovered — the files assert the end state instead.
+Proven safe by re-applying all three to production and diffing a schema
+fingerprint over the four objects: **identical before and after
+(`0e0f80ce…`, 29 columns), 12 policies still anon-scoped.**
+
+**Ghost training units repaired (04/08/2026, migration
+`20260804000000_repair_ghost_days_on_synced_plans`).** The `active_days` fix
+above is forward-only, so plans already carrying the inherited `[1,2,3,4,5]`
+kept their empty extra unit cards. 10 candidate slots existed; the repair
+removes a day only when the group does not train it **and** it holds no planned
+row, no logged session, no typed label and no schedule entry. **9 removed, 1
+kept:** Asger Søderberg's "Friday" on 25/05 has 5 planned rows and a completed
+session, and is untouched — verified after the fact, along with the four 13/07
+plans going `[1,2,3,4,5]` → `[1,2,3]`. Nothing was deleted; `active_days` only
+decides which units a week shows. Re-running now finds 0 candidates.
+
 **On the log-as-daycards question (the one that says "ask me first"):** before
 starting I'd want to know whether you mean the coach's Log mode in the weekly
 planner, the athlete app, or both; whether a day card should show plan and log
