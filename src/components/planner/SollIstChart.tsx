@@ -146,11 +146,11 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--color-text-secondary)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 12, height: 2, backgroundColor: '#3b82f6' }} />
-            SOLL
+            Target
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', width: 12, height: 2, backgroundColor: '#10b981' }} />
-            IST
+            Planned
           </span>
         </div>
       </div>
@@ -164,7 +164,9 @@ export function SollIstChart({ exerciseId, athleteId, macroContext }: SollIstCha
             contentStyle={{ fontSize: 11 }}
             formatter={((value: number, name: string) => [
               `${value} kg`,
-              name.includes('soll') ? 'SOLL' : 'IST',
+              // 'soll' is the macro target; the other series is what the
+              // coach has written into the week — planned, not performed.
+              name.includes('soll') ? 'Target' : 'Planned',
             ]) as never}
           />
           <ReferenceLine

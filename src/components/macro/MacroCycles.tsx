@@ -1039,7 +1039,7 @@ ${how}.${warn}`)) return;
 
   // ── Exercise detail panel (PRs + load history) ──────────────────────────
   // Opened from the table's exercise header / toggle chip. The chart wants a
-  // MacroContext so it can draw this cycle's SOLL line and mark the current
+  // MacroContext so it can draw this cycle's Target line and mark the current
   // week; we anchor on the live macro week (or week 1 for a past/future cycle).
   const detailExercise = trackedExercises.find(te => te.id === detailTrackedExId)?.exercise ?? null;
   const detailAthleteId = individualViewAthleteId ?? selectedAthlete?.id ?? null;

@@ -4,7 +4,7 @@
  *
  * Two things a coach wants while writing macro targets and never had in
  * this view: what the athlete actually lifts (the PR table) and where the
- * exercise has been going (the load history, including this cycle's SOLL).
+ * exercise has been going (the load history, including this cycle's Target).
  * Both are existing modules — buildPRRows/fetchPRHistory from lib/prTable
  * and the planner's ExerciseHistoryChart — reused, not reimplemented.
  */
@@ -25,7 +25,7 @@ interface MacroExerciseDetailProps {
   /** Null for a group macro with no individual athlete in view. */
   athleteId: string | null;
   athleteName: string | null;
-  /** Drives the SOLL series + "this week" marker on the history chart. */
+  /** Drives the Target series + "this week" marker on the history chart. */
   macroContext: MacroContext | null;
   /** Monday of the macro week the chart should anchor on. */
   anchorWeekStart?: string;
