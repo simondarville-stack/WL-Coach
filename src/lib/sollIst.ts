@@ -80,13 +80,18 @@ export interface IstValue {
 
 export interface ComputedSollIstRow {
   row: SollIstRow;
+  /** "Target kg" in the UI: what the ratio says this lift should be at the
+   *  athlete's CURRENT reference. (Historically "Soll".) */
   soll: number | null;
+  /** "Actual kg" in the UI: what the athlete has actually hit, from the PR
+   *  table or typed over by the coach. (Historically "Ist".) */
   ist: IstValue | null;
   deltaKg: number | null;
-  /** Ist as % of Soll (100 = exactly on the model). */
+  /** Actual as % of Target (100 = exactly on the model). */
   deltaPct: number | null;
+  /** "Goal kg" in the UI: the same ratio at the athlete's GOAL reference. */
   target: number | null;
-  /** Target − Ist; ≤ 0 means the goal-supporting number is already there. */
+  /** Goal − Actual; ≤ 0 means the goal-supporting number is already there. */
   toGo: number | null;
 }
 
@@ -127,6 +132,14 @@ export function buildIstMap(
   exercises: Exercise[],
   history: AthletePRHistory[],
   overrides: Record<string, number>,
+  /**
+   * Use only xRM values the athlete has actually hit, ignoring the PR table's
+   * estimates. A ratio built on estimated numbers is a ratio between two
+   * guesses — fine for a first look, misleading when the coach is deciding
+   * what an athlete is actually weak at. Coach-typed overrides always win
+   * either way: those are measurements too, just entered by hand.
+   */
+  onlyMeasured = false,
 ): Map<string, IstValue> {
   const map = new Map<string, IstValue>();
   const wanted = new Set(rows.map((r) => r.exerciseId).filter((id): id is string => id != null));
@@ -137,7 +150,7 @@ export function buildIstMap(
     for (const cell of prRow.cells) {
       const key = istKey(prRow.exercise.id, cell.repCount);
       if (cell.current) map.set(key, { valueKg: cell.current.value_kg, source: 'real' });
-      else if (cell.phantom != null) map.set(key, { valueKg: cell.phantom, source: 'estimated' });
+      else if (!onlyMeasured && cell.phantom != null) map.set(key, { valueKg: cell.phantom, source: 'estimated' });
     }
   }
   for (const [key, valueKg] of Object.entries(overrides)) {
@@ -152,14 +165,17 @@ export function buildIstMap(
 export function suggestReference(
   refExercise: Exercise | null,
   history: AthletePRHistory[],
+  /** Skip the implied 1RM — see buildIstMap. */
+  onlyMeasured = false,
 ): { valueKg: number; source: IstSource } | null {
   if (!refExercise) return null;
   const [row] = buildPRRows([refExercise], history);
   const real = row.cells.find((c) => c.repCount === 1)?.current;
   if (real) return { valueKg: real.value_kg, source: 'real' };
-  if (row.implied1RM != null) return { valueKg: row.implied1RM, source: 'estimated' };
+  if (!onlyMeasured && row.implied1RM != null) return { valueKg: row.implied1RM, source: 'estimated' };
   return null;
 }
+
 
 /**
  * Capture the athlete's *actual* ratios as an individual model: every row
@@ -400,6 +416,8 @@ export interface SollIstAnalysisRecord {
   options: {
     heatmap?: boolean;
     diff?: boolean;
+    /** Build Actual from measured xRM only, ignoring PR-table estimates. */
+    onlyMeasured?: boolean;
     sideModelRef?: string | null;
     rows?: SollIstRow[];
     /** Data-view state (group/filter/sort) — shape owned by the UI layer

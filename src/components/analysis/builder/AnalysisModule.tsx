@@ -207,7 +207,7 @@ export function AnalysisModule() {
                 {([
                   { id: 'build', label: 'Build' },
                   { id: 'monitor', label: 'Monitor' },
-                  { id: 'sollist', label: 'Soll–Ist' },
+                  { id: 'sollist', label: 'Ratio Analysis' },
                 ] as const).map((m) => (
                   <button
                     key={m.id}

@@ -1,4 +1,4 @@
-// Sheet state + shared helpers for the Soll–Ist surface. Pure functions only;
+// Sheet state + shared helpers for the Ratio Analysis surface. Pure functions only;
 // all Supabase access lives in src/lib/sollIst.ts.
 
 import type { Exercise } from '../../../lib/database.types';
@@ -44,6 +44,19 @@ export interface SheetState {
   overrides: Record<string, number>;
   heatmap: boolean;
   diff: boolean;
+  /** Build Actual from measured xRM only, ignoring the PR table's estimates. */
+  onlyMeasured: boolean;
+  /**
+   * Which athlete the bound references were filled from, or null when they
+   * have never been filled.
+   *
+   * Without this, a reference's `current` outlives an athlete change: the
+   * autofill only fills NULLS, and `onAthleteChange` is not the only way the
+   * athlete gets set — the Analysis scope seeds it at mount, and the restored
+   * draft carries one. The result is one athlete's PR sitting under another
+   * athlete's name, which is worse than showing nothing.
+   */
+  refsFilledFor: string | null;
   /** Second model shown side-by-side, or null for single-model view. */
   sideModelRef: string | null;
   view: SheetView;
@@ -60,9 +73,28 @@ export function emptySheet(): SheetState {
     overrides: {},
     heatmap: true,
     diff: true,
+    onlyMeasured: false,
+    refsFilledFor: null,
     sideModelRef: null,
     view: defaultView(),
   };
+}
+
+/**
+ * Is this a usable sheet? Guards the device-local draft, which is JSON from
+ * localStorage and therefore untrusted — a draft written by an older build, or
+ * hand-edited, must be discarded rather than crash the surface on mount.
+ * Deliberately shallow: it checks the shape the render path depends on, and
+ * fills the rest from `emptySheet` at the call site.
+ */
+export function isSheetState(value: unknown): value is SheetState {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Partial<SheetState>;
+  return Array.isArray(s.refs)
+    && Array.isArray(s.rows)
+    && typeof s.overrides === 'object' && s.overrides !== null
+    && (s.athleteId === null || typeof s.athleteId === 'string')
+    && (s.modelRef === null || typeof s.modelRef === 'string');
 }
 
 export interface ModelOption {
@@ -125,7 +157,7 @@ export function sheetToRecord(sheet: SheetState): Omit<SollIstAnalysisRecord, 'i
     presetKey: isPreset ? presetKeyFromId(sheet.modelRef!) : null,
     refs,
     istOverrides: sheet.overrides,
-    options: { heatmap: sheet.heatmap, diff: sheet.diff, sideModelRef: sheet.sideModelRef, rows: sheet.rows, view: sheet.view },
+    options: { heatmap: sheet.heatmap, diff: sheet.diff, onlyMeasured: sheet.onlyMeasured, sideModelRef: sheet.sideModelRef, rows: sheet.rows, view: sheet.view },
   };
 }
 
@@ -154,6 +186,11 @@ export function sheetFromRecord(
     overrides: rec.istOverrides,
     heatmap: rec.options.heatmap ?? true,
     diff: rec.options.diff ?? true,
+    onlyMeasured: rec.options.onlyMeasured ?? false,
+    // A saved analysis stores the reference values it was saved with, so they
+    // belong to its own athlete by construction — mark them filled to stop the
+    // autofill treating them as another athlete's leftovers.
+    refsFilledFor: rec.athleteId,
     sideModelRef: rec.options.sideModelRef ?? null,
     view: { ...defaultView(), ...((rec.options.view as Partial<SheetView> | undefined) ?? {}) },
   };
@@ -271,7 +308,7 @@ export function buildRowGroups(
 
 /** kg for table cells: rounded to 0,5 kg, comma decimal. */
 /**
- * How an exercise reads in a Soll-Ist `<select>`: "SN - Snatch" when it has a
+ * How an exercise reads in a Ratio Analysis `<select>`: "SN - Snatch" when it has a
  * code, the bare name when it does not. A `<select>` cannot hold styled markup,
  * so the code goes into the option's plain text.
  */
