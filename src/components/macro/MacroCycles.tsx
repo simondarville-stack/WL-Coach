@@ -11,6 +11,12 @@ import { materializeTemplate } from '../../lib/macroTemplate';
 import type { MacroTemplateRow } from '../../lib/macroTemplate';
 import { buildFillPlan } from './fillGuidePlan';
 import { buildColumnCopyRows, countFilledWeeks } from '../../lib/macroColumnCopy';
+import { unitOf, unitLabel } from '../../lib/macroTargetUnit';
+import { buildConversionRows, describeColumn, unitAfter, unitBefore } from '../../lib/macroUnitConvert';
+import type { ConvertDirection } from '../../lib/macroUnitConvert';
+import { ResolvePercentagesModal } from '../planner/ResolvePercentagesModal';
+import type { SingleResolveCandidate, ResolveRoundingOptions } from '../planner/ResolvePercentagesModal';
+import { supabase } from '../../lib/supabase';
 import { findPhaseInCycle } from '../../lib/macroPhases';
 import type { FillGuideInputs, FillGuidePreview, FillWritePlan } from './fillGuidePlan';
 import { useMacroCycles } from '../../hooks/useMacroCycles';
@@ -81,6 +87,7 @@ export function MacroCycles() {
     fetchTargets,
     upsertTarget,
     bulkUpsertTargets,
+    updateTrackedExerciseUnit,
     bulkDeleteTargets,
     bulkUpdateWeeks,
     updateTrackedExerciseReference,
@@ -618,10 +625,131 @@ export function MacroCycles() {
     await upsertTarget(weekId, trackedExId, field, numValue, existing);
   }, [targets, upsertTarget]);
 
+  /**
+   * Write a whole target cell in ONE row upsert.
+   *
+   * `upsertTarget` writes a single field per call, which is right for a drag
+   * but wrong for a typed cell: a load and its prose have to land together, or
+   * a stray failure between two calls leaves a number stranded under a unit
+   * that no longer describes it. `bulkUpsertTargets` with one row does the
+   * whole cell in a single request.
+   */
+  const handleUpdateTargetCell = useCallback(async (
+    weekId: string, trackedExId: string, fields: Partial<MacroTarget>,
+  ) => {
+    await bulkUpsertTargets([{
+      macro_week_id: weekId,
+      tracked_exercise_id: trackedExId,
+      fields,
+    }]);
+  }, [bulkUpsertTargets]);
+
   const handleDragTarget = useCallback(async (weekId: string, trackedExId: string, field: keyof MacroTarget, value: number) => {
     const existing = targets.find(t => t.macro_week_id === weekId && t.tracked_exercise_id === trackedExId);
     await upsertTarget(weekId, trackedExId, field, value, existing);
   }, [targets, upsertTarget]);
+
+  // ─── Convert a column's unit (% ⇄ kg) ─────────────────────────────────────────
+  // The macro side of the planner's percentage flow: a coach can write a whole
+  // cycle in percentages — the way a general model is written — and later
+  // resolve it against a real athlete. The PR is a SUGGESTION per column; the
+  // coach can overwrite every one of them, which is what makes the same model
+  // reusable on an athlete whose PR is stale or who has none on file.
+
+  const [convert, setConvert] = useState<{
+    direction: ConvertDirection;
+    candidates: SingleResolveCandidate[];
+  } | null>(null);
+  const [convertBusy, setConvertBusy] = useState(false);
+
+  /** Columns eligible for a direction: right unit, and something to convert. */
+  const convertibleColumns = useCallback((direction: ConvertDirection) => {
+    const from = unitBefore(direction);
+    return trackedExercises.filter(te =>
+      unitOf(te) === from
+      && targets.some(t => t.tracked_exercise_id === te.id && (t.target_max != null || t.target_avg != null)),
+    );
+  }, [trackedExercises, targets]);
+
+  const handleOpenConvert = useCallback(async (direction: ConvertDirection) => {
+    const columns = convertibleColumns(direction);
+    if (columns.length === 0) return;
+
+    // PRs resolve through pr_reference_exercise_id — a variation converts
+    // against the lift it derives from, the same rule the planner and the
+    // Excel template export apply.
+    const athleteId = selectedAthlete?.id ?? null;
+    const prByTe = new Map<string, number>();
+    const refNameByTe = new Map<string, string>();
+    if (athleteId) {
+      const exerciseIds = columns.map(te => te.exercise_id);
+      const { data: exRows } = await supabase
+        .from('exercises')
+        .select('id, name, exercise_code, pr_reference_exercise_id')
+        .in('id', exerciseIds);
+      const refById = new Map<string, string>();
+      (exRows ?? []).forEach(ex => {
+        if (ex.pr_reference_exercise_id) refById.set(ex.id, ex.pr_reference_exercise_id);
+      });
+      const lookupIds = Array.from(new Set([...exerciseIds, ...refById.values()]));
+      const [{ data: prs }, { data: refRows }] = await Promise.all([
+        supabase.from('athlete_prs').select('exercise_id, pr_value_kg')
+          .eq('athlete_id', athleteId).in('exercise_id', lookupIds),
+        supabase.from('exercises').select('id, name, exercise_code')
+          .in('id', Array.from(new Set(refById.values())).length > 0 ? Array.from(new Set(refById.values())) : ['00000000-0000-0000-0000-000000000000']),
+      ]);
+      const prByExercise = new Map<string, number>();
+      (prs ?? []).forEach(pr => { if (pr.pr_value_kg) prByExercise.set(pr.exercise_id, pr.pr_value_kg); });
+      const refName = new Map((refRows ?? []).map(r => [r.id, r.exercise_code || r.name]));
+      for (const te of columns) {
+        const refId = refById.get(te.exercise_id);
+        const pr = prByExercise.get(refId ?? te.exercise_id);
+        if (pr && pr > 0) prByTe.set(te.id, pr);
+        if (refId) refNameByTe.set(te.id, refName.get(refId) ?? '');
+      }
+    }
+
+    setConvert({
+      direction,
+      // The modal is keyed on plannedExerciseId; here one "row" is one COLUMN,
+      // so the tracked-exercise id takes that slot.
+      candidates: columns.map(te => ({
+        kind: 'single' as const,
+        plannedExerciseId: te.id,
+        exerciseName: te.exercise.exercise_code || te.exercise.name,
+        exerciseColor: te.exercise.color,
+        prescriptionRaw: describeColumn(te.id, targets, unitOf(te)),
+        prSourceName: refNameByTe.get(te.id) || null,
+        // Falls back to the column's own reference load when the athlete has no
+        // PR — for a group cycle that is the only anchor there is.
+        defaultPR: prByTe.get(te.id) ?? te.reference_kg ?? null,
+      })),
+    });
+  }, [convertibleColumns, selectedAthlete?.id, targets]);
+
+  const handleConfirmConvert = useCallback(async (
+    overrides: Record<string, number>,
+    rounding: ResolveRoundingOptions,
+  ) => {
+    if (!convert || convertBusy) return;
+    setConvertBusy(true);
+    try {
+      const { direction } = convert;
+      const step = rounding.enabled ? rounding.increment : null;
+      for (const [teId, reference] of Object.entries(overrides)) {
+        const rows = buildConversionRows(teId, targets, direction, reference, step);
+        // Values first, then the unit — a reader that catches the column
+        // mid-write sees the old unit with old numbers, never the reverse.
+        if (rows.length > 0) await bulkUpsertTargets(rows);
+        await updateTrackedExerciseUnit(teId, unitAfter(direction));
+        // The reference the coach just approved becomes the column's stored
+        // one, so a later convert back suggests the same anchor.
+        await updateTrackedExerciseReference(teId, reference);
+      }
+    } finally {
+      setConvertBusy(false);
+    }
+  }, [convert, convertBusy, targets, bulkUpsertTargets, updateTrackedExerciseUnit, updateTrackedExerciseReference]);
 
   // ─── Fill guide ───────────────────────────────────────────────────────────────
   // Apply writes plain rows (table = source of truth); undo restores a snapshot.
@@ -688,6 +816,7 @@ export function MacroCycles() {
           target_reps: t.target_reps,
           target_avg: t.target_avg,
           target_max: t.target_max,
+          target_text: t.target_text,
           target_reps_at_max: t.target_reps_at_max,
           target_sets_at_max: t.target_sets_at_max,
           note: t.note,
@@ -787,7 +916,7 @@ export function MacroCycles() {
     // Position is resolved inside addTrackedExercise from the DB — deriving it
     // here from `trackedExercises` reused the same number on a second, quick
     // add and violated UNIQUE(macrocycle_id, position).
-    await addTrackedExercise(selectedCycle.id, exercise.id);
+    await addTrackedExercise(selectedCycle.id, exercise.id, exercise.default_unit);
     await fetchTrackedExercises(selectedCycle.id);
   };
 
@@ -1207,6 +1336,24 @@ ${how}.${warn}`)) return;
               >
                 Reps
               </button>
+              {/* Convert chips — only when there is actually something to
+                  convert, so the toolbar stays quiet on a plain kg cycle. */}
+              {(['percent-to-kg', 'kg-to-percent'] as const).map(dir => {
+                const n = convertibleColumns(dir).length;
+                if (n === 0) return null;
+                const from = unitLabel(unitBefore(dir));
+                const to = unitLabel(unitAfter(dir));
+                return (
+                  <button
+                    key={dir}
+                    onClick={() => void handleOpenConvert(dir)}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-gray-300 bg-white text-gray-600 hover:border-gray-400 flex-shrink-0"
+                    title={`Convert ${n} column${n === 1 ? '' : 's'} from ${from} to ${to} — the athlete's PR is suggested per column and can be overwritten`}
+                  >
+                    {from} → {to}
+                  </button>
+                );
+              })}
               <MacroViewMenu
                 metrics={exerciseMetrics}
                 onMetricsChange={applyMetrics}
@@ -1233,6 +1380,8 @@ ${how}.${warn}`)) return;
               phases={phases}
               actuals={displayedActuals}
               onUpdateTarget={handleUpdateTarget}
+              onUpdateTargetCell={handleUpdateTargetCell}
+              onSetColumnUnit={updateTrackedExerciseUnit}
               onUpdateWeekType={handleUpdateWeekType}
               onUpdateTotalReps={handleUpdateTotalReps}
               onUpdateTonnageTarget={handleUpdateTonnageTarget}
@@ -1347,6 +1496,15 @@ ${how}.${warn}`)) return;
           targets={targets}
           onSave={async (name, mode, weekCount, payload) => { await createTemplate(name, mode, weekCount, payload); }}
           onClose={() => setShowTemplateSave(false)}
+        />
+      )}
+
+      {convert && (
+        <ResolvePercentagesModal
+          candidates={convert.candidates}
+          direction={convert.direction}
+          onClose={() => setConvert(null)}
+          onConfirm={handleConfirmConvert}
         />
       )}
 

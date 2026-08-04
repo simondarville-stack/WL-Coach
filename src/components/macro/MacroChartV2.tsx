@@ -25,6 +25,7 @@
  * ad-hoc while the toggle is off.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isNumericUnit, unitLabel, unitOf, type MacroTargetUnit } from '../../lib/macroTargetUnit';
 import type {
   MacroCompetition,
   MacroTarget,
@@ -159,13 +160,23 @@ export function MacroChartV2({
 
   const oKey = (weekId: string, series: string) => `${weekId}|${series}`;
 
+  /** A column's unit, by tracked-exercise id. */
+  const unitByTe = useMemo(() => {
+    const m = new Map<string, MacroTargetUnit>();
+    for (const te of trackedExercises) m.set(te.id, unitOf(te));
+    return m;
+  }, [trackedExercises]);
+
   const getExValue = useCallback((weekId: string, teId: string, series: SeriesKind): number | null => {
     const ov = overrides[oKey(weekId, `${series}:${teId}`)];
     if (ov !== undefined) return ov;
     const t = targetMap.get(`${weekId}|${teId}`);
     if (!t) return null;
+    // A free-text column has no number — it charts nothing rather than charting
+    // a stale kilogram left behind by an earlier unit.
+    if (series !== 'reps' && !isNumericUnit(unitByTe.get(teId) ?? 'absolute_kg')) return null;
     return series === 'max' ? t.target_max : series === 'avg' ? t.target_avg : t.target_reps;
-  }, [overrides, targetMap]);
+  }, [overrides, targetMap, unitByTe]);
 
   const getGenValue = useCallback((week: MacroWeek, gk: GeneralKey): number | null => {
     const ov = overrides[oKey(week.id, `g:${gk}`)];
@@ -455,6 +466,17 @@ export function MacroChartV2({
               <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1" strokeDasharray="1 3" strokeLinecap="round" opacity="0.7" /></svg>
               done
             </span>
+            {/* Shown only when a percentage column is actually on the chart — a
+                key nobody needs is noise on a dense header. */}
+            {trackedExercises.some(te => unitOf(te) === 'percentage') && (
+              <span className="flex items-center gap-1" title="A % column plots on the kg axis: 85 % sits where 85 kg sits. Its points are squares.">
+                <svg width="16" height="8">
+                  <line x1="0" y1="4" x2="16" y2="4" stroke="#94a3b8" strokeWidth="1.8" strokeDasharray="7 3" />
+                  <rect x="5" y="1" width="6" height="6" rx="1" fill="#94a3b8" />
+                </svg>
+                %
+              </span>
+            )}
           </span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-gray-600">
@@ -571,7 +593,7 @@ export function MacroChartV2({
                   style={{ cursor: 'ns-resize' }}
                   onPointerDown={e => startExerciseDrag(e, w.id, te.id, 'avg')}
                 >
-                  <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} avg: ${fmt(vals[i]!)} kg — drag (Ctrl = with max)`}</title>
+                  <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} avg: ${fmt(vals[i]!)} ${unitLabel(unitByTe.get(te.id) ?? 'absolute_kg')} — drag (Ctrl = with max)`}</title>
                 </circle>
               ))}
             </g>
@@ -582,19 +604,34 @@ export function MacroChartV2({
         {trackedExercises.map(te => {
           const color = getColor(te);
           const focused = focusedExerciseId === te.id;
+          // A percentage column shares the kilogram axis — 85 % sits at the
+          // height of 85 kg. That is deliberate (one axis, one shape to read),
+          // so the MARKER carries the difference: squares, not circles.
+          const isPct = (unitByTe.get(te.id) ?? 'absolute_kg') === 'percentage';
           const vals = weeks.map(w => getExValue(w.id, te.id, 'max'));
           return (
             <g key={`max${te.id}`}>
               <polyline points={linePoints(vals, yKg)} fill="none"
-                stroke={color} strokeWidth={focused ? 2.6 : 1.8} />
+                stroke={color} strokeWidth={focused ? 2.6 : 1.8}
+                strokeDasharray={isPct ? '7 3' : undefined} />
               {weeks.map((w, i) => vals[i] != null && (
-                <circle key={w.id} cx={x(i)} cy={yKg(vals[i]!)} r={5.5}
-                  fill={color} stroke="#fff" strokeWidth={1.5}
-                  style={{ cursor: 'ns-resize' }}
-                  onPointerDown={e => startExerciseDrag(e, w.id, te.id, 'max')}
-                >
-                  <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} max: ${fmt(vals[i]!)} kg — drag (Ctrl = with avg)`}</title>
-                </circle>
+                isPct ? (
+                  <rect key={w.id} x={x(i) - 5} y={yKg(vals[i]!) - 5} width={10} height={10} rx={1.5}
+                    fill={color} stroke="#fff" strokeWidth={1.5}
+                    style={{ cursor: 'ns-resize' }}
+                    onPointerDown={e => startExerciseDrag(e, w.id, te.id, 'max')}
+                  >
+                    <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} max: ${fmt(vals[i]!)} % — drag (Ctrl = with avg)`}</title>
+                  </rect>
+                ) : (
+                  <circle key={w.id} cx={x(i)} cy={yKg(vals[i]!)} r={5.5}
+                    fill={color} stroke="#fff" strokeWidth={1.5}
+                    style={{ cursor: 'ns-resize' }}
+                    onPointerDown={e => startExerciseDrag(e, w.id, te.id, 'max')}
+                  >
+                    <title>{`${te.exercise.exercise_code || te.exercise.name} W${w.week_number} max: ${fmt(vals[i]!)} kg — drag (Ctrl = with avg)`}</title>
+                  </circle>
+                )
               ))}
             </g>
           );

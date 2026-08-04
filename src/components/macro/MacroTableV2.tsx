@@ -85,6 +85,11 @@ interface MacroTableV2Props {
   onReorderExercise: (sourceTeId: string, targetTeId: string, side: 'left' | 'right') => Promise<void>;
   /** Ctrl/⌘+drag one exercise column onto another: copy its whole prescription. */
   onCopyExercisePrescription?: (sourceTeId: string, targetTeId: string) => Promise<void>;
+  /** Write a whole target cell in ONE row upsert — value, prose and reps
+   *  together, so a unit and its number can never be written out of step. */
+  onUpdateTargetCell?: (weekId: string, teId: string, fields: Partial<MacroTarget>) => Promise<void>;
+  /** Set the exercise COLUMN's unit (kg / % / free text). */
+  onSetColumnUnit?: (teId: string, unit: 'absolute_kg' | 'percentage' | 'free_text_reps') => Promise<void>;
   onRemoveExercise: (trackedExId: string) => Promise<void>;
   onPasteTargets: (targetWeekId: string, copiedTargets: Record<string, Partial<MacroTarget>>) => Promise<void>;
   onExerciseDoubleClick: (trackedExId: string) => void;
@@ -131,6 +136,11 @@ const STICKY_COL_ORDER: MacroTableColumnKey[] = ['week', 'dates', 'events', 'wee
 /** Marker MIME so week-row drop targets can tell a column drag apart
  *  during dragover, where getData() is blocked. Lowercase: Chrome and Safari
  *  lowercase custom type names. */
+import {
+  contributesToTonnage, fmtNumber, isNumericUnit, mean, numericValues,
+  peak as peakOf, unitLabel, unitOf, unitSuffix, type MacroTargetUnit,
+} from '../../lib/macroTargetUnit';
+
 const MARK_MACRO_EXERCISE = 'application/x-emos-macro-exercise';
 
 const STICKY_COL_WIDTHS: Record<string, number> = { week: 68, dates: 76, events: 44, weektype: 44, notes: 100 };
@@ -154,6 +164,8 @@ export function MacroTableV2({
   onUpdateNotes,
   onReorderExercise,
   onCopyExercisePrescription,
+  onUpdateTargetCell,
+  onSetColumnUnit,
   onRemoveExercise,
   onExerciseDoubleClick,
   onOpenExerciseDetail,
@@ -359,18 +371,48 @@ export function MacroTableV2({
   }, [macroWeeks, targets]);
 
   const handleGridUpdate = useCallback(async (
-    weekId: string, teId: string, values: { load?: number; reps?: number; sets?: number },
+    weekId: string, teId: string,
+    values: {
+      load?: number | null; reps?: number; sets?: number;
+      unit?: 'absolute_kg' | 'percentage' | 'free_text_reps'; loadText?: string | null;
+    },
   ) => {
-    if (values.load !== undefined) await onUpdateTarget(weekId, teId, 'target_max', String(values.load));
+    // What the coach typed can re-unit the whole COLUMN. That lives on
+    // macro_tracked_exercises, a different table from the cell, so it is its
+    // own write — and it goes first, so the cell is never read under the old
+    // unit.
+    if (values.unit !== undefined && onSetColumnUnit) await onSetColumnUnit(teId, values.unit);
+
+    // The cell itself is ONE row upsert. Writing value and prose as separate
+    // single-field calls would let a chart drag interleave between them and
+    // leave a number stranded under the wrong unit.
+    if (onUpdateTargetCell) {
+      const fields: Partial<MacroTarget> = {};
+      if (values.load !== undefined) fields.target_max = values.load;
+      if (values.loadText !== undefined) fields.target_text = values.loadText;
+      if (values.reps !== undefined) fields.target_reps_at_max = values.reps;
+      if (values.sets !== undefined) fields.target_sets_at_max = values.sets;
+      if (Object.keys(fields).length > 0) await onUpdateTargetCell(weekId, teId, fields);
+      return;
+    }
+    // Fallback for a caller that has not wired the row write yet.
+    if (values.load !== undefined && values.load !== null) await onUpdateTarget(weekId, teId, 'target_max', String(values.load));
     if (values.reps !== undefined) await onUpdateTarget(weekId, teId, 'target_reps_at_max', String(values.reps));
     if (values.sets !== undefined) await onUpdateTarget(weekId, teId, 'target_sets_at_max', String(values.sets));
-  }, [onUpdateTarget]);
+  }, [onUpdateTarget, onUpdateTargetCell, onSetColumnUnit]);
 
   const handleGridDelete = useCallback(async (weekId: string, teId: string) => {
+    if (onUpdateTargetCell) {
+      await onUpdateTargetCell(weekId, teId, {
+        target_max: null, target_text: null,
+        target_reps_at_max: null, target_sets_at_max: null,
+      });
+      return;
+    }
     await onUpdateTarget(weekId, teId, 'target_max', '');
     await onUpdateTarget(weekId, teId, 'target_reps_at_max', '');
     await onUpdateTarget(weekId, teId, 'target_sets_at_max', '');
-  }, [onUpdateTarget]);
+  }, [onUpdateTarget, onUpdateTargetCell]);
 
   // Fix phantom +1: when currentValue is null, initialize from prev without applying delta.
   // Fix bubble: in delete mode, clicking clears the value.
@@ -564,6 +606,28 @@ export function MacroTableV2({
                       </span>
                     </button>
                     <div className="flex items-center gap-0 flex-shrink-0">
+                      {/* The column's unit, always visible. Typing a cell can
+                          re-unit the whole column, so that flip has to be legible
+                          at a glance — and one click here puts it back. */}
+                      {onSetColumnUnit && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const order: MacroTargetUnit[] = ['absolute_kg', 'percentage', 'free_text_reps'];
+                            const next = order[(order.indexOf(unitOf(te)) + 1) % order.length];
+                            void onSetColumnUnit(te.id, next);
+                          }}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                          className="text-[8px] font-mono leading-none px-1 py-0.5 rounded"
+                          style={{
+                            color: unitOf(te) === 'absolute_kg' ? 'var(--color-text-tertiary)' : 'var(--color-accent)',
+                            backgroundColor: unitOf(te) === 'absolute_kg' ? 'transparent' : 'var(--color-accent-muted)',
+                          }}
+                          title={`This column is in ${unitLabel(unitOf(te))} — click to cycle kg → % → text`}
+                        >
+                          {unitLabel(unitOf(te))}
+                        </button>
+                      )}
                       {onToggleCollapse && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onToggleCollapse(te.id); }}
@@ -731,11 +795,20 @@ export function MacroTableV2({
               // Computed week stats — only count exercises with both reps and avg set
               let weekK = 0;
               let weekTonnage = 0;
+              // Columns left out of the tonnage, so the total can SAY it is partial
+              // rather than quietly reading low.
+              const tonnageSkipped: string[] = [];
               displayed.forEach(te => {
                 const t = getTarget(week.id, te.id);
                 const reps = t?.target_reps ?? 0;
                 const avg = t?.target_avg ?? 0;
                 weekK += reps;
+                // reps × 80 % is not kilograms. A percentage is relative to its own
+                // exercise, so it cannot enter a cross-exercise total.
+                if (!contributesToTonnage(unitOf(te))) {
+                  if (reps > 0) tonnageSkipped.push(te.exercise.exercise_code || te.exercise.name);
+                  return;
+                }
                 if (reps > 0 && avg > 0) weekTonnage += reps * avg;
               });
               const wtColor = getWeekTypeColor(week.week_type, weekTypes);
@@ -994,7 +1067,9 @@ export function MacroTableV2({
                       style={{ minWidth: 52 }}
                       onClick={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
                       onContextMenu={(e) => handleWeekFieldClick(e, week, 'tonnage_target', 100, onUpdateTonnageTarget, setEditingTonnageId)}
-                      title={`Tonnage target (±100 kg) — ${weekFieldTitle}`}
+                      title={tonnageSkipped.length > 0
+                        ? `Tonnage target (±100 kg) — ${weekFieldTitle}. Not counted: ${tonnageSkipped.join(', ')} (not in kg).`
+                        : `Tonnage target (±100 kg) — ${weekFieldTitle}`}
                     >
                       {editingTonnageId === week.id ? (
                         <div onClick={e => e.stopPropagation()}>
@@ -1072,8 +1147,15 @@ export function MacroTableV2({
 
                     // Collapsed: one narrow strip — max only, heat-shaded by % of reference
                     if (st.collapsed) {
+                      const colUnit = unitOf(te);
                       const maxShown = previewCell?.max ?? target?.target_max ?? null;
-                      const ratio = maxShown != null && te.reference_kg ? maxShown / te.reference_kg : null;
+                      // A percentage column already IS a fraction of the reference,
+                      // so it heat-shades against 100, not against reference_kg.
+                      const ratio = colUnit === 'free_text_reps' || maxShown == null
+                        ? null
+                        : colUnit === 'percentage'
+                        ? maxShown / 100
+                        : te.reference_kg ? maxShown / te.reference_kg : null;
                       return (
                         <td
                           key={te.id}
@@ -1084,9 +1166,20 @@ export function MacroTableV2({
                             color: previewCell ? 'var(--color-accent)' : 'var(--color-text-secondary)',
                             fontStyle: previewCell ? 'italic' : undefined,
                           }}
-                          title={`${te.exercise.exercise_code || te.exercise.name} W${week.week_number}${maxShown != null ? `: ${maxShown} kg${ratio != null ? ` (${Math.round(ratio * 100)} % of ref)` : ''}` : ''}`}
+                          title={`${te.exercise.exercise_code || te.exercise.name} W${week.week_number}${
+                            colUnit === 'free_text_reps'
+                              ? target?.target_text ? `: ${target.target_text}` : ''
+                              : maxShown != null
+                              ? `: ${fmtNumber(maxShown)} ${unitLabel(colUnit)}${ratio != null ? ` (${Math.round(ratio * 100)} % of ref)` : ''}`
+                              : ''
+                          }`}
                         >
-                          {maxShown ?? ''}
+                          {/* A collapsed strip is 30 px wide — prose cannot fit, so a
+                              free-text column shows a mark meaning "something is
+                              written here" and the tooltip carries the words. */}
+                          {colUnit === 'free_text_reps'
+                            ? (target?.target_text?.trim() ? '·' : '')
+                            : maxShown != null ? `${fmtNumber(maxShown)}${unitSuffix(colUnit)}` : ''}
                         </td>
                       );
                     }
@@ -1166,6 +1259,8 @@ export function MacroTableV2({
                               load={maxVal}
                               reps={repsAtMax}
                               sets={setsAtMax}
+                              unit={unitOf(te)}
+                              loadText={target?.target_text ?? null}
                               prevLoad={prev?.target_max ?? null}
                               prevReps={prev?.target_reps_at_max ?? null}
                               prevSets={prev?.target_sets_at_max ?? null}
@@ -1367,12 +1462,15 @@ export function MacroTableV2({
                 )}
                 {displayed.map((te, teIdx) => {
                   const st = colState(te.id);
+                  const colUnit = unitOf(te);
                   const exTargets = targets.filter(t => t.tracked_exercise_id === te.id);
                   const wReps = exTargets.filter(t => (t.target_reps ?? 0) > 0);
-                  const wMax = exTargets.filter(t => (t.target_max ?? 0) > 0);
                   const wAvg = exTargets.filter(t => (t.target_avg ?? 0) > 0);
                   const avgReps = wReps.length > 0 ? Math.round(wReps.reduce((s, t) => s + (t.target_reps ?? 0), 0) / wReps.length) : null;
-                  const avgMax = wMax.length > 0 ? Math.round(wMax.reduce((s, t) => s + (t.target_max ?? 0), 0) / wMax.length) : null;
+                  // Within one column the unit is constant, so a mean is meaningful
+                  // whether it reads in kilograms or in percent. A free-text column
+                  // yields no numbers and its aggregate stays blank.
+                  const avgMax = mean(numericValues(exTargets, colUnit, 'target_max').filter(v => v > 0));
                   const totalRepsForAvg = wAvg.reduce((s, t) => s + (t.target_reps ?? 0), 0);
                   const avgAvg = totalRepsForAvg > 0
                     ? Math.round(wAvg.reduce((s, t) => s + (t.target_avg ?? 0) * (t.target_reps ?? 0), 0) / totalRepsForAvg)
@@ -1381,7 +1479,7 @@ export function MacroTableV2({
                   if (st.collapsed) {
                     return (
                       <td key={te.id} className={`${borderCls(0)}text-center font-mono ${summaryText} px-0.5 py-0`} style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
-                        {avgMax != null ? avgMax : ''}
+                        {avgMax != null ? `${fmtNumber(Math.round(avgMax))}${unitSuffix(colUnit)}` : ''}
                       </td>
                     );
                   }
@@ -1391,14 +1489,23 @@ export function MacroTableV2({
                         if (mk === 'max_set') {
                           return (
                             <td key={mk} className={`${borderCls(mi)}text-center px-0 py-0`}>
-                              <MacroGridCell load={avgMax} reps={null} sets={null} onUpdate={() => {}} disabled compact />
+                              <MacroGridCell
+                                load={avgMax != null ? Math.round(avgMax) : null}
+                                reps={null} sets={null}
+                                unit={colUnit}
+                                onUpdate={() => {}} disabled compact
+                              />
                             </td>
                           );
                         }
-                        const val = mk === 'avg' ? avgAvg : avgReps;
+                        // Avg intensity reads in the column's own unit; reps are
+                        // reps in every unit. Neither means anything for prose.
+                        const val = mk === 'avg'
+                          ? (isNumericUnit(colUnit) ? avgAvg : null)
+                          : avgReps;
                         return (
                           <td key={mk} className={`${borderCls(mi)}text-center font-mono ${summaryText} px-1 py-0`}>
-                            {val != null ? val : ''}
+                            {val != null ? `${val}${mk === 'avg' ? unitSuffix(colUnit) : ''}` : ''}
                           </td>
                         );
                       })}
@@ -1455,16 +1562,16 @@ export function MacroTableV2({
                 )}
                 {displayed.map((te, teIdx) => {
                   const st = colState(te.id);
+                  const colUnit = unitOf(te);
                   const exTargets = targets.filter(t => t.tracked_exercise_id === te.id);
                   const maxReps = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_reps ?? 0)) : null;
-                  const peakTarget = exTargets.reduce<MacroTarget | undefined>((best, t) =>
-                    (t.target_max ?? 0) > (best?.target_max ?? 0) ? t : best, undefined);
+                  const peakMax = peakOf(numericValues(exTargets, colUnit, 'target_max'));
                   const maxAvg = exTargets.length > 0 ? Math.max(...exTargets.map(t => t.target_avg ?? 0)) : null;
                   const borderCls = (mi: number) => mi === 0 ? `${teIdx === 0 ? 'border-l-2' : 'border-l'} border-[color:var(--color-border-tertiary)] ` : '';
                   if (st.collapsed) {
                     return (
                       <td key={te.id} className={`${borderCls(0)}text-center font-mono ${summaryText} px-0.5 py-0`} style={{ width: 30, minWidth: 30, maxWidth: 30 }}>
-                        {peakTarget?.target_max ?? ''}
+                        {peakMax != null ? `${fmtNumber(peakMax)}${unitSuffix(colUnit)}` : ''}
                       </td>
                     );
                   }
@@ -1475,18 +1582,21 @@ export function MacroTableV2({
                           return (
                             <td key={mk} className={`${borderCls(mi)}text-center px-0 py-0`}>
                               <MacroGridCell
-                                load={peakTarget?.target_max ?? null}
+                                load={peakMax}
                                 reps={null}
                                 sets={null}
+                                unit={colUnit}
                                 onUpdate={() => {}} disabled compact
                               />
                             </td>
                           );
                         }
-                        const val = mk === 'avg' ? (maxAvg || null) : (maxReps || null);
+                        const val = mk === 'avg'
+                          ? (isNumericUnit(colUnit) ? (maxAvg || null) : null)
+                          : (maxReps || null);
                         return (
                           <td key={mk} className={`${borderCls(mi)}text-center font-mono ${summaryText} px-1 py-0`}>
-                            {val != null ? val : ''}
+                            {val != null ? `${val}${mk === 'avg' ? unitSuffix(colUnit) : ''}` : ''}
                           </td>
                         );
                       })}

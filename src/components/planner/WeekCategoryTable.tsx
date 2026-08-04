@@ -12,6 +12,7 @@
 // coach note ("Go for a 3RM") renders as an italic ✎ line under the row.
 
 import { useEffect, useMemo, useState } from 'react';
+import { unitOf, type MacroTargetUnit } from '../../lib/macroTargetUnit';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Exercise, PlannedExercise, ComboMemberEntry } from '../../lib/database.types';
@@ -51,6 +52,10 @@ interface Target {
   setsAtMax: number | null;
   /** Coach's macro note for this exercise+week ('' / null = none). */
   note: string | null;
+  /** The macro COLUMN's unit — kg, % of PR, or prose. */
+  unit: MacroTargetUnit;
+  /** Prose load, when the macro column is free text. */
+  text: string | null;
 }
 
 interface ExRow {
@@ -126,15 +131,15 @@ export function WeekCategoryTable({
             .eq('macrocycle_id', macroContext.macroId)
             .eq('week_number', macroContext.weekNumber)
             .maybeSingle(),
-          supabase.from('macro_tracked_exercises').select('id, exercise_id')
+          supabase.from('macro_tracked_exercises').select('id, exercise_id, target_unit')
             .eq('macrocycle_id', macroContext.macroId),
         ]);
         if (cancelled || !mw || !tracked || tracked.length === 0) return;
-        const exByTracked = new Map(
-          (tracked as Array<{ id: string; exercise_id: string }>).map(t => [t.id, t.exercise_id]),
-        );
+        const trackedRows = tracked as Array<{ id: string; exercise_id: string; target_unit: string | null }>;
+        const exByTracked = new Map(trackedRows.map(t => [t.id, t.exercise_id]));
+        const unitByTracked = new Map(trackedRows.map(t => [t.id, unitOf(t)]));
         const { data: tgts } = await supabase.from('macro_targets')
-          .select('tracked_exercise_id, target_reps, target_avg, target_max, target_reps_at_max, target_sets_at_max, note')
+          .select('tracked_exercise_id, target_reps, target_avg, target_max, target_text, target_reps_at_max, target_sets_at_max, note')
           .eq('macro_week_id', (mw as { id: string }).id)
           .in('tracked_exercise_id', [...exByTracked.keys()]);
         if (cancelled) return;
@@ -143,15 +148,24 @@ export function WeekCategoryTable({
         const num = (v: number | string | null): number | null => (v == null ? null : Number(v));
         for (const t of (tgts ?? []) as Array<{
           tracked_exercise_id: string; target_reps: number | null; target_avg: number | string | null;
-          target_max: number | string | null; target_reps_at_max: number | null; target_sets_at_max: number | null;
+          target_max: number | string | null; target_text: string | null;
+          target_reps_at_max: number | null; target_sets_at_max: number | null;
           note: string | null;
         }>) {
           const exId = exByTracked.get(t.tracked_exercise_id);
           if (!exId) continue;
-          // A row may hold only a note — that still deserves a row.
-          if (t.target_reps == null && t.target_avg == null && t.target_max == null && !t.note?.trim()) continue;
+          const unit = unitByTracked.get(t.tracked_exercise_id) ?? 'absolute_kg';
+          // A row may hold only a note — that still deserves a row. A free-text
+          // column's load lives in target_text, so that counts as content too.
+          if (t.target_reps == null && t.target_avg == null && t.target_max == null
+            && !t.target_text?.trim() && !t.note?.trim()) continue;
           map.set(exId, {
-            reps: t.target_reps, avg: num(t.target_avg), max: num(t.target_max),
+            reps: t.target_reps, avg: num(t.target_avg),
+            // A free-text column's number is dormant, not current — showing it
+            // would resurrect a load the coach replaced with words.
+            max: unit === 'free_text_reps' ? null : num(t.target_max),
+            text: t.target_text,
+            unit,
             repsAtMax: t.target_reps_at_max, setsAtMax: t.target_sets_at_max,
             note: t.note,
           });
@@ -351,9 +365,14 @@ export function WeekCategoryTable({
                             {r.reps > 0 ? r.reps : '—'}
                           </td>
                         </tr>
-                        {t && (t.max != null || t.repsAtMax != null || t.avg != null || t.reps != null) && (() => {
+                        {t && (t.max != null || t.text?.trim() || t.repsAtMax != null || t.avg != null || t.reps != null) && (() => {
                           const targetRaw = targetMaxRaw(t.max, t.repsAtMax, t.setsAtMax);
-                          const loadStatus = statusOf(plannedMaxLoad, t.max);
+                          // Compare like with like. The planned top set carries the
+                          // planner row's own unit; if the macro column is in a
+                          // different one, a red/green verdict would be invented
+                          // from a comparison nobody made. Same unit, or no verdict.
+                          const comparable = !!r.maxSet && (r.maxSet.unit ?? 'absolute_kg') === t.unit;
+                          const loadStatus = comparable ? statusOf(plannedMaxLoad, t.max) : null;
                           const repsStatus = t.repsAtMax == null ? null
                             : r.maxSet && r.maxSet.reps === t.repsAtMax && (t.setsAtMax == null || r.maxSet.sets === t.setsAtMax) ? 'on' : 'off';
                           const topSetStatus: TargetStatus | null =
@@ -363,7 +382,16 @@ export function WeekCategoryTable({
                             <tr title="Macro target — green: plan on target, red: short or over">
                               <td style={{ ...cellBase, paddingTop: 0, fontSize: 9, color: 'var(--color-text-tertiary)' }}>↳ target</td>
                               <td style={{ ...cellBase, paddingTop: 0 }}>
-                                {targetRaw ? (
+                                {t.unit === 'free_text_reps' && t.text?.trim() ? (
+                                  // Prose has no stacked form — it reads as written,
+                                  // right-aligned where a load would sit.
+                                  <span style={{
+                                    fontSize: 'var(--text-caption)', display: 'block',
+                                    textAlign: 'right', color: 'var(--color-text-secondary)',
+                                  }}>
+                                    {t.text}
+                                  </span>
+                                ) : targetRaw ? (
                                   // Same stacked visual as the planned top set above it;
                                   // the text token carries the on/off-target colour (data,
                                   // not chrome — StackedNotation reads --color-text-primary).
@@ -371,14 +399,22 @@ export function WeekCategoryTable({
                                     display: 'flex', justifyContent: 'flex-end',
                                     '--color-text-primary': statusColor(topSetStatus),
                                   } as React.CSSProperties}>
-                                    <StackedNotation raw={targetRaw} unit="absolute_kg" />
+                                    <StackedNotation raw={targetRaw} unit={t.unit} />
                                   </div>
                                 ) : (
                                   <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', display: 'block', textAlign: 'right' }}>—</span>
                                 )}
                               </td>
-                              <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(avgKg, t.avg)) }}>
-                                {t.avg != null ? fmtNum(t.avg) : ''}
+                              {/* Avg reads in the macro column's unit, and is graded
+                                  against the planned average measured in that SAME
+                                  unit — kg against kg, % against %. */}
+                              <td style={{
+                                ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right',
+                                color: statusColor(statusOf(t.unit === 'percentage' ? avgPct : avgKg, t.avg)),
+                              }}>
+                                {t.avg != null && t.unit !== 'free_text_reps'
+                                  ? `${fmtNum(t.avg)}${t.unit === 'percentage' ? '%' : ''}`
+                                  : ''}
                               </td>
                               <td style={{ ...cellBase, paddingTop: 0, ...mono, fontSize: 'var(--text-caption)', textAlign: 'right', color: statusColor(statusOf(r.reps || null, t.reps)) }}>
                                 {t.reps != null ? t.reps : ''}

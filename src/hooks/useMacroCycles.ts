@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { addDaysToISO, isoMonday, isoSunday } from '../lib/dateUtils';
 import { resolveScopeAthleteIds } from '../lib/macroTimelineData';
+import { unitFromDefaultUnit } from '../lib/macroTargetUnit';
 import type { MacroCycle, MacroWeek, MacroTrackedExerciseWithExercise, MacroTarget, MacroPhase, MacroCompetition } from '../lib/database.types';
 
 /** Discriminated union identifying who a macrocycle belongs to */
@@ -224,7 +225,9 @@ export function useMacroCycles() {
       }));
       // Also optimistically swap targets
       setTargets(prev => {
-        const targetFields2 = ['target_max', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
+        // target_text is the LOAD of a free-text column, so it swaps with the
+        // numbers — leaving it behind would strand the prose on the wrong week.
+        const targetFields2 = ['target_max', 'target_text', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
         return prev.map(t => {
           if (t.macro_week_id === weekId1) {
             const pair = prev.find(t2 => t2.macro_week_id === weekId2 && t2.tracked_exercise_id === t.tracked_exercise_id);
@@ -250,7 +253,7 @@ export function useMacroCycles() {
       if (ge2) throw ge2;
 
       // --- 2. Swap exercise targets ---
-      const targetFields = ['target_max', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
+      const targetFields = ['target_max', 'target_text', 'target_reps_at_max', 'target_sets_at_max', 'target_reps', 'target_avg'] as const;
       const weekTargets1 = targets.filter(t => t.macro_week_id === weekId1);
       const weekTargets2 = targets.filter(t => t.macro_week_id === weekId2);
       const allTeIds = new Set([
@@ -321,7 +324,13 @@ export function useMacroCycles() {
    * UNIQUE(macrocycle_id, position). One retry covers a genuine race with a
    * co-coach adding at the same moment.
    */
-  const addTrackedExercise = async (macrocycleId: string, exerciseId: string) => {
+  const addTrackedExercise = async (
+    macrocycleId: string,
+    exerciseId: string,
+    /** The exercise's library default unit — the column starts in it. */
+    defaultUnit?: string | null,
+  ) => {
+    const targetUnit = unitFromDefaultUnit(defaultUnit);
     const nextPosition = async (): Promise<number> => {
       const { data } = await supabase
         .from('macro_tracked_exercises')
@@ -334,12 +343,12 @@ export function useMacroCycles() {
     try {
       const { error } = await supabase
         .from('macro_tracked_exercises')
-        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition() });
+        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition(), target_unit: targetUnit });
       if (!error) return;
       if (error.code !== '23505') throw error;
       const { error: retryError } = await supabase
         .from('macro_tracked_exercises')
-        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition() });
+        .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition(), target_unit: targetUnit });
       if (retryError) throw retryError;
     } catch (err) {
       setError(errMsg(err, 'Failed to add tracked exercise'));
@@ -590,6 +599,33 @@ export function useMacroCycles() {
     } catch (err) {
       if (original) setTrackedExercises(prev => prev.map(te => te.id === id ? original : te));
       setError(errMsg(err, 'Failed to update reference'));
+      throw err;
+    }
+  };
+
+  /**
+   * Persist a tracked exercise COLUMN's unit — kg, percentage, or free text.
+   *
+   * The unit lives on the column, not the cell, so one write re-reads every
+   * week at once. Optimistic, because the coach types a cell and expects the
+   * whole column to re-render in the new unit on the same keystroke.
+   */
+  const updateTrackedExerciseUnit = async (
+    id: string,
+    unit: 'absolute_kg' | 'percentage' | 'free_text_reps',
+  ): Promise<void> => {
+    const original = trackedExercises.find(te => te.id === id);
+    if (original?.target_unit === unit) return;
+    setTrackedExercises(prev => prev.map(te => te.id === id ? { ...te, target_unit: unit } : te));
+    try {
+      const { error } = await supabase
+        .from('macro_tracked_exercises')
+        .update({ target_unit: unit })
+        .eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      if (original) setTrackedExercises(prev => prev.map(te => te.id === id ? original : te));
+      setError(errMsg(err, 'Failed to update unit'));
       throw err;
     }
   };
@@ -1200,6 +1236,7 @@ export function useMacroCycles() {
     bulkDeleteTargets,
     bulkUpdateWeeks,
     updateTrackedExerciseReference,
+    updateTrackedExerciseUnit,
     fetchMacroTargetForExercise,
     fetchMacroValidationData,
     fetchPhases,

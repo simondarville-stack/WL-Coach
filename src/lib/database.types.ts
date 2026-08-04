@@ -419,6 +419,12 @@ export interface MacroTrackedExercise {
   position: number;
   /** Reference load (kg) for %-anchored fills and general-model templates. NULL = unset. */
   reference_kg: number | null;
+  /**
+   * Unit this column's targets are written in. NULL = 'absolute_kg' (every row
+   * predating the column). The unit is per COLUMN, not per cell — see
+   * src/lib/macroTargetUnit.ts, which is the only place that interprets it.
+   */
+  target_unit: 'absolute_kg' | 'percentage' | 'free_text_reps' | null;
   created_at: string;
   updated_at: string;
 }
@@ -438,6 +444,9 @@ export interface MacroTarget {
   target_sets_at_max: number | null;
   /** Coach note for this exercise+week (e.g. "Go for a 3RM this week"). A row may hold only a note. */
   note: string | null;
+  /** Free-text load ("Heavy", "Max out") when the column's target_unit is
+   *  free_text_reps. Null for numeric columns, which use target_max/_avg. */
+  target_text: string | null;
   created_at: string;
   updated_at: string;
 }

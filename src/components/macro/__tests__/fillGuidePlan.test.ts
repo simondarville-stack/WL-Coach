@@ -50,6 +50,7 @@ function mkTe(id: string, name: string, referenceKg: number | null): MacroTracke
     exercise_id: `ex-${id}`,
     position: 0,
     reference_kg: referenceKg,
+    target_unit: null,
     created_at: '',
     updated_at: '',
     exercise: { id: `ex-${id}`, name, exercise_code: null } as MacroTrackedExerciseWithExercise['exercise'],
@@ -67,6 +68,7 @@ function mkTarget(weekId: string, teId: string, max: number | null): MacroTarget
     target_reps_at_max: null,
     target_sets_at_max: null,
     note: null,
+    target_text: null,
     created_at: '',
     updated_at: '',
   };
@@ -159,6 +161,34 @@ describe('buildFillPlan — % of reference and all-exercises', () => {
     expect(plan.preview.byTrackedEx['te-2']['week-1'].max).toBe(160);
     expect(plan.preview.byTrackedEx['te-3']).toBeUndefined();
     expect(plan.skippedNoReference).toEqual(['Back Squat']);
+  });
+
+  it('skips columns that are not in kilograms, and names them', () => {
+    // The engine produces kg. Stamping those into a % column would leave a
+    // kilogram number wearing the wrong unit — a silent 120 % target.
+    const kg = mkTe('te-1', 'Snatch', 100);
+    const pct = { ...mkTe('te-2', 'Clean & Jerk', 100), target_unit: 'percentage' as const };
+    const text = { ...mkTe('te-3', 'Back Squat', 100), target_unit: 'free_text_reps' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, target: FILL_TARGET_ALL, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [kg, pct, text], [], WEEK_TYPES,
+    );
+    expect(plan.preview.byTrackedEx['te-1']['week-1'].max).toBe(80);
+    expect(plan.preview.byTrackedEx['te-2']).toBeUndefined();
+    expect(plan.preview.byTrackedEx['te-3']).toBeUndefined();
+    expect(plan.skippedNonKg).toEqual(['Clean & Jerk', 'Back Squat']);
+    expect(plan.targetRows.every(r => r.tracked_exercise_id === 'te-1')).toBe(true);
+  });
+
+  it('a single-exercise fill on a % column writes nothing at all', () => {
+    const pct = { ...mkTe('te-1', 'Snatch', 150), target_unit: 'percentage' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [pct], [], WEEK_TYPES,
+    );
+    expect(plan.targetRows).toEqual([]);
+    expect(plan.cellCount).toBe(0);
+    expect(plan.skippedNonKg).toEqual(['Snatch']);
   });
 });
 

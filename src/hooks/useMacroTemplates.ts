@@ -110,6 +110,9 @@ export function useMacroTemplates() {
           exercise_id: ex.exercise_id,
           position: ex.position,
           reference_kg: ex.reference_kg,
+          // Restore the column's unit, or the template's percentages land in a
+          // column that reads them as kilograms.
+          target_unit: mat.units[ex.exercise_id] ?? 'absolute_kg',
         })))
         .select('id, exercise_id');
       if (teErr) throw teErr;
@@ -130,6 +133,7 @@ export function useMacroTemplates() {
           macro_week_id: r.macro_week_id,
           tracked_exercise_id: r.tracked_exercise_id,
           target_max: r.target_max ?? null,
+          target_text: r.target_text ?? null,
           target_avg: r.target_avg ?? null,
           target_reps: r.target_reps ?? null,
           target_reps_at_max: r.target_reps_at_max ?? null,

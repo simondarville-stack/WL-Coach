@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { isNumericUnit, unitLabel, unitOf } from '../../lib/macroTargetUnit';
 import { Download, Upload, X, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise, WeekTypeConfig } from '../../lib/database.types';
@@ -217,7 +218,11 @@ export function MacroExcelIO({
       const headerRow2: string[] = ['', '', '', '', ''];
 
       trackedExercises.forEach(te => {
-        const exName = te.exercise.exercise_code || te.exercise.name;
+        const baseName = te.exercise.exercise_code || te.exercise.name;
+        // A column in % or free text says so in its header — the field labels
+        // below all read "(kg)", which would be a lie for those columns.
+        const colUnit = unitOf(te);
+        const exName = colUnit === 'absolute_kg' ? baseName : `${baseName} [${unitLabel(colUnit)}]`;
         if (!asTemplate) {
           // Target + Actual columns (5 each = 10 per exercise)
           fieldDefs.forEach((f, fi) => {
@@ -254,8 +259,15 @@ export function MacroExcelIO({
           const target = targets.find(t => t.macro_week_id === week.id && t.tracked_exercise_id === te.id);
           const exActuals = weekActuals[te.exercise_id];
           fieldDefs.forEach(f => {
+            const colUnit = unitOf(te);
             let val = target?.[f.field] as number | null ?? null;
-            if (asTemplate && f.isPercent && val !== null) {
+            // A free-text column has no number to put in a numeric cell.
+            if (!isNumericUnit(colUnit) && f.field !== 'target_reps') val = null;
+            // A column already written in percent IS the template value — a
+            // second division by the PR would turn 85 % into 85 % of 85 %.
+            if (asTemplate && f.isPercent && val !== null && colUnit === 'percentage') {
+              // leave as-is
+            } else if (asTemplate && f.isPercent && val !== null) {
               // Resolve through pr_reference_exercise_id exactly as the import
               // side does, so a derived exercise (e.g. a variation anchored on
               // the competition lift) converts against the same PR both ways.
@@ -349,6 +361,9 @@ export function MacroExcelIO({
     const athletePRs = new Map<string, number>();
     const missing: string[] = [];
     for (const te of trackedExercises) {
+      // A column already written in % (or free text) needs no PR — it is
+      // already level-independent, so it must not be reported as missing one.
+      if (unitOf(te) !== 'absolute_kg') continue;
       const pr = prByExercise.get(refById.get(te.exercise_id) ?? te.exercise_id);
       if (pr && pr > 0) athletePRs.set(te.exercise_id, pr);
       else if (targets.some(t => t.tracked_exercise_id === te.id && (t.target_max != null || t.target_avg != null))) {

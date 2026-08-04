@@ -8,6 +8,7 @@
  * macro_weeks updates. Re-modulate re-runs buildFillPlan with the same inputs
  * against the current week types — the table stays plain data throughout.
  */
+import { contributesToTonnage, unitOf } from '../../lib/macroTargetUnit';
 import type {
   MacroTarget,
   MacroTrackedExerciseWithExercise,
@@ -75,6 +76,10 @@ export interface FillWritePlan {
   weekUpdates: Array<{ id: string } & Partial<Pick<MacroWeek, 'week_type' | 'total_reps_target'>>>;
   /** Exercise names skipped in an all-exercises fill because they have no reference. */
   skippedNoReference: string[];
+  /** Exercise names skipped because their column is not in kilograms. The fill
+   *  engine produces kg; stamping those into a % or free-text column would leave
+   *  a kilogram number wearing the wrong unit — a silent 120 % target. */
+  skippedNonKg: string[];
   /** In-range weeks skipped because they already hold values (overwrite off) —
    *  lets the guide say "tick Overwrite" instead of a generic hint. */
   skippedExisting: number;
@@ -105,6 +110,7 @@ export function buildFillPlan(
     targetRows: [],
     weekUpdates: [],
     skippedNoReference: [],
+    skippedNonKg: [],
     skippedExisting: 0,
     cellCount: 0,
     preview,
@@ -157,6 +163,10 @@ export function buildFillPlan(
       ? trackedExercises
       : trackedExercises.filter(te => te.id === inputs.target);
     for (const te of exList) {
+      if (!contributesToTonnage(unitOf(te))) {
+        plan.skippedNonKg.push(te.exercise.exercise_code || te.exercise.name);
+        continue;
+      }
       const isAll = inputs.target === FILL_TARGET_ALL;
       const usesPct = isAll || inputs.unit === 'pct';
       const reference = usesPct ? te.reference_kg : null;
