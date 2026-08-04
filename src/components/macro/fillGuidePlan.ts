@@ -8,7 +8,7 @@
  * macro_weeks updates. Re-modulate re-runs buildFillPlan with the same inputs
  * against the current week types — the table stays plain data throughout.
  */
-import { contributesToTonnage, unitOf } from '../../lib/macroTargetUnit';
+import { isNumericUnit, unitOf } from '../../lib/macroTargetUnit';
 import type {
   MacroTarget,
   MacroTrackedExerciseWithExercise,
@@ -17,6 +17,7 @@ import type {
   WeekTypeConfig,
 } from '../../lib/database.types';
 import {
+  DEFAULT_LOAD_ROUNDING_PCT,
   computeExerciseFill,
   computeGeneralFill,
   type FillCell,
@@ -57,13 +58,20 @@ export interface FillGuidePreview {
   weekTypeStamps: Record<string, string>;
   /** macro_week_id → Σreps value (general fills) */
   totalReps: Record<string, number>;
-  /** Draggable ramp anchors (single-exercise fills only) — kg positions for the chart's ◆ handles. */
+  /**
+   * Draggable ramp anchors (single-exercise fills only) — positions for the
+   * chart's ◆ handles, on the chart's shared value axis. For a kilogram column
+   * those are kilograms; for a percentage column they are percentages, which
+   * sit at the same heights because a % series already shares the kg axis.
+   */
   anchors?: {
     trackedExId: string;
     fromWeekNumber: number;
     toWeekNumber: number;
     fromKg: number;
     toKg: number;
+    /** What `fromKg`/`toKg` are actually in, so the guide can invert a drag. */
+    unit: 'kg' | 'pct';
   } | null;
 }
 
@@ -76,10 +84,9 @@ export interface FillWritePlan {
   weekUpdates: Array<{ id: string } & Partial<Pick<MacroWeek, 'week_type' | 'total_reps_target'>>>;
   /** Exercise names skipped in an all-exercises fill because they have no reference. */
   skippedNoReference: string[];
-  /** Exercise names skipped because their column is not in kilograms. The fill
-   *  engine produces kg; stamping those into a % or free-text column would leave
-   *  a kilogram number wearing the wrong unit — a silent 120 % target. */
-  skippedNonKg: string[];
+  /** Exercise names skipped because their column holds prose, not numbers.
+   *  A fill computes a value; there is nothing to compute for free text. */
+  skippedFreeText: string[];
   /** In-range weeks skipped because they already hold values (overwrite off) —
    *  lets the guide say "tick Overwrite" instead of a generic hint. */
   skippedExisting: number;
@@ -110,7 +117,7 @@ export function buildFillPlan(
     targetRows: [],
     weekUpdates: [],
     skippedNoReference: [],
-    skippedNonKg: [],
+    skippedFreeText: [],
     skippedExisting: 0,
     cellCount: 0,
     preview,
@@ -163,14 +170,29 @@ export function buildFillPlan(
       ? trackedExercises
       : trackedExercises.filter(te => te.id === inputs.target);
     for (const te of exList) {
-      if (!contributesToTonnage(unitOf(te))) {
-        plan.skippedNonKg.push(te.exercise.exercise_code || te.exercise.name);
+      const colUnit = unitOf(te);
+      if (!isNumericUnit(colUnit)) {
+        plan.skippedFreeText.push(te.exercise.exercise_code || te.exercise.name);
         continue;
       }
       const isAll = inputs.target === FILL_TARGET_ALL;
-      const usesPct = isAll || inputs.unit === 'pct';
-      const reference = usesPct ? te.reference_kg : null;
-      if (usesPct && !(reference && reference > 0)) {
+
+      // The unit the fill WRITES follows the column — a percentage column gets
+      // percentages, which is what makes "85 / 90 / 92,5 / deload" writable as
+      // a rhythm instead of by hand.
+      const outUnit: 'kg' | 'pct' = colUnit === 'percentage' ? 'pct' : 'kg';
+
+      // The unit the coach's anchors are IN. An all-exercises fill is always
+      // proportional; a percentage column always takes percentages, because its
+      // output is percentages and converting kg anchors into them would need a
+      // reference to say something the column already says.
+      const anchorUnit: 'kg' | 'pct' = outUnit === 'pct' || isAll ? 'pct' : inputs.unit;
+
+      // A reference is needed ONLY to cross between the two. Same unit in and
+      // out means no reference, no conversion, and nothing to skip for.
+      const converts = anchorUnit !== outUnit;
+      const reference = te.reference_kg;
+      if (converts && !(reference && reference > 0)) {
         plan.skippedNoReference.push(te.exercise.exercise_code || te.exercise.name);
         continue;
       }
@@ -189,13 +211,16 @@ export function buildFillPlan(
       const res = computeExerciseFill(weeks, inputs.rhythm, weekTypes, {
         anchors,
         trend: inputs.trend,
-        unit: usesPct ? 'pct' : 'kg',
-        referenceKg: usesPct ? reference : undefined,
+        // 'kg' is the engine's identity pass-through, so it is what a fill whose
+        // anchors are already in the output unit asks for — including a % fill.
+        unit: converts ? 'pct' : 'kg',
+        referenceKg: converts ? reference : undefined,
         repsAnchors: inputs.fillReps ? { fromValue: inputs.repsFrom, toValue: inputs.repsTo } : null,
         mirrorPct: inputs.mirror ? inputs.mirrorPct : null,
         overwrite: inputs.overwrite,
         stamp: inputs.stamp,
-        loadRoundingKg: inputs.loadRoundingKg,
+        // The coach's kg grid is a barbell fact; percentages get their own.
+        loadRoundingKg: outUnit === 'pct' ? DEFAULT_LOAD_ROUNDING_PCT : inputs.loadRoundingKg,
       });
       collectStamps(res.stamps);
       const cellsByWeekId: Record<string, FillCell> = {};
@@ -217,10 +242,13 @@ export function buildFillPlan(
 
       // Ramp anchors for the chart's draggable ◆ handles (single-exercise fills)
       if (!isAll) {
-        const toKgValue = (v: number): number | null =>
-          usesPct ? (reference && reference > 0 ? (reference * v) / 100 : null) : v;
-        const fromKg = toKgValue(inputs.fromValue);
-        const toKg = toKgValue(inputs.toValue);
+        // The ◆ handles sit on the chart's shared value axis, so an anchor has
+        // to be expressed in the OUTPUT unit — the same one the series is
+        // plotted in — not always in kilograms.
+        const toAxis = (v: number): number | null =>
+          converts ? (reference && reference > 0 ? (reference * v) / 100 : null) : v;
+        const fromKg = toAxis(inputs.fromValue);
+        const toKg = toAxis(inputs.toValue);
         preview.anchors = fromKg != null && toKg != null
           ? {
               trackedExId: te.id,
@@ -228,6 +256,7 @@ export function buildFillPlan(
               toWeekNumber: inputs.toWeek,
               fromKg,
               toKg,
+              unit: outUnit,
             }
           : null;
       }

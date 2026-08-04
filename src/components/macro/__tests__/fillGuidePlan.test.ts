@@ -163,9 +163,7 @@ describe('buildFillPlan — % of reference and all-exercises', () => {
     expect(plan.skippedNoReference).toEqual(['Back Squat']);
   });
 
-  it('skips columns that are not in kilograms, and names them', () => {
-    // The engine produces kg. Stamping those into a % column would leave a
-    // kilogram number wearing the wrong unit — a silent 120 % target.
+  it('skips only free text — there is no number to compute for prose', () => {
     const kg = mkTe('te-1', 'Snatch', 100);
     const pct = { ...mkTe('te-2', 'Clean & Jerk', 100), target_unit: 'percentage' as const };
     const text = { ...mkTe('te-3', 'Back Squat', 100), target_unit: 'free_text_reps' as const };
@@ -174,21 +172,96 @@ describe('buildFillPlan — % of reference and all-exercises', () => {
       weeks, [kg, pct, text], [], WEEK_TYPES,
     );
     expect(plan.preview.byTrackedEx['te-1']['week-1'].max).toBe(80);
-    expect(plan.preview.byTrackedEx['te-2']).toBeUndefined();
     expect(plan.preview.byTrackedEx['te-3']).toBeUndefined();
-    expect(plan.skippedNonKg).toEqual(['Clean & Jerk', 'Back Squat']);
-    expect(plan.targetRows.every(r => r.tracked_exercise_id === 'te-1')).toBe(true);
+    expect(plan.skippedFreeText).toEqual(['Back Squat']);
   });
+});
 
-  it('a single-exercise fill on a % column writes nothing at all', () => {
+describe('buildFillPlan — filling a percentage column', () => {
+  it('writes the anchors as PERCENTAGES, without dividing by any reference', () => {
+    // The whole point: "80 → 100" on a % column means 80 % → 100 %, the shape
+    // the coach drew, not 80 % of a reference resolved into kilograms.
     const pct = { ...mkTe('te-1', 'Snatch', 150), target_unit: 'percentage' as const };
     const plan = buildFillPlan(
       { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 },
       weeks, [pct], [], WEEK_TYPES,
     );
-    expect(plan.targetRows).toEqual([]);
-    expect(plan.cellCount).toBe(0);
-    expect(plan.skippedNonKg).toEqual(['Snatch']);
+    expect(plan.targetRows.find(r => r.macro_week_id === 'week-1')!.fields.target_max).toBe(80);
+    expect(plan.targetRows.find(r => r.macro_week_id === 'week-4')!.fields.target_max).toBe(100);
+    expect(plan.skippedNoReference).toEqual([]);
+    expect(plan.skippedFreeText).toEqual([]);
+  });
+
+  it('needs no reference at all — the column already carries its own level', () => {
+    const pct = { ...mkTe('te-1', 'Snatch', null), target_unit: 'percentage' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [pct], [], WEEK_TYPES,
+    );
+    expect(plan.cellCount).toBeGreaterThan(0);
+    expect(plan.skippedNoReference).toEqual([]);
+  });
+
+  it('rounds on a 0,5 grid, not the coach\'s kilogram step', () => {
+    // A 2,5 grid is a barbell fact; on a percentage it would flatten the ramp.
+    const pct = { ...mkTe('te-1', 'Snatch', null), target_unit: 'percentage' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 87, loadRoundingKg: 2.5 },
+      weeks, [pct], [], WEEK_TYPES,
+    );
+    const maxes = plan.targetRows.map(r => r.fields.target_max as number).sort((a, b) => a - b);
+    expect(maxes).toEqual([80, 82.5, 84.5, 87]);
+    // Every value sits on the 0,5 grid, and they are not all multiples of 2,5.
+    expect(maxes.every(v => Math.abs(v * 2 - Math.round(v * 2)) < 1e-9)).toBe(true);
+    expect(maxes.some(v => Math.abs(v / 2.5 - Math.round(v / 2.5)) > 1e-9)).toBe(true);
+  });
+
+  it('ignores the anchor toggle: a % column always takes % anchors', () => {
+    // Nothing a caller passes can make a kg number land in a % column.
+    const pct = { ...mkTe('te-1', 'Snatch', 150), target_unit: 'percentage' as const };
+    const asKg = buildFillPlan(
+      { ...baseInputs, unit: 'kg', fromValue: 80, toValue: 100 }, weeks, [pct], [], WEEK_TYPES,
+    );
+    const asPct = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 }, weeks, [pct], [], WEEK_TYPES,
+    );
+    expect(asKg.targetRows).toEqual(asPct.targetRows);
+  });
+
+  it('reports the ◆ anchors in the column\'s own unit', () => {
+    const pct = { ...mkTe('te-1', 'Snatch', 150), target_unit: 'percentage' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [pct], [], WEEK_TYPES,
+    );
+    // 80 stays 80, NOT 120 — the handles sit on the chart's shared value axis,
+    // where a % series is plotted at its own numbers.
+    expect(plan.preview.anchors).toMatchObject({ fromKg: 80, toKg: 100, unit: 'pct' });
+  });
+
+  it('a kg column still converts % anchors through its reference', () => {
+    const kg = mkTe('te-1', 'Snatch', 150);
+    const plan = buildFillPlan(
+      { ...baseInputs, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [kg], [], WEEK_TYPES,
+    );
+    expect(plan.targetRows.find(r => r.macro_week_id === 'week-1')!.fields.target_max).toBe(120);
+    expect(plan.preview.anchors).toMatchObject({ fromKg: 120, toKg: 150, unit: 'kg' });
+  });
+
+  it('an all-exercises fill gives each column its own unit in one pass', () => {
+    const kg = mkTe('te-1', 'Snatch', 100);
+    const pct = { ...mkTe('te-2', 'Clean & Jerk', 200), target_unit: 'percentage' as const };
+    const plan = buildFillPlan(
+      { ...baseInputs, target: FILL_TARGET_ALL, unit: 'pct', fromValue: 80, toValue: 100 },
+      weeks, [kg, pct], [], WEEK_TYPES,
+    );
+    // Same coach intent — "80 % → 100 % of each exercise's level" — resolved
+    // through the reference for kg, stored verbatim for %.
+    expect(plan.preview.byTrackedEx['te-1']['week-1'].max).toBe(80);
+    expect(plan.preview.byTrackedEx['te-2']['week-1'].max).toBe(80);
+    expect(plan.preview.byTrackedEx['te-1']['week-4'].max).toBe(100);
+    expect(plan.preview.byTrackedEx['te-2']['week-4'].max).toBe(100);
   });
 });
 

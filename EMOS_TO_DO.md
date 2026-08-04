@@ -22,6 +22,132 @@ _(everything below is done; new items go above this line.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Macro units, round two: %-native fills, honest Excel imports, and the reference (04/08/2026, v0.36.0 → 0.37.0)
+The three follow-ups the 0.36.0 reply flagged, plus three real defects found while
+building them — one of them introduced by 0.36.0 itself.
+
+**1. The fill guide writes percentages now.**
+*Wrong:* the engine produced kilograms, so 0.36.0 made the fill guide SKIP every
+non-kg column. But a percentage cycle is exactly where a rhythm fill is most
+natural — "85 / 90 / 92,5 / deload" is the shape a coach thinks in.
+
+*Changed:* the unit a fill writes follows the target column. It needed no engine
+change at all: `computeExerciseFill`'s `unit` option only decides whether the
+anchors are divided through a reference on the way in, and `'kg'` is a pure
+identity pass-through — so a fill whose anchors are already percentages asks for
+`'kg'` and gets percentages out. `fillGuidePlan` picks the output unit from
+`unitOf(te)`, requires a reference ONLY when the anchor unit and the output unit
+differ, and skips only free text (there is no number to compute for prose).
+Percentages round on a 0,5 grid, not the coach's kilogram step — a 2,5 grid is a
+barbell fact and would flatten a percentage ramp into steps.
+
+A % column locks the anchor toggle to `%`: its anchors are already in its own
+unit, so there is nothing for a kg anchor to be converted into, and locking is
+honest where defaulting would silently re-interpret "100 → 140 kg" as
+"100 → 140 %". An all-exercises fill still means "80 % → 100 % of each
+exercise's level" — kg columns resolve that through their own reference, %
+columns store it verbatim. Both in one pass.
+
+The chart's ◆ ramp anchors now report in the filled column's unit (`W1 = 80 %`,
+not the 120 kg that reference would have produced), and the guide inverts a
+drag with the same rule. `selectedTe?.target_unit` joined that effect's
+dependencies — typing one character into a cell re-units a whole column, and a
+setter left over from the old unit would invert every later drag wrongly, with
+plausible numbers.
+
+*Also fixed while in there:* the "skipped" line only rendered for all-exercises
+fills, so a single-exercise fill on a skipped column showed "Nothing to fill —
+check the anchors", which was untrue; `switchUnit` compared against the raw
+`unit` state instead of the effective one, so in all-exercises mode clicking the
+already-active "% of reference" divided the anchors by the reference a second
+time; and the ghost preview cells printed raw JS numbers, so a 0,5 grid would
+have shown "87.5" in a table that is comma-decimal everywhere else.
+
+**2. Excel "Import as %" stamps the unit instead of corrupting the column.**
+*Wrong:* it wrote the raw percentage straight into `target_max` and never
+touched the column's unit, so 80 landed in a column that still said kilograms
+and every reader believed it. Unconditional — the PR-resolution code in that
+modal only ever served the "Import as kg" button. The modal's own group-mode
+note promised "PRs will be resolved per-athlete later"; nothing was.
+
+*Changed:* a `%` import now stamps `target_unit = 'percentage'` on every column
+that actually receives a load (a template column carrying reps alone says
+nothing about a load's unit and must not re-unit anything), which makes the
+existing copy true. The kg direction stamps `absolute_kg` for the mirror-image
+reason. Values are written first and units second, matching the convert flow: a
+failed write then leaves the column as it was rather than re-united over numbers
+that never arrived. Plumbed by widening the existing `onImportTargets` callback
+rather than threading a new prop through three layers.
+
+*Round-trip, which 0.36.0 broke:* the export tags a non-kg column's header
+(`SN [%]`), and neither import path stripped it — the plain import silently
+dropped the column, and the template import listed it twice (once tagged,
+holding the data and unmapped; once bare, mapped and empty). `splitExerciseHeader`
+now returns the tag, stripping the `(Target)`/`(Actual)` suffix FIRST since the
+tag is not trailing until it is gone. Only the three strings `unitLabel` emits
+count as units, so an exercise a coach named "Snatch [comp]" keeps its brackets.
+
+*Guards:* the plain import refuses a column whose current unit is free text (a
+number written there is never rendered — it would look like it worked and change
+nothing) and refuses a file whose header tag disagrees with the column, rather
+than turning 85 % into 85 kg without a word. And because an Excel import has no
+undo, the modal now names the columns an import would re-unit and how many cells
+it does not cover — those keep their current numbers under the new meaning.
+
+**3. `reference_kg` — one concept, but the convert flow was clobbering it.**
+*Wrong:* 0.36.0's convert flow wrote the approved reference to the column
+unconditionally, so converting silently replaced the level a coach had set for
+filling, heat-shading, copy-rescaling and templating. (This is what ate Ida
+Mørck's Træk reference during the 0.36.0 test — see the note under that entry.)
+
+*Changed:* the write is direction-aware, which matters both ways.
+- **kg → %** must write it: the numbers now MEAN "% of this reference" and
+  nothing else records that anchor. Leaving a stale one would make the column
+  claim a level its own values contradict — and a pct template would bake that
+  into every cycle made from it. (A plain write-if-empty rule looks safer and is
+  worse here for exactly that reason.)
+- **% → kg** must not: the numbers are absolute again and need no anchor, so the
+  coach's planned level stays. It is still filled in when the column has none.
+
+The modal shows the column's own reference whenever it disagrees with the
+suggested PR — the only staleness signal in the app — and says "will be
+re-anchored" on the direction that replaces it.
+
+*Two more of the same class, found and fixed:*
+- `buildTemplatePayload` fell back to the column's PEAK when it had no reference.
+  On a percentage column that peak is a percent, so 95 became "written toward
+  95 kg", stored in the template and restored as a kg reference on every cycle
+  made from it. Introduced by 0.36.0, which created % columns; the fallback now
+  applies to kilogram columns only.
+- Ctrl+drag column copy rescaled across units with no check — a % column dropped
+  on a kg column mirrored percentages and scaled them by a kilogram ratio, while
+  the confirm text still said "scaled X kg → Y kg". It now refuses a cross-unit
+  copy and points at the convert chip, and never rescales a % column (85 % is
+  85 % at any level).
+- The fill guide's Reference input accepted 0 and negatives, which every reader
+  treats as unset — a column that LOOKS anchored and behaves as though it were
+  not, and whose stored 0 pre-filled the convert modal with a value that
+  disabled the entire dialog. Normalised to null on blur, and one
+  `storedReference` helper now owns the `> 0` and the PostgREST string
+  coercion.
+- Re-modulate replays a fill's stored anchors with `overwrite: true` and no
+  preview. Since one keystroke re-units a whole column, "100 → 140" written as
+  kilograms could come back as "100 % → 140 %" across every week at once. It
+  now records the units the fill ran under and refuses, naming the column and
+  pointing at the fill guide, which previews.
+
+**Verified end to end** against Ida Mørck's NM 2026 cycle. A % column's fill
+preview produced `70,5%  76,5%  81%  85%  86%` — comma decimals, 0,5 grid,
+rhythm-modulated, no reference needed — and the ◆ anchors read "W1 = 80 %".
+Converting % → kg at an athlete PR of 80 left `reference_kg` at the coach's 105
+(the defect above, now fixed) and produced 45,5 kg from 57 %. Converting kg → %
+at 100 wrote 100, as it must. Rows whose PR box was cleared were skipped
+untouched. All test data restored: the database holds no `target_unit` and no
+`target_text`, and every reference in that cycle is back at 105.
+
+No migration — all three changes are behavioural.
+
+
 #Macro percentages & free text (04/08/2026, v0.35.1 → 0.36.0)
 **Wrong:** every macro target cell was kilograms, and "kg" was implicit in
 fourteen readers — no unit column existed anywhere. A coach could not write the

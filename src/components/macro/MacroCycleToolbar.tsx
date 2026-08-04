@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { MacroTargetUnit } from '../../lib/macroTargetUnit';
 import { ArrowLeft, BarChart3, BookmarkPlus, CalendarPlus, ChevronDown, Layers, Pencil, PieChart, Plus, RefreshCw, Tent, Trash2, Trophy, Undo2, Users, Wand2 } from 'lucide-react';
 import { Button } from '../ui';
 import { ExerciseSearch } from '../planner/ExerciseSearch';
@@ -42,7 +43,13 @@ interface MacroCycleToolbarProps {
   onAddEvent: (type: EventType) => void;
   onEditCycle: () => void;
   onDeleteCycle: () => void;
-  onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
+  onImportTargets: (
+    rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[],
+    /** Columns whose unit this import establishes (a "%" template import
+     *  writes percentages, so the column must say so). Applied after the
+     *  values. */
+    unitByTe?: Map<string, MacroTargetUnit>,
+  ) => Promise<void>;
   onImportWeeks: (rows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }>) => Promise<void>;
   /** Coach's week-type definitions — gates which types a template may import. */
   weekTypes: WeekTypeConfig[];

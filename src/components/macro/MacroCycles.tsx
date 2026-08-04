@@ -54,6 +54,20 @@ import { MacroExerciseDetail } from './MacroExerciseDetail';
 import type { MacroContext } from '../planner/WeeklyPlanner';
 
 
+/**
+ * A tracked exercise's stored reference, or null when it holds nothing usable.
+ *
+ * Every reader treats ≤ 0 as unset — the fill guide, the collapsed heat strip,
+ * the copy rescale, the template — and PostgREST hands numerics back as
+ * strings, so the coercion and the `> 0` belong in one place rather than at
+ * each call site. A stored 0 is otherwise a column that LOOKS anchored and
+ * behaves as though it were not.
+ */
+function storedReference(te: { reference_kg: number | null } | undefined): number | null {
+  const n = Number(te?.reference_kg);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function MacroCycles() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -169,6 +183,15 @@ export function MacroCycles() {
     weekRows: Array<{ id: string; week_type: string; total_reps_target: number | null }>;
   } | null>(null);
   const [lastFillInputs, setLastFillInputs] = useState<FillGuideInputs | null>(null);
+  /**
+   * The units the last fill's columns were in when it ran.
+   *
+   * Re-modulate replays stored anchors with `overwrite: true` and no preview.
+   * Typing one character into a cell re-units a whole column, so "100 → 140"
+   * written as kilograms would come back as "100 % → 140 %" across the column
+   * with no chance to see it first. Anchors mean nothing without their unit.
+   */
+  const [lastFillUnits, setLastFillUnits] = useState<Record<string, string>>({});
   const [showRhythmManager, setShowRhythmManager] = useState(false);
   const [showTemplateSave, setShowTemplateSave] = useState(false);
   // Chart ◆ anchor drags route into the fill guide through this registered setter
@@ -399,6 +422,7 @@ export function MacroCycles() {
     setFillPreview(null);
     setFillUndo(null);
     setLastFillInputs(null);
+    setLastFillUnits({});
   }, [selectedCycle?.id]);
 
   // Load the per-macro table view config. Saved metric order wins for known
@@ -721,8 +745,13 @@ export function MacroCycles() {
         prescriptionRaw: describeColumn(te.id, targets, unitOf(te)),
         prSourceName: refNameByTe.get(te.id) || null,
         // Falls back to the column's own reference load when the athlete has no
-        // PR — for a group cycle that is the only anchor there is.
-        defaultPR: prByTe.get(te.id) ?? te.reference_kg ?? null,
+        // PR — for a group cycle that is the only anchor there is. The `> 0`
+        // matters: a stored 0 would pre-fill "0", which the modal reads as
+        // invalid and which disables Convert for EVERY row, not just this one.
+        defaultPR: prByTe.get(te.id) ?? storedReference(te),
+        // Shown only when it disagrees with the suggested PR — the coach is
+        // about to re-anchor a column that was written toward another level.
+        columnReferenceKg: storedReference(te),
       })),
     });
   }, [convertibleColumns, selectedAthlete?.id, targets]);
@@ -742,19 +771,39 @@ export function MacroCycles() {
         // mid-write sees the old unit with old numbers, never the reverse.
         if (rows.length > 0) await bulkUpsertTargets(rows);
         await updateTrackedExerciseUnit(teId, unitAfter(direction));
-        // The reference the coach just approved becomes the column's stored
-        // one, so a later convert back suggests the same anchor.
-        await updateTrackedExerciseReference(teId, reference);
+
+        // Whether the approved reference becomes the column's stored one
+        // depends on the DIRECTION, and getting this wrong corrupts data both
+        // ways.
+        //
+        // kg → %: the numbers now MEAN "% of this reference". Nothing else
+        // records that anchor, so it must be written — leaving a stale one
+        // would make the column claim a level its own values contradict, and
+        // a pct template would bake that lie into every cycle made from it.
+        //
+        // % → kg: the numbers are absolute again and need no anchor. The
+        // stored value is the coach's planned level — it drives the fill
+        // guide, the heat strip, the copy rescale and the template — so a PR
+        // approved for one conversion must not silently replace it. It is
+        // still filled in when the column has none.
+        const stored = storedReference(trackedExercises.find(t => t.id === teId));
+        if (direction === 'kg-to-percent' || stored == null) {
+          await updateTrackedExerciseReference(teId, reference);
+        }
       }
     } finally {
       setConvertBusy(false);
     }
-  }, [convert, convertBusy, targets, bulkUpsertTargets, updateTrackedExerciseUnit, updateTrackedExerciseReference]);
+  }, [convert, convertBusy, targets, trackedExercises, bulkUpsertTargets, updateTrackedExerciseUnit, updateTrackedExerciseReference]);
 
   // ─── Fill guide ───────────────────────────────────────────────────────────────
   // Apply writes plain rows (table = source of truth); undo restores a snapshot.
 
   const pairKey = (weekId: string, teId: string) => `${weekId}|${teId}`;
+
+  /** Every tracked column's unit right now, keyed by id. */
+  const snapshotUnits = (): Record<string, string> =>
+    Object.fromEntries(trackedExercises.map(te => [te.id, unitOf(te)]));
 
   // Shared in-flight flag for the bulk fill operations (apply / undo /
   // re-modulate) — prevents concurrent bulk writes from double-clicks.
@@ -787,6 +836,7 @@ export function MacroCycles() {
       if (createdIds.length > 0 || existingRows.length > 0) {
         setFillUndo({ existingRows, createdIds, weekRows });
         setLastFillInputs(inputs);
+        setLastFillUnits(snapshotUnits());
       }
       setFillPreview(null);
       if (macroWeeks.length > 0) void fetchTargets(macroWeeks.map(w => w.id));
@@ -799,6 +849,7 @@ export function MacroCycles() {
       .map(r => r.id);
     setFillUndo({ existingRows, createdIds, weekRows });
     setLastFillInputs(inputs);
+    setLastFillUnits(snapshotUnits());
     setShowFillGuide(false);
     setFillPreview(null);
     setFillBusy(false);
@@ -833,6 +884,21 @@ export function MacroCycles() {
   // week types (explicit action, overwrites that fill's cells).
   const handleRemodulate = useCallback(async () => {
     if (!lastFillInputs || fillBusy) return;
+
+    // Anchors mean nothing without their unit. Re-modulate overwrites with no
+    // preview, so a column that has been re-united since the fill would take
+    // "100 → 140" as percentages across every week at once.
+    const reunited = trackedExercises
+      .filter(te => lastFillUnits[te.id] && lastFillUnits[te.id] !== unitOf(te))
+      .map(te => te.exercise.exercise_code || te.exercise.name);
+    if (reunited.length > 0) {
+      setError(
+        `${reunited.join(', ')} changed unit since that fill, so its anchors no longer mean what they did. ` +
+        'Re-run the fill guide instead — it previews before writing.',
+      );
+      return;
+    }
+
     const inputs = { ...lastFillInputs, overwrite: true };
     const plan = buildFillPlan(inputs, macroWeeks, trackedExercises, targets, settings?.week_types ?? []);
     if (plan.cellCount === 0) {
@@ -844,7 +910,7 @@ export function MacroCycles() {
     } catch {
       // surfaced via the error banner
     }
-  }, [lastFillInputs, fillBusy, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill, setError]);
+  }, [lastFillInputs, lastFillUnits, fillBusy, macroWeeks, trackedExercises, targets, settings?.week_types, handleApplyFill, setError]);
 
   // ─── Weekly exercise note ───────────────────────────────────────────────────
   // A macro_targets row may hold only a note (all numeric targets NULL).
@@ -884,6 +950,14 @@ export function MacroCycles() {
    */
   const handleImportTargets = useCallback(async (
     rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[],
+    /**
+     * Columns whose unit the import establishes — a "%" template import writes
+     * percentages, so the column has to say so or every reader treats 85 as
+     * 85 kg. Applied AFTER the values, matching the convert flow: a write that
+     * fails then leaves the column untouched rather than re-united over numbers
+     * that never arrived.
+     */
+    unitByTe?: Map<string, 'absolute_kg' | 'percentage' | 'free_text_reps'>,
   ) => {
     const merged = new Map<string, { macro_week_id: string; tracked_exercise_id: string; fields: Partial<MacroTarget> }>();
     for (const row of rows) {
@@ -897,7 +971,8 @@ export function MacroCycles() {
       merged.set(key, entry);
     }
     await bulkUpsertTargets(Array.from(merged.values()));
-  }, [bulkUpsertTargets]);
+    for (const [teId, unit] of unitByTe ?? []) await updateTrackedExerciseUnit(teId, unit);
+  }, [bulkUpsertTargets, updateTrackedExerciseUnit]);
 
   /** Week-level import (a template's week type + weekly Σreps target). */
   const handleImportWeeks = useCallback(async (
@@ -965,18 +1040,39 @@ export function MacroCycles() {
     const target = trackedExercises.find(te => te.id === targetTeId);
     if (!source || !target) return;
 
-    const fromRef = source.reference_kg != null ? Number(source.reference_kg) : 0;
-    const toRef = target.reference_kg != null ? Number(target.reference_kg) : 0;
-    const rescale = fromRef > 0 && toRef > 0 ? { fromRef, toRef } : null;
+    const sourceName = source.exercise.exercise_code || source.exercise.name;
+    const targetName = target.exercise.exercise_code || target.exercise.name;
+    const sourceUnit = unitOf(source);
+    const targetUnit = unitOf(target);
+
+    // Copying across units would mirror numbers whose meaning changes on the
+    // way: 85 % landing in a kilogram column reads as 85 kg, and rescaling it
+    // by a kilogram ratio on top of that is meaningless twice over.
+    if (sourceUnit !== targetUnit) {
+      alert(
+        `${sourceName} is in ${unitLabel(sourceUnit)} and ${targetName} is in ${unitLabel(targetUnit)}.\n\n` +
+        `Copying would move the numbers without their meaning. Put both columns in the same unit first — ` +
+        `the ${unitLabel(sourceUnit)} → ${unitLabel(targetUnit)} chip converts a column properly, against a reference you approve.`,
+      );
+      return;
+    }
+
+    const fromRef = storedReference(source) ?? 0;
+    const toRef = storedReference(target) ?? 0;
+    // A percentage column is already relative to its own exercise, so the two
+    // references have nothing to say about it — 85 % is 85 % at any level.
+    const rescale = sourceUnit === 'absolute_kg' && fromRef > 0 && toRef > 0 ? { fromRef, toRef } : null;
 
     const rows = buildColumnCopyRows(sourceTeId, targetTeId, macroWeeks, targets, { rescale });
     if (rows.length === 0) return;
 
-    const sourceName = source.exercise.exercise_code || source.exercise.name;
-    const targetName = target.exercise.exercise_code || target.exercise.name;
     const filled = countFilledWeeks(targetTeId, targets);
     const how = rescale
       ? `scaled ${fromRef} kg → ${toRef} kg`
+      : sourceUnit === 'percentage'
+      ? 'copied as-is (percentages carry their own level)'
+      : sourceUnit === 'free_text_reps'
+      ? 'copied as-is (free text)'
       : 'copied as-is (no reference on both exercises)';
     const warn = filled > 0
       ? `

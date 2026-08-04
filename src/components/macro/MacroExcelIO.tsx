@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { isNumericUnit, unitLabel, unitOf } from '../../lib/macroTargetUnit';
+import { isNumericUnit, unitLabel, unitOf, type MacroTargetUnit } from '../../lib/macroTargetUnit';
 import { Download, Upload, X, ChevronDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { MacroWeek, MacroPhase, MacroTarget, MacroTrackedExerciseWithExercise, Exercise, WeekTypeConfig } from '../../lib/database.types';
@@ -24,7 +24,13 @@ interface MacroExcelIOProps {
    *  when the abbreviation exists here, so an import can't inject a type the
    *  cycle has no definition (or colour) for. */
   weekTypes?: WeekTypeConfig[];
-  onImportTargets: (rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[]) => Promise<void>;
+  onImportTargets: (
+    rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[],
+    /** Columns whose unit this import establishes (a "%" template import
+     *  writes percentages, so the column must say so). Applied after the
+     *  values. */
+    unitByTe?: Map<string, MacroTargetUnit>,
+  ) => Promise<void>;
   /** Week-level import (template week rhythm). Optional: without it the
    *  Type / Total Reps columns are parsed but not offered for import. */
   onImportWeeks?: (rows: Array<{ id: string; week_type?: string; total_reps_target?: number | null }>) => Promise<void>;
@@ -416,23 +422,45 @@ export function MacroExcelIO({
           const exHeaderRow = rows[0] as (string | null)[];
           const fieldHeaderRow = rows[1] as (string | null)[];
 
-          const colMap = new Map<number, { te: MacroTrackedExerciseWithExercise; field: keyof MacroTarget }>();
+          const colMap = new Map<number, {
+            te: MacroTrackedExerciseWithExercise;
+            field: keyof MacroTarget;
+            /** Set when the column cannot be imported; every cell becomes an
+             *  error row carrying this, instead of writing a number whose
+             *  meaning the sheet and the column disagree about. */
+            problem?: string;
+          }>();
           let currentTe: MacroTrackedExerciseWithExercise | null = null;
           // "(Actual)" blocks are derived values (what the athlete did) — they
           // are exported for reading, never imported back over the plan.
           let inActualBlock = false;
+          let currentProblem: string | undefined;
           exHeaderRow.forEach((cell, colIdx) => {
             if (colIdx < 5) return;
             const cellStr = String(cell ?? '').trim();
             if (cellStr) {
-              const { name, block } = splitExerciseHeader(cellStr);
+              const { name, block, unitTag } = splitExerciseHeader(cellStr);
               currentTe = teByExCode.get(name.toLowerCase()) ?? null;
               inActualBlock = block === 'actual';
+              currentProblem = undefined;
+              if (currentTe) {
+                const colUnit = unitOf(currentTe);
+                if (colUnit === 'free_text_reps') {
+                  // The load of a free-text column is prose in target_text. A
+                  // number written to target_max there is simply never rendered
+                  // — importing it would look like it worked and change nothing.
+                  currentProblem = 'Column is free text — its load is words, not a number. Change the column to kg or % first.';
+                } else if (unitTag && unitTag !== colUnit) {
+                  // The file says one unit and the column says another. Writing
+                  // silently would turn 85 % into 85 kg without a word.
+                  currentProblem = `File says ${unitLabel(unitTag)}, column is ${unitLabel(colUnit)} — convert the column first`;
+                }
+              }
             }
             if (currentTe && !inActualBlock) {
               const fieldLabel = String(fieldHeaderRow[colIdx] ?? '').trim();
               const fieldDef = TARGET_FIELDS.find(f => f.label === fieldLabel);
-              if (fieldDef) colMap.set(colIdx, { te: currentTe, field: fieldDef.field });
+              if (fieldDef) colMap.set(colIdx, { te: currentTe, field: fieldDef.field, problem: currentProblem });
             }
           });
 
@@ -457,11 +485,22 @@ export function MacroExcelIO({
               continue;
             }
 
-            colMap.forEach(({ te, field }, colIdx) => {
+            colMap.forEach(({ te, field, problem }, colIdx) => {
               const rawVal = row[colIdx];
               const numVal = rawVal !== null && rawVal !== undefined && rawVal !== '' ? Number(rawVal) : null;
               if (numVal === null) return;
-              if (isNaN(numVal as number) || (numVal as number) < 0) {
+              if (problem) {
+                parsed.push({
+                  weekNumber: weekNum,
+                  weekId: week.id,
+                  trackedExId: te.id,
+                  exerciseName: te.exercise.exercise_code || te.exercise.name,
+                  field,
+                  value: 0,
+                  valid: false,
+                  error: problem,
+                });
+              } else if (isNaN(numVal as number) || (numVal as number) < 0) {
                 parsed.push({
                   weekNumber: weekNum,
                   weekId: week.id,
@@ -573,7 +612,11 @@ export function MacroExcelIO({
           exHeaderRow.forEach((cell, colIdx) => {
             if (colIdx < 5) return;
             const cellStr = String(cell ?? '').trim();
-            if (cellStr) currentExCode = cellStr;
+            // Same split as the plain path. Without it a "SN [%]" band keys its
+            // data under the tagged string while Template Info lists the bare
+            // code, so the column shows up TWICE in the mapping list — once
+            // holding the data and unmapped, once mapped and empty.
+            if (cellStr) currentExCode = splitExerciseHeader(cellStr).name;
             if (currentExCode) {
               const fieldLabel = String(fieldHeaderRow[colIdx] ?? '').trim();
               const fieldDef = TEMPLATE_FIELDS.find(f => f.label === fieldLabel) ||
@@ -711,6 +754,59 @@ export function MacroExcelIO({
     return maxPcts;
   };
 
+  /**
+   * Columns an import would RE-UNIT, and how much of each it leaves behind.
+   *
+   * Stamping a unit changes the whole column, but an import only writes the
+   * cells the template covers. Everything it misses — weeks past the template's
+   * length, blank template cells, target_avg when only target_max is filled —
+   * keeps its old number under the new meaning. A 117,5 kg week 14 silently
+   * becomes 117,5 %.
+   *
+   * There is no undo for an Excel import, so this is the only place the coach
+   * can see that before it happens.
+   */
+  const reunitCollateral = (mode: 'kg' | 'percentage'): Array<{ name: string; cells: number }> => {
+    if (!templateData) return [];
+    const importUnit: MacroTargetUnit =
+      mode === 'percentage' && templateData.unit === 'percentage' ? 'percentage' : 'absolute_kg';
+
+    // Every (tracked exercise, week, load field) this import will write over.
+    const covered = new Set<string>();
+    const stamped = new Set<string>();
+    for (const week of templateData.weeks) {
+      const macroWeek = macroWeeks.find(w => w.week_number === week.weekNumber);
+      if (!macroWeek) continue;
+      for (const exCode of templateData.exercises) {
+        const exerciseId = exerciseMapping.get(exCode);
+        const trackedEx = exerciseId ? trackedExercises.find(te => te.exercise_id === exerciseId) : undefined;
+        const exData = trackedEx ? week.exerciseData[exCode] : undefined;
+        if (!trackedEx || !exData) continue;
+        for (const field of ['target_max', 'target_avg'] as const) {
+          if (exData[field] == null) continue;
+          stamped.add(trackedEx.id);
+          covered.add(`${trackedEx.id}|${macroWeek.id}|${field}`);
+        }
+      }
+    }
+
+    const out: Array<{ name: string; cells: number }> = [];
+    for (const teId of stamped) {
+      const te = trackedExercises.find(t => t.id === teId);
+      if (!te || unitOf(te) === importUnit) continue; // nothing is reinterpreted
+      let cells = 0;
+      for (const t of targets) {
+        if (t.tracked_exercise_id !== teId) continue;
+        for (const field of ['target_max', 'target_avg'] as const) {
+          if (t[field] == null) continue;
+          if (!covered.has(`${teId}|${t.macro_week_id}|${field}`)) cells++;
+        }
+      }
+      if (cells > 0) out.push({ name: te.exercise.exercise_code || te.exercise.name, cells });
+    }
+    return out;
+  };
+
   const handleImportTemplate = async (mode: 'kg' | 'percentage') => {
     if (!templateData) return;
 
@@ -742,6 +838,16 @@ export function MacroExcelIO({
     setTemplateImporting(true);
     try {
       const rows: { weekId: string; trackedExId: string; field: keyof MacroTarget; value: number }[] = [];
+      // Columns that actually receive a LOAD, and the unit those numbers are in.
+      // "Import as %" writes percentages verbatim, so the column has to declare
+      // it — that is the whole fix: without it 85 lands in a column that still
+      // says kilograms and every reader downstream believes it.
+      //
+      // Only load fields count. A template column carrying reps alone says
+      // nothing about the unit of a load, and must not re-unit anything.
+      const unitByTe = new Map<string, MacroTargetUnit>();
+      const importUnit: MacroTargetUnit =
+        mode === 'percentage' && templateData.unit === 'percentage' ? 'percentage' : 'absolute_kg';
 
       for (const week of templateData.weeks) {
         const macroWeek = macroWeeks.find(w => w.week_number === week.weekNumber);
@@ -767,13 +873,16 @@ export function MacroExcelIO({
               val = resolved;
             }
 
+            if (field === 'target_max' || field === 'target_avg') unitByTe.set(trackedEx.id, importUnit);
             rows.push({ weekId: macroWeek.id, trackedExId: trackedEx.id, field, value: val });
           });
         }
       }
 
       if (rows.length > 0) {
-        await onImportTargets(rows);
+        // Values first, then the units — a failed write leaves the column as it
+        // was rather than re-united over numbers that never landed.
+        await onImportTargets(rows, unitByTe);
       }
 
       // Week rhythm: the type chip and the weekly Σreps target. Both were
@@ -1185,6 +1294,26 @@ export function MacroExcelIO({
                       Group macro: "Import as %" is recommended. PRs will be resolved per-athlete later.
                     </div>
                   )}
+
+                  {/* Re-unit collateral — shown for whichever buttons would cause
+                      it, because an Excel import has no undo. */}
+                  {(['percentage', 'kg'] as const).map(m => {
+                    if (m === 'percentage' && templateData.unit !== 'percentage') return null;
+                    const hit = reunitCollateral(m);
+                    if (hit.length === 0) return null;
+                    const to = m === 'percentage' ? '%' : 'kg';
+                    return (
+                      <div
+                        key={m}
+                        className="rounded-lg px-3 py-2 text-xs"
+                        style={{ background: 'var(--color-danger-bg)', border: '0.5px solid var(--color-danger-border)', color: 'var(--color-danger-text)' }}
+                      >
+                        <span className="font-medium">"Import as {to}" re-reads these columns as {to}:</span>{' '}
+                        {hit.map(h => `${h.name} (${h.cells} cell${h.cells === 1 ? '' : 's'} this template does not cover)`).join(', ')}.
+                        {' '}Those cells keep their current numbers under the new meaning. There is no undo for an import.
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">

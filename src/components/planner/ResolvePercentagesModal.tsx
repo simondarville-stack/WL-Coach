@@ -15,6 +15,14 @@ export interface SingleResolveCandidate extends BaseCandidate {
   prSourceName: string | null;
   /** Athlete PR for the resolved reference exercise, in kg. Null = no PR on file. */
   defaultPR: number | null;
+  /**
+   * Macro only: the level this column is already written toward
+   * (`macro_tracked_exercises.reference_kg`). Rendered when it disagrees with
+   * the suggested PR, so a coach can see they are about to convert against a
+   * different number than the column was planned against. Optional — the
+   * weekly planner has no such concept and passes nothing.
+   */
+  columnReferenceKg?: number | null;
 }
 
 export interface ComboMemberOption {
@@ -245,6 +253,21 @@ export function ResolvePercentagesModal({
                               {c.prSourceName && (
                                 <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
                                   uses {c.prSourceName} PR
+                                </div>
+                              )}
+                              {/* Only when the column's own level disagrees with
+                                  the number in the box — a matching pair is noise
+                                  on every row. */}
+                              {c.columnReferenceKg != null
+                                && Math.abs(c.columnReferenceKg - (parsed.find(x => x.id === c.plannedExerciseId)?.value ?? c.columnReferenceKg)) > 0.001 && (
+                                <div
+                                  style={{ fontSize: 10, color: 'var(--color-danger-text)', fontStyle: 'italic' }}
+                                  title={toPercent
+                                    ? 'Converting at a different number re-anchors this column: the stored reference is replaced, and the percentages will mean % of the new value.'
+                                    : 'This column was planned toward a different level. Converting keeps that planned level — only the loads change.'}
+                                >
+                                  column reference {c.columnReferenceKg} kg
+                                  {toPercent ? ' — will be re-anchored' : ''}
                                 </div>
                               )}
                             </div>
