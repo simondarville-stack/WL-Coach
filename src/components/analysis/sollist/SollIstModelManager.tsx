@@ -1,5 +1,5 @@
 /**
- * SollIstModelManager — open, fork and curate Soll–Ist models.
+ * SollIstModelManager — open, fork and curate Ratio Analysis models.
  *
  * Two kinds of model sit behind the Model dropdown and they behave differently,
  * which is exactly what this sheet makes visible:
@@ -97,7 +97,7 @@ export function SollIstModelManager({
   if (!open) return null;
 
   return (
-    <Modal isOpen onClose={onClose} title="Soll–Ist models" size="xl">
+    <Modal isOpen onClose={onClose} title="Ratio Analysis models" size="xl">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
         <section>
           <div style={{ ...cap, marginBottom: 6 }}>Textbook</div>

@@ -1,4 +1,4 @@
-// 4-step wizard for building a Soll–Ist analysis: Athlete → Model →
+// 4-step wizard for building a Ratio Analysis: Athlete → Model →
 // References & exercises → Create. The one genuinely sequential flow in the
 // module (each step's options depend on the previous choice), which is what
 // justifies a wizard over inline editing (CLAUDE.md).
@@ -62,7 +62,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
   const fileRef = useRef<HTMLInputElement>(null);
 
   const options = modelOptions(models);
-  // Sentinels can never carry a PR, so they are not valid Soll-Ist rows.
+  // Sentinels can never carry a PR, so they are not valid Ratio Analysis rows.
   const sortedExercises = exercises.filter((e) => e.category !== '— System').sort((a, b) => a.name.localeCompare(b.name));
 
   const reset = () => {
@@ -128,7 +128,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
   const defaultName = () => {
     const athlete = athletes.find((a) => a.id === athleteId);
     const date = formatDateToDDMMYYYY(toLocalISO(new Date()));
-    return athlete ? `${athlete.name} — ${date}` : `Soll–Ist — ${date}`;
+    return athlete ? `${athlete.name} — ${date}` : `Ratio Analysis — ${date}`;
   };
 
   const finish = () => {
@@ -149,7 +149,7 @@ export function SollIstWizard({ isOpen, onClose, athletes, exercises, models, on
       isOpen={isOpen}
       onClose={close}
       size="xl"
-      title="New Soll–Ist analysis"
+      title="New Ratio Analysis"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
           <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} style={{ visibility: step === 0 ? 'hidden' : undefined }}>

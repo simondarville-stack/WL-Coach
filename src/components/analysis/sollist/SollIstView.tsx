@@ -1,4 +1,4 @@
-// Soll–Ist analysis surface (Analysis › Soll–Ist mode). Orchestrates the
+// Ratio Analysis surface (Analysis › Ratio Analysis mode). Orchestrates the
 // sheet: model/athlete selection, generic references (any exercise — or
 // typed numbers — can anchor the index), PR-fed Ist values, save/load
 // against sollist_analyses, CSV export and print. The sheet is a live data
@@ -40,6 +40,7 @@ import { ExerciseSearch } from '../../planner/ExerciseSearch';
 import { SollIstTable } from './SollIstTable';
 import { SollIstWizard, type WizardResult } from './SollIstWizard';
 import { SollIstModelManager } from './SollIstModelManager';
+import { loadRatioDraft, saveRatioDraft } from '../../../lib/ratioAnalysisDraft';
 import {
   buildRowGroups,
   defaultView,
@@ -55,6 +56,7 @@ import {
   type SheetState,
   type SheetView,
   exerciseOptionLabel,
+  isSheetState,
 } from './sollIstState';
 
 interface NamedEntity {
@@ -77,10 +79,29 @@ const capStyle: React.CSSProperties = {
 
 export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   const { exercises, categories, fetchExercises, fetchCategories, setExercises } = useExerciseStore();
-  const [sheet, setSheet] = useState<SheetState>(() => ({ ...emptySheet(), athleteId: initialAthleteId }));
+  // Restore the in-flight sheet. Walking over to the PR page unmounts this
+  // component, so without the draft every unsaved edit was lost the moment the
+  // coach went to look up a number — which is exactly when they go.
+  // `initialAthleteId` only wins when there is no draft, so arriving from a
+  // one-athlete Analysis scope does not silently swap the athlete under a
+  // sheet the coach was already building.
+  const [sheet, setSheet] = useState<SheetState>(() => {
+    const draft = loadRatioDraft(isSheetState);
+    if (draft) return { ...emptySheet(), ...draft };
+    return { ...emptySheet(), athleteId: initialAthleteId };
+  });
   const [models, setModels] = useState<SollIstModel[]>([]);
   const [analyses, setAnalyses] = useState<SollIstAnalysisRecord[]>([]);
-  const [history, setHistory] = useState<AthletePRHistory[]>([]);
+  /**
+   * PR history AND whose it is. The pair has to move together: the fetch is
+   * async, so for a moment after switching athlete the sheet's athleteId is the
+   * new one while `rows` is still the old one's. Autofilling in that window
+   * stamped the previous athlete's PRs onto the new athlete's references — the
+   * bug behind "it fails to load X's PRs", which was really "it shows Y's".
+   */
+  const [history, setHistory] = useState<{ athleteId: string | null; rows: AthletePRHistory[] }>(
+    { athleteId: null, rows: [] },
+  );
   const [wizardOpen, setWizardOpen] = useState(false);
   const [refsOpen, setRefsOpen] = useState(false);
   const [saveModelOpen, setSaveModelOpen] = useState(false);
@@ -105,7 +126,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         setModels(m);
         setAnalyses(a);
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load Soll–Ist data'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load Ratio Analysis data'));
     return () => {
       cancelled = true;
     };
@@ -124,14 +145,18 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
   // PR history follows the selected athlete.
   useEffect(() => {
-    if (!sheet.athleteId) {
-      setHistory([]);
+    const forAthlete = sheet.athleteId;
+    if (!forAthlete) {
+      setHistory({ athleteId: null, rows: [] });
       return;
     }
     let cancelled = false;
-    void fetchPRHistory(sheet.athleteId)
-      .then((h) => !cancelled && setHistory(h))
-      .catch(() => !cancelled && setHistory([]));
+    // Clear first: until the fetch lands, we must not be holding rows that
+    // belong to somebody else.
+    setHistory({ athleteId: forAthlete, rows: [] });
+    void fetchPRHistory(forAthlete)
+      .then((h) => !cancelled && setHistory({ athleteId: forAthlete, rows: h }))
+      .catch(() => !cancelled && setHistory({ athleteId: forAthlete, rows: [] }));
     return () => {
       cancelled = true;
     };
@@ -141,25 +166,57 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
   // table. Only fills nulls, so loaded analyses and typed values are never
   // clobbered; switching athletes nulls the bound refs first (below).
   useEffect(() => {
-    if (!sheet.athleteId || history.length === 0) return;
+    if (!sheet.athleteId) return;
+    // The guard that makes this safe: never fill from rows belonging to a
+    // different athlete than the one selected.
+    if (history.athleteId !== sheet.athleteId) return;
     setSheet((s) => {
-      let changed = false;
-      const refs = s.refs.map((r) => {
+      if (!s.athleteId) return s;
+      // A reference filled from a DIFFERENT athlete has to be cleared before
+      // refilling — otherwise their PR silently stays under this athlete's
+      // name. `onAthleteChange` clears them for the dropdown path, but the
+      // athlete also arrives from the Analysis scope at mount and from a
+      // restored draft, and those went unguarded.
+      const staleAthlete = s.refsFilledFor !== null && s.refsFilledFor !== s.athleteId;
+      const base = staleAthlete
+        ? s.refs.map((r) => (r.exerciseId != null ? { ...r, current: null, goal: null } : r))
+        : s.refs;
+
+      // Nothing to fill from yet: keep the cleared refs and record whose sheet
+      // this is, so an athlete with no PRs settles on blank instead of
+      // inheriting the last one's numbers.
+      if (history.rows.length === 0) {
+        return staleAthlete || s.refsFilledFor !== s.athleteId
+          ? { ...s, refs: base, refsFilledFor: s.athleteId }
+          : s;
+      }
+
+      let changed = staleAthlete;
+      const refs = base.map((r) => {
         if (r.exerciseId == null || r.current != null) return r;
-        const sug = suggestReference(exercises.find((e) => e.id === r.exerciseId) ?? null, history);
+        const sug = suggestReference(exercises.find((e) => e.id === r.exerciseId) ?? null, history.rows, s.onlyMeasured);
         if (!sug) return r;
         changed = true;
         return { ...r, current: sug.valueKg, goal: r.goal ?? roundKg(sug.valueKg * 1.025) };
       });
-      return changed ? { ...s, refs } : s;
+      if (!changed && s.refsFilledFor === s.athleteId) return s;
+      return { ...s, refs, refsFilledFor: s.athleteId };
     });
-  }, [sheet.athleteId, history, exercises, sheet.refs]);
+  }, [sheet.athleteId, history, exercises, sheet.refs, sheet.onlyMeasured, sheet.refsFilledFor]);
+
+  // Mirror the sheet on every change. Cheap (one small JSON write, no network)
+  // and it is what makes the surface survive a remount.
+  useEffect(() => { saveRatioDraft(sheet); }, [sheet]);
 
   const refValues = useMemo(() => refValuesMap(sheet.refs), [sheet.refs]);
 
   const istMap = useMemo(
-    () => (sheet.athleteId ? buildIstMap(sheet.rows, exercises, history, sheet.overrides) : buildIstMap(sheet.rows, [], [], sheet.overrides)),
-    [sheet.athleteId, sheet.rows, exercises, history, sheet.overrides],
+    () => (sheet.athleteId
+      // Same guard for the Actual column: mismatched history contributes
+       // nothing rather than another athlete's numbers.
+      ? buildIstMap(sheet.rows, exercises, history.athleteId === sheet.athleteId ? history.rows : [], sheet.overrides, sheet.onlyMeasured)
+      : buildIstMap(sheet.rows, [], [], sheet.overrides, sheet.onlyMeasured)),
+    [sheet.athleteId, sheet.rows, exercises, history, sheet.overrides, sheet.onlyMeasured],
   );
 
   const computed = useMemo(() => computeSollIst(sheet.rows, refValues, istMap), [sheet.rows, refValues, istMap]);
@@ -298,6 +355,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       ...s,
       athleteId,
       overrides: {},
+      refsFilledFor: null,
       analysisId: null,
       name: '',
       // Null the bound refs so the PR autofill refills them for the new
@@ -331,7 +389,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
     setBusy(true);
     setError(null);
     try {
-      const name = sheet.name.trim() || `${athleteName ?? 'Soll–Ist'} — ${formatDateToDDMMYYYY(toLocalISO(new Date()))}`;
+      const name = sheet.name.trim() || `${athleteName ?? 'Ratio Analysis'} — ${formatDateToDDMMYYYY(toLocalISO(new Date()))}`;
       const id = await saveSollIstAnalysis({ ...sheetToRecord({ ...sheet, name }) });
       set({ analysisId: id, name });
       setAnalyses(await fetchSollIstAnalyses());
@@ -476,7 +534,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
   const options = modelOptions(models);
   // Sentinels (TEXT / GPP / VIDEO / IMAGE) can never carry a PR, so they are
-  // meaningless as a Soll-Ist row — and now that codes are printed, their codes
+  // meaningless as a Ratio Analysis row — and now that codes are printed, their codes
   // would read as if they were lifts. Same filter ExerciseSearch already uses.
   const sortedExercises = useMemo(
     () => exercises.filter((e) => e.category !== '— System').sort((a, b) => a.name.localeCompare(b.name)),
@@ -562,7 +620,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
                   onChange={(e) => updateRef(i, { current: e.target.value === '' ? null : parseFloat(e.target.value) })}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Target column`}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Goal kg column`}>
                 <span style={capStyle}>goal</span>
                 <Input
                   type="number"
@@ -580,11 +638,41 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           <Button variant="ghost" size="sm" icon={<Settings2 size={13} />} onClick={() => setRefsOpen((o) => !o)} title="Edit references — add, remove, rename, or bind to a catalogue exercise">
             Refs
           </Button>
+          {/* An athlete with no personal records at all. The Actual column is
+              simply empty in that case, which reads exactly like a failed load —
+              say which it is. */}
+          {sheet.athleteId && history.athleteId === sheet.athleteId && history.rows.length === 0 && (
+            <span
+              style={{
+                fontSize: 'var(--text-caption)', color: 'var(--color-danger-text)',
+                background: 'var(--color-danger-bg)', border: '0.5px solid var(--color-danger-border)',
+                borderRadius: 'var(--radius-sm)', padding: '2px 8px', whiteSpace: 'nowrap',
+              }}
+              title="Ratios are built from the PR table. Add this athlete's xRM records on the Personal Records page and they will appear here."
+            >
+              {athleteName ?? 'This athlete'} has no personal records yet
+            </span>
+          )}
+          {/* Has PRs, but none the model can use once estimates are excluded. */}
+          {sheet.athleteId && history.rows.length > 0 && sheet.onlyMeasured && istMap.size === 0 && (
+            <span
+              style={{
+                fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+                whiteSpace: 'nowrap',
+              }}
+              title="Every value this model needs is an estimate. Turn Measured only off, or record the missing xRM."
+            >
+              No measured xRM for this model
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
           {toggle('Heatmap', sheet.heatmap, (v) => set({ heatmap: v }))}
           {toggle('Diff', sheet.diff, (v) => set({ diff: v }))}
+          <span title="Build Actual from xRM values the athlete has actually hit, ignoring the PR table's estimates. A ratio between two estimates is a ratio between two guesses.">
+            {toggle('Measured only', sheet.onlyMeasured, (v) => set({ onlyMeasured: v }))}
+          </span>
           <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)' }}>
             Compare
             <div style={{ width: 170 }}>
@@ -760,7 +848,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
 
       {/* print header: name + context, only visible on paper */}
       <div className="print-only" style={{ display: 'none', marginBottom: 8 }}>
-        <strong>Soll–Ist — {sheet.name || mainModelName}</strong>
+        <strong>Ratio Analysis — {sheet.name || mainModelName}</strong>
         <span style={{ marginLeft: 12 }}>
           {athleteName ?? 'No athlete'} · {formatDateToDDMMYYYY(toLocalISO(new Date()))}
         </span>

@@ -92,6 +92,30 @@ describe('buildIstMap', () => {
     const map = buildIstMap([BSQ], exercises, history, { [istKey('bsq', 3)]: 155 });
     expect(map.get(istKey('bsq', 3))).toEqual({ valueKg: 155, source: 'override' });
   });
+
+  describe('measured-only mode', () => {
+    it('drops estimated cells and keeps measured ones', () => {
+      const history = [pr('bsq', 3, 150), pr('pull', 1, 110)];
+      const rows = [BSQ, { ...PULL, reps: 3 }];
+      // Sanity: the estimate exists in the default mode.
+      expect(buildIstMap(rows, exercises, history, {}).get(istKey('pull', 3))?.source).toBe('estimated');
+
+      const measured = buildIstMap(rows, exercises, history, {}, true);
+      expect(measured.get(istKey('bsq', 3))).toEqual({ valueKg: 150, source: 'real' });
+      expect(measured.has(istKey('pull', 3))).toBe(false);
+      expect([...measured.values()].every((v) => v.source !== 'estimated')).toBe(true);
+    });
+
+    it('still lets a coach override through — a typed number is a measurement', () => {
+      const map = buildIstMap([{ ...PULL, reps: 3 }], exercises, [pr('pull', 1, 110)], { [istKey('pull', 3)]: 99 }, true);
+      expect(map.get(istKey('pull', 3))).toEqual({ valueKg: 99, source: 'override' });
+    });
+
+    it('is empty when the athlete has no records at all', () => {
+      expect(buildIstMap([BSQ], exercises, [], {}, true).size).toBe(0);
+      expect(buildIstMap([BSQ], exercises, [], {}, false).size).toBe(0);
+    });
+  });
 });
 
 describe('suggestReference', () => {
@@ -103,6 +127,14 @@ describe('suggestReference', () => {
     expect(implied!.valueKg).toBeGreaterThan(92);
     expect(suggestReference(sn, [])).toBeNull();
     expect(suggestReference(null, [pr('sn', 1, 100)])).toBeNull(); // manual ref
+  });
+
+  it('measured-only refuses to fall back to the implied 1RM', () => {
+    const sn = ex('sn', 'Snatch', 'snatch');
+    // A real 1RM still resolves.
+    expect(suggestReference(sn, [pr('sn', 1, 100)], true)).toEqual({ valueKg: 100, source: 'real' });
+    // Only a 3RM to infer from — nothing measured at 1RM, so nothing suggested.
+    expect(suggestReference(sn, [pr('sn', 3, 92)], true)).toBeNull();
   });
 });
 

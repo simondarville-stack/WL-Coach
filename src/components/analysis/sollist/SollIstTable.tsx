@@ -1,4 +1,4 @@
-// The Soll–Ist sheet table. The model itself is interactive: a row's
+// The Ratio Analysis sheet table. The model itself is interactive: a row's
 // reference is swapped via an inline select (full reference names, no
 // chips), index/reps are edited in place, rows can be removed, columns
 // sort on click, and rows arrive pre-grouped (by reference or category)
@@ -169,24 +169,24 @@ export function SollIstTable({
           {sortableTh('Reps', 'reps')}
           {side ? (
             <>
-              {hasAthlete && sortableTh('Ist kg', 'ist')}
+              {hasAthlete && sortableTh('Actual kg', 'ist')}
               {sortableTh('Index %', 'index', colSep)}
-              {sortableTh('Soll kg', 'soll')}
+              {sortableTh('Target kg', 'soll')}
               {diff && sortableTh('Δ %', 'deltaPct')}
               <th style={{ ...th, ...colSep }}>Index %</th>
-              <th style={th}>Soll kg</th>
+              <th style={th}>Target kg</th>
               {diff && <th style={th}>Δ %</th>}
             </>
           ) : (
             <>
               {sortableTh('Index %', 'index', colSep)}
-              {sortableTh('Soll kg', 'soll')}
-              {hasAthlete && sortableTh('Ist kg', 'ist')}
+              {sortableTh('Target kg', 'soll')}
+              {hasAthlete && sortableTh('Actual kg', 'ist')}
               {diff && hasAthlete && sortableTh('Δ kg', 'deltaKg')}
               {diff && hasAthlete && sortableTh('Δ %', 'deltaPct')}
             </>
           )}
-          {sortableTh('Target kg', 'target', colSep)}
+          {sortableTh('Goal kg', 'target', colSep)}
           {hasAthlete && sortableTh('To go', 'toGo')}
           <th style={th} />
         </tr>
