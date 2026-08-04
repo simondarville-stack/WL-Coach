@@ -1,6 +1,7 @@
 // TODO: Consider extracting the Target/Planned section into its own sub-component
 // TODO: Consider extracting media gallery into ExerciseMediaGallery sub-component
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { unitOf, unitSuffix, type MacroTargetUnit } from '../../lib/macroTargetUnit';
 import { X, ArrowLeft, Video, Upload, Replace } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -38,6 +39,10 @@ interface SollTarget {
   avg: number | null;
   /** Coach's macro note for this exercise+week ('' / null = none). */
   note: string | null;
+  /** The macro COLUMN's unit — kg, % of PR, or prose. */
+  unit: MacroTargetUnit;
+  /** Prose load, when the macro column is free text. */
+  text: string | null;
 }
 
 interface ExerciseDetailProps {
@@ -161,7 +166,7 @@ export function ExerciseDetail({
 
   async function loadSollTarget() {
     if (!macroContext || !plannedExercise) return;
-    const { data: te } = await supabase.from('macro_tracked_exercises').select('id')
+    const { data: te } = await supabase.from('macro_tracked_exercises').select('id, target_unit')
       .eq('macrocycle_id', macroContext.macroId).eq('exercise_id', plannedExercise.exercise_id).maybeSingle();
     if (!te) { setSollTarget(null); setTrackedExId(null); return; }
     setTrackedExId(te.id);
@@ -169,10 +174,15 @@ export function ExerciseDetail({
       .eq('macrocycle_id', macroContext.macroId).eq('week_number', macroContext.weekNumber).maybeSingle();
     if (!mw) { setSollTarget(null); return; }
     const { data: tgt } = await supabase.from('macro_targets')
-      .select('target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg, note')
+      .select('target_reps, target_max, target_text, target_reps_at_max, target_sets_at_max, target_avg, note')
       .eq('macro_week_id', mw.id).eq('tracked_exercise_id', te.id).maybeSingle();
+    const unit = unitOf(te);
     setSollTarget(tgt ? {
-      reps: tgt.target_reps, max: tgt.target_max,
+      reps: tgt.target_reps,
+      // A free-text column's number is dormant — the prose is the load.
+      max: unit === 'free_text_reps' ? null : tgt.target_max,
+      text: tgt.target_text,
+      unit,
       maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
       note: tgt.note,
     } : null);
@@ -757,12 +767,19 @@ export function ExerciseDetail({
               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, fontFamily: 'var(--font-sans)', color: 'var(--color-text-tertiary)', width: 52, flexShrink: 0 }}>Target</span>
                 <span style={{ color: 'var(--color-text-secondary)' }}>R <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.reps ?? '—'}</strong></span>
-                <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.avg ?? '—'}</strong></span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Avg <strong style={{ color: 'var(--color-text-primary)' }}>{
+                  sollTarget.avg != null && sollTarget.unit !== 'free_text_reps'
+                    ? `${sollTarget.avg}${unitSuffix(sollTarget.unit)}`
+                    : '—'
+                }</strong></span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)' }}>
                   Max{' '}
-                  {sollTarget.max != null
-                    // Canonical stacked visual — same as the prescription grid.
-                    ? <StackedNotation raw={targetMaxRaw(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)} unit="absolute_kg" />
+                  {sollTarget.unit === 'free_text_reps' && sollTarget.text?.trim()
+                    ? <strong style={{ color: 'var(--color-text-primary)' }}>{sollTarget.text}</strong>
+                    : sollTarget.max != null
+                    // Canonical stacked visual — same as the prescription grid,
+                    // in whatever unit the macro column is written in.
+                    ? <StackedNotation raw={targetMaxRaw(sollTarget.max, sollTarget.maxReps, sollTarget.maxSets)} unit={sollTarget.unit} />
                     : <strong style={{ color: 'var(--color-text-primary)' }}>—</strong>}
                 </span>
               </div>

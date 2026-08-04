@@ -30,6 +30,7 @@ import type { MacroTarget, MacroWeek } from './database.types';
 /** Every field that belongs to an exercise column's prescription. */
 export const COPYABLE_TARGET_FIELDS = [
   'target_max',
+  'target_text',
   'target_avg',
   'target_reps',
   'target_reps_at_max',
@@ -97,6 +98,8 @@ export function buildColumnCopyRows(
       tracked_exercise_id: targetTeId,
       fields: {
         target_max: scaleLoad(num(src?.target_max)),
+        // Prose copies verbatim — "Heavy" does not rescale between references.
+        target_text: src?.target_text ?? null,
         target_avg: scaleLoad(num(src?.target_avg)),
         target_reps: src?.target_reps ?? null,
         target_reps_at_max: src?.target_reps_at_max ?? null,
@@ -112,6 +115,7 @@ export function buildColumnCopyRows(
 export function isFilled(t: MacroTarget | undefined | null): boolean {
   if (!t) return false;
   return t.target_max != null
+    || !!t.target_text?.trim()
     || t.target_avg != null
     || t.target_reps != null
     || t.target_reps_at_max != null

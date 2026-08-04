@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { unitOf, type MacroTargetUnit } from '../../lib/macroTargetUnit';
 import { X, Settings as GearIcon, GripVertical, Trash2, Video, Image as ImageIcon, AlignLeft, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
@@ -27,6 +28,10 @@ interface MacroTargetData {
   maxReps: number | null;
   maxSets: number | null;
   avg: number | null;
+  /** The macro COLUMN's unit — kg, % of PR, or prose. */
+  unit: MacroTargetUnit;
+  /** Prose load, when the macro column is free text. */
+  text: string | null;
   /** Coach's macro note for this exercise+week ('' / null = none). */
   note: string | null;
 }
@@ -113,18 +118,23 @@ export function DayEditor({
         .eq('macrocycle_id', macroContext.macroId).eq('week_number', macroContext.weekNumber).maybeSingle();
       if (!mw) return;
       const { data: trackedExs } = await supabase
-        .from('macro_tracked_exercises').select('id, exercise_id').eq('macrocycle_id', macroContext.macroId);
+        .from('macro_tracked_exercises').select('id, exercise_id, target_unit').eq('macrocycle_id', macroContext.macroId);
       if (!trackedExs?.length) return;
       const { data: targets } = await supabase
         .from('macro_targets')
-        .select('tracked_exercise_id, target_reps, target_max, target_reps_at_max, target_sets_at_max, target_avg, note')
+        .select('tracked_exercise_id, target_reps, target_max, target_text, target_reps_at_max, target_sets_at_max, target_avg, note')
         .eq('macro_week_id', mw.id).in('tracked_exercise_id', trackedExs.map(te => te.id));
       const map = new Map<string, MacroTargetData>();
       for (const tgt of targets || []) {
         const te = trackedExs.find(t => t.id === tgt.tracked_exercise_id);
         if (te) {
+          const unit = unitOf(te);
           map.set(te.exercise_id, {
-            reps: tgt.target_reps, max: tgt.target_max,
+            reps: tgt.target_reps,
+            // A free-text column's number is dormant — the prose is the load.
+            max: unit === 'free_text_reps' ? null : tgt.target_max,
+            text: tgt.target_text,
+            unit,
             maxReps: tgt.target_reps_at_max, maxSets: tgt.target_sets_at_max, avg: tgt.target_avg,
             note: tgt.note,
           });

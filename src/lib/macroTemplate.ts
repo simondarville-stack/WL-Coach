@@ -20,6 +20,7 @@ import type {
   MacroWeek,
 } from './database.types';
 import { roundToStep, DEFAULT_LOAD_ROUNDING_KG } from './macroFillGuide';
+import { unitOf } from './macroTargetUnit';
 
 export type MacroTemplateMode = 'kg' | 'pct';
 
@@ -42,13 +43,17 @@ export interface MacroTemplatePhase {
 
 export interface MacroTemplateTargetCell {
   week_number: number;
-  /** kg in 'kg' mode, % of reference (1 decimal) in 'pct' mode. */
+  /** kg in 'kg' mode, % of reference (1 decimal) in 'pct' mode — but ONLY for a
+   *  kilogram column. A column already written in % or free text is stored
+   *  verbatim in both modes (see `target_unit` below). */
   max: number | null;
   avg: number | null;
   reps: number | null;
   reps_at_max: number | null;
   sets_at_max: number | null;
   note: string | null;
+  /** Prose load of a free-text column. */
+  text?: string | null;
 }
 
 export interface MacroTemplateExercise {
@@ -59,6 +64,16 @@ export interface MacroTemplateExercise {
   /** The reference the template was built against (pct mode) — the default
    *  suggestion when applying; null when the source had no loads. */
   reference_kg: number | null;
+  /**
+   * The column's unit. Absent on templates saved before units existed, which
+   * read as kilograms.
+   *
+   * A percentage column is ALREADY level-independent, so 'pct' mode must not
+   * divide it by a reference a second time — that would turn 85 % into 85 % of
+   * 85 %. A free-text column has no number to convert at all. Both are stored
+   * verbatim and come back verbatim, in either mode.
+   */
+  target_unit?: 'absolute_kg' | 'percentage' | 'free_text_reps';
   targets: MacroTemplateTargetCell[];
 }
 
@@ -88,8 +103,10 @@ export interface MaterializedTemplate {
     week_number: number;
     exercise_id: string;
     fields: Partial<Pick<MacroTarget,
-      'target_max' | 'target_avg' | 'target_reps' | 'target_reps_at_max' | 'target_sets_at_max' | 'note'>>;
+      'target_max' | 'target_text' | 'target_avg' | 'target_reps' | 'target_reps_at_max' | 'target_sets_at_max' | 'note'>>;
   }>;
+  /** Column units to restore alongside the rows. */
+  units: Record<string, 'absolute_kg' | 'percentage' | 'free_text_reps'>;
 }
 
 const pct1 = (v: number) => Math.round(v * 10) / 10;
@@ -143,9 +160,12 @@ export function buildTemplatePayload(
         null,
       );
       const reference = te.reference_kg ?? peakMax;
+      const unit = unitOf(te);
       const toStored = (kg: number | null): number | null => {
         if (kg == null) return null;
-        if (mode === 'kg') return kg;
+        // Only kilograms are level-dependent. A % column is already a shape and
+        // a free-text column has no number — both travel unchanged.
+        if (mode === 'kg' || unit !== 'absolute_kg') return kg;
         return reference && reference > 0 ? pct1((kg / reference) * 100) : null;
       };
 
@@ -154,10 +174,12 @@ export function buildTemplatePayload(
         exercise_name: te.exercise.exercise_code || te.exercise.name,
         position: te.position,
         reference_kg: reference,
+        target_unit: unit,
         targets: exTargets
           .filter(t =>
             t.target_max != null || t.target_avg != null || t.target_reps != null ||
-            t.target_reps_at_max != null || t.target_sets_at_max != null || t.note != null)
+            t.target_reps_at_max != null || t.target_sets_at_max != null || t.note != null ||
+            !!t.target_text?.trim())
           .map(t => ({
             week_number: weekById.get(t.macro_week_id)!.week_number,
             max: toStored(t.target_max),
@@ -166,6 +188,7 @@ export function buildTemplatePayload(
             reps_at_max: t.target_reps_at_max,
             sets_at_max: t.target_sets_at_max,
             note: t.note,
+            text: t.target_text ?? null,
           })),
       };
     });
@@ -187,13 +210,20 @@ export function materializeTemplate(
   const { mode, payload } = template;
 
   const targets: MaterializedTemplate['targets'] = [];
+  const units: MaterializedTemplate['units'] = {};
   const exercises = payload.exercises.map(ex => {
     const reference = mode === 'pct'
       ? (references[ex.exercise_id] !== undefined ? references[ex.exercise_id] : ex.reference_kg) ?? null
       : ex.reference_kg;
+    // Templates predating units are kilograms — the same default the reader
+    // applies to every row that predates the column.
+    const unit = ex.target_unit ?? 'absolute_kg';
+    units[ex.exercise_id] = unit;
     const toKg = (stored: number | null): number | null => {
       if (stored == null) return null;
-      if (mode === 'kg') return stored;
+      // The mirror of toStored: a % or free-text column was never divided, so
+      // it is never multiplied back.
+      if (mode === 'kg' || unit !== 'absolute_kg') return stored;
       return reference && reference > 0
         ? Math.max(0, roundToStep((reference * stored) / 100, loadRoundingKg))
         : null;
@@ -208,6 +238,7 @@ export function materializeTemplate(
       if (cell.reps_at_max != null) fields.target_reps_at_max = cell.reps_at_max;
       if (cell.sets_at_max != null) fields.target_sets_at_max = cell.sets_at_max;
       if (cell.note) fields.note = cell.note;
+      if (cell.text) fields.target_text = cell.text;
       if (Object.keys(fields).length > 0) {
         targets.push({ week_number: cell.week_number, exercise_id: ex.exercise_id, fields });
       }
@@ -220,5 +251,6 @@ export function materializeTemplate(
     phases: payload.phases,
     exercises,
     targets,
+    units,
   };
 }

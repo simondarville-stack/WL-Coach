@@ -19,7 +19,7 @@ function mkWeek(n: number, type = 'm', totalReps: number | null = null): MacroWe
 function mkTe(id: string, name: string, referenceKg: number | null, position = 0): MacroTrackedExerciseWithExercise {
   return {
     id, macrocycle_id: 'mc', exercise_id: `ex-${id}`, position, reference_kg: referenceKg,
-    created_at: '', updated_at: '',
+    target_unit: null, created_at: '', updated_at: '',
     exercise: { id: `ex-${id}`, name, exercise_code: null } as MacroTrackedExerciseWithExercise['exercise'],
   };
 }
@@ -28,7 +28,7 @@ function mkTarget(weekN: number, teId: string, fields: Partial<MacroTarget>): Ma
   return {
     id: `t-${weekN}-${teId}`, macro_week_id: `week-${weekN}`, tracked_exercise_id: teId,
     target_reps: null, target_avg: null, target_max: null,
-    target_reps_at_max: null, target_sets_at_max: null, note: null,
+    target_reps_at_max: null, target_sets_at_max: null, note: null, target_text: null,
     created_at: '', updated_at: '', ...fields,
   };
 }
@@ -110,5 +110,48 @@ describe('macro templates — general model (%)', () => {
     expect(w1.fields.target_max).toBeUndefined();
     expect(w1.fields.target_reps).toBe(20);
     expect(w1.fields.note).toBe('hold back');
+  });
+});
+
+describe('macro templates — column units', () => {
+  const weeks = [mkWeek(1), mkWeek(2)];
+
+  it('carries a percentage column through pct mode WITHOUT dividing it again', () => {
+    // The trap: 'pct' mode converts kg to % of the reference. A column already
+    // written in % is already a shape — converting it would store 85 % of the
+    // 150 kg reference, i.e. 56,7, and materialize back as 85 kg.
+    const te = { ...mkTe('te1', 'Snatch', 150), target_unit: 'percentage' as const };
+    const targets = [mkTarget(1, 'te1', { target_max: 85, target_avg: 75 })];
+    const payload = buildTemplatePayload('pct', weeks, PHASES, [te], targets);
+
+    expect(payload.exercises[0].target_unit).toBe('percentage');
+    expect(payload.exercises[0].targets[0].max).toBe(85);
+
+    const mat = materializeTemplate({ mode: 'pct', payload }, { 'ex-te1': 200 });
+    expect(mat.targets[0].fields.target_max).toBe(85);
+    expect(mat.units['ex-te1']).toBe('percentage');
+  });
+
+  it('carries a free-text load through both modes', () => {
+    const te = { ...mkTe('te1', 'Pull', null), target_unit: 'free_text_reps' as const };
+    const targets = [mkTarget(1, 'te1', { target_text: 'Heavy singles', target_reps: 12 })];
+    const payload = buildTemplatePayload('pct', weeks, PHASES, [te], targets);
+    const mat = materializeTemplate({ mode: 'pct', payload });
+
+    expect(mat.targets[0].fields.target_text).toBe('Heavy singles');
+    expect(mat.targets[0].fields.target_reps).toBe(12);
+    expect(mat.units['ex-te1']).toBe('free_text_reps');
+  });
+
+  it('reads a template saved before units existed as kilograms', () => {
+    const te = mkTe('te1', 'Snatch', 150);
+    const targets = [mkTarget(1, 'te1', { target_max: 120 })];
+    const payload = buildTemplatePayload('pct', weeks, PHASES, [te], targets);
+    // Simulate an older payload: strip the unit the builder just wrote.
+    delete (payload.exercises[0] as { target_unit?: unknown }).target_unit;
+
+    const mat = materializeTemplate({ mode: 'pct', payload }, { 'ex-te1': 150 });
+    expect(mat.units['ex-te1']).toBe('absolute_kg');
+    expect(mat.targets[0].fields.target_max).toBe(120);
   });
 });

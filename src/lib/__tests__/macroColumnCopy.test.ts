@@ -41,10 +41,24 @@ describe('buildColumnCopyRows', () => {
       macro_week_id: 'w1',
       tracked_exercise_id: 'B',
       fields: {
-        target_max: 120, target_avg: 100, target_reps: 30,
+        target_max: 120, target_text: null, target_avg: 100, target_reps: 30,
         target_reps_at_max: 2, target_sets_at_max: 3, note: 'go 3RM',
       },
     });
+  });
+
+  it('mirrors a free-text load, and clears it when the source has none', () => {
+    const withText = buildColumnCopyRows('A', 'B', WEEKS, [
+      target('w1', 'A', { target_text: 'Heavy singles' }),
+    ]);
+    expect(withText[0].fields.target_text).toBe('Heavy singles');
+    // Mirroring means the destination's prose goes when the source has none —
+    // otherwise a stale word survives a copy that replaced everything else.
+    const withoutText = buildColumnCopyRows('A', 'B', WEEKS, [
+      target('w1', 'A', { target_max: 120 }),
+      target('w1', 'B', { target_text: 'stale' }),
+    ]);
+    expect(withoutText[0].fields.target_text).toBeNull();
   });
 
   it('mirrors rather than merges — an empty source week clears the destination', () => {

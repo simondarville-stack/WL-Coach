@@ -1,13 +1,28 @@
 import { useState, useRef, useEffect } from 'react';
+import {
+  fmtNumber, inferUnitFromInput, parseTargetNumber, unitSuffix,
+  type MacroTargetUnit,
+} from '../../lib/macroTargetUnit';
 
 interface MacroGridCellProps {
   load: number | null;
   reps: number | null;
   sets: number | null;
+  /** The COLUMN's unit — every cell in an exercise column shares it. */
+  unit?: MacroTargetUnit;
+  /** Prose load, for a free-text column. */
+  loadText?: string | null;
   prevLoad?: number | null;
   prevReps?: number | null;
   prevSets?: number | null;
-  onUpdate: (values: { load?: number; reps?: number; sets?: number }) => void;
+  onUpdate: (values: {
+    load?: number | null;
+    reps?: number;
+    sets?: number;
+    /** Set when the typed value implies a different unit for the column. */
+    unit?: MacroTargetUnit;
+    loadText?: string | null;
+  }) => void;
   disabled?: boolean;
   deleteMode?: boolean;
   onDelete?: () => void;
@@ -16,11 +31,14 @@ interface MacroGridCellProps {
 
 export function MacroGridCell({
   load, reps, sets,
+  unit = 'absolute_kg',
+  loadText = null,
   prevLoad, prevReps, prevSets,
   onUpdate, disabled,
   deleteMode, onDelete,
   compact,
 }: MacroGridCellProps) {
+  const isText = unit === 'free_text_reps';
   const [editing, setEditing] = useState<'load' | 'reps' | null>(null);
   const loadRef = useRef<HTMLInputElement>(null);
   const repsRef = useRef<HTMLInputElement>(null);
@@ -37,7 +55,7 @@ export function MacroGridCell({
     }
   }, [editing]);
 
-  const isEmpty = load === null && reps === null && sets === null;
+  const isEmpty = load === null && reps === null && sets === null && !loadText?.trim();
   const hasPrev = prevLoad !== null && prevLoad !== undefined;
   const isDeleteMode = deleteMode && !isEmpty && !disabled;
 
@@ -58,7 +76,9 @@ export function MacroGridCell({
       return;
     }
 
-    if (e.ctrlKey || e.metaKey) {
+    // "Heavy" + 1 is meaningless, so a free-text cell always opens the editor
+    // instead of stepping.
+    if (e.ctrlKey || e.metaKey || isText) {
       setEditing('load');
       return;
     }
@@ -101,10 +121,23 @@ export function MacroGridCell({
     }
   }
 
+  /**
+   * Commit a typed load. What the coach types decides the COLUMN's unit, using
+   * the prescription grid's own rule — "88%" makes it a percentage column,
+   * letters make it free text, a plain number makes it kilograms. parseFloat
+   * with comma decimals, not the old parseInt, so 117,5 is finally typable.
+   */
   function commitLoad(val: string) {
-    const v = Math.max(0, parseInt(val) || 0);
-    onUpdate({ load: v });
+    const inferred = inferUnitFromInput(val);
+    const nextUnit = inferred ?? unit;
     setEditing(null);
+    if (nextUnit === 'free_text_reps') {
+      const text = val.trim();
+      onUpdate({ unit: nextUnit, loadText: text || null, load: null });
+      return;
+    }
+    const n = parseTargetNumber(val);
+    onUpdate({ unit: nextUnit, loadText: null, load: n == null ? 0 : Math.max(0, n) });
   }
 
   function commitReps(repsVal: string, setsVal: string) {
@@ -132,8 +165,8 @@ export function MacroGridCell({
         style={{ minWidth: 52, height: 38 }}
         title={
           hasPrev
-            ? `Click to start from last week's value (${prevLoad}) · Ctrl+click to type`
-            : 'Click to start a max set · Ctrl+click to type'
+            ? `Click to start from last week's value (${fmtNumber(prevLoad!)}) · Ctrl+click to type`
+            : 'Click to start a max set · Ctrl+click to type. A % makes the column percentages; words make it free text.'
         }
         onClick={handleLoadClick}
         onContextMenu={handleLoadClick}
@@ -148,11 +181,14 @@ export function MacroGridCell({
     return (
       <div className="group flex items-center" style={{ minWidth: 52, height: 38 }}>
         <div className="flex flex-col items-center flex-1">
+          {/* type="text": a number input cannot accept '%' or letters, which is
+              what makes a percentage or free-text column typable at all. */}
           <input
             ref={loadRef}
-            type="number"
-            defaultValue={load ?? 0}
-            className="no-spin w-[40px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
+            type="text"
+            inputMode={isText ? 'text' : 'decimal'}
+            defaultValue={isText ? (loadText ?? '') : load != null ? fmtNumber(load) : ''}
+            className="no-spin w-[52px] text-center font-mono text-[11px] font-medium border-none outline-none rounded px-1 py-0.5"
             style={{ backgroundColor: 'var(--color-accent-muted)' }}
             onBlur={(e) => commitLoad(e.target.value)}
             onKeyDown={(e) => {
@@ -180,7 +216,9 @@ export function MacroGridCell({
     return (
       <div className="group flex items-center" style={{ minWidth: 52, height: 38 }}>
         <div className="flex flex-col items-center flex-1">
-          <div className="text-[11px] font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>{load ?? 0}</div>
+          <div className="text-[11px] font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>
+            {isText ? (loadText ?? '') : `${fmtNumber(load ?? 0)}${unitSuffix(unit)}`}
+          </div>
           <div className="w-[80%] border-t my-0.5" style={{ borderColor: 'var(--color-border-tertiary)' }} />
           <div className="flex items-center gap-0.5">
             <input
@@ -233,8 +271,10 @@ export function MacroGridCell({
   if (compact) {
     return (
       <div className="flex items-center justify-center" style={{ minWidth: 52, height: 20 }}>
-        {load ? (
-          <span className="text-[8px] font-mono italic" style={{ color: 'var(--color-text-tertiary)' }}>{load}</span>
+        {load != null && !isText ? (
+          <span className="text-[8px] font-mono italic" style={{ color: 'var(--color-text-tertiary)' }}>
+            {fmtNumber(load)}{unitSuffix(unit)}
+          </span>
         ) : (
           <span className="text-[8px]" style={{ color: 'var(--color-text-tertiary)' }}>—</span>
         )}
@@ -258,11 +298,15 @@ export function MacroGridCell({
           className={`text-[11px] font-mono font-medium cursor-pointer px-2 leading-tight ${
             isDeleteMode ? 'text-[color:var(--color-danger-text)]' : 'text-[color:var(--color-text-primary)]'
           }`}
-          title={isDeleteMode ? 'Click to clear' : 'Load: click +1 · right-click −1 · Ctrl+click to type'}
+          title={isDeleteMode
+            ? 'Click to clear'
+            : isText
+            ? 'Click to type. Type a number for kg, or add % for percentages.'
+            : `Load: click +1 · right-click −1 · Ctrl+click to type${unit === 'percentage' ? ' · this column is in %' : ''}`}
           onClick={handleLoadClick}
           onContextMenu={handleLoadClick}
         >
-          {load ?? 0}
+          {isText ? (loadText ?? '—') : `${fmtNumber(load ?? 0)}${unitSuffix(unit)}`}
         </div>
         <div className={`w-[80%] border-t ${isDeleteMode ? 'border-[color:var(--color-danger-border)]' : 'border-[color:var(--color-border-tertiary)]'}`} />
         <div

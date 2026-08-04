@@ -408,6 +408,11 @@ export function MacroFillGuide({
             {plan.skippedNoReference.length > 0 && (
               <span className="text-amber-600"> Skipped (no reference): {plan.skippedNoReference.join(', ')}</span>
             )}
+            {plan.skippedNonKg.length > 0 && (
+              <span className="text-amber-600" title="The fill engine produces kilograms. Convert the column to kg first, or write it by hand.">
+                {' '}Skipped (not in kg): {plan.skippedNonKg.join(', ')}
+              </span>
+            )}
           </div>
         )}
 

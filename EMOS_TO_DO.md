@@ -16,16 +16,95 @@ defers others).
 * Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
   _(untouched on purpose — it says "ask me before doing it". See the note under
   #Batch of 04/08/2026 for what I'd want to know before starting.)_
-* In the macro  planner it should also be possible to write percentages or free text. This should then show up in the category table in the week planner, and evaluate accordingly
-  _(not built — this one needs a schema decision and four product calls from you
-  before it is safe to write. Options and questions under
-  #Macro percentages & free text — scoped, not built, below.)_
-
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Macro percentages & free text (04/08/2026, v0.35.1 → 0.36.0)
+**Wrong:** every macro target cell was kilograms, and "kg" was implicit in
+fourteen readers — no unit column existed anywhere. A coach could not write the
+percentage-based programmes they actually use, and Excel's *Import as %* mode
+wrote raw percentages straight into `target_max`, so the table rendered "80" and
+every consumer treated it as 80 kg.
+
+**Changed:** the unit is now explicit and lives on the **column**
+(`macro_tracked_exercises.target_unit`), mirroring `planned_exercises.unit` in
+the weekly planner, plus `macro_targets.target_text` for a prose load. NULL
+reads as kilograms, so all 380 existing rows are correct without a backfill.
+One module, `src/lib/macroTargetUnit.ts`, answers "what does this cell mean" for
+every reader.
+
+- **Authoring:** type it. `88%` makes the column percentages, `Heavy` makes it
+  free text, `117,5` makes it kilograms — the same rule the prescription grid
+  uses. The load input became `type="text"` (a number input cannot accept `%` or
+  letters) and finally accepts comma decimals; it used to `parseInt`, so `117,5`
+  was silently 117. The header carries a `kg` / `%` / `text` chip that cycles on
+  click, so a typo-driven unit flip is visible and one click to undo.
+- **Aggregates follow the column:** Ø and peak read in the column's own unit
+  (`74%`, `88%`), a free-text column's aggregates stay blank, and tonnage counts
+  **only** kilogram columns — its tooltip names the ones it left out rather than
+  quietly reporting a smaller total. The collapsed heat strip shades a % column
+  against 100 instead of `reference_kg`.
+- **Chart:** a % series plots on the same kg axis (85 % sits where 85 kg sits) —
+  deliberately, so there is one shape to read — and is marked as different:
+  squares instead of circles, a dashed line, and a legend key that only appears
+  when a % column is on the chart. Free-text columns plot nothing.
+- **Convert:** `% → kg` and `kg → %` chips appear only when a column can
+  actually convert. They open the planner's own `ResolvePercentagesModal`, which
+  suggests the athlete's PR per column — resolved through
+  `pr_reference_exercise_id`, falling back to the column's `reference_kg` — and
+  lets the coach overwrite every one. Reps, sets and notes are level-independent
+  and are never touched. The approved reference is stored so converting back
+  suggests the same anchor.
+- **Weekly planner (the "evaluate accordingly" half):** the category table's
+  `↳ target` row renders in the macro column's unit, shows prose for a free-text
+  column, and **only grades planned-vs-target when the two units match** — a
+  red/green verdict comparing 85 % against 102 kg would be invented. The avg
+  cell grades % against the planned % average and kg against the kg average.
+  `ExerciseDetail`'s Macro-targets block and `DayEditor`'s per-row target chip
+  got the same treatment.
+- **Everything that moves a cell carries the unit:** `swapMacroWeeks` (both
+  field lists), column copy, paste, fill-guide undo, and templates. A template
+  stores the column's unit, and 'pct' mode no longer divides an
+  already-percentage column by a reference a second time — that would have
+  turned 85 % into 85 % of 85 %.
+- **Fill guide:** the engine produces kilograms, so it now **skips** non-kg
+  columns and says which ones, instead of stamping a kg number into a % column
+  and leaving a silent 120 % target.
+- **Excel:** a non-kg column's header reads `[%]` / `[text]` (the field labels
+  all say "(kg)"), the template export passes an already-% column through
+  untouched, and such a column is no longer reported as "missing a PR" it does
+  not need.
+
+New tracked exercises inherit the unit from `exercises.default_unit`
+(`rpe`/`other` fall back to kg — a macro cell is a planned load).
+
+**Migration:** `20260804120000_macro_target_unit_and_text.sql` — additive, two
+nullable columns, no backfill.
+
+**Verified end to end** against a real cycle (Ida Mørck, NM 2026): typing `88%`
+flipped the column and wrote `target_max = 88` in one row upsert with
+`target_reps_at_max` intact; the whole column re-rendered with `%`, Ø showed
+`74%` and peak `88%` while the kg columns stayed bare; the chart drew 14 squares
+reading "88 %" beside 49 kg circles. Converting at a coach-entered reference of
+100 kg with a 2,5 step gave 87,5 / 62,5 / 67,5 / 70. Typing `Tungt løft` flipped
+the column to text, blanked its aggregates, and dropped it from the chart. All
+test data was restored afterwards — the database holds no `target_unit` or
+`target_text` anywhere.
+
+**One caveat:** the test overwrote `reference_kg` on Ida Mørck's *Træk* column
+(NM 2026). Its original value was not recoverable, so it was restored to **105**
+to match every other filled column in that cycle. Worth a glance if that column
+was meant to differ.
+
+**Answers to the four open questions**, for the record: (1) percent stays
+percent — nothing converts silently; the deliberate convert flow suggests the PR
+and the coach can overwrite it. (2) Per **column**, not per cell — it matches
+the planner and keeps aggregates honest. (3) % and free-text cells are excluded
+from tonnage and the exclusion is *named*. (4) The fill guide skips them.
+
 
 #History points sit at the session, not the week (04/08/2026, v0.35.0 → 0.35.1)
 **Wrong:** every session in a week collapsed onto one data point at the week
@@ -169,53 +248,6 @@ NULL, not false, so a null `day_schedule` made the whole condition NULL and
 matched nothing. After: the four 13/07 athletes went `{1,2,3,4,5}` → `{1,2,3}`,
 Carl lost only his empty day 5, Asger's week is untouched, and `planned_exercises`
 and `training_log_sessions` are unchanged at 2 059 / 262 rows.
-
-#Macro percentages & free text — scoped, not built (04/08/2026)
-Left OPEN deliberately. Every macro target cell is kilograms today: `macro_targets`
-has `target_max` / `target_avg` numerics and **no unit column anywhere**, so "kg"
-is implicit in 14 different readers (the chart and its drag write-back, the Ø and
-peak rows, the summary bar, tonnage, the collapsed heat strip, Excel export /
-import / template, `macroTemplate`, the fill guide, `SollIstChart`,
-`ExerciseHistoryChart`, `MacroReviewTable`, and `swapMacroWeeks`). Adding "80 %"
-or "Heavy" to a cell without deciding what every one of those does with it
-silently corrupts macro data — an 80 that means 80 % gets averaged, peaked,
-charted and exported as 80 kg.
-
-**The shape I'd build** (additive, no backfill — all 380 existing rows are
-genuine kg; I checked every `target_max` under 40 and they are all real light
-loads): `macro_targets.target_unit text CHECK IN ('absolute_kg','percentage',
-'free_text_reps')` with NULL meaning kg, plus `target_text` for the free-text
-load token. Reps and sets stay numeric, so "Heavy × 3 × 2" still renders in the
-stacked notation. One new `src/lib/macroTargetValue.ts` owns "what does this cell
-mean" so the rule exists once, and the union type makes `tsc` enumerate all 14
-consumers for me rather than my finding them by hand.
-
-**What I need from you first:**
-1. **Percent of what?** Three anchors exist in the code:
-   `macro_tracked_exercises.reference_kg` (coach-authored, macro-local, works for
-   group macros — but only **5 of 45** tracked rows have one), the athlete's PR
-   via `pr_reference_exercise_id` (good coverage, per-athlete, undefined for a
-   group macro), or nothing. I'd cascade reference → PR → unresolved. With
-   today's data most % cells would NOT resolve on first use, so the SOLL line
-   would develop gaps that read as "the chart broke" — worth knowing before you
-   see it.
-2. **Per cell or per exercise column?** Per cell reads the TODO literally
-   ("write percentages or free text" in the cell); a per-column default is the
-   denser authoring experience. They compose — column default seeding cell
-   values — but which is the source of truth?
-3. **Do % / free-text cells count in Ø, peak and tonnage?** Silently converting
-   is convenient, silently excluding is safer, and "Ø over 8 of 11 weeks" is the
-   dense expert answer. I'd do the third.
-4. **What does the fill guide do to a %-authored cell?** It writes kg today. If
-   it leaves `target_unit` alone it would leave a kg number stamped
-   "percentage" — a silent 120 % target. Either it always stamps kg, or it
-   converts to % first. Changes what Apply means.
-
-**Related, and currently a real defect:** Excel's *Import as %* mode writes the
-raw percentage straight into `target_max`, so the table renders "80" and every
-consumer treats it as 80 kg. I did NOT fix it, because the honest fix is the
-unit column above — anything else is either removing the mode or converting on
-import, and both are your call.
 
 #Batch of 04/08/2026 — 18 items (v0.33.0)
 Everything else in the list above, shipped across eight commits. What was wrong
