@@ -9,8 +9,8 @@
  *    16:00 belongs on Wednesday, not at "unit 2 of 3".
  *  - **Free sessions.** No schedule — a unit is just "the second session this
  *    week". There is no calendar answer, so the units are spread evenly across
- *    the week: with three sessions, session 2 sits 2/3 of the way between this
- *    week's divider and the next.
+ *    the week and strictly inside it: with three sessions they sit at 1/4, 2/4
+ *    and 3/4 between this week's divider and the next.
  *
  * Everything returns a fraction of the week: 0 is this week's Monday 00:00 and
  * 1 is the next week's Monday. Callers add it to a week index to get a
@@ -71,8 +71,13 @@ export function scheduledFraction(slot: DaySlot): number {
 
 /**
  * Where a free (unscheduled) unit sits: evenly across the week by its ordinal.
- * Session k of n lands at k/n — session 2 of 3 is 2/3 of the way to the next
- * week's divider, which is the rule the coach asked for.
+ *
+ * Session k of n lands at k/(n+1), which spreads n sessions across n+1 equal
+ * gaps — three sessions sit at 1/4, 2/4, 3/4. The k/n reading (2/3 for session
+ * 2 of 3) is the more literal one, but it puts the LAST session of every week
+ * exactly on the next week's divider, where it reads as belonging to the wrong
+ * week and collides with the gridline. Keeping every session strictly inside
+ * its own week is worth the half-step.
  *
  * Returns null when the unit is not in the week's ordered list at all, so the
  * caller can fall back rather than invent a position.
@@ -80,7 +85,7 @@ export function scheduledFraction(slot: DaySlot): number {
 export function ordinalFraction(dayIndex: number, ordered: number[]): number | null {
   const i = ordered.indexOf(dayIndex);
   if (i < 0 || ordered.length === 0) return null;
-  return (i + 1) / ordered.length;
+  return (i + 1) / (ordered.length + 1);
 }
 
 export interface UnitPlacement {
