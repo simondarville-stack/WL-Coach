@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, FileText, Sliders } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
-import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup } from '../../lib/database.types';
+import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup, CoachProfile } from '../../lib/database.types';
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
@@ -32,7 +32,55 @@ interface PrintWeekProps {
   onClose: () => void;
   showCategorySummaries?: boolean;
   dayLabels?: Record<number, string> | null;
+  /** When omitted (athlete app), falls back to weekPlan.week_description. */
   weekDescription?: string | null;
+  /** 'athlete' renders the Programme layout only, with a compact
+   *  mobile-friendly options row instead of the Designer toggle. */
+  variant?: 'coach' | 'athlete';
+  /** Pre-resolved plan id. The athlete app passes it so the group-plan
+   *  fallback of /athlete/week (resolveAthleteWeekPlanId) is honoured;
+   *  athlete/group are then only used for the printout header. */
+  weekPlanId?: string | null;
+  /** Coach header line for browsers where the coach store is empty
+   *  (athlete app). Falls back to useCoachStore().activeCoach. */
+  coach?: Pick<CoachProfile, 'name' | 'club_name'> | null;
+}
+
+interface AthletePrintOptions {
+  showTotals: boolean;
+  showWeekNotes: boolean;
+  showExerciseNotes: boolean;
+  landscape: boolean;
+}
+
+const ATHLETE_PRINT_OPTIONS_KEY = 'emos.athlete.print.options.v1';
+const ATHLETE_PRINT_DEFAULTS: AthletePrintOptions = {
+  showTotals: true,
+  showWeekNotes: true,
+  showExerciseNotes: true,
+  landscape: false,
+};
+
+function loadAthletePrintOptions(): AthletePrintOptions {
+  try {
+    const raw = localStorage.getItem(ATHLETE_PRINT_OPTIONS_KEY);
+    if (raw) return { ...ATHLETE_PRINT_DEFAULTS, ...(JSON.parse(raw) as Partial<AthletePrintOptions>) };
+  } catch { /* corrupt storage — fall through to defaults */ }
+  return { ...ATHLETE_PRINT_DEFAULTS };
+}
+
+function OptionToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-gray-700 select-none cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+      />
+      {label}
+    </label>
+  );
 }
 
 type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
@@ -120,23 +168,36 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
   );
 }
 
-export function PrintWeek({ athlete = null, group = null, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription = null }: PrintWeekProps) {
-  const { fetchWeekPlanForAthlete, fetchWeekPlanForGroup, fetchPlannedExercisesFlat } = useWeekPlans();
+export function PrintWeek({ athlete = null, group = null, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription, variant = 'coach', weekPlanId = null, coach = null }: PrintWeekProps) {
+  const { fetchWeekPlanForAthlete, fetchWeekPlanForGroup, fetchWeekPlanById, fetchPlannedExercisesFlat } = useWeekPlans();
   const { fetchProgrammeData } = useCombos();
   const { activeCoach } = useCoachStore();
+  const isAthleteVariant = variant === 'athlete';
+  const coachLine = coach ?? activeCoach;
 
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [loading, setLoading] = useState(true);
   const [printMode, setPrintMode] = useState<'programme' | 'designer'>('programme');
+  const [athleteOpts, setAthleteOpts] = useState<AthletePrintOptions>(loadAthletePrintOptions);
 
-  useEffect(() => { void loadWeekData(); }, [athlete?.id, group?.id, weekStart]);
+  const setAthleteOpt = (patch: Partial<AthletePrintOptions>) => {
+    setAthleteOpts(prev => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(ATHLETE_PRINT_OPTIONS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  useEffect(() => { void loadWeekData(); }, [athlete?.id, group?.id, weekStart, weekPlanId]);
 
   const loadWeekData = async () => {
     try {
       setLoading(true);
-      const plan = athlete
+      const plan = weekPlanId
+        ? await fetchWeekPlanById(weekPlanId)
+        : athlete
         ? await fetchWeekPlanForAthlete(athlete.id, weekStart)
         : group
         ? await fetchWeekPlanForGroup(group.id, weekStart)
@@ -221,6 +282,17 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
   const categorySummaries = calculateCategorySummaries();
   const weeklyTotal = calculateWeeklyTotal();
 
+  // Effective display flags — the coach variant keeps its existing behaviour;
+  // the athlete variant is driven by the compact options row.
+  const showTotalsBlock = isAthleteVariant ? athleteOpts.showTotals : true;
+  const showCatSummaries = isAthleteVariant ? athleteOpts.showTotals : showCategorySummaries;
+  const showWeekNotes = isAthleteVariant ? athleteOpts.showWeekNotes : true;
+  const showExerciseNotes = isAthleteVariant ? athleteOpts.showExerciseNotes : true;
+  const pageOrientation = isAthleteVariant && athleteOpts.landscape ? 'landscape' : 'portrait';
+  // The planner injects its (possibly unsaved) week description; the athlete
+  // app omits the prop and reads the saved one off the plan.
+  const effectiveWeekDescription = weekDescription !== undefined ? weekDescription : (weekPlan?.week_description ?? null);
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -255,6 +327,27 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
 
   return createPortal((
     <div id="print-programme-root" className="fixed inset-0 bg-white z-50 overflow-auto">
+      {isAthleteVariant ? (
+        <div className="print:hidden bg-gray-100 border-b border-gray-300 px-3 py-2 sticky top-0 z-10">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-bold text-gray-900">Print programme</h2>
+            <div className="flex gap-2">
+              <Button variant="primary" onClick={() => window.print()} icon={<Printer size={16} />}>
+                Print
+              </Button>
+              <button onClick={onClose} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg" aria-label="Close">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2">
+            <OptionToggle label="Totals" checked={athleteOpts.showTotals} onChange={v => setAthleteOpt({ showTotals: v })} />
+            <OptionToggle label="Week notes" checked={athleteOpts.showWeekNotes} onChange={v => setAthleteOpt({ showWeekNotes: v })} />
+            <OptionToggle label="Exercise notes" checked={athleteOpts.showExerciseNotes} onChange={v => setAthleteOpt({ showExerciseNotes: v })} />
+            <OptionToggle label="Landscape" checked={athleteOpts.landscape} onChange={v => setAthleteOpt({ landscape: v })} />
+          </div>
+        </div>
+      ) : (
       <div className="print:hidden bg-gray-100 border-b border-gray-300 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold text-gray-900">Print Preview</h2>
@@ -290,6 +383,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           </button>
         </div>
       </div>
+      )}
 
       {printMode === 'designer' ? (
         <PrintWeekDesigner
@@ -299,7 +393,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
           plannedExercises={plannedExercises}
           comboMembers={comboMembers}
           weekStart={weekStart}
-          weekDescription={weekDescription}
+          weekDescription={effectiveWeekDescription}
           dayLabels={dayLabels}
         />
       ) : (<>
@@ -308,7 +402,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
         {/* Header */}
         <div className="flex items-start justify-between mb-3 pb-2 border-b border-gray-300">
           <div>
-            {activeCoach?.name && <p className="text-[10px] text-gray-500 leading-tight">{activeCoach.name}{activeCoach.club_name ? ` · ${activeCoach.club_name}` : ''}</p>}
+            {coachLine?.name && <p className="text-[10px] text-gray-500 leading-tight">{coachLine.name}{coachLine.club_name ? ` · ${coachLine.club_name}` : ''}</p>}
             <h1 className="text-lg font-bold text-gray-900 leading-tight">{headerName}</h1>
             {headerStats && <p className="text-xs text-gray-600 leading-tight">{headerStats}</p>}
           </div>
@@ -319,10 +413,10 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
         </div>
 
         {/* Weekly totals + Category summaries — combined row, compact */}
-        {(weeklyTotal.totalSets > 0 || (showCategorySummaries && Object.keys(categorySummaries).length > 0)) && (
+        {((showTotalsBlock && weeklyTotal.totalSets > 0) || (showCatSummaries && Object.keys(categorySummaries).length > 0)) && (
           <div className="mb-3 pb-2 border-b border-gray-300">
             <div className="flex items-stretch gap-3">
-              {weeklyTotal.totalSets > 0 && (
+              {showTotalsBlock && weeklyTotal.totalSets > 0 && (
                 <div className="flex items-center gap-3 bg-white border border-gray-400 rounded px-2 py-1.5 flex-shrink-0">
                   <div className="text-center px-1">
                     <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Sets</p>
@@ -340,7 +434,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                   )}
                 </div>
               )}
-              {showCategorySummaries && Object.keys(categorySummaries).length > 0 && (
+              {showCatSummaries && Object.keys(categorySummaries).length > 0 && (
                 <div className="grid grid-cols-6 gap-1 flex-1">
                   {Object.entries(categorySummaries).sort(([a], [b]) => a.localeCompare(b)).map(([cat, t]) => (
                     <div key={cat} className="bg-gray-50 rounded px-1.5 py-1 border border-gray-200 leading-tight">
@@ -358,10 +452,10 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
         )}
 
         {/* Week notes */}
-        {weekDescription?.trim() && (
+        {showWeekNotes && effectiveWeekDescription?.trim() && (
           <div className="mb-3 pb-2 border-b border-gray-300">
             <div className="bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-              <p className="text-xs text-gray-800 whitespace-pre-wrap leading-snug">{weekDescription}</p>
+              <p className="text-xs text-gray-800 whitespace-pre-wrap leading-snug">{effectiveWeekDescription}</p>
             </div>
           </div>
         )}
@@ -381,7 +475,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
             <div key={day.index} className="mb-3 break-inside-avoid">
               <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-gray-300">
                 <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wide">{day.name}</h2>
-                {(daySets > 0 || dayReps > 0) && (
+                {showTotalsBlock && (daySets > 0 || dayReps > 0) && (
                   <div className="text-[10px] text-gray-600">
                     {daySets > 0 && `${daySets} sets`}
                     {daySets > 0 && dayReps > 0 && ' • '}
@@ -505,7 +599,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                                 : ex.exercise.name}
                             </h3>
                             {/* Legacy variation_note fallback — the folded note (ex.notes) prints below */}
-                            {!ex.notes?.trim() && ex.variation_note && (
+                            {showExerciseNotes && !ex.notes?.trim() && ex.variation_note && (
                               <span className="text-[10px] text-gray-500 italic leading-tight">{ex.variation_note}</span>
                             )}
                             {unitSymbol && <span className="text-[9px] font-medium text-gray-800 bg-gray-200 px-1 py-px rounded">{unitSymbol}</span>}
@@ -522,7 +616,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                             </p>
                           )}
                           {/* Note prints above the prescription so the athlete reads the variation before the numbers */}
-                          {ex.notes && <p className="text-[10px] text-gray-600 italic leading-tight">{ex.notes}</p>}
+                          {showExerciseNotes && ex.notes && <p className="text-[10px] text-gray-600 italic leading-tight">{ex.notes}</p>}
                           {ex.prescription_raw && (
                             <div className="leading-tight">
                               <InlinePrescription prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
@@ -541,7 +635,7 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
 
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 8mm; }
+          @page { size: A4 ${pageOrientation}; margin: 8mm; }
           body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background: white !important; }
           /* Hide everything except the print root so position:fixed
              doesn't clip the document to one viewport page. */

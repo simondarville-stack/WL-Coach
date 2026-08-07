@@ -26,6 +26,7 @@ import {
 } from '../../../lib/trainingLogService';
 import { WeekNavigator, Weekday } from '../components/WeekNavigator';
 import { SessionPreview } from '../components/SessionPreview';
+import { AthletePrintWeek } from '../components/AthletePrintWeek';
 import { WeekBriefCard } from '../components/WeekBriefCard';
 import { BonusDayNameModal } from '../components/BonusDayNameModal';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
@@ -69,6 +70,7 @@ export function WeekScreen() {
 
   const [showBonusName, setShowBonusName] = useState(false);
   const [bonusSaving, setBonusSaving] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
 
   const load = useCallback(async () => {
     if (!athlete) return;
@@ -178,7 +180,11 @@ export function WeekScreen() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 space-y-3">
-      <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+      <WeekNavigator
+        weekStart={weekStart}
+        onChange={setWeekStart}
+        onPrint={overview?.weekPlanId ? () => setShowPrint(true) : undefined}
+      />
 
       {!loading && !error && overview && overview.days.length > 0 && (
         <div className="flex items-center justify-between px-1">
@@ -346,6 +352,15 @@ export function WeekScreen() {
         onClose={() => setShowBonusName(false)}
         onConfirm={handleConfirmBonusDay}
       />
+
+      {showPrint && overview?.weekPlanId && (
+        <AthletePrintWeek
+          athlete={athlete}
+          weekPlanId={overview.weekPlanId}
+          weekStart={weekStart}
+          onClose={() => setShowPrint(false)}
+        />
+      )}
     </div>
   );
 }

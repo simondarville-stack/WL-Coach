@@ -21,6 +21,7 @@ import type {
   AthleteWeekMetricsConfig,
   CustomMetricEntry,
   WeekPlan,
+  CoachProfile,
 } from './database.types';
 import type { DayLog, LoggedExerciseFull } from './trainingLogModel';
 
@@ -219,6 +220,23 @@ export async function resolveAthleteWeekPlanId(
   if (gErr) throw gErr;
   if (groupRow) return { weekPlanId: (groupRow as { id: string }).id, source: 'group' };
   return { weekPlanId: null, source: null };
+}
+
+/**
+ * Coach name/club for the athlete-side programme printout header. The coach
+ * store (zustand `emos-coach`) is empty in an athlete's browser, so the
+ * header line is resolved from the plan owner's profile instead.
+ */
+export async function fetchCoachHeaderProfile(
+  ownerId: string,
+): Promise<Pick<CoachProfile, 'name' | 'club_name'> | null> {
+  const { data, error } = await supabase
+    .from('coach_profiles')
+    .select('name, club_name')
+    .eq('id', ownerId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Pick<CoachProfile, 'name' | 'club_name'> | null) ?? null;
 }
 
 /**
