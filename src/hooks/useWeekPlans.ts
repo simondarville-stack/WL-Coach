@@ -1162,6 +1162,18 @@ export function useWeekPlans() {
     return data || null;
   };
 
+  const fetchWeekPlanById = async (weekPlanId: string): Promise<WeekPlan | null> => {
+    // Used by the athlete-app printout, which resolves its plan id upfront
+    // (individual plan with group fallback — see resolveAthleteWeekPlanId).
+    const { data, error } = await supabase
+      .from('week_plans')
+      .select('*')
+      .eq('id', weekPlanId)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  };
+
   const fetchPlannedExercisesFlat = async (weekPlanId: string): Promise<(PlannedExercise & { exercise: Exercise })[]> => {
     const { data, error } = await supabase
       .from('planned_exercises')
@@ -1611,6 +1623,7 @@ export function useWeekPlans() {
     fetchPlannedExerciseById,
     fetchWeekPlanForAthlete,
     fetchWeekPlanForGroup,
+    fetchWeekPlanById,
     fetchPlannedExercisesFlat,
     createComboExercise,
     swapPlannedExercise,

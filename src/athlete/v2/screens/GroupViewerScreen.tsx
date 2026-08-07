@@ -12,6 +12,7 @@ import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../../../lib/supabase';
 import { WeekNavigator, getMondayOf } from '../components/WeekNavigator';
 import { SessionPreview } from '../components/SessionPreview';
+import { AthletePrintWeek } from '../components/AthletePrintWeek';
 import { fetchPlannedDay, defaultSlotLabel } from '../../../lib/trainingLogService';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { WeekPlan } from '../../../lib/database.types';
@@ -53,6 +54,7 @@ export function GroupViewerScreen() {
   const [days, setDays] = useState<DayBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPrint, setShowPrint] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +138,11 @@ export function GroupViewerScreen() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-        <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+        <WeekNavigator
+          weekStart={weekStart}
+          onChange={setWeekStart}
+          onPrint={weekPlan ? () => setShowPrint(true) : undefined}
+        />
 
         {error && (
           <div className="px-3 py-2 border border-red-900 bg-red-950/50 rounded text-xs text-red-300">
@@ -174,6 +180,15 @@ export function GroupViewerScreen() {
           ))
         )}
       </div>
+
+      {showPrint && weekPlan && (
+        <AthletePrintWeek
+          group={group}
+          weekPlanId={weekPlan.id}
+          weekStart={weekStart}
+          onClose={() => setShowPrint(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Home } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Home, Printer } from 'lucide-react';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
 import { formatDateRange } from '../../../lib/dateUtils';
 
@@ -41,9 +41,12 @@ function formatWeekRange(weekStart: string): string {
 interface WeekNavigatorProps {
   weekStart: string;
   onChange: (next: string) => void;
+  /** Renders a printer button on the right when provided. Callers pass it
+   *  only when a plan exists for the shown week (no plan → nothing to print). */
+  onPrint?: () => void;
 }
 
-export function WeekNavigator({ weekStart, onChange }: WeekNavigatorProps) {
+export function WeekNavigator({ weekStart, onChange, onPrint }: WeekNavigatorProps) {
   const thisWeekStart = getMondayOf(new Date());
   const isThisWeek = weekStart === thisWeekStart;
 
@@ -77,6 +80,16 @@ export function WeekNavigator({ weekStart, onChange }: WeekNavigatorProps) {
           title="Jump to this week"
         >
           <Home size={14} />
+        </button>
+      )}
+      {onPrint && (
+        <button
+          onClick={onPrint}
+          className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-800"
+          aria-label="Print programme"
+          title="Print this week's programme"
+        >
+          <Printer size={14} />
         </button>
       )}
     </div>
