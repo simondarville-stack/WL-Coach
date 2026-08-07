@@ -17,6 +17,7 @@ import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
 import { expandForCounting } from '../../lib/comboExpansion';
+import { defaultSlotLabel } from '../../lib/trainingLogService';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekDesigner } from './PrintWeekDesigner';
@@ -223,8 +224,11 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
 
   const WEEKDAY_NAMES_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const getDayLabel = (dayIndex: number): string => {
+    // day_index is a TRAINING-UNIT index, not a weekday — the weekday (if
+    // scheduled) is appended from day_schedule below. Unlabelled units fall
+    // back to the app-wide default unit name ("Day N"), never weekday names.
     const labels = dayLabels || weekPlan?.day_labels;
-    const base = (labels?.[dayIndex]) || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const base = (labels?.[dayIndex]) || defaultSlotLabel(dayIndex);
     const schedule = weekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null;
     const entry = schedule?.[dayIndex];
     if (!entry) return base;
@@ -595,7 +599,10 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <h3 className="text-xs font-bold text-gray-900 leading-tight">
                               {ex.is_combo
-                                ? (ex.combo_notation || (members?.map(m => m.exercise.name).join(' + ') ?? ex.exercise.name))
+                                ? (ex.combo_notation?.trim()
+                                    || (members && members.length > 0
+                                      ? members.map(m => m.exercise.name).join(' + ')
+                                      : ex.exercise.name))
                                 : ex.exercise.name}
                             </h3>
                             {/* Legacy variation_note fallback — the folded note (ex.notes) prints below */}
@@ -610,7 +617,9 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                               </span>
                             )}
                           </div>
-                          {ex.is_combo && members && members.length > 0 && (
+                          {/* Member list only when the title is a custom combo name —
+                              otherwise the title already lists the members. */}
+                          {ex.is_combo && members && members.length > 0 && !!ex.combo_notation?.trim() && (
                             <p className="text-[10px] text-gray-500 leading-tight">
                               {members.map((m, i) => <span key={m.position}>{i > 0 && ' + '}{m.exercise.name}</span>)}
                             </p>
