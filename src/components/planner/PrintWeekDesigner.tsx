@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup } from '../../lib/database.types';
-import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
+import { getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
 import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
@@ -308,8 +308,10 @@ export function PrintWeekDesigner({
     : [];
 
   const getDayLabel = (dayIndex: number): string => {
+    // day_index is a TRAINING-UNIT index, not a weekday — unlabelled units
+    // fall back to the default unit name, never weekday names.
     const labels = dayLabels || weekPlan.day_labels;
-    const base = (labels?.[dayIndex]) || DAYS_OF_WEEK.find(d => d.index === dayIndex)?.name || `Day ${dayIndex}`;
+    const base = (labels?.[dayIndex]) || `Day ${dayIndex}`;
     const schedule = weekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null;
     const entry = schedule?.[dayIndex];
     if (!entry) return base;
@@ -736,7 +738,10 @@ function ExerciseRow({
         <div className="dz-row-head">
           <h3 className="dz-ex-name">
             {ex.is_combo
-              ? (ex.combo_notation || (members?.map(m => m.exercise.name).join(' + ') ?? ex.exercise.name))
+              ? (ex.combo_notation?.trim()
+                  || (members && members.length > 0
+                    ? members.map(m => m.exercise.name).join(' + ')
+                    : ex.exercise.name))
               : ex.exercise.name}
           </h3>
           {/* Legacy variation_note fallback — the folded note (ex.notes) renders via showExerciseNotes */}
