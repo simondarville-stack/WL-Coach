@@ -22,7 +22,7 @@ _(everything below is done; new items go above this line.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
-#Ratio Analysis: symmetric analysis blocks, and search instead of a 300-option dropdown (05/08/2026, v0.37.0 → 0.38.0)
+#Ratio Analysis: symmetric analysis blocks, and search instead of a 300-option dropdown (05/08/2026, v0.38.1 → 0.39.0)
 **Wrong (columns):** the sheet asked the same question at two levels and answered
 it in two different shapes. The current level got `Target kg`, `Δ kg` and `Δ %`;
 the goal level got `Goal kg` and a single `To go` — differently named, missing
