@@ -11,6 +11,7 @@ import {
   type RepCount,
 } from '../../lib/prTable';
 import { usePREstimationMode } from '../../hooks/usePREstimationMode';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { PREstimationModeToggle } from '../PREstimationModeToggle';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
 
@@ -725,6 +726,8 @@ interface PRHistoryDialogProps {
 }
 
 function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDialogProps) {
+  const backdrop = useBackdropDismiss(onClose);
+
   // Sort the entries chronologically for the chart, but show most-recent
   // first in the list.
   const sortedAsc = useMemo(() => {
@@ -749,11 +752,10 @@ function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDial
     <div
       className="animate-backdrop-in"
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
-      onClick={onClose}
+      {...backdrop}
     >
       <div
         className="animate-dialog-in"
-        onClick={e => e.stopPropagation()}
         style={{
           background: 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-xl)',

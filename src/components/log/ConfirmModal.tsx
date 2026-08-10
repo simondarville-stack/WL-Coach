@@ -18,6 +18,7 @@
  *   />
  */
 import { useEffect } from 'react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 interface ConfirmModalProps {
   open: boolean;
@@ -40,6 +41,8 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const backdrop = useBackdropDismiss(onCancel);
+
   // Close on Escape key.
   useEffect(() => {
     if (!open) return;
@@ -55,11 +58,10 @@ export function ConfirmModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
-      onClick={onCancel}
+      {...backdrop}
     >
       <div
         className="w-full max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"

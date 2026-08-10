@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 interface ImageLightboxProps {
   src: string;
@@ -7,9 +8,13 @@ interface ImageLightboxProps {
 }
 
 /** Fullscreen image overlay used by the training-log image sentinels.
- *  Backdrop click or Esc dismisses; the image itself swallows clicks so
- *  users can pinch-zoom on mobile without the overlay collapsing. */
+ *  Backdrop click or Esc dismisses; clicks on the image do not, so users can
+ *  pinch-zoom on mobile without the overlay collapsing. (useBackdropDismiss
+ *  only fires when the gesture starts and ends on the backdrop itself, which
+ *  is why the image no longer needs its own stopPropagation guard.) */
 export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
+  const backdrop = useBackdropDismiss(onClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -23,7 +28,7 @@ export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
 
   return (
     <div
-      onClick={onClose}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.9)',
@@ -46,7 +51,6 @@ export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
       <img
         src={src}
         alt=""
-        onClick={e => e.stopPropagation()}
         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: 'default' }}
       />
     </div>

@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { useSaveQueue } from '../../hooks/useSaveQueue';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
 
 /** Supabase errors are plain objects (not Error). Pull the useful
@@ -153,6 +154,8 @@ export function GppBlockEditor({
     void flush().finally(onClose);
   }, [enqueue, flush, onClose, showDoneColumn]);
 
+  const backdrop = useBackdropDismiss(handleClose);
+
   // Escape closes (and therefore flushes), matching the app's other sheets.
   useEffect(() => {
     if (!open) return;
@@ -190,12 +193,9 @@ export function GppBlockEditor({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={handleClose}
+      {...backdrop}
     >
-      <div
-        className="w-full max-w-xl bg-white rounded-lg shadow-xl flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="w-full max-w-xl bg-white rounded-lg shadow-xl flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="text-sm font-bold text-gray-900">{titleProp ?? 'GPP block'}</h2>
           <button

@@ -1,6 +1,6 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
@@ -18,6 +18,7 @@ import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -166,6 +167,11 @@ export function WeeklyPlanner() {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [pendingWeekPaste, setPendingWeekPaste] = useState<string | null>(null);
+  // Hoisted out of the Apply-week dialog below: that dialog is an IIFE inside
+  // conditional JSX, so a hook cannot be called there.
+  const applyWeekBackdrop = useBackdropDismiss(
+    useCallback(() => setPendingWeekPaste(null), []),
+  );
   // When a parked week carries training units that don't exist in the
   // destination, the coach decides per-paste whether to add those days or
   // skip them. Defaults to adding (no silent data loss). Reset on each open.
@@ -1933,8 +1939,8 @@ export function WeeklyPlanner() {
           };
           const btn: React.CSSProperties = { padding: '6px 14px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-label)', fontWeight: 500, cursor: 'pointer', fontFamily: 'var(--font-sans)' };
           return (
-            <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 28px rgba(0,0,0,0.18)', padding: 18, maxWidth: 400, width: '90%' }}>
+            <div {...applyWeekBackdrop} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+              <div style={{ background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-secondary)', borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 28px rgba(0,0,0,0.18)', padding: 18, maxWidth: 400, width: '90%' }}>
                 <div style={{ fontSize: 'var(--text-section)', fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Apply week</div>
                 <p style={{ fontSize: 'var(--text-body)', color: 'var(--color-text-secondary)', lineHeight: 1.5, margin: '0 0 12px' }}>
                   {hasContent
