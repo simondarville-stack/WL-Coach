@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -21,6 +22,8 @@ const SIZE_WIDTHS: Record<ModalSize, string> = {
 };
 
 export function Modal({ isOpen, onClose, title, size = 'md', children, footer }: ModalProps) {
+  const backdrop = useBackdropDismiss(onClose);
+
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
@@ -36,10 +39,9 @@ export function Modal({ isOpen, onClose, title, size = 'md', children, footer }:
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
       style={{ background: 'rgba(0, 0, 0, 0.15)' }}
-      onClick={onClose}
+      {...backdrop}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="animate-dialog-in"
         style={{
           width: '100%',

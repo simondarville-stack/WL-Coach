@@ -5,6 +5,7 @@ import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUti
 import type { Exercise, Athlete } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { Button, ColorDot, Textarea } from '../ui';
+import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -87,6 +88,8 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
   exerciseName: string;
   onClose: () => void;
 }) {
+  const backdrop = useBackdropDismiss(onClose);
+
   // Merge athlete_prs 1RM into the history map (history wins if it has a 1RM entry)
   const actualPRs = new Map(prHistory);
   if (oneRM !== null && !actualPRs.has(1)) {
@@ -136,7 +139,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
         zIndex: 50,
         padding: 'var(--space-md)',
       }}
-      onClick={onClose}
+      {...backdrop}
     >
       <div
         style={{
@@ -146,7 +149,6 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
           width: 288,
           overflow: 'hidden',
         }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Modal header */}
         <div style={{

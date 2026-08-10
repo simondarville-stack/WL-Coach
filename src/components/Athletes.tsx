@@ -10,6 +10,7 @@ import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
 import { useAthleteStore } from '../store/athleteStore';
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
 import { Button } from './ui';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
@@ -22,6 +23,7 @@ interface AthleteFormModalProps {
 }
 
 function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: AthleteFormModalProps) {
+  const backdrop = useBackdropDismiss(onClose);
   const [name, setName] = useState(editingAthlete?.name ?? '');
   const [birthdateDisplay, setBirthdateDisplay] = useState(formatDateToDDMMYYYY(editingAthlete?.birthdate ?? ''));
   const [birthdate, setBirthdate] = useState(editingAthlete?.birthdate ?? '');
@@ -76,12 +78,11 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
+      {...backdrop}
     >
       <div
         className="rounded-xl w-[520px] max-h-[90vh] flex flex-col"
         style={{ backgroundColor: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-primary)' }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 flex-shrink-0">
