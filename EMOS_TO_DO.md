@@ -22,6 +22,83 @@ _(everything below is done; new items go above this line.)_
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
 
+#Ratio Analysis: symmetric analysis blocks, and search instead of a 300-option dropdown (05/08/2026, v0.38.1 → 0.39.0)
+**Wrong (columns):** the sheet asked the same question at two levels and answered
+it in two different shapes. The current level got `Target kg`, `Δ kg` and `Δ %`;
+the goal level got `Goal kg` and a single `To go` — differently named, missing
+the percentage, and signed the OPPOSITE way (`To go` was target − actual, `Δ kg`
+was actual − target), so a coach scanning one row had to remember which column
+was inverted. `Actual kg` also named the athlete's own number as if it belonged
+to the model's analysis.
+
+**Changed:** the table now reads **general information → analysis at the current
+level → analysis at the goal level**, with the same three answers in each block:
+
+| general | now | goal |
+|---|---|---|
+| Exercise · Reference · Reps · **Current best** | Index % · Target kg · Δ kg · Δ % | **Goal target kg** · Δ kg · Δ % |
+
+- `Actual kg` → **`Current best`**, and it moved into the general block. It is
+  the athlete's own number, and both levels are measured against it — the
+  side-by-side view already placed it there, so the two modes now agree instead
+  of the single-model view being a special case.
+- `Goal kg` → **`Goal target kg`**, and the goal block gained `Δ kg` and `Δ %`,
+  computed exactly like the current level's pair (`macro`-style guards included:
+  the percentage is null rather than dividing by a zero goal).
+- **Both Δ pairs are signed the same way** — current best minus that level's
+  target. `To go` survives as the friendlier phrasing in the cell's tooltip
+  ("15 kg still to go") and as a sort key, so nothing is lost, but the column a
+  coach reads across is consistent.
+- A **band row** now names the blocks (`NOW` / `GOAL`) in both modes. Two
+  identically-labelled `Δ kg / Δ %` pairs need it, and it makes the block
+  structure visible rather than implied.
+
+*Fixed on the way:* the side-by-side band row hardcoded `colSpan={2}` over the
+goal block while `To go` only rendered with an athlete selected — so with a
+second model shown and no athlete, the band was one column wider than the body.
+All four band spans are now computed from the same flags the body uses. The
+`Δ %` column in side-by-side mode was gated on `diff` alone rather than
+`diff && hasAthlete`, so it rendered a column of dashes with no athlete.
+
+*Also corrected:* the legend still described the pre-rename vocabulary and was
+factually wrong — it claimed `Target` was index × **goal** reference, which is
+what `Goal target kg` is. Three "Ist"/"Soll" survivors in the legend and two
+tooltips went with it.
+
+**Wrong (mapping):** every row carried a `<select>` listing the entire
+catalogue — a few hundred options — including the rows that most need it: the
+ones a preset or CSV could not resolve, which show as `⚠ Jerk-drive squat
+(unmapped)`. Finding the right lift in that list is the one job the control
+exists for, and a native select is the worst tool for it.
+
+**Changed:** an unmapped row now renders its label as a button. Click it and the
+app's ranked `ExerciseSearch` — the same one the weekly planner, the macro
+toolbar and this sheet's own "Add exercise…" field use — opens in the cell.
+Type, arrow, Enter, and the row maps. Escape or clicking away closes it without
+changing anything. Mapped rows keep the dropdown: repointing an already-correct
+row is a different job, and the coach asked for the empty case.
+
+Three details that make it behave: the open cell is keyed on the row OBJECT, not
+the render key, because that key changes the instant a row becomes mapped; the
+trigger opens on `click`, not `mousedown`, or it would race the search's own
+outside-mousedown dismissal when moving between cells; and focus lands on the
+select that replaces the search, so tab order does not restart at the top of the
+document. No change to the shared `ExerciseSearch` — dismissal lives in the
+cell, so the other six call sites are untouched.
+
+**Verified end to end** against Ida Mørck / BVDG — U23. The header renders 4 + 4
++ 3 + 1 = 12 columns and every body row renders 12. A mapped row read
+`Target 106 · −16,5 · 84 % | Goal target 108,5 · −19 · 82 %` — both gaps
+negative, both percentages under 100, consistent. Clicking `⚠ Jerk-drive squat`
+opened a 220 px search; "knick" ranked `Knickstød 12 Jerk`; picking it mapped the
+row, closed the search and left focus on the new select inside the table. Escape
+and focus-out both closed without mapping. All test mappings were reverted: the
+two `exercise_aliases` entries the test wrote were removed and the device draft
+cleared.
+
+No migration — display and interaction only.
+
+
 #Macro units, round two: %-native fills, honest Excel imports, and the reference (04/08/2026, v0.36.0 → 0.37.0)
 The three follow-ups the 0.36.0 reply flagged, plus three real defects found while
 building them — one of them introduced by 0.36.0 itself.

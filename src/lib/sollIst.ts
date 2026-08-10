@@ -10,11 +10,14 @@
  * athlete should manage `indexPct` % of that reference for `reps`
  * repetitions. From that we derive:
  *
- *   Soll   = index × current reference        (what the model expects today)
- *   Ist    = the athlete's PR at that rep count (real, estimated, or typed)
- *   Δ      = Ist − Soll  (kg and %)            (strength / weakness)
- *   Target = index × goal reference            (numbers to hit for the goal)
- *   To go  = Target − Ist
+ *   Current best = the athlete's PR at that rep count (real, estimated, typed)
+ *   Target kg      = index × current reference   (what the model expects today)
+ *   Δ              = Current best − Target kg      (kg and %) — strength/weakness
+ *   Goal target kg = index × goal reference      (the number the goal implies)
+ *   Δ              = Current best − Goal target kg (kg and %) — distance to the goal
+ *
+ * The same two questions asked at two levels, against one athlete number. The
+ * UI labels follow ("Actual"/"Soll"/"Ist" were the old names).
  *
  * Textbook models ship as code presets (sollIstPresets.ts); individual and
  * custom models live in `sollist_models` / `sollist_model_rows` (+ a `refs`
@@ -78,20 +81,43 @@ export interface IstValue {
   source: IstSource;
 }
 
+/**
+ * One row, computed against BOTH reference levels.
+ *
+ * The two levels are deliberately symmetric — the same three questions asked
+ * twice, once at the athlete's current reference and once at their goal:
+ *
+ *            target        gap (kg)        gap (%)
+ *   current  soll          deltaKg         deltaPct
+ *   goal     target        goalDeltaKg     goalDeltaPct
+ *
+ * "Current best" (`ist`) belongs to neither — it is the athlete's own number,
+ * and both levels are measured against it.
+ */
 export interface ComputedSollIstRow {
   row: SollIstRow;
   /** "Target kg" in the UI: what the ratio says this lift should be at the
    *  athlete's CURRENT reference. (Historically "Soll".) */
   soll: number | null;
-  /** "Actual kg" in the UI: what the athlete has actually hit, from the PR
+  /** "Current best" in the UI: what the athlete has actually hit, from the PR
    *  table or typed over by the coach. (Historically "Ist".) */
   ist: IstValue | null;
+  /** Current best − Target; > 0 is a strength at today's level. */
   deltaKg: number | null;
-  /** Actual as % of Target (100 = exactly on the model). */
+  /** Current best as % of Target (100 = exactly on the model). */
   deltaPct: number | null;
-  /** "Goal kg" in the UI: the same ratio at the athlete's GOAL reference. */
+  /** "Goal target kg" in the UI: the same ratio at the athlete's GOAL reference. */
   target: number | null;
-  /** Goal − Actual; ≤ 0 means the goal-supporting number is already there. */
+  /** Current best − Goal target; ≥ 0 means the goal-supporting number is there.
+   *  Signed like `deltaKg`, NOT like the old "To go" — the two gap columns have
+   *  to read the same way or a coach scanning across the row has to remember
+   *  which one is inverted. `toGo` below keeps the friendlier phrasing. */
+  goalDeltaKg: number | null;
+  /** Current best as % of Goal target (100 = the goal number is already there). */
+  goalDeltaPct: number | null;
+  /** Goal target − Current best; ≤ 0 means done. The same fact as
+   *  `goalDeltaKg` with the sign a coach says out loud ("15 to go"), kept for
+   *  the tooltip and for sorting by "furthest from the goal". */
   toGo: number | null;
 }
 
@@ -116,8 +142,11 @@ export function computeSollIst(
     const istVal = row.exerciseId ? ist.get(istKey(row.exerciseId, row.reps)) ?? null : null;
     const deltaKg = istVal != null && soll != null ? istVal.valueKg - soll : null;
     const deltaPct = istVal != null && soll != null && soll > 0 ? (istVal.valueKg / soll) * 100 : null;
-    const toGo = istVal != null && target != null ? target - istVal.valueKg : null;
-    return { row, soll, ist: istVal, deltaKg, deltaPct, target, toGo };
+    // The goal level asks the same two questions of the same number.
+    const goalDeltaKg = istVal != null && target != null ? istVal.valueKg - target : null;
+    const goalDeltaPct = istVal != null && target != null && target > 0 ? (istVal.valueKg / target) * 100 : null;
+    const toGo = goalDeltaKg == null ? null : -goalDeltaKg;
+    return { row, soll, ist: istVal, deltaKg, deltaPct, target, goalDeltaKg, goalDeltaPct, toGo };
   });
 }
 

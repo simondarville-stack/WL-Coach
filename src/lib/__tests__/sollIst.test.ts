@@ -35,16 +35,60 @@ const BSQ: SollIstRow = { exerciseId: 'bsq', label: 'Back squat', refKey: 'cj', 
 const PULL: SollIstRow = { exerciseId: 'pull', label: 'Snatch pull', refKey: 'sn', indexPct: 108, reps: 1 };
 
 describe('computeSollIst', () => {
-  it('derives Soll, Δ, Target and To-go from index × reference', () => {
-    // The canonical example: back squat 120/3 vs C&J. C&J 120 → Soll 144;
-    // athlete squats 150×3 → +6 kg / 104 %; goal C&J 125 → target 150 → done.
+  it('derives both target levels and a Δ pair against each, from index × reference', () => {
+    // The canonical example: back squat 120/3 vs C&J. C&J 120 → Target 144;
+    // athlete squats 150×3 → +6 kg / 104 %; goal C&J 125 → goal target 150 → done.
     const ist = new Map([[istKey('bsq', 3), { valueKg: 150, source: 'real' as const }]]);
     const [row] = computeSollIst([BSQ], REFS, ist);
     expect(row.soll).toBeCloseTo(144);
     expect(row.deltaKg).toBeCloseTo(6);
     expect(row.deltaPct).toBeCloseTo((150 / 144) * 100);
     expect(row.target).toBeCloseTo(150);
+    expect(row.goalDeltaKg).toBeCloseTo(0);
+    expect(row.goalDeltaPct).toBeCloseTo(100);
     expect(row.toGo).toBeCloseTo(0);
+  });
+
+  it('signs both Δ pairs the same way — current best minus that level\'s target', () => {
+    // The two blocks are read across one row, so "below" must not mean +15 in
+    // one column and −15 in the next. Snatch pull 108/1 vs snatch: current
+    // reference 100 → target 108, goal 105 → goal target 113,4. Athlete pulls
+    // 100: short of both, so BOTH gaps are negative.
+    const ist = new Map([[istKey('pull', 1), { valueKg: 100, source: 'real' as const }]]);
+    const [row] = computeSollIst([PULL], REFS, ist);
+    expect(row.soll).toBeCloseTo(108);
+    expect(row.target).toBeCloseTo(113.4);
+    expect(row.deltaKg).toBeCloseTo(-8);
+    expect(row.goalDeltaKg).toBeCloseTo(-13.4);
+    expect(row.deltaPct).toBeCloseTo((100 / 108) * 100);
+    expect(row.goalDeltaPct).toBeCloseTo((100 / 113.4) * 100);
+    // "To go" is the same fact said the way a coach says it out loud.
+    expect(row.toGo).toBeCloseTo(13.4);
+    expect(row.toGo).toBeCloseTo(-row.goalDeltaKg!);
+  });
+
+  it('leaves the goal pair null when there is no goal reference or no PR', () => {
+    const noGoal: RefValuesMap = { sn: { current: 100, goal: null } };
+    const ist = new Map([[istKey('pull', 1), { valueKg: 100, source: 'real' as const }]]);
+    const [a] = computeSollIst([PULL], noGoal, ist);
+    expect(a.target).toBeNull();
+    expect(a.goalDeltaKg).toBeNull();
+    expect(a.goalDeltaPct).toBeNull();
+    expect(a.toGo).toBeNull();
+
+    const [b] = computeSollIst([PULL], REFS, new Map());
+    expect(b.target).toBeCloseTo(113.4);
+    expect(b.goalDeltaKg).toBeNull();
+    expect(b.goalDeltaPct).toBeNull();
+  });
+
+  it('guards the goal percentage against a zero goal, like the current one', () => {
+    const zeroGoal: RefValuesMap = { sn: { current: 100, goal: 0 } };
+    const ist = new Map([[istKey('pull', 1), { valueKg: 100, source: 'real' as const }]]);
+    const [row] = computeSollIst([PULL], zeroGoal, ist);
+    expect(row.target).toBeCloseTo(0);
+    expect(row.goalDeltaPct).toBeNull(); // no division by zero
+    expect(row.goalDeltaKg).toBeCloseTo(100);
   });
 
   it('supports arbitrary references — a squat-family sheet anchored on back squat', () => {
