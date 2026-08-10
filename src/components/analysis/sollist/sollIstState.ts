@@ -16,7 +16,14 @@ export interface SheetRef extends SollIstRef {
 
 export type GroupBy = 'none' | 'ref' | 'category';
 
-export type SortKey = 'exercise' | 'index' | 'reps' | 'soll' | 'ist' | 'deltaKg' | 'deltaPct' | 'target' | 'toGo';
+export type SortKey =
+  | 'exercise' | 'index' | 'reps' | 'soll' | 'ist'
+  | 'deltaKg' | 'deltaPct'
+  | 'target' | 'goalDeltaKg' | 'goalDeltaPct'
+  /** Retired header, kept as a key: a sort saved before the goal block gained
+   *  its own Δ pair still lives in `sollist_analyses.options.view` and in the
+   *  device draft, and neither is validated on read. */
+  | 'toGo';
 
 export interface SheetView {
   groupBy: GroupBy;
@@ -223,6 +230,10 @@ function sortValue(c: ComputedSollIstRow, key: SortKey): string | number | null 
       return c.deltaPct;
     case 'target':
       return c.target;
+    case 'goalDeltaKg':
+      return c.goalDeltaKg;
+    case 'goalDeltaPct':
+      return c.goalDeltaPct;
     case 'toGo':
       return c.toGo;
   }

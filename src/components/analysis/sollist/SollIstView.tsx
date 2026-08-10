@@ -620,7 +620,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
                   onChange={(e) => updateRef(i, { current: e.target.value === '' ? null : parseFloat(e.target.value) })}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Goal kg column`}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title={`${r.label} — goal, drives the Goal target kg column`}>
                 <span style={capStyle}>goal</span>
                 <Input
                   type="number"
@@ -731,7 +731,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
               icon={<UserRoundPlus size={14} />}
               onClick={() => void saveIndividualModel()}
               disabled={busy || computed.every((c) => c.ist == null)}
-              title="Capture the athlete's actual ratios (Ist ÷ current reference) as a dated individual model"
+              title="Capture the athlete's actual ratios (current best ÷ current reference) as a dated individual model"
             >
               Save as individual model
             </Button>
@@ -883,17 +883,18 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
           <>
             <span>
               <span style={{ display: 'inline-block', width: 11, height: 11, borderRadius: 2, background: 'rgba(28,124,60,0.16)', verticalAlign: -1, marginRight: 4 }} />
-              Ist ≥ Soll (strength)
+              Current best ≥ Target (strength)
             </span>
             <span>
               <span style={{ display: 'inline-block', width: 11, height: 11, borderRadius: 2, background: 'rgba(200,60,60,0.18)', verticalAlign: -1, marginRight: 4 }} />
-              Ist &lt; Soll (weakness — redder = larger gap)
+              Current best &lt; Target (weakness — redder = larger gap)
             </span>
             <span>
               <em>≈ italic</em> = estimated rep-max from the PR table — type in the cell to override
             </span>
             <span>
-              <strong>Target</strong> = index × goal reference · <strong>To go</strong> = Target − Ist
+              <strong>Target kg</strong> = index × current reference · <strong>Goal target kg</strong> = index × goal reference ·
+              both <strong>Δ</strong> pairs = current best − that target
             </span>
           </>
         ) : (
