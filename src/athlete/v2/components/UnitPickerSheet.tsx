@@ -14,6 +14,7 @@ import { ChevronLeft, ChevronRight, Loader2, Paperclip, X } from 'lucide-react';
 import { fetchWeekOverview, type WeekOverview } from '../../../lib/trainingLogService';
 import { getMondayOfWeekISO } from '../../../lib/weekUtils';
 import { addDaysToISO, formatDateShort, toLocalISO } from '../../../lib/dateUtils';
+import { AdaptiveDialog } from '../../../components/ui/AdaptiveDialog';
 
 export interface PickedUnit {
   weekStart: string;
@@ -68,14 +69,8 @@ export function UnitPickerSheet({
   const isCurrentWeek = weekStart === getMondayOfWeekISO(new Date());
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end" role="dialog" aria-label="Attach a training unit">
-      <button
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-        aria-label="Close"
-        tabIndex={-1}
-      />
-      <div className="relative bg-gray-900 border-t border-gray-800 rounded-t-2xl max-h-[70vh] flex flex-col">
+    <AdaptiveDialog mode="sheet" panel="bare" onClose={onClose} ariaLabel="Attach a training unit">
+      <div className="relative w-full bg-gray-900 border-t border-gray-800 rounded-t-2xl max-h-[70vh] flex flex-col">
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-800">
           <div className="text-[13px] font-semibold text-white flex items-center gap-1.5">
             <Paperclip size={13} className="text-gray-500" />
@@ -163,6 +158,6 @@ export function UnitPickerSheet({
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
