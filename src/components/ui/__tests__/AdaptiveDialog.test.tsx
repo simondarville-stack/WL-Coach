@@ -129,6 +129,19 @@ describe('AdaptiveDialog — chrome', () => {
     expect(document.body.style.overflow).not.toBe('hidden');
   });
 
+  it('leaves alignItems unset for responsive-end so the breakpoint class wins', () => {
+    const { container } = render(
+      <AdaptiveDialog onClose={vi.fn()} ariaLabel="x" align="responsive-end">
+        <div>body</div>
+      </AdaptiveDialog>,
+    );
+    const overlay = container.firstElementChild as HTMLElement;
+    expect(overlay.className).toContain('items-end');
+    expect(overlay.className).toContain('sm:items-center');
+    // An inline value here would override the classes and pin the sheet.
+    expect(overlay.style.alignItems).toBe('');
+  });
+
   it('wraps Tab from the last focusable back to the first', () => {
     const { dialog } = renderDialog();
     const first = screen.getByLabelText('first');

@@ -51,6 +51,12 @@ interface AdaptiveDialogProps {
   panel?: 'default' | 'bare';
   /** `'media'` uses the near-opaque wash — for content that *is* the subject. */
   variant?: 'panel' | 'media';
+  /**
+   * Vertical placement, when the mode's default isn't right.
+   * `'responsive-end'` is the bottom-sheet-on-phones / centred-on-desktop
+   * pattern the log confirms use — reachable with a thumb, tidy on a laptop.
+   */
+  align?: 'center' | 'end' | 'responsive-end';
   role?: 'dialog' | 'alertdialog';
   /** Required when there is no visible `title` to label the dialog. */
   ariaLabel?: string;
@@ -98,6 +104,7 @@ export function AdaptiveDialog({
   dirty = false,
   panel = 'default',
   variant = 'panel',
+  align,
   role = 'dialog',
   ariaLabel,
   title,
@@ -179,14 +186,24 @@ export function AdaptiveDialog({
     }
   };
 
+  // `responsive-end` needs a breakpoint, which inline styles can't express, so
+  // it hands alignment to Tailwind classes and leaves `alignItems` unset —
+  // an inline value would win over the class and pin it to one side.
+  const isResponsiveEnd = align === 'responsive-end';
+  const alignItems = isResponsiveEnd
+    ? undefined
+    : align === 'end' ? 'flex-end'
+      : align === 'center' ? 'center'
+        : isSidebar ? 'flex-start' : isSheet ? 'flex-end' : 'center';
+
   const container: React.CSSProperties = {
     position: 'fixed',
     inset: 0,
     zIndex: isSheet ? 'var(--z-sheet)' : 'var(--z-dialog)',
     display: 'flex',
-    alignItems: isSidebar ? 'flex-start' : isSheet ? 'flex-end' : 'center',
+    alignItems,
     justifyContent: isSidebar ? 'flex-end' : 'center',
-    padding: isSidebar || isSheet ? 0 : variant === 'media' ? 16 : 24,
+    padding: isSidebar || isSheet || isResponsiveEnd ? 0 : variant === 'media' ? 16 : 24,
   };
 
   const defaultPanel: React.CSSProperties = isSidebar
@@ -228,7 +245,7 @@ export function AdaptiveDialog({
 
   return (
     <div
-      className="animate-backdrop-in"
+      className={`animate-backdrop-in${isResponsiveEnd ? ' items-end sm:items-center' : ''}`}
       // Never a bin for a dragged planner item (see ThrowAwayZone).
       data-emos-no-throw
       style={container}

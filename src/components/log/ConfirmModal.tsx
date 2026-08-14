@@ -48,6 +48,7 @@ export function ConfirmModal({
     <AdaptiveDialog
       onClose={onCancel}
       panel="bare"
+      align="responsive-end"
       role="alertdialog"
       ariaLabel={title}
     >
