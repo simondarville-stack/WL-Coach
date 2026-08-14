@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { useSaveQueue } from '../../hooks/useSaveQueue';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import type { Exercise, GppRow, GppSection } from '../../lib/database.types';
 
 /** Supabase errors are plain objects (not Error). Pull the useful
@@ -154,15 +154,8 @@ export function GppBlockEditor({
     void flush().finally(onClose);
   }, [enqueue, flush, onClose, showDoneColumn]);
 
-  const backdrop = useBackdropDismiss(handleClose);
-
-  // Escape closes (and therefore flushes), matching the app's other sheets.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, handleClose]);
+  // Escape and backdrop dismissal come from AdaptiveDialog. This sheet
+  // autosaves, so it is `transient`: closing can't lose anything.
 
   // Last-resort flush: an unmount that isn't routed through handleClose (a
   // navigation, the parent dropping the modal) must not lose the debounced tick.
@@ -191,9 +184,10 @@ export function GppBlockEditor({
     commit({ ...section, rows: section.rows.filter((_, idx) => idx !== i) }, true);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={handleClose}
+      panel="bare"
+      ariaLabel={titleProp ?? 'GPP block'}
     >
       <div className="w-full max-w-xl bg-white rounded-lg shadow-xl flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
@@ -338,7 +332,7 @@ export function GppBlockEditor({
           </button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

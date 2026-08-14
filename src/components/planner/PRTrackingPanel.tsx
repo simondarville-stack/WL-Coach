@@ -11,7 +11,7 @@ import {
   type RepCount,
 } from '../../lib/prTable';
 import { usePREstimationMode } from '../../hooks/usePREstimationMode';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { PREstimationModeToggle } from '../PREstimationModeToggle';
 import type { Exercise, AthletePRHistory, Athlete } from '../../lib/database.types';
 
@@ -726,8 +726,7 @@ interface PRHistoryDialogProps {
 }
 
 function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDialogProps) {
-  const backdrop = useBackdropDismiss(onClose);
-
+  // Read-only history — `transient` is right: nothing here can be lost.
   // Sort the entries chronologically for the chart, but show most-recent
   // first in the list.
   const sortedAsc = useMemo(() => {
@@ -749,10 +748,10 @@ function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDial
   }, [sortedAsc]);
 
   return (
-    <div
-      className="animate-backdrop-in"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      ariaLabel={`PR history · ${exercise.name}`}
     >
       <div
         className="animate-dialog-in"
@@ -841,7 +840,7 @@ function PRHistoryDialog({ exercise, history, onClose, onDelete }: PRHistoryDial
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

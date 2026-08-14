@@ -1,6 +1,5 @@
-import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 interface ImageLightboxProps {
   src: string;
@@ -9,32 +8,16 @@ interface ImageLightboxProps {
 
 /** Fullscreen image overlay used by the training-log image sentinels.
  *  Backdrop click or Esc dismisses; clicks on the image do not, so users can
- *  pinch-zoom on mobile without the overlay collapsing. (useBackdropDismiss
- *  only fires when the gesture starts and ends on the backdrop itself, which
- *  is why the image no longer needs its own stopPropagation guard.) */
+ *  pinch-zoom on mobile without the overlay collapsing. The `media` variant
+ *  swaps the standard dim for the near-opaque wash — here the image *is* the
+ *  content, not something layered over the app. */
 export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
-  const backdrop = useBackdropDismiss(onClose);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
-
   return (
-    <div
-      {...backdrop}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.9)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, cursor: 'zoom-out',
-      }}
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      variant="media"
+      ariaLabel="Image preview"
     >
       <button
         onClick={onClose}
@@ -44,6 +27,7 @@ export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
           background: 'rgba(255,255,255,0.1)', color: '#fff',
           border: 'none', borderRadius: 999, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1,
         }}
       >
         <X size={20} />
@@ -53,6 +37,6 @@ export function ImageLightbox({ src, onClose }: ImageLightboxProps) {
         alt=""
         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: 'default' }}
       />
-    </div>
+    </AdaptiveDialog>
   );
 }

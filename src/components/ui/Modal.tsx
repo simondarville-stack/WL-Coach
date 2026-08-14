@@ -1,7 +1,16 @@
-import { useEffect } from 'react';
-import { X } from 'lucide-react';
+/**
+ * @deprecated Use `AdaptiveDialog` directly — it is the one overlay primitive.
+ *
+ * Kept as a thin adapter so nothing has to migrate in a hurry. It forwards to
+ * AdaptiveDialog, so it inherits the dismissal contract, focus trap, Escape,
+ * scroll lock, and token'd backdrop for free.
+ *
+ * Note the default: `dismiss="transient"` (backdrop click closes). If the
+ * dialog buffers unsaved input, pass `dismiss="guarded"` — or better, move to
+ * AdaptiveDialog and state the contract explicitly.
+ */
 import type { ReactNode } from 'react';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog, type DialogDismiss } from './AdaptiveDialog';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -10,105 +19,45 @@ interface ModalProps {
   onClose: () => void;
   title?: ReactNode;
   size?: ModalSize;
+  dismiss?: DialogDismiss;
+  dirty?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }
 
-const SIZE_WIDTHS: Record<ModalSize, string> = {
-  sm: '28rem',
-  md: '32rem',
-  lg: '42rem',
-  xl: '56rem',
+/** Was `rem` strings; AdaptiveDialog takes px. 28/32/42/56rem at 16px/rem. */
+const SIZE_WIDTHS: Record<ModalSize, number> = {
+  sm: 448,
+  md: 512,
+  lg: 672,
+  xl: 896,
 };
 
-export function Modal({ isOpen, onClose, title, size = 'md', children, footer }: ModalProps) {
-  const backdrop = useBackdropDismiss(onClose);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
-
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  size = 'md',
+  dismiss = 'transient',
+  dirty,
+  children,
+  footer,
+}: ModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-backdrop-in"
-      style={{ background: 'rgba(0, 0, 0, 0.15)' }}
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={onClose}
+      maxWidth={SIZE_WIDTHS[size]}
+      dismiss={dismiss}
+      dirty={dirty}
+      title={title}
+      footer={footer}
+      ariaLabel={typeof title === 'string' ? title : undefined}
     >
-      <div
-        className="animate-dialog-in"
-        style={{
-          width: '100%',
-          maxWidth: SIZE_WIDTHS[size],
-          maxHeight: '85vh',
-          background: 'var(--color-bg-primary)',
-          border: '0.5px solid var(--color-border-tertiary)',
-          borderRadius: 'var(--radius-xl)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        {title && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: 'var(--space-lg)',
-              borderBottom: '0.5px solid var(--color-border-tertiary)',
-            }}
-          >
-            <h2
-              style={{
-                fontSize: 'var(--text-section)',
-                fontWeight: 500,
-                letterSpacing: 'var(--tracking-section)',
-                margin: 0,
-                color: 'var(--color-text-primary)',
-              }}
-            >
-              {title}
-            </h2>
-            <button
-              onClick={onClose}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px',
-                color: 'var(--color-text-tertiary)',
-                display: 'flex',
-              }}
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        )}
-        <div style={{ padding: 'var(--space-lg)', overflowY: 'auto', flex: 1 }}>
-          {children}
-        </div>
-        {footer && (
-          <div
-            style={{
-              padding: 'var(--space-md) var(--space-lg)',
-              borderTop: '0.5px solid var(--color-border-tertiary)',
-              display: 'flex',
-              gap: 'var(--space-sm)',
-              justifyContent: 'flex-end',
-            }}
-          >
-            {footer}
-          </div>
-        )}
+      <div style={{ padding: 'var(--space-lg)', overflowY: 'auto', flex: 1 }}>
+        {children}
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

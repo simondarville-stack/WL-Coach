@@ -10,7 +10,7 @@ import { formatDateToDDMMYYYY, parseDDMMYYYYToISO } from '../lib/dateUtils';
 import { calculateAge } from '../lib/calculations';
 import { useAthletes } from '../hooks/useAthletes';
 import { useAthleteStore } from '../store/athleteStore';
-import { useBackdropDismiss } from '../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from './ui/AdaptiveDialog';
 import { Button } from './ui';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
@@ -23,7 +23,6 @@ interface AthleteFormModalProps {
 }
 
 function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: AthleteFormModalProps) {
-  const backdrop = useBackdropDismiss(onClose);
   const [name, setName] = useState(editingAthlete?.name ?? '');
   const [birthdateDisplay, setBirthdateDisplay] = useState(formatDateToDDMMYYYY(editingAthlete?.birthdate ?? ''));
   const [birthdate, setBirthdate] = useState(editingAthlete?.birthdate ?? '');
@@ -75,10 +74,28 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
   const inputCls = 'w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400';
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
 
+  // This form buffers a whole athlete record, so it is `guarded`: the backdrop
+  // never dismisses it, and Escape only does while nothing has been typed.
+  const dirty =
+    name !== (editingAthlete?.name ?? '') ||
+    birthdateDisplay !== formatDateToDDMMYYYY(editingAthlete?.birthdate ?? '') ||
+    bodyweight !== (editingAthlete?.bodyweight?.toString() ?? '') ||
+    weightClass !== (editingAthlete?.weight_class ?? '') ||
+    club !== (editingAthlete?.club ?? '') ||
+    notes !== (editingAthlete?.notes ?? '') ||
+    photoUrl !== (editingAthlete?.photo_url ?? '') ||
+    isActive !== (editingAthlete?.is_active ?? true) ||
+    trackBodyweight !== (editingAthlete?.track_bodyweight ?? true) ||
+    competitionTotal !== (editingAthlete?.competition_total?.toString() ?? '') ||
+    accessCode !== (editingAthlete?.access_code ?? '');
+
   return (
-    <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      dismiss="guarded"
+      dirty={dirty}
+      ariaLabel={editingAthlete ? 'Edit athlete' : 'Add athlete'}
     >
       <div
         className="rounded-xl w-[520px] max-h-[90vh] flex flex-col"
@@ -300,7 +317,7 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
           </Button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 
