@@ -3,10 +3,10 @@
 // prescriptions), mirroring the programme-template preview. Reads from the
 // in-memory snapshot, so no fetch is needed.
 
-import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { ClipboardWeekItem } from './useClipboardState';
 import { readableLines } from './TemplatePreviewDialog';
+import { AdaptiveDialog } from '../../ui/AdaptiveDialog';
 
 interface ClipboardWeekPreviewDialogProps {
   week: ClipboardWeekItem;
@@ -14,34 +14,8 @@ interface ClipboardWeekPreviewDialogProps {
 }
 
 export function ClipboardWeekPreviewDialog({ week, onClose }: ClipboardWeekPreviewDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="animate-backdrop-in"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-    >
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }} onClick={onClose} />
-      <div
-        className="animate-dialog-in"
-        style={{
-          position: 'relative', zIndex: 10,
-          width: '100%', maxWidth: 640, maxHeight: '85vh',
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border-secondary)',
-          borderRadius: 'var(--radius-xl)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
+    <AdaptiveDialog onClose={onClose} maxWidth={640} ariaLabel="Parked week preview">
         <div
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -122,7 +96,6 @@ export function ClipboardWeekPreviewDialog({ week, onClose }: ClipboardWeekPrevi
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

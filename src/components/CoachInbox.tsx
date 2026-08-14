@@ -57,6 +57,7 @@ import { describeError } from '../lib/errorMessage';
 import { onInboxChanged } from '../lib/inboxEvents';
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
+import { AdaptiveDialog } from './ui/AdaptiveDialog';
 import type { TrainingLogMessage } from '../lib/database.types';
 
 /** A unit-thread target from the attach flow. sessionId stays null
@@ -1269,30 +1270,11 @@ function UnitPickerModal({
   const isCurrentWeek = weekStart === getMondayOfWeekISO(new Date());
 
   return (
-    <div
-      role="dialog"
-      aria-label={`Attach a training unit for ${athleteName}`}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 60,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      ariaLabel={`Attach a training unit for ${athleteName}`}
     >
-      <button
-        onClick={onClose}
-        aria-label="Close"
-        tabIndex={-1}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(0,0,0,0.4)',
-          border: 'none',
-          cursor: 'default',
-        }}
-      />
       <div
         style={{
           position: 'relative',
@@ -1423,7 +1405,7 @@ function UnitPickerModal({
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

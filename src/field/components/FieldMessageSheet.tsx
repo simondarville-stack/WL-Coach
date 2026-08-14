@@ -30,6 +30,7 @@ import {
   sendGeneralMessage,
 } from '../../lib/trainingLogService';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
+import { AdaptiveDialog } from '../../components/ui/AdaptiveDialog';
 import type { TrainingLogMessage } from '../../lib/database.types';
 
 /** The training unit a drill-in screen is showing, for unit-attached
@@ -153,14 +154,16 @@ export function FieldMessageSheet({ athleteId, athleteName, unit, onClose }: Fie
     : 'General thread · lands in their Coach tab';
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-label={`Message ${athleteName}`}>
-      <button
-        className="absolute inset-0 bg-black/60"
-        onClick={onClose}
-        aria-label="Close"
-        tabIndex={-1}
-      />
-      <div className="relative bg-gray-900 border-t border-gray-800 rounded-t-2xl max-h-[70vh] flex flex-col">
+    <AdaptiveDialog
+      mode="sheet"
+      panel="bare"
+      onClose={onClose}
+      // Holds an unsent draft: the backdrop must not throw it away.
+      dismiss="guarded"
+      dirty={body.trim().length > 0 || sending}
+      ariaLabel={`Message ${athleteName}`}
+    >
+      <div className="relative w-full bg-gray-900 border-t border-gray-800 rounded-t-2xl max-h-[70vh] flex flex-col">
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-800">
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-white truncate">{athleteName}</div>
@@ -234,7 +237,7 @@ export function FieldMessageSheet({ athleteId, athleteName, unit, onClose }: Fie
           </button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

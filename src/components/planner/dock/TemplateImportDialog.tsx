@@ -5,6 +5,7 @@ import {
   fetchTemplateFull,
 } from '../../../lib/templateService';
 import type { ProgramTemplateFull } from '../../../lib/database.types';
+import { AdaptiveDialog } from '../../ui/AdaptiveDialog';
 
 interface TemplateImportDialogProps {
   templateId: string;
@@ -73,15 +74,6 @@ export function TemplateImportDialog({
     return () => { cancelled = true; };
   }, [templateId, visibleDays, startDayIndex]);
 
-  // Esc closes the dialog (matches the existing dialog idiom in WeeklyPlanner).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !applying) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, applying]);
-
   const mappedCount = useMemo(
     () => Object.values(mapping).filter(v => v != null).length,
     [mapping],
@@ -102,38 +94,15 @@ export function TemplateImportDialog({
   };
 
   return (
-    <div
-      className="animate-backdrop-in"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}
+    <AdaptiveDialog
+      onClose={onClose}
+      maxWidth={640}
+      // Holds a day-to-unit mapping the coach has built up; the backdrop must
+      // not throw it away, and nothing dismisses mid-apply.
+      dismiss="guarded"
+      dirty={applying || mappedCount > 0}
+      ariaLabel="Import template"
     >
-      <div
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }}
-        onClick={() => { if (!applying) onClose(); }}
-      />
-      <div
-        className="animate-dialog-in"
-        style={{
-          position: 'relative',
-          zIndex: 10,
-          width: '100%',
-          maxWidth: 640,
-          maxHeight: '85vh',
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border-secondary)',
-          borderRadius: 'var(--radius-xl)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
         <Header
           title={template ? `Import "${template.name}"` : 'Import template'}
           subtitle={template ? `${template.days.length} template day${template.days.length === 1 ? '' : 's'}` : null}
@@ -199,8 +168,7 @@ export function TemplateImportDialog({
           onCancel={() => { if (!applying) onClose(); }}
           onApply={handleApply}
         />
-      </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

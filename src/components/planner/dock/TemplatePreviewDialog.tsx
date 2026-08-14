@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { fetchTemplateFull } from '../../../lib/templateService';
+import { AdaptiveDialog } from '../../ui/AdaptiveDialog';
 import type { ProgramTemplateFull } from '../../../lib/database.types';
 import {
   parsePrescription,
@@ -45,37 +46,12 @@ export function TemplatePreviewDialog({ templateId, onClose }: TemplatePreviewDi
     return () => { cancelled = true; };
   }, [templateId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   return (
-    <div
-      className="animate-backdrop-in"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
+    <AdaptiveDialog
+      onClose={onClose}
+      maxWidth={640}
+      ariaLabel="Template preview"
     >
-      <div
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }}
-        onClick={onClose}
-      />
-      <div
-        className="animate-dialog-in"
-        style={{
-          position: 'relative', zIndex: 10,
-          width: '100%', maxWidth: 640, maxHeight: '85vh',
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border-secondary)',
-          borderRadius: 'var(--radius-xl)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
         <div
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -129,8 +105,7 @@ export function TemplatePreviewDialog({ templateId, onClose }: TemplatePreviewDi
             </div>
           ) : null}
         </div>
-      </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

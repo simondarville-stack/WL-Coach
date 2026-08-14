@@ -8,6 +8,7 @@ import { ExerciseBulkImportModal } from '../ExerciseBulkImportModal';
 import { ExerciseDetailPanel } from './ExerciseDetailPanel';
 import { ExerciseListPanel } from './ExerciseListPanel';
 import { ExerciseCategoryNav } from './ExerciseCategoryNav';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import type { Exercise } from '../../lib/database.types';
 
 export function ExerciseLibrary() {
@@ -179,15 +180,12 @@ export function ExerciseLibrary() {
 
       {/* Detail panel — fixed right-edge sidebar */}
       {selectedExercise && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-end"
-          onKeyDown={e => { if (e.key === 'Escape') setSelectedExerciseId(null); }}
+        <AdaptiveDialog
+          mode="sidebar"
+          panel="bare"
+          onClose={() => setSelectedExerciseId(null)}
+          ariaLabel={`Exercise · ${selectedExercise.name}`}
         >
-          <div
-            className="absolute inset-0"
-            style={{ background: 'rgba(0,0,0,0.15)' }}
-            onClick={() => setSelectedExerciseId(null)}
-          />
           <div
             className="animate-sidebar-in relative z-10 h-full flex flex-col"
             style={{
@@ -210,7 +208,7 @@ export function ExerciseLibrary() {
               allExercises={exercises}
             />
           </div>
-        </div>
+        </AdaptiveDialog>
       )}
 
       {/* Modals */}

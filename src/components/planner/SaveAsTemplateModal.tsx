@@ -12,8 +12,9 @@
 // back-conversion. Coaches build templates against the plan they already
 // have; abstraction is a future concern (see plan).
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { X, Loader2, Save } from 'lucide-react';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 export type SaveAsTemplateMode = 'day' | 'week';
 
@@ -77,14 +78,6 @@ export function SaveAsTemplateModal({
     return init;
   });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, saving]);
-
   const includedCount = mode === 'week'
     ? Object.values(included).filter(Boolean).length
     : 1;
@@ -116,30 +109,16 @@ export function SaveAsTemplateModal({
   };
 
   return (
-    <div
-      className="animate-backdrop-in"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 55,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
+    <AdaptiveDialog
+      onClose={onClose}
+      maxWidth={520}
+      // Buffers a name, description and per-unit selection, so the backdrop
+      // must not discard it. Escape stays available until the coach types, and
+      // is suppressed outright mid-save.
+      dismiss="guarded"
+      dirty={saving || name !== defaultName || description !== (defaultDescription ?? '')}
+      ariaLabel={mode === 'day' ? 'Save training unit as template' : 'Save week as template'}
     >
-      <div
-        style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.2)' }}
-        onClick={() => { if (!saving) onClose(); }}
-      />
-      <div
-        className="animate-dialog-in"
-        style={{
-          position: 'relative', zIndex: 10,
-          width: '100%', maxWidth: 520, maxHeight: '85vh',
-          background: 'var(--color-bg-primary)',
-          border: '1px solid var(--color-border-secondary)',
-          borderRadius: 'var(--radius-xl)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
         <Header
           title={mode === 'day' ? 'Save training unit as template' : 'Save week as template'}
           onClose={() => { if (!saving) onClose(); }}
@@ -305,8 +284,7 @@ export function SaveAsTemplateModal({
             {saving ? 'Saving…' : 'Save template'}
           </button>
         </div>
-      </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

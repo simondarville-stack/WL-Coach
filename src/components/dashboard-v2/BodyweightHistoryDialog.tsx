@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 import { fetchBodyweightHistory, type BodyweightPoint } from '../../lib/trainingLogService';
 import { describeError } from '../../lib/errorMessage';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { formatDateShort, formatWeekday, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 
 interface Props {
@@ -113,14 +114,6 @@ export function BodyweightHistoryDialog({ athleteId, athleteName, onClose }: Pro
     };
   }, [athleteId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   // Full series with trailing 7d / 28d moving averages. MAs are computed
   // over ALL points (not just the visible window) so the value at a
   // window's left edge stays correct when the view is narrowed. Weigh-ins
@@ -187,13 +180,12 @@ export function BodyweightHistoryDialog({ athleteId, athleteName, onClose }: Pro
   }, [entries]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-black/20" onClick={onClose} />
-      <div
-        role="dialog"
-        aria-label={`Bodyweight history · ${athleteName}`}
-        className="relative bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
-      >
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      ariaLabel={`Bodyweight history · ${athleteName}`}
+    >
+      <div className="relative bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
         <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100">
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-[11px] uppercase tracking-wider text-gray-400 font-medium">
@@ -370,7 +362,7 @@ export function BodyweightHistoryDialog({ athleteId, athleteName, onClose }: Pro
           )}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 

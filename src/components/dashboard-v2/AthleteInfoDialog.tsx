@@ -2,11 +2,11 @@
 // weight class, club, birthdate-derived age, bodyweight) plus quick actions
 // (open planner, open macro plan, view full athlete profile).
 
-import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { AthleteStatus } from '../../hooks/useCoachDashboard';
 import type { AthleteEnrichment } from '../../hooks/useCoachDashboardV2';
 import { calculateAge } from '../../lib/calculations';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { Avatar, RawChip, BwDelta, PhasePill, WeekPill } from './atoms';
 
 interface Props {
@@ -33,25 +33,10 @@ export function AthleteInfoDialog({
   const a = status.athlete;
   const age = calculateAge(a.birthdate);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
+  // Read-only summary — `transient`, the default.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div
-        className="absolute inset-0 bg-black/20"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-label={`Athlete · ${a.name}`}
-        className="relative bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden"
-      >
+    <AdaptiveDialog onClose={onClose} panel="bare" ariaLabel={`Athlete · ${a.name}`}>
+      <div className="relative bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-5 py-4 flex items-center gap-3 border-b border-gray-100">
           {a.photo_url ? (
@@ -149,6 +134,6 @@ export function AthleteInfoDialog({
           </button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
