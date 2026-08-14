@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Prescription Enrichments (Prototype v4)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --success: #1c7c3c;
+    --radius: 6px;
+    --mono: "Cascadia Code", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .muted { color: var(--text-3); }
+  .cols { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .panel { background: var(--bg-1); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 12px 14px; }
+  .note { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+
+  /* ---------- coach day card ---------- */
+  .daycard { width: 500px; }
+  .daycard .dayhead { display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--border-2); padding-bottom: 6px; margin-bottom: 4px; }
+  .daycard .dayhead .d { font-weight: 600; }
+  .exrow { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-2); }
+  .exrow:last-child { border-bottom: none; }
+  .exrow .pos { color: var(--text-3); font-size: 11px; width: 14px; padding-top: 2px; }
+  .exrow .name { width: 128px; font-weight: 500; padding-top: 2px; }
+  .exrow .name .cat { display: block; font-size: 10px; color: var(--text-3); font-weight: 400; }
+  .presc { flex: 1; }
+
+  /* ---------- unified stacked editor ---------- */
+  .skilledit { display: flex; gap: 8px; align-items: center; }
+  .segcol { display: flex; flex-direction: column; align-items: center; }
+  .segcol .toprow { display: flex; align-items: center; }
+  .segcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .skilledit input, .metarow input {
+    font-family: var(--mono); font-size: 12px; line-height: 1.25; font-weight: 500;
+    border: none; outline: none; background: transparent; text-align: center;
+    color: var(--text-1); padding: 0 1px; border-radius: 3px; min-width: 18px;
+  }
+  .segcol input.repsin { color: var(--text-3); }
+  .skilledit input:hover, .metarow input:hover { background: var(--bg-2); }
+  .skilledit input:focus, .metarow input:focus { background: var(--accent-light); }
+  .cmp { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent);
+    cursor: pointer; user-select: none; padding: 0 1px; border-radius: 3px; }
+  .cmp:hover { background: var(--accent-light); }
+  .cmp.none { opacity: 0; }                 /* invisible until row hover */
+  .exrow:hover .cmp.none { opacity: .3; }   /* faint affordance */
+  .cmp.none:hover { opacity: .8 !important; }
+  .setsin { align-self: center; }
+  .setsin input { font-size: 11px; color: var(--text-2); }
+
+  /* ---------- meta row (all rows, hidden + until hover) ---------- */
+  .metarow { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+  .metarow.empty { margin-top: 0; }
+  .mchip {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 1px solid var(--border-1); border-radius: 4px; background: var(--bg-2);
+    padding: 1px 6px; font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: nowrap;
+  }
+  .mchip .k { color: var(--text-3); font-size: 10px; }
+  .mchip.ghost { border-style: dashed; background: transparent; }
+  .mchip.ghost .k, .mchip.ghost input { color: var(--text-3); }
+  .mchip .eye { cursor: pointer; display: inline-flex; align-items: center; color: var(--text-3); padding: 0 1px; border-radius: 3px; }
+  .mchip .eye:hover { color: var(--accent); background: var(--accent-light); }
+  .mchip .eye svg { width: 11px; height: 11px; }
+  .mchip .off { color: var(--text-3); cursor: pointer; padding: 0 1px; font-size: 10px; }
+  .mchip .off:hover { color: var(--danger); }
+  .mchip .autobadge { font-size: 8px; text-transform: uppercase; letter-spacing: .04em;
+    background: var(--bg-1); border: 1px solid var(--border-2); border-radius: 3px; padding: 0 3px; color: var(--text-3); }
+  .mchip.overridden .autobadge { background: var(--accent-light); border-color: var(--accent-light); color: var(--accent); }
+  .mchip .reset { color: var(--text-3); cursor: pointer; font-size: 10px; }
+  .mchip .reset:hover { color: var(--accent); }
+
+  .addmeta { position: relative; }
+  .addmeta > button { font-size: 11px; color: var(--text-3); cursor: pointer; border: 1px dashed var(--border-1);
+    background: none; border-radius: 4px; padding: 1px 7px; font-family: var(--mono); }
+  .addmeta > button:hover { color: var(--accent); border-color: var(--accent); }
+  .metarow.empty .addmeta > button { opacity: 0; }
+  .exrow:hover .metarow.empty .addmeta > button { opacity: .5; }
+  .metarow.empty .addmeta > button:hover { opacity: 1; }
+  .addmenu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 2px;
+    background: var(--bg-1); border: 1px solid var(--border-1); border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(20,30,45,.13); padding: 3px; min-width: 130px; }
+  .addmenu button { display: flex; gap: 6px; width: 100%; text-align: left; font: inherit; font-size: 12px;
+    border: none; background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; color: var(--text-1); }
+  .addmenu button:hover { background: var(--accent-light); }
+  .addmenu button .ic { width: 14px; color: var(--text-3); font-family: var(--mono); }
+
+  .summaryline { margin-top: 3px; font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+  .combochip { font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px;
+    border-radius: 8px; background: #e8f1e9; color: #1c7c3c; vertical-align: 1px; }
+
+  .cfg { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--text-2);
+    background: var(--bg-2); border-radius: var(--radius); padding: 6px 10px; margin-top: 10px; }
+  .cfg input { width: 44px; font: inherit; padding: 1px 4px; border: 1px solid var(--border-1); border-radius: 3px; text-align: right; }
+
+  /* ---------- print preview ---------- */
+  .printbox { width: 285px; }
+  .printrow { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--border-2); align-items: flex-start; }
+  .printrow:last-child { border-bottom: none; }
+  .printrow .pn { width: 96px; font-weight: 500; font-size: 12px; }
+  .printstack { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .printcol { display: flex; flex-direction: column; align-items: center; font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .printcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .printcol .lower { color: var(--text-3); }
+  .printtime { font-size: 11px; color: var(--text-2); align-self: center; font-family: var(--mono); }
+  .printmeta { width: 100%; font-family: var(--mono); font-size: 11px; color: var(--text-2); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ---------- athlete card ---------- */
+  .phone { width: 320px; background: #10151c; border-radius: 18px; padding: 10px; }
+  .phonescreen { background: #f4f5f7; border-radius: 10px; padding: 10px; }
+  .acard { background: #fff; border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .acard .ahead { display: flex; justify-content: space-between; align-items: baseline; }
+  .acard .aname { font-weight: 600; font-size: 14px; }
+  .aconstraints { margin: 6px 0 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .ameta { margin: 2px 0 8px; font-family: var(--mono); font-size: 12px; color: var(--text-2); display: flex; gap: 10px; flex-wrap: wrap; }
+  .setrows { border-top: 1px solid var(--border-2); }
+  .setrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-2); font-family: var(--mono); font-size: 13px; }
+  .setrow .sn { color: var(--text-3); font-size: 11px; width: 18px; }
+  .setrow input { width: 52px; font: inherit; padding: 2px 5px; border: 1px solid var(--border-1); border-radius: 4px; text-align: right; }
+  .setrow .x { color: var(--text-3); }
+  .addset { margin-top: 6px; width: 100%; font: inherit; font-size: 12px; padding: 5px; border: 1px dashed var(--border-1);
+    border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .addset:hover { border-color: var(--accent); color: var(--accent); }
+  .runline { margin-top: 8px; display: flex; justify-content: space-between; font-size: 12px; }
+  .runline .ok { color: var(--success); font-weight: 600; }
+  .runline .under { color: var(--text-3); }
+  .runline .over { color: var(--danger); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>EMOS — Prescription Enrichments <span class="muted" style="font-weight:400">· prototype v4 — no mode, one grammar for everything</span></h1>
+<div class="note">There is no "skill mode" anymore. Sign (≥ ≈ ≤), rep ranges, set ranges, and the meta row are
+<b>optional enrichments on every prescription</b>. Use none → identical to today. Use several → a soft-constrained
+"skill" block. Regular sets gain rest/time prescription for free. Hover a plain row to discover the sign slot and the + for meta.</div>
+
+<div class="cols">
+
+  <!-- ============ COACH PLANNER ============ -->
+  <div class="panel daycard">
+    <h2>Coach · Weekly Planner (Tuesday)</h2>
+    <div class="dayhead"><span class="d">Tuesday</span><span class="muted">17/08</span></div>
+
+    <div class="exrow">
+      <span class="pos">1</span>
+      <span class="name">Snatch Pull<span class="cat">Pull · regular + rest</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-pull"></div>
+        <div class="metarow" id="meta-pull"></div>
+        <div class="summaryline" id="sum-pull"></div>
+      </div>
+    </div>
+
+    <div class="exrow">
+      <span class="pos">2</span>
+      <span class="name">Snatch<span class="cat">Snatch · soft block</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-sn"></div>
+        <div class="metarow" id="meta-sn"></div>
+        <div class="summaryline" id="sum-sn"></div>
+      </div>
+    </div>
+
+    <div class="exrow">
+      <span class="pos">3</span>
+      <span class="name">Clean + Jerk <span class="combochip">COMBO</span><span class="cat">Combo · soft block</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-cj"></div>
+        <div class="metarow" id="meta-cj"></div>
+        <div class="summaryline" id="sum-cj"></div>
+      </div>
+    </div>
+
+    <div class="exrow">
+      <span class="pos">4</span>
+      <span class="name">Back Squat<span class="cat">Squat · untouched</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-sq"></div>
+        <div class="metarow" id="meta-sq"></div>
+        <div class="summaryline" id="sum-sq"></div>
+      </div>
+    </div>
+
+    <div class="cfg">
+      <span>Coach config — auto avg load =</span>
+      <input type="number" id="ghostFraction" value="75" min="10" max="100"> <span>% of anchor</span>
+      <span class="muted" style="margin-left:auto">COACH-CONFIG candidate</span>
+    </div>
+    <div class="note" style="margin-top:8px">
+      Row 4 uses zero enrichments — it looks and behaves exactly like today. Row 1 is a regular fixed prescription
+      plus a prescribed rest (one enrichment). Rows 2–3 combine sign + ranges + meta = the full soft block.
+      Typed grammar extends the parser, not replaces it: <span style="font-family:var(--mono)">&gt;=85%×3-5×4-6</span>
+      parses like <span style="font-family:var(--mono)">85×3×5</span> does now.
+    </div>
+  </div>
+
+  <!-- ============ PRINT / READ-ONLY ============ -->
+  <div class="panel printbox">
+    <h2>Print / read-only rendering</h2>
+    <div class="printrow"><span class="pn">Snatch Pull</span><div style="flex:1" id="print-pull"></div></div>
+    <div class="printrow"><span class="pn">Snatch</span><div style="flex:1" id="print-sn"></div></div>
+    <div class="printrow"><span class="pn">Clean + Jerk</span><div style="flex:1" id="print-cj"></div></div>
+    <div class="printrow"><span class="pn">Back Squat</span><div style="flex:1" id="print-sq"></div></div>
+    <div class="note" style="margin-top:8px">Plain rows render exactly as today. Enriched rows show the sign, ranges
+    and <b>visible</b> meta values. Ghosts (dashed chips) feed Analysis but never render here.</div>
+  </div>
+
+  <!-- ============ ATHLETE APP ============ -->
+  <div class="phone">
+    <div class="phonescreen">
+      <div class="acard">
+        <div class="ahead"><span class="aname">Snatch</span></div>
+        <div class="aconstraints" id="ath-stack"></div>
+        <div class="ameta" id="ath-meta"></div>
+        <div class="setrows" id="setrows"></div>
+        <button class="addset" id="addset">+ add set</button>
+        <div class="runline">
+          <span id="runreps"></span>
+          <span id="runtop"></span>
+        </div>
+      </div>
+      <div class="note" style="color:#9aa3ad">Free set logging appears whenever the prescription has open ranges;
+      fixed prescriptions keep today's tick-off rows. Soft check against visible targets.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ================= helpers =================
+const CMPS = ['', '>=', '~', '<='];
+const GLYPH = { '': '', '>=': '≥', '~': '≈', '<=': '≤' };
+const fmt = n => n == null ? '' : String(Math.round(n * 10) / 10).replace('.', ',');
+
+function parseTime(raw) {
+  if (!raw || !raw.trim()) return null;
+  const s = raw.trim().toLowerCase().replace(',', '.').replace('′', '').replace('″', 's');
+  if (s.endsWith('s')) { const n = parseFloat(s); return isNaN(n) ? null : n; }
+  const n = parseFloat(s); return isNaN(n) ? null : n * 60;
+}
+function fmtTime(sec) {
+  if (sec == null) return '';
+  if (sec < 60 || sec % 60 !== 0) return fmt(sec) + '″';
+  return fmt(sec / 60) + '′';
+}
+function parseRange(raw) {
+  const s = (raw || '').replace(/\s/g, '').replace(/–/g, '-');
+  if (/^\d+(\+\d+)+$/.test(s)) {
+    const tuple = s.split('+').map(x => parseInt(x, 10) || 0);
+    const t = tuple.reduce((a, b) => a + b, 0);
+    return { min: t, max: t, tuple, text: s };
+  }
+  const m = s.match(/^(\d+)(?:-(\d+))?$/);
+  if (m) return { min: +m[1], max: m[2] ? +m[2] : +m[1], tuple: null, text: s };
+  return null;
+}
+const mid = r => r ? (r.min + r.max) / 2 : null;
+const isRange = r => r && r.min !== r.max;
+
+// ================= meta registry (extensible) =================
+const META_REGISTRY = {
+  totalTime: { icon: '⏱', label: 'total time', defVisible: true,  defValue: () => 600, fmtV: v => fmtTime(v), parse: parseTime, auto: null },
+  rest:      { icon: '⏸', label: 'rest',       defVisible: true,  defValue: () => 120, fmtV: v => fmtTime(v), parse: parseTime, auto: null },
+  totalReps: { icon: 'Σ', label: 'total reps', defVisible: false, defValue: null, fmtV: v => String(v),
+               parse: v => { const n = parseInt(v, 10); return isNaN(n) ? null : n; },
+               auto: row => { const r = mid(parseRange(row.reps)), s = mid(parseRange(row.sets)); return r != null && s != null ? Math.round(r * s) : null; } },
+  avgLoad:   { icon: 'Ø', label: 'avg load',   defVisible: false, defValue: null,
+               fmtV: (v, row) => fmt(v) + (row.isPct ? '%' : ''),
+               parse: v => { const n = parseFloat(v.replace('%','').replace(',', '.')); return isNaN(n) ? null : n; },
+               auto: row => {
+                 if (!row.cmp) return row.load;   // fixed prescription: avg = the prescribed load, as today
+                 const frac = Number(document.getElementById('ghostFraction').value) / 100;
+                 return row.load != null ? Math.round(row.load * frac * 2) / 2 : null;
+               } },
+  rpeCap:    { icon: '@', label: 'RPE cap',    defVisible: true, defValue: () => 8, fmtV: v => 'RPE' + fmt(v),
+               parse: v => { const n = parseFloat(v.replace(/rpe/i, '').replace(',', '.')); return isNaN(n) ? null : n; }, auto: null },
+};
+
+// ================= rows: same model for every exercise =================
+const rows = {
+  pull: { id: 'pull', cmp: '', load: 100, isPct: false, reps: '3', sets: '5',
+          meta: [ { key: 'rest', value: 180, visible: true } ] },
+  sn:   { id: 'sn', cmp: '>=', load: 85, isPct: true, reps: '3-5', sets: '5',
+          meta: [ { key: 'totalTime', value: 720, visible: true },
+                  { key: 'totalReps', value: null, visible: false },
+                  { key: 'avgLoad',  value: null, visible: false } ] },
+  cj:   { id: 'cj', cmp: '<=', load: 70, isPct: true, reps: '2+1', sets: '4-6',
+          meta: [ { key: 'rest', value: 120, visible: true },
+                  { key: 'totalReps', value: null, visible: false } ] },
+  sq:   { id: 'sq', cmp: '', load: 120, isPct: false, reps: '5', sets: '5', meta: [] },
+};
+const logged = [ { load: 60, reps: 3 }, { load: 65, reps: 3 }, { load: 70, reps: 2 } ];
+let openMenu = null;
+
+function metaValue(row, m) {
+  if (m.value != null) return m.value;
+  const reg = META_REGISTRY[m.key];
+  return reg.auto ? reg.auto(row) : null;
+}
+
+// ================= editor =================
+function autosize(inp) { inp.style.width = Math.max(2, inp.value.length) + 'ch'; }
+function mkInput(value, cls, commit) {
+  const inp = document.createElement('input');
+  inp.className = cls; inp.value = value == null ? '' : value;
+  autosize(inp);
+  inp.addEventListener('input', () => autosize(inp));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+  inp.addEventListener('blur', () => commit(inp.value.trim()));
+  return inp;
+}
+
+const EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 12s3.5-7 10-7c2.2 0 4 .8 5.5 1.8M22 12s-3.5 7-10 7c-2.2 0-4-.8-5.5-1.8"/><line x1="3" y1="21" x2="21" y2="3"/></svg>';
+
+function renderStack(row) {
+  const host = document.getElementById('edit-' + row.id);
+  host.innerHTML = '';
+  const col = document.createElement('span');
+  col.className = 'segcol';
+  const top = document.createElement('span');
+  top.className = 'toprow';
+  const cmp = document.createElement('span');
+  cmp.className = 'cmp' + (row.cmp ? '' : ' none');
+  cmp.textContent = row.cmp ? GLYPH[row.cmp] : '≥';
+  cmp.title = row.cmp ? 'cycle: ≥ work up to / ≈ around / ≤ stay below / none' : 'add a sign (soft load)';
+  cmp.addEventListener('click', () => { row.cmp = CMPS[(CMPS.indexOf(row.cmp) + 1) % CMPS.length]; renderAll(); });
+  top.appendChild(cmp);
+  top.appendChild(mkInput(fmt(row.load) + (row.isPct ? '%' : ''), 'loadin', v => {
+    row.isPct = v.includes('%');
+    const n = parseFloat(v.replace('%', '').replace(',', '.'));
+    if (!isNaN(n)) row.load = n;
+    renderAll();
+  }));
+  col.appendChild(top);
+  const rule = document.createElement('span'); rule.className = 'rule'; col.appendChild(rule);
+  col.appendChild(mkInput(row.reps, 'repsin', v => { row.reps = v; renderAll(); }));
+  host.appendChild(col);
+
+  const sets = document.createElement('span');
+  sets.className = 'setsin';
+  sets.appendChild(mkInput(row.sets, '', v => { row.sets = v; renderAll(); }));
+  sets.title = 'sets — accepts a range (4-6)';
+  host.appendChild(sets);
+}
+
+function renderMeta(row) {
+  const host = document.getElementById('meta-' + row.id);
+  host.innerHTML = '';
+  host.className = 'metarow' + (row.meta.length ? '' : ' empty');
+
+  row.meta.forEach((m, mi) => {
+    const reg = META_REGISTRY[m.key];
+    const val = metaValue(row, m);
+    const overridden = m.value != null && !!reg.auto;
+    const c = document.createElement('span');
+    c.className = 'mchip' + (m.visible ? '' : ' ghost') + (overridden ? ' overridden' : '');
+    c.title = reg.label + (m.visible ? ' — visible to athlete' : ' — ghost: analysis only');
+
+    const k = document.createElement('span'); k.className = 'k'; k.textContent = reg.icon; c.appendChild(k);
+    const inp = mkInput(val == null ? '' : reg.fmtV(val, row).replace(/^RPE/, ''), '', v => {
+      m.value = reg.parse(v); renderAll();
+    });
+    c.appendChild(inp);
+
+    if (reg.auto) {
+      const b = document.createElement('span'); b.className = 'autobadge';
+      b.textContent = overridden ? 'set' : 'auto'; c.appendChild(b);
+      if (overridden) {
+        const r = document.createElement('span'); r.className = 'reset'; r.textContent = '↺'; r.title = 'back to auto';
+        r.addEventListener('click', () => { m.value = null; renderAll(); });
+        c.appendChild(r);
+      }
+    }
+
+    const eye = document.createElement('span');
+    eye.className = 'eye'; eye.innerHTML = m.visible ? EYE_ON : EYE_OFF;
+    eye.title = m.visible ? 'visible to athlete — click to make ghost' : 'ghost (analysis only) — click to show to athlete';
+    eye.addEventListener('click', () => { m.visible = !m.visible; renderAll(); });
+    c.appendChild(eye);
+
+    const off = document.createElement('span'); off.className = 'off'; off.textContent = '✕'; off.title = 'remove';
+    off.addEventListener('click', () => { row.meta.splice(mi, 1); renderAll(); });
+    c.appendChild(off);
+
+    host.appendChild(c);
+  });
+
+  const wrap = document.createElement('span');
+  wrap.className = 'addmeta';
+  const btn = document.createElement('button');
+  btn.textContent = '+';
+  btn.title = 'add: time / rest / total reps / avg load / …';
+  btn.addEventListener('click', e => { e.stopPropagation(); openMenu = openMenu === row.id ? null : row.id; renderAll(); });
+  wrap.appendChild(btn);
+  if (openMenu === row.id) {
+    const menu = document.createElement('div');
+    menu.className = 'addmenu';
+    Object.keys(META_REGISTRY).filter(k => !row.meta.some(m => m.key === k)).forEach(k => {
+      const reg = META_REGISTRY[k];
+      const b = document.createElement('button');
+      b.innerHTML = '<span class="ic">' + reg.icon + '</span>' + reg.label;
+      b.addEventListener('click', () => {
+        row.meta.push({ key: k, value: reg.defValue ? reg.defValue() : null, visible: reg.defVisible });
+        openMenu = null; renderAll();
+      });
+      menu.appendChild(b);
+    });
+    if (!menu.children.length) { const e = document.createElement('div'); e.className = 'note'; e.style.padding = '4px 8px'; e.textContent = 'all added'; menu.appendChild(e); }
+    wrap.appendChild(menu);
+  }
+  host.appendChild(wrap);
+
+  // analysis summary — everything feeds it, ghost or visible
+  const r = parseRange(row.reps), s = parseRange(row.sets);
+  const tr = row.meta.find(m => m.key === 'totalReps');
+  const al = row.meta.find(m => m.key === 'avgLoad');
+  const totalReps = tr ? metaValue(row, tr) : (mid(r) != null && mid(s) != null ? Math.round(mid(r) * mid(s)) : null);
+  const avg = al ? metaValue(row, al) : (row.cmp ? null : row.load);
+  const parts = [];
+  if (totalReps != null) parts.push('R ' + totalReps);
+  if (avg != null) parts.push('Avg ' + fmt(avg) + (row.isPct ? '%' : ''));
+  if (row.load != null) parts.push('Hi ' + fmt(row.load) + (row.isPct ? '%' : ''));
+  document.getElementById('sum-' + row.id).textContent = '→ analysis: ' + (parts.length ? parts.join(' · ') : '—');
+}
+
+// ================= read-only renderings =================
+function stackReadonly(row) {
+  const wrap = document.createElement('div');
+  wrap.className = 'printstack';
+  const col = document.createElement('span');
+  col.className = 'printcol';
+  col.innerHTML = '<span>' + GLYPH[row.cmp] + fmt(row.load) + (row.isPct ? '%' : '') + '</span><span class="rule"></span><span class="lower">'
+    + (row.reps || '—').replace(/-/g, '–') + '</span>';
+  wrap.appendChild(col);
+  const showSets = !(row.sets === '1' || row.sets === '');
+  if (showSets) {
+    const s = document.createElement('span');
+    s.className = 'printtime'; s.textContent = (row.sets || '').replace(/-/g, '–');
+    wrap.appendChild(s);
+  }
+  return wrap;
+}
+function visibleMetaText(row) {
+  return row.meta.filter(m => m.visible).map(m => {
+    const reg = META_REGISTRY[m.key];
+    const v = metaValue(row, m);
+    return v == null ? null : reg.icon + ' ' + reg.fmtV(v, row);
+  }).filter(Boolean);
+}
+function renderPrint(row) {
+  const host = document.getElementById('print-' + row.id);
+  host.innerHTML = '';
+  host.appendChild(stackReadonly(row));
+  const metas = visibleMetaText(row);
+  if (metas.length) {
+    const m = document.createElement('div');
+    m.className = 'printmeta';
+    metas.forEach(t => { const s = document.createElement('span'); s.textContent = t; m.appendChild(s); });
+    host.appendChild(m);
+  }
+}
+
+// ================= athlete card (snatch) =================
+function renderAthlete() {
+  const row = rows.sn;
+  const st = document.getElementById('ath-stack');
+  st.innerHTML = ''; st.appendChild(stackReadonly(row));
+  const am = document.getElementById('ath-meta');
+  am.innerHTML = '';
+  visibleMetaText(row).forEach(t => { const s = document.createElement('span'); s.textContent = t; am.appendChild(s); });
+
+  const rowsEl = document.getElementById('setrows');
+  rowsEl.innerHTML = '';
+  logged.forEach((s, i) => {
+    const r = document.createElement('div');
+    r.className = 'setrow';
+    r.innerHTML = '<span class="sn">' + (i + 1) + '</span>';
+    const load = document.createElement('input'); load.value = s.load;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×';
+    const reps = document.createElement('input'); reps.value = s.reps; reps.style.width = '40px';
+    load.addEventListener('change', () => { s.load = parseFloat(load.value.replace(',', '.')) || 0; renderAll(); });
+    reps.addEventListener('change', () => { s.reps = parseInt(reps.value, 10) || 0; renderAll(); });
+    r.appendChild(load); r.appendChild(x); r.appendChild(reps);
+    rowsEl.appendChild(r);
+  });
+
+  const total = logged.reduce((s, l) => s + l.reps, 0);
+  const top = logged.reduce((s, l) => Math.max(s, l.load), 0);
+  const tr = row.meta.find(m => m.key === 'totalReps' && m.visible);
+  let lo = null, hi = null;
+  if (tr && metaValue(row, tr) != null) { lo = hi = metaValue(row, tr); }
+  else {
+    const r = parseRange(row.reps), s = parseRange(row.sets);
+    if (r && s) { lo = r.min * s.min; hi = r.max * s.max; }
+  }
+  const rl = document.getElementById('runreps');
+  let cls = '', suffix = '';
+  if (lo != null) {
+    const label = lo === hi ? String(lo) : lo + '–' + hi;
+    if (total < lo) { cls = 'under'; suffix = ' / ' + label; }
+    else if (total > hi) { cls = 'over'; suffix = ' — over ' + label; }
+    else { cls = 'ok'; suffix = ' ✓ in ' + label; }
+  }
+  rl.innerHTML = 'Σ <b>' + total + '</b> reps<span class="' + cls + '">' + suffix + '</span>';
+  document.getElementById('runtop').textContent = top ? 'top ' + fmt(top) + ' kg' : '';
+}
+
+document.getElementById('addset').addEventListener('click', () => {
+  const last = logged[logged.length - 1];
+  logged.push({ load: last ? last.load : 0, reps: last ? last.reps : 1 });
+  renderAll();
+});
+document.getElementById('ghostFraction').addEventListener('change', () => renderAll());
+document.addEventListener('click', () => { if (openMenu) { openMenu = null; renderAll(); } });
+
+function renderAll() {
+  Object.values(rows).forEach(r => { renderStack(r); renderMeta(r); renderPrint(r); });
+  renderAthlete();
+}
+renderAll();
+</script>
+</body>
+</html>

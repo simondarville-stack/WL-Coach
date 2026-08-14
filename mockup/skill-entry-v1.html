@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Skill-Based Entry (Prototype v1)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --success: #1c7c3c;
+    --radius: 6px;
+    --mono: "Cascadia Code", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .muted { color: var(--text-3); }
+  .cols { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .panel {
+    background: var(--bg-1); border: 1px solid var(--border-2);
+    border-radius: var(--radius); padding: 12px 14px;
+  }
+  .note { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+
+  /* ---------- coach day card ---------- */
+  .daycard { width: 460px; }
+  .daycard .dayhead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--border-2); padding-bottom: 6px; margin-bottom: 4px;
+  }
+  .daycard .dayhead .d { font-weight: 600; }
+  .exrow {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 4px; border-bottom: 1px solid var(--border-2);
+  }
+  .exrow:last-child { border-bottom: none; }
+  .exrow .pos { color: var(--text-3); font-size: 11px; width: 14px; padding-top: 2px; }
+  .exrow .name { width: 128px; font-weight: 500; padding-top: 2px; }
+  .exrow .name .cat { display: block; font-size: 10px; color: var(--text-3); font-weight: 400; }
+  .presc { flex: 1; }
+
+  /* stacked notation (existing visual, for context rows) */
+  .stack { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .stackcol { display: flex; flex-direction: column; align-items: center; min-width: 22px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .stackcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .stackcol .reps { color: var(--text-3); }
+  .setmult { font-size: 11px; color: var(--text-2); align-self: center; }
+
+  /* ---------- skill chip strip ---------- */
+  .skillstrip { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--border-1); border-radius: 4px;
+    background: var(--bg-2); padding: 2px 7px; cursor: pointer;
+    font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip .lbl { font-family: inherit; color: var(--text-3); font-size: 10px; }
+  .chip.emptychip { border-style: dashed; color: var(--text-3); background: transparent; font-family: inherit; }
+  .chip.ghostchip {
+    border-style: dashed; background: transparent; color: var(--text-3);
+  }
+  .chip.ghostchip .autobadge {
+    font-size: 9px; font-family: inherit; text-transform: uppercase; letter-spacing: .04em;
+    background: var(--bg-2); border-radius: 3px; padding: 0 4px; color: var(--text-3);
+  }
+  .chip.ghostchip.overridden .autobadge { background: var(--accent-light); color: var(--accent); }
+  .chip input {
+    font: inherit; font-family: var(--mono); width: 44px; border: none; outline: none;
+    background: transparent; color: var(--text-1); padding: 0;
+  }
+  .cmp {
+    font-weight: 700; color: var(--accent); cursor: pointer; user-select: none;
+    padding: 0 2px; border-radius: 3px;
+  }
+  .cmp:hover { background: var(--accent-light); }
+  .chip .reset { color: var(--text-3); cursor: pointer; font-size: 11px; padding: 0 1px; }
+  .chip .reset:hover { color: var(--accent); }
+
+  .summaryline {
+    margin-top: 4px; font-size: 11px; color: var(--text-3); font-family: var(--mono);
+  }
+  .skillbadge {
+    font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px;
+    border-radius: 8px; background: #f1e8f8; color: #6b3fa0; vertical-align: 1px;
+  }
+
+  /* ---------- config box ---------- */
+  .cfg { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--text-2);
+    background: var(--bg-2); border-radius: var(--radius); padding: 6px 10px; margin-top: 10px; }
+  .cfg input { width: 44px; font: inherit; padding: 1px 4px; border: 1px solid var(--border-1); border-radius: 3px; text-align: right; }
+
+  /* ---------- read-only display variants ---------- */
+  .variants { width: 300px; }
+  .variantbox { border: 1px solid var(--border-2); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; background: var(--bg-2); }
+  .variantbox .vtitle { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; margin-bottom: 6px; }
+  .constraintline { font-family: var(--mono); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .constraintline .sep { color: var(--border-1); }
+  .skillstack { display: flex; gap: 8px; align-items: center; }
+  .skillstack .col { display: flex; flex-direction: column; align-items: center; font-family: var(--mono); font-size: 12px; }
+  .skillstack .col .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .skillstack .col .lower { color: var(--text-3); }
+  .skillstack .cap { font-size: 11px; color: var(--text-2); align-self: center; }
+
+  /* ---------- athlete card ---------- */
+  .phone { width: 320px; background: #10151c; border-radius: 18px; padding: 10px; }
+  .phonescreen { background: #f4f5f7; border-radius: 10px; padding: 10px; }
+  .acard { background: #fff; border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; }
+  .acard .ahead { display: flex; justify-content: space-between; align-items: baseline; }
+  .acard .aname { font-weight: 600; font-size: 14px; }
+  .aconstraints { margin: 6px 0 8px; font-family: var(--mono); font-size: 12px; color: var(--text-2);
+    display: flex; gap: 8px; flex-wrap: wrap; }
+  .setrows { border-top: 1px solid var(--border-2); }
+  .setrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-2); font-family: var(--mono); font-size: 13px; }
+  .setrow .sn { color: var(--text-3); font-size: 11px; width: 18px; }
+  .setrow input { width: 52px; font: inherit; padding: 2px 5px; border: 1px solid var(--border-1); border-radius: 4px; text-align: right; }
+  .setrow .x { color: var(--text-3); }
+  .addset { margin-top: 6px; width: 100%; font: inherit; font-size: 12px; padding: 5px; border: 1px dashed var(--border-1);
+    border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .addset:hover { border-color: var(--accent); color: var(--accent); }
+  .runline { margin-top: 8px; display: flex; justify-content: space-between; font-size: 12px; }
+  .runline .ok { color: var(--success); font-weight: 600; }
+  .runline .under { color: var(--text-3); }
+  .runline .over { color: var(--danger); font-weight: 600; }
+  .pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+  .pill.skill { background: #f1e8f8; color: #6b3fa0; }
+</style>
+</head>
+<body>
+
+<h1>EMOS — Skill-Based Entry <span class="muted" style="font-weight:400">· prototype v1</span></h1>
+<div class="note">Soft-constrained exercise block: time cap · rep range · load anchor · ghost values (analysis only).
+Edit the chips in the coach row — the read-only variants and the athlete card update live. Click <b>≥</b> to cycle the anchor comparator.</div>
+
+<div class="cols">
+
+  <!-- ============ COACH PLANNER ============ -->
+  <div class="panel daycard">
+    <h2>Coach · Weekly Planner (Tuesday)</h2>
+    <div class="dayhead"><span class="d">Tuesday</span><span class="muted">17/08</span></div>
+
+    <div class="exrow">
+      <span class="pos">1</span>
+      <span class="name">Snatch Pull<span class="cat">Pull</span></span>
+      <div class="presc stack">
+        <span class="stackcol"><span>90</span><span class="rule"></span><span class="reps">3</span></span>
+        <span class="stackcol"><span>100</span><span class="rule"></span><span class="reps">3</span></span>
+        <span class="setmult">3</span>
+      </div>
+    </div>
+
+    <div class="exrow" style="background: #fbf9fd;">
+      <span class="pos">2</span>
+      <span class="name">Snatch <span class="skillbadge">SKILL</span><span class="cat">Snatch</span></span>
+      <div class="presc">
+        <div class="skillstrip" id="strip"></div>
+        <div class="summaryline" id="summaryline"></div>
+      </div>
+    </div>
+
+    <div class="exrow">
+      <span class="pos">3</span>
+      <span class="name">Back Squat<span class="cat">Squat</span></span>
+      <div class="presc stack">
+        <span class="stackcol"><span>120</span><span class="rule"></span><span class="reps">5</span></span>
+        <span class="setmult">5</span>
+      </div>
+    </div>
+
+    <div class="cfg">
+      <span>Coach config — ghost avg load =</span>
+      <input type="number" id="ghostFraction" value="75" min="10" max="100"> <span>% of anchor</span>
+      <span class="muted" style="margin-left:auto">COACH-CONFIG candidate</span>
+    </div>
+    <div class="note" style="margin-top:8px">
+      The ghost chip (dashed, ≈) is <b>coach-only</b>: expected reps &amp; avg load that feed weekly tonnage /
+      rep totals in Analysis. <b>auto</b> = derived (reps = range midpoint, avg = fraction of anchor);
+      edit it to override, ↺ resets to auto. Empty chips (dashed +) mean the constraint is simply off — all four are optional.
+    </div>
+  </div>
+
+  <!-- ============ READ-ONLY DISPLAY VARIANTS ============ -->
+  <div class="panel variants">
+    <h2>Read-only display (print / log mode)</h2>
+    <div class="variantbox">
+      <div class="vtitle">Variant A — constraint line</div>
+      <div class="constraintline" id="variantA"></div>
+    </div>
+    <div class="variantbox">
+      <div class="vtitle">Variant B — adapted stacked notation</div>
+      <div class="skillstack" id="variantB"></div>
+      <div class="note" style="margin-top:6px">Anchor above the rule, rep range below, time cap where the
+      set-count sits — same visual grammar as Stacked Load Notation, so it reads instantly next to normal rows.</div>
+    </div>
+    <div class="note">Ghost values never appear in either variant, nor anywhere athlete-facing.</div>
+  </div>
+
+  <!-- ============ ATHLETE APP ============ -->
+  <div class="phone">
+    <div class="phonescreen">
+      <div class="acard">
+        <div class="ahead">
+          <span class="aname">Snatch</span>
+          <span class="pill skill">SKILL</span>
+        </div>
+        <div class="aconstraints" id="athleteConstraints"></div>
+        <div class="setrows" id="setrows"></div>
+        <button class="addset" id="addset">+ add set</button>
+        <div class="runline">
+          <span id="runreps"></span>
+          <span id="runtop"></span>
+        </div>
+      </div>
+      <div class="note" style="margin-top:8px; color:#9aa3ad">Athlete logs sets freely (load × reps) —
+      no planned set rows to tick off. Running total is checked <i>softly</i> against the rep range.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---------------- state ----------------
+const state = {
+  cap: 12,                                        // minutes | null
+  repMin: 15, repMax: 25,                         // null,null = off
+  anchor: { cmp: '>=', value: 85, isPct: true },  // null = off
+  ghost: { reps: null, avg: null },               // null = auto
+};
+const CMPS = ['>=', '~', '<='];
+const CMP_GLYPH = { '>=': '≥', '~': '≈', '<=': '≤' };
+const logged = [ { load: 60, reps: 3 }, { load: 65, reps: 3 }, { load: 70, reps: 2 } ];
+
+const fmt = n => n == null ? '' : String(Math.round(n * 10) / 10).replace('.', ',');
+const anchorUnit = () => state.anchor && state.anchor.isPct ? '%' : ' kg';
+
+function ghostReps() {
+  if (state.ghost.reps != null) return state.ghost.reps;
+  if (state.repMin != null && state.repMax != null) return Math.round((state.repMin + state.repMax) / 2);
+  return null;
+}
+function ghostAvg() {
+  if (state.ghost.avg != null) return state.ghost.avg;
+  const frac = Number(document.getElementById('ghostFraction').value) / 100;
+  if (state.anchor) return Math.round(state.anchor.value * frac * 2) / 2;
+  return null;
+}
+
+// ---------------- chip strip ----------------
+let editing = null; // which chip is in edit mode
+
+function chip(html, cls, onclick) {
+  const el = document.createElement('span');
+  el.className = 'chip ' + (cls || '');
+  el.innerHTML = html;
+  if (onclick) el.addEventListener('click', onclick);
+  return el;
+}
+
+function inputChip(cls, fields, commit) {
+  // fields: [{key, value, width}] rendered as inputs separated by the given glue
+  const el = document.createElement('span');
+  el.className = 'chip ' + (cls || '');
+  const inputs = [];
+  fields.forEach((f, i) => {
+    if (i > 0) { const s = document.createElement('span'); s.textContent = f.glue || '–'; s.className = 'x'; el.appendChild(s); }
+    const inp = document.createElement('input');
+    inp.value = f.value == null ? '' : f.value;
+    if (f.width) inp.style.width = f.width;
+    inp.placeholder = f.ph || '';
+    inputs.push(inp); el.appendChild(inp);
+  });
+  const done = () => { commit(inputs.map(i => i.value.trim())); editing = null; renderAll(); };
+  inputs.forEach(inp => {
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') { editing = null; renderAll(); } });
+    inp.addEventListener('blur', () => setTimeout(() => { if (!el.contains(document.activeElement)) done(); }, 80));
+  });
+  setTimeout(() => inputs[0].select(), 0);
+  return el;
+}
+
+function renderStrip() {
+  const strip = document.getElementById('strip');
+  strip.innerHTML = '';
+
+  // --- time cap ---
+  if (editing === 'cap') {
+    strip.appendChild(inputChip('', [{ value: state.cap, width: '30px', ph: 'min' }], v => {
+      const n = parseFloat(v[0].replace(',', '.'));
+      state.cap = isNaN(n) || n <= 0 ? null : n;
+    }));
+  } else if (state.cap != null) {
+    strip.appendChild(chip('⏱ ' + fmt(state.cap) + '′', '', () => { editing = 'cap'; renderAll(); }));
+  } else {
+    strip.appendChild(chip('+ cap', 'emptychip', () => { editing = 'cap'; renderAll(); }));
+  }
+
+  // --- rep range ---
+  if (editing === 'range') {
+    strip.appendChild(inputChip('', [
+      { value: state.repMin, width: '28px', ph: 'min' },
+      { value: state.repMax, width: '28px', glue: '–', ph: 'max' },
+    ], v => {
+      const a = parseInt(v[0], 10), b = parseInt(v[1], 10);
+      if (!isNaN(a) && !isNaN(b) && b >= a) { state.repMin = a; state.repMax = b; }
+      else if (!isNaN(a) && v[1] === '') { state.repMin = a; state.repMax = a; }
+      else { state.repMin = null; state.repMax = null; }
+    }));
+  } else if (state.repMin != null) {
+    const label = state.repMin === state.repMax ? state.repMin : state.repMin + '–' + state.repMax;
+    strip.appendChild(chip(label + ' <span class="lbl">reps</span>', '', () => { editing = 'range'; renderAll(); }));
+  } else {
+    strip.appendChild(chip('+ reps', 'emptychip', () => { editing = 'range'; renderAll(); }));
+  }
+
+  // --- anchor ---
+  if (editing === 'anchor') {
+    strip.appendChild(inputChip('', [{ value: state.anchor ? state.anchor.value + (state.anchor.isPct ? '%' : '') : '', width: '48px', ph: '85%' }], v => {
+      const raw = v[0];
+      if (!raw) { state.anchor = null; return; }
+      const isPct = raw.includes('%');
+      const n = parseFloat(raw.replace('%', '').replace(',', '.'));
+      if (!isNaN(n)) state.anchor = { cmp: state.anchor ? state.anchor.cmp : '>=', value: n, isPct };
+    }));
+  } else if (state.anchor) {
+    const c = chip('', '');
+    const cmp = document.createElement('span');
+    cmp.className = 'cmp'; cmp.textContent = CMP_GLYPH[state.anchor.cmp];
+    cmp.title = 'cycle: work up to ≥ / around ≈ / stay below ≤';
+    cmp.addEventListener('click', e => {
+      e.stopPropagation();
+      state.anchor.cmp = CMPS[(CMPS.indexOf(state.anchor.cmp) + 1) % 3];
+      renderAll();
+    });
+    c.appendChild(cmp);
+    const val = document.createElement('span');
+    val.textContent = fmt(state.anchor.value) + (state.anchor.isPct ? '%' : ' kg');
+    c.appendChild(val);
+    c.addEventListener('click', () => { editing = 'anchor'; renderAll(); });
+    strip.appendChild(c);
+  } else {
+    strip.appendChild(chip('+ anchor', 'emptychip', () => { editing = 'anchor'; renderAll(); }));
+  }
+
+  // --- ghost (coach-only) ---
+  const gr = ghostReps(), ga = ghostAvg();
+  const overridden = state.ghost.reps != null || state.ghost.avg != null;
+  if (editing === 'ghost') {
+    strip.appendChild(inputChip('ghostchip', [
+      { value: gr, width: '30px', ph: 'reps' },
+      { value: ga, width: '36px', glue: '×', ph: 'avg' },
+    ], v => {
+      const r = parseInt(v[0], 10), a = parseFloat(v[1].replace(',', '.'));
+      state.ghost.reps = isNaN(r) ? null : r;
+      state.ghost.avg = isNaN(a) ? null : a;
+    }));
+  } else {
+    const label = (gr == null && ga == null)
+      ? '≈ ghost'
+      : '≈ ' + (gr == null ? '?' : gr) + ' × ' + (ga == null ? '?' : fmt(ga) + (state.anchor && state.anchor.isPct ? '%' : ''));
+    const g = chip(label + ' <span class="autobadge">' + (overridden ? 'set' : 'auto') + '</span>',
+      'ghostchip' + (overridden ? ' overridden' : ''),
+      () => { editing = 'ghost'; renderAll(); });
+    g.title = 'Analysis only — never shown to the athlete';
+    if (overridden) {
+      const r = document.createElement('span');
+      r.className = 'reset'; r.textContent = '↺'; r.title = 'back to auto';
+      r.addEventListener('click', e => { e.stopPropagation(); state.ghost = { reps: null, avg: null }; renderAll(); });
+      g.appendChild(r);
+    }
+    strip.appendChild(g);
+  }
+}
+
+function renderSummary() {
+  const gr = ghostReps(), ga = ghostAvg();
+  const parts = [];
+  if (gr != null) parts.push('R ' + gr);
+  if (ga != null) parts.push('Avg ' + fmt(ga) + (state.anchor && state.anchor.isPct ? '%' : ''));
+  if (state.anchor) parts.push('Hi ' + fmt(state.anchor.value) + (state.anchor.isPct ? '%' : ''));
+  document.getElementById('summaryline').textContent =
+    parts.length ? '→ summary: ' + parts.join(' · ') + '  (ghost-fed)' : '→ summary: — (no ghosts, excluded from totals)';
+}
+
+// ---------------- read-only variants ----------------
+function constraintParts() {
+  const p = [];
+  if (state.cap != null) p.push('⏱ ' + fmt(state.cap) + '′');
+  if (state.repMin != null) p.push((state.repMin === state.repMax ? state.repMin : state.repMin + '–' + state.repMax) + ' reps');
+  if (state.anchor) p.push(CMP_GLYPH[state.anchor.cmp] + ' ' + fmt(state.anchor.value) + anchorUnit());
+  return p;
+}
+
+function renderVariants() {
+  const a = document.getElementById('variantA');
+  a.innerHTML = '';
+  const parts = constraintParts();
+  parts.forEach((t, i) => {
+    if (i > 0) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '·'; a.appendChild(s); }
+    const el = document.createElement('span'); el.textContent = t; a.appendChild(el);
+  });
+  if (!parts.length) a.innerHTML = '<span class="muted">free skill work</span>';
+
+  const b = document.getElementById('variantB');
+  b.innerHTML = '';
+  const col = document.createElement('span');
+  col.className = 'col';
+  const top = state.anchor ? CMP_GLYPH[state.anchor.cmp] + fmt(state.anchor.value) + (state.anchor.isPct ? '%' : '') : '—';
+  const bottom = state.repMin != null ? (state.repMin === state.repMax ? state.repMin : state.repMin + '–' + state.repMax) : '—';
+  col.innerHTML = '<span>' + top + '</span><span class="rule"></span><span class="lower">' + bottom + '</span>';
+  b.appendChild(col);
+  if (state.cap != null) {
+    const cap = document.createElement('span');
+    cap.className = 'cap'; cap.textContent = '⏱' + fmt(state.cap) + '′';
+    b.appendChild(cap);
+  }
+}
+
+// ---------------- athlete card ----------------
+function renderAthlete() {
+  const c = document.getElementById('athleteConstraints');
+  c.innerHTML = '';
+  const parts = constraintParts();
+  (parts.length ? parts : ['free skill work']).forEach((t, i) => {
+    if (i > 0) { const s = document.createElement('span'); s.textContent = '·'; s.style.color = 'var(--border-1)'; c.appendChild(s); }
+    const el = document.createElement('span'); el.textContent = t; c.appendChild(el);
+  });
+
+  const rows = document.getElementById('setrows');
+  rows.innerHTML = '';
+  logged.forEach((s, i) => {
+    const r = document.createElement('div');
+    r.className = 'setrow';
+    r.innerHTML = '<span class="sn">' + (i + 1) + '</span>';
+    const load = document.createElement('input'); load.value = s.load;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×';
+    const reps = document.createElement('input'); reps.value = s.reps; reps.style.width = '40px';
+    load.addEventListener('change', () => { s.load = parseFloat(load.value.replace(',', '.')) || 0; renderAll(); });
+    reps.addEventListener('change', () => { s.reps = parseInt(reps.value, 10) || 0; renderAll(); });
+    r.appendChild(load); r.appendChild(x); r.appendChild(reps);
+    rows.appendChild(r);
+  });
+
+  const total = logged.reduce((s, l) => s + l.reps, 0);
+  const top = logged.reduce((s, l) => Math.max(s, l.load), 0);
+  const rl = document.getElementById('runreps');
+  let cls = '', suffix = '';
+  if (state.repMin != null) {
+    if (total < state.repMin) { cls = 'under'; suffix = ' / ' + state.repMin + '–' + state.repMax; }
+    else if (total > state.repMax) { cls = 'over'; suffix = ' — over range'; }
+    else { cls = 'ok'; suffix = ' ✓ in range'; }
+  }
+  rl.innerHTML = 'Σ <b>' + total + '</b> reps<span class="' + cls + '">' + suffix + '</span>';
+  document.getElementById('runtop').textContent = top ? 'top ' + fmt(top) + ' kg' : '';
+}
+
+document.getElementById('addset').addEventListener('click', () => {
+  const last = logged[logged.length - 1];
+  logged.push({ load: last ? last.load : 0, reps: last ? last.reps : 1 });
+  renderAll();
+});
+document.getElementById('ghostFraction').addEventListener('change', renderAll);
+
+function renderAll() { renderStrip(); renderSummary(); renderVariants(); renderAthlete(); }
+renderAll();
+</script>
+</body>
+</html>

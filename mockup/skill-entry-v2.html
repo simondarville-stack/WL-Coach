@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Skill-Based Entry (Prototype v2)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --success: #1c7c3c;
+    --radius: 6px;
+    --mono: "Cascadia Code", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .muted { color: var(--text-3); }
+  .cols { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .panel {
+    background: var(--bg-1); border: 1px solid var(--border-2);
+    border-radius: var(--radius); padding: 12px 14px;
+  }
+  .note { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+
+  /* ---------- coach day card ---------- */
+  .daycard { width: 490px; }
+  .daycard .dayhead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--border-2); padding-bottom: 6px; margin-bottom: 4px;
+  }
+  .daycard .dayhead .d { font-weight: 600; }
+  .exrow {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 4px; border-bottom: 1px solid var(--border-2);
+  }
+  .exrow:last-child { border-bottom: none; }
+  .exrow .pos { color: var(--text-3); font-size: 11px; width: 14px; padding-top: 2px; }
+  .exrow .name { width: 128px; font-weight: 500; padding-top: 2px; }
+  .exrow .name .cat { display: block; font-size: 10px; color: var(--text-3); font-weight: 400; }
+  .presc { flex: 1; }
+
+  /* classic stacked notation (context rows) */
+  .stack { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .stackcol { display: flex; flex-direction: column; align-items: center; min-width: 22px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .stackcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .stackcol .reps { color: var(--text-3); }
+  .setmult { font-size: 11px; color: var(--text-2); align-self: center; }
+
+  /* ---------- skill stacked EDITOR ---------- */
+  .skilledit { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .segcol { display: flex; flex-direction: column; align-items: center; }
+  .segcol .toprow { display: flex; align-items: center; }
+  .segcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .segcol input {
+    font-family: var(--mono); font-size: 12px; line-height: 1.25; font-weight: 500;
+    border: none; outline: none; background: transparent; text-align: center;
+    color: var(--text-1); padding: 0 1px; border-radius: 3px; min-width: 20px;
+  }
+  .segcol input.repsin { color: var(--text-3); }
+  .segcol input:hover { background: var(--bg-2); }
+  .segcol input:focus { background: var(--accent-light); }
+  .cmp {
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent);
+    cursor: pointer; user-select: none; padding: 0 1px; border-radius: 3px;
+  }
+  .cmp:hover { background: var(--accent-light); }
+  .addseg {
+    font-size: 12px; color: var(--text-3); cursor: pointer; border: none; background: none;
+    padding: 0 2px; align-self: center;
+  }
+  .addseg:hover { color: var(--accent); }
+
+  /* chips: total time / rest — inactive until clicked */
+  .chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 1px solid var(--border-1); border-radius: 4px;
+    background: var(--bg-2); padding: 1px 6px; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: nowrap;
+    align-self: center;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip.inactive { border-style: dashed; background: transparent; color: var(--text-3); }
+  .chip input {
+    font: inherit; width: 34px; border: none; outline: none;
+    background: transparent; color: var(--text-1); padding: 0; text-align: center;
+  }
+  .chip .off { color: var(--text-3); cursor: pointer; padding: 0 1px; font-size: 10px; }
+  .chip .off:hover { color: var(--danger); }
+  .chip.ghostchip { border-style: dashed; background: transparent; color: var(--text-3); }
+  .chip.ghostchip .autobadge {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .04em;
+    background: var(--bg-2); border-radius: 3px; padding: 0 4px; color: var(--text-3);
+  }
+  .chip.ghostchip.overridden .autobadge { background: var(--accent-light); color: var(--accent); }
+  .chip .reset { color: var(--text-3); cursor: pointer; font-size: 11px; }
+  .chip .reset:hover { color: var(--accent); }
+
+  .summaryline { margin-top: 4px; font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+  .skillbadge {
+    font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px;
+    border-radius: 8px; background: #f1e8f8; color: #6b3fa0; vertical-align: 1px;
+  }
+  .combochip {
+    font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px;
+    border-radius: 8px; background: #e8f1e9; color: #1c7c3c; vertical-align: 1px;
+  }
+
+  .cfg { display: flex; gap: 10px; align-items: center; font-size: 11px; color: var(--text-2);
+    background: var(--bg-2); border-radius: var(--radius); padding: 6px 10px; margin-top: 10px; }
+  .cfg input { width: 44px; font: inherit; padding: 1px 4px; border: 1px solid var(--border-1); border-radius: 3px; text-align: right; }
+
+  /* ---------- print preview ---------- */
+  .printbox { width: 280px; }
+  .printrow { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--border-2); align-items: flex-start; }
+  .printrow:last-child { border-bottom: none; }
+  .printrow .pn { width: 96px; font-weight: 500; font-size: 12px; }
+  .printstack { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .printcol { display: flex; flex-direction: column; align-items: center; font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .printcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .printcol .lower { color: var(--text-3); }
+  .printtime { font-size: 11px; color: var(--text-2); align-self: center; font-family: var(--mono); }
+
+  /* ---------- athlete card ---------- */
+  .phone { width: 320px; background: #10151c; border-radius: 18px; padding: 10px; }
+  .phonescreen { background: #f4f5f7; border-radius: 10px; padding: 10px; }
+  .acard { background: #fff; border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; }
+  .acard .ahead { display: flex; justify-content: space-between; align-items: baseline; }
+  .acard .aname { font-weight: 600; font-size: 14px; }
+  .aconstraints { margin: 6px 0 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .setrows { border-top: 1px solid var(--border-2); }
+  .setrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-2); font-family: var(--mono); font-size: 13px; }
+  .setrow .sn { color: var(--text-3); font-size: 11px; width: 18px; }
+  .setrow input { width: 52px; font: inherit; padding: 2px 5px; border: 1px solid var(--border-1); border-radius: 4px; text-align: right; }
+  .setrow .x { color: var(--text-3); }
+  .addset { margin-top: 6px; width: 100%; font: inherit; font-size: 12px; padding: 5px; border: 1px dashed var(--border-1);
+    border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .addset:hover { border-color: var(--accent); color: var(--accent); }
+  .runline { margin-top: 8px; display: flex; justify-content: space-between; font-size: 12px; }
+  .runline .ok { color: var(--success); font-weight: 600; }
+  .runline .under { color: var(--text-3); }
+  .runline .over { color: var(--danger); font-weight: 600; }
+  .pill { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+  .pill.skill { background: #f1e8f8; color: #6b3fa0; }
+</style>
+</head>
+<body>
+
+<h1>EMOS — Skill-Based Entry <span class="muted" style="font-weight:400">· prototype v2 — WYSIWYG stacked input</span></h1>
+<div class="note">The input <b>is</b> the stacked notation: comparator symbol in front of the load (click to cycle ≥ ≈ ≤),
+rep range below the rule. Time constraints are chips that activate when clicked (⏱ total · rest). Works for any
+exercise incl. combos — it's an input <b>mode</b>, orthogonal to kg/%.</div>
+
+<div class="cols">
+
+  <!-- ============ COACH PLANNER ============ -->
+  <div class="panel daycard">
+    <h2>Coach · Weekly Planner (Tuesday)</h2>
+    <div class="dayhead"><span class="d">Tuesday</span><span class="muted">17/08</span></div>
+
+    <div class="exrow">
+      <span class="pos">1</span>
+      <span class="name">Snatch Pull<span class="cat">Pull</span></span>
+      <div class="presc stack">
+        <span class="stackcol"><span>90</span><span class="rule"></span><span class="reps">3</span></span>
+        <span class="stackcol"><span>100</span><span class="rule"></span><span class="reps">3</span></span>
+        <span class="setmult">3</span>
+      </div>
+    </div>
+
+    <div class="exrow" style="background:#fbf9fd;">
+      <span class="pos">2</span>
+      <span class="name">Snatch <span class="skillbadge">SKILL</span><span class="cat">Snatch</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-sn"></div>
+        <div class="summaryline" id="sum-sn"></div>
+      </div>
+    </div>
+
+    <div class="exrow" style="background:#fbf9fd;">
+      <span class="pos">3</span>
+      <span class="name">Clean + Jerk <span class="combochip">COMBO</span> <span class="skillbadge">SKILL</span><span class="cat">Combo</span></span>
+      <div class="presc">
+        <div class="skilledit" id="edit-cj"></div>
+        <div class="summaryline" id="sum-cj"></div>
+      </div>
+    </div>
+
+    <div class="exrow">
+      <span class="pos">4</span>
+      <span class="name">Back Squat<span class="cat">Squat</span></span>
+      <div class="presc stack">
+        <span class="stackcol"><span>120</span><span class="rule"></span><span class="reps">5</span></span>
+        <span class="setmult">5</span>
+      </div>
+    </div>
+
+    <div class="cfg">
+      <span>Coach config — ghost avg load =</span>
+      <input type="number" id="ghostFraction" value="75" min="10" max="100"> <span>% of anchor</span>
+      <span class="muted" style="margin-left:auto">COACH-CONFIG candidate</span>
+    </div>
+    <div class="note" style="margin-top:8px">
+      Load and reps are edited <b>directly in the notation</b> (click a value). Reps accept a range
+      (<span style="font-family:var(--mono)">15-25</span>); combo reps keep the tuple, with an optional round-range
+      via the existing multiplier grammar: <span style="font-family:var(--mono)">4-6(2+1)</span> = 4–6 rounds of 2+1.
+      The <b>+</b> adds a second segment (column). Dashed chips are inactive constraints — click ⏱ or rest to switch
+      them on; ✕ switches off. Ghost chip (≈, coach-only) as in v1: auto from range midpoint & anchor fraction, edit
+      to override, ↺ back to auto.
+    </div>
+  </div>
+
+  <!-- ============ PRINT / READ-ONLY ============ -->
+  <div class="panel printbox">
+    <h2>Print / read-only rendering</h2>
+    <div class="printrow"><span class="pn">Snatch Pull</span>
+      <div class="printstack">
+        <span class="printcol"><span>90</span><span class="rule"></span><span class="lower">3</span></span>
+        <span class="printcol"><span>100</span><span class="rule"></span><span class="lower">3</span></span>
+        <span class="printtime">3</span>
+      </div>
+    </div>
+    <div class="printrow"><span class="pn">Snatch</span><div class="printstack" id="print-sn"></div></div>
+    <div class="printrow"><span class="pn">Clean + Jerk</span><div class="printstack" id="print-cj"></div></div>
+    <div class="printrow"><span class="pn">Back Squat</span>
+      <div class="printstack">
+        <span class="printcol"><span>120</span><span class="rule"></span><span class="lower">5</span></span>
+        <span class="printtime">5</span>
+      </div>
+    </div>
+    <div class="note" style="margin-top:8px">Identical visual grammar to normal rows — the comparator symbol and the
+    time chips are the only tells. Ghost values never render here or anywhere athlete-facing.</div>
+  </div>
+
+  <!-- ============ ATHLETE APP ============ -->
+  <div class="phone">
+    <div class="phonescreen">
+      <div class="acard">
+        <div class="ahead">
+          <span class="aname">Snatch</span>
+          <span class="pill skill">SKILL</span>
+        </div>
+        <div class="aconstraints" id="ath-constraints"></div>
+        <div class="setrows" id="setrows"></div>
+        <button class="addset" id="addset">+ add set</button>
+        <div class="runline">
+          <span id="runreps"></span>
+          <span id="runtop"></span>
+        </div>
+      </div>
+      <div class="note" style="margin-top:8px; color:#9aa3ad">Athlete sees the same stacked notation, logs sets freely.
+      Running total softly checked against the rep range.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ================= helpers =================
+const CMPS = ['>=', '~', '<='];
+const GLYPH = { '>=': '≥', '~': '≈', '<=': '≤' };
+const fmt = n => n == null ? '' : String(Math.round(n * 10) / 10).replace('.', ',');
+
+// time: stored in seconds. parse "12" → 720, "90s" → 90, "1,5" → 90
+function parseTime(raw) {
+  if (!raw || !raw.trim()) return null;
+  const s = raw.trim().toLowerCase().replace(',', '.');
+  if (s.endsWith('s') || s.endsWith('″')) { const n = parseFloat(s); return isNaN(n) ? null : n; }
+  const n = parseFloat(s); return isNaN(n) ? null : n * 60;
+}
+function fmtTime(sec) {
+  if (sec == null) return '';
+  if (sec < 60 || sec % 60 !== 0) return fmt(sec) + '″';
+  return fmt(sec / 60) + '′';
+}
+
+// reps field: "15-25" | "5" | "2+1" | "4-6(2+1)"
+function parseReps(raw) {
+  const s = (raw || '').replace(/\s/g, '').replace(/–/g, '-');
+  let m = s.match(/^(\d+)(?:-(\d+))?\((.+)\)$/);            // round-range tuple
+  if (m) {
+    const tuple = m[3].split('+').map(x => parseInt(x, 10) || 0);
+    return { kind: 'tuple', min: +m[1], max: m[2] ? +m[2] : +m[1], tuple, text: s };
+  }
+  m = s.match(/^(\d+)\+(.+)$/);                              // bare tuple "2+1"
+  if (m && /^[\d+]+$/.test(s)) {
+    const tuple = s.split('+').map(x => parseInt(x, 10) || 0);
+    return { kind: 'tuple', min: 1, max: 1, tuple, text: s };
+  }
+  m = s.match(/^(\d+)(?:-(\d+))?$/);                         // plain or range
+  if (m) return { kind: 'plain', min: +m[1], max: m[2] ? +m[2] : +m[1], tuple: null, text: s };
+  return null;
+}
+function repsMidTotal(r) {
+  if (!r) return null;
+  const rounds = (r.min + r.max) / 2;
+  const per = r.tuple ? r.tuple.reduce((a, b) => a + b, 0) : 1;
+  return Math.round(rounds * per);
+}
+
+// ================= row model =================
+// segments: [{cmp, load, isPct, reps: "15-25"}]; totalTime/restTime in sec|null; ghost {reps,avg}|null
+function makeRow(id, init) {
+  return Object.assign({ id, ghost: { reps: null, avg: null } }, init);
+}
+const rows = {
+  sn: makeRow('sn', {
+    segments: [{ cmp: '>=', load: 85, isPct: true, reps: '15-25' }],
+    totalTime: 720, restTime: null,
+  }),
+  cj: makeRow('cj', {
+    segments: [{ cmp: '<=', load: 70, isPct: true, reps: '4-6(2+1)' }],
+    totalTime: null, restTime: 120,
+  }),
+};
+const logged = [ { load: 60, reps: 3 }, { load: 65, reps: 3 }, { load: 70, reps: 2 } ];
+
+function ghostReps(row) {
+  if (row.ghost.reps != null) return row.ghost.reps;
+  const t = row.segments.map(s => repsMidTotal(parseReps(s.reps))).filter(x => x != null);
+  return t.length ? t.reduce((a, b) => a + b, 0) : null;
+}
+function ghostAvg(row) {
+  if (row.ghost.avg != null) return row.ghost.avg;
+  const frac = Number(document.getElementById('ghostFraction').value) / 100;
+  const anchors = row.segments.map(s => s.load).filter(x => x != null);
+  if (!anchors.length) return null;
+  return Math.round(Math.max(...anchors) * frac * 2) / 2;
+}
+function anchorHi(row) {
+  const a = row.segments.map(s => s.load).filter(x => x != null);
+  return a.length ? Math.max(...a) : null;
+}
+
+// ================= stacked editor =================
+function autosize(inp) {
+  inp.style.width = Math.max(2, inp.value.length) + 'ch';
+}
+function mkInput(value, cls, commit) {
+  const inp = document.createElement('input');
+  inp.className = cls; inp.value = value;
+  autosize(inp);
+  inp.addEventListener('input', () => autosize(inp));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+  inp.addEventListener('blur', () => commit(inp.value.trim()));
+  return inp;
+}
+
+function timeChip(row, key, icon, label) {
+  const val = row[key];
+  if (val == null) {
+    const c = document.createElement('span');
+    c.className = 'chip inactive';
+    c.textContent = icon + ' ' + label;
+    c.title = 'click to set a ' + label + ' constraint';
+    c.addEventListener('click', () => { row[key] = key === 'totalTime' ? 600 : 120; renderAll(true, row.id + ':' + key); });
+    return c;
+  }
+  const c = document.createElement('span');
+  c.className = 'chip';
+  const ic = document.createElement('span'); ic.textContent = icon; c.appendChild(ic);
+  const inp = mkInput(fmtTime(val), '', v => { row[key] = parseTime(v.replace('′', '').replace('″', 's')); renderAll(); });
+  inp.style.width = '34px';
+  c.appendChild(inp);
+  const off = document.createElement('span'); off.className = 'off'; off.textContent = '✕'; off.title = 'remove constraint';
+  off.addEventListener('click', e => { e.stopPropagation(); row[key] = null; renderAll(); });
+  c.appendChild(off);
+  return c;
+}
+
+function renderEditor(row) {
+  const host = document.getElementById('edit-' + row.id);
+  host.innerHTML = '';
+
+  row.segments.forEach((seg, si) => {
+    const col = document.createElement('span');
+    col.className = 'segcol';
+
+    const top = document.createElement('span');
+    top.className = 'toprow';
+    const cmp = document.createElement('span');
+    cmp.className = 'cmp'; cmp.textContent = GLYPH[seg.cmp];
+    cmp.title = 'cycle: work up to ≥ / around ≈ / stay below ≤';
+    cmp.addEventListener('click', () => { seg.cmp = CMPS[(CMPS.indexOf(seg.cmp) + 1) % 3]; renderAll(); });
+    top.appendChild(cmp);
+    top.appendChild(mkInput(fmt(seg.load) + (seg.isPct ? '%' : ''), 'loadin', v => {
+      if (!v) { row.segments.splice(si, 1); if (!row.segments.length) row.segments.push({ cmp: '>=', load: null, isPct: true, reps: '' }); renderAll(); return; }
+      seg.isPct = v.includes('%');
+      const n = parseFloat(v.replace('%', '').replace(',', '.'));
+      if (!isNaN(n)) seg.load = n;
+      renderAll();
+    }));
+    col.appendChild(top);
+
+    const rule = document.createElement('span'); rule.className = 'rule'; col.appendChild(rule);
+    col.appendChild(mkInput(seg.reps, 'repsin', v => { seg.reps = v; renderAll(); }));
+    host.appendChild(col);
+  });
+
+  const add = document.createElement('button');
+  add.className = 'addseg'; add.textContent = '+'; add.title = 'add segment';
+  add.addEventListener('click', () => {
+    const last = row.segments[row.segments.length - 1];
+    row.segments.push({ cmp: last.cmp, load: last.load, isPct: last.isPct, reps: last.reps });
+    renderAll();
+  });
+  host.appendChild(add);
+
+  host.appendChild(timeChip(row, 'totalTime', '⏱', 'total'));
+  host.appendChild(timeChip(row, 'restTime', '⏸', 'rest'));
+
+  // ghost chip
+  const gr = ghostReps(row), ga = ghostAvg(row);
+  const overridden = row.ghost.reps != null || row.ghost.avg != null;
+  const g = document.createElement('span');
+  g.className = 'chip ghostchip' + (overridden ? ' overridden' : '');
+  g.title = 'Analysis only — never shown to the athlete';
+  const lbl = document.createElement('span');
+  lbl.textContent = '≈ ';
+  g.appendChild(lbl);
+  const gri = mkInput(gr == null ? '' : gr, '', v => { const n = parseInt(v, 10); row.ghost.reps = isNaN(n) ? null : n; renderAll(); });
+  const gx = document.createElement('span'); gx.textContent = '×';
+  const gai = mkInput(ga == null ? '' : fmt(ga), '', v => { const n = parseFloat(v.replace(',', '.')); row.ghost.avg = isNaN(n) ? null : n; renderAll(); });
+  g.appendChild(gri); g.appendChild(gx); g.appendChild(gai);
+  const badge = document.createElement('span');
+  badge.className = 'autobadge'; badge.textContent = overridden ? 'set' : 'auto';
+  g.appendChild(badge);
+  if (overridden) {
+    const r = document.createElement('span'); r.className = 'reset'; r.textContent = '↺'; r.title = 'back to auto';
+    r.addEventListener('click', () => { row.ghost = { reps: null, avg: null }; renderAll(); });
+    g.appendChild(r);
+  }
+  host.appendChild(g);
+
+  // summary
+  const parts = [];
+  const hi = anchorHi(row);
+  if (gr != null) parts.push('R ' + gr);
+  if (ga != null) parts.push('Avg ' + fmt(ga) + (row.segments[0] && row.segments[0].isPct ? '%' : ''));
+  if (hi != null) parts.push('Hi ' + fmt(hi) + (row.segments[0] && row.segments[0].isPct ? '%' : ''));
+  document.getElementById('sum-' + row.id).textContent =
+    parts.length ? '→ summary: ' + parts.join(' · ') + '  (ghost-fed)' : '→ summary: — (no ghosts, excluded from totals)';
+}
+
+// ================= print rendering =================
+function renderPrint(row) {
+  const host = document.getElementById('print-' + row.id);
+  host.innerHTML = '';
+  row.segments.forEach(seg => {
+    const col = document.createElement('span');
+    col.className = 'printcol';
+    const unit = seg.isPct ? '%' : '';
+    col.innerHTML = '<span>' + GLYPH[seg.cmp] + fmt(seg.load) + unit + '</span><span class="rule"></span><span class="lower">'
+      + (seg.reps || '—').replace(/-/g, '–') + '</span>';
+    host.appendChild(col);
+  });
+  const times = [];
+  if (row.totalTime != null) times.push('⏱' + fmtTime(row.totalTime));
+  if (row.restTime != null) times.push('⏸' + fmtTime(row.restTime));
+  if (times.length) {
+    const t = document.createElement('span');
+    t.className = 'printtime'; t.textContent = times.join(' ');
+    host.appendChild(t);
+  }
+}
+
+// ================= athlete card (snatch row) =================
+function renderAthlete() {
+  const row = rows.sn;
+  const c = document.getElementById('ath-constraints');
+  c.innerHTML = '';
+  const stack = document.createElement('span');
+  stack.className = 'printstack';
+  row.segments.forEach(seg => {
+    const col = document.createElement('span');
+    col.className = 'printcol';
+    col.innerHTML = '<span>' + GLYPH[seg.cmp] + fmt(seg.load) + (seg.isPct ? '%' : '') + '</span><span class="rule"></span><span class="lower">'
+      + (seg.reps || '—').replace(/-/g, '–') + '</span>';
+    stack.appendChild(col);
+  });
+  c.appendChild(stack);
+  const times = [];
+  if (row.totalTime != null) times.push('⏱ ' + fmtTime(row.totalTime));
+  if (row.restTime != null) times.push('⏸ rest ' + fmtTime(row.restTime));
+  times.forEach(t => {
+    const el = document.createElement('span');
+    el.style.cssText = 'font-family:var(--mono); font-size:12px; color:var(--text-2)';
+    el.textContent = t;
+    c.appendChild(el);
+  });
+
+  const rowsEl = document.getElementById('setrows');
+  rowsEl.innerHTML = '';
+  logged.forEach((s, i) => {
+    const r = document.createElement('div');
+    r.className = 'setrow';
+    r.innerHTML = '<span class="sn">' + (i + 1) + '</span>';
+    const load = document.createElement('input'); load.value = s.load;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×';
+    const reps = document.createElement('input'); reps.value = s.reps; reps.style.width = '40px';
+    load.addEventListener('change', () => { s.load = parseFloat(load.value.replace(',', '.')) || 0; renderAll(); });
+    reps.addEventListener('change', () => { s.reps = parseInt(reps.value, 10) || 0; renderAll(); });
+    r.appendChild(load); r.appendChild(x); r.appendChild(reps);
+    rowsEl.appendChild(r);
+  });
+
+  const total = logged.reduce((s, l) => s + l.reps, 0);
+  const top = logged.reduce((s, l) => Math.max(s, l.load), 0);
+  // soft range check vs the sum of segment ranges
+  let lo = 0, hi = 0, has = false;
+  rows.sn.segments.forEach(s => {
+    const r = parseReps(s.reps);
+    if (r && r.kind === 'plain') { lo += r.min; hi += r.max; has = true; }
+  });
+  const rl = document.getElementById('runreps');
+  let cls = '', suffix = '';
+  if (has) {
+    if (total < lo) { cls = 'under'; suffix = ' / ' + lo + '–' + hi; }
+    else if (total > hi) { cls = 'over'; suffix = ' — over range'; }
+    else { cls = 'ok'; suffix = ' ✓ in range'; }
+  }
+  rl.innerHTML = 'Σ <b>' + total + '</b> reps<span class="' + cls + '">' + suffix + '</span>';
+  document.getElementById('runtop').textContent = top ? 'top ' + fmt(top) + ' kg' : '';
+}
+
+document.getElementById('addset').addEventListener('click', () => {
+  const last = logged[logged.length - 1];
+  logged.push({ load: last ? last.load : 0, reps: last ? last.reps : 1 });
+  renderAll();
+});
+document.getElementById('ghostFraction').addEventListener('change', () => renderAll());
+
+let focusTarget = null;
+function renderAll(focusNew, target) {
+  renderEditor(rows.sn); renderEditor(rows.cj);
+  renderPrint(rows.sn); renderPrint(rows.cj);
+  renderAthlete();
+  if (focusNew && target) {
+    // focus the newly activated time chip's input
+    const [rid, key] = target.split(':');
+    const host = document.getElementById('edit-' + rid);
+    const chips = host.querySelectorAll('.chip:not(.ghostchip):not(.inactive)');
+    const idx = key === 'totalTime' ? 0 : chips.length - 1;
+    const inp = chips[idx] && chips[idx].querySelector('input');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+}
+renderAll();
+</script>
+</body>
+</html>
