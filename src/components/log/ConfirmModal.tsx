@@ -17,8 +17,7 @@
  *     onCancel={() => setShowConfirm(false)}
  *   />
  */
-import { useEffect } from 'react';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 interface ConfirmModalProps {
   open: boolean;
@@ -41,31 +40,18 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
-  const backdrop = useBackdropDismiss(onCancel);
-
-  // Close on Escape key.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, onCancel]);
-
   if (!open) return null;
 
+  // A confirm holds no input, so backdrop and Escape both cancel — the cheapest
+  // possible escape hatch from a dialog that is itself the safety net.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={onCancel}
+      panel="bare"
+      role="alertdialog"
+      ariaLabel={title}
     >
-      <div
-        className="w-full max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="confirm-title"
-      >
+      <div className="w-full max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-5 pt-5 pb-2">
           <h2
             id="confirm-title"
@@ -99,6 +85,6 @@ export function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }

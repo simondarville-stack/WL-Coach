@@ -4,17 +4,15 @@
  * behaviour (coachStore.setActiveCoach + full reload so every owner-scoped
  * query re-runs under the new environment).
  */
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../../components/ui/AdaptiveDialog';
 import type { CoachProfile } from '../../lib/database.types';
 
 export function EnvironmentSwitcher() {
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
   const [open, setOpen] = useState(false);
-  // Before the early return below — hooks can't sit behind a conditional.
-  const backdrop = useBackdropDismiss(useCallback(() => setOpen(false), []));
 
   if (!activeCoach) return null;
 
@@ -37,11 +35,11 @@ export function EnvironmentSwitcher() {
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex flex-col justify-end"
-          {...backdrop}
-          role="dialog"
-          aria-label="Switch environment"
+        <AdaptiveDialog
+          mode="sheet"
+          panel="bare"
+          onClose={() => setOpen(false)}
+          ariaLabel="Switch environment"
         >
           <div className="bg-gray-900 border-t border-gray-800 rounded-t-2xl max-w-2xl w-full mx-auto pb-6">
             <p className="text-[11px] uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">
@@ -60,7 +58,7 @@ export function EnvironmentSwitcher() {
               </button>
             ))}
           </div>
-        </div>
+        </AdaptiveDialog>
       )}
     </>
   );

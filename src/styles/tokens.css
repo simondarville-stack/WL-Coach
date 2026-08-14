@@ -206,6 +206,21 @@
   /* -- Work area -- */
   --work-area-max-width: 1400px;
 
+  /* -- Overlays --
+   * Two tints only. `dialog` dims the app behind any panel or sheet;
+   * `media` is the near-opaque wash used when the content *is* the subject
+   * (image lightbox). Anything else drifting in is a bug — the app had 21
+   * distinct backdrop values before these existed. */
+  --overlay-dialog: rgba(0, 0, 0, 0.25);
+  --overlay-media: rgba(0, 0, 0, 0.9);
+
+  /* -- Stacking order --
+   * Overlays only. Anything below a dialog keeps its local z-index; these
+   * exist so overlays stop guessing (z-40 / 50 / 55 / 60 / 9999 all shipped). */
+  --z-dialog: 50;
+  --z-sheet: 60;
+  --z-toast: 70;
+
   /* -- Focus ring -- */
   --focus-ring: 0 0 0 2px var(--color-accent-border);
 

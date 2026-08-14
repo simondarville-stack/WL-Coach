@@ -15,7 +15,7 @@ function setup() {
   const { container } = render(
     <GppBlockEditor open initial={SECTION} onClose={onClose} onSave={onSave} />,
   );
-  const backdrop = container.firstElementChild as HTMLElement;
+  const backdrop = container.querySelector('[data-emos-backdrop]') as HTMLElement;
   return { onClose, onSave, backdrop };
 }
 
@@ -23,21 +23,19 @@ function setup() {
  * `handleClose` reaches onClose through `flush().finally(...)`, so "did not
  * close" can only be asserted once that whole promise chain has had a chance to
  * settle. Awaiting a single microtask is not enough — it makes the negative
- * tests pass against the buggy component too.
+ * tests pass against a component that does close.
  */
 const settle = () => act(async () => { await new Promise(r => setTimeout(r, 50)); });
 
-// jsdom doesn't synthesize `click` from a down/up pair, so each test fires it
-// explicitly — on the backdrop, because the browser dispatches click at the
-// nearest common ancestor of the down and up targets. That click is exactly
-// what used to dismiss the sheet mid-selection.
-describe('GppBlockEditor backdrop dismissal', () => {
+// The GPP sheet autosaves, so it is wired as a `transient` AdaptiveDialog:
+// backdrop and Escape both dismiss. These tests pin that wiring; the gesture
+// logic itself is covered in useBackdropDismiss.test.tsx.
+describe('GppBlockEditor dismissal', () => {
   it('closes when the whole gesture happens on the backdrop', async () => {
     const { onClose, backdrop } = setup();
 
     fireEvent.mouseDown(backdrop);
     fireEvent.mouseUp(backdrop);
-    fireEvent.click(backdrop);
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
@@ -46,7 +44,8 @@ describe('GppBlockEditor backdrop dismissal', () => {
     const { onClose, backdrop } = setup();
 
     // Selecting the description and dragging past the panel edge: mouse down
-    // inside the sheet, mouse up over the backdrop.
+    // inside the sheet, mouse up over the backdrop, then the click the browser
+    // dispatches at their nearest common ancestor.
     fireEvent.mouseDown(screen.getByPlaceholderText(/3 rounds for time/i));
     fireEvent.mouseUp(backdrop);
     fireEvent.click(backdrop);
@@ -55,14 +54,11 @@ describe('GppBlockEditor backdrop dismissal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('stays open for a gesture that ends inside the sheet', async () => {
-    const { onClose, backdrop } = setup();
+  it('closes on Escape', async () => {
+    const { onClose } = setup();
 
-    fireEvent.mouseDown(backdrop);
-    fireEvent.mouseUp(screen.getByPlaceholderText(/3 rounds for time/i));
-    fireEvent.click(backdrop);
+    fireEvent.keyDown(screen.getByPlaceholderText(/3 rounds for time/i), { key: 'Escape' });
 
-    await settle();
-    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

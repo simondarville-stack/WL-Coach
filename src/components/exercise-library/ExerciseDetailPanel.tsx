@@ -5,7 +5,7 @@ import { estimate1RM, estimateWeightAtReps, roundToHalf } from '../../lib/xrmUti
 import type { Exercise, Athlete } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { Button, ColorDot, Textarea } from '../ui';
-import { useBackdropDismiss } from '../../hooks/useBackdropDismiss';
+import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -88,8 +88,6 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
   exerciseName: string;
   onClose: () => void;
 }) {
-  const backdrop = useBackdropDismiss(onClose);
-
   // Merge athlete_prs 1RM into the history map (history wins if it has a 1RM entry)
   const actualPRs = new Map(prHistory);
   if (oneRM !== null && !actualPRs.has(1)) {
@@ -128,18 +126,10 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
   });
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 'var(--space-md)',
-      }}
-      {...backdrop}
+    <AdaptiveDialog
+      onClose={onClose}
+      panel="bare"
+      ariaLabel={`Estimated X-RM · ${exerciseName}`}
     >
       <div
         style={{
@@ -238,7 +228,7 @@ function XrmTableModal({ oneRM, prHistory, exerciseName, onClose }: {
           ))}
         </div>
       </div>
-    </div>
+    </AdaptiveDialog>
   );
 }
 
