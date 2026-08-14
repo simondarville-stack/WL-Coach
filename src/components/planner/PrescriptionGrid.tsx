@@ -5,9 +5,9 @@ import {
   parsePrescription, formatPrescription,
   parseFreeTextPrescription, formatFreeTextPrescription,
   parseComboPrescription, formatComboPrescription,
-  detectIntendedUnit,
+  detectIntendedUnit, splitLoadCmp, LOAD_CMP_GLYPH,
 } from '../../lib/prescriptionParser';
-import type { ParsedSetLine } from '../../lib/prescriptionParser';
+import type { ParsedSetLine, LoadCmp } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { AutoGrowTextarea } from '../ui';
 
@@ -16,9 +16,15 @@ interface GridColumn {
   load: number;
   loadMax: number | null;
   loadText: string;
+  /** Soft-load comparator (≥ ≈ ≤). null = exact load. */
+  loadCmp: LoadCmp | null;
   reps: number;
+  /** Rep-range upper bound ("3-5"). null = fixed reps. Non-combo only. */
+  repsMax: number | null;
   repsText: string;
   sets: number;
+  /** Set-range upper bound ("4-6"). null = fixed set count. */
+  setsMax: number | null;
   /** Combo round-grouping multiplier ("m(a+b)"). null = ungrouped. */
   multiplier: number | null;
 }
@@ -52,6 +58,15 @@ interface PrescriptionGridProps {
 let colIdCounter = 0;
 function nextId() { return `col-${++colIdCounter}`; }
 
+/** "3-5" → {min:3, max:5}, "5" → {min:5, max:null}; invalid → null (edit discarded). */
+function parseBoundedIntRange(s: string, floor: number): { min: number; max: number | null } | null {
+  const m = s.replace(/–/g, '-').match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const min = Math.max(floor, parseInt(m[1], 10));
+  const max = m[2] != null ? Math.max(min, parseInt(m[2], 10)) : null;
+  return { min, max };
+}
+
 function defaultRepsTextForCombo(comboPartCount: number): string {
   return Array(comboPartCount).fill('1').join('+');
 }
@@ -68,26 +83,35 @@ function parseToColumns(raw: string | null, isCombo: boolean, unit: string | nul
     return lines.map(line => ({
       id: nextId(), load: line.load, loadMax: line.loadMax ?? null,
       loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : (line.loadText ?? String(line.load)),
-      reps: line.totalReps, repsText: line.repsText, sets: line.sets, multiplier: line.multiplier ?? null,
+      loadCmp: line.loadCmp ?? null,
+      reps: line.totalReps, repsMax: null, repsText: line.repsText,
+      sets: line.sets, setsMax: line.setsMax ?? null, multiplier: line.multiplier ?? null,
     }));
   }
   if (unit === 'free_text_reps') {
     const lines = parseFreeTextPrescription(raw);
     return lines.map(line => ({
       id: nextId(), load: parseFloat(line.loadText) || 0, loadMax: null,
-      loadText: line.loadText, reps: line.reps, repsText: String(line.reps), sets: line.sets, multiplier: null,
+      loadText: line.loadText, loadCmp: null,
+      reps: line.reps, repsMax: null, repsText: String(line.reps),
+      sets: line.sets, setsMax: null, multiplier: null,
     }));
   }
   const lines = parsePrescription(raw);
   return lines.map(line => ({
     id: nextId(), load: line.load, loadMax: line.loadMax ?? null,
     loadText: line.loadMax != null ? `${line.load}-${line.loadMax}` : String(line.load),
-    reps: line.reps, repsText: String(line.reps), sets: line.sets, multiplier: null,
+    loadCmp: line.loadCmp ?? null,
+    reps: line.reps, repsMax: line.repsMax ?? null, repsText: String(line.reps),
+    sets: line.sets, setsMax: line.setsMax ?? null, multiplier: null,
   }));
 }
 
 function columnsToSetLines(cols: GridColumn[]): ParsedSetLine[] {
-  return cols.map(col => ({ load: col.load, loadMax: col.loadMax ?? null, reps: col.reps, sets: col.sets }));
+  return cols.map(col => ({
+    load: col.load, loadMax: col.loadMax ?? null, loadCmp: col.loadCmp,
+    reps: col.reps, repsMax: col.repsMax, sets: col.sets, setsMax: col.setsMax,
+  }));
 }
 
 export function PrescriptionGrid({
@@ -163,8 +187,8 @@ export function PrescriptionGrid({
     if (isCombo) {
       raw = formatComboPrescription(
         cols.map(col => ({
-          sets: col.sets, repsText: col.repsText, totalReps: col.reps,
-          load: col.load, loadMax: col.loadMax ?? null,
+          sets: col.sets, setsMax: col.setsMax, repsText: col.repsText, totalReps: col.reps,
+          load: col.load, loadMax: col.loadMax ?? null, loadCmp: col.loadCmp,
           ...(col.multiplier != null ? { multiplier: col.multiplier } : {}),
           ...(isFreeTextReps ? { loadText: col.loadText } : {}),
         })),
@@ -204,7 +228,7 @@ export function PrescriptionGrid({
 
     if (e.ctrlKey || e.metaKey) {
       let currentValue: string;
-      if (field === 'reps') currentValue = col.repsText;
+      if (field === 'reps') currentValue = col.repsMax != null ? `${col.reps}-${col.repsMax}` : col.repsText;
       else if (field === 'load' && isFreeTextReps) currentValue = col.loadText;
       else if (field === 'load') {
         const base = col.loadMax !== null ? `${col.load}-${col.loadMax}` : String(col.load);
@@ -213,9 +237,12 @@ export function PrescriptionGrid({
         // numbers without re-adding the symbol. The focus effect selects
         // only the numeric portion, and the existing detectIntendedUnit
         // path converts to kg if the coach deliberately deletes the "%".
+        // The soft-load sign is NOT pre-populated: typing ">=", "<=" or "=="
+        // in front sets it, and the glyph's own Del-held gesture removes it —
+        // so a plain retype of the number never silently drops the sign.
         currentValue = unit === 'percentage' ? `${base}%` : base;
       }
-      else currentValue = String(col.sets);
+      else currentValue = col.setsMax != null ? `${col.sets}-${col.setsMax}` : String(col.sets);
       setEditing({ colId, field, value: currentValue });
       return;
     }
@@ -282,13 +309,18 @@ export function PrescriptionGrid({
     // Combos use the same detection but format through formatComboPrescription
     // so the tuple reps_text ("2+1") survives the switch.
     if (editing.field === 'load') {
-      const text = value.trim();
+      // Typed soft-load sign (">=", "<=", "==", "~" or the glyphs) activates
+      // the comparator; typing without a sign KEEPS the existing one — the
+      // glyph's Del-held gesture is the removal path.
+      const { cmp: typedCmp, rest: unsignedText } = splitLoadCmp(value.trim());
+      const text = unsignedText.trim();
+      const nextCmp = typedCmp ?? col.loadCmp;
       const detected = detectIntendedUnit(text);
       if (detected && detected !== unit) {
         const switchedCols: GridColumn[] = columns.map(c => {
           if (c.id === editing.colId) {
             if (detected === 'free_text_reps') {
-              return { ...c, loadText: text, load: parseFloat(text) || 0, loadMax: null };
+              return { ...c, loadText: text, load: parseFloat(text) || 0, loadMax: null, loadCmp: null };
             }
             // percentage: keep numeric storage, strip the % for parsing
             const numText = text.replace(/%/g, '');
@@ -297,11 +329,11 @@ export function PrescriptionGrid({
               const minVal = parseFloat(numText.slice(0, dashIdx));
               const maxVal = parseFloat(numText.slice(dashIdx + 1));
               if (!isNaN(minVal) && !isNaN(maxVal) && maxVal >= minVal) {
-                return { ...c, load: minVal, loadMax: maxVal, loadText: `${minVal}-${maxVal}` };
+                return { ...c, load: minVal, loadMax: maxVal, loadText: `${minVal}-${maxVal}`, loadCmp: nextCmp };
               }
             }
             const val = Math.max(0, parseFloat(numText) || 0);
-            return { ...c, load: val, loadMax: null, loadText: String(val) };
+            return { ...c, load: val, loadMax: null, loadText: String(val), loadCmp: nextCmp };
           }
           // Other columns: when switching to free_text_reps, seed loadText
           // from the existing numeric load so format has something to print.
@@ -350,33 +382,45 @@ export function PrescriptionGrid({
           updateColumn(editing.colId, { repsText: String(val), reps: val });
         }
       } else {
-        const val = Math.max(0, parseInt(value, 10));
-        updateColumn(editing.colId, { reps: val, repsText: String(val) });
+        // "3-5" creates a rep range (min-max), a plain number clears it —
+        // same typing grammar interval loads use.
+        const range = parseBoundedIntRange(value.trim(), 0);
+        if (range) {
+          updateColumn(editing.colId, {
+            reps: range.min, repsMax: range.max,
+            repsText: range.max != null ? `${range.min}-${range.max}` : String(range.min),
+          });
+        }
       }
     } else if (editing.field === 'load') {
       if (isFreeTextReps) {
         const text = value.trim();
         updateColumn(editing.colId, { loadText: text, load: parseFloat(text) || 0 });
       } else {
-        const text = value.trim();
+        const { cmp: typedCmp, rest } = splitLoadCmp(value.trim());
+        const text = rest.trim();
+        const nextCmp = typedCmp ?? col.loadCmp;
         const dashIdx = text.indexOf('-', 1);
         if (dashIdx !== -1) {
           const minVal = parseFloat(text.slice(0, dashIdx));
           const maxVal = parseFloat(text.slice(dashIdx + 1));
           if (!isNaN(minVal) && !isNaN(maxVal) && maxVal >= minVal) {
-            updateColumn(editing.colId, { load: minVal, loadMax: maxVal, loadText: `${minVal}-${maxVal}` });
+            updateColumn(editing.colId, { load: minVal, loadMax: maxVal, loadText: `${minVal}-${maxVal}`, loadCmp: nextCmp });
           }
         } else {
           const val = Math.max(0, parseFloat(text) || 0);
-          updateColumn(editing.colId, { load: val, loadMax: null, loadText: String(val) });
+          updateColumn(editing.colId, { load: val, loadMax: null, loadText: String(val), loadCmp: nextCmp });
         }
       }
     } else if (editing.field === 'multiplier') {
       const val = Math.max(1, parseInt(value, 10) || (col.multiplier ?? 1));
       updateColumn(editing.colId, { multiplier: val });
     } else {
-      const val = Math.max(1, parseInt(value, 10) || col.sets);
-      updateColumn(editing.colId, { sets: val });
+      // Sets accept a range too ("4-6").
+      const range = parseBoundedIntRange(value.trim(), 1);
+      if (range) {
+        updateColumn(editing.colId, { sets: range.min, setsMax: range.max });
+      }
     }
     setEditing(null);
   }
@@ -417,7 +461,9 @@ export function PrescriptionGrid({
 
     const newCol: GridColumn = {
       id: nextId(), load: newLoad, loadMax: newLoadMax, loadText: newLoadText,
-      reps: last ? last.reps : 1, repsText: defaultRepsText, sets: 1,
+      loadCmp: last?.loadCmp ?? null,
+      reps: last ? last.reps : 1, repsMax: last?.repsMax ?? null, repsText: defaultRepsText,
+      sets: 1, setsMax: null,
       multiplier: last?.multiplier ?? null,
     };
     const next = [...columns, newCol];
@@ -558,6 +604,42 @@ export function PrescriptionGrid({
     );
   }
 
+  /** Soft-load comparator glyph (≥ ≈ ≤) in front of the load. Click cycles
+   *  forward, right-click backward, Del-held+click removes the sign (not the
+   *  column). Rendered only when a sign is active — it is added by typing
+   *  ">=" / "<=" / "==" into the load cell or via the row's feature menu. */
+  function renderCmpButton(col: GridColumn) {
+    if (!col.loadCmp) return null;
+    const isDeleting = deleteHeld;
+    return (
+      <button
+        onMouseDown={e => {
+          if (e.button !== 0 && e.button !== 2) return;
+          e.preventDefault();
+          if (disabled) return;
+          if (isDeleting) { updateColumn(col.id, { loadCmp: null }); return; }
+          const order: LoadCmp[] = ['>=', '~', '<='];
+          const delta = e.button === 2 ? -1 : 1;
+          const idx = (order.indexOf(col.loadCmp as LoadCmp) + delta + order.length) % order.length;
+          updateColumn(col.id, { loadCmp: order[idx] });
+        }}
+        onContextMenu={e => e.preventDefault()}
+        tabIndex={-1}
+        disabled={disabled}
+        title={isDeleting
+          ? 'Click to remove the sign'
+          : 'Soft load — ≥ work up to · ≈ around · ≤ stay below · click cycles · hold Del + click removes'}
+        className="pgrid-btn"
+        style={{
+          minWidth: '0.8rem', padding: '0 1px', fontWeight: 700,
+          color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-accent)',
+        }}
+      >
+        {LOAD_CMP_GLYPH[col.loadCmp]}
+      </button>
+    );
+  }
+
   function renderLoadCell(col: GridColumn) {
     const isEditingThis = editing?.colId === col.id && editing.field === 'load';
     const isInterval = col.loadMax !== null;
@@ -617,6 +699,7 @@ export function PrescriptionGrid({
         isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
+          {renderCmpButton(col)}
           <button
             onMouseDown={e => adjustBound('min', e)}
             onContextMenu={e => e.preventDefault()}
@@ -644,17 +727,96 @@ export function PrescriptionGrid({
       );
     }
 
+    if (!col.loadCmp) {
+      return (
+        <button
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
+          onContextMenu={e => e.preventDefault()}
+          tabIndex={-1}
+          disabled={disabled}
+          title={isDeleting ? 'Click to delete column' : undefined}
+          className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
+        >
+          <span>{loadDisplay}</span>
+        </button>
+      );
+    }
     return (
-      <button
-        onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
-        onContextMenu={e => e.preventDefault()}
-        tabIndex={-1}
-        disabled={disabled}
-        title={isDeleting ? 'Click to delete column' : undefined}
-        className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
-      >
-        <span>{loadDisplay}</span>
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
+        {renderCmpButton(col)}
+        <button
+          onMouseDown={e => { if (e.button === 0 || e.button === 2) handleCellClick(e, col.id, 'load'); }}
+          onContextMenu={e => e.preventDefault()}
+          tabIndex={-1}
+          disabled={disabled}
+          title={isDeleting ? 'Click to delete column' : undefined}
+          className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
+        >
+          <span>{loadDisplay}</span>
+        </button>
+      </div>
+    );
+  }
+
+  /** Two-bound cell for a rep range ("3-5") or set range ("4-6") — mirrors
+   *  the interval-load cell: left box = lower bound, right box = upper,
+   *  click ±1 per bound, Ctrl+click to type, Del-held+click deletes column.
+   *  Created by typing "a-b" into the cell; typing a plain number collapses
+   *  the range back to a fixed value. */
+  function renderRangeCell(col: GridColumn, field: 'reps' | 'sets', rangeMax: number) {
+    const isDeleting = deleteHeld;
+    const floor = field === 'sets' ? 1 : 0;
+    const minVal = field === 'reps' ? col.reps : col.sets;
+    const patch = (min: number, max: number) => {
+      if (field === 'reps') updateColumn(col.id, { reps: min, repsMax: max, repsText: `${min}-${max}` });
+      else updateColumn(col.id, { sets: min, setsMax: max });
+    };
+    const adjustBound = (bound: 'min' | 'max', e: React.MouseEvent) => {
+      if (e.button !== 0 && e.button !== 2) return;
+      e.preventDefault();
+      if (disabled) return;
+      if (isDeleting) { removeColumn(col.id); return; }
+      if (e.ctrlKey || e.metaKey) {
+        setEditing({ colId: col.id, field, value: `${minVal}-${rangeMax}` });
+        return;
+      }
+      const delta = e.button === 2 ? -1 : 1;
+      if (bound === 'min') {
+        const nextMin = Math.max(floor, minVal + delta);
+        patch(nextMin, Math.max(nextMin, rangeMax));
+      } else {
+        patch(minVal, Math.max(minVal, rangeMax + delta));
+      }
+    };
+    const boxTitle = (which: string) =>
+      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
+    const setsCls = field === 'sets' ? ' pgrid-btn-sets' : '';
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
+        <button
+          onMouseDown={e => adjustBound('min', e)}
+          onContextMenu={e => e.preventDefault()}
+          tabIndex={-1}
+          disabled={disabled}
+          title={boxTitle('min')}
+          className={`pgrid-btn${setsCls}${isDeleting ? ' pgrid-btn-del' : ''}`}
+          style={{ minWidth: '1rem', padding: '0 2px' }}
+        >
+          {minVal}
+        </button>
+        <span style={{ fontSize: 10, lineHeight: 1, userSelect: 'none', color: isDeleting ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>-</span>
+        <button
+          onMouseDown={e => adjustBound('max', e)}
+          onContextMenu={e => e.preventDefault()}
+          tabIndex={-1}
+          disabled={disabled}
+          title={boxTitle('max')}
+          className={`pgrid-btn${setsCls}${isDeleting ? ' pgrid-btn-del' : ''}`}
+          style={{ minWidth: '1rem', padding: '0 2px' }}
+        >
+          {rangeMax}
+        </button>
+      </div>
     );
   }
 
@@ -682,6 +844,9 @@ export function PrescriptionGrid({
         </>
       );
     }
+
+    const rangeMax = field === 'reps' ? col.repsMax : col.setsMax;
+    if (rangeMax != null) return renderRangeCell(col, field, rangeMax);
 
     const isSetCell = field === 'sets';
     const isSetsOne = col.sets === 1;

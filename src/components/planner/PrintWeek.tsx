@@ -15,8 +15,9 @@ import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, Tr
 import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
-import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, parseComboPrescription, parseFreeTextPrescription, LOAD_CMP_GLYPH } from '../../lib/prescriptionParser';
 import { expandForCounting } from '../../lib/comboExpansion';
+import { formatSeconds } from '../../lib/exerciseFeatures';
 import { defaultSlotLabel } from '../../lib/trainingLogService';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
@@ -134,6 +135,7 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
           <div key={i} className="flex items-center gap-1">
             <div className="inline-flex flex-col items-center leading-none">
               <span className="text-xs font-semibold text-gray-900">
+                {!line.loadText && line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
                 {isFreeTextReps && line.loadText
                   ? line.loadText
                   : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
@@ -143,7 +145,11 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
                 {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
               </span>
             </div>
-            {line.sets > 1 && <span className="text-xs font-bold text-gray-900">{line.sets}</span>}
+            {(line.sets > 1 || line.setsMax != null) && (
+              <span className="text-xs font-bold text-gray-900">
+                {line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -157,12 +163,19 @@ function InlinePrescription({ prescription, unit, isCombo }: { prescription: str
         <div key={i} className="flex items-center gap-1">
           <div className="inline-flex flex-col items-center leading-none">
             <span className="text-xs font-semibold text-gray-900">
+              {line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
               {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
             </span>
             <div className="border-t border-gray-400 w-full my-px" />
-            <span className="text-xs font-semibold text-gray-900">{line.reps}</span>
+            <span className="text-xs font-semibold text-gray-900">
+              {line.repsMax != null ? `${line.reps}-${line.repsMax}` : line.reps}
+            </span>
           </div>
-          {line.sets > 1 && <span className="text-xs font-bold text-gray-900">{line.sets}</span>}
+          {(line.sets > 1 || line.setsMax != null) && (
+            <span className="text-xs font-bold text-gray-900">
+              {line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}
+            </span>
+          )}
         </div>
       ))}
     </div>
@@ -630,6 +643,9 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                             <div className="leading-tight">
                               <InlinePrescription prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
                             </div>
+                          )}
+                          {ex.metadata?.features?.totalTime != null && (
+                            <p className="text-[10px] text-gray-700 leading-tight">⏱ {formatSeconds(ex.metadata.features.totalTime)}</p>
                           )}
                         </div>
                       </div>

@@ -15,6 +15,7 @@ import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
+import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { GppLogCard } from './GppLogCard';
 import { useAutoCommit } from '../lib/useAutoCommit';
 import { plannedNote } from '../../../lib/plannedNote';
@@ -331,12 +332,17 @@ export function ExerciseLogCard({
               {plannedNote(planned.exercise)}
             </p>
           )}
-          <div className="mt-1">
+          <div className="mt-1 flex items-baseline gap-2 flex-wrap">
             <StackedNotation
               raw={planned.exercise.prescription_raw}
               unit={planned.exercise.unit}
               isCombo={planned.exercise.is_combo}
             />
+            {planned.exercise.metadata?.features?.totalTime != null && (
+              <span className="text-[11px] text-gray-500 font-medium">
+                ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
+              </span>
+            )}
           </div>
         </div>
         <div className="text-[10px] text-gray-500 flex-shrink-0 mt-0.5">

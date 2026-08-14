@@ -1,8 +1,52 @@
+/**
+ * Load comparator — an "exercise feature" that softens a prescribed load:
+ * '>=' work up to at least, '~' around, '<=' stay at or below. Typed as
+ * ">=", "<=", "==" (or "~") in front of the load; displayed as ≥ ≈ ≤.
+ */
+export type LoadCmp = '>=' | '~' | '<=';
+
+export const LOAD_CMP_GLYPH: Record<LoadCmp, string> = { '>=': '≥', '~': '≈', '<=': '≤' };
+
+/**
+ * Split an optional comparator prefix off a load string. Accepts both the
+ * typed ASCII forms (">=", "<=", "==", "~") and the display glyphs (≥ ≤ ≈)
+ * so formatted prescriptions round-trip through the parser.
+ */
+export function splitLoadCmp(raw: string): { cmp: LoadCmp | null; rest: string } {
+  const s = raw.trimStart();
+  if (s.startsWith('>=')) return { cmp: '>=', rest: s.slice(2) };
+  if (s.startsWith('≥')) return { cmp: '>=', rest: s.slice(1) };
+  if (s.startsWith('<=')) return { cmp: '<=', rest: s.slice(2) };
+  if (s.startsWith('≤')) return { cmp: '<=', rest: s.slice(1) };
+  if (s.startsWith('==')) return { cmp: '~', rest: s.slice(2) };
+  if (s.startsWith('≈')) return { cmp: '~', rest: s.slice(1) };
+  if (s.startsWith('~')) return { cmp: '~', rest: s.slice(1) };
+  return { cmp: null, rest: raw };
+}
+
+/** "3-5" → {min: 3, max: 5}; "5" → {min: 5, max: null}; garbage → null. */
+function parseIntRange(s: string): { min: number; max: number | null } | null {
+  const m = s.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const min = parseInt(m[1], 10);
+  const max = m[2] != null ? parseInt(m[2], 10) : null;
+  if (max != null && max < min) return null;
+  return { min, max };
+}
+
+/** Midpoint of a min/max range (max null = fixed value). */
+export function rangeMid(min: number, max: number | null | undefined): number {
+  return max != null ? (min + max) / 2 : min;
+}
+
 export interface ParsedSetLine {
   sets: number;
+  setsMax?: number | null;   // null/absent = fixed set count, number = range upper bound
   reps: number;
+  repsMax?: number | null;   // null/absent = fixed reps, number = range upper bound
   load: number;
   loadMax: number | null;  // null = fixed, number = interval upper bound
+  loadCmp?: LoadCmp | null;  // soft-load comparator (≥ ≈ ≤), null/absent = exact
 }
 
 export interface FreeTextSetLine {
@@ -58,6 +102,7 @@ export function parsePrescription(raw: string): ParsedSetLine[] {
     .replace(/\s+/g, '')
     .replace(/\*/g, 'x')
     .replace(/×/g, 'x')
+    .replace(/–/g, '-')
     .replace(/%/g, '');
 
   const segments = normalized.split(',').filter(s => s.trim());
@@ -73,7 +118,9 @@ export function parsePrescription(raw: string): ParsedSetLine[] {
 }
 
 function parseSegment(segment: string): ParsedSetLine | null {
-  const parts = segment.split('x');
+  // Optional soft-load comparator in front of the load ("≥85x3-5x4-6").
+  const { cmp: loadCmp, rest } = splitLoadCmp(segment);
+  const parts = rest.split('x');
   if (parts.length < 2) return null;
 
   // Parse load — check for interval "min-max"
@@ -95,15 +142,15 @@ function parseSegment(segment: string): ParsedSetLine | null {
   }
 
   if (parts.length === 2) {
-    const reps = parseInt(parts[1], 10);
-    if (reps > 0 && load >= 0) {
-      return { sets: 1, reps, load, loadMax };
+    const reps = parseIntRange(parts[1]);
+    if (reps && reps.min > 0 && load >= 0) {
+      return { sets: 1, setsMax: null, reps: reps.min, repsMax: reps.max, load, loadMax, loadCmp };
     }
   } else if (parts.length === 3) {
-    const reps = parseInt(parts[1], 10);
-    const sets = parseInt(parts[2], 10);
-    if (sets > 0 && reps > 0 && load >= 0) {
-      return { sets, reps, load, loadMax };
+    const reps = parseIntRange(parts[1]);
+    const sets = parseIntRange(parts[2]);
+    if (sets && reps && sets.min > 0 && reps.min > 0 && load >= 0) {
+      return { sets: sets.min, setsMax: sets.max, reps: reps.min, repsMax: reps.max, load, loadMax, loadCmp };
     }
   }
 
@@ -122,15 +169,19 @@ export function formatPrescription(lines: ParsedSetLine[], unit: string | null):
 
   return lines
     .map(line => {
+      const cmpPrefix = line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : '';
       const loadStr = line.loadMax !== null && line.loadMax !== undefined
-        ? `${line.load}-${line.loadMax}${unitSymbol}`
-        : `${line.load}${unitSymbol}`;
+        ? `${cmpPrefix}${line.load}-${line.loadMax}${unitSymbol}`
+        : `${cmpPrefix}${line.load}${unitSymbol}`;
+      const repsStr = line.repsMax != null ? `${line.reps}-${line.repsMax}` : String(line.reps);
+      const setsStr = line.setsMax != null ? `${line.sets}-${line.setsMax}` : String(line.sets);
 
-      if (line.sets === 1) {
-        return `${loadStr}×${line.reps}`;
-      } else {
-        return `${loadStr}×${line.reps}×${line.sets}`;
+      // Display rule: sets = 1 hides the sets part — unless it's a range
+      // ("1-3" carries information a bare 1 would not).
+      if (line.sets === 1 && line.setsMax == null) {
+        return `${loadStr}×${repsStr}`;
       }
+      return `${loadStr}×${repsStr}×${setsStr}`;
     })
     .join(', ');
 }
@@ -214,10 +265,12 @@ function parseFreeTextSegment(segment: string): FreeTextSetLine | null {
  */
 export interface ParsedComboSetLine {
   sets: number;
+  setsMax?: number | null;  // null/absent = fixed set count, number = range upper bound
   repsText: string;   // "2+1" or "1+1+1" — always the BARE per-round tuple
   totalReps: number;  // sum of all parts (one round)
   load: number;
   loadMax: number | null;   // null = fixed, number = interval upper bound
+  loadCmp?: LoadCmp | null; // soft-load comparator (≥ ≈ ≤), null/absent = exact
   loadText?: string;  // set when load is free text (non-numeric)
   /**
    * Optional round-grouping multiplier. `undefined` = ungrouped, render the
@@ -245,15 +298,17 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     const normalized = segment
       .replace(/×/g, 'x')
       .replace(/\s+/g, '')
+      .replace(/–/g, '-')
       .replace(/%/g, '');
 
     // Split on 'x' but preserve the '+' inside reps
-    // Format: load x repsText [x sets]
-    const firstX = normalized.indexOf('x');
+    // Format: [cmp]load x repsText [x sets]
+    const { cmp: loadCmp, rest: unsigned } = splitLoadCmp(normalized);
+    const firstX = unsigned.indexOf('x');
     if (firstX === -1) continue;
 
-    const loadStr = normalized.slice(0, firstX);
-    const rest = normalized.slice(firstX + 1);
+    const loadStr = unsigned.slice(0, firstX);
+    const rest = unsigned.slice(firstX + 1);
 
     // Interval detection in load: contains "-" not at position 0
     const dashIdx = loadStr.indexOf('-', 1);
@@ -276,17 +331,20 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     // Allow free-text loads (e.g. "Heavy") — store as loadText with load=0
     if (!loadIsNumeric && !loadStr) continue;
 
-    // Check if there's a trailing 'x sets' (last segment after 'x' that is just a number, no '+')
+    // Check if there's a trailing 'x sets' (last segment after 'x' that is a
+    // number or number range, no '+')
     const lastX = rest.lastIndexOf('x');
     let repsText: string;
     let sets = 1;
+    let setsMax: number | null = null;
 
     if (lastX !== -1) {
       const possibleSets = rest.slice(lastX + 1);
       const possibleReps = rest.slice(0, lastX);
-      // Only treat as sets if it's a plain integer (no '+')
-      if (/^\d+$/.test(possibleSets) && possibleReps.length > 0) {
-        sets = parseInt(possibleSets, 10);
+      // Only treat as sets if it's a plain integer or range (no '+')
+      if (/^\d+(-\d+)?$/.test(possibleSets) && possibleReps.length > 0) {
+        const range = parseIntRange(possibleSets);
+        if (range) { sets = range.min; setsMax = range.max; }
         repsText = possibleReps;
       } else {
         repsText = rest;
@@ -314,10 +372,12 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
 
     result.push({
       sets,
+      setsMax,
       repsText,
       totalReps,
       load: loadIsNumeric ? load : 0,
       loadMax: loadIsNumeric ? loadMax : null,
+      loadCmp: loadIsNumeric ? loadCmp : null,
       ...(multiplier != null ? { multiplier } : {}),
       ...(loadIsNumeric ? {} : { loadText: loadStr }),
     });
@@ -334,16 +394,21 @@ export function formatComboPrescription(lines: ParsedComboSetLine[], unit: strin
   const sym = unit === 'percentage' ? '%' : '';
   return lines
     .map(l => {
+      const cmpPrefix = !l.loadText && l.loadCmp ? LOAD_CMP_GLYPH[l.loadCmp] : '';
       let loadPart: string;
       if (l.loadText) {
         loadPart = l.loadText;
       } else if (l.loadMax !== null && l.loadMax !== undefined) {
-        loadPart = `${l.load}-${l.loadMax}${sym}`;
+        loadPart = `${cmpPrefix}${l.load}-${l.loadMax}${sym}`;
       } else {
-        loadPart = `${l.load}${sym}`;
+        loadPart = `${cmpPrefix}${l.load}${sym}`;
       }
       const repsPart = l.multiplier != null ? `${l.multiplier}(${l.repsText})` : l.repsText;
-      return l.sets === 1 ? `${loadPart}×${repsPart}` : `${loadPart}×${repsPart}×${l.sets}`;
+      const setsPart = l.setsMax != null ? `${l.sets}-${l.setsMax}` : String(l.sets);
+      // sets = 1 hides the suffix — unless it's a range ("1-3" is information).
+      return l.sets === 1 && l.setsMax == null
+        ? `${loadPart}×${repsPart}`
+        : `${loadPart}×${repsPart}×${setsPart}`;
     })
     .join(', ');
 }
@@ -397,12 +462,21 @@ export function computePrescriptionSummary(
     // Round-grouping multiplier scales REPS/volume only — the set count is the
     // ×N suffix and is never multiplied (Option A: "the number to the right
     // stays the set count"). m absent ⇒ ×1, so legacy prescriptions are unchanged.
-    const total_sets = parsed.reduce((s, l) => s + l.sets, 0);
-    const total_reps = parsed.reduce((s, l) => s + l.sets * (l.multiplier ?? 1) * l.totalReps, 0);
+    // Set ranges ("×4-6") count at their midpoint — the honest planned estimate.
+    const total_sets = Math.round(parsed.reduce((s, l) => s + rangeMid(l.sets, l.setsMax), 0));
+    const total_reps = Math.round(parsed.reduce((s, l) => s + rangeMid(l.sets, l.setsMax) * (l.multiplier ?? 1) * l.totalReps, 0));
     const highest_load = Math.max(...parsed.map(l => l.loadMax ?? l.load));
-    const weighted = parsed.reduce(
-      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * (l.multiplier ?? 1) * l.totalReps, 0);
-    return { total_sets, total_reps, highest_load, avg_load: total_reps > 0 ? weighted / total_reps : null };
+    // Soft loads (≥ ≈ ≤) prescribe a bound, not a number — they carry no
+    // honest average, so they are excluded from BOTH sides of the weighted
+    // mean. All lines soft ⇒ avg null (the Ø override feature fills it in).
+    let weighted = 0, weightedReps = 0;
+    for (const l of parsed) {
+      if (l.loadCmp) continue;
+      const reps = rangeMid(l.sets, l.setsMax) * (l.multiplier ?? 1) * l.totalReps;
+      weighted += (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * reps;
+      weightedReps += reps;
+    }
+    return { total_sets, total_reps, highest_load, avg_load: weightedReps > 0 ? weighted / weightedReps : null };
   }
 
   const isFreeText = unit === 'free_text';
@@ -415,12 +489,21 @@ export function computePrescriptionSummary(
   const parsedText = isTextBased ? parseFreeTextPrescription(prescription) : [];
 
   if (parsed.length > 0 && !isNonNumeric && !isFreeTextReps) {
-    const total_sets = parsed.reduce((s, l) => s + l.sets, 0);
-    const total_reps = parsed.reduce((s, l) => s + l.sets * l.reps, 0);
+    // Rep/set ranges count at their midpoint — the honest planned estimate.
+    const lineReps = (l: ParsedSetLine) => rangeMid(l.sets, l.setsMax) * rangeMid(l.reps, l.repsMax);
+    const total_sets = Math.round(parsed.reduce((s, l) => s + rangeMid(l.sets, l.setsMax), 0));
+    const total_reps = Math.round(parsed.reduce((s, l) => s + lineReps(l), 0));
     const highest_load = Math.max(...parsed.map(l => l.loadMax ?? l.load));
-    const weighted = parsed.reduce(
-      (s, l) => s + (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * l.sets * l.reps, 0);
-    return { total_sets, total_reps, highest_load, avg_load: total_reps > 0 ? weighted / total_reps : null };
+    // Soft loads (≥ ≈ ≤) are excluded from the average entirely — a bound is
+    // not a number. All lines soft ⇒ avg null (Ø override feature fills it in).
+    let weighted = 0, weightedReps = 0;
+    for (const l of parsed) {
+      if (l.loadCmp) continue;
+      const reps = lineReps(l);
+      weighted += (l.loadMax != null ? (l.load + l.loadMax) / 2 : l.load) * reps;
+      weightedReps += reps;
+    }
+    return { total_sets, total_reps, highest_load, avg_load: weightedReps > 0 ? weighted / weightedReps : null };
   }
   if (parsedText.length > 0 && isTextBased) {
     const total_sets = parsedText.reduce((s, l) => s + l.sets, 0);

@@ -49,6 +49,8 @@ interface WeekOverviewProps {
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   /** Persist a GPP block payload on a planned_exercise row. */
   saveGppSection?: (plannedExId: string, section: import('../../lib/database.types').GppSection) => Promise<void>;
+  /** Persist the exercise-features bag (⏱ total time, Σ/Ø overrides). */
+  saveExerciseFeatures?: (plannedExId: string, features: import('../../lib/database.types').ExerciseFeatures) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
@@ -80,6 +82,7 @@ export function WeekOverview({
   competitionTotal,
   savePrescription,
   saveGppSection,
+  saveExerciseFeatures,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -167,6 +170,7 @@ export function WeekOverview({
                         onSaveAsTemplate={onSaveAsTemplate}
                         savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
+                        saveExerciseFeatures={saveExerciseFeatures}
                         loadIncrement={loadIncrement}
                         defaultPrescriptionLoad={defaultPrescriptionLoad}
                         isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -216,6 +220,7 @@ export function WeekOverview({
                   onSaveAsTemplate={onSaveAsTemplate}
                   savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
+                        saveExerciseFeatures={saveExerciseFeatures}
                   loadIncrement={loadIncrement}
                   defaultPrescriptionLoad={defaultPrescriptionLoad}
                   isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -261,6 +266,7 @@ export function WeekOverview({
             onSaveAsTemplate={onSaveAsTemplate}
             savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
+                        saveExerciseFeatures={saveExerciseFeatures}
             loadIncrement={loadIncrement}
             defaultPrescriptionLoad={defaultPrescriptionLoad}
             isLinkedToGroupPlan={isLinkedToGroupPlan}

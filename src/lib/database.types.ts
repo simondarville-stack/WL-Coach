@@ -284,6 +284,21 @@ export interface GppSection {
   rows: GppRow[];
 }
 
+/**
+ * Exercise features — optional per-exercise enrichments (see
+ * src/lib/exerciseFeatures.ts for helpers). Absent keys mean the feature
+ * is off; a present key is an active feature.
+ */
+export interface ExerciseFeatures {
+  /** Total time for the exercise block, in seconds. Athlete-visible. */
+  totalTime?: number;
+  /** Coach override for summary_total_reps ("overwrites the summation").
+   *  Coach/analysis-only, never athlete-visible. */
+  totalReps?: number;
+  /** Coach override for summary_avg_load. Coach/analysis-only. */
+  avgLoad?: number;
+}
+
 export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP
    *  sentinel exercise. Absent for non-GPP rows. */
@@ -291,6 +306,8 @@ export interface PlannedExerciseMetadata {
   /** Coach-authored caption for IMAGE / VIDEO sentinels. Rendered next
    *  to the media in athlete log and print. */
   description?: string;
+  /** Exercise features (total time, summary overrides). */
+  features?: ExerciseFeatures;
 }
 
 export interface PlannedExercise {
@@ -324,10 +341,13 @@ export interface PlannedSetLine {
   id: string;
   planned_exercise_id: string;
   sets: number;
+  sets_max: number | null;   // null = fixed set count, number = range upper bound
   reps: number;
+  reps_max: number | null;   // null = fixed reps, number = range upper bound
   reps_text: string | null;
   load_value: number;
   load_max: number | null;   // null = fixed load, number = interval upper bound
+  load_cmp: '>=' | '~' | '<=' | null;  // soft-load comparator (≥ ≈ ≤)
   position: number;
   notes: string | null;
   created_at: string;

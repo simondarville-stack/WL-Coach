@@ -12,6 +12,12 @@ import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
+import { AnalysisColumn, TotalTimeChip, type FeatureMenuItem } from './ExerciseFeatureControls';
+import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
+import {
+  parsePrescription, formatPrescription,
+  parseComboPrescription, formatComboPrescription,
+} from '../../lib/prescriptionParser';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { expandForCounting } from '../../lib/comboExpansion';
@@ -68,6 +74,8 @@ interface DayCardProps {
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   /** Persist a GPP block payload on a planned_exercise row. */
   saveGppSection?: (plannedExId: string, section: GppSection) => Promise<void>;
+  /** Persist the exercise-features bag (⏱ total time, Σ/Ø overrides). */
+  saveExerciseFeatures?: (plannedExId: string, features: ExerciseFeatures) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -102,6 +110,7 @@ export function DayCard({
   onSaveAsTemplate,
   savePrescription,
   saveGppSection,
+  saveExerciseFeatures,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -128,6 +137,40 @@ export function DayCard({
       unit: ((unitOverride ?? ex.unit) as DefaultUnit) || 'absolute_kg',
       isCombo: ex.is_combo,
     }).catch(() => { void onRefresh(); });
+  }
+
+  function handleFeaturesSave(ex: PlannedExercise, features: ExerciseFeatures) {
+    if (!saveExerciseFeatures) return;
+    void saveExerciseFeatures(ex.id, features).catch(() => { void onRefresh(); });
+  }
+
+  /** "+"-menu entry that prepends a ≥ sign to every unsigned load in the
+   *  prescription. Offered for numeric units only, and only while at least
+   *  one segment is still unsigned; per-segment cycling/removal lives on the
+   *  glyph in the grid. */
+  function signMenuItem(ex: PlannedExercise): FeatureMenuItem[] {
+    const numericUnit = ex.unit === 'absolute_kg' || ex.unit === 'percentage' || ex.unit == null;
+    if (!numericUnit || !ex.prescription_raw) return [];
+    if (ex.is_combo) {
+      const lines = parseComboPrescription(ex.prescription_raw);
+      if (!lines.length || lines.every(l => l.loadCmp || l.loadText)) return [];
+      return [{
+        key: 'sign', icon: '≥', label: 'Load sign (≥ ≈ ≤)',
+        onAdd: () => handleGridSave(ex, formatComboPrescription(
+          lines.map(l => ({ ...l, loadCmp: l.loadText ? l.loadCmp ?? null : l.loadCmp ?? '>=' })),
+          ex.unit,
+        )),
+      }];
+    }
+    const lines = parsePrescription(ex.prescription_raw);
+    if (!lines.length || lines.every(l => l.loadCmp)) return [];
+    return [{
+      key: 'sign', icon: '≥', label: 'Load sign (≥ ≈ ≤)',
+      onAdd: () => handleGridSave(ex, formatPrescription(
+        lines.map(l => ({ ...l, loadCmp: l.loadCmp ?? '>=' })),
+        ex.unit,
+      )),
+    }];
   }
 
   // Expand combos into their member instances so each member's reps count
@@ -650,6 +693,12 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
+                          {saveExerciseFeatures && ex.metadata?.features && (
+                            <TotalTimeChip
+                              features={ex.metadata.features}
+                              onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                            />
+                          )}
                         </>
                       ) : (
                         <>
@@ -679,9 +728,25 @@ export function DayCard({
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
                             />
                           </div>
+                          {saveExerciseFeatures && ex.metadata?.features && (
+                            <TotalTimeChip
+                              features={ex.metadata.features}
+                              onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                            />
+                          )}
                         </>
                       )}
                     </div>
+                    {/* Per-exercise analysis (R/S/Hi/Ø) + "+" feature menu.
+                        Sentinel rows (text/media/GPP) carry no summary. */}
+                    {!sentinel && saveExerciseFeatures && (
+                      <AnalysisColumn
+                        ex={ex}
+                        rowHovered={isHovered}
+                        onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                        extraMenuItems={signMenuItem(ex)}
+                      />
+                    )}
                   </div>
                 );
               })}

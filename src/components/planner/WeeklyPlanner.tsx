@@ -129,6 +129,7 @@ export function WeeklyPlanner() {
     saveNotes,
     saveGppSection,
     saveMediaDescription,
+    saveExerciseFeatures,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1777,6 +1778,7 @@ export function WeeklyPlanner() {
                 onSaveAsTemplate={handleSaveDayAsTemplate}
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
+                saveExerciseFeatures={saveExerciseFeatures}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
