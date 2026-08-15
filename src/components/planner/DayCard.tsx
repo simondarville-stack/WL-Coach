@@ -226,8 +226,10 @@ export function DayCard({
 
   /** Apply a #preset to an existing row: template replaces the prescription
    *  (non-combo only — combo notation is its own grammar), features merge
-   *  (preset wins), badge per the preset's setting. */
-  async function applyPresetToRow(ex: PlannedExercise, p: CoachPreset) {
+   *  (preset wins), badge per the preset's setting. `stampBadge: false`
+   *  suppresses the chip regardless (the drag-drop path — the coach is
+   *  reusing numbers, not tagging the work). */
+  async function applyPresetToRow(ex: PlannedExercise, p: CoachPreset, opts?: { stampBadge?: boolean }) {
     try {
       if (p.prescription_raw && !ex.is_combo) {
         const unit = (p.unit ?? ex.unit ?? 'absolute_kg') as DefaultUnit;
@@ -237,7 +239,7 @@ export function DayCard({
       if (Object.values(pf).some(v => v != null) && saveExerciseFeatures) {
         await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
       }
-      if (p.show_badge && savePresetTag) {
+      if ((opts?.stampBadge ?? true) && p.show_badge && savePresetTag) {
         await savePresetTag(ex.id, { name: p.name, color: p.color });
       }
     } catch {
@@ -329,6 +331,10 @@ export function DayCard({
   }
 
   function handleCardDragOver(e: React.DragEvent) {
+    // Preset drags target individual exercise rows, never the card itself —
+    // arming the card would flash the "Drop to move here" move affordance
+    // for a gesture that doesn't move anything.
+    if (e.dataTransfer.types.includes(MARK_PRESET)) return;
     e.preventDefault();
     setIsDragOver(true);
   }
@@ -581,7 +587,7 @@ export function DayCard({
                         e.stopPropagation();
                         setPresetDropExId(null);
                         const preset = presets?.find(p => p.id === data.slice('PRESET:'.length));
-                        if (preset && !sentinel) void applyPresetToRow(ex, preset);
+                        if (preset && !sentinel) void applyPresetToRow(ex, preset, { stampBadge: false });
                         return;
                       }
                       const parts = data.split(':');
@@ -787,6 +793,8 @@ export function DayCard({
                               comboPartCount={(members?.length) || 2}
                               compact
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
+                              presets={presets}
+                              onApplyPreset={p => void applyPresetToRow(ex, p)}
                             />
                           </div>
                           {saveExerciseFeatures && ex.metadata?.features && (
@@ -834,6 +842,8 @@ export function DayCard({
                               isCombo={false}
                               compact
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
+                              presets={presets}
+                              onApplyPreset={p => void applyPresetToRow(ex, p)}
                             />
                           </div>
                           {saveExerciseFeatures && ex.metadata?.features && (

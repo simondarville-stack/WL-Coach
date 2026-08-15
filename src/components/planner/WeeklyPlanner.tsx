@@ -18,6 +18,7 @@ import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
+import type { DefaultUnit } from '../../lib/database.types';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -1859,6 +1860,31 @@ export function WeeklyPlanner() {
                     swapPlannedExercise={swapPlannedExercise}
                     updateComboExercise={updateComboExercise}
                     fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
+                    presets={presets}
+                    onApplyPreset={p => {
+                      // Same semantics as the day-card apply: template replaces
+                      // the prescription (non-combo), features merge, badge per
+                      // the preset's setting.
+                      const ex = selectedExercise;
+                      if (!ex) return;
+                      void (async () => {
+                        try {
+                          if (p.prescription_raw && !ex.is_combo) {
+                            const u = (p.unit ?? ex.unit ?? 'absolute_kg') as DefaultUnit;
+                            await savePrescription(ex.id, { prescription: p.prescription_raw, unit: u, isCombo: false });
+                          }
+                          const pf = p.features ?? {};
+                          if (Object.values(pf).some(v => v != null)) {
+                            await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
+                          }
+                          if (p.show_badge) {
+                            await savePresetTag(ex.id, { name: p.name, color: p.color });
+                          }
+                        } catch {
+                          void handleRefresh();
+                        }
+                      })();
+                    }}
                   />
               </AdaptiveDialog>
             )}

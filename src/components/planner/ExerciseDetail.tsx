@@ -73,6 +73,9 @@ interface ExerciseDetailProps {
   fetchOtherDayPrescriptions: (
     weekplanId: string, exerciseId: string, excludeId: string,
   ) => Promise<OtherDay[]>;
+  /** Coach's # prescription presets — typing "#name" in a grid cell applies one. */
+  presets?: import('../../lib/database.types').CoachPreset[];
+  onApplyPreset?: (preset: import('../../lib/database.types').CoachPreset) => void;
 }
 
 // Unit choices are the canonical DEFAULT_UNITS from constants. Anything
@@ -100,6 +103,8 @@ export function ExerciseDetail({
   updateComboExercise,
   fetchOtherDayPrescriptions,
   settings,
+  presets,
+  onApplyPreset,
 }: ExerciseDetailProps) {
   const isCombo = plannedExercise?.is_combo ?? false;
   const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code ?? null);
@@ -693,6 +698,8 @@ export function ExerciseDetail({
                   void savePrescription(plannedExercise.id, { prescription: raw, unit: effective || 'absolute_kg', isCombo }).catch(() => {});
                   debouncedRefresh();
                 }}
+                presets={presets}
+                onApplyPreset={onApplyPreset}
               />
             )}
           </div>

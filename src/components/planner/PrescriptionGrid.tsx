@@ -10,6 +10,9 @@ import {
 import type { ParsedSetLine, LoadCmp } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { AutoGrowTextarea } from '../ui';
+import type { CoachPreset } from '../../lib/database.types';
+import { StackedNotation } from './StackedNotation';
+import { formatSeconds } from '../../lib/exerciseFeatures';
 
 interface GridColumn {
   id: string;
@@ -53,6 +56,11 @@ interface PrescriptionGridProps {
   disabled?: boolean;
   /** Compact density variant used inside week-overview day cards. */
   compact?: boolean;
+  /** When provided, typing "#<name>" into any cell (case-insensitive; a
+   *  unique prefix works too) applies that prescription preset instead of
+   *  committing the text as a value. */
+  presets?: CoachPreset[];
+  onApplyPreset?: (preset: CoachPreset) => void;
 }
 
 let colIdCounter = 0;
@@ -124,6 +132,8 @@ export function PrescriptionGrid({
   onSave,
   disabled = false,
   compact = false,
+  presets,
+  onApplyPreset,
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
@@ -132,6 +142,8 @@ export function PrescriptionGrid({
   const [columns, setColumns] = useState<GridColumn[]>(() => parseToColumns(prescriptionRaw, isCombo, unit));
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [focusedColId, setFocusedColId] = useState<string | null>(null);
+  /** Highlighted row of the "#" preset dropdown while editing a cell. */
+  const [presetIndex, setPresetIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Every raw this grid has emitted. The parent echoes saves back into
@@ -181,6 +193,95 @@ export function PrescriptionGrid({
     const r = resolveFormulaCell(editing.value, editing.field === 'load' ? 'decimal' : 'integer');
     return r.error ? '!' : r.text;
   }, [editing]);
+
+  /** Presets matching a "#…" cell edit — drives the in-cell dropdown. A bare
+   *  "#" lists everything; further characters filter by name prefix. */
+  const presetMatches = useMemo(() => {
+    if (!editing || !presets?.length || !onApplyPreset) return [];
+    const typed = editing.value.trim();
+    if (!typed.startsWith('#')) return [];
+    const q = typed.slice(1).toLowerCase();
+    return presets.filter(p => p.name.toLowerCase().startsWith(q));
+  }, [editing, presets, onApplyPreset]);
+
+  function applyPresetFromDropdown(p: CoachPreset) {
+    setEditing(null);
+    onApplyPreset?.(p);
+  }
+
+  /** The one editing input all cells share — plus the formula bubble and the
+   *  "#" preset dropdown (ArrowUp/Down + Enter, or click). */
+  function renderEditingInput() {
+    return (
+      <span style={{ position: 'relative', display: 'inline-block' }}>
+        <input
+          ref={inputRef}
+          value={editing!.value}
+          size={1}
+          onChange={e => { setEditing(prev => prev ? { ...prev, value: e.target.value } : null); setPresetIndex(0); }}
+          onBlur={commitEdit}
+          onKeyDown={e => {
+            if (presetMatches.length > 0) {
+              if (e.key === 'ArrowDown') { e.stopPropagation(); e.preventDefault(); setPresetIndex(i => Math.min(i + 1, presetMatches.length - 1)); return; }
+              if (e.key === 'ArrowUp') { e.stopPropagation(); e.preventDefault(); setPresetIndex(i => Math.max(i - 1, 0)); return; }
+              if (e.key === 'Enter') {
+                e.stopPropagation(); e.preventDefault();
+                applyPresetFromDropdown(presetMatches[Math.min(presetIndex, presetMatches.length - 1)]);
+                return;
+              }
+            }
+            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
+            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
+          }}
+          className="pgrid-editing"
+        />
+        {formulaPreview != null && (
+          <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
+        )}
+        {presetMatches.length > 0 && (
+          <div
+            style={{
+              position: 'absolute', top: '100%', left: 0, zIndex: 40, marginTop: 2,
+              minWidth: 210, maxHeight: 200, overflowY: 'auto',
+              background: 'var(--color-bg-primary)',
+              border: '0.5px solid var(--color-border-primary)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 4px 14px rgba(20,30,45,0.13)',
+            }}
+          >
+            {presetMatches.map((p, i) => (
+              <button
+                key={p.id}
+                onMouseDown={e => { e.preventDefault(); applyPresetFromDropdown(p); }}
+                onMouseEnter={() => setPresetIndex(i)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '5px 9px', textAlign: 'left', border: 'none', cursor: 'pointer',
+                  background: i === presetIndex ? 'var(--color-accent-muted)' : 'transparent',
+                }}
+              >
+                <span style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', flexShrink: 0,
+                  background: `${p.color}1c`, color: p.color, borderRadius: 8, padding: '1px 6px',
+                }}>
+                  #{p.name.toUpperCase()}
+                </span>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  {p.prescription_raw && <StackedNotation raw={p.prescription_raw} unit={p.unit} />}
+                  {p.features?.totalTime != null && (
+                    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>⏱ {formatSeconds(p.features.totalTime)}</span>
+                  )}
+                  {p.features?.restTime != null && (
+                    <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>⏸ {formatSeconds(p.features.restTime)}</span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </span>
+    );
+  }
 
   const save = useCallback((cols: GridColumn[]) => {
     let raw: string;
@@ -290,6 +391,21 @@ export function PrescriptionGrid({
     if (!editing) return;
     const col = columns.find(c => c.id === editing.colId);
     if (!col) { setEditing(null); return; }
+
+    // "#<name>" in any cell invokes a prescription preset (case-insensitive;
+    // a unique prefix is enough). Checked FIRST — before formula resolution
+    // and unit detection, both of which would misread the tag as text.
+    const typed = editing.value.trim();
+    if (typed.startsWith('#') && presets?.length && onApplyPreset) {
+      const q = typed.slice(1).toLowerCase();
+      const exact = presets.find(p => p.name.toLowerCase() === q);
+      const prefixMatches = q.length > 0 ? presets.filter(p => p.name.toLowerCase().startsWith(q)) : [];
+      const match = exact ?? (prefixMatches.length === 1 ? prefixMatches[0] : undefined);
+      setEditing(null);
+      // No match → discard the edit (never write "#skil" into a cell).
+      if (match) onApplyPreset(match);
+      return;
+    }
 
     // Excel-style "=": resolve the arithmetic BEFORE anything else reads the
     // cell, so every downstream branch (unit detection, interval parsing, the
@@ -497,25 +613,7 @@ export function PrescriptionGrid({
     const grouped = col.multiplier != null;
 
     if (isEditingThis) {
-      return (
-        <>
-          <input
-            ref={inputRef}
-            value={editing!.value}
-            size={1}
-            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-            onBlur={commitEdit}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-            }}
-            className="pgrid-editing"
-          />
-          {formulaPreview != null && (
-            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
-          )}
-        </>
-      );
+      return renderEditingInput();
     }
 
     const glyph = (ch: string) => (
@@ -647,25 +745,7 @@ export function PrescriptionGrid({
     const isDeleting = deleteHeld;
 
     if (isEditingThis) {
-      return (
-        <>
-          <input
-            ref={inputRef}
-            value={editing!.value}
-            size={1}
-            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-            onBlur={commitEdit}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-            }}
-            className="pgrid-editing"
-          />
-          {formulaPreview != null && (
-            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
-          )}
-        </>
-      );
+      return renderEditingInput();
     }
 
     const loadDisplay = isFreeTextReps
@@ -825,25 +905,7 @@ export function PrescriptionGrid({
     const isEditingThis = editing?.colId === col.id && editing.field === field;
 
     if (isEditingThis) {
-      return (
-        <>
-          <input
-            ref={inputRef}
-            value={editing!.value}
-            size={1}
-            onChange={e => setEditing(prev => prev ? { ...prev, value: e.target.value } : null)}
-            onBlur={commitEdit}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitEdit(); }
-              if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); cancelEdit(); }
-            }}
-            className="pgrid-editing"
-          />
-          {formulaPreview != null && (
-            <span className="pgrid-formula-preview" aria-hidden>{formulaPreview}</span>
-          )}
-        </>
-      );
+      return renderEditingInput();
     }
 
     const rangeMax = field === 'reps' ? col.repsMax : col.setsMax;
