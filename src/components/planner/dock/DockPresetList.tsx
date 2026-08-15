@@ -67,9 +67,6 @@ export function DockPresetList({ presets, query, onManagePresets }: DockPresetLi
             }}
           >
             <PresetBadge name={p.name} color={p.color} />
-            {!p.show_badge && (
-              <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>no badge</span>
-            )}
             {p.prescription_raw
               ? <StackedNotation raw={p.prescription_raw} unit={p.unit} />
               : <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>features only</span>}

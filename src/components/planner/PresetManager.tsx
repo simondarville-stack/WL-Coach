@@ -123,9 +123,9 @@ export function PresetManager({
       <div style={{ padding: 'var(--space-lg)', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <p style={{ margin: 0, fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.45 }}>
           A preset is anything you can prescribe: build the template exactly like a normal exercise
-          (signs, ranges and comma segments included), add ⏱/⏸ if the block carries time, and choose
-          whether rows show the badge. Apply with <span style={{ fontFamily: 'var(--font-mono)' }}>#name</span> in
-          the add-exercise field, or from a row's + menu.
+          (signs, ranges and comma segments included), and add ⏱/⏸ if the block carries time.
+          Apply with <span style={{ fontFamily: 'var(--font-mono)' }}>#name</span> in the add-exercise
+          field or a prescription cell, from a row's + menu, or by dragging from the dock.
         </p>
 
         {presets.map(p => {
@@ -143,9 +143,6 @@ export function PresetManager({
                 {expanded ? <ChevronDown size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
                           : <ChevronRight size={12} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />}
                 <PresetBadge name={p.name} color={p.color} />
-                {!p.show_badge && (
-                  <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>no badge</span>
-                )}
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
                   {p.prescription_raw
                     ? <StackedNotation raw={p.prescription_raw} unit={p.unit} />
@@ -184,14 +181,6 @@ export function PresetManager({
                       title="Badge colour"
                       style={{ width: 26, height: 22, padding: 0, border: '1px solid var(--color-border-primary)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }}
                     />
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                      <input
-                        type="checkbox"
-                        checked={p.show_badge}
-                        onChange={e => void updatePreset(p.id, { show_badge: e.target.checked })}
-                      />
-                      badge on rows
-                    </label>
                     <button
                       onClick={() => { if (window.confirm(`Delete preset #${p.name}? Rows it was applied to keep their prescription.`)) void deletePreset(p.id); }}
                       title="Delete preset"

@@ -303,9 +303,10 @@ export interface ExerciseFeatures {
   avgLoad?: number;
 }
 
-/** Denormalised badge snapshot stamped on a row when a #preset with
- *  show_badge was applied. A snapshot (not a FK) so renaming or deleting
- *  the preset never breaks or silently rewrites history. */
+/** DORMANT — row badges were removed (2026-08-15): presets configure a row,
+ *  they don't tag it. The type stays because a handful of rows written
+ *  during the feature's short life still carry metadata.preset; nothing
+ *  reads or writes it anymore. */
 export interface PresetTag {
   name: string;
   color: string;

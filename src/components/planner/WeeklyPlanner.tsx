@@ -135,7 +135,6 @@ export function WeeklyPlanner() {
     saveGppSection,
     saveMediaDescription,
     saveExerciseFeatures,
-    savePresetTag,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1785,7 +1784,6 @@ export function WeeklyPlanner() {
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
                 saveExerciseFeatures={saveExerciseFeatures}
-                savePresetTag={savePresetTag}
                 presets={presets}
                 onManagePresets={() => setShowPresetManager(true)}
                 loadIncrement={settings?.grid_load_increment ?? 5}
@@ -1863,8 +1861,7 @@ export function WeeklyPlanner() {
                     presets={presets}
                     onApplyPreset={p => {
                       // Same semantics as the day-card apply: template replaces
-                      // the prescription (non-combo), features merge, badge per
-                      // the preset's setting.
+                      // the prescription (non-combo), features merge.
                       const ex = selectedExercise;
                       if (!ex) return;
                       void (async () => {
@@ -1876,9 +1873,6 @@ export function WeeklyPlanner() {
                           const pf = p.features ?? {};
                           if (Object.values(pf).some(v => v != null)) {
                             await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
-                          }
-                          if (p.show_badge) {
-                            await savePresetTag(ex.id, { name: p.name, color: p.color });
                           }
                         } catch {
                           void handleRefresh();

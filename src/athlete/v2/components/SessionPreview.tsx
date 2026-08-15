@@ -279,18 +279,6 @@ function PreviewExerciseRow({
                 '(unknown exercise)'
               : planned.exerciseDef?.name ?? '(unknown exercise)'}
           </h3>
-          {planned.exercise.metadata?.preset && (
-            <span
-              className="text-[8px] font-bold rounded-full px-1.5 py-px"
-              style={{
-                background: `${planned.exercise.metadata.preset.color}33`,
-                color: planned.exercise.metadata.preset.color,
-                letterSpacing: '0.04em',
-              }}
-            >
-              #{planned.exercise.metadata.preset.name.toUpperCase()}
-            </span>
-          )}
           {/* Legacy variation_note fallback — the folded note
               (exercise.notes) renders in its own block below. */}
           {!planned.exercise.notes?.trim() && planned.exercise.variation_note && (

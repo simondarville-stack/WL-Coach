@@ -285,18 +285,6 @@ export function ExerciseLogCard({
                 ⇄ for {plannedName}
               </span>
             )}
-            {planned.exercise.metadata?.preset && (
-              <span
-                className="text-[8px] font-bold rounded-full px-1.5 py-px"
-                style={{
-                  background: `${planned.exercise.metadata.preset.color}33`,
-                  color: planned.exercise.metadata.preset.color,
-                  letterSpacing: '0.04em',
-                }}
-              >
-                #{planned.exercise.metadata.preset.name.toUpperCase()}
-              </span>
-            )}
             {allCompleted && <DoneChip variant="dark" iconOnly size={14} />}
             {globalSaving && (
               <span className="text-[9px] text-blue-400 italic">saving…</span>

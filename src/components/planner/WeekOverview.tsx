@@ -52,8 +52,6 @@ interface WeekOverviewProps {
   saveGppSection?: (plannedExId: string, section: import('../../lib/database.types').GppSection) => Promise<void>;
   /** Persist the exercise-features bag (⏱ total time, Σ/Ø overrides). */
   saveExerciseFeatures?: (plannedExId: string, features: import('../../lib/database.types').ExerciseFeatures) => Promise<void>;
-  /** Stamp/clear the #preset badge snapshot on a row. */
-  savePresetTag?: (plannedExId: string, tag: import('../../lib/database.types').PresetTag | null) => Promise<void>;
   /** Coach's # prescription presets. */
   presets?: import('../../lib/database.types').CoachPreset[];
   onManagePresets?: () => void;
@@ -89,7 +87,6 @@ export function WeekOverview({
   savePrescription,
   saveGppSection,
   saveExerciseFeatures,
-  savePresetTag,
   presets,
   onManagePresets,
   loadIncrement,
@@ -180,7 +177,6 @@ export function WeekOverview({
                         savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
                         saveExerciseFeatures={saveExerciseFeatures}
-                        savePresetTag={savePresetTag}
                         presets={presets}
                         onManagePresets={onManagePresets}
                         loadIncrement={loadIncrement}
@@ -233,7 +229,6 @@ export function WeekOverview({
                   savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
                         saveExerciseFeatures={saveExerciseFeatures}
-                        savePresetTag={savePresetTag}
                         presets={presets}
                         onManagePresets={onManagePresets}
                   loadIncrement={loadIncrement}
@@ -282,7 +277,6 @@ export function WeekOverview({
             savePrescription={savePrescription}
                         saveGppSection={saveGppSection}
                         saveExerciseFeatures={saveExerciseFeatures}
-                        savePresetTag={savePresetTag}
                         presets={presets}
                         onManagePresets={onManagePresets}
             loadIncrement={loadIncrement}

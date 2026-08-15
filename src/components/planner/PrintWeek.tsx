@@ -618,14 +618,6 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                                       : ex.exercise.name))
                                 : ex.exercise.name}
                             </h3>
-                            {ex.metadata?.preset && (
-                              <span
-                                className="text-[8px] font-bold rounded-full px-1.5 leading-tight"
-                                style={{ background: `${ex.metadata.preset.color}1c`, color: ex.metadata.preset.color, letterSpacing: '0.04em' }}
-                              >
-                                #{ex.metadata.preset.name.toUpperCase()}
-                              </span>
-                            )}
                             {/* Legacy variation_note fallback — the folded note (ex.notes) prints below */}
                             {showExerciseNotes && !ex.notes?.trim() && ex.variation_note && (
                               <span className="text-[10px] text-gray-500 italic leading-tight">{ex.variation_note}</span>
