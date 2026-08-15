@@ -237,9 +237,10 @@ export function PrescriptionGrid({
         // numbers without re-adding the symbol. The focus effect selects
         // only the numeric portion, and the existing detectIntendedUnit
         // path converts to kg if the coach deliberately deletes the "%".
-        // The soft-load sign is NOT pre-populated: typing ">=", "<=" or "=="
+        // The soft-load sign is NOT pre-populated: typing ">=", "<=" or "~"
         // in front sets it, and the glyph's own Del-held gesture removes it —
         // so a plain retype of the number never silently drops the sign.
+        // ("==" can't work here: a leading "=" opens the formula path.)
         currentValue = unit === 'percentage' ? `${base}%` : base;
       }
       else currentValue = col.setsMax != null ? `${col.sets}-${col.setsMax}` : String(col.sets);
@@ -309,7 +310,7 @@ export function PrescriptionGrid({
     // Combos use the same detection but format through formatComboPrescription
     // so the tuple reps_text ("2+1") survives the switch.
     if (editing.field === 'load') {
-      // Typed soft-load sign (">=", "<=", "==", "~" or the glyphs) activates
+      // Typed soft-load sign (">=", "<=", "~" or the glyphs) activates
       // the comparator; typing without a sign KEEPS the existing one — the
       // glyph's Del-held gesture is the removal path.
       const { cmp: typedCmp, rest: unsignedText } = splitLoadCmp(value.trim());

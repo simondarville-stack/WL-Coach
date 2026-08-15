@@ -158,13 +158,17 @@ export function AnalysisColumn({ ex, rowHovered, onSaveFeatures, extraMenuItems 
       key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation',
       onAdd: () => patchFeatures({ totalReps: ex.summary_total_reps ?? 0 }),
     }] : []),
+    ...(features.totalSets == null ? [{
+      key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation',
+      onAdd: () => patchFeatures({ totalSets: ex.summary_total_sets ?? 0 }),
+    }] : []),
     ...(features.avgLoad == null ? [{
       key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites',
       onAdd: () => patchFeatures({ avgLoad: ex.summary_avg_load ?? ex.summary_highest_load ?? 0 }),
     }] : []),
   ];
 
-  const rows: Array<{ label: string; value: string; override?: { key: 'totalReps' | 'avgLoad'; current: number; step: number; title: string; parse: (t: string) => number | null } }> = [
+  const rows: Array<{ label: string; value: string; override?: { key: 'totalReps' | 'totalSets' | 'avgLoad'; current: number; step: number; title: string; parse: (t: string) => number | null } }> = [
     {
       label: 'R',
       value: fmtNum(ex.summary_total_reps),
@@ -176,7 +180,17 @@ export function AnalysisColumn({ ex, rowHovered, onSaveFeatures, extraMenuItems 
         },
       } : {}),
     },
-    { label: 'S', value: fmtNum(ex.summary_total_sets) },
+    {
+      label: 'S',
+      value: fmtNum(ex.summary_total_sets),
+      ...(features.totalSets != null ? {
+        override: {
+          key: 'totalSets' as const, current: features.totalSets, step: 1,
+          title: 'Total sets override — overwrites the summation',
+          parse: (t: string) => { const n = parseInt(t, 10); return isNaN(n) || n < 0 ? null : n; },
+        },
+      } : {}),
+    },
     { label: 'Hi', value: ex.summary_highest_load != null ? fmtNum(ex.summary_highest_load) + unitSuffix : '—' },
     {
       label: 'Ø',

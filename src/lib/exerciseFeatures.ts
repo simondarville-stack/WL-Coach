@@ -32,6 +32,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: 'totalTime', icon: '⏱', label: 'Total time', coachOnly: false },
   { key: 'restTime', icon: '⏸', label: 'Rest time', coachOnly: false },
   { key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation', coachOnly: true },
+  { key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation', coachOnly: true },
   { key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites', coachOnly: true },
 ];
 
@@ -48,6 +49,7 @@ export function applyFeatureOverrides(
   return {
     ...summary,
     total_reps: features.totalReps ?? summary.total_reps,
+    total_sets: features.totalSets ?? summary.total_sets,
     avg_load: features.avgLoad ?? summary.avg_load,
   };
 }

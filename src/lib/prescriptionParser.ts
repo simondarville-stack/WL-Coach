@@ -1,7 +1,9 @@
 /**
  * Load comparator — an "exercise feature" that softens a prescribed load:
  * '>=' work up to at least, '~' around, '<=' stay at or below. Typed as
- * ">=", "<=", "==" (or "~") in front of the load; displayed as ≥ ≈ ≤.
+ * ">=", "<=" or "~" in front of the load; displayed as ≥ ≈ ≤.
+ * ("==" is deliberately NOT accepted: a leading "=" is the Excel-style
+ * formula trigger in grid cells, so it can never reach the parser.)
  */
 export type LoadCmp = '>=' | '~' | '<=';
 
@@ -18,7 +20,6 @@ export function splitLoadCmp(raw: string): { cmp: LoadCmp | null; rest: string }
   if (s.startsWith('≥')) return { cmp: '>=', rest: s.slice(1) };
   if (s.startsWith('<=')) return { cmp: '<=', rest: s.slice(2) };
   if (s.startsWith('≤')) return { cmp: '<=', rest: s.slice(1) };
-  if (s.startsWith('==')) return { cmp: '~', rest: s.slice(2) };
   if (s.startsWith('≈')) return { cmp: '~', rest: s.slice(1) };
   if (s.startsWith('~')) return { cmp: '~', rest: s.slice(1) };
   return { cmp: null, rest: raw };

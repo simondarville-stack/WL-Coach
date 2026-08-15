@@ -20,8 +20,10 @@ describe('splitLoadCmp', () => {
   it('parses the typed ASCII forms', () => {
     expect(splitLoadCmp('>=85')).toEqual({ cmp: '>=', rest: '85' });
     expect(splitLoadCmp('<=70%')).toEqual({ cmp: '<=', rest: '70%' });
-    expect(splitLoadCmp('==80')).toEqual({ cmp: '~', rest: '80' });
     expect(splitLoadCmp('~80')).toEqual({ cmp: '~', rest: '80' });
+  });
+  it('rejects "==" — a leading "=" belongs to the formula grammar', () => {
+    expect(splitLoadCmp('==80').cmp).toBeNull();
   });
   it('parses the display glyphs (formatted output must re-parse)', () => {
     expect(splitLoadCmp('≥85')).toEqual({ cmp: '>=', rest: '85' });
@@ -132,9 +134,9 @@ describe('computePrescriptionSummary — midpoints and honest averages', () => {
 
 describe('applyFeatureOverrides', () => {
   const base = { total_sets: 5, total_reps: 20, highest_load: 85, avg_load: null };
-  it('overrides total reps and avg load', () => {
-    expect(applyFeatureOverrides(base, { totalReps: 30, avgLoad: 64 })).toEqual({
-      total_sets: 5, total_reps: 30, highest_load: 85, avg_load: 64,
+  it('overrides total reps, total sets and avg load', () => {
+    expect(applyFeatureOverrides(base, { totalReps: 30, totalSets: 8, avgLoad: 64 })).toEqual({
+      total_sets: 8, total_reps: 30, highest_load: 85, avg_load: 64,
     });
   });
   it('passes through when no features are set', () => {

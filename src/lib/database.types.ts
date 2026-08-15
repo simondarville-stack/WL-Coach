@@ -297,6 +297,8 @@ export interface ExerciseFeatures {
   /** Coach override for summary_total_reps ("overwrites the summation").
    *  Coach/analysis-only, never athlete-visible. */
   totalReps?: number;
+  /** Coach override for summary_total_sets. Coach/analysis-only. */
+  totalSets?: number;
   /** Coach override for summary_avg_load. Coach/analysis-only. */
   avgLoad?: number;
 }
