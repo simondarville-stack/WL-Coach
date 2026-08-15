@@ -20,6 +20,7 @@ import {
   parsePrescription,
   parseComboPrescription,
   parseFreeTextPrescription,
+  LOAD_CMP_GLYPH,
 } from '../../lib/prescriptionParser';
 import type { TrainingLogSet } from '../../lib/database.types';
 
@@ -98,24 +99,29 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
     const isFreeTextReps = unit === 'free_text_reps';
     return (
       <div style={stackRow}>
-        {lines.map((line, i) => (
-          <div key={i} style={stackPair}>
-            <div style={stackColumn}>
-              <span style={mono}>
-                {isFreeTextReps && line.loadText
-                  ? line.loadText
-                  : line.loadMax != null
-                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-              </span>
-              <div style={ruleStyle} />
-              <span style={mono}>
-                {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
-              </span>
+        {lines.map((line, i) => {
+          const cmp = !line.loadText && line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : '';
+          const setsText = line.setsMax != null ? `${line.sets}-${line.setsMax}` : String(line.sets);
+          return (
+            <div key={i} style={stackPair}>
+              <div style={stackColumn}>
+                <span style={mono}>
+                  {cmp}
+                  {isFreeTextReps && line.loadText
+                    ? line.loadText
+                    : line.loadMax != null
+                    ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
+                    : `${line.load}${unit === 'percentage' ? '%' : ''}`}
+                </span>
+                <div style={ruleStyle} />
+                <span style={mono}>
+                  {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
+                </span>
+              </div>
+              {(line.sets > 1 || line.setsMax != null) && <span style={setMultiplier}>{setsText}</span>}
             </div>
-            {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -161,20 +167,28 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
   if (lines.length === 0) return <span style={empty}>{raw}</span>;
   return (
     <div style={stackRow}>
-      {lines.map((line, i) => (
-        <div key={i} style={stackPair}>
-          <div style={stackColumn}>
-            <span style={mono}>
-              {line.loadMax != null
-                ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
-                : `${line.load}${unit === 'percentage' ? '%' : ''}`}
-            </span>
-            <div style={ruleStyle} />
-            <span style={mono}>{line.reps}</span>
+      {lines.map((line, i) => {
+        const cmp = line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : '';
+        const repsText = line.repsMax != null ? `${line.reps}-${line.repsMax}` : String(line.reps);
+        // A set range renders even when the lower bound is 1 — "1-3" carries
+        // information a hidden set count would lose.
+        const setsText = line.setsMax != null ? `${line.sets}-${line.setsMax}` : String(line.sets);
+        return (
+          <div key={i} style={stackPair}>
+            <div style={stackColumn}>
+              <span style={mono}>
+                {cmp}
+                {line.loadMax != null
+                  ? `${line.load}-${line.loadMax}${unit === 'percentage' ? '%' : ''}`
+                  : `${line.load}${unit === 'percentage' ? '%' : ''}`}
+              </span>
+              <div style={ruleStyle} />
+              <span style={mono}>{repsText}</span>
+            </div>
+            {(line.sets > 1 || line.setsMax != null) && <span style={setMultiplier}>{setsText}</span>}
           </div>
-          {line.sets > 1 && <span style={setMultiplier}>{line.sets}</span>}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

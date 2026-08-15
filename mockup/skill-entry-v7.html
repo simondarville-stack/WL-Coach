@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — # Prescription Presets (Prototype v7)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --success: #1c7c3c;
+    --radius: 6px;
+    --mono: "Cascadia Code", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .muted { color: var(--text-3); }
+  .cols { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .panel { background: var(--bg-1); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 12px 14px; }
+  .note { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+  kbd { font-family: var(--mono); font-size: 10px; background: var(--bg-2); border: 1px solid var(--border-1);
+    border-radius: 3px; padding: 0 4px; color: var(--text-2); }
+
+  /* ---------- day card ---------- */
+  .daycard { width: 540px; }
+  .daycard .dayhead { display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--border-2); padding-bottom: 6px; margin-bottom: 4px; }
+  .daycard .dayhead .d { font-weight: 600; }
+  .exrow { position: relative; display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 24px 6px 4px; border-bottom: 1px solid var(--border-2); }
+  .exrow .grip { color: var(--border-1); padding-top: 2px; font-size: 10px; cursor: grab; }
+  .exrow .name { width: 130px; font-weight: 500; padding-top: 1px; }
+  .exrow .name .cat { display: block; font-size: 10px; color: var(--text-3); font-weight: 400; }
+  .presc { flex: 1; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 9px; font-weight: 700; letter-spacing: .04em; padding: 1px 6px;
+    border-radius: 8px; vertical-align: 1px; white-space: nowrap; cursor: default;
+  }
+  .badge .rm { cursor: pointer; opacity: .55; font-weight: 400; }
+  .badge .rm:hover { opacity: 1; }
+
+  /* stacked notation */
+  .stack { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .stackpair { display: flex; align-items: center; gap: 3px; }
+  .stackcol { display: flex; flex-direction: column; align-items: center; min-width: 22px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .stackcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .stackcol .reps { color: var(--text-3); }
+  .stackcol .cmp { color: var(--accent); font-weight: 700; }
+  .setmult { font-size: 11px; color: var(--text-2); }
+  .featline { display: flex; gap: 10px; margin-top: 3px; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+
+  /* analysis column */
+  .an { width: 52px; flex-shrink: 0; border-left: 0.5px solid var(--border-2); padding-left: 6px;
+    display: flex; flex-direction: column; font-family: var(--mono); font-size: 10px; color: var(--text-2); }
+  .an .r { display: flex; justify-content: space-between; }
+  .an .k { color: var(--text-3); font-size: 9px; }
+
+  /* + menu on rows */
+  .plusbtn { position: absolute; top: 4px; right: 3px; font-size: 11px; color: var(--text-3);
+    border: 1px dashed var(--border-1); background: var(--bg-1); border-radius: 4px; padding: 1px 5px;
+    cursor: pointer; font-family: var(--mono); opacity: 0; }
+  .exrow:hover .plusbtn { opacity: .6; }
+  .plusbtn:hover { opacity: 1 !important; color: var(--accent); border-color: var(--accent); }
+  .rowmenu { position: absolute; top: 21px; right: 3px; z-index: 6; min-width: 190px;
+    background: var(--bg-1); border: 1px solid var(--border-1); border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(20,30,45,.13); padding: 3px; }
+  .rowmenu button, .dd button {
+    display: flex; gap: 6px; width: 100%; text-align: left; font: inherit; font-size: 12px;
+    border: none; background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; color: var(--text-1);
+    align-items: center;
+  }
+  .rowmenu button:hover, .dd button:hover { background: var(--accent-light); }
+  .rowmenu .sep, .dd .sep { border-top: 1px solid var(--border-2); margin: 3px 4px; }
+  .rowmenu .hint, .dd .hint { font-size: 10px; color: var(--text-3); padding: 2px 8px 3px; }
+  .ic { width: 16px; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+
+  /* ---------- add-exercise input + dropdown ---------- */
+  .addwrap { position: relative; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
+  .addwrap input {
+    flex: 1; font: inherit; font-size: 12px; padding: 5px 8px;
+    border: 1px dashed var(--border-1); border-radius: 5px; outline: none; background: var(--bg-1);
+  }
+  .addwrap input:focus { border-color: var(--accent); border-style: solid; }
+  .dd { position: absolute; top: 100%; left: 0; right: 0; z-index: 8; margin-top: 2px;
+    background: var(--bg-1); border: 1px solid var(--border-1); border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(20,30,45,.13); padding: 3px; max-height: 240px; overflow-y: auto; }
+  .dd .preview { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-left: auto; }
+
+  /* ---------- preset config panel ---------- */
+  .cfgpanel { width: 360px; }
+  .preset { border: 1px solid var(--border-2); border-radius: 5px; margin-bottom: 8px; }
+  .preset .phead { display: flex; align-items: center; gap: 7px; padding: 7px 9px; cursor: pointer; }
+  .preset .phead:hover { background: var(--bg-2); }
+  .preset .pdesc { font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-left: auto; }
+  .pbody { border-top: 1px solid var(--border-2); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .pbody label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
+  .pbody input[type=text], .pbody input[type=number] {
+    font: inherit; font-size: 11px; font-family: var(--mono); padding: 2px 5px;
+    border: 1px solid var(--border-1); border-radius: 3px;
+  }
+  .pbody input[type=number] { width: 52px; }
+  .pbody input[type=color] { width: 24px; height: 18px; padding: 0; border: 1px solid var(--border-1); border-radius: 3px; background: none; }
+  .prescfield { display: flex; flex-direction: column; gap: 4px; }
+  .prescfield .lab { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); font-weight: 600; }
+  .prescfield input { width: 100%; }
+  .prescfield input.bad { border-color: var(--danger); }
+  .prescpreview { min-height: 30px; background: var(--bg-2); border-radius: 4px; padding: 5px 8px;
+    display: flex; align-items: center; }
+  .prescpreview .empty { font-size: 10px; color: var(--text-3); font-style: italic; }
+  .newpreset { width: 100%; font: inherit; font-size: 12px; padding: 6px; border: 1px dashed var(--border-1);
+    border-radius: 5px; background: none; color: var(--text-2); cursor: pointer; }
+  .newpreset:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- print ---------- */
+  .printbox { width: 280px; }
+  .printrow { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--border-2); align-items: flex-start; }
+  .printrow:last-child { border-bottom: none; }
+  .printrow .pn { width: 100px; font-weight: 500; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>EMOS — <span style="font-family:var(--mono)">#</span> Prescription Presets <span class="muted" style="font-weight:400">· prototype v7</span></h1>
+<div class="note">A preset is <b>anything the coach can prescribe</b>: an optional prescription template written in the normal
+grammar (<kbd>80%x5x5</kbd>, <kbd>&gt;=85%x3-5x4-6</kbd>, comma segments — signs and ranges included), plus optional
+⏱ / ⏸ features and an optional badge. <kbd>#5x5</kbd> is as valid a preset as <kbd>#Skill</kbd>.
+Try the add field (<kbd>#</kbd> …), edit a preset's prescription in the right panel and watch the live preview,
+then add a row with it. <kbd>/</kbd> blocks stay separate, as today.</div>
+
+<div class="cols">
+
+  <!-- ============ COACH PLANNER ============ -->
+  <div class="panel daycard">
+    <h2>Coach · Weekly Planner (Tuesday)</h2>
+    <div class="dayhead"><span class="d">Tuesday</span><span class="muted">17/08</span></div>
+    <div id="rows"></div>
+
+    <div class="addwrap" id="addwrap">
+      <span id="armedchip"></span>
+      <input id="addinput" type="text" placeholder="+ Add exercise…   (# preset · / block)" autocomplete="off">
+      <div class="dd" id="dd" style="display:none"></div>
+    </div>
+
+    <div class="note" style="margin-top:10px">
+      Applying a preset with a template <b>replaces</b> the row's prescription (features merge; badge per the
+      preset's setting). A template-less preset only adds features/badge. ✕ on a badge removes the tag,
+      keeps prescription and features.
+    </div>
+  </div>
+
+  <!-- ============ PRESET CONFIG (COACH-CONFIG) ============ -->
+  <div class="panel cfgpanel">
+    <h2># Preset registry <span class="muted" style="font-weight:400">· coach-config</span></h2>
+    <div id="presets"></div>
+    <button class="newpreset" id="newpreset">+ new preset</button>
+    <div class="note" style="margin-top:8px">The prescription field speaks the exact planner grammar — invalid input
+    turns the field red and applies nothing. Everything is optional: template only (#5x5), features only (#WOD),
+    or both (#Skill).</div>
+  </div>
+
+  <!-- ============ PRINT ============ -->
+  <div class="panel printbox">
+    <h2>Print / athlete view</h2>
+    <div id="printrows"></div>
+    <div class="note" style="margin-top:8px">Badges print only when the preset says so — #5x5 is a coach shortcut,
+    not athlete information, so its badge is off.</div>
+  </div>
+
+</div>
+
+<script>
+// ================= prescription grammar (mirrors the planner parser) =================
+const GLYPH = { '>=': '≥', '~': '≈', '<=': '≤' };
+function splitCmp(s) {
+  if (s.startsWith('>=')) return { cmp: '>=', rest: s.slice(2) };
+  if (s.startsWith('≥')) return { cmp: '>=', rest: s.slice(1) };
+  if (s.startsWith('<=')) return { cmp: '<=', rest: s.slice(2) };
+  if (s.startsWith('≤')) return { cmp: '<=', rest: s.slice(1) };
+  if (s.startsWith('~') || s.startsWith('≈')) return { cmp: '~', rest: s.slice(1) };
+  return { cmp: null, rest: s };
+}
+function parseRange(t) {
+  const m = t.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return null;
+  const min = +m[1], max = m[2] != null ? +m[2] : null;
+  if (max != null && max < min) return null;
+  return { min, max };
+}
+/** "≥85%x3-5x4-6, 90%x2" → segments | null when invalid */
+function parsePresc(raw) {
+  if (!raw || !raw.trim()) return null;
+  const segs = raw.replace(/×/g, 'x').replace(/–/g, '-').replace(/\s/g, '').split(',').filter(Boolean).map(part => {
+    const { cmp, rest } = splitCmp(part);
+    const bits = rest.split('x');
+    if (bits.length < 2 || bits.length > 3) return null;
+    const isPct = bits[0].includes('%');
+    const load = parseFloat(bits[0].replace('%', ''));
+    const reps = parseRange(bits[1]);
+    const sets = bits[2] != null ? parseRange(bits[2]) : { min: 1, max: null };
+    if (isNaN(load) || !reps || !sets) return null;
+    return { cmp, load, isPct, repMin: reps.min, repMax: reps.max, setMin: sets.min, setMax: sets.max };
+  });
+  return segs.length && segs.every(Boolean) ? segs : null;
+}
+const rangeText = (min, max) => max != null ? min + '–' + max : String(min);
+function prescText(segs) {
+  return segs.map(s =>
+    (s.cmp ? GLYPH[s.cmp] : '') + s.load + (s.isPct ? '%' : '') + '×' + rangeText(s.repMin, s.repMax).replace('–', '-')
+    + (s.setMin === 1 && s.setMax == null ? '' : '×' + rangeText(s.setMin, s.setMax).replace('–', '-'))
+  ).join(', ');
+}
+
+// ================= preset registry (coach-config) =================
+// presc: template string in the grammar ('' = none) · badge: show tag on rows
+const presets = [
+  { id: 'skill', name: 'Skill', color: '#6b3fa0', badge: true, presc: '>=85%x3-5x4-6', totalTime: 12, rest: null },
+  { id: '5x5', name: '5x5', color: '#185FA5', badge: false, presc: '80%x5x5', totalTime: null, rest: null },
+  { id: 'wod', name: 'WOD', color: '#b3541e', badge: true, presc: '', totalTime: 15, rest: null },
+  { id: 'ta', name: 'TA', color: '#1c7c3c', badge: true, presc: '<=70%x3x6', totalTime: null, rest: 2 },
+];
+function presetPreview(p) {
+  const bits = [];
+  const segs = parsePresc(p.presc);
+  if (segs) bits.push(prescText(segs));
+  if (p.totalTime != null) bits.push('⏱' + p.totalTime + '′');
+  if (p.rest != null) bits.push('⏸' + p.rest + '′');
+  return bits.join(' · ') || 'badge only';
+}
+
+const EXERCISES = [
+  { name: 'Snatch', cat: 'Snatch', color: '#d97706' },
+  { name: 'Clean + Jerk', cat: 'C&J', color: '#0891b2' },
+  { name: 'Back Squat', cat: 'Squat', color: '#4f46e5' },
+  { name: 'Snatch Pull', cat: 'Pull', color: '#9333ea' },
+  { name: 'Push Press', cat: 'Press', color: '#dc2626' },
+];
+
+// ================= day rows =================
+// row: { exName, cat, color, segments[], totalTime, rest, presetId, showBadge }
+const rows = [
+  { exName: 'Snatch Pull', cat: 'Pull', color: '#9333ea',
+    segments: parsePresc('100x3x5'), totalTime: null, rest: null, presetId: null, showBadge: false },
+  { exName: 'Snatch', cat: 'Snatch', color: '#d97706',
+    segments: parsePresc('>=85%x3-5x4-6'), totalTime: 12, rest: null, presetId: 'skill', showBadge: true },
+];
+let openRowMenu = null;
+let openPreset = null;
+let armed = null;
+
+function applyPreset(row, p) {
+  row.presetId = p.id;
+  row.showBadge = p.badge;
+  const segs = parsePresc(p.presc);
+  if (segs) row.segments = segs.map(s => ({ ...s }));   // template replaces the prescription
+  if (p.totalTime != null) row.totalTime = p.totalTime; // features merge
+  if (p.rest != null) row.rest = p.rest;
+}
+
+function fmt(n) { return n == null ? '' : String(Math.round(n * 10) / 10).replace('.', ','); }
+const mid = (min, max) => max != null ? (min + max) / 2 : min;
+
+function derived(row) {
+  let R = 0, S = 0, Hi = 0, w = 0, wr = 0, pct = false, soft = false;
+  for (const s of row.segments) {
+    const reps = mid(s.repMin, s.repMax) * mid(s.setMin, s.setMax);
+    R += reps; S += mid(s.setMin, s.setMax);
+    if (s.load > Hi) { Hi = s.load; pct = s.isPct; }
+    if (s.cmp) { soft = true; continue; }
+    w += s.load * reps; wr += reps;
+  }
+  return {
+    R: Math.round(R), S: Math.round(S),
+    Hi: fmt(Hi) + (pct ? '%' : ''),
+    Avg: wr > 0 ? fmt(Math.round(w / wr * 10) / 10) + (pct ? '%' : '') : '—',
+    soft,
+  };
+}
+
+function badgeFor(presetId) { return presets.find(x => x.id === presetId); }
+function badgeEl(row, removable) {
+  if (!row.presetId || !row.showBadge) return null;
+  const p = badgeFor(row.presetId);
+  if (!p) return null;
+  const b = document.createElement('span');
+  b.className = 'badge';
+  b.style.background = p.color + '1c';
+  b.style.color = p.color;
+  b.innerHTML = '#' + p.name.toUpperCase();
+  b.title = '#' + p.name + ' — ' + presetPreview(p);
+  if (removable) {
+    const rm = document.createElement('span');
+    rm.className = 'rm'; rm.textContent = '✕';
+    rm.title = 'remove badge (prescription & features stay)';
+    rm.addEventListener('click', e => { e.stopPropagation(); row.presetId = null; row.showBadge = false; renderAll(); });
+    b.appendChild(rm);
+  }
+  return b;
+}
+
+function stackEl(segments) {
+  const wrap = document.createElement('div');
+  wrap.className = 'stack';
+  segments.forEach(s => {
+    const pair = document.createElement('span');
+    pair.className = 'stackpair';
+    const col = document.createElement('span');
+    col.className = 'stackcol';
+    col.innerHTML = '<span>' + (s.cmp ? '<span class="cmp">' + GLYPH[s.cmp] + '</span>' : '')
+      + fmt(s.load) + (s.isPct ? '%' : '') + '</span><span class="rule"></span><span class="reps">'
+      + rangeText(s.repMin, s.repMax) + '</span>';
+    pair.appendChild(col);
+    if (s.setMin > 1 || s.setMax != null) {
+      const sm = document.createElement('span'); sm.className = 'setmult';
+      sm.textContent = rangeText(s.setMin, s.setMax);
+      pair.appendChild(sm);
+    }
+    wrap.appendChild(pair);
+  });
+  return wrap;
+}
+
+function featLine(row) {
+  const parts = [];
+  if (row.totalTime != null) parts.push('⏱ ' + fmt(row.totalTime) + '′');
+  if (row.rest != null) parts.push('⏸ ' + fmt(row.rest) + '′');
+  if (!parts.length) return null;
+  const el = document.createElement('div');
+  el.className = 'featline';
+  parts.forEach(t => { const s = document.createElement('span'); s.textContent = t; el.appendChild(s); });
+  return el;
+}
+
+function renderRows() {
+  const host = document.getElementById('rows');
+  host.innerHTML = '';
+  rows.forEach((row, i) => {
+    const r = document.createElement('div');
+    r.className = 'exrow';
+    r.style.borderLeft = '3px solid ' + row.color;
+
+    const grip = document.createElement('span'); grip.className = 'grip'; grip.textContent = '⠿'; r.appendChild(grip);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.innerHTML = row.exName + ' ';
+    const badge = badgeEl(row, true);
+    if (badge) name.appendChild(badge);
+    const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = row.cat; name.appendChild(cat);
+    r.appendChild(name);
+
+    const presc = document.createElement('div');
+    presc.className = 'presc';
+    presc.appendChild(stackEl(row.segments));
+    const fl = featLine(row);
+    if (fl) presc.appendChild(fl);
+    r.appendChild(presc);
+
+    const d = derived(row);
+    const an = document.createElement('div');
+    an.className = 'an';
+    an.innerHTML = '<div class="r"><span class="k">R</span><span>' + d.R + '</span></div>'
+      + '<div class="r"><span class="k">S</span><span>' + d.S + '</span></div>'
+      + '<div class="r"><span class="k">Hi</span><span>' + d.Hi + '</span></div>'
+      + '<div class="r"><span class="k">Ø</span><span>' + d.Avg + '</span></div>';
+    r.appendChild(an);
+
+    const plus = document.createElement('button');
+    plus.className = 'plusbtn'; plus.textContent = '+'; plus.title = 'exercise features & presets';
+    plus.addEventListener('click', e => { e.stopPropagation(); openRowMenu = openRowMenu === i ? null : i; renderAll(); });
+    r.appendChild(plus);
+    if (openRowMenu === i) {
+      const menu = document.createElement('div');
+      menu.className = 'rowmenu';
+      const hint1 = document.createElement('div'); hint1.className = 'hint'; hint1.textContent = 'features'; menu.appendChild(hint1);
+      ['≥ load sign', '⏱ total time', '⏸ rest time', 'Σ total reps — overwrites', 'S total sets — overwrites', 'Ø avg load — overwrites'].forEach(t => {
+        const b = document.createElement('button');
+        b.innerHTML = '<span class="ic">' + t.slice(0, 1) + '</span>' + t.slice(2);
+        b.addEventListener('click', e => { e.stopPropagation(); openRowMenu = null; renderAll(); });
+        menu.appendChild(b);
+      });
+      const sep = document.createElement('div'); sep.className = 'sep'; menu.appendChild(sep);
+      const hint2 = document.createElement('div'); hint2.className = 'hint'; hint2.textContent = 'apply preset (template replaces prescription)'; menu.appendChild(hint2);
+      presets.filter(p => p.id !== row.presetId).forEach(p => {
+        const b = document.createElement('button');
+        b.innerHTML = '<span class="ic" style="color:' + p.color + '">#</span>#' + p.name
+          + '<span class="preview" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-3)">' + presetPreview(p) + '</span>';
+        b.addEventListener('click', e => {
+          e.stopPropagation();
+          applyPreset(row, p);
+          openRowMenu = null; renderAll();
+        });
+        menu.appendChild(b);
+      });
+      r.appendChild(menu);
+    }
+
+    host.appendChild(r);
+  });
+}
+
+// ================= add field with # and / dropdowns =================
+const addinput = document.getElementById('addinput');
+const dd = document.getElementById('dd');
+
+function renderArmed() {
+  const host = document.getElementById('armedchip');
+  host.innerHTML = '';
+  if (!armed) return;
+  const p = presets.find(x => x.id === armed);
+  const b = document.createElement('span');
+  b.className = 'badge';
+  b.style.background = p.color + '1c';
+  b.style.color = p.color;
+  b.innerHTML = '#' + p.name.toUpperCase();
+  const rm = document.createElement('span');
+  rm.className = 'rm'; rm.textContent = '✕';
+  rm.addEventListener('click', () => { armed = null; renderAll(); addinput.focus(); });
+  b.appendChild(rm);
+  host.appendChild(b);
+}
+
+function renderDropdown() {
+  const v = addinput.value;
+  dd.innerHTML = '';
+  let items = [];
+  if (v.startsWith('#')) {
+    const q = v.slice(1).toLowerCase();
+    items = presets.filter(p => p.name.toLowerCase().startsWith(q)).map(p => ({
+      html: '<span class="ic" style="color:' + p.color + '">#</span>#' + p.name + '<span class="preview">' + presetPreview(p) + '</span>',
+      onPick: () => { armed = p.id; addinput.value = ''; addinput.placeholder = 'exercise name…'; renderAll(); addinput.focus(); },
+    }));
+    if (!items.length) items = [{ html: '<span class="hint">no preset “' + v.slice(1) + '” — manage presets in the panel →</span>', onPick: () => {} }];
+  } else if (v.startsWith('/')) {
+    const q = v.slice(1).toLowerCase();
+    items = ['Text', 'Video', 'Image', 'GPP block'].filter(n => n.toLowerCase().startsWith(q)).map(n => ({
+      html: '<span class="ic">/</span>' + n + '<span class="preview">structural block (as today)</span>',
+      onPick: () => { addinput.value = ''; hideDd(); },
+    }));
+  } else if (v.trim().length > 0) {
+    items = EXERCISES.filter(e => e.name.toLowerCase().includes(v.trim().toLowerCase())).map(e => ({
+      html: e.name + '<span class="preview">' + e.cat + '</span>',
+      onPick: () => {
+        const row = { exName: e.name, cat: e.cat, color: e.color,
+          segments: parsePresc('80%x3x5'), totalTime: null, rest: null, presetId: null, showBadge: false };
+        if (armed) applyPreset(row, presets.find(x => x.id === armed));
+        rows.push(row);
+        armed = null; addinput.value = ''; addinput.placeholder = '+ Add exercise…   (# preset · / block)';
+        hideDd(); renderAll();
+      },
+    }));
+  }
+  if (!items.length) { hideDd(); return; }
+  items.forEach(it => {
+    const b = document.createElement('button');
+    b.innerHTML = it.html;
+    b.addEventListener('mousedown', e => { e.preventDefault(); it.onPick(); });
+    dd.appendChild(b);
+  });
+  dd.style.display = 'block';
+}
+function hideDd() { dd.style.display = 'none'; }
+addinput.addEventListener('input', renderDropdown);
+addinput.addEventListener('focus', renderDropdown);
+addinput.addEventListener('blur', () => setTimeout(hideDd, 150));
+
+// ================= preset config panel =================
+function renderPresets() {
+  const host = document.getElementById('presets');
+  host.innerHTML = '';
+  presets.forEach(p => {
+    const box = document.createElement('div');
+    box.className = 'preset';
+    const head = document.createElement('div');
+    head.className = 'phead';
+    head.innerHTML = '<span class="badge" style="background:' + p.color + '1c;color:' + p.color + '">#' + p.name.toUpperCase() + '</span>'
+      + '<span class="pdesc">' + presetPreview(p) + '</span>';
+    head.addEventListener('click', () => { openPreset = openPreset === p.id ? null : p.id; renderAll(); });
+    box.appendChild(head);
+    if (openPreset === p.id) {
+      const body = document.createElement('div');
+      body.className = 'pbody';
+
+      // name + colour + badge toggle
+      const nameRow = document.createElement('label');
+      nameRow.innerHTML = '<span style="font-family:var(--mono);color:var(--text-3)">#</span>';
+      const nameIn = document.createElement('input'); nameIn.type = 'text'; nameIn.value = p.name; nameIn.style.width = '80px';
+      nameIn.addEventListener('change', () => { p.name = nameIn.value || p.name; renderAll(); });
+      nameRow.appendChild(nameIn);
+      const colIn = document.createElement('input'); colIn.type = 'color'; colIn.value = p.color;
+      colIn.addEventListener('change', () => { p.color = colIn.value; renderAll(); });
+      nameRow.appendChild(colIn);
+      const bCb = document.createElement('input'); bCb.type = 'checkbox'; bCb.checked = p.badge;
+      bCb.addEventListener('change', () => { p.badge = bCb.checked; renderAll(); });
+      nameRow.appendChild(bCb);
+      nameRow.appendChild(document.createTextNode(' badge on rows'));
+      body.appendChild(nameRow);
+
+      // prescription template + live preview
+      const pf = document.createElement('div');
+      pf.className = 'prescfield';
+      pf.innerHTML = '<span class="lab">Prescription template — planner grammar, optional</span>';
+      const pIn = document.createElement('input');
+      pIn.type = 'text'; pIn.value = p.presc; pIn.placeholder = 'e.g. 80%x5x5  ·  >=85%x3-5x4-6  ·  70%x3, 80%x2x3';
+      pIn.spellcheck = false;
+      const preview = document.createElement('div');
+      preview.className = 'prescpreview';
+      const paint = () => {
+        const segs = parsePresc(pIn.value);
+        pIn.classList.toggle('bad', pIn.value.trim() !== '' && !segs);
+        preview.innerHTML = '';
+        if (segs) preview.appendChild(stackEl(segs));
+        else preview.innerHTML = '<span class="empty">' + (pIn.value.trim() ? 'does not parse — nothing will be applied' : 'no template — preset applies features/badge only') + '</span>';
+      };
+      pIn.addEventListener('input', paint);
+      pIn.addEventListener('change', () => {
+        const segs = parsePresc(pIn.value);
+        p.presc = segs ? pIn.value : (pIn.value.trim() === '' ? '' : p.presc);
+        renderAll();
+      });
+      pf.appendChild(pIn);
+      pf.appendChild(preview);
+      body.appendChild(pf);
+      paint();
+
+      // total time
+      const tt = document.createElement('label');
+      const ttCb = document.createElement('input'); ttCb.type = 'checkbox'; ttCb.checked = p.totalTime != null;
+      const ttIn = document.createElement('input'); ttIn.type = 'number'; ttIn.value = p.totalTime ?? 12; ttIn.min = 1;
+      ttCb.addEventListener('change', () => { p.totalTime = ttCb.checked ? Number(ttIn.value) : null; renderAll(); });
+      ttIn.addEventListener('change', () => { if (ttCb.checked) { p.totalTime = Number(ttIn.value); renderAll(); } });
+      tt.appendChild(ttCb); tt.appendChild(document.createTextNode(' ⏱ total time '));
+      tt.appendChild(ttIn); tt.appendChild(document.createTextNode(' min'));
+      body.appendChild(tt);
+
+      // rest
+      const rr = document.createElement('label');
+      const rrCb = document.createElement('input'); rrCb.type = 'checkbox'; rrCb.checked = p.rest != null;
+      const rrIn = document.createElement('input'); rrIn.type = 'number'; rrIn.value = p.rest ?? 2; rrIn.min = 0.25; rrIn.step = 0.25;
+      rrCb.addEventListener('change', () => { p.rest = rrCb.checked ? Number(rrIn.value) : null; renderAll(); });
+      rrIn.addEventListener('change', () => { if (rrCb.checked) { p.rest = Number(rrIn.value); renderAll(); } });
+      rr.appendChild(rrCb); rr.appendChild(document.createTextNode(' ⏸ rest '));
+      rr.appendChild(rrIn); rr.appendChild(document.createTextNode(' min'));
+      body.appendChild(rr);
+
+      box.appendChild(body);
+    }
+    host.appendChild(box);
+  });
+}
+
+document.getElementById('newpreset').addEventListener('click', () => {
+  const id = 'p' + Date.now();
+  presets.push({ id, name: 'New', color: '#185FA5', badge: false, presc: '', totalTime: null, rest: null });
+  openPreset = id;
+  renderAll();
+});
+
+// ================= print =================
+function renderPrint() {
+  const host = document.getElementById('printrows');
+  host.innerHTML = '';
+  rows.forEach(row => {
+    const r = document.createElement('div');
+    r.className = 'printrow';
+    const n = document.createElement('span');
+    n.className = 'pn';
+    n.textContent = row.exName + ' ';
+    const b = badgeEl(row, false);
+    if (b) n.appendChild(b);
+    r.appendChild(n);
+    const body = document.createElement('div');
+    body.style.flex = '1';
+    body.appendChild(stackEl(row.segments));
+    const fl = featLine(row);
+    if (fl) body.appendChild(fl);
+    r.appendChild(body);
+    host.appendChild(r);
+  });
+}
+
+document.addEventListener('click', () => { if (openRowMenu != null) { openRowMenu = null; renderAll(); } });
+
+function renderAll() { renderRows(); renderArmed(); renderPresets(); renderPrint(); }
+renderAll();
+</script>
+</body>
+</html>

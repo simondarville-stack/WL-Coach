@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMOS — Exercise Features (Prototype v5)</title>
+<style>
+  :root {
+    --accent: #185FA5;
+    --accent-light: #EAF2F9;
+    --text-1: #1a2330;
+    --text-2: #4b5563;
+    --text-3: #8b93a1;
+    --bg-1: #ffffff;
+    --bg-2: #f6f7f9;
+    --bg-page: #eef0f3;
+    --border-1: #d4d8de;
+    --border-2: #e4e7eb;
+    --danger: #b3261e;
+    --danger-bg: #fbeae9;
+    --success: #1c7c3c;
+    --radius: 6px;
+    --mono: "Cascadia Code", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px; color: var(--text-1); background: var(--bg-page);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 2px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .muted { color: var(--text-3); }
+  .cols { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+  .panel { background: var(--bg-1); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 12px 14px; }
+  .note { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+  kbd { font-family: var(--mono); font-size: 10px; background: var(--bg-2); border: 1px solid var(--border-1);
+    border-radius: 3px; padding: 0 4px; color: var(--text-2); }
+
+  /* ---------- coach day card ---------- */
+  .daycard { width: 560px; }
+  .daycard .dayhead { display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--border-2); padding-bottom: 6px; margin-bottom: 4px; }
+  .daycard .dayhead .d { font-weight: 600; }
+  .exrow { position: relative; display: flex; align-items: flex-start; gap: 8px;
+    padding: 6px 26px 6px 4px; border-bottom: 1px solid var(--border-2); }
+  .exrow:last-child { border-bottom: none; }
+  .exrow .pos { color: var(--text-3); font-size: 11px; width: 14px; padding-top: 2px; }
+  .exrow .name { width: 122px; font-weight: 500; padding-top: 2px; }
+  .exrow .name .cat { display: block; font-size: 10px; color: var(--text-3); font-weight: 400; }
+  .presc { flex: 1; }
+
+  /* ---------- stacked editor ---------- */
+  .skilledit { display: flex; gap: 8px; align-items: center; }
+  .segcol { display: flex; flex-direction: column; align-items: center; }
+  .segcol .toprow { display: flex; align-items: center; }
+  .segcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .tok {
+    font-family: var(--mono); font-size: 12px; line-height: 1.25; font-weight: 500;
+    color: var(--text-1); padding: 0 2px; border-radius: 3px; cursor: pointer; user-select: none;
+  }
+  .tok:hover { background: var(--bg-2); }
+  .tok.dim { color: var(--text-3); }
+  .tok.setstok { font-size: 11px; color: var(--text-2); align-self: center; }
+  .skilledit input, .featrow input, .an input {
+    font-family: var(--mono); font-size: 12px; border: none; outline: none;
+    background: var(--accent-light); text-align: center; color: var(--text-1);
+    padding: 0 1px; border-radius: 3px; min-width: 18px;
+  }
+  .cmp { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent);
+    cursor: pointer; user-select: none; padding: 0 1px; border-radius: 3px; }
+  .cmp:hover { background: var(--accent-light); }
+  body.delheld .cmp { color: var(--danger); background: var(--danger-bg); }
+
+  /* ---------- feature chips (athlete-visible, under stack) ---------- */
+  .featrow { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+  .fchip {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: 1px solid var(--border-1); border-radius: 4px; background: var(--bg-2);
+    padding: 1px 6px; font-family: var(--mono); font-size: 11px; line-height: 1.5; white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  .fchip .k { color: var(--text-3); font-size: 10px; }
+  body.delheld .fchip { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+  body.delheld .fchip .k { color: var(--danger); }
+
+  /* ---------- per-exercise analysis (right side) ---------- */
+  .an {
+    width: 70px; flex-shrink: 0; display: flex; flex-direction: column; gap: 1px;
+    font-family: var(--mono); font-size: 10.5px; line-height: 1.45;
+    border-left: 1px solid var(--border-2); padding-left: 8px;
+  }
+  .an .anrow { display: flex; justify-content: space-between; gap: 4px; }
+  .an .k { color: var(--text-3); }
+  .an .v { color: var(--text-2); }
+  .an .v.ovr { color: var(--accent); font-weight: 600; cursor: pointer; border-radius: 3px; padding: 0 2px; }
+  .an .v.ovr:hover { background: var(--accent-light); }
+  body.delheld .an .v.ovr { color: var(--danger); background: var(--danger-bg); }
+
+  /* ---------- + button (row upper-right corner) ---------- */
+  .plusbtn {
+    position: absolute; top: 4px; right: 4px;
+    font-size: 12px; line-height: 1; color: var(--text-3); cursor: pointer;
+    border: 1px dashed var(--border-1); background: var(--bg-1); border-radius: 4px;
+    padding: 2px 5px; font-family: var(--mono); opacity: 0;
+  }
+  .exrow:hover .plusbtn { opacity: .6; }
+  .plusbtn:hover { opacity: 1 !important; color: var(--accent); border-color: var(--accent); }
+  .addmenu { position: absolute; top: 22px; right: 4px; z-index: 5;
+    background: var(--bg-1); border: 1px solid var(--border-1); border-radius: 5px;
+    box-shadow: 0 4px 14px rgba(20,30,45,.13); padding: 3px; min-width: 150px; }
+  .addmenu button { display: flex; gap: 6px; width: 100%; text-align: left; font: inherit; font-size: 12px;
+    border: none; background: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; color: var(--text-1); }
+  .addmenu button:hover { background: var(--accent-light); }
+  .addmenu button .ic { width: 16px; color: var(--text-3); font-family: var(--mono); }
+  .addmenu .hint { font-size: 10px; color: var(--text-3); padding: 2px 8px 3px; border-top: 1px solid var(--border-2); margin-top: 2px; }
+
+  .combochip { font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 1px 5px;
+    border-radius: 8px; background: #e8f1e9; color: #1c7c3c; vertical-align: 1px; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-2);
+    background: var(--bg-2); border-radius: var(--radius); padding: 6px 10px; margin-top: 10px; }
+
+  /* ---------- print preview ---------- */
+  .printbox { width: 280px; }
+  .printrow { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid var(--border-2); align-items: flex-start; }
+  .printrow:last-child { border-bottom: none; }
+  .printrow .pn { width: 96px; font-weight: 500; font-size: 12px; }
+  .printstack { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .printcol { display: flex; flex-direction: column; align-items: center; font-family: var(--mono); font-size: 12px; line-height: 1.2; }
+  .printcol .rule { width: 100%; border-top: 1px solid var(--border-1); margin: 1px 0; }
+  .printcol .lower { color: var(--text-3); }
+  .printtime { font-size: 11px; color: var(--text-2); align-self: center; font-family: var(--mono); }
+  .printmeta { width: 100%; font-family: var(--mono); font-size: 11px; color: var(--text-2); margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ---------- athlete card ---------- */
+  .phone { width: 320px; background: #10151c; border-radius: 18px; padding: 10px; }
+  .phonescreen { background: #f4f5f7; border-radius: 10px; padding: 10px; }
+  .acard { background: #fff; border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .acard .ahead { display: flex; justify-content: space-between; align-items: baseline; }
+  .acard .aname { font-weight: 600; font-size: 14px; }
+  .aconstraints { margin: 6px 0 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .ameta { margin: 2px 0 8px; font-family: var(--mono); font-size: 12px; color: var(--text-2); display: flex; gap: 10px; flex-wrap: wrap; }
+  .setrows { border-top: 1px solid var(--border-2); }
+  .setrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border-2); font-family: var(--mono); font-size: 13px; }
+  .setrow .sn { color: var(--text-3); font-size: 11px; width: 18px; }
+  .setrow input { width: 52px; font: inherit; padding: 2px 5px; border: 1px solid var(--border-1); border-radius: 4px; text-align: right; background: var(--bg-1); }
+  .setrow .x { color: var(--text-3); }
+  .addset { margin-top: 6px; width: 100%; font: inherit; font-size: 12px; padding: 5px; border: 1px dashed var(--border-1);
+    border-radius: 5px; background: transparent; color: var(--text-2); cursor: pointer; }
+  .addset:hover { border-color: var(--accent); color: var(--accent); }
+  .runline { margin-top: 8px; display: flex; justify-content: space-between; font-size: 12px; }
+  .runline .ok { color: var(--success); font-weight: 600; }
+  .runline .under { color: var(--text-3); }
+  .runline .over { color: var(--danger); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>EMOS — Exercise Features <span class="muted" style="font-weight:400">· prototype v5 — a general planner update</span></h1>
+<div class="note"><b>Exercise features</b> enrich any prescription: load sign (≥ ≈ ≤), rep/set ranges, total time,
+and analysis overrides. Every exercise now shows its <b>analysis</b> (R / S / Hi / Ø) in a compact column on the
+right. <b>+</b> sits in the row's upper-right corner (hover). Signs can also be typed: <kbd>&gt;=</kbd> <kbd>&lt;=</kbd>
+<kbd>==</kbd> in front of the load (<kbd>ctrl</kbd>+click the load to type).</div>
+
+<div class="cols">
+
+  <!-- ============ COACH PLANNER ============ -->
+  <div class="panel daycard">
+    <h2>Coach · Weekly Planner (Tuesday)</h2>
+    <div class="dayhead"><span class="d">Tuesday</span><span class="muted">17/08</span></div>
+    <div id="dayrows"></div>
+
+    <div class="legend">
+      <span>click <b>+1</b></span>
+      <span>right-click <b>−1</b></span>
+      <span><kbd>ctrl</kbd>+click <b>type</b></span>
+      <span>hold <kbd>Del</kbd>+click <b>remove feature</b></span>
+    </div>
+    <div class="note" style="margin-top:8px">
+      Derived analysis values are grey and passive. An <b>override feature</b> (total reps / avg load) turns the
+      value <span style="color:var(--accent);font-weight:600">accent</span> and editable — it overwrites the
+      summation for Analysis. Hold <kbd>Del</kbd> and click any feature (sign, ⏱ chip, override) to remove it.
+      Ranges edit like interval loads today: left half = lower bound, right half = upper.
+    </div>
+  </div>
+
+  <!-- ============ PRINT / READ-ONLY ============ -->
+  <div class="panel printbox">
+    <h2>Print / read-only rendering</h2>
+    <div id="printrows"></div>
+    <div class="note" style="margin-top:8px">Signs, ranges and time render for the athlete; the analysis column and
+    overrides are coach-only and never print.</div>
+  </div>
+
+  <!-- ============ ATHLETE APP ============ -->
+  <div class="phone">
+    <div class="phonescreen">
+      <div class="acard">
+        <div class="ahead"><span class="aname">Snatch</span></div>
+        <div class="aconstraints" id="ath-stack"></div>
+        <div class="ameta" id="ath-meta"></div>
+        <div class="setrows" id="setrows"></div>
+        <button class="addset" id="addset">+ add set</button>
+        <div class="runline">
+          <span id="runreps"></span>
+          <span id="runtop"></span>
+        </div>
+      </div>
+      <div class="note" style="color:#9aa3ad">Open ranges → free set logging with a soft target; fixed prescriptions
+      keep today's tick-off rows.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ================= helpers =================
+const GLYPH = { '': '', '>=': '≥', '~': '≈', '<=': '≤' };
+const fmt = n => n == null ? '' : String(Math.round(n * 10) / 10).replace('.', ',');
+const fmtTime = sec => sec == null ? '' : (sec < 60 || sec % 60 !== 0) ? fmt(sec) + '″' : fmt(sec / 60) + '′';
+function parseTime(raw) {
+  if (!raw || !raw.trim()) return null;
+  const s = raw.trim().toLowerCase().replace(',', '.').replace('′', '').replace('″', 's');
+  if (s.endsWith('s')) { const n = parseFloat(s); return isNaN(n) ? null : n; }
+  const n = parseFloat(s); return isNaN(n) ? null : n * 60;
+}
+// leading sign in typed load: ">=85%", "<=70", "==80"
+function parseSignedLoad(raw) {
+  const s = raw.replace(/\s/g, '');
+  let cmp = null, rest = s;
+  if (s.startsWith('>=')) { cmp = '>='; rest = s.slice(2); }
+  else if (s.startsWith('<=')) { cmp = '<='; rest = s.slice(2); }
+  else if (s.startsWith('==')) { cmp = '~'; rest = s.slice(2); }
+  else if (s.startsWith('~')) { cmp = '~'; rest = s.slice(1); }
+  const isPct = rest.includes('%');
+  const n = parseFloat(rest.replace('%', '').replace(',', '.'));
+  return isNaN(n) ? null : { cmp, load: n, isPct };
+}
+
+// ================= exercise feature registry =================
+const FEATURES = {
+  sign:      { icon: '≥', label: 'load sign (≥ ≈ ≤)' },
+  totalTime: { icon: '⏱', label: 'total time' },
+  totalReps: { icon: 'Σ', label: 'total reps — overwrites summation' },
+  avgLoad:   { icon: 'Ø', label: 'avg load — overwrites' },
+};
+
+// ================= rows =================
+// reps/sets: {min, max|null}; tuple for combos; features: {totalTime?, totalReps?, avgLoad?}; cmp '' = no sign
+const rows = [
+  { id: 'pull', name: 'Snatch Pull', cat: 'Pull', pos: 1, combo: false,
+    cmp: '', load: 100, isPct: false, rep: { min: 3, max: null }, tuple: null, set: { min: 5, max: null }, feat: {} },
+  { id: 'sn', name: 'Snatch', cat: 'Snatch', pos: 2, combo: false,
+    cmp: '>=', load: 85, isPct: true, rep: { min: 3, max: 5 }, tuple: null, set: { min: 5, max: null },
+    feat: { totalTime: 720, totalReps: null, avgLoad: null } },   // null = feature added, auto value
+  { id: 'cj', name: 'Clean + Jerk', cat: 'Combo', pos: 3, combo: true,
+    cmp: '<=', load: 70, isPct: true, rep: { min: 3, max: null }, tuple: '2+1', set: { min: 4, max: 6 }, feat: {} },
+  { id: 'sq', name: 'Back Squat', cat: 'Squat', pos: 4, combo: false,
+    cmp: '', load: 120, isPct: false, rep: { min: 5, max: null }, tuple: null, set: { min: 5, max: null }, feat: {} },
+];
+const logged = [ { load: 60, reps: 3 }, { load: 65, reps: 3 }, { load: 70, reps: 2 } ];
+let openMenu = null;
+let editing = null;   // {rowId, field}
+
+// ================= derivations =================
+const midR = r => r.max != null ? (r.min + r.max) / 2 : r.min;
+function derived(row) {
+  const perSet = row.tuple ? row.tuple.split('+').reduce((s, p) => s + (parseInt(p, 10) || 0), 0) : midR(row.rep);
+  const sets = midR(row.set);
+  const R = Math.round(perSet * sets);
+  const S = sets;
+  const Hi = row.load;
+  const Avg = row.cmp ? null : row.load;   // signed load: no honest avg without an override
+  return { R, S, Hi, Avg };
+}
+function anValue(row, key) {
+  const d = derived(row);
+  if (key === 'totalReps') return (('totalReps' in row.feat) && row.feat.totalReps != null) ? row.feat.totalReps : d.R;
+  if (key === 'avgLoad')  return (('avgLoad' in row.feat) && row.feat.avgLoad != null) ? row.feat.avgLoad : d.Avg;
+  if (key === 'S') return d.S;
+  if (key === 'Hi') return d.Hi;
+  return null;
+}
+
+// ================= delete-held ================
+let delHeld = false;
+document.addEventListener('keydown', e => { if (e.key === 'Delete') { delHeld = true; document.body.classList.add('delheld'); } });
+document.addEventListener('keyup', e => { if (e.key === 'Delete') { delHeld = false; document.body.classList.remove('delheld'); } });
+window.addEventListener('blur', () => { delHeld = false; document.body.classList.remove('delheld'); });
+
+// ================= token: click +1 / right-click −1 / ctrl+click type =================
+function mkToken(text, cls, opts) {
+  // opts: {step(delta, half), edit(), del(), title}
+  if (editing && editing.id === opts.editId) {
+    const inp = document.createElement('input');
+    inp.value = opts.editValue;
+    inp.style.width = Math.max(3, opts.editValue.length + 1) + 'ch';
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { editing = null; renderAll(); } });
+    inp.addEventListener('blur', () => { editing = null; opts.commit(inp.value.trim()); });
+    setTimeout(() => { inp.focus(); inp.select(); }, 0);
+    return inp;
+  }
+  const el = document.createElement('span');
+  el.className = 'tok ' + (cls || '');
+  el.textContent = text;
+  if (opts.title) el.title = opts.title;
+  el.addEventListener('mousedown', e => e.preventDefault());
+  el.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    if (delHeld) { if (opts.del) opts.del(); return; }
+    if (e.ctrlKey || e.metaKey) { editing = { id: opts.editId }; renderAll(); return; }
+    if (opts.step) {
+      const rect = el.getBoundingClientRect();
+      const half = (e.clientX - rect.left) > rect.width / 2 ? 'hi' : 'lo';
+      opts.step(1, half); renderAll();
+    }
+  });
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault(); e.stopPropagation();
+    if (delHeld || !opts.step) return;
+    const rect = el.getBoundingClientRect();
+    const half = (e.clientX - rect.left) > rect.width / 2 ? 'hi' : 'lo';
+    opts.step(-1, half); renderAll();
+  });
+  return el;
+}
+
+// ================= coach rows =================
+function repText(row) {
+  if (row.tuple) return row.tuple;
+  return row.rep.max != null ? row.rep.min + '–' + row.rep.max : String(row.rep.min);
+}
+function setText(row) {
+  return row.set.max != null ? row.set.min + '–' + row.set.max : String(row.set.min);
+}
+function stepRange(r, delta, half) {
+  if (r.max != null) {
+    if (half === 'hi') r.max = Math.max(r.min, r.max + delta);
+    else { r.min = Math.max(0, r.min + delta); if (r.max < r.min) r.max = r.min; }
+  } else {
+    r.min = Math.max(0, r.min + delta);
+  }
+}
+function parseRangeText(v, r) {
+  const s = v.replace(/\s/g, '').replace(/–/g, '-');
+  const m = s.match(/^(\d+)(?:-(\d+))?$/);
+  if (!m) return;
+  r.min = +m[1]; r.max = m[2] ? Math.max(+m[1], +m[2]) : null;
+}
+
+function renderRow(row) {
+  const host = document.createElement('div');
+  host.className = 'exrow';
+
+  const pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = row.pos; host.appendChild(pos);
+  const name = document.createElement('span'); name.className = 'name';
+  name.innerHTML = row.name + (row.combo ? ' <span class="combochip">COMBO</span>' : '') + '<span class="cat">' + row.cat + '</span>';
+  host.appendChild(name);
+
+  // ----- prescription stack -----
+  const presc = document.createElement('div'); presc.className = 'presc';
+  const ed = document.createElement('div'); ed.className = 'skilledit';
+  const col = document.createElement('span'); col.className = 'segcol';
+  const top = document.createElement('span'); top.className = 'toprow';
+  if (row.cmp) {
+    const c = document.createElement('span');
+    c.className = 'cmp'; c.textContent = GLYPH[row.cmp];
+    c.title = delHeld ? 'click to remove sign' : 'load sign — hold Del + click to remove';
+    c.addEventListener('click', e => {
+      e.stopPropagation();
+      if (delHeld) { row.cmp = ''; renderAll(); return; }
+      row.cmp = row.cmp === '>=' ? '~' : row.cmp === '~' ? '<=' : '>=';
+      renderAll();
+    });
+    top.appendChild(c);
+  }
+  top.appendChild(mkToken(fmt(row.load) + (row.isPct ? '%' : ''), '', {
+    editId: row.id + ':load',
+    editValue: (row.cmp ? { '>=': '>=', '~': '==', '<=': '<=' }[row.cmp] : '') + fmt(row.load).replace(',', '.') + (row.isPct ? '%' : ''),
+    step: d => { row.load = Math.max(0, row.load + d); },
+    commit: v => {
+      const p = parseSignedLoad(v);
+      if (p) { row.load = p.load; row.isPct = p.isPct; if (p.cmp !== null) row.cmp = p.cmp; }
+      renderAll();
+    },
+    title: 'load — type >= <= == in front to set the sign',
+  }));
+  col.appendChild(top);
+  const rule = document.createElement('span'); rule.className = 'rule'; col.appendChild(rule);
+  col.appendChild(mkToken(repText(row), 'dim', {
+    editId: row.id + ':reps',
+    editValue: repText(row).replace('–', '-'),
+    step: (d, half) => { if (!row.tuple) stepRange(row.rep, d, half); else {
+      const parts = row.tuple.split('+'); parts[0] = String(Math.max(0, (parseInt(parts[0], 10) || 0) + d)); row.tuple = parts.join('+'); } },
+    commit: v => {
+      if (/\+/.test(v)) { row.tuple = v; }
+      else { row.tuple = null; parseRangeText(v, row.rep); }
+      renderAll();
+    },
+    title: 'reps per set — range allowed (3-5)',
+  }));
+  ed.appendChild(col);
+  ed.appendChild(mkToken(setText(row), 'setstok', {
+    editId: row.id + ':sets',
+    editValue: setText(row).replace('–', '-'),
+    step: (d, half) => stepRange(row.set, d, half),
+    commit: v => { parseRangeText(v, row.set); renderAll(); },
+    title: 'sets — range allowed (4-6)',
+  }));
+  presc.appendChild(ed);
+
+  // feature chips (athlete-visible): total time
+  const fr = document.createElement('div'); fr.className = 'featrow';
+  if ('totalTime' in row.feat) {
+    const chip = document.createElement('span');
+    chip.className = 'fchip';
+    const k = document.createElement('span'); k.className = 'k'; k.textContent = '⏱'; chip.appendChild(k);
+    chip.appendChild(mkToken(fmtTime(row.feat.totalTime), '', {
+      editId: row.id + ':totalTime',
+      editValue: fmtTime(row.feat.totalTime).replace('′', '').replace('″', 's'),
+      step: d => { row.feat.totalTime = Math.max(60, (row.feat.totalTime || 0) + d * 60); },
+      commit: v => { const t = parseTime(v); if (t != null) row.feat.totalTime = t; renderAll(); },
+      del: () => { delete row.feat.totalTime; renderAll(); },
+      title: 'total time',
+    }));
+    chip.title = delHeld ? 'click to remove' : 'total time — visible to athlete';
+    chip.addEventListener('click', () => { if (delHeld) { delete row.feat.totalTime; renderAll(); } });
+    fr.appendChild(chip);
+  }
+  if (fr.children.length) presc.appendChild(fr);
+  host.appendChild(presc);
+
+  // ----- analysis column (right) -----
+  const an = document.createElement('div'); an.className = 'an';
+  const anRow = (k, valueEl) => {
+    const r = document.createElement('div'); r.className = 'anrow';
+    const kk = document.createElement('span'); kk.className = 'k'; kk.textContent = k;
+    r.appendChild(kk); r.appendChild(valueEl); an.appendChild(r);
+  };
+  const unit = row.isPct ? '%' : '';
+  // R — overridable
+  const rOvr = 'totalReps' in row.feat;
+  if (rOvr) {
+    const v = anValue(row, 'totalReps');
+    anRow('R', mkToken(String(v ?? '—'), 'v ovr', {
+      editId: row.id + ':anR', editValue: String(v ?? ''),
+      step: d => { row.feat.totalReps = Math.max(0, (anValue(row, 'totalReps') || 0) + d); },
+      commit: t => { const n = parseInt(t, 10); row.feat.totalReps = isNaN(n) ? null : n; renderAll(); },
+      del: () => { delete row.feat.totalReps; renderAll(); },
+      title: 'total reps override — overwrites summation',
+    }));
+  } else {
+    const v = document.createElement('span'); v.className = 'v'; v.textContent = derived(row).R; anRow('R', v);
+  }
+  // S — derived only
+  const sv = document.createElement('span'); sv.className = 'v'; sv.textContent = fmt(derived(row).S); anRow('S', sv);
+  // Hi — derived only
+  const hv = document.createElement('span'); hv.className = 'v'; hv.textContent = fmt(derived(row).Hi) + unit; anRow('Hi', hv);
+  // Ø — overridable
+  const aOvr = 'avgLoad' in row.feat;
+  if (aOvr) {
+    const v = anValue(row, 'avgLoad');
+    anRow('Ø', mkToken(v == null ? '—' : fmt(v) + unit, 'v ovr', {
+      editId: row.id + ':anA', editValue: v == null ? '' : fmt(v).replace(',', '.'),
+      step: d => { row.feat.avgLoad = Math.max(0, (anValue(row, 'avgLoad') || row.load) + d); },
+      commit: t => { const n = parseFloat(t.replace('%', '').replace(',', '.')); row.feat.avgLoad = isNaN(n) ? null : n; renderAll(); },
+      del: () => { delete row.feat.avgLoad; renderAll(); },
+      title: 'avg load override — overwrites',
+    }));
+  } else {
+    const d = derived(row);
+    const v = document.createElement('span'); v.className = 'v'; v.textContent = d.Avg == null ? '—' : fmt(d.Avg) + unit;
+    v.title = d.Avg == null ? 'signed load has no exact avg — add the Ø feature' : '';
+    anRow('Ø', v);
+  }
+  host.appendChild(an);
+
+  // ----- + button, upper-right corner -----
+  const plus = document.createElement('button');
+  plus.className = 'plusbtn'; plus.textContent = '+'; plus.title = 'add exercise feature';
+  plus.addEventListener('click', e => { e.stopPropagation(); openMenu = openMenu === row.id ? null : row.id; renderAll(); });
+  host.appendChild(plus);
+  if (openMenu === row.id) {
+    const menu = document.createElement('div');
+    menu.className = 'addmenu';
+    const avail = [];
+    if (!row.cmp) avail.push('sign');
+    if (!('totalTime' in row.feat)) avail.push('totalTime');
+    if (!('totalReps' in row.feat)) avail.push('totalReps');
+    if (!('avgLoad' in row.feat)) avail.push('avgLoad');
+    avail.forEach(k => {
+      const b = document.createElement('button');
+      b.innerHTML = '<span class="ic">' + FEATURES[k].icon + '</span>' + FEATURES[k].label;
+      b.addEventListener('click', () => {
+        if (k === 'sign') row.cmp = '>=';
+        else if (k === 'totalTime') row.feat.totalTime = 600;
+        else row.feat[k] = null;   // added, auto until edited
+        openMenu = null; renderAll();
+      });
+      menu.appendChild(b);
+    });
+    if (!avail.length) { const e = document.createElement('div'); e.className = 'note'; e.style.padding = '4px 8px'; e.textContent = 'all features added'; menu.appendChild(e); }
+    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'registry — extensible later';
+    menu.appendChild(hint);
+    host.appendChild(menu);
+  }
+
+  return host;
+}
+
+// ================= print =================
+function stackReadonly(row) {
+  const wrap = document.createElement('div');
+  wrap.className = 'printstack';
+  const col = document.createElement('span');
+  col.className = 'printcol';
+  col.innerHTML = '<span>' + GLYPH[row.cmp] + fmt(row.load) + (row.isPct ? '%' : '') + '</span><span class="rule"></span><span class="lower">'
+    + repText(row) + '</span>';
+  wrap.appendChild(col);
+  const st = setText(row);
+  if (st !== '1') {
+    const s = document.createElement('span'); s.className = 'printtime'; s.textContent = st; wrap.appendChild(s);
+  }
+  return wrap;
+}
+function renderPrint() {
+  const host = document.getElementById('printrows');
+  host.innerHTML = '';
+  rows.forEach(row => {
+    const r = document.createElement('div'); r.className = 'printrow';
+    const n = document.createElement('span'); n.className = 'pn'; n.textContent = row.name; r.appendChild(n);
+    const body = document.createElement('div'); body.style.flex = '1';
+    body.appendChild(stackReadonly(row));
+    if ('totalTime' in row.feat) {
+      const m = document.createElement('div'); m.className = 'printmeta';
+      m.innerHTML = '<span>⏱ ' + fmtTime(row.feat.totalTime) + '</span>';
+      body.appendChild(m);
+    }
+    r.appendChild(body);
+    host.appendChild(r);
+  });
+}
+
+// ================= athlete card (snatch) =================
+function renderAthlete() {
+  const row = rows.find(r => r.id === 'sn');
+  const st = document.getElementById('ath-stack');
+  st.innerHTML = ''; st.appendChild(stackReadonly(row));
+  const am = document.getElementById('ath-meta');
+  am.innerHTML = '';
+  if ('totalTime' in row.feat) {
+    const s = document.createElement('span'); s.textContent = '⏱ ' + fmtTime(row.feat.totalTime); am.appendChild(s);
+  }
+
+  const rowsEl = document.getElementById('setrows');
+  rowsEl.innerHTML = '';
+  logged.forEach((s, i) => {
+    const r = document.createElement('div');
+    r.className = 'setrow';
+    r.innerHTML = '<span class="sn">' + (i + 1) + '</span>';
+    const load = document.createElement('input'); load.value = s.load;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×';
+    const reps = document.createElement('input'); reps.value = s.reps; reps.style.width = '40px';
+    load.addEventListener('change', () => { s.load = parseFloat(load.value.replace(',', '.')) || 0; renderAll(); });
+    reps.addEventListener('change', () => { s.reps = parseInt(reps.value, 10) || 0; renderAll(); });
+    r.appendChild(load); r.appendChild(x); r.appendChild(reps);
+    rowsEl.appendChild(r);
+  });
+
+  const total = logged.reduce((s, l) => s + l.reps, 0);
+  const top = logged.reduce((s, l) => Math.max(s, l.load), 0);
+  let lo = null, hi = null;
+  const rr = row.rep, ss = row.set;
+  lo = (rr.min) * (ss.min); hi = (rr.max != null ? rr.max : rr.min) * (ss.max != null ? ss.max : ss.min);
+  const rl = document.getElementById('runreps');
+  let cls = '', suffix = '';
+  if (lo != null) {
+    const label = lo === hi ? String(lo) : lo + '–' + hi;
+    if (total < lo) { cls = 'under'; suffix = ' / ' + label; }
+    else if (total > hi) { cls = 'over'; suffix = ' — over ' + label; }
+    else { cls = 'ok'; suffix = ' ✓ in ' + label; }
+  }
+  rl.innerHTML = 'Σ <b>' + total + '</b> reps<span class="' + cls + '">' + suffix + '</span>';
+  document.getElementById('runtop').textContent = top ? 'top ' + fmt(top) + ' kg' : '';
+}
+
+document.getElementById('addset').addEventListener('click', () => {
+  const last = logged[logged.length - 1];
+  logged.push({ load: last ? last.load : 0, reps: last ? last.reps : 1 });
+  renderAll();
+});
+document.addEventListener('click', () => { if (openMenu) { openMenu = null; renderAll(); } });
+
+function renderAll() {
+  const host = document.getElementById('dayrows');
+  host.innerHTML = '';
+  rows.forEach(r => host.appendChild(renderRow(r)));
+  renderPrint();
+  renderAthlete();
+}
+renderAll();
+</script>
+</body>
+</html>

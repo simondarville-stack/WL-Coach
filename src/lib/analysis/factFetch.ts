@@ -23,7 +23,7 @@
 import { supabase } from '../supabase';
 import { getOwnerId } from '../ownerContext';
 import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
-import { parsePrescription, parseComboPrescription } from '../prescriptionParser';
+import { parsePrescription, parseComboPrescription, rangeMid } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
 import { buildParentIndex, resolveRootId } from '../exerciseHierarchy';
 import { findPhaseForWeek } from '../macroPhases';
@@ -70,7 +70,12 @@ export interface RawPlannedExercise {
 export interface RawSetLine {
   planned_exercise_id: string;
   sets: number;
+  /** Range upper bound; null/absent = fixed set count. Optional so pre-range
+   *  fixtures and cached rows without the column stay valid. */
+  sets_max?: number | null;
   reps: number;
+  /** Range upper bound; null/absent = fixed reps. */
+  reps_max?: number | null;
   load_value: number;
   load_max: number | null;
 }
@@ -387,14 +392,18 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
       };
 
       if (lines.length > 0) {
-        // Exact: one fact per set-line → tonnage = Σ(load × reps).
+        // Exact: one fact per set-line → tonnage = Σ(load × reps). Rep/set
+        // ranges ("3-5", "4-6") count at their MIDPOINT — the same convention
+        // computePrescriptionSummary uses for the cached summary, so line-level
+        // facts and summary-fed metrics can't disagree.
         for (const sl of lines) {
           const res = resolveLoad(unit, sl.load_value, sl.load_max, refMax);
-          const totalReps = sl.sets * sl.reps;
+          const setsMid = rangeMid(sl.sets, sl.sets_max);
+          const totalReps = Math.round(setsMid * rangeMid(sl.reps, sl.reps_max));
           facts.push({
             ...common,
             ...exFields,
-            sets: sl.sets,
+            sets: Math.round(setsMid),
             reps: totalReps,
             tonnage: res.kgLoad > 0 ? res.kgLoad * totalReps : 0,
             maxLoad: res.maxKg,
@@ -408,11 +417,11 @@ export function buildFacts(input: BuildFactsInput): FactRow[] {
         // Fallback: parse the raw prescription (legacy rows without set lines).
         for (const pl of parsePrescription(pe.prescription_raw)) {
           const res = resolveLoad(unit, pl.load, pl.loadMax, refMax);
-          const totalReps = pl.sets * pl.reps;
+          const totalReps = Math.round(rangeMid(pl.sets, pl.setsMax) * rangeMid(pl.reps, pl.repsMax));
           facts.push({
             ...common,
             ...exFields,
-            sets: pl.sets,
+            sets: Math.round(rangeMid(pl.sets, pl.setsMax)),
             reps: totalReps,
             tonnage: res.kgLoad > 0 ? res.kgLoad * totalReps : 0,
             maxLoad: res.maxKg,
@@ -852,7 +861,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
       const [{ data: slRows }, { data: cmRows }] = await Promise.all([
         supabase
           .from('planned_set_lines')
-          .select('planned_exercise_id, sets, reps, load_value, load_max')
+          .select('planned_exercise_id, sets, sets_max, reps, reps_max, load_value, load_max')
           .in('planned_exercise_id', peIds),
         supabase
           .from('planned_exercise_combo_members')

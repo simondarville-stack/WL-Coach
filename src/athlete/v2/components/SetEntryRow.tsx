@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, X, Trash2 } from 'lucide-react';
 import type { TrainingLogSet, PlannedSetLine } from '../../../lib/database.types';
 import { parseNumericInput, parseRepsInput } from '../../../lib/trainingLogModel';
+import { LOAD_CMP_GLYPH } from '../../../lib/prescriptionParser';
 
 export interface SetRowInput {
   setNumber: number;
@@ -355,8 +356,13 @@ export function expandSetLines(setLines: PlannedSetLine[], unit?: string | null)
   const out: SetRowInput[] = [];
   let setNumber = 1;
   for (const line of setLines) {
+    // sets holds the LOWER bound of a set range ("4-6" stores 4) — the athlete
+    // gets the guaranteed minimum as pre-built rows and adds extras ad hoc.
     const count = Math.max(1, line.sets ?? 1);
-    const repsText = line.reps_text ?? String(line.reps ?? '');
+    const repsText =
+      line.reps_text ??
+      (line.reps_max != null ? `${line.reps}-${line.reps_max}` : String(line.reps ?? ''));
+    const cmpPrefix = line.load_cmp ? LOAD_CMP_GLYPH[line.load_cmp] : '';
     const baseLoad =
       line.load_max != null && line.load_max !== line.load_value
         ? `${line.load_value}-${line.load_max}`
@@ -366,10 +372,10 @@ export function expandSetLines(setLines: PlannedSetLine[], unit?: string | null)
     const loadText = !baseLoad
       ? ''
       : unit === 'percentage'
-      ? `${baseLoad}%`
+      ? `${cmpPrefix}${baseLoad}%`
       : unit === 'rpe'
       ? `RPE ${baseLoad}`
-      : baseLoad;
+      : `${cmpPrefix}${baseLoad}`;
     for (let i = 0; i < count; i += 1) {
       out.push({
         setNumber,

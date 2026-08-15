@@ -16,6 +16,7 @@ import type {
 } from '../lib/database.types';
 import { DAYS_OF_WEEK } from '../lib/constants';
 import { parsePrescription, parseComboPrescription, computePrescriptionSummary } from '../lib/prescriptionParser';
+import { applyFeatureOverrides, type ExerciseFeatures } from '../lib/exerciseFeatures';
 import { recordPrescriptionDraft, clearPrescriptionDraft } from '../lib/prescriptionDraftStore';
 import {
   mergeGroupStructureIntoAthlete,
@@ -527,8 +528,19 @@ export function useWeekPlans() {
     const isNonNumeric = isFreeText || isOtherUnit;
 
     // Summary (sets/reps/loads) is computed by the single shared helper so the
-    // stored cache always matches what the counting layer would derive.
-    const summary = computePrescriptionSummary(prescription, unit, !!isCombo);
+    // stored cache always matches what the counting layer would derive. Feature
+    // overrides (Σ total reps / Ø avg load) are re-applied on every write so a
+    // prescription edit can't clobber a standing override.
+    const { data: metaRow } = await supabase
+      .from('planned_exercises')
+      .select('metadata')
+      .eq('id', plannedExId)
+      .single();
+    const features = ((metaRow as { metadata?: PlannedExerciseMetadata } | null)?.metadata ?? {}).features;
+    const summary = applyFeatureOverrides(
+      computePrescriptionSummary(prescription, unit, !!isCombo),
+      features,
+    );
     const summaryUpdate = {
       prescription_raw: prescription,
       unit,
@@ -545,14 +557,19 @@ export function useWeekPlans() {
         // not the set count (Option A). reps_text carries the grouped display
         // ("2(1+2)") so the athlete sees the rounds; it is display-only —
         // per-member attribution reads prescription_raw, not this cache.
+        // Set ranges store the lower bound in `sets` (the guaranteed minimum
+        // the athlete expands) and the upper bound in `sets_max`.
         const m = line.multiplier ?? 1;
         return {
           planned_exercise_id: plannedExId,
           sets: line.sets,
+          sets_max: line.setsMax ?? null,
           reps: line.totalReps * m,
+          reps_max: null,
           reps_text: line.multiplier != null ? `${m}(${line.repsText})` : line.repsText,
           load_value: line.load,
           load_max: line.loadMax ?? null,
+          load_cmp: line.loadCmp ?? null,
           position: idx + 1,
         };
       });
@@ -567,10 +584,13 @@ export function useWeekPlans() {
       ? parsed.map((line, idx) => ({
           planned_exercise_id: plannedExId,
           sets: line.sets,
+          sets_max: line.setsMax ?? null,
           reps: line.reps,
+          reps_max: line.repsMax ?? null,
           reps_text: null,
           load_value: line.load,
           load_max: line.loadMax ?? null,
+          load_cmp: line.loadCmp ?? null,
           position: idx + 1,
         }))
       : [];
@@ -608,7 +628,7 @@ export function useWeekPlans() {
     // and revert keystrokes). The grid suppresses the prescription_raw echo
     // (sentRawsRef), so this never remounts it. Same computePrescriptionSummary
     // the write path uses, so the cached summary stays consistent.
-    const summary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
+    const baseSummary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
     setPlannedExercises(prev => {
       let changed = false;
       const next: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
@@ -617,6 +637,9 @@ export function useWeekPlans() {
         next[day] = prev[day].map(ex => {
           if (ex.id !== plannedExId) return ex;
           changed = true;
+          // Feature overrides (Σ/Ø) survive prescription edits — same rule the
+          // write path applies.
+          const summary = applyFeatureOverrides(baseSummary, ex.metadata?.features);
           return {
             ...ex,
             prescription_raw: data.prescription,
@@ -697,6 +720,71 @@ export function useWeekPlans() {
         });
       }
       return changed ? next : prev;
+    });
+  };
+
+  /**
+   * Persist the exercise-features bag (metadata.features) for a planned
+   * exercise and re-derive the cached summary so Σ/Ø overrides take effect
+   * everywhere summary_* is read (planner totals, analysis, macro fill).
+   * An empty bag clears the key so the JSON stays tidy.
+   */
+  const saveExerciseFeatures = async (
+    plannedExId: string,
+    features: ExerciseFeatures,
+  ): Promise<void> => {
+    const { data: row, error: rErr } = await supabase
+      .from('planned_exercises')
+      .select('metadata, prescription_raw, unit, is_combo')
+      .eq('id', plannedExId)
+      .single();
+    if (rErr) throw rErr;
+    const r = row as { metadata?: Record<string, unknown>; prescription_raw: string | null; unit: string | null; is_combo: boolean } | null;
+    const current = (r?.metadata ?? {}) as Record<string, unknown>;
+    const next = { ...current };
+    const hasAny = Object.values(features).some(v => v != null);
+    if (hasAny) next.features = features; else delete next.features;
+
+    const summary = applyFeatureOverrides(
+      computePrescriptionSummary(r?.prescription_raw ?? '', r?.unit ?? null, !!r?.is_combo),
+      hasAny ? features : undefined,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    const update: any = {
+      metadata: next,
+      summary_total_sets: summary.total_sets,
+      summary_total_reps: summary.total_reps,
+      summary_highest_load: summary.highest_load,
+      summary_avg_load: summary.avg_load,
+    };
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update(update)
+      .eq('id', plannedExId);
+    if (error) throw error;
+    await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+
+    // Optimistic in-memory patch — same shape savePrescription uses, so the
+    // analysis column and day totals update live without a refetch.
+    setPlannedExercises(prev => {
+      let changed = false;
+      const nextState: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        nextState[day] = prev[day].map(ex => {
+          if (ex.id !== plannedExId) return ex;
+          changed = true;
+          return {
+            ...ex,
+            metadata: next as PlannedExerciseMetadata,
+            summary_total_sets: summary.total_sets,
+            summary_total_reps: summary.total_reps,
+            summary_highest_load: summary.highest_load,
+            summary_avg_load: summary.avg_load,
+          };
+        });
+      }
+      return changed ? nextState : prev;
     });
   };
 
@@ -1611,6 +1699,7 @@ export function useWeekPlans() {
     saveNotes,
     saveGppSection,
     saveMediaDescription,
+    saveExerciseFeatures,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

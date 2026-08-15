@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
-import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection } from '../../lib/database.types';
+import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection, CoachPreset } from '../../lib/database.types';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { getOrCreateSentinel } from './sentinelService';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -12,12 +12,18 @@ import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
+import { AnalysisColumn, FeatureChips, type FeatureMenuItem } from './ExerciseFeatureControls';
+import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
+import {
+  parsePrescription, formatPrescription,
+  parseComboPrescription, formatComboPrescription,
+} from '../../lib/prescriptionParser';
 import type { RestInfo } from '../../lib/restCalculation';
 import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
-import { MARK_DAY, MARK_EXERCISE } from './dragPayload';
+import { MARK_DAY, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
 
 interface DayCardProps {
   dayIndex: number;
@@ -37,7 +43,8 @@ interface DayCardProps {
     exerciseId: string,
     position: number | null,
     unit: DefaultUnit,
-  ) => Promise<unknown>;
+    extras?: { metadata?: import('../../lib/database.types').PlannedExerciseMetadata },
+  ) => Promise<PlannedExercise & { id: string }>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -68,6 +75,12 @@ interface DayCardProps {
   savePrescription: (id: string, data: { prescription: string; unit: DefaultUnit; isCombo?: boolean }) => Promise<unknown>;
   /** Persist a GPP block payload on a planned_exercise row. */
   saveGppSection?: (plannedExId: string, section: GppSection) => Promise<void>;
+  /** Persist the exercise-features bag (⏱ total time, Σ/Ø overrides). */
+  saveExerciseFeatures?: (plannedExId: string, features: ExerciseFeatures) => Promise<void>;
+  /** Coach's # prescription presets for the add search and the row + menu. */
+  presets?: CoachPreset[];
+  /** Open the preset manager (from the # list's "manage presets…" entry). */
+  onManagePresets?: () => void;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -102,6 +115,9 @@ export function DayCard({
   onSaveAsTemplate,
   savePrescription,
   saveGppSection,
+  saveExerciseFeatures,
+  presets,
+  onManagePresets,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -115,6 +131,8 @@ export function DayCard({
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
+  /** Row currently hovered by a dock preset drag (accent highlight). */
+  const [presetDropExId, setPresetDropExId] = useState<string | null>(null);
   /** When non-null, opens the GPP editor for that planned_exercise. */
   const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const deleteHeld = useDeleteHeld();
@@ -130,6 +148,40 @@ export function DayCard({
     }).catch(() => { void onRefresh(); });
   }
 
+  function handleFeaturesSave(ex: PlannedExercise, features: ExerciseFeatures) {
+    if (!saveExerciseFeatures) return;
+    void saveExerciseFeatures(ex.id, features).catch(() => { void onRefresh(); });
+  }
+
+  /** "+"-menu entry that prepends a ≥ sign to every unsigned load in the
+   *  prescription. Offered for numeric units only, and only while at least
+   *  one segment is still unsigned; per-segment cycling/removal lives on the
+   *  glyph in the grid. */
+  function signMenuItem(ex: PlannedExercise): FeatureMenuItem[] {
+    const numericUnit = ex.unit === 'absolute_kg' || ex.unit === 'percentage' || ex.unit == null;
+    if (!numericUnit || !ex.prescription_raw) return [];
+    if (ex.is_combo) {
+      const lines = parseComboPrescription(ex.prescription_raw);
+      if (!lines.length || lines.every(l => l.loadCmp || l.loadText)) return [];
+      return [{
+        key: 'sign', icon: '≥', label: 'Load sign (≥ ≈ ≤)',
+        onAdd: () => handleGridSave(ex, formatComboPrescription(
+          lines.map(l => ({ ...l, loadCmp: l.loadText ? l.loadCmp ?? null : l.loadCmp ?? '>=' })),
+          ex.unit,
+        )),
+      }];
+    }
+    const lines = parsePrescription(ex.prescription_raw);
+    if (!lines.length || lines.every(l => l.loadCmp)) return [];
+    return [{
+      key: 'sign', icon: '≥', label: 'Load sign (≥ ≈ ≤)',
+      onAdd: () => handleGridSave(ex, formatPrescription(
+        lines.map(l => ({ ...l, loadCmp: l.loadCmp ?? '>=' })),
+        ex.unit,
+      )),
+    }];
+  }
+
   // Expand combos into their member instances so each member's reps count
   // under its own exercise and tick (a combo merely governs structure).
   const dayMetrics = computeMetrics(
@@ -140,14 +192,56 @@ export function DayCard({
   );
   const isEmpty = exercises.length === 0;
 
-  async function handleAddExercise(exercise: Exercise) {
+  async function handleAddExercise(exercise: Exercise, preset?: CoachPreset) {
     setAdding(true);
     try {
-      await addExerciseToDay(weekPlanId, dayIndex, exercise.id, null, exercise.default_unit);
+      // A #preset configures the new row: features go in on the insert; the
+      // prescription template runs through savePrescription so set lines and
+      // summary are written by the normal path. (No badge — presets configure
+      // the row, they don't tag it.)
+      const presetFeatures = preset?.features ?? {};
+      const hasFeatures = Object.values(presetFeatures).some(v => v != null);
+      const metadata = preset && hasFeatures ? { features: presetFeatures } : undefined;
+      const unit = (preset?.prescription_raw ? preset.unit ?? exercise.default_unit : exercise.default_unit) as DefaultUnit;
+      const created = await addExerciseToDay(
+        weekPlanId, dayIndex, exercise.id, null, unit,
+        metadata ? { metadata } : undefined,
+      );
+      if (preset?.prescription_raw) {
+        await savePrescription(created.id, { prescription: preset.prescription_raw, unit, isCombo: false });
+      }
     } finally {
       setAdding(false);
     }
     onRefresh();
+  }
+
+  /** Apply a #preset to an existing row: template replaces the prescription
+   *  (non-combo only — combo notation is its own grammar), features merge
+   *  (preset wins). */
+  async function applyPresetToRow(ex: PlannedExercise, p: CoachPreset) {
+    try {
+      if (p.prescription_raw && !ex.is_combo) {
+        const unit = (p.unit ?? ex.unit ?? 'absolute_kg') as DefaultUnit;
+        await savePrescription(ex.id, { prescription: p.prescription_raw, unit, isCombo: false });
+      }
+      const pf = p.features ?? {};
+      if (Object.values(pf).some(v => v != null) && saveExerciseFeatures) {
+        await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
+      }
+    } catch {
+      void onRefresh();
+    }
+  }
+
+  function presetMenuItems(ex: PlannedExercise): FeatureMenuItem[] {
+    if (!presets?.length) return [];
+    return presets.map(p => ({
+      key: `preset-${p.id}`,
+      icon: '#',
+      label: `#${p.name}`,
+      onAdd: () => void applyPresetToRow(ex, p),
+    }));
   }
 
   async function handleSlashCommand(key: string) {
@@ -224,6 +318,10 @@ export function DayCard({
   }
 
   function handleCardDragOver(e: React.DragEvent) {
+    // Preset drags target individual exercise rows, never the card itself —
+    // arming the card would flash the "Drop to move here" move affordance
+    // for a gesture that doesn't move anything.
+    if (e.dataTransfer.types.includes(MARK_PRESET)) return;
     e.preventDefault();
     setIsDragOver(true);
   }
@@ -435,6 +533,16 @@ export function DayCard({
                       setIsDragOver(false);
                     }}
                     onDragOver={e => {
+                      // Dock preset drag → highlight this row as the apply
+                      // target (sentinel rows carry no prescription to apply
+                      // to, so they don't accept it).
+                      if (!sentinel && presets?.length && e.dataTransfer.types.includes(MARK_PRESET)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'copy';
+                        if (presetDropExId !== ex.id) setPresetDropExId(ex.id);
+                        return;
+                      }
                       // Allow drop when an exercise is being dragged from
                       // anywhere (same day OR cross-day). Same-day uses the
                       // local draggingExId; cross-day relies on the dataTransfer
@@ -455,10 +563,20 @@ export function DayCard({
                     onDragLeave={e => {
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                         setDropIndicator(null);
+                        setPresetDropExId(prev => prev === ex.id ? null : prev);
                       }
                     }}
                     onDrop={e => {
                       const data = e.dataTransfer.getData('text/plain');
+                      // Dock preset dropped onto this row → apply it here.
+                      if (data.startsWith('PRESET:')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPresetDropExId(null);
+                        const preset = presets?.find(p => p.id === data.slice('PRESET:'.length));
+                        if (preset && !sentinel) void applyPresetToRow(ex, preset);
+                        return;
+                      }
                       const parts = data.split(':');
                       if (parts.length >= 3) {
                         const fromDay = parseInt(parts[0], 10);
@@ -511,7 +629,9 @@ export function DayCard({
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
                       borderBottom: '0.5px solid var(--color-border-tertiary)',
                       borderLeft: `3px solid ${borderColor}`,
-                      background: deleteHeld
+                      background: presetDropExId === ex.id
+                        ? 'var(--color-accent-muted)'
+                        : deleteHeld
                         ? (isHovered ? 'var(--color-danger-bg)' : 'transparent')
                         : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
                       cursor: 'pointer',
@@ -648,8 +768,16 @@ export function DayCard({
                               comboPartCount={(members?.length) || 2}
                               compact
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
+                              presets={presets}
+                              onApplyPreset={p => void applyPresetToRow(ex, p)}
                             />
                           </div>
+                          {saveExerciseFeatures && ex.metadata?.features && (
+                            <FeatureChips
+                              features={ex.metadata.features}
+                              onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                            />
+                          )}
                         </>
                       ) : (
                         <>
@@ -677,11 +805,29 @@ export function DayCard({
                               isCombo={false}
                               compact
                               onSave={(raw, unitOverride) => handleGridSave(ex, raw, unitOverride)}
+                              presets={presets}
+                              onApplyPreset={p => void applyPresetToRow(ex, p)}
                             />
                           </div>
+                          {saveExerciseFeatures && ex.metadata?.features && (
+                            <FeatureChips
+                              features={ex.metadata.features}
+                              onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                            />
+                          )}
                         </>
                       )}
                     </div>
+                    {/* Per-exercise analysis (R/S/Hi/Ø) + "+" feature menu.
+                        Sentinel rows (text/media/GPP) carry no summary. */}
+                    {!sentinel && saveExerciseFeatures && (
+                      <AnalysisColumn
+                        ex={ex}
+                        rowHovered={isHovered}
+                        onSaveFeatures={f => handleFeaturesSave(ex, f)}
+                        extraMenuItems={[...signMenuItem(ex), ...presetMenuItems(ex)]}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -699,10 +845,12 @@ export function DayCard({
         <div style={{ marginTop: 'auto', paddingTop: 2 }}>
           <ExerciseSearch
             exercises={allExercises}
-            onAdd={handleAddExercise}
+            onAdd={(exercise, preset) => void handleAddExercise(exercise, preset)}
             onAddCombo={members => void handleAddComboInline(members)}
             onSlashCommand={key => void handleSlashCommand(key)}
             placeholder={adding ? '…' : '+ Add exercise...'}
+            presets={presets}
+            onManagePresets={onManagePresets}
           />
         </div>
       </div>

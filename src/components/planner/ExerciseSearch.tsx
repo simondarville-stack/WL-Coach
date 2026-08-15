@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Layers, Type, Video, Image as ImageIcon, Plus, PlusCircle, Dumbbell } from 'lucide-react';
-import type { Exercise } from '../../lib/database.types';
+import { Layers, Type, Video, Image as ImageIcon, Plus, PlusCircle, Dumbbell, Settings2 } from 'lucide-react';
+import type { Exercise, CoachPreset } from '../../lib/database.types';
 import { rankExercises } from '../../lib/exerciseRanker';
+import { StackedNotation } from './StackedNotation';
+import { formatSeconds } from '../../lib/exerciseFeatures';
 
 interface SlashCommand {
   key: string;
@@ -20,7 +22,9 @@ const SLASH_COMMANDS: SlashCommand[] = [
 
 interface ExerciseSearchProps {
   exercises: Exercise[];
-  onAdd: (exercise: Exercise) => void;
+  /** `preset` is set when the coach armed a #preset before picking the
+   *  exercise — the caller applies it to the newly added row. */
+  onAdd: (exercise: Exercise, preset?: CoachPreset) => void;
   onSlashCommand?: (key: string) => void;
   placeholder?: string;
   disableSlashCommands?: boolean;
@@ -32,6 +36,11 @@ interface ExerciseSearchProps {
   onAddCombo?: (exercises: Exercise[]) => void | Promise<void>;
   /** Focus the input on mount (used where the search is revealed on demand). */
   autoFocus?: boolean;
+  /** When provided, "#" lists the coach's prescription presets: picking one
+   *  arms it (chip in the input), the following exercise pick applies it. */
+  presets?: CoachPreset[];
+  /** "manage presets…" entry at the foot of the # list. */
+  onManagePresets?: () => void;
 }
 
 export function ExerciseSearch({
@@ -43,6 +52,8 @@ export function ExerciseSearch({
   dropUp = true,
   onAddCombo,
   autoFocus = false,
+  presets,
+  onManagePresets,
 }: ExerciseSearchProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -50,26 +61,39 @@ export function ExerciseSearch({
   const [inputFocused, setInputFocused] = useState(false);
   /** Combo members staged inline via "+" before Enter commits them. */
   const [staged, setStaged] = useState<Exercise[]>([]);
+  /** #preset armed for the next exercise pick. */
+  const [armedPreset, setArmedPreset] = useState<CoachPreset | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const comboMode = !!onAddCombo;
 
   const isSlash = !disableSlashCommands && query.startsWith('/');
+  const hashEnabled = !!presets;
+  const isHash = hashEnabled && query.startsWith('#');
 
   const filteredCommands = isSlash
     ? SLASH_COMMANDS.filter(c => c.key.startsWith(query.toLowerCase()))
     : [];
 
+  const filteredPresets = isHash
+    ? (presets ?? []).filter(p => p.name.toLowerCase().startsWith(query.slice(1).toLowerCase()))
+    : [];
+
   // Rank: exact code > code prefix > name prefix > code contains > name contains
   // (shared with the combo builder and athlete add sheet via exerciseRanker).
-  const filteredExercises = !isSlash && query.trim().length > 0
+  const filteredExercises = !isSlash && !isHash && query.trim().length > 0
     ? rankExercises(exercises.filter(ex => ex.category !== '— System'), query, 12)
     : [];
 
-  const results: { type: 'exercise' | 'command'; exercise?: Exercise; command?: SlashCommand }[] =
+  const results: { type: 'exercise' | 'command' | 'preset' | 'manage'; exercise?: Exercise; command?: SlashCommand; preset?: CoachPreset }[] =
     isSlash
-      ? filteredCommands.map(c => ({ type: 'command', command: c }))
+      ? filteredCommands.map(c => ({ type: 'command' as const, command: c }))
+      : isHash
+      ? [
+          ...filteredPresets.map(p => ({ type: 'preset' as const, preset: p })),
+          ...(onManagePresets ? [{ type: 'manage' as const }] : []),
+        ]
       : filteredExercises.map(e => ({ type: 'exercise', exercise: e }));
 
   const hasResults = results.length > 0;
@@ -82,6 +106,7 @@ export function ExerciseSearch({
         setOpen(false);
         setQuery('');
         setStaged([]);
+        setArmedPreset(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -91,9 +116,11 @@ export function ExerciseSearch({
   /** Commit an accumulated member list: exactly one → single add, 2+ → combo. */
   function commitStaged(list: Exercise[]) {
     if (list.length === 0) return;
-    if (list.length === 1) onAdd(list[0]);
+    // Presets are single-exercise concepts — a combo commit drops the armed preset.
+    if (list.length === 1) onAdd(list[0], armedPreset ?? undefined);
     else void onAddCombo?.(list);
     setStaged([]);
+    setArmedPreset(null);
     setQuery('');
     setOpen(false);
     inputRef.current?.focus();
@@ -102,6 +129,20 @@ export function ExerciseSearch({
   function handleSelect(index: number) {
     const item = results[index];
     if (!item) return;
+    if (item.type === 'preset' && item.preset) {
+      // Arm the preset and keep the search open for the exercise pick.
+      setArmedPreset(item.preset);
+      setQuery('');
+      setOpen(true);
+      inputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'manage') {
+      onManagePresets?.();
+      setQuery('');
+      setOpen(false);
+      return;
+    }
     if (item.type === 'exercise' && item.exercise) {
       // Mid-build: clicking a match stages the next member instead of
       // committing, so a combo can be built entirely by mouse.
@@ -113,9 +154,11 @@ export function ExerciseSearch({
         inputRef.current?.focus();
         return;
       }
-      onAdd(item.exercise);
+      onAdd(item.exercise, armedPreset ?? undefined);
+      setArmedPreset(null);
     } else if (item.type === 'command' && item.command) {
       onSlashCommand?.(item.command.key);
+      setArmedPreset(null);
     }
     setQuery('');
     setOpen(false);
@@ -146,9 +189,15 @@ export function ExerciseSearch({
       setStaged(s => s.slice(0, -1));
       return;
     }
-    if (e.key === 'Escape' && (staged.length > 0 || query)) {
+    if (e.key === 'Backspace' && query === '' && staged.length === 0 && armedPreset) {
+      e.preventDefault();
+      setArmedPreset(null);
+      return;
+    }
+    if (e.key === 'Escape' && (staged.length > 0 || query || armedPreset)) {
       e.preventDefault();
       setStaged([]);
+      setArmedPreset(null);
       setQuery('');
       setOpen(false);
       return;
@@ -180,7 +229,7 @@ export function ExerciseSearch({
         borderTop: `0.5px solid ${inputFocused ? 'var(--color-border-secondary)' : 'transparent'}`,
         transition: 'border-color 0.1s',
       }}>
-        {staged.length === 0 && (
+        {staged.length === 0 && !armedPreset && (
           <Plus size={11} style={{ position: 'absolute', left: 8, color: 'var(--color-text-tertiary)', pointerEvents: 'none' }} />
         )}
         {staged.map((ex, i) => (
@@ -205,6 +254,25 @@ export function ExerciseSearch({
         {staged.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', userSelect: 'none' }}>+</span>
         )}
+        {armedPreset && (
+          <span
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.04em',
+              background: `${armedPreset.color}1c`, color: armedPreset.color,
+              borderRadius: 8, padding: '1px 6px', marginLeft: staged.length === 0 ? 6 : 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            #{armedPreset.name.toUpperCase()}
+            <button
+              onMouseDown={e => { e.preventDefault(); setArmedPreset(null); inputRef.current?.focus(); }}
+              tabIndex={-1}
+              title="Disarm preset"
+              style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 11, opacity: 0.7 }}
+            >×</button>
+          </span>
+        )}
         <input
           ref={inputRef}
           type="text"
@@ -214,10 +282,14 @@ export function ExerciseSearch({
           onFocus={() => { setOpen(true); setInputFocused(true); }}
           onBlur={() => setInputFocused(false)}
           onKeyDown={handleKeyDown}
-          placeholder={staged.length > 0 ? 'add next member… (Enter to create combo)' : placeholder}
+          placeholder={staged.length > 0
+            ? 'add next member… (Enter to create combo)'
+            : armedPreset
+            ? `exercise for #${armedPreset.name}…`
+            : placeholder}
           style={{
             flex: 1, minWidth: 90,
-            paddingLeft: staged.length > 0 ? 6 : 24, paddingRight: 8, paddingTop: 4, paddingBottom: 4,
+            paddingLeft: staged.length > 0 || armedPreset ? 6 : 24, paddingRight: 8, paddingTop: 4, paddingBottom: 4,
             fontSize: 11,
             border: 'none',
             outline: 'none',
@@ -266,6 +338,57 @@ export function ExerciseSearch({
                   <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', flexShrink: 0, fontStyle: 'italic' }}>
                     {ex.category}
                   </span>
+                </button>
+              );
+            }
+            if (item.type === 'preset' && item.preset) {
+              const p = item.preset;
+              return (
+                <button
+                  key={p.id}
+                  onMouseDown={e => { e.preventDefault(); handleSelect(i); }}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 12px', textAlign: 'left',
+                    background: isSelected ? 'var(--color-accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', flexShrink: 0,
+                    background: `${p.color}1c`, color: p.color, borderRadius: 8, padding: '1px 6px',
+                  }}>
+                    #{p.name.toUpperCase()}
+                  </span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    {p.prescription_raw && <StackedNotation raw={p.prescription_raw} unit={p.unit} />}
+                    {p.features?.totalTime != null && (
+                      <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>⏱ {formatSeconds(p.features.totalTime)}</span>
+                    )}
+                    {p.features?.restTime != null && (
+                      <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-text-tertiary)', flexShrink: 0 }}>⏸ {formatSeconds(p.features.restTime)}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            }
+            if (item.type === 'manage') {
+              return (
+                <button
+                  key="manage-presets"
+                  onMouseDown={e => { e.preventDefault(); handleSelect(i); }}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 12px', textAlign: 'left',
+                    background: isSelected ? 'var(--color-accent-muted)' : 'transparent',
+                    border: 'none', cursor: 'pointer',
+                    borderTop: '0.5px solid var(--color-border-secondary)',
+                  }}
+                >
+                  <Settings2 size={12} style={{ color: 'var(--color-text-secondary)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Manage presets…</span>
                 </button>
               );
             }

@@ -18,6 +18,7 @@ import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
 import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
+import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
@@ -329,6 +330,16 @@ function PreviewExerciseRow({
             unit={planned.exercise.unit}
             isCombo={planned.exercise.is_combo}
           />
+          {planned.exercise.metadata?.features?.totalTime != null && (
+            <span className="text-[11px] text-gray-400 font-medium">
+              ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
+            </span>
+          )}
+          {planned.exercise.metadata?.features?.restTime != null && (
+            <span className="text-[11px] text-gray-400 font-medium">
+              ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+            </span>
+          )}
         </div>
 
         {!readOnly && (

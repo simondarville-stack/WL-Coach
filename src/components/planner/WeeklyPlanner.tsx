@@ -18,6 +18,7 @@ import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
+import type { DefaultUnit } from '../../lib/database.types';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -29,6 +30,8 @@ import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
 import { GroupLogView } from './log/GroupLogView';
 import { PlannerModals } from './PlannerModals';
+import { PresetManager } from './PresetManager';
+import { useCoachPresets } from '../../hooks/useCoachPresets';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
 import { TemplateImportDialog } from './dock/TemplateImportDialog';
@@ -98,6 +101,8 @@ export function WeeklyPlanner() {
   const { exercises: allExercises } = useExercises();
   const { fetchAllAthletes } = useAthletes();
   const { fetchGroups } = useTrainingGroups();
+  const { presets, createPreset, updatePreset, deletePreset } = useCoachPresets();
+  const [showPresetManager, setShowPresetManager] = useState(false);
 
   const {
     weekPlan: currentWeekPlan,
@@ -129,6 +134,7 @@ export function WeeklyPlanner() {
     saveNotes,
     saveGppSection,
     saveMediaDescription,
+    saveExerciseFeatures,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1777,6 +1783,9 @@ export function WeeklyPlanner() {
                 onSaveAsTemplate={handleSaveDayAsTemplate}
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
+                saveExerciseFeatures={saveExerciseFeatures}
+                presets={presets}
+                onManagePresets={() => setShowPresetManager(true)}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
@@ -1849,6 +1858,27 @@ export function WeeklyPlanner() {
                     swapPlannedExercise={swapPlannedExercise}
                     updateComboExercise={updateComboExercise}
                     fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
+                    presets={presets}
+                    onApplyPreset={p => {
+                      // Same semantics as the day-card apply: template replaces
+                      // the prescription (non-combo), features merge.
+                      const ex = selectedExercise;
+                      if (!ex) return;
+                      void (async () => {
+                        try {
+                          if (p.prescription_raw && !ex.is_combo) {
+                            const u = (p.unit ?? ex.unit ?? 'absolute_kg') as DefaultUnit;
+                            await savePrescription(ex.id, { prescription: p.prescription_raw, unit: u, isCombo: false });
+                          }
+                          const pf = p.features ?? {};
+                          if (Object.values(pf).some(v => v != null)) {
+                            await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
+                          }
+                        } catch {
+                          void handleRefresh();
+                        }
+                      })();
+                    }}
                   />
               </AdaptiveDialog>
             )}
@@ -1895,6 +1925,17 @@ export function WeeklyPlanner() {
           weekDescription={currentWeekPlan?.week_description}
           onPrintClose={() => setShowPrintModal(false)}
         />
+
+        {showPresetManager && (
+          <PresetManager
+            onClose={() => setShowPresetManager(false)}
+            presets={presets}
+            createPreset={createPreset}
+            updatePreset={updatePreset}
+            deletePreset={deletePreset}
+            loadIncrement={settings?.grid_load_increment ?? 5}
+          />
+        )}
 
         {resolveCandidates !== null && (
           <ResolvePercentagesModal
@@ -1981,6 +2022,8 @@ export function WeeklyPlanner() {
               onClipboardRemove={clipboard.remove}
               onClipboardClear={clipboard.clear}
               onClipboardPlannerDrop={handleClipboardPlannerDrop}
+              presets={presets}
+              onManagePresets={() => setShowPresetManager(true)}
             />
           </>
         )}

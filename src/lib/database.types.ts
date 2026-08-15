@@ -284,6 +284,34 @@ export interface GppSection {
   rows: GppRow[];
 }
 
+/**
+ * Exercise features — optional per-exercise enrichments (see
+ * src/lib/exerciseFeatures.ts for helpers). Absent keys mean the feature
+ * is off; a present key is an active feature.
+ */
+export interface ExerciseFeatures {
+  /** Total time for the exercise block, in seconds. Athlete-visible. */
+  totalTime?: number;
+  /** Prescribed rest between sets, in seconds. Athlete-visible. */
+  restTime?: number;
+  /** Coach override for summary_total_reps ("overwrites the summation").
+   *  Coach/analysis-only, never athlete-visible. */
+  totalReps?: number;
+  /** Coach override for summary_total_sets. Coach/analysis-only. */
+  totalSets?: number;
+  /** Coach override for summary_avg_load. Coach/analysis-only. */
+  avgLoad?: number;
+}
+
+/** DORMANT — row badges were removed (2026-08-15): presets configure a row,
+ *  they don't tag it. The type stays because a handful of rows written
+ *  during the feature's short life still carry metadata.preset; nothing
+ *  reads or writes it anymore. */
+export interface PresetTag {
+  name: string;
+  color: string;
+}
+
 export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP
    *  sentinel exercise. Absent for non-GPP rows. */
@@ -291,6 +319,28 @@ export interface PlannedExerciseMetadata {
   /** Coach-authored caption for IMAGE / VIDEO sentinels. Rendered next
    *  to the media in athlete log and print. */
   description?: string;
+  /** Exercise features (total time, summary overrides). */
+  features?: ExerciseFeatures;
+  /** #preset badge (planner rows, print, athlete card). */
+  preset?: PresetTag;
+}
+
+/** A coach-defined # prescription preset (coach_presets table). */
+export interface CoachPreset {
+  id: string;
+  owner_id: string;
+  name: string;
+  color: string;
+  /** Show the #NAME badge on rows this preset is applied to. Off = the
+   *  preset is a silent coach shortcut (e.g. #5x5). */
+  show_badge: boolean;
+  /** Prescription template in the canonical grammar; null = feature/badge-only preset. */
+  prescription_raw: string | null;
+  unit: DefaultUnit | null;
+  features: ExerciseFeatures;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PlannedExercise {
@@ -324,10 +374,13 @@ export interface PlannedSetLine {
   id: string;
   planned_exercise_id: string;
   sets: number;
+  sets_max: number | null;   // null = fixed set count, number = range upper bound
   reps: number;
+  reps_max: number | null;   // null = fixed reps, number = range upper bound
   reps_text: string | null;
   load_value: number;
   load_max: number | null;   // null = fixed load, number = interval upper bound
+  load_cmp: '>=' | '~' | '<=' | null;  // soft-load comparator (≥ ≈ ≤)
   position: number;
   notes: string | null;
   created_at: string;
@@ -1033,6 +1086,12 @@ export interface Database {
         Row: PlannedExerciseComboMember & Record<string, unknown>;
         Insert: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      coach_presets: {
+        Row: CoachPreset & Record<string, unknown>;
+        Insert: Partial<Omit<CoachPreset, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<CoachPreset, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       macrocycles: {
