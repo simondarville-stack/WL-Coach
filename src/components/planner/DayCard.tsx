@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
-import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection } from '../../lib/database.types';
+import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection, CoachPreset, PresetTag } from '../../lib/database.types';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { getOrCreateSentinel } from './sentinelService';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -13,6 +13,7 @@ import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
 import { AnalysisColumn, FeatureChips, type FeatureMenuItem } from './ExerciseFeatureControls';
+import { PresetBadge } from './PresetManager';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
 import {
   parsePrescription, formatPrescription,
@@ -43,7 +44,8 @@ interface DayCardProps {
     exerciseId: string,
     position: number | null,
     unit: DefaultUnit,
-  ) => Promise<unknown>;
+    extras?: { metadata?: import('../../lib/database.types').PlannedExerciseMetadata },
+  ) => Promise<PlannedExercise & { id: string }>;
   createComboExercise: (
     weekPlanId: string,
     dayIndex: number,
@@ -76,6 +78,12 @@ interface DayCardProps {
   saveGppSection?: (plannedExId: string, section: GppSection) => Promise<void>;
   /** Persist the exercise-features bag (⏱ total time, Σ/Ø overrides). */
   saveExerciseFeatures?: (plannedExId: string, features: ExerciseFeatures) => Promise<void>;
+  /** Stamp/clear the #preset badge snapshot on a row (metadata.preset). */
+  savePresetTag?: (plannedExId: string, tag: PresetTag | null) => Promise<void>;
+  /** Coach's # prescription presets for the add search and the row + menu. */
+  presets?: CoachPreset[];
+  /** Open the preset manager (from the # list's "manage presets…" entry). */
+  onManagePresets?: () => void;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -111,6 +119,9 @@ export function DayCard({
   savePrescription,
   saveGppSection,
   saveExerciseFeatures,
+  savePresetTag,
+  presets,
+  onManagePresets,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -183,14 +194,63 @@ export function DayCard({
   );
   const isEmpty = exercises.length === 0;
 
-  async function handleAddExercise(exercise: Exercise) {
+  async function handleAddExercise(exercise: Exercise, preset?: CoachPreset) {
     setAdding(true);
     try {
-      await addExerciseToDay(weekPlanId, dayIndex, exercise.id, null, exercise.default_unit);
+      // A #preset configures the new row: badge + features go in on the
+      // insert; the prescription template runs through savePrescription so
+      // set lines and summary are written by the normal path.
+      const presetFeatures = preset?.features ?? {};
+      const hasFeatures = Object.values(presetFeatures).some(v => v != null);
+      const metadata = preset && (hasFeatures || preset.show_badge)
+        ? {
+            ...(hasFeatures ? { features: presetFeatures } : {}),
+            ...(preset.show_badge ? { preset: { name: preset.name, color: preset.color } } : {}),
+          }
+        : undefined;
+      const unit = (preset?.prescription_raw ? preset.unit ?? exercise.default_unit : exercise.default_unit) as DefaultUnit;
+      const created = await addExerciseToDay(
+        weekPlanId, dayIndex, exercise.id, null, unit,
+        metadata ? { metadata } : undefined,
+      );
+      if (preset?.prescription_raw) {
+        await savePrescription(created.id, { prescription: preset.prescription_raw, unit, isCombo: false });
+      }
     } finally {
       setAdding(false);
     }
     onRefresh();
+  }
+
+  /** Apply a #preset to an existing row: template replaces the prescription
+   *  (non-combo only — combo notation is its own grammar), features merge
+   *  (preset wins), badge per the preset's setting. */
+  async function applyPresetToRow(ex: PlannedExercise, p: CoachPreset) {
+    try {
+      if (p.prescription_raw && !ex.is_combo) {
+        const unit = (p.unit ?? ex.unit ?? 'absolute_kg') as DefaultUnit;
+        await savePrescription(ex.id, { prescription: p.prescription_raw, unit, isCombo: false });
+      }
+      const pf = p.features ?? {};
+      if (Object.values(pf).some(v => v != null) && saveExerciseFeatures) {
+        await saveExerciseFeatures(ex.id, { ...(ex.metadata?.features ?? {}), ...pf });
+      }
+      if (p.show_badge && savePresetTag) {
+        await savePresetTag(ex.id, { name: p.name, color: p.color });
+      }
+    } catch {
+      void onRefresh();
+    }
+  }
+
+  function presetMenuItems(ex: PlannedExercise): FeatureMenuItem[] {
+    if (!presets?.length || !savePresetTag) return [];
+    return presets.map(p => ({
+      key: `preset-${p.id}`,
+      icon: '#',
+      label: `#${p.name}`,
+      onAdd: () => void applyPresetToRow(ex, p),
+    }));
   }
 
   async function handleSlashCommand(key: string) {
@@ -670,6 +730,18 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
                             </span>
+                            {ex.metadata?.preset && (
+                              <span
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  if (deleteHeld && savePresetTag) void savePresetTag(ex.id, null);
+                                }}
+                                title={deleteHeld ? 'Click to remove badge' : `#${ex.metadata.preset.name} preset`}
+                                style={{ cursor: deleteHeld ? 'pointer' : 'default', flexShrink: 0 }}
+                              >
+                                <PresetBadge name={ex.metadata.preset.name} color={ex.metadata.preset.color} small />
+                              </span>
+                            )}
                             <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
                           {plannedNote(ex) && (
@@ -706,6 +778,18 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {ex.exercise.name}
                             </span>
+                            {ex.metadata?.preset && (
+                              <span
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  if (deleteHeld && savePresetTag) void savePresetTag(ex.id, null);
+                                }}
+                                title={deleteHeld ? 'Click to remove badge' : `#${ex.metadata.preset.name} preset`}
+                                style={{ cursor: deleteHeld ? 'pointer' : 'default', flexShrink: 0 }}
+                              >
+                                <PresetBadge name={ex.metadata.preset.name} color={ex.metadata.preset.color} small />
+                              </span>
+                            )}
                             <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
                           {plannedNote(ex) && (
@@ -744,7 +828,7 @@ export function DayCard({
                         ex={ex}
                         rowHovered={isHovered}
                         onSaveFeatures={f => handleFeaturesSave(ex, f)}
-                        extraMenuItems={signMenuItem(ex)}
+                        extraMenuItems={[...signMenuItem(ex), ...presetMenuItems(ex)]}
                       />
                     )}
                   </div>
@@ -764,10 +848,12 @@ export function DayCard({
         <div style={{ marginTop: 'auto', paddingTop: 2 }}>
           <ExerciseSearch
             exercises={allExercises}
-            onAdd={handleAddExercise}
+            onAdd={(exercise, preset) => void handleAddExercise(exercise, preset)}
             onAddCombo={members => void handleAddComboInline(members)}
             onSlashCommand={key => void handleSlashCommand(key)}
             placeholder={adding ? '…' : '+ Add exercise...'}
+            presets={presets}
+            onManagePresets={onManagePresets}
           />
         </div>
       </div>

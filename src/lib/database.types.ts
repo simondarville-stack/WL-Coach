@@ -303,6 +303,14 @@ export interface ExerciseFeatures {
   avgLoad?: number;
 }
 
+/** Denormalised badge snapshot stamped on a row when a #preset with
+ *  show_badge was applied. A snapshot (not a FK) so renaming or deleting
+ *  the preset never breaks or silently rewrites history. */
+export interface PresetTag {
+  name: string;
+  color: string;
+}
+
 export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP
    *  sentinel exercise. Absent for non-GPP rows. */
@@ -312,6 +320,26 @@ export interface PlannedExerciseMetadata {
   description?: string;
   /** Exercise features (total time, summary overrides). */
   features?: ExerciseFeatures;
+  /** #preset badge (planner rows, print, athlete card). */
+  preset?: PresetTag;
+}
+
+/** A coach-defined # prescription preset (coach_presets table). */
+export interface CoachPreset {
+  id: string;
+  owner_id: string;
+  name: string;
+  color: string;
+  /** Show the #NAME badge on rows this preset is applied to. Off = the
+   *  preset is a silent coach shortcut (e.g. #5x5). */
+  show_badge: boolean;
+  /** Prescription template in the canonical grammar; null = feature/badge-only preset. */
+  prescription_raw: string | null;
+  unit: DefaultUnit | null;
+  features: ExerciseFeatures;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PlannedExercise {
@@ -1057,6 +1085,12 @@ export interface Database {
         Row: PlannedExerciseComboMember & Record<string, unknown>;
         Insert: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<PlannedExerciseComboMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      coach_presets: {
+        Row: CoachPreset & Record<string, unknown>;
+        Insert: Partial<Omit<CoachPreset, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<CoachPreset, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       macrocycles: {

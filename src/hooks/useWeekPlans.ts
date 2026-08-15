@@ -789,6 +789,49 @@ export function useWeekPlans() {
   };
 
   /**
+   * Stamp (or clear, with null) the #preset badge snapshot on a planned
+   * exercise (metadata.preset). Prescription and features applied by the
+   * preset live in their own fields and are untouched here — removing the
+   * badge never undoes the work it configured.
+   */
+  const savePresetTag = async (
+    plannedExId: string,
+    tag: import('../lib/database.types').PresetTag | null,
+  ): Promise<void> => {
+    const { data: row, error: rErr } = await supabase
+      .from('planned_exercises')
+      .select('metadata')
+      .eq('id', plannedExId)
+      .single();
+    if (rErr) throw rErr;
+    const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+    const next = { ...current };
+    if (tag) next.preset = tag; else delete next.preset;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    const update: any = { metadata: next };
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update(update)
+      .eq('id', plannedExId);
+    if (error) throw error;
+    await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+
+    setPlannedExercises(prev => {
+      let changed = false;
+      const nextState: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        nextState[day] = prev[day].map(ex => {
+          if (ex.id !== plannedExId) return ex;
+          changed = true;
+          return { ...ex, metadata: next as PlannedExerciseMetadata };
+        });
+      }
+      return changed ? nextState : prev;
+    });
+  };
+
+  /**
    * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
    * Empty / whitespace-only strings clear the key so the JSON stays tidy.
    */
@@ -1700,6 +1743,7 @@ export function useWeekPlans() {
     saveGppSection,
     saveMediaDescription,
     saveExerciseFeatures,
+    savePresetTag,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

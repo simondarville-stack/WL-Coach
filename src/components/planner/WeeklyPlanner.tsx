@@ -29,6 +29,8 @@ import { UnsavedDraftsBanner } from './UnsavedDraftsBanner';
 import { LogModeView } from './log/LogModeView';
 import { GroupLogView } from './log/GroupLogView';
 import { PlannerModals } from './PlannerModals';
+import { PresetManager } from './PresetManager';
+import { useCoachPresets } from '../../hooks/useCoachPresets';
 import { PlannerWeekOverview } from './PlannerWeekOverview';
 import { PlannerDock } from './dock/PlannerDock';
 import { TemplateImportDialog } from './dock/TemplateImportDialog';
@@ -98,6 +100,8 @@ export function WeeklyPlanner() {
   const { exercises: allExercises } = useExercises();
   const { fetchAllAthletes } = useAthletes();
   const { fetchGroups } = useTrainingGroups();
+  const { presets, createPreset, updatePreset, deletePreset } = useCoachPresets();
+  const [showPresetManager, setShowPresetManager] = useState(false);
 
   const {
     weekPlan: currentWeekPlan,
@@ -130,6 +134,7 @@ export function WeeklyPlanner() {
     saveGppSection,
     saveMediaDescription,
     saveExerciseFeatures,
+    savePresetTag,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1779,6 +1784,9 @@ export function WeeklyPlanner() {
                 savePrescription={savePrescription}
                 saveGppSection={saveGppSection}
                 saveExerciseFeatures={saveExerciseFeatures}
+                savePresetTag={savePresetTag}
+                presets={presets}
+                onManagePresets={() => setShowPresetManager(true)}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
@@ -1897,6 +1905,17 @@ export function WeeklyPlanner() {
           weekDescription={currentWeekPlan?.week_description}
           onPrintClose={() => setShowPrintModal(false)}
         />
+
+        {showPresetManager && (
+          <PresetManager
+            onClose={() => setShowPresetManager(false)}
+            presets={presets}
+            createPreset={createPreset}
+            updatePreset={updatePreset}
+            deletePreset={deletePreset}
+            loadIncrement={settings?.grid_load_increment ?? 5}
+          />
+        )}
 
         {resolveCandidates !== null && (
           <ResolvePercentagesModal
