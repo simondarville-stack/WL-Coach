@@ -3,9 +3,10 @@ import { ChevronUp, ChevronDown, Search, X } from 'lucide-react';
 import { useDockState, type DockTab, DOCK_MIN_HEIGHT } from './useDockState';
 import { DockExerciseList } from './DockExerciseList';
 import { DockTemplateList } from './DockTemplateList';
+import { DockPresetList } from './DockPresetList';
 import { ClipboardPanel } from './ClipboardPanel';
 import type { ClipboardItem } from './useClipboardState';
-import type { Exercise } from '../../../lib/database.types';
+import type { Exercise, CoachPreset } from '../../../lib/database.types';
 
 interface TabDef {
   key: DockTab;
@@ -15,6 +16,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: 'exercises', label: 'Exercises' },
   { key: 'templates', label: 'Templates' },
+  { key: 'presets', label: 'Presets' },
   { key: 'clipboard', label: 'Clipboard' },
 ];
 
@@ -36,6 +38,9 @@ interface PlannerDockProps {
    *  when a planner item is dropped onto the clipboard. The parent
    *  resolves it (single exercise vs. day) and snapshots accordingly. */
   onClipboardPlannerDrop: (data: string) => Promise<void> | void;
+  /** Coach's # prescription presets (dock Presets tab). */
+  presets?: CoachPreset[];
+  onManagePresets?: () => void;
 }
 
 export function PlannerDock({
@@ -45,6 +50,8 @@ export function PlannerDock({
   onClipboardRemove,
   onClipboardClear,
   onClipboardPlannerDrop,
+  presets,
+  onManagePresets,
 }: PlannerDockProps) {
   const {
     tab, setTab,
@@ -117,6 +124,8 @@ export function PlannerDock({
     ? 'Search exercises…'
     : tab === 'templates'
     ? 'Search templates…'
+    : tab === 'presets'
+    ? 'Search presets…'
     : '';
   const showSearch = tab !== 'clipboard';
 
@@ -365,6 +374,12 @@ export function PlannerDock({
             />
           ) : tab === 'templates' ? (
             <DockTemplateList query={query} onOpenImport={onOpenImport} />
+          ) : tab === 'presets' ? (
+            <DockPresetList
+              presets={presets ?? []}
+              query={query}
+              onManagePresets={onManagePresets}
+            />
           ) : (
             <ClipboardPanel
               items={clipboardItems}

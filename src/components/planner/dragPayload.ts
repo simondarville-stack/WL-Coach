@@ -17,6 +17,9 @@ export const MARK_EXERCISE = 'application/x-emos-exercise';
 export const MARK_DAY = 'application/x-emos-day';
 /** Set by the clipboard panel's cards. */
 export const MARK_CLIPBOARD = 'application/x-emos-clipboard';
+/** Set by the dock's preset cards ("PRESET:<id>"). Deliberately NOT a
+ *  ThrowKind — dragging a preset out of the dock must never delete it. */
+export const MARK_PRESET = 'application/x-emos-preset';
 
 /** Kinds that can be thrown away. Library and template drags are deliberately
  *  unmarked, and therefore un-throwable by construction — deleting a catalogue

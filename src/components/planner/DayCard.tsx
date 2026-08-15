@@ -24,7 +24,7 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
-import { MARK_DAY, MARK_EXERCISE } from './dragPayload';
+import { MARK_DAY, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
 
 interface DayCardProps {
   dayIndex: number;
@@ -135,6 +135,8 @@ export function DayCard({
   const [hoveredExId, setHoveredExId] = useState<string | null>(null);
   const [draggingExId, setDraggingExId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' } | null>(null);
+  /** Row currently hovered by a dock preset drag (accent highlight). */
+  const [presetDropExId, setPresetDropExId] = useState<string | null>(null);
   /** When non-null, opens the GPP editor for that planned_exercise. */
   const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const deleteHeld = useDeleteHeld();
@@ -538,6 +540,16 @@ export function DayCard({
                       setIsDragOver(false);
                     }}
                     onDragOver={e => {
+                      // Dock preset drag → highlight this row as the apply
+                      // target (sentinel rows carry no prescription to apply
+                      // to, so they don't accept it).
+                      if (!sentinel && presets?.length && e.dataTransfer.types.includes(MARK_PRESET)) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = 'copy';
+                        if (presetDropExId !== ex.id) setPresetDropExId(ex.id);
+                        return;
+                      }
                       // Allow drop when an exercise is being dragged from
                       // anywhere (same day OR cross-day). Same-day uses the
                       // local draggingExId; cross-day relies on the dataTransfer
@@ -558,10 +570,20 @@ export function DayCard({
                     onDragLeave={e => {
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                         setDropIndicator(null);
+                        setPresetDropExId(prev => prev === ex.id ? null : prev);
                       }
                     }}
                     onDrop={e => {
                       const data = e.dataTransfer.getData('text/plain');
+                      // Dock preset dropped onto this row → apply it here.
+                      if (data.startsWith('PRESET:')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPresetDropExId(null);
+                        const preset = presets?.find(p => p.id === data.slice('PRESET:'.length));
+                        if (preset && !sentinel) void applyPresetToRow(ex, preset);
+                        return;
+                      }
                       const parts = data.split(':');
                       if (parts.length >= 3) {
                         const fromDay = parseInt(parts[0], 10);
@@ -614,7 +636,9 @@ export function DayCard({
                       display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 8px',
                       borderBottom: '0.5px solid var(--color-border-tertiary)',
                       borderLeft: `3px solid ${borderColor}`,
-                      background: deleteHeld
+                      background: presetDropExId === ex.id
+                        ? 'var(--color-accent-muted)'
+                        : deleteHeld
                         ? (isHovered ? 'var(--color-danger-bg)' : 'transparent')
                         : (isHovered ? 'var(--color-bg-secondary)' : 'transparent'),
                       cursor: 'pointer',

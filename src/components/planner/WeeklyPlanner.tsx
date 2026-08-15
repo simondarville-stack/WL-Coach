@@ -2002,6 +2002,8 @@ export function WeeklyPlanner() {
               onClipboardRemove={clipboard.remove}
               onClipboardClear={clipboard.clear}
               onClipboardPlannerDrop={handleClipboardPlannerDrop}
+              presets={presets}
+              onManagePresets={() => setShowPresetManager(true)}
             />
           </>
         )}
