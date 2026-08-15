@@ -81,6 +81,9 @@ interface DayCardProps {
   presets?: CoachPreset[];
   /** Open the preset manager (from the # list's "manage presets…" entry). */
   onManagePresets?: () => void;
+  /** Snapshot a row's prescription + durations into a new preset and open
+   *  the manager on it for naming. */
+  onSaveAsPreset?: (ex: PlannedExercise & { exercise: Exercise }) => void;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -118,6 +121,7 @@ export function DayCard({
   saveExerciseFeatures,
   presets,
   onManagePresets,
+  onSaveAsPreset,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -242,6 +246,22 @@ export function DayCard({
       label: `#${p.name}`,
       onAdd: () => void applyPresetToRow(ex, p),
     }));
+  }
+
+  /** "Save as preset…" — capture this row's prescription + durations as a
+   *  new #preset. Combos are excluded (their tuple grammar is not a preset
+   *  template), as are rows with nothing to capture. */
+  function saveAsPresetItem(ex: PlannedExercise & { exercise: Exercise }): FeatureMenuItem[] {
+    if (!onSaveAsPreset || ex.is_combo) return [];
+    const f = ex.metadata?.features;
+    const hasContent = !!ex.prescription_raw?.trim() || f?.totalTime != null || f?.restTime != null;
+    if (!hasContent) return [];
+    return [{
+      key: 'save-as-preset',
+      icon: '#',
+      label: 'Save as preset…',
+      onAdd: () => onSaveAsPreset(ex),
+    }];
   }
 
   async function handleSlashCommand(key: string) {
@@ -825,7 +845,7 @@ export function DayCard({
                         ex={ex}
                         rowHovered={isHovered}
                         onSaveFeatures={f => handleFeaturesSave(ex, f)}
-                        extraMenuItems={[...signMenuItem(ex), ...presetMenuItems(ex)]}
+                        extraMenuItems={[...signMenuItem(ex), ...presetMenuItems(ex), ...saveAsPresetItem(ex)]}
                       />
                     )}
                   </div>

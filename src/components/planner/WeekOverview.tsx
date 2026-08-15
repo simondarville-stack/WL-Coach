@@ -55,6 +55,8 @@ interface WeekOverviewProps {
   /** Coach's # prescription presets. */
   presets?: import('../../lib/database.types').CoachPreset[];
   onManagePresets?: () => void;
+  /** Snapshot a row into a new preset and open the manager on it. */
+  onSaveAsPreset?: (ex: import('../../lib/database.types').PlannedExercise & { exercise: import('../../lib/database.types').Exercise }) => void;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
@@ -89,6 +91,7 @@ export function WeekOverview({
   saveExerciseFeatures,
   presets,
   onManagePresets,
+  onSaveAsPreset,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -179,6 +182,7 @@ export function WeekOverview({
                         saveExerciseFeatures={saveExerciseFeatures}
                         presets={presets}
                         onManagePresets={onManagePresets}
+                        onSaveAsPreset={onSaveAsPreset}
                         loadIncrement={loadIncrement}
                         defaultPrescriptionLoad={defaultPrescriptionLoad}
                         isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -231,6 +235,7 @@ export function WeekOverview({
                         saveExerciseFeatures={saveExerciseFeatures}
                         presets={presets}
                         onManagePresets={onManagePresets}
+                        onSaveAsPreset={onSaveAsPreset}
                   loadIncrement={loadIncrement}
                   defaultPrescriptionLoad={defaultPrescriptionLoad}
                   isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -279,6 +284,7 @@ export function WeekOverview({
                         saveExerciseFeatures={saveExerciseFeatures}
                         presets={presets}
                         onManagePresets={onManagePresets}
+                        onSaveAsPreset={onSaveAsPreset}
             loadIncrement={loadIncrement}
             defaultPrescriptionLoad={defaultPrescriptionLoad}
             isLinkedToGroupPlan={isLinkedToGroupPlan}

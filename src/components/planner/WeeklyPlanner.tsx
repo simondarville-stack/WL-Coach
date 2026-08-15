@@ -18,7 +18,7 @@ import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
-import type { DefaultUnit } from '../../lib/database.types';
+import type { DefaultUnit, PlannedExercise, Exercise } from '../../lib/database.types';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -103,6 +103,33 @@ export function WeeklyPlanner() {
   const { fetchGroups } = useTrainingGroups();
   const { presets, createPreset, updatePreset, deletePreset } = useCoachPresets();
   const [showPresetManager, setShowPresetManager] = useState(false);
+  /** Preset the manager opens expanded on (save-row-as-preset lands here). */
+  const [presetManagerFocusId, setPresetManagerFocusId] = useState<string | null>(null);
+
+  /** Snapshot a planner row into a new #preset: prescription template + the
+   *  duration features (⏱/⏸). The Σ/S/Ø summary overrides deliberately stay
+   *  behind — they are per-row analysis corrections, not prescription
+   *  content. Opens the manager on the new preset for naming. */
+  const handleSaveRowAsPreset = (ex: PlannedExercise & { exercise: Exercise }) => {
+    const base = (ex.exercise.name || 'Preset').replace(/\s+/g, '') || 'Preset';
+    let name = base;
+    let n = 2;
+    while (presets.some(p => p.name.toLowerCase() === name.toLowerCase())) name = `${base}${n++}`;
+    const f = ex.metadata?.features ?? {};
+    void createPreset({
+      name,
+      color: ex.exercise.color ?? '#185FA5',
+      prescription_raw: ex.prescription_raw?.trim() ? ex.prescription_raw : null,
+      unit: (ex.unit as DefaultUnit | null) ?? null,
+      features: {
+        ...(f.totalTime != null ? { totalTime: f.totalTime } : {}),
+        ...(f.restTime != null ? { restTime: f.restTime } : {}),
+      },
+    }).then(created => {
+      setPresetManagerFocusId(created.id);
+      setShowPresetManager(true);
+    }).catch(() => {});
+  };
 
   const {
     weekPlan: currentWeekPlan,
@@ -1786,6 +1813,7 @@ export function WeeklyPlanner() {
                 saveExerciseFeatures={saveExerciseFeatures}
                 presets={presets}
                 onManagePresets={() => setShowPresetManager(true)}
+                onSaveAsPreset={handleSaveRowAsPreset}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}
@@ -1928,12 +1956,13 @@ export function WeeklyPlanner() {
 
         {showPresetManager && (
           <PresetManager
-            onClose={() => setShowPresetManager(false)}
+            onClose={() => { setShowPresetManager(false); setPresetManagerFocusId(null); }}
             presets={presets}
             createPreset={createPreset}
             updatePreset={updatePreset}
             deletePreset={deletePreset}
             loadIncrement={settings?.grid_load_increment ?? 5}
+            initialOpenId={presetManagerFocusId}
           />
         )}
 

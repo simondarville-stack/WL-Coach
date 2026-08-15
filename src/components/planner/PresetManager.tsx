@@ -24,6 +24,9 @@ interface PresetManagerProps {
   updatePreset: (id: string, patch: Partial<CoachPresetInput>) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
   loadIncrement: number;
+  /** Preset to open expanded on mount — the save-row-as-preset flow lands
+   *  the coach directly on the freshly captured preset for naming. */
+  initialOpenId?: string | null;
 }
 
 export function PresetBadge({ name, color, small = false }: { name: string; color: string; small?: boolean }) {
@@ -95,8 +98,9 @@ export function PresetManager({
   updatePreset,
   deletePreset,
   loadIncrement,
+  initialOpenId = null,
 }: PresetManagerProps) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
 
   const patchFeatures = (p: CoachPreset, key: keyof ExerciseFeatures, value: number | undefined) => {
