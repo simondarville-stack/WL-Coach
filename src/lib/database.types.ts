@@ -292,6 +292,8 @@ export interface GppSection {
 export interface ExerciseFeatures {
   /** Total time for the exercise block, in seconds. Athlete-visible. */
   totalTime?: number;
+  /** Prescribed rest between sets, in seconds. Athlete-visible. */
+  restTime?: number;
   /** Coach override for summary_total_reps ("overwrites the summation").
    *  Coach/analysis-only, never athlete-visible. */
   totalReps?: number;

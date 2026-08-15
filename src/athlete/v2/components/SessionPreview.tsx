@@ -335,6 +335,11 @@ function PreviewExerciseRow({
               ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
             </span>
           )}
+          {planned.exercise.metadata?.features?.restTime != null && (
+            <span className="text-[11px] text-gray-400 font-medium">
+              ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+            </span>
+          )}
         </div>
 
         {!readOnly && (

@@ -343,6 +343,11 @@ export function ExerciseLogCard({
                 ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
               </span>
             )}
+            {planned.exercise.metadata?.features?.restTime != null && (
+              <span className="text-[11px] text-gray-500 font-medium">
+                ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+              </span>
+            )}
           </div>
         </div>
         <div className="text-[10px] text-gray-500 flex-shrink-0 mt-0.5">

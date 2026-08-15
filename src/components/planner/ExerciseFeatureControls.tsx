@@ -6,7 +6,8 @@
  *    menu in the row's upper-right corner. Derived values are grey and
  *    passive; the Σ / Ø override features turn their value accent-coloured
  *    and editable in place.
- *  - TotalTimeChip — the athlete-visible ⏱ chip under the prescription.
+ *  - FeatureChips — the athlete-visible duration chips under the
+ *    prescription (⏱ total time, ⏸ rest between sets).
  *
  * Editing follows the house gestures everywhere (same as PrescriptionGrid):
  * click +1 · right-click −1 · Ctrl+click type · Del-held+click removes the
@@ -16,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import type { Exercise, PlannedExercise } from '../../lib/database.types';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
-import { formatSeconds, parseTimeInput } from '../../lib/exerciseFeatures';
+import { formatSeconds, parseTimeInput, timeEditValue } from '../../lib/exerciseFeatures';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 
 function fmtNum(v: number | null | undefined): string {
@@ -149,6 +150,10 @@ export function AnalysisColumn({ ex, rowHovered, onSaveFeatures, extraMenuItems 
       key: 'totalTime', icon: '⏱', label: 'Total time',
       onAdd: () => patchFeatures({ totalTime: 600 }),
     }] : []),
+    ...(features.restTime == null ? [{
+      key: 'restTime', icon: '⏸', label: 'Rest time',
+      onAdd: () => patchFeatures({ restTime: 120 }),
+    }] : []),
     ...(features.totalReps == null ? [{
       key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation',
       onAdd: () => patchFeatures({ totalReps: ex.summary_total_reps ?? 0 }),
@@ -270,39 +275,56 @@ export function AnalysisColumn({ ex, rowHovered, onSaveFeatures, extraMenuItems 
   );
 }
 
-interface TotalTimeChipProps {
+interface FeatureChipsProps {
   features: ExerciseFeatures;
   onSaveFeatures: (features: ExerciseFeatures) => void;
 }
 
-/** ⏱ total-time chip under the prescription — athlete-visible content. */
-export function TotalTimeChip({ features, onSaveFeatures }: TotalTimeChipProps) {
+/** Time-valued feature chips shown under the prescription — the two
+ *  duration features today: ⏱ totalTime, ⏸ restTime (seconds each).
+ *  Athlete-visible prescription content. */
+const TIME_CHIPS: Array<{ key: 'totalTime' | 'restTime'; icon: string; title: string; minSec: number }> = [
+  { key: 'totalTime', icon: '⏱', title: 'Total time (minutes; append s for seconds)', minSec: 60 },
+  { key: 'restTime', icon: '⏸', title: 'Rest between sets (minutes; append s for seconds)', minSec: 15 },
+];
+
+export function FeatureChips({ features, onSaveFeatures }: FeatureChipsProps) {
   const deleteHeld = useDeleteHeld();
-  const total = features.totalTime;
-  if (total == null) return null;
-  const save = (totalTime: number | undefined) => {
+  const active = TIME_CHIPS.filter(c => features[c.key] != null);
+  if (active.length === 0) return null;
+  const save = (key: 'totalTime' | 'restTime', sec: number | undefined) => {
     const next: ExerciseFeatures = { ...features };
-    if (totalTime == null) delete next.totalTime; else next.totalTime = totalTime;
+    if (sec == null) delete next[key]; else next[key] = sec;
     onSaveFeatures(next);
   };
   return (
     <div
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, alignSelf: 'flex-start' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start', flexWrap: 'wrap' }}
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       draggable={false}
       onDragStart={e => e.preventDefault()}
     >
-      <span style={{ fontSize: 9, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>⏱</span>
-      <GestureValue
-        display={formatSeconds(total)}
-        editValue={formatSeconds(total).replace('′', '').replace('″', 's')}
-        title="Total time (minutes; append s for seconds)"
-        accent={false}
-        onStep={d => save(Math.max(60, total + d * 60))}
-        onCommit={t => { const sec = parseTimeInput(t); if (sec != null) save(sec); }}
-        onRemove={() => save(undefined)}
-      />
+      {active.map(c => {
+        const sec = features[c.key] as number;
+        // ⏱ steps in minutes; ⏸ rests are short — step in 15 s so "1′45″"
+        // is reachable by clicking, not only by typing.
+        const step = c.key === 'restTime' ? 15 : 60;
+        return (
+          <div key={c.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ fontSize: 9, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>{c.icon}</span>
+            <GestureValue
+              display={formatSeconds(sec)}
+              editValue={timeEditValue(sec)}
+              title={c.title}
+              accent={false}
+              onStep={d => save(c.key, Math.max(c.minSec, sec + d * step))}
+              onCommit={t => { const parsed = parseTimeInput(t); if (parsed != null) save(c.key, parsed); }}
+              onRemove={() => save(c.key, undefined)}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -644,8 +644,13 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
                               <InlinePrescription prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
                             </div>
                           )}
-                          {ex.metadata?.features?.totalTime != null && (
-                            <p className="text-[10px] text-gray-700 leading-tight">⏱ {formatSeconds(ex.metadata.features.totalTime)}</p>
+                          {(ex.metadata?.features?.totalTime != null || ex.metadata?.features?.restTime != null) && (
+                            <p className="text-[10px] text-gray-700 leading-tight">
+                              {[
+                                ex.metadata.features.totalTime != null ? `⏱ ${formatSeconds(ex.metadata.features.totalTime)}` : null,
+                                ex.metadata.features.restTime != null ? `⏸ rest ${formatSeconds(ex.metadata.features.restTime)}` : null,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
                           )}
                         </div>
                       </div>

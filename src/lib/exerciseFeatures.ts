@@ -30,6 +30,7 @@ export interface FeatureDefinition {
 
 export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: 'totalTime', icon: '⏱', label: 'Total time', coachOnly: false },
+  { key: 'restTime', icon: '⏸', label: 'Rest time', coachOnly: false },
   { key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation', coachOnly: true },
   { key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites', coachOnly: true },
 ];
@@ -51,27 +52,41 @@ export function applyFeatureOverrides(
   };
 }
 
-/** 720 → "12′", 90 → "90″", 630 → "10,5′". European comma decimals. */
+/** 720 → "12′", 45 → "45″", 135 → "2′15″". European conventions, no decimals. */
 export function formatSeconds(sec: number): string {
   const fmt = (n: number) => String(Math.round(n * 10) / 10).replace('.', ',');
-  if (sec < 60 || sec % 60 !== 0) {
-    if (sec >= 60) return `${fmt(sec / 60)}′`;
-    return `${fmt(sec)}″`;
-  }
-  return `${fmt(sec / 60)}′`;
+  if (sec < 60) return `${fmt(sec)}″`;
+  if (sec % 60 === 0) return `${fmt(sec / 60)}′`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}′${String(s).padStart(2, '0')}″`;
 }
 
 /**
  * Parse a coach-typed duration. Plain numbers are minutes ("12" → 720 s);
- * a trailing s/″ means seconds ("90s" → 90). Comma decimals accepted.
+ * a trailing s/″ means seconds ("90s" → 90); "m:ss" is minutes:seconds
+ * ("2:15" → 135). Comma decimals accepted.
  */
 export function parseTimeInput(raw: string): number | null {
   const s = raw.trim().toLowerCase().replace(',', '.').replace('′', '').replace('″', 's');
   if (!s) return null;
+  const colon = s.match(/^(\d+):(\d{1,2})$/);
+  if (colon) {
+    const sec = parseInt(colon[1], 10) * 60 + parseInt(colon[2], 10);
+    return sec > 0 ? sec : null;
+  }
   if (s.endsWith('s')) {
     const n = parseFloat(s.slice(0, -1));
     return isNaN(n) || n <= 0 ? null : Math.round(n);
   }
   const n = parseFloat(s);
   return isNaN(n) || n <= 0 ? null : Math.round(n * 60);
+}
+
+/** Seed for a duration edit field: whole minutes as "12", sub-minute as
+ *  "45s", mixed as "2:15" — every form round-trips through parseTimeInput. */
+export function timeEditValue(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  if (sec % 60 === 0) return String(sec / 60);
+  return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
 }

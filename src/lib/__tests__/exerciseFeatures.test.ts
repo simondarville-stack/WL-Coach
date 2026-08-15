@@ -14,7 +14,7 @@ import {
   splitLoadCmp,
   rangeMid,
 } from '../prescriptionParser';
-import { applyFeatureOverrides, formatSeconds, parseTimeInput } from '../exerciseFeatures';
+import { applyFeatureOverrides, formatSeconds, parseTimeInput, timeEditValue } from '../exerciseFeatures';
 
 describe('splitLoadCmp', () => {
   it('parses the typed ASCII forms', () => {
@@ -144,16 +144,23 @@ describe('applyFeatureOverrides', () => {
 });
 
 describe('time helpers', () => {
-  it('formats seconds European-style', () => {
+  it('formats seconds European-style, mixed values as m′ss″', () => {
     expect(formatSeconds(720)).toBe('12′');
-    expect(formatSeconds(90)).toBe('1,5′');
+    expect(formatSeconds(90)).toBe('1′30″');
+    expect(formatSeconds(135)).toBe('2′15″');
     expect(formatSeconds(45)).toBe('45″');
   });
-  it('parses minutes by default, seconds with a trailing s', () => {
+  it('parses minutes by default, seconds with a trailing s, and m:ss', () => {
     expect(parseTimeInput('12')).toBe(720);
     expect(parseTimeInput('1,5')).toBe(90);
     expect(parseTimeInput('90s')).toBe(90);
+    expect(parseTimeInput('2:15')).toBe(135);
     expect(parseTimeInput('abc')).toBeNull();
+  });
+  it('timeEditValue round-trips through parseTimeInput', () => {
+    for (const sec of [45, 60, 90, 135, 720]) {
+      expect(parseTimeInput(timeEditValue(sec))).toBe(sec);
+    }
   });
 });
 

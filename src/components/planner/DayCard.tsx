@@ -12,7 +12,7 @@ import { RestBadge } from './RestBadge';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
-import { AnalysisColumn, TotalTimeChip, type FeatureMenuItem } from './ExerciseFeatureControls';
+import { AnalysisColumn, FeatureChips, type FeatureMenuItem } from './ExerciseFeatureControls';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
 import {
   parsePrescription, formatPrescription,
@@ -694,7 +694,7 @@ export function DayCard({
                             />
                           </div>
                           {saveExerciseFeatures && ex.metadata?.features && (
-                            <TotalTimeChip
+                            <FeatureChips
                               features={ex.metadata.features}
                               onSaveFeatures={f => handleFeaturesSave(ex, f)}
                             />
@@ -729,7 +729,7 @@ export function DayCard({
                             />
                           </div>
                           {saveExerciseFeatures && ex.metadata?.features && (
-                            <TotalTimeChip
+                            <FeatureChips
                               features={ex.metadata.features}
                               onSaveFeatures={f => handleFeaturesSave(ex, f)}
                             />
