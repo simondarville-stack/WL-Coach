@@ -1,24 +1,18 @@
 /**
- * PrintWeek — print-only view of a single training week.
+ * PrintWeek — print host for a single training week.
  *
- * Font-weight note: font-bold / font-semibold classes are used throughout
- * this component intentionally for hard-copy readability. Screen designs
- * use font-medium per EMOS design spec, but higher weights are necessary
- * for printed output where ink density and contrast matter more.
- * Do not normalize these to font-medium without testing a physical print.
+ * Loads the week's data and renders the print DESIGNER. The fixed
+ * "programme" layout was retired (0.45.0) in favour of the option-driven
+ * designer, which both the coach planner and the athlete app now share.
+ * The athlete variant defaults to honouring the coach's eye
+ * (athlete-visibility) settings; the coach can toggle the same option to
+ * proof what the athlete printout will reveal.
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, FileText, Sliders } from 'lucide-react';
-import { useCoachStore } from '../../store/coachStore';
+import { X, Printer } from 'lucide-react';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup, CoachProfile } from '../../lib/database.types';
-import { DAYS_OF_WEEK, getUnitSymbol } from '../../lib/constants';
-import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
-import { calculateAge } from '../../lib/calculations';
-import { parsePrescription, parseComboPrescription, parseFreeTextPrescription, LOAD_CMP_GLYPH } from '../../lib/prescriptionParser';
-import { expandForCounting } from '../../lib/comboExpansion';
-import { formatSeconds } from '../../lib/exerciseFeatures';
-import { defaultSlotLabel } from '../../lib/trainingLogService';
+import { DAYS_OF_WEEK } from '../../lib/constants';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
 import { useCombos } from '../../hooks/useCombos';
 import { PrintWeekDesigner } from './PrintWeekDesigner';
@@ -32,12 +26,14 @@ interface PrintWeekProps {
   group?: TrainingGroup | null;
   weekStart: string;
   onClose: () => void;
+  /** Retired with the fixed programme layout — the designer has its own
+   *  category-summary toggle. Accepted for caller compatibility. */
   showCategorySummaries?: boolean;
   dayLabels?: Record<number, string> | null;
   /** When omitted (athlete app), falls back to weekPlan.week_description. */
   weekDescription?: string | null;
-  /** 'athlete' renders the Programme layout only, with a compact
-   *  mobile-friendly options row instead of the Designer toggle. */
+  /** 'athlete' defaults the designer to the athlete view (eye settings
+   *  honoured); 'coach' starts with everything visible. */
   variant?: 'coach' | 'athlete';
   /** Pre-resolved plan id. The athlete app passes it so the group-plan
    *  fallback of /athlete/week (resolveAthleteWeekPlanId) is honoured;
@@ -48,161 +44,24 @@ interface PrintWeekProps {
   coach?: Pick<CoachProfile, 'name' | 'club_name'> | null;
 }
 
-interface AthletePrintOptions {
-  showTotals: boolean;
-  showWeekNotes: boolean;
-  showExerciseNotes: boolean;
-  landscape: boolean;
-}
-
-const ATHLETE_PRINT_OPTIONS_KEY = 'emos.athlete.print.options.v1';
-const ATHLETE_PRINT_DEFAULTS: AthletePrintOptions = {
-  showTotals: true,
-  showWeekNotes: true,
-  showExerciseNotes: true,
-  landscape: false,
-};
-
-function loadAthletePrintOptions(): AthletePrintOptions {
-  try {
-    const raw = localStorage.getItem(ATHLETE_PRINT_OPTIONS_KEY);
-    if (raw) return { ...ATHLETE_PRINT_DEFAULTS, ...(JSON.parse(raw) as Partial<AthletePrintOptions>) };
-  } catch { /* corrupt storage — fall through to defaults */ }
-  return { ...ATHLETE_PRINT_DEFAULTS };
-}
-
-function OptionToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (next: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-1.5 text-xs text-gray-700 select-none cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 accent-[var(--color-accent)]"
-      />
-      {label}
-    </label>
-  );
-}
-
-type SentinelType = 'text' | 'video' | 'image' | 'gpp' | null;
-function getSentinelType(code: string | null | undefined): SentinelType {
-  if (code === 'TEXT') return 'text';
-  if (code === 'VIDEO') return 'video';
-  if (code === 'IMAGE') return 'image';
-  if (code === 'GPP') return 'gpp';
-  return null;
-}
-function getYouTubeVideoId(url: string): string | null {
-  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return m ? m[1] : null;
-}
-
-function InlinePrescription({ prescription, unit, isCombo }: { prescription: string | null; unit: string | null; isCombo?: boolean }) {
-  if (!prescription?.trim()) return <span className="text-gray-500 italic">No prescription</span>;
-  const unitSym = unit === 'percentage' ? '%' : unit === 'rpe' ? ' RPE' : '';
-
-  // free_text_reps — stacked notation with the (possibly empty) text as
-  // the load row. Falls back to raw output only when the row isn't
-  // parseable as "<text> × reps [× sets]". Combos handled in the
-  // dedicated isCombo block above, so their tuple reps stay intact.
-  if (unit === 'free_text_reps' && !isCombo) {
-    const lines = parseFreeTextPrescription(prescription);
-    if (lines.length === 0) return <span>{prescription}</span>;
-    return (
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {lines.map((line, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <div className="inline-flex flex-col items-center leading-none">
-              <span className="text-xs font-semibold text-gray-900 min-h-[1em]">{line.loadText || ' '}</span>
-              <div className="border-t border-gray-400 w-full my-px" />
-              <span className="text-xs font-semibold text-gray-900">{line.reps}</span>
-            </div>
-            {line.sets > 1 && <span className="text-xs font-bold text-gray-900">{line.sets}</span>}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (isCombo) {
-    const parsed = parseComboPrescription(prescription);
-    if (parsed.length === 0) return <span>{prescription}</span>;
-    const isFreeTextReps = unit === 'free_text_reps';
-    return (
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {parsed.map((line, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <div className="inline-flex flex-col items-center leading-none">
-              <span className="text-xs font-semibold text-gray-900">
-                {!line.loadText && line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
-                {isFreeTextReps && line.loadText
-                  ? line.loadText
-                  : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
-              </span>
-              <div className="border-t border-gray-400 w-full my-px" />
-              <span className="text-xs font-semibold text-gray-900">
-                {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
-              </span>
-            </div>
-            {(line.sets > 1 || line.setsMax != null) && (
-              <span className="text-xs font-bold text-gray-900">
-                {line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  }
-  const parsed = parsePrescription(prescription);
-  if (parsed.length === 0) return <span>{prescription}</span>;
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-      {parsed.map((line, i) => (
-        <div key={i} className="flex items-center gap-1">
-          <div className="inline-flex flex-col items-center leading-none">
-            <span className="text-xs font-semibold text-gray-900">
-              {line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
-              {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
-            </span>
-            <div className="border-t border-gray-400 w-full my-px" />
-            <span className="text-xs font-semibold text-gray-900">
-              {line.repsMax != null ? `${line.reps}-${line.repsMax}` : line.reps}
-            </span>
-          </div>
-          {(line.sets > 1 || line.setsMax != null) && (
-            <span className="text-xs font-bold text-gray-900">
-              {line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function PrintWeek({ athlete = null, group = null, weekStart, onClose, showCategorySummaries = true, dayLabels = null, weekDescription, variant = 'coach', weekPlanId = null, coach = null }: PrintWeekProps) {
+export function PrintWeek({
+  athlete = null,
+  group = null,
+  weekStart,
+  onClose,
+  dayLabels = null,
+  weekDescription,
+  variant = 'coach',
+  weekPlanId = null,
+  coach = null,
+}: PrintWeekProps) {
   const { fetchWeekPlanForAthlete, fetchWeekPlanForGroup, fetchWeekPlanById, fetchPlannedExercisesFlat } = useWeekPlans();
   const { fetchProgrammeData } = useCombos();
-  const { activeCoach } = useCoachStore();
-  const isAthleteVariant = variant === 'athlete';
-  const coachLine = coach ?? activeCoach;
 
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
   const [plannedExercises, setPlannedExercises] = useState<Record<number, (PlannedExercise & { exercise: Exercise })[]>>({});
   const [comboMembers, setComboMembers] = useState<Record<string, ComboMemberEntry[]>>({});
   const [loading, setLoading] = useState(true);
-  const [printMode, setPrintMode] = useState<'programme' | 'designer'>('programme');
-  const [athleteOpts, setAthleteOpts] = useState<AthletePrintOptions>(loadAthletePrintOptions);
-
-  const setAthleteOpt = (patch: Partial<AthletePrintOptions>) => {
-    setAthleteOpts(prev => {
-      const next = { ...prev, ...patch };
-      try { localStorage.setItem(ATHLETE_PRINT_OPTIONS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-      return next;
-    });
-  };
 
   useEffect(() => { void loadWeekData(); }, [athlete?.id, group?.id, weekStart, weekPlanId]);
 
@@ -235,77 +94,6 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
     }
   };
 
-  const WEEKDAY_NAMES_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const getDayLabel = (dayIndex: number): string => {
-    // day_index is a TRAINING-UNIT index, not a weekday — the weekday (if
-    // scheduled) is appended from day_schedule below. Unlabelled units fall
-    // back to the app-wide default unit name ("Day N"), never weekday names.
-    const labels = dayLabels || weekPlan?.day_labels;
-    const base = (labels?.[dayIndex]) || defaultSlotLabel(dayIndex);
-    const schedule = weekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null;
-    const entry = schedule?.[dayIndex];
-    if (!entry) return base;
-    const wdName = WEEKDAY_NAMES_FULL[entry.weekday];
-    const timeSuffix = entry.time ? ` ${entry.time}` : '';
-    return `${base} (${wdName}${timeSuffix})`;
-  };
-
-  const activeDays = weekPlan?.active_days || [1, 2, 3, 4, 5, 6, 7];
-  const visibleDays = activeDays.map(dayIndex => ({ index: dayIndex, name: getDayLabel(dayIndex) }));
-
-  const calculateCategorySummaries = () => {
-    const totals: Record<string, { sets: number; reps: number; totalLoad: number; avgLoad: number; loadCount: number }> = {};
-    // Combos expand into member instances so each member's reps land in its own
-    // category (a combo merely governs structure).
-    Object.values(plannedExercises).forEach(dayExs => {
-      dayExs.forEach(ex => {
-        for (const c of expandForCounting(ex, comboMembers[ex.id])) {
-          if (c.exercise.counts_towards_totals && c.exercise.category && c.exercise.category !== '— System') {
-            const cat = c.exercise.category;
-            if (!totals[cat]) totals[cat] = { sets: 0, reps: 0, totalLoad: 0, avgLoad: 0, loadCount: 0 };
-            totals[cat].sets += c.summary_total_sets;
-            totals[cat].reps += c.summary_total_reps;
-            if (c.unit === 'absolute_kg' && c.summary_avg_load) {
-              totals[cat].totalLoad += c.summary_avg_load * c.summary_total_reps;
-              totals[cat].avgLoad += c.summary_avg_load;
-              totals[cat].loadCount += 1;
-            }
-          }
-        }
-      });
-    });
-    Object.keys(totals).forEach(cat => {
-      if (totals[cat].loadCount > 0) totals[cat].avgLoad = totals[cat].avgLoad / totals[cat].loadCount;
-    });
-    return totals;
-  };
-
-  const calculateWeeklyTotal = () => {
-    let totalSets = 0; let totalReps = 0; let totalLoad = 0;
-    Object.values(plannedExercises).forEach(dayExs => {
-      dayExs.forEach(ex => {
-        for (const c of expandForCounting(ex, comboMembers[ex.id])) {
-          if (c.exercise.counts_towards_totals) {
-            totalSets += c.summary_total_sets;
-            totalReps += c.summary_total_reps;
-            if (c.unit === 'absolute_kg' && c.summary_avg_load) totalLoad += c.summary_avg_load * c.summary_total_reps;
-          }
-        }
-      });
-    });
-    return { totalSets, totalReps, totalLoad };
-  };
-
-  const categorySummaries = calculateCategorySummaries();
-  const weeklyTotal = calculateWeeklyTotal();
-
-  // Effective display flags — the coach variant keeps its existing behaviour;
-  // the athlete variant is driven by the compact options row.
-  const showTotalsBlock = isAthleteVariant ? athleteOpts.showTotals : true;
-  const showCatSummaries = isAthleteVariant ? athleteOpts.showTotals : showCategorySummaries;
-  const showWeekNotes = isAthleteVariant ? athleteOpts.showWeekNotes : true;
-  const showExerciseNotes = isAthleteVariant ? athleteOpts.showExerciseNotes : true;
-  const pageOrientation = isAthleteVariant && athleteOpts.landscape ? 'landscape' : 'portrait';
   // The planner injects its (possibly unsaved) week description; the athlete
   // app omits the prop and reads the saved one off the plan.
   const effectiveWeekDescription = weekDescription !== undefined ? weekDescription : (weekPlan?.week_description ?? null);
@@ -332,363 +120,32 @@ export function PrintWeek({ athlete = null, group = null, weekStart, onClose, sh
     );
   }
 
-  const age = athlete ? calculateAge(athlete.birthdate) : null;
-  const headerName = athlete?.name ?? group?.name ?? '';
-  const headerStats = athlete
-    ? [age !== null && `${age} years old`, athlete.bodyweight && `${athlete.bodyweight}kg`, athlete.weight_class]
-        .filter(Boolean)
-        .join(' • ')
-    : group
-    ? 'Group plan'
-    : '';
-
   return createPortal((
     <div id="print-programme-root" className="fixed inset-0 bg-white z-50 overflow-auto">
-      {isAthleteVariant ? (
-        <div className="print:hidden bg-gray-100 border-b border-gray-300 px-3 py-2 sticky top-0 z-10">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-bold text-gray-900">Print programme</h2>
-            <div className="flex gap-2">
-              <Button variant="primary" onClick={() => window.print()} icon={<Printer size={16} />}>
-                Print
-              </Button>
-              <button onClick={onClose} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg" aria-label="Close">
-                <X size={20} />
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2">
-            <OptionToggle label="Totals" checked={athleteOpts.showTotals} onChange={v => setAthleteOpt({ showTotals: v })} />
-            <OptionToggle label="Week notes" checked={athleteOpts.showWeekNotes} onChange={v => setAthleteOpt({ showWeekNotes: v })} />
-            <OptionToggle label="Exercise notes" checked={athleteOpts.showExerciseNotes} onChange={v => setAthleteOpt({ showExerciseNotes: v })} />
-            <OptionToggle label="Landscape" checked={athleteOpts.landscape} onChange={v => setAthleteOpt({ landscape: v })} />
-          </div>
-        </div>
-      ) : (
-      <div className="print:hidden bg-gray-100 border-b border-gray-300 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-4">
-          <h2 className="text-xl font-bold text-gray-900">Print Preview</h2>
-          <div className="flex rounded-lg border border-gray-300 overflow-hidden bg-white">
-            <button
-              onClick={() => setPrintMode('programme')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors"
-              style={printMode === 'programme'
-                ? { background: 'var(--color-accent)', color: 'var(--color-text-on-accent)' }
-                : { background: 'var(--color-bg-primary)', color: 'var(--color-text-secondary)' }}
-            >
-              <FileText size={14} />
-              Programme
-            </button>
-            <button
-              onClick={() => setPrintMode('designer')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border-l border-gray-300 transition-colors"
-              style={printMode === 'designer'
-                ? { background: 'var(--color-accent)', color: 'var(--color-text-on-accent)' }
-                : { background: 'var(--color-bg-primary)', color: 'var(--color-text-secondary)' }}
-            >
-              <Sliders size={14} />
-              Designer
-            </button>
-          </div>
-        </div>
+      <div className="print:hidden bg-gray-100 border-b border-gray-300 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+        <h2 className="text-base font-bold text-gray-900">Print week</h2>
         <div className="flex gap-2">
-          <Button variant="primary" onClick={() => window.print()} icon={<Printer size={18} />}>
+          <Button variant="primary" onClick={() => window.print()} icon={<Printer size={16} />}>
             Print
           </Button>
-          <button onClick={onClose} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg">
+          <button onClick={onClose} className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg" aria-label="Close">
             <X size={20} />
           </button>
         </div>
       </div>
-      )}
 
-      {printMode === 'designer' ? (
-        <PrintWeekDesigner
-          athlete={athlete}
-          group={group}
-          weekPlan={weekPlan}
-          plannedExercises={plannedExercises}
-          comboMembers={comboMembers}
-          weekStart={weekStart}
-          weekDescription={effectiveWeekDescription}
-          dayLabels={dayLabels}
-        />
-      ) : (<>
-      <style>{`@media print { @page { margin: 10mm; } }`}</style>
-      <div className="print-content max-w-[210mm] mx-auto bg-white p-6 print:p-3">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-3 pb-2 border-b border-gray-300">
-          <div>
-            {coachLine?.name && <p className="text-[10px] text-gray-500 leading-tight">{coachLine.name}{coachLine.club_name ? ` · ${coachLine.club_name}` : ''}</p>}
-            <h1 className="text-lg font-bold text-gray-900 leading-tight">{headerName}</h1>
-            {headerStats && <p className="text-xs text-gray-600 leading-tight">{headerStats}</p>}
-          </div>
-          <div className="text-right">
-            <p className="text-xs font-semibold text-gray-900 leading-tight">{formatDateRange(weekStart)}</p>
-            <p className="text-[10px] text-gray-500 leading-tight">Generated by EMOS · {formatDateToDDMMYYYY(new Date().toISOString())}</p>
-          </div>
-        </div>
-
-        {/* Weekly totals + Category summaries — combined row, compact */}
-        {((showTotalsBlock && weeklyTotal.totalSets > 0) || (showCatSummaries && Object.keys(categorySummaries).length > 0)) && (
-          <div className="mb-3 pb-2 border-b border-gray-300">
-            <div className="flex items-stretch gap-3">
-              {showTotalsBlock && weeklyTotal.totalSets > 0 && (
-                <div className="flex items-center gap-3 bg-white border border-gray-400 rounded px-2 py-1.5 flex-shrink-0">
-                  <div className="text-center px-1">
-                    <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Sets</p>
-                    <p className="text-base font-bold text-gray-900 leading-tight">{weeklyTotal.totalSets}</p>
-                  </div>
-                  <div className="text-center px-1 border-l border-gray-400">
-                    <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Reps</p>
-                    <p className="text-base font-bold text-gray-900 leading-tight">{weeklyTotal.totalReps}</p>
-                  </div>
-                  {weeklyTotal.totalLoad > 0 && (
-                    <div className="text-center px-1 border-l border-gray-400">
-                      <p className="text-[9px] text-gray-700 font-medium uppercase tracking-wide leading-tight">Load</p>
-                      <p className="text-base font-bold text-gray-900 leading-tight">{Math.round(weeklyTotal.totalLoad)}kg</p>
-                    </div>
-                  )}
-                </div>
-              )}
-              {showCatSummaries && Object.keys(categorySummaries).length > 0 && (
-                <div className="grid grid-cols-6 gap-1 flex-1">
-                  {Object.entries(categorySummaries).sort(([a], [b]) => a.localeCompare(b)).map(([cat, t]) => (
-                    <div key={cat} className="bg-gray-50 rounded px-1.5 py-1 border border-gray-200 leading-tight">
-                      <div className="text-[9px] font-semibold text-gray-700 truncate">{cat}</div>
-                      <div className="text-[10px] text-gray-900">
-                        <span className="font-bold">{t.sets}</span>s · <span className="font-bold">{t.reps}</span>r
-                        {t.totalLoad > 0 && <> · <span className="font-bold">{Math.round(t.totalLoad)}</span>kg</>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Week notes */}
-        {showWeekNotes && effectiveWeekDescription?.trim() && (
-          <div className="mb-3 pb-2 border-b border-gray-300">
-            <div className="bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-              <p className="text-xs text-gray-800 whitespace-pre-wrap leading-snug">{effectiveWeekDescription}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Days */}
-        {visibleDays.map(day => {
-          const dayExs = (plannedExercises[day.index] || []).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-          if (dayExs.length === 0) return null;
-
-          const dayContribs = dayExs
-            .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
-            .filter(c => c.exercise.counts_towards_totals);
-          const daySets = dayContribs.reduce((s, c) => s + c.summary_total_sets, 0);
-          const dayReps = dayContribs.reduce((s, c) => s + c.summary_total_reps, 0);
-
-          return (
-            <div key={day.index} className="mb-3 break-inside-avoid">
-              <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-gray-300">
-                <h2 className="text-xs font-bold text-gray-900 uppercase tracking-wide">{day.name}</h2>
-                {showTotalsBlock && (daySets > 0 || dayReps > 0) && (
-                  <div className="text-[10px] text-gray-600">
-                    {daySets > 0 && `${daySets} sets`}
-                    {daySets > 0 && dayReps > 0 && ' • '}
-                    {dayReps > 0 && `${dayReps} reps`}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                {dayExs.map(ex => {
-                  const sentinel = getSentinelType(ex.exercise.exercise_code);
-                  const unitSymbol = getUnitSymbol(ex.unit);
-                  const hasSummary = ex.summary_total_sets !== null && ex.summary_total_sets > 0;
-                  const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
-                  const borderColor = sentinel
-                    ? (sentinel === 'text' ? 'transparent' : '#d1d5db')
-                    : ex.is_combo ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8') : ex.exercise.color;
-
-                  // Sentinel rendering
-                  if (sentinel === 'text') {
-                    if (!ex.notes?.trim()) return null;
-                    return (
-                      <div key={ex.id} className="break-inside-avoid bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        <p className="text-xs text-gray-700 italic whitespace-pre-wrap leading-snug">{ex.notes}</p>
-                      </div>
-                    );
-                  }
-                  if (sentinel === 'image') {
-                    if (!ex.notes?.trim()) return null;
-                    const description = ex.metadata?.description?.trim();
-                    return (
-                      <div key={ex.id} className="break-inside-avoid">
-                        <img src={ex.notes} alt="" className="max-w-full rounded border border-gray-200" style={{ maxHeight: '140px', objectFit: 'contain' }} onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }} />
-                        {description && (
-                          <p className="text-[10px] text-gray-600 italic mt-0.5 whitespace-pre-wrap leading-snug">{description}</p>
-                        )}
-                      </div>
-                    );
-                  }
-                  if (sentinel === 'video') {
-                    const url = ex.notes?.trim();
-                    if (!url) return null;
-                    const videoId = getYouTubeVideoId(url);
-                    const description = ex.metadata?.description?.trim();
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(url)}&size=80x80`;
-                    return (
-                      <div key={ex.id} className="break-inside-avoid bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
-                        <div className="flex items-center gap-2">
-                          <img src={qrUrl} alt="QR code" className="w-12 h-12 flex-shrink-0" />
-                          <div className="min-w-0 flex items-center gap-2">
-                            {videoId && (
-                              <img src={`https://img.youtube.com/vi/${videoId}/mqdefault.jpg`} alt="" className="rounded w-16 h-10 object-cover flex-shrink-0" />
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-medium text-gray-700 leading-tight">Video</p>
-                              <p className="text-[9px] text-gray-500 break-all leading-tight">{url}</p>
-                            </div>
-                          </div>
-                        </div>
-                        {description && (
-                          <p className="text-[10px] text-gray-600 italic mt-1 whitespace-pre-wrap leading-snug">{description}</p>
-                        )}
-                      </div>
-                    );
-                  }
-                  if (sentinel === 'gpp') {
-                    const gpp = ex.metadata?.gpp;
-                    if (!gpp || gpp.rows.length === 0) {
-                      return (
-                        <div key={ex.id} className="break-inside-avoid bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
-                          <p className="text-[10px] uppercase tracking-wide font-semibold text-emerald-700">
-                            {gpp?.title || 'GPP'}
-                          </p>
-                          <p className="text-[10px] text-gray-500 italic">No rows yet</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={ex.id} className="break-inside-avoid bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
-                        <p className="text-[11px] uppercase tracking-wide font-semibold text-emerald-700 mb-0.5">
-                          {gpp.title || 'GPP'}
-                        </p>
-                        {gpp.description && (
-                          <p className="text-[10px] text-gray-700 italic mb-1 whitespace-pre-wrap">
-                            {gpp.description}
-                          </p>
-                        )}
-                        <table className="w-full text-[10px] border-collapse">
-                          <thead>
-                            <tr className="text-gray-500">
-                              <th className="text-left font-medium pb-0.5">Exercise</th>
-                              <th className="text-center font-medium pb-0.5 w-12">Reps</th>
-                              <th className="text-center font-medium pb-0.5 w-10">Sets</th>
-                              <th className="text-left font-medium pb-0.5 w-14">Load</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {gpp.rows.map((row, i) => (
-                              <tr key={i} className="border-t border-emerald-100">
-                                <td className="text-gray-800 py-0.5">{row.exercise}</td>
-                                <td className="text-center text-gray-700 tabular-nums py-0.5">{row.reps || '—'}</td>
-                                <td className="text-center text-gray-700 tabular-nums py-0.5">{row.sets}</td>
-                                <td className="text-gray-700 py-0.5">{row.load || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={ex.id} className="break-inside-avoid">
-                      <div className="flex items-start gap-1.5">
-                        <div className="w-0.5 self-stretch rounded" style={{ backgroundColor: borderColor }} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <h3 className="text-xs font-bold text-gray-900 leading-tight">
-                              {ex.is_combo
-                                ? (ex.combo_notation?.trim()
-                                    || (members && members.length > 0
-                                      ? members.map(m => m.exercise.name).join(' + ')
-                                      : ex.exercise.name))
-                                : ex.exercise.name}
-                            </h3>
-                            {/* Legacy variation_note fallback — the folded note (ex.notes) prints below */}
-                            {showExerciseNotes && !ex.notes?.trim() && ex.variation_note && (
-                              <span className="text-[10px] text-gray-500 italic leading-tight">{ex.variation_note}</span>
-                            )}
-                            {unitSymbol && <span className="text-[9px] font-medium text-gray-800 bg-gray-200 px-1 py-px rounded">{unitSymbol}</span>}
-                            {hasSummary && (
-                              <span className="text-[10px] text-gray-500 ml-auto leading-tight">
-                                S{ex.summary_total_sets} · R{ex.summary_total_reps}
-                                {ex.summary_highest_load != null && <> · Hi {ex.summary_highest_load.toFixed(0)} · Avg {ex.summary_avg_load?.toFixed(0)}</>}
-                              </span>
-                            )}
-                          </div>
-                          {/* Member list only when the title is a custom combo name —
-                              otherwise the title already lists the members. */}
-                          {ex.is_combo && members && members.length > 0 && !!ex.combo_notation?.trim() && (
-                            <p className="text-[10px] text-gray-500 leading-tight">
-                              {members.map((m, i) => <span key={m.position}>{i > 0 && ' + '}{m.exercise.name}</span>)}
-                            </p>
-                          )}
-                          {/* Note prints above the prescription so the athlete reads the variation before the numbers */}
-                          {showExerciseNotes && ex.notes && <p className="text-[10px] text-gray-600 italic leading-tight">{ex.notes}</p>}
-                          {ex.prescription_raw && (
-                            <div className="leading-tight">
-                              <InlinePrescription prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
-                            </div>
-                          )}
-                          {(ex.metadata?.features?.totalTime != null || ex.metadata?.features?.restTime != null) && (
-                            <p className="text-[10px] text-gray-700 leading-tight">
-                              {[
-                                ex.metadata.features.totalTime != null ? `⏱ ${formatSeconds(ex.metadata.features.totalTime)}` : null,
-                                ex.metadata.features.restTime != null ? `⏸ rest ${formatSeconds(ex.metadata.features.restTime)}` : null,
-                              ].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <style>{`
-        @media print {
-          @page { size: A4 ${pageOrientation}; margin: 8mm; }
-          body { print-color-adjust: exact; -webkit-print-color-adjust: exact; background: white !important; }
-          /* Hide everything except the print root so position:fixed
-             doesn't clip the document to one viewport page. */
-          body > * { display: none !important; }
-          #print-programme-root { display: block !important; }
-          #print-programme-root {
-            position: static !important;
-            inset: auto !important;
-            overflow: visible !important;
-            height: auto !important;
-            background: white !important;
-          }
-          .print\\:hidden { display: none !important; }
-          .print-content {
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-          .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
-        }
-      `}</style>
-    </>)}
+      <PrintWeekDesigner
+        athlete={athlete}
+        group={group}
+        weekPlan={weekPlan}
+        plannedExercises={plannedExercises}
+        comboMembers={comboMembers}
+        weekStart={weekStart}
+        weekDescription={effectiveWeekDescription}
+        dayLabels={dayLabels}
+        variant={variant}
+        coach={coach}
+      />
     </div>
   ), document.body);
 }

@@ -12,11 +12,12 @@
 import { useEffect, useState } from 'react';
 import { RotateCcw, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
-import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup } from '../../lib/database.types';
+import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup, CoachProfile, AthleteHiddenKey } from '../../lib/database.types';
 import { getUnitSymbol } from '../../lib/constants';
 import { formatDateRange, formatDateToDDMMYYYY } from '../../lib/dateUtils';
 import { calculateAge } from '../../lib/calculations';
-import { parsePrescription, parseComboPrescription, parseFreeTextPrescription } from '../../lib/prescriptionParser';
+import { parsePrescription, parseComboPrescription, parseFreeTextPrescription, LOAD_CMP_GLYPH, topSetOnlyPrescription } from '../../lib/prescriptionParser';
+import { formatSeconds } from '../../lib/exerciseFeatures';
 import { fetchWeekLog } from '../../lib/trainingLogService';
 import type { TrainingLogSet } from '../../lib/database.types';
 
@@ -50,6 +51,13 @@ interface DesignerOptions {
   /** P6 — print parity: include athlete-logged actuals under each
    *  planned exercise. */
   showLog: boolean;
+  /** Exercise codes next to exercise names. */
+  showExerciseCodes: boolean;
+  /** Honour the per-row eye (athlete-visibility) settings: hidden
+   *  prescriptions print blank, top-set-only rows reduce to the heaviest
+   *  segment, hidden timing/notes are dropped, and concealed rows leave
+   *  the printed totals. Default ON for the athlete variant. */
+  respectAthleteEye: boolean;
 }
 
 const DEFAULT_OPTIONS: DesignerOptions = {
@@ -73,17 +81,22 @@ const DEFAULT_OPTIONS: DesignerOptions = {
   hideEmptyDays: true,
   showFooter: true,
   showLog: false,
+  showExerciseCodes: false,
+  respectAthleteEye: false,
 };
 
 const STORAGE_KEY = 'emos.print.designer.options.v1';
 
-function loadOptions(): DesignerOptions {
+function loadOptions(variant: 'coach' | 'athlete'): DesignerOptions {
+  // The athlete variant defaults to honouring the eye settings — a stored
+  // preference (either way) still wins.
+  const defaults = { ...DEFAULT_OPTIONS, respectAthleteEye: variant === 'athlete' };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_OPTIONS;
-    return { ...DEFAULT_OPTIONS, ...JSON.parse(raw) };
+    if (!raw) return defaults;
+    return { ...defaults, ...JSON.parse(raw) };
   } catch {
-    return DEFAULT_OPTIONS;
+    return defaults;
   }
 }
 
@@ -153,6 +166,7 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
           <div key={i} className="dz-rx-cell">
             <div className="dz-rx-stack">
               <span className="dz-rx-load">
+                {!line.loadText && line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
                 {isFreeTextReps && line.loadText
                   ? line.loadText
                   : line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
@@ -162,7 +176,9 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
                 {line.multiplier != null ? `${line.multiplier}(${line.repsText})` : line.repsText}
               </span>
             </div>
-            {line.sets > 1 && <span className="dz-rx-sets">{line.sets}</span>}
+            {(line.sets > 1 || line.setsMax != null) && (
+              <span className="dz-rx-sets">{line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}</span>
+            )}
           </div>
         ))}
       </div>
@@ -177,12 +193,15 @@ function PrescriptionBlock({ prescription, unit, isCombo }: { prescription: stri
         <div key={i} className="dz-rx-cell">
           <div className="dz-rx-stack">
             <span className="dz-rx-load">
+              {line.loadCmp ? LOAD_CMP_GLYPH[line.loadCmp] : ''}
               {line.loadMax != null ? `${line.load}-${line.loadMax}${unitSym}` : `${line.load}${unitSym}`}
             </span>
             <div className="dz-rx-bar" />
-            <span className="dz-rx-reps">{line.reps}</span>
+            <span className="dz-rx-reps">{line.repsMax != null ? `${line.reps}-${line.repsMax}` : line.reps}</span>
           </div>
-          {line.sets > 1 && <span className="dz-rx-sets">{line.sets}</span>}
+          {(line.sets > 1 || line.setsMax != null) && (
+            <span className="dz-rx-sets">{line.setsMax != null ? `${line.sets}-${line.setsMax}` : line.sets}</span>
+          )}
         </div>
       ))}
     </div>
@@ -256,13 +275,19 @@ interface PrintWeekDesignerProps {
   weekStart: string;
   weekDescription?: string | null;
   dayLabels?: Record<number, string> | null;
+  /** 'athlete' defaults respectAthleteEye on. */
+  variant?: 'coach' | 'athlete';
+  /** Coach header override for contexts without a coach store (athlete app). */
+  coach?: Pick<CoachProfile, 'name' | 'club_name'> | null;
 }
 
 export function PrintWeekDesigner({
   athlete = null, group = null, weekPlan, plannedExercises, comboMembers, weekStart, weekDescription, dayLabels,
+  variant = 'coach', coach = null,
 }: PrintWeekDesignerProps) {
   const { activeCoach } = useCoachStore();
-  const [opts, setOpts] = useState<DesignerOptions>(() => loadOptions());
+  const coachLine = coach ?? activeCoach;
+  const [opts, setOpts] = useState<DesignerOptions>(() => loadOptions(variant));
 
   useEffect(() => { saveOptions(opts); }, [opts]);
 
@@ -326,9 +351,16 @@ export function PrintWeekDesigner({
     .filter(d => !opts.hideEmptyDays || d.exercises.length > 0);
 
   // ── Aggregates ────────────────────────────────────────────────────────
+  // Rows whose prescription the athlete can't see leave the athlete-view
+  // totals too — a taper-week printout must not reveal the concealed
+  // volume through its summary band.
+  const concealedFromPrint = (ex: PlannedExercise) =>
+    opts.respectAthleteEye && (ex.metadata?.athleteHidden ?? []).includes('prescription');
+
   const categorySummaries: Record<string, { sets: number; reps: number; load: number }> = {};
   Object.values(plannedExercises).forEach(dayExs => {
     dayExs.forEach(ex => {
+      if (concealedFromPrint(ex)) return;
       if (!ex.exercise.counts_towards_totals) return;
       if (!ex.exercise.category || ex.exercise.category === '— System') return;
       const cat = ex.exercise.category;
@@ -344,6 +376,7 @@ export function PrintWeekDesigner({
   let weekSets = 0, weekReps = 0, weekLoad = 0;
   Object.values(plannedExercises).forEach(dayExs => {
     dayExs.forEach(ex => {
+      if (concealedFromPrint(ex)) return;
       if (!ex.exercise.counts_towards_totals) return;
       weekSets += ex.summary_total_sets || 0;
       weekReps += ex.summary_total_reps || 0;
@@ -405,10 +438,24 @@ export function PrintWeekDesigner({
 
         <Section title="Exercise rows">
           <Toggle label="Summary stats (S R Hi Avg)" checked={opts.showSummaryBadges} onChange={v => set('showSummaryBadges', v)} />
+          <Toggle label="Exercise codes" checked={opts.showExerciseCodes} onChange={v => set('showExerciseCodes', v)} />
           <Toggle label="Notes" checked={opts.showExerciseNotes} onChange={v => set('showExerciseNotes', v)} />
           <Toggle label="Variation notes" checked={opts.showVariationNotes} onChange={v => set('showVariationNotes', v)} />
           <Toggle label="Combo member list" checked={opts.showComboMembers} onChange={v => set('showComboMembers', v)} />
           <Toggle label="Colored accent bar" checked={opts.showColorAccents} onChange={v => set('showColorAccents', v)} />
+        </Section>
+
+        <Section title="Athlete view">
+          <Toggle
+            label="Respect eye settings"
+            checked={opts.respectAthleteEye}
+            onChange={v => set('respectAthleteEye', v)}
+          />
+          <p className="text-[10px] text-gray-500 leading-snug m-0">
+            Prints what the athlete is allowed to see: hidden prescriptions
+            stay blank (and leave the totals), top-set-only rows show just the
+            heaviest set, hidden timing and notes are dropped.
+          </p>
         </Section>
 
         <Section title="Layout" defaultOpen={false}>
@@ -450,9 +497,9 @@ export function PrintWeekDesigner({
             {(opts.showCoachHeader || opts.showAthleteDetails || opts.showWeekDates) && (
               <header className="dz-header">
                 <div className="dz-header-left">
-                  {opts.showCoachHeader && activeCoach?.name && (
+                  {opts.showCoachHeader && coachLine?.name && (
                     <div className="dz-coach">
-                      {activeCoach.name}{activeCoach.club_name ? ` · ${activeCoach.club_name}` : ''}
+                      {coachLine.name}{coachLine.club_name ? ` · ${coachLine.club_name}` : ''}
                     </div>
                   )}
                   {opts.showAthleteDetails && headerName && (
@@ -567,10 +614,12 @@ function DayBlock({
     );
   }
 
-  const daySets = day.exercises.filter(ex => ex.exercise.counts_towards_totals)
-    .reduce((s, ex) => s + (ex.summary_total_sets || 0), 0);
-  const dayReps = day.exercises.filter(ex => ex.exercise.counts_towards_totals)
-    .reduce((s, ex) => s + (ex.summary_total_reps || 0), 0);
+  // Concealed rows leave the day totals too (see the week aggregates).
+  const countable = day.exercises.filter(ex =>
+    ex.exercise.counts_towards_totals &&
+    !(options.respectAthleteEye && (ex.metadata?.athleteHidden ?? []).includes('prescription')));
+  const daySets = countable.reduce((s, ex) => s + (ex.summary_total_sets || 0), 0);
+  const dayReps = countable.reduce((s, ex) => s + (ex.summary_total_reps || 0), 0);
 
   return (
     <div className={`dz-day ${options.showDayDividers ? 'dz-day-divider' : ''}`}>
@@ -729,6 +778,26 @@ function ExerciseRow({
     ? (ex.combo_color || members?.[0]?.exercise.color || '#94a3b8')
     : ex.exercise.color;
 
+  // Eye (athlete-visibility) settings, honoured when the designer is in
+  // athlete view. Hidden prescriptions also drop the summary badge — the
+  // badge would leak exactly the numbers the coach concealed. Top-set-only
+  // rows reduce the notation AND drop the badge (it totals the full plan).
+  const hidden: AthleteHiddenKey[] = options.respectAthleteEye ? (ex.metadata?.athleteHidden ?? []) : [];
+  const eyeHidesPrescription = hidden.includes('prescription');
+  const eyeTopSetOnly = !eyeHidesPrescription && hidden.includes('belowTopSet');
+  const eyeHidesTiming = hidden.includes('durations');
+  const eyeHidesNote = hidden.includes('note');
+
+  const printedRaw = eyeTopSetOnly
+    ? topSetOnlyPrescription(ex.prescription_raw, ex.unit, ex.is_combo) ?? ex.prescription_raw
+    : ex.prescription_raw;
+
+  const features = ex.metadata?.features;
+  const timingParts: string[] = [];
+  if (!eyeHidesTiming && features?.totalTime != null) timingParts.push(`⏱ ${formatSeconds(features.totalTime)}`);
+  if (!eyeHidesTiming && features?.restTime != null) timingParts.push(`⏸ ${formatSeconds(features.restTime)}`);
+  if (!eyeHidesTiming && features?.tempo != null) timingParts.push(`⧖ ${features.tempo}`);
+
   return (
     <div className="dz-row dz-row-exercise">
       {options.showColorAccents && (
@@ -744,13 +813,16 @@ function ExerciseRow({
                     : ex.exercise.name))
               : ex.exercise.name}
           </h3>
+          {options.showExerciseCodes && !ex.is_combo && ex.exercise.exercise_code && (
+            <span className="dz-ex-code">{ex.exercise.exercise_code}</span>
+          )}
           {/* Legacy variation_note fallback — the folded note (ex.notes) renders via showExerciseNotes */}
-          {options.showVariationNotes && !ex.notes?.trim() && ex.variation_note && (
+          {options.showVariationNotes && !eyeHidesNote && !ex.notes?.trim() && ex.variation_note && (
             <span className="dz-variation">{ex.variation_note}</span>
           )}
           {ex.is_combo && <span className="dz-badge dz-badge-combo">Combo</span>}
-          {unitSymbol && <span className="dz-badge dz-badge-unit">{unitSymbol}</span>}
-          {options.showSummaryBadges && hasSummary && (
+          {unitSymbol && !eyeHidesPrescription && <span className="dz-badge dz-badge-unit">{unitSymbol}</span>}
+          {options.showSummaryBadges && hasSummary && !eyeHidesPrescription && !eyeTopSetOnly && (
             <span className="dz-summary-badge">
               S{ex.summary_total_sets} · R{ex.summary_total_reps}
               {ex.summary_highest_load != null && (
@@ -762,19 +834,31 @@ function ExerciseRow({
 
         {options.showComboMembers && ex.is_combo && members && members.length > 0 && (
           <p className="dz-combo-members">
-            {members.map((m, i) => <span key={m.position}>{i > 0 && ' + '}{m.exercise.name}</span>)}
+            {members.map((m, i) => (
+              <span key={m.position}>
+                {i > 0 && ' + '}
+                {m.exercise.name}
+                {options.showExerciseCodes && m.exercise.exercise_code && (
+                  <span className="dz-ex-code"> {m.exercise.exercise_code}</span>
+                )}
+              </span>
+            ))}
           </p>
         )}
 
         {/* Note above the prescription — athletes read the variation before the numbers */}
-        {options.showExerciseNotes && ex.notes && (
+        {options.showExerciseNotes && !eyeHidesNote && ex.notes && (
           <p className="dz-ex-notes">{ex.notes}</p>
         )}
 
-        {ex.prescription_raw && (
+        {printedRaw && !eyeHidesPrescription && (
           <div className="dz-prescription">
-            <PrescriptionBlock prescription={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
+            <PrescriptionBlock prescription={printedRaw} unit={ex.unit} isCombo={ex.is_combo} />
           </div>
+        )}
+
+        {timingParts.length > 0 && (
+          <p className="dz-timing">{timingParts.join('   ')}</p>
         )}
 
         {options.showLog && loggedSets && loggedSets.length > 0 && (
@@ -1037,6 +1121,18 @@ function designerCss(orientation: Orientation): string {
       font-size: 0.78em;
       color: #6b7280;
       font-style: italic;
+    }
+    .dz-ex-code {
+      font-size: 0.72em;
+      color: #6b7280;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    .dz-timing {
+      font-size: 0.78em;
+      color: #374151;
+      margin: 1px 0 0 0;
+      line-height: 1.3;
+      white-space: pre;
     }
     .dz-badge {
       font-size: 0.66em;
