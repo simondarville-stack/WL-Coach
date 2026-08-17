@@ -789,6 +789,49 @@ export function useWeekPlans() {
   };
 
   /**
+   * Persist which row parts are hidden from the athlete app
+   * (metadata.athleteHidden — the planner's eye menu). Empty array clears
+   * the key. Planner display, analysis and summaries are untouched: this
+   * is athlete-facing display only.
+   */
+  const saveAthleteVisibility = async (
+    plannedExId: string,
+    hidden: import('../lib/database.types').AthleteHiddenKey[],
+  ): Promise<void> => {
+    const { data: row, error: rErr } = await supabase
+      .from('planned_exercises')
+      .select('metadata')
+      .eq('id', plannedExId)
+      .single();
+    if (rErr) throw rErr;
+    const current = ((row as { metadata?: Record<string, unknown> } | null)?.metadata ?? {}) as Record<string, unknown>;
+    const next = { ...current };
+    if (hidden.length > 0) next.athleteHidden = hidden; else delete next.athleteHidden;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    const update: any = { metadata: next };
+    const { error } = await supabase
+      .from('planned_exercises')
+      .update(update)
+      .eq('id', plannedExId);
+    if (error) throw error;
+    await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
+
+    setPlannedExercises(prev => {
+      let changed = false;
+      const nextState: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        nextState[day] = prev[day].map(ex => {
+          if (ex.id !== plannedExId) return ex;
+          changed = true;
+          return { ...ex, metadata: next as PlannedExerciseMetadata };
+        });
+      }
+      return changed ? nextState : prev;
+    });
+  };
+
+  /**
    * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
    * Empty / whitespace-only strings clear the key so the JSON stays tidy.
    */
@@ -1700,6 +1743,7 @@ export function useWeekPlans() {
     saveGppSection,
     saveMediaDescription,
     saveExerciseFeatures,
+    saveAthleteVisibility,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

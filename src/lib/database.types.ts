@@ -165,6 +165,9 @@ export interface Exercise {
   color: string;
   counts_towards_totals: boolean;
   use_stacked_notation: boolean;
+  /** Show the individual R/S/Hi/Ø analysis column on this exercise's planner
+   *  rows. Backfilled from counts_towards_totals; new exercises default true. */
+  show_planner_summary: boolean;
   notes: string | null;
   link: string | null;
   is_archived: boolean;
@@ -312,10 +315,18 @@ export interface PresetTag {
   color: string;
 }
 
+/** Parts of a planned exercise the coach can hide from the athlete app.
+ *  'prescription' hides the plan numbers entirely (the athlete logs freely),
+ *  'durations' hides the ⏱/⏸ chips, 'note' hides the coach note. */
+export type AthleteHiddenKey = 'prescription' | 'durations' | 'note';
+
 export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP
    *  sentinel exercise. Absent for non-GPP rows. */
   gpp?: GppSection;
+  /** Row parts hidden from the athlete app (eye menu in the planner).
+   *  Absent/empty = everything visible, as always. */
+  athleteHidden?: AthleteHiddenKey[];
   /** Coach-authored caption for IMAGE / VIDEO sentinels. Rendered next
    *  to the media in athlete log and print. */
   description?: string;

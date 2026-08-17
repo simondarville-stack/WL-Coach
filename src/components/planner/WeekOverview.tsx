@@ -57,6 +57,8 @@ interface WeekOverviewProps {
   onManagePresets?: () => void;
   /** Snapshot a row into a new preset and open the manager on it. */
   onSaveAsPreset?: (ex: import('../../lib/database.types').PlannedExercise & { exercise: import('../../lib/database.types').Exercise }) => void;
+  /** Persist which row parts the athlete app hides (eye menu). */
+  saveAthleteVisibility?: (plannedExId: string, hidden: import('../../lib/database.types').AthleteHiddenKey[]) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   isLinkedToGroupPlan?: boolean;
@@ -92,6 +94,7 @@ export function WeekOverview({
   presets,
   onManagePresets,
   onSaveAsPreset,
+  saveAthleteVisibility,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -183,6 +186,7 @@ export function WeekOverview({
                         presets={presets}
                         onManagePresets={onManagePresets}
                         onSaveAsPreset={onSaveAsPreset}
+                        saveAthleteVisibility={saveAthleteVisibility}
                         loadIncrement={loadIncrement}
                         defaultPrescriptionLoad={defaultPrescriptionLoad}
                         isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -236,6 +240,7 @@ export function WeekOverview({
                         presets={presets}
                         onManagePresets={onManagePresets}
                         onSaveAsPreset={onSaveAsPreset}
+                        saveAthleteVisibility={saveAthleteVisibility}
                   loadIncrement={loadIncrement}
                   defaultPrescriptionLoad={defaultPrescriptionLoad}
                   isLinkedToGroupPlan={isLinkedToGroupPlan}
@@ -285,6 +290,7 @@ export function WeekOverview({
                         presets={presets}
                         onManagePresets={onManagePresets}
                         onSaveAsPreset={onSaveAsPreset}
+                        saveAthleteVisibility={saveAthleteVisibility}
             loadIncrement={loadIncrement}
             defaultPrescriptionLoad={defaultPrescriptionLoad}
             isLinkedToGroupPlan={isLinkedToGroupPlan}

@@ -43,6 +43,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [notes, setNotes] = useState('');
   const [link, setLink] = useState('');
   const [countsTowardsTotals, setCountsTowardsTotals] = useState(true);
+  const [showPlannerSummary, setShowPlannerSummary] = useState(true);
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -64,6 +65,9 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setNotes(editingExercise.notes || '');
       setLink(editingExercise.link || '');
       setCountsTowardsTotals(editingExercise.counts_towards_totals);
+      // Stale caches from before the column existed fall back to the
+      // backfill rule (summary follows counts-towards-totals).
+      setShowPlannerSummary(editingExercise.show_planner_summary ?? editingExercise.counts_towards_totals);
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
       setParentId(editingExercise.parent_exercise_id ?? null);
@@ -86,6 +90,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     setNotes('');
     setLink('');
     setCountsTowardsTotals(true);
+    setShowPlannerSummary(true);
     setTrackPr(true);
     setPrReferenceId(null);
     setParentId(null);
@@ -106,6 +111,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         default_unit: defaultUnit,
         color,
         counts_towards_totals: countsTowardsTotals,
+        show_planner_summary: showPlannerSummary,
         track_pr: trackPr,
         pr_reference_exercise_id: prReferenceId,
         parent_exercise_id: parentId,
@@ -269,6 +275,18 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         </label>
         <p className="text-xs text-gray-500 ml-6">
           When enabled, this exercise will be included in weekly set, rep, and tonnage summaries
+        </p>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={showPlannerSummary}
+            onChange={(e) => setShowPlannerSummary(e.target.checked)}
+            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <span className="text-sm font-medium text-gray-700">Individual Exercise Summary in the planner</span>
+        </label>
+        <p className="text-xs text-gray-500 ml-6">
+          Shows the R / S / Hi / Ø column on this exercise's rows in the weekly planner
         </p>
       </div>
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
-import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection, CoachPreset } from '../../lib/database.types';
+import type { PlannedExercise, Exercise, DefaultUnit, ComboMemberEntry, GppSection, CoachPreset, AthleteHiddenKey } from '../../lib/database.types';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { getOrCreateSentinel } from './sentinelService';
 import { ExerciseSearch } from './ExerciseSearch';
@@ -84,6 +84,8 @@ interface DayCardProps {
   /** Snapshot a row's prescription + durations into a new preset and open
    *  the manager on it for naming. */
   onSaveAsPreset?: (ex: PlannedExercise & { exercise: Exercise }) => void;
+  /** Persist which row parts the athlete app hides (eye menu). */
+  saveAthleteVisibility?: (plannedExId: string, hidden: AthleteHiddenKey[]) => Promise<void>;
   loadIncrement: number;
   defaultPrescriptionLoad: number;
   /** True when the current view is an individual plan linked to a group plan.
@@ -122,6 +124,7 @@ export function DayCard({
   presets,
   onManagePresets,
   onSaveAsPreset,
+  saveAthleteVisibility,
   loadIncrement,
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
@@ -246,6 +249,13 @@ export function DayCard({
       label: `#${p.name}`,
       onAdd: () => void applyPresetToRow(ex, p),
     }));
+  }
+
+  function handleVisibilityToggle(ex: PlannedExercise, key: AthleteHiddenKey) {
+    if (!saveAthleteVisibility) return;
+    const hidden = ex.metadata?.athleteHidden ?? [];
+    const next = hidden.includes(key) ? hidden.filter(k => k !== key) : [...hidden, key];
+    void saveAthleteVisibility(ex.id, next).catch(() => { void onRefresh(); });
   }
 
   /** "Save as preset…" — capture this row's prescription + durations as a
@@ -845,7 +855,17 @@ export function DayCard({
                         ex={ex}
                         rowHovered={isHovered}
                         onSaveFeatures={f => handleFeaturesSave(ex, f)}
-                        extraMenuItems={[...signMenuItem(ex), ...presetMenuItems(ex), ...saveAsPresetItem(ex)]}
+                        extraFeatureItems={signMenuItem(ex)}
+                        presetItems={[
+                          ...presetMenuItems(ex),
+                          ...saveAsPresetItem(ex),
+                          ...(onManagePresets ? [{ key: 'manage-presets', icon: '⚙', label: 'Manage presets…', onAdd: () => onManagePresets() }] : []),
+                        ]}
+                        visibility={saveAthleteVisibility ? {
+                          hidden: ex.metadata?.athleteHidden ?? [],
+                          onToggle: key => handleVisibilityToggle(ex, key),
+                        } : undefined}
+                        showSummary={ex.exercise.show_planner_summary ?? ex.exercise.counts_towards_totals}
                       />
                     )}
                   </div>

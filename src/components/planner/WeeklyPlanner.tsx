@@ -162,6 +162,7 @@ export function WeeklyPlanner() {
     saveGppSection,
     saveMediaDescription,
     saveExerciseFeatures,
+    saveAthleteVisibility,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -1814,6 +1815,7 @@ export function WeeklyPlanner() {
                 presets={presets}
                 onManagePresets={() => setShowPresetManager(true)}
                 onSaveAsPreset={handleSaveRowAsPreset}
+                saveAthleteVisibility={saveAthleteVisibility}
                 loadIncrement={settings?.grid_load_increment ?? 5}
                 defaultPrescriptionLoad={settings?.default_prescription_load ?? 50}
                 isLinkedToGroupPlan={planSelection.type === 'individual' && !!currentWeekPlan?.source_group_plan_id}

@@ -257,6 +257,8 @@ function PreviewExerciseRow({
   const delta = computeDelta(plannedReps || null, performedReps, !!logged);
   const allCompleted =
     logged != null && logged.sets.length > 0 && logged.sets.every(s => s.status === 'completed');
+  /** Row parts the coach hid from the athlete (planner eye menu). */
+  const athleteHidden = planned.exercise.metadata?.athleteHidden ?? [];
 
   return (
     <li className="flex gap-3 px-4 py-3">
@@ -315,32 +317,36 @@ function PreviewExerciseRow({
         {/* Coach note above the prescription: athletes start training, then
             read the note (which often qualifies the variation) — so it must
             come before the numbers, not after. */}
-        {planned.exercise.notes?.trim() && (
+        {!athleteHidden.includes('note') && planned.exercise.notes?.trim() && (
           <p className="text-[11px] text-gray-400 italic whitespace-pre-wrap leading-snug">
             {planned.exercise.notes}
           </p>
         )}
 
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
-            Plan
-          </span>
-          <StackedNotation
-            raw={planned.exercise.prescription_raw}
-            unit={planned.exercise.unit}
-            isCombo={planned.exercise.is_combo}
-          />
-          {planned.exercise.metadata?.features?.totalTime != null && (
-            <span className="text-[11px] text-gray-400 font-medium">
-              ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
+        {/* Coach hid the prescription (planner eye menu): no Plan row at all —
+            the athlete trains and logs freely for this exercise. */}
+        {!athleteHidden.includes('prescription') && (
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
+              Plan
             </span>
-          )}
-          {planned.exercise.metadata?.features?.restTime != null && (
-            <span className="text-[11px] text-gray-400 font-medium">
-              ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
-            </span>
-          )}
-        </div>
+            <StackedNotation
+              raw={planned.exercise.prescription_raw}
+              unit={planned.exercise.unit}
+              isCombo={planned.exercise.is_combo}
+            />
+            {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.totalTime != null && (
+              <span className="text-[11px] text-gray-400 font-medium">
+                ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
+              </span>
+            )}
+            {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.restTime != null && (
+              <span className="text-[11px] text-gray-400 font-medium">
+                ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+              </span>
+            )}
+          </div>
+        )}
 
         {!readOnly && (
           <div className="flex items-baseline gap-2 flex-wrap">
@@ -355,7 +361,9 @@ function PreviewExerciseRow({
                     so the ratio is always 0 — it rendered a green "0%" on
                     work that was fully done. Suppress it there; completion is
                     shown by the DoneChip by the name instead. */}
-                {delta.state !== 'pending' && plannedReps > 0 && (
+                {/* The % compares against the hidden plan — showing it would
+                    leak what the coach chose not to show. */}
+                {delta.state !== 'pending' && plannedReps > 0 && !athleteHidden.includes('prescription') && (
                   <span
                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                       delta.state === 'matched'

@@ -102,7 +102,17 @@ export function ExerciseLogCard({
     [loggedExercise?.metadata?.removed_set_numbers],
   );
 
+  /** Row parts the coach hid from the athlete (planner eye menu). */
+  const athleteHidden = planned.exercise.metadata?.athleteHidden ?? [];
+  const hidePrescription = athleteHidden.includes('prescription');
+  const hideDurations = athleteHidden.includes('durations');
+  const hideNote = athleteHidden.includes('note');
+
   const rows = useMemo<SetRowInput[]>(() => {
+    // Coach hid the prescription: no pre-built plan rows — the athlete logs
+    // freely via "Add set". (The plan still exists coach-side; comparisons
+    // stay available in the coach log.)
+    if (hidePrescription) return [];
     // A single read-only ✓/✗ "accept or didn't-do-it" row carrying the
     // coach's prose. The only sensible affordance when there is nothing
     // numeric to log.
@@ -160,7 +170,7 @@ export function ExerciseLogCard({
     // planned-but-untouched row writes to metadata.removed_set_numbers;
     // we honour that here without renumbering the surviving rows.
     return base.filter(r => !removedSetNumbers.includes(r.setNumber));
-  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw, removedSetNumbers]);
+  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw, removedSetNumbers, hidePrescription]);
   const setBySetNumber = useMemo(() => {
     const m = new Map<number, TrainingLogSet>();
     loggedSets.forEach(s => m.set(s.set_number, s));
@@ -327,23 +337,25 @@ export function ExerciseLogCard({
           )}
           {/* Note above the prescription — athletes start on the numbers
               then read the note (often the variation) later, so it leads. */}
-          {plannedNote(planned.exercise) && (
+          {!hideNote && plannedNote(planned.exercise) && (
             <p className="text-[10px] text-gray-500 italic mt-1 whitespace-pre-wrap leading-snug">
               {plannedNote(planned.exercise)}
             </p>
           )}
           <div className="mt-1 flex items-baseline gap-2 flex-wrap">
-            <StackedNotation
-              raw={planned.exercise.prescription_raw}
-              unit={planned.exercise.unit}
-              isCombo={planned.exercise.is_combo}
-            />
-            {planned.exercise.metadata?.features?.totalTime != null && (
+            {!hidePrescription && (
+              <StackedNotation
+                raw={planned.exercise.prescription_raw}
+                unit={planned.exercise.unit}
+                isCombo={planned.exercise.is_combo}
+              />
+            )}
+            {!hideDurations && planned.exercise.metadata?.features?.totalTime != null && (
               <span className="text-[11px] text-gray-500 font-medium">
                 ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
               </span>
             )}
-            {planned.exercise.metadata?.features?.restTime != null && (
+            {!hideDurations && planned.exercise.metadata?.features?.restTime != null && (
               <span className="text-[11px] text-gray-500 font-medium">
                 ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
               </span>
