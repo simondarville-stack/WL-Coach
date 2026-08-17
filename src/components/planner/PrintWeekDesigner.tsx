@@ -10,7 +10,7 @@
  * programme page is sent to paper.
  */
 import { useEffect, useState } from 'react';
-import { RotateCcw, ChevronDown, ChevronRight } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronRight, Sliders, X } from 'lucide-react';
 import { useCoachStore } from '../../store/coachStore';
 import type { WeekPlan, PlannedExercise, Exercise, Athlete, ComboMemberEntry, TrainingGroup, CoachProfile, AthleteHiddenKey } from '../../lib/database.types';
 import { getUnitSymbol } from '../../lib/constants';
@@ -289,6 +289,21 @@ export function PrintWeekDesigner({
   const coachLine = coach ?? activeCoach;
   const [opts, setOpts] = useState<DesignerOptions>(() => loadOptions(variant));
 
+  // Narrow viewports (athlete app on a phone, small coach windows): the
+  // options sidebar collapses into an overlay drawer behind an "Options"
+  // button so the page preview gets the full width.
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia('(max-width: 900px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = (e: MediaQueryListEvent) => {
+      setIsNarrow(e.matches);
+      setSidebarOpen(!e.matches);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
   useEffect(() => { saveOptions(opts); }, [opts]);
 
   const set = <K extends keyof DesignerOptions>(key: K, value: DesignerOptions[K]) =>
@@ -394,8 +409,41 @@ export function PrintWeekDesigner({
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full min-h-[calc(100vh-60px)]">
-      {/* Sidebar — print:hidden */}
-      <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto print:hidden">
+      {/* Narrow viewports: floating "Options" button + backdrop drawer */}
+      {isNarrow && !sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="print:hidden fixed bottom-4 left-4 z-30 flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-gray-300 rounded-full shadow-lg text-gray-700"
+        >
+          <Sliders size={14} />
+          Options
+        </button>
+      )}
+      {isNarrow && sidebarOpen && (
+        <div
+          className="print:hidden fixed inset-0 bg-black/30 z-20"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Sidebar — print:hidden; overlay drawer on narrow viewports */}
+      {sidebarOpen && (
+      <aside
+        className={
+          isNarrow
+            ? 'fixed inset-y-0 left-0 z-30 w-72 bg-white shadow-xl overflow-y-auto print:hidden'
+            : 'w-72 flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto print:hidden'
+        }
+      >
+        {isNarrow && (
+          <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 sticky top-0 bg-white z-10">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-700">Print options</span>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 text-gray-500 hover:bg-gray-100 rounded" aria-label="Close options">
+              <X size={16} />
+            </button>
+          </div>
+        )}
         <Section title="Page setup">
           <SegmentedControl
             label="Orientation"
@@ -484,6 +532,7 @@ export function PrintWeekDesigner({
           </button>
         </div>
       </aside>
+      )}
 
       {/* Preview area */}
       <div className="flex-1 overflow-auto bg-gray-200 p-6 print:p-0 print:bg-white print:overflow-visible">
