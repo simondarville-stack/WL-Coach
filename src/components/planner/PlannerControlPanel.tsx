@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Settings2, Copy, Printer, BarChart2, Trash2,
   Users, User as UserIcon, BookmarkPlus, ArrowLeftRight,
+  Eye, EyeOff,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -202,6 +203,10 @@ export interface PlannerControlPanelProps {
   onSaveAsTemplate?: () => void;
   /** Delete the whole week's prescription (keeps logged exercises). */
   onDeleteAll?: () => void;
+  /** Week-level athlete visibility: true = every prescribed exercise this
+   *  week hides its prescription from the athlete (taper/test week). */
+  weekPrescriptionsHidden?: boolean;
+  onToggleWeekPrescriptionsHidden?: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: (direction: 'percent-to-kg' | 'kg-to-percent') => void;
   onNavigateToWeek?: (weekStart: string) => void;
@@ -230,6 +235,8 @@ export function PlannerControlPanel({
   onPrint,
   onSaveAsTemplate,
   onDeleteAll,
+  weekPrescriptionsHidden = false,
+  onToggleWeekPrescriptionsHidden,
   onToggleLoadDistribution,
   onResolvePercentages,
   weekTypes = [],
@@ -558,6 +565,18 @@ export function PlannerControlPanel({
             </div>
           )}
 
+          {onToggleWeekPrescriptionsHidden && (
+            <IconButton
+              title={weekPrescriptionsHidden
+                ? 'Prescriptions are hidden from athletes this week — click to show them again'
+                : "Hide all of this week's prescriptions from athletes (taper / test week)"}
+              onClick={onToggleWeekPrescriptionsHidden}
+            >
+              {weekPrescriptionsHidden
+                ? <EyeOff size={16} style={{ color: 'var(--color-accent)' }} />
+                : <Eye size={16} />}
+            </IconButton>
+          )}
           {onDeleteAll && (
             <IconButton title="Delete the whole week's prescription (logged exercises are kept)" onClick={onDeleteAll} danger>
               <Trash2 size={16} />

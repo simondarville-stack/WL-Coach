@@ -432,6 +432,27 @@ export function formatFreeTextPrescription(lines: FreeTextSetLine[]): string {
     .join(', ');
 }
 
+/**
+ * Reduce a prescription to its top set line only — the segment with the
+ * highest load (ties go to the later segment, i.e. the top of a build-up).
+ * Used by the athlete app when the coach hides "sets below top set".
+ * Returns null when there is nothing to reduce (0–1 segments), so callers
+ * fall back to the full raw.
+ */
+export function topSetOnlyPrescription(raw: string | null, unit: string | null, isCombo: boolean): string | null {
+  if (!raw?.trim()) return null;
+  if (isCombo) {
+    const lines = parseComboPrescription(raw);
+    if (lines.length <= 1) return null;
+    const top = lines.reduce((best, l) => ((l.loadMax ?? l.load) >= (best.loadMax ?? best.load) ? l : best));
+    return formatComboPrescription([top], unit);
+  }
+  const lines = parsePrescription(raw);
+  if (lines.length <= 1) return null;
+  const top = lines.reduce((best, l) => ((l.loadMax ?? l.load) >= (best.loadMax ?? best.load) ? l : best));
+  return formatPrescription([top], unit);
+}
+
 export interface PrescriptionSummary {
   total_sets: number;
   total_reps: number;

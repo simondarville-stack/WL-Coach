@@ -1,6 +1,6 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
@@ -124,6 +124,7 @@ export function WeeklyPlanner() {
       features: {
         ...(f.totalTime != null ? { totalTime: f.totalTime } : {}),
         ...(f.restTime != null ? { restTime: f.restTime } : {}),
+        ...(f.tempo != null ? { tempo: f.tempo } : {}),
       },
     }).then(created => {
       setPresetManagerFocusId(created.id);
@@ -163,6 +164,7 @@ export function WeeklyPlanner() {
     saveMediaDescription,
     saveExerciseFeatures,
     saveAthleteVisibility,
+    setWeekPrescriptionsHidden,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -173,6 +175,14 @@ export function WeeklyPlanner() {
     deleteDayExercises,
     syncGroupPlanToAthletes,
   } = useWeekPlans();
+
+  /** True when every prescribed exercise of the loaded week hides its
+   *  prescription from the athlete — drives the week-level eye toggle. */
+  const weekPrescriptionsHidden = useMemo(() => {
+    const prescribed = Object.values(plannedExercises).flat().filter(ex => ex.prescription_raw?.trim());
+    return prescribed.length > 0 &&
+      prescribed.every(ex => (ex.metadata?.athleteHidden ?? []).includes('prescription'));
+  }, [plannedExercises]);
 
   // Origin to stamp on every row this surface creates. On an individual plan
   // that is 'individual' — it earns the I badge and pins the row against the
@@ -1654,6 +1664,10 @@ export function WeeklyPlanner() {
                 weekTypes={settings?.week_types ?? []}
                 onSaveAsTemplate={handleSaveWeekAsTemplate}
                 onDeleteAll={currentWeekPlan ? () => setShowDeleteAllConfirm(true) : undefined}
+                weekPrescriptionsHidden={weekPrescriptionsHidden}
+                onToggleWeekPrescriptionsHidden={currentWeekPlan
+                  ? () => { void setWeekPrescriptionsHidden(!weekPrescriptionsHidden).catch(() => { void handleRefresh(); }); }
+                  : undefined}
               />
 
             {/* ── Load distribution (collapsible band) ── */}

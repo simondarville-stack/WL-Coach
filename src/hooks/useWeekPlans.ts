@@ -832,6 +832,26 @@ export function useWeekPlans() {
   };
 
   /**
+   * Hide (or unhide) the prescription from the athlete app for EVERY
+   * prescribed exercise in the loaded week — taper/test weeks. Flips only
+   * the 'prescription' key; each row's other eye settings are preserved.
+   */
+  const setWeekPrescriptionsHidden = async (hidden: boolean): Promise<void> => {
+    const targets = Object.values(plannedExercises).flat().filter(ex => {
+      if (!ex.prescription_raw?.trim()) return false;
+      const has = (ex.metadata?.athleteHidden ?? []).includes('prescription');
+      return hidden ? !has : has;
+    });
+    await Promise.all(targets.map(ex => {
+      const current = ex.metadata?.athleteHidden ?? [];
+      const next = hidden
+        ? [...current, 'prescription' as const]
+        : current.filter(k => k !== 'prescription');
+      return saveAthleteVisibility(ex.id, next);
+    }));
+  };
+
+  /**
    * Persist a caption for an IMAGE / VIDEO sentinel on metadata.description.
    * Empty / whitespace-only strings clear the key so the JSON stays tidy.
    */
@@ -1744,6 +1764,7 @@ export function useWeekPlans() {
     saveMediaDescription,
     saveExerciseFeatures,
     saveAthleteVisibility,
+    setWeekPrescriptionsHidden,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,

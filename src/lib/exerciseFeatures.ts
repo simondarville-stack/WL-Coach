@@ -31,6 +31,7 @@ export interface FeatureDefinition {
 export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: 'totalTime', icon: '⏱', label: 'Total time', coachOnly: false },
   { key: 'restTime', icon: '⏸', label: 'Rest time', coachOnly: false },
+  { key: 'tempo', icon: '⧖', label: 'Tempo (TUT)', coachOnly: false },
   { key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation', coachOnly: true },
   { key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation', coachOnly: true },
   { key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites', coachOnly: true },
@@ -91,4 +92,16 @@ export function timeEditValue(sec: number): string {
   if (sec < 60) return `${sec}s`;
   if (sec % 60 === 0) return String(sec / 60);
   return `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+}
+
+/**
+ * Parse a coach-typed tempo (time under tension). Accepts the four digits
+ * with or without separators — "3120", "3-1-2-0", "3.1.2.0", "3 1 2 0" —
+ * and returns the canonical "A-B-C-D" (eccentric-pause-concentric-pause),
+ * or null when it isn't exactly four digits.
+ */
+export function parseTempoInput(raw: string): string | null {
+  const digits = raw.replace(/[^0-9]/g, '');
+  if (digits.length !== 4) return null;
+  return digits.split('').join('-');
 }

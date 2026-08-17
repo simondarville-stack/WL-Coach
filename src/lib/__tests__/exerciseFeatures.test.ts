@@ -13,8 +13,9 @@ import {
   computePrescriptionSummary,
   splitLoadCmp,
   rangeMid,
+  topSetOnlyPrescription,
 } from '../prescriptionParser';
-import { applyFeatureOverrides, formatSeconds, parseTimeInput, timeEditValue } from '../exerciseFeatures';
+import { applyFeatureOverrides, formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../exerciseFeatures';
 
 describe('splitLoadCmp', () => {
   it('parses the typed ASCII forms', () => {
@@ -163,6 +164,44 @@ describe('time helpers', () => {
     for (const sec of [45, 60, 90, 135, 720]) {
       expect(parseTimeInput(timeEditValue(sec))).toBe(sec);
     }
+  });
+});
+
+describe('parseTempoInput', () => {
+  it('accepts four digits with or without separators', () => {
+    expect(parseTempoInput('3120')).toBe('3-1-2-0');
+    expect(parseTempoInput('3-1-2-0')).toBe('3-1-2-0');
+    expect(parseTempoInput('3.1.2.0')).toBe('3-1-2-0');
+    expect(parseTempoInput('3 1 2 0')).toBe('3-1-2-0');
+  });
+  it('rejects anything that is not exactly four digits', () => {
+    expect(parseTempoInput('312')).toBeNull();
+    expect(parseTempoInput('31200')).toBeNull();
+    expect(parseTempoInput('31X0')).toBeNull();
+    expect(parseTempoInput('')).toBeNull();
+  });
+});
+
+describe('topSetOnlyPrescription', () => {
+  it('keeps only the heaviest segment', () => {
+    expect(topSetOnlyPrescription('70%×3, 80%×2, 90%×1×3', 'percentage', false)).toBe('90%×1×3');
+  });
+  it('ties go to the later segment (top of the build)', () => {
+    expect(topSetOnlyPrescription('90×1, 90×2', 'absolute_kg', false)).toBe('90×2');
+  });
+  it('uses the interval upper bound for comparison', () => {
+    expect(topSetOnlyPrescription('85×2, 80-90×1', 'absolute_kg', false)).toBe('80-90×1');
+  });
+  it('keeps signs and ranges intact on the surviving segment', () => {
+    expect(topSetOnlyPrescription('70%×3×2, ≥85%×1-3×2', 'percentage', false)).toBe('≥85%×1-3×2');
+  });
+  it('reduces combos through the combo grammar', () => {
+    expect(topSetOnlyPrescription('60×2+1×2, 75×1+1×3', 'absolute_kg', true)).toBe('75×1+1×3');
+  });
+  it('returns null when there is nothing to reduce', () => {
+    expect(topSetOnlyPrescription('80×5×5', 'absolute_kg', false)).toBeNull();
+    expect(topSetOnlyPrescription('', 'absolute_kg', false)).toBeNull();
+    expect(topSetOnlyPrescription(null, 'absolute_kg', false)).toBeNull();
   });
 });
 

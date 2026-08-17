@@ -18,7 +18,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Plus, Eye, EyeOff } from 'lucide-react';
 import type { AthleteHiddenKey, Exercise, PlannedExercise } from '../../lib/database.types';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
-import { formatSeconds, parseTimeInput, timeEditValue } from '../../lib/exerciseFeatures';
+import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 
 function fmtNum(v: number | null | undefined): string {
@@ -26,7 +26,9 @@ function fmtNum(v: number | null | undefined): string {
   return String(Math.round(v * 10) / 10).replace('.', ',');
 }
 
-/** One editable feature value with the house gestures. */
+/** One editable feature value with the house gestures. `editOnClick` is for
+ *  non-steppable values (e.g. the tempo tuple): a plain click opens the edit
+ *  instead of stepping. */
 function GestureValue({
   display,
   editValue,
@@ -35,6 +37,7 @@ function GestureValue({
   onStep,
   onCommit,
   onRemove,
+  editOnClick = false,
 }: {
   display: string;
   editValue: string;
@@ -43,6 +46,7 @@ function GestureValue({
   onStep: (delta: number) => void;
   onCommit: (text: string) => void;
   onRemove: () => void;
+  editOnClick?: boolean;
 }) {
   const deleteHeld = useDeleteHeld();
   const [editing, setEditing] = useState<string | null>(null);
@@ -83,13 +87,17 @@ function GestureValue({
         e.preventDefault();
         e.stopPropagation();
         if (deleteHeld) { onRemove(); return; }
-        if (e.ctrlKey || e.metaKey) { setEditing(editValue); return; }
+        if (editOnClick || e.ctrlKey || e.metaKey) { setEditing(editValue); return; }
         onStep(e.button === 2 ? -1 : 1);
       }}
       onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
       onClick={e => e.stopPropagation()}
       tabIndex={-1}
-      title={deleteHeld ? 'Click to remove this feature' : `${title} · click +1 · right-click −1 · Ctrl+click type · Del-held removes`}
+      title={deleteHeld
+        ? 'Click to remove this feature'
+        : editOnClick
+        ? `${title} · click to type · Del-held removes`
+        : `${title} · click +1 · right-click −1 · Ctrl+click type · Del-held removes`}
       style={{
         border: 'none', background: 'none', cursor: 'pointer', padding: '0 2px',
         borderRadius: 3, fontSize: 10, lineHeight: 1.4, fontWeight: 600,
@@ -111,7 +119,8 @@ export interface FeatureMenuItem {
 /** Athlete-visibility toggles surfaced by the eye menu, in display order. */
 const EYE_ITEMS: Array<{ key: AthleteHiddenKey; label: string }> = [
   { key: 'prescription', label: 'Prescription' },
-  { key: 'durations', label: '⏱ / ⏸ durations' },
+  { key: 'belowTopSet', label: 'Sets below top set' },
+  { key: 'durations', label: '⏱ ⏸ ⧖ timing' },
   { key: 'note', label: 'Note' },
 ];
 
@@ -161,11 +170,14 @@ export function AnalysisColumn({
     return () => document.removeEventListener('click', close);
   }, [openMenu]);
 
-  const patchFeatures = (patch: Partial<Record<keyof ExerciseFeatures, number | undefined>>) => {
+  // Numeric-feature patcher for the summary overrides and durations; tempo
+  // (a string) goes through onSaveFeatures directly.
+  const patchFeatures = (patch: Partial<Record<'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'avgLoad', number | undefined>>) => {
     const next: ExerciseFeatures = { ...features };
     for (const [k, v] of Object.entries(patch)) {
-      if (v == null) delete next[k as keyof ExerciseFeatures];
-      else next[k as keyof ExerciseFeatures] = v;
+      const key = k as 'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'avgLoad';
+      if (v == null) delete next[key];
+      else next[key] = v;
     }
     onSaveFeatures(next);
   };
@@ -179,6 +191,10 @@ export function AnalysisColumn({
     ...(features.restTime == null ? [{
       key: 'restTime', icon: '⏸', label: 'Rest time',
       onAdd: () => patchFeatures({ restTime: 120 }),
+    }] : []),
+    ...(features.tempo == null ? [{
+      key: 'tempo', icon: '⧖', label: 'Tempo (TUT)',
+      onAdd: () => onSaveFeatures({ ...features, tempo: '3-0-1-0' }),
     }] : []),
     ...(features.totalReps == null ? [{
       key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation',
@@ -385,7 +401,7 @@ const TIME_CHIPS: Array<{ key: 'totalTime' | 'restTime'; icon: string; title: st
 export function FeatureChips({ features, onSaveFeatures }: FeatureChipsProps) {
   const deleteHeld = useDeleteHeld();
   const active = TIME_CHIPS.filter(c => features[c.key] != null);
-  if (active.length === 0) return null;
+  if (active.length === 0 && features.tempo == null) return null;
   const save = (key: 'totalTime' | 'restTime', sec: number | undefined) => {
     const next: ExerciseFeatures = { ...features };
     if (sec == null) delete next[key]; else next[key] = sec;
@@ -419,6 +435,28 @@ export function FeatureChips({ features, onSaveFeatures }: FeatureChipsProps) {
           </div>
         );
       })}
+      {features.tempo != null && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ fontSize: 9, color: deleteHeld ? 'var(--color-danger-text)' : 'var(--color-text-tertiary)' }}>⧖</span>
+          <GestureValue
+            display={features.tempo}
+            editValue={features.tempo.replace(/-/g, '')}
+            title="Tempo (TUT) — eccentric · pause · concentric · pause; type 4 digits, e.g. 3120"
+            accent={false}
+            editOnClick
+            onStep={() => {}}
+            onCommit={t => {
+              const v = parseTempoInput(t);
+              if (v != null) onSaveFeatures({ ...features, tempo: v });
+            }}
+            onRemove={() => {
+              const next = { ...features };
+              delete next.tempo;
+              onSaveFeatures(next);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

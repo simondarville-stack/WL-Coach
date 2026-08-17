@@ -17,7 +17,7 @@ import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet } from '..
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
-import { computePrescriptionSummary } from '../../../lib/prescriptionParser';
+import { computePrescriptionSummary, topSetOnlyPrescription } from '../../../lib/prescriptionParser';
 import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { StackedNotation, LoggedStackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
@@ -259,6 +259,7 @@ function PreviewExerciseRow({
     logged != null && logged.sets.length > 0 && logged.sets.every(s => s.status === 'completed');
   /** Row parts the coach hid from the athlete (planner eye menu). */
   const athleteHidden = planned.exercise.metadata?.athleteHidden ?? [];
+  const topSetOnly = !athleteHidden.includes('prescription') && athleteHidden.includes('belowTopSet');
 
   return (
     <li className="flex gap-3 px-4 py-3">
@@ -331,7 +332,9 @@ function PreviewExerciseRow({
               Plan
             </span>
             <StackedNotation
-              raw={planned.exercise.prescription_raw}
+              raw={topSetOnly
+                ? topSetOnlyPrescription(planned.exercise.prescription_raw, planned.exercise.unit, planned.exercise.is_combo) ?? planned.exercise.prescription_raw
+                : planned.exercise.prescription_raw}
               unit={planned.exercise.unit}
               isCombo={planned.exercise.is_combo}
             />
@@ -343,6 +346,11 @@ function PreviewExerciseRow({
             {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.restTime != null && (
               <span className="text-[11px] text-gray-400 font-medium">
                 ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+              </span>
+            )}
+            {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.tempo != null && (
+              <span className="text-[11px] text-gray-400 font-medium" title="Tempo: eccentric · pause · concentric · pause">
+                ⧖ {planned.exercise.metadata.features.tempo}
               </span>
             )}
           </div>
@@ -361,9 +369,10 @@ function PreviewExerciseRow({
                     so the ratio is always 0 — it rendered a green "0%" on
                     work that was fully done. Suppress it there; completion is
                     shown by the DoneChip by the name instead. */}
-                {/* The % compares against the hidden plan — showing it would
-                    leak what the coach chose not to show. */}
-                {delta.state !== 'pending' && plannedReps > 0 && !athleteHidden.includes('prescription') && (
+                {/* The % compares against the hidden (or top-set-reduced)
+                    plan — showing it would leak what the coach chose not to
+                    show. */}
+                {delta.state !== 'pending' && plannedReps > 0 && !athleteHidden.includes('prescription') && !topSetOnly && (
                   <span
                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
                       delta.state === 'matched'

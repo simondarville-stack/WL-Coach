@@ -15,7 +15,7 @@ import { StackedNotation } from './StackedNotation';
 import type { CoachPreset, DefaultUnit } from '../../lib/database.types';
 import type { CoachPresetInput } from '../../hooks/useCoachPresets';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
-import { formatSeconds, parseTimeInput, timeEditValue } from '../../lib/exerciseFeatures';
+import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
 
 interface PresetManagerProps {
   onClose: () => void;
@@ -91,6 +91,51 @@ function DurationFeature({
   );
 }
 
+/** Tempo (time under tension) — four digits, eccentric-pause-concentric-pause. */
+function TempoFeature({
+  value, onChange,
+}: {
+  value: string | undefined;
+  onChange: (tempo: string | undefined) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const active = value != null;
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+      <input
+        type="checkbox"
+        checked={active}
+        onChange={e => onChange(e.target.checked ? (value ?? '3-0-1-0') : undefined)}
+      />
+      <span style={{ width: 14, fontSize: 11, color: 'var(--color-text-tertiary)' }}>⧖</span>
+      tempo (TUT)
+      {active && (
+        <input
+          type="text"
+          value={draft ?? (value as string).replace(/-/g, '')}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft != null) {
+              const tempo = parseTempoInput(draft);
+              if (tempo != null) onChange(tempo);
+            }
+            setDraft(null);
+          }}
+          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          title="Four digits: eccentric · pause · concentric · pause (e.g. 3120)"
+          style={{
+            width: 56, fontSize: 11, fontFamily: 'var(--font-mono)', textAlign: 'right',
+            padding: '2px 5px', border: '1px solid var(--color-border-primary)',
+            borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-primary)',
+            color: 'var(--color-text-primary)', outline: 'none',
+          }}
+        />
+      )}
+      {active && <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)' }}>= {value}</span>}
+    </label>
+  );
+}
+
 export function PresetManager({
   onClose,
   presets,
@@ -103,9 +148,15 @@ export function PresetManager({
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
 
-  const patchFeatures = (p: CoachPreset, key: keyof ExerciseFeatures, value: number | undefined) => {
+  const patchFeatures = (p: CoachPreset, key: 'totalTime' | 'restTime', value: number | undefined) => {
     const next: ExerciseFeatures = { ...(p.features ?? {}) };
     if (value == null) delete next[key]; else next[key] = value;
+    void updatePreset(p.id, { features: next });
+  };
+
+  const patchTempo = (p: CoachPreset, tempo: string | undefined) => {
+    const next: ExerciseFeatures = { ...(p.features ?? {}) };
+    if (tempo == null) delete next.tempo; else next.tempo = tempo;
     void updatePreset(p.id, { features: next });
   };
 
@@ -113,6 +164,7 @@ export function PresetManager({
     const bits: string[] = [];
     if (p.features?.totalTime != null) bits.push(`⏱ ${formatSeconds(p.features.totalTime)}`);
     if (p.features?.restTime != null) bits.push(`⏸ ${formatSeconds(p.features.restTime)}`);
+    if (p.features?.tempo != null) bits.push(`⧖ ${p.features.tempo}`);
     return bits;
   };
 
@@ -225,6 +277,10 @@ export function PresetManager({
                     icon="⏸" label="rest between sets"
                     value={p.features?.restTime}
                     onChange={sec => patchFeatures(p, 'restTime', sec)}
+                  />
+                  <TempoFeature
+                    value={p.features?.tempo}
+                    onChange={tempo => patchTempo(p, tempo)}
                   />
                 </div>
               )}

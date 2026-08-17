@@ -297,6 +297,9 @@ export interface ExerciseFeatures {
   totalTime?: number;
   /** Prescribed rest between sets, in seconds. Athlete-visible. */
   restTime?: number;
+  /** Time-under-tension tempo, stored canonically as "A-B-C-D" =
+   *  eccentric-pause-concentric-pause seconds. Athlete-visible. */
+  tempo?: string;
   /** Coach override for summary_total_reps ("overwrites the summation").
    *  Coach/analysis-only, never athlete-visible. */
   totalReps?: number;
@@ -317,8 +320,10 @@ export interface PresetTag {
 
 /** Parts of a planned exercise the coach can hide from the athlete app.
  *  'prescription' hides the plan numbers entirely (the athlete logs freely),
- *  'durations' hides the ⏱/⏸ chips, 'note' hides the coach note. */
-export type AthleteHiddenKey = 'prescription' | 'durations' | 'note';
+ *  'belowTopSet' shows only the heaviest set line ("work up to" without
+ *  revealing the build), 'durations' hides the ⏱/⏸/⧖ timing chips,
+ *  'note' hides the coach note. */
+export type AthleteHiddenKey = 'prescription' | 'belowTopSet' | 'durations' | 'note';
 
 export interface PlannedExerciseMetadata {
   /** GPP block content when the planned_exercise points at the GPP

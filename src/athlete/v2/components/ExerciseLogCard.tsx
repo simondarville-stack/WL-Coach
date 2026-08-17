@@ -14,7 +14,7 @@ import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
-import { parseFreeTextPrescription } from '../../../lib/prescriptionParser';
+import { parseFreeTextPrescription, topSetOnlyPrescription } from '../../../lib/prescriptionParser';
 import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { GppLogCard } from './GppLogCard';
 import { useAutoCommit } from '../lib/useAutoCommit';
@@ -105,6 +105,7 @@ export function ExerciseLogCard({
   /** Row parts the coach hid from the athlete (planner eye menu). */
   const athleteHidden = planned.exercise.metadata?.athleteHidden ?? [];
   const hidePrescription = athleteHidden.includes('prescription');
+  const topSetOnly = !hidePrescription && athleteHidden.includes('belowTopSet');
   const hideDurations = athleteHidden.includes('durations');
   const hideNote = athleteHidden.includes('note');
 
@@ -132,7 +133,13 @@ export function ExerciseLogCard({
     const unit = planned.exercise.unit;
     let base: SetRowInput[] = [];
     if (planned.setLines.length > 0) {
-      base = expandSetLines(planned.setLines, unit);
+      // "Sets below top set" hidden: expand only the heaviest line — the
+      // athlete sees the target, not the build-up.
+      const lines = topSetOnly && planned.setLines.length > 1
+        ? [planned.setLines.reduce((best, l) =>
+            ((l.load_max ?? l.load_value) >= (best.load_max ?? best.load_value) ? l : best))]
+        : planned.setLines;
+      base = expandSetLines(lines, unit);
     } else if (unit === 'free_text_reps') {
       // free_text_reps isn't stored as planned_set_lines. When the prose
       // carries "× reps" ("moderate × 5 × 3") synthesise one row per set
@@ -170,7 +177,7 @@ export function ExerciseLogCard({
     // planned-but-untouched row writes to metadata.removed_set_numbers;
     // we honour that here without renumbering the surviving rows.
     return base.filter(r => !removedSetNumbers.includes(r.setNumber));
-  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw, removedSetNumbers, hidePrescription]);
+  }, [planned.setLines, planned.exercise.unit, planned.exercise.prescription_raw, removedSetNumbers, hidePrescription, topSetOnly]);
   const setBySetNumber = useMemo(() => {
     const m = new Map<number, TrainingLogSet>();
     loggedSets.forEach(s => m.set(s.set_number, s));
@@ -345,7 +352,9 @@ export function ExerciseLogCard({
           <div className="mt-1 flex items-baseline gap-2 flex-wrap">
             {!hidePrescription && (
               <StackedNotation
-                raw={planned.exercise.prescription_raw}
+                raw={topSetOnly
+                  ? topSetOnlyPrescription(planned.exercise.prescription_raw, planned.exercise.unit, planned.exercise.is_combo) ?? planned.exercise.prescription_raw
+                  : planned.exercise.prescription_raw}
                 unit={planned.exercise.unit}
                 isCombo={planned.exercise.is_combo}
               />
@@ -358,6 +367,11 @@ export function ExerciseLogCard({
             {!hideDurations && planned.exercise.metadata?.features?.restTime != null && (
               <span className="text-[11px] text-gray-500 font-medium">
                 ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
+              </span>
+            )}
+            {!hideDurations && planned.exercise.metadata?.features?.tempo != null && (
+              <span className="text-[11px] text-gray-500 font-medium" title="Tempo: eccentric · pause · concentric · pause">
+                ⧖ {planned.exercise.metadata.features.tempo}
               </span>
             )}
           </div>
