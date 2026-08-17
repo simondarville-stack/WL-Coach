@@ -210,10 +210,20 @@ export function PrescriptionGrid({
   }
 
   /** The one editing input all cells share — plus the formula bubble and the
-   *  "#" preset dropdown (ArrowUp/Down + Enter, or click). */
+   *  "#" preset dropdown (ArrowUp/Down + Enter, or click). The wrapper keeps
+   *  the cell's width (block + 100%) and grows with the typed text via a
+   *  ch-based min-width, so the box mimics how wide the committed value will
+   *  render instead of collapsing to the input's intrinsic width. */
   function renderEditingInput() {
     return (
-      <span style={{ position: 'relative', display: 'inline-block' }}>
+      <span
+        style={{
+          position: 'relative',
+          display: 'block',
+          width: '100%',
+          minWidth: `${Math.max(3, editing!.value.length + 1)}ch`,
+        }}
+      >
         <input
           ref={inputRef}
           value={editing!.value}
