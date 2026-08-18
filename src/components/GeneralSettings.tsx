@@ -89,7 +89,9 @@ export function GeneralSettings() {
   const [macroTableColumns, setMacroTableColumns] = useState<MacroTableColumnKey[]>([...DEFAULT_MACRO_TABLE_COLUMNS]);
 
   useEffect(() => {
-    fetchSettings();
+    // The editor always reads the authoritative row, bypassing the
+    // module-level settings cache other surfaces use.
+    fetchSettings({ force: true });
     fetchExercises();
   }, []);
 

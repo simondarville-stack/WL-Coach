@@ -630,67 +630,6 @@ export function useMacroCycles() {
     }
   };
 
-  interface MacroTargetForExercise {
-    target_reps: number | null;
-    target_avg: number | null;
-    target_max: number | null;
-    target_reps_at_max: number | null;
-    target_sets_at_max: number | null;
-  }
-
-  const fetchMacroTargetForExercise = async (
-    weekplanId: string,
-    exerciseId: string,
-  ): Promise<MacroTargetForExercise | null> => {
-    try {
-      const { data: weekPlan } = await supabase
-        .from('week_plans')
-        .select('week_start, athlete_id')
-        .eq('id', weekplanId)
-        .maybeSingle();
-
-      if (!weekPlan) return null;
-
-      const { data: macrocycle } = await supabase
-        .from('macrocycles')
-        .select('id')
-        .eq('is_active', true)
-        .eq('athlete_id', weekPlan.athlete_id ?? '')
-        .maybeSingle();
-
-      if (!macrocycle) return null;
-
-      const { data: macroWeek } = await supabase
-        .from('macro_weeks')
-        .select('id')
-        .eq('macrocycle_id', macrocycle.id)
-        .eq('week_start', weekPlan.week_start)
-        .maybeSingle();
-
-      if (!macroWeek) return null;
-
-      const { data: trackedExercise } = await supabase
-        .from('macro_tracked_exercises')
-        .select('id')
-        .eq('macrocycle_id', macrocycle.id)
-        .eq('exercise_id', exerciseId)
-        .maybeSingle();
-
-      if (!trackedExercise) return null;
-
-      const { data: target } = await supabase
-        .from('macro_targets')
-        .select('target_reps, target_avg, target_max, target_reps_at_max, target_sets_at_max')
-        .eq('macro_week_id', macroWeek.id)
-        .eq('tracked_exercise_id', trackedExercise.id)
-        .maybeSingle();
-
-      return target || null;
-    } catch (err) {
-      return null;
-    }
-  };
-
   interface MacroValidationData {
     macroTargets: Record<string, {
       id: string; macro_week_id: string; tracked_exercise_id: string; exercise_id: string;
@@ -1237,7 +1176,6 @@ export function useMacroCycles() {
     bulkUpdateWeeks,
     updateTrackedExerciseReference,
     updateTrackedExerciseUnit,
-    fetchMacroTargetForExercise,
     fetchMacroValidationData,
     fetchPhases,
     createPhase,

@@ -489,6 +489,14 @@ export function MacroCycles() {
     fetchMacroActuals(macroTarget, macroWeeks, trackedExercises).then(setActuals);
   }, [selectedAthlete?.id, selectedGroup?.id, macroWeeks.length, trackedExercises.length]);
 
+  // Cell edits (targets, week types) replace the macroWeeks array without
+  // changing the week grid itself — key the marker fetch below on the weeks'
+  // ids + dates so it stops re-running its 4 queries on every cell commit.
+  const macroWeekGridKey = useMemo(
+    () => macroWeeks.map(w => `${w.id}:${w.week_start}`).join(','),
+    [macroWeeks],
+  );
+
   // Fetch competitions + camps for the cycle range and bucket them per week
   // (weekId → markers overlapping that week's Mon–Sun) for the table icons.
   // Reuses the timeline data path so macro_competitions, competition-type
@@ -524,7 +532,8 @@ export function MacroCycles() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedCycle?.id, selectedCycle?.start_date, selectedCycle?.end_date, selectedAthlete?.id, selectedGroup?.id, macroWeeks, timelineReloadKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCycle?.id, selectedCycle?.start_date, selectedCycle?.end_date, selectedAthlete?.id, selectedGroup?.id, macroWeekGridKey, timelineReloadKey]);
 
   // Load individual athlete actuals for "individual view" in group mode
   useEffect(() => {
@@ -929,16 +938,23 @@ export function MacroCycles() {
     targetWeekId: string,
     copiedTargets: Record<string, Partial<MacroTarget>>,
   ) => {
-    await Promise.all(
-      Object.entries(copiedTargets).flatMap(([trackedExId, vals]) =>
-        (Object.entries(vals) as [keyof MacroTarget, number | null][]).map(([field, val]) => {
-          if (val === null || val === undefined) return Promise.resolve();
-          const existing = targets.find(t => t.macro_week_id === targetWeekId && t.tracked_exercise_id === trackedExId);
-          return upsertTarget(targetWeekId, trackedExId, field, val, existing);
-        })
-      )
-    );
-  }, [targets, upsertTarget]);
+    // One bulk upsert with one row per exercise — the per-(exercise, field)
+    // upsertTarget fan-out was up to ~30 round trips per paste, with several
+    // concurrent upserts racing against the SAME row resolved from one stale
+    // `targets` snapshot. Same path handleImportTargets already uses.
+    const rows = Object.entries(copiedTargets)
+      .map(([trackedExId, vals]) => {
+        const fields: Partial<MacroTarget> = {};
+        for (const [field, val] of Object.entries(vals) as [keyof MacroTarget, number | null][]) {
+          if (val === null || val === undefined) continue;
+          (fields as Record<string, number | null>)[field] = val;
+        }
+        return { macro_week_id: targetWeekId, tracked_exercise_id: trackedExId, fields };
+      })
+      .filter(r => Object.keys(r.fields).length > 0);
+    if (rows.length === 0) return;
+    await bulkUpsertTargets(rows);
+  }, [bulkUpsertTargets]);
 
   // ─── Import from Excel ────────────────────────────────────────────────────────
 

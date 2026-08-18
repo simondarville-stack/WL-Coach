@@ -1328,18 +1328,36 @@ export interface InboxThread {
  *  visible before the athlete's first reply. Unread threads sort first;
  *  within a sort group, most-recently-active threads come first. */
 export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]> {
-  // 1. Pull every athlete-sent message owned by this coach. We need the
-  //    full set so we can compute unreadCount and pick the latest message
-  //    per thread; a per-session top-1 query would force one round-trip
-  //    per thread.
-  const { data: athleteMsgs, error: amErr } = await supabase
-    .from('training_log_messages')
-    .select('id, session_id, message, created_at, coach_read_at')
-    .eq('owner_id', ownerId)
-    .eq('sender_type', 'athlete')
-    .order('created_at', { ascending: false });
-  if (amErr) throw amErr;
-  const rows = (athleteMsgs ?? []) as {
+  // 1. Pull athlete-sent messages owned by this coach (newest first). We
+  //    need the set to compute unreadCount and pick the latest message per
+  //    thread; a per-session top-1 query would force one round-trip per
+  //    thread. Capped: message history grows forever, and this used to be
+  //    unbounded — re-downloaded on every focus and after every send. At
+  //    the cap, only threads whose entire traffic is older than the 2000
+  //    most recent messages fall off the list.
+  //    The coach-sent query (2) is independent — run both together.
+  const [amRes, cmRes] = await Promise.all([
+    supabase
+      .from('training_log_messages')
+      .select('id, session_id, message, created_at, coach_read_at')
+      .eq('owner_id', ownerId)
+      .eq('sender_type', 'athlete')
+      .order('created_at', { ascending: false })
+      .limit(2000),
+    // 2. Coach-sent session messages, owner-wide (not just for sessions the
+    //    athlete wrote on): they feed "last activity" AND surface sessions
+    //    where only the coach has written so far as their own threads.
+    supabase
+      .from('training_log_messages')
+      .select('session_id, message, created_at')
+      .eq('owner_id', ownerId)
+      .eq('sender_type', 'coach')
+      .not('session_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(2000),
+  ]);
+  if (amRes.error) throw amRes.error;
+  const rows = (amRes.data ?? []) as {
     id: string;
     session_id: string | null;
     message: string;
@@ -1354,17 +1372,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   // "invalid input syntax for type uuid: \"null\"".
   const sessionRows = rows.filter((r): r is typeof r & { session_id: string } => r.session_id !== null);
 
-  // 2. Coach-sent session messages, owner-wide (not just for sessions the
-  //    athlete wrote on): they feed "last activity" AND surface sessions
-  //    where only the coach has written so far as their own threads.
-  const { data: coachMsgRows } = await supabase
-    .from('training_log_messages')
-    .select('session_id, message, created_at')
-    .eq('owner_id', ownerId)
-    .eq('sender_type', 'coach')
-    .not('session_id', 'is', null)
-    .order('created_at', { ascending: false });
-  const coachMsgs = (coachMsgRows ?? []) as {
+  const coachMsgs = (cmRes.data ?? []) as {
     session_id: string; message: string; created_at: string;
   }[];
 
@@ -1495,7 +1503,8 @@ async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread
     .select('athlete_id, sender_type, message, created_at, coach_read_at')
     .eq('owner_id', ownerId)
     .is('session_id', null)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(2000);
   if (error) throw error;
   const rows = (data ?? []) as {
     athlete_id: string | null;
@@ -1747,7 +1756,8 @@ export async function fetchAthleteInboxThreads(
     .from('training_log_messages')
     .select('id, session_id, sender_type, message, created_at, athlete_read_at')
     .eq('athlete_id', athleteId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(2000);
   if (error) throw error;
   const rows = (data ?? []) as {
     id: string;
