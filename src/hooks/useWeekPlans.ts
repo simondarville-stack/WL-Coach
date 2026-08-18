@@ -933,6 +933,7 @@ export function useWeekPlans() {
       prescription_raw?: string | null;
       notes?: string | null;
       variation_note?: string | null;
+      display_name?: string | null;
       summary_total_sets?: number;
       summary_total_reps?: number;
       summary_highest_load?: number | null;
@@ -962,6 +963,7 @@ export function useWeekPlans() {
         prescription_raw: extras?.prescription_raw ?? null,
         notes: extras?.notes ?? null,
         variation_note: extras?.variation_note ?? null,
+        display_name: extras?.display_name ?? null,
         is_combo: extras?.is_combo ?? false,
         combo_notation: extras?.combo_notation ?? null,
         combo_color: extras?.combo_color ?? null,
@@ -991,6 +993,7 @@ export function useWeekPlans() {
       prescription_raw: sourceEx.prescription_raw,
       notes: sourceEx.notes,
       variation_note: sourceEx.variation_note,
+      display_name: sourceEx.display_name,
       summary_total_sets: sourceEx.summary_total_sets ?? 0,
       summary_total_reps: sourceEx.summary_total_reps ?? 0,
       summary_highest_load: sourceEx.summary_highest_load,
@@ -1172,6 +1175,7 @@ export function useWeekPlans() {
       prescription_raw: string | null;
       notes: string | null;
       variation_note: string | null;
+      display_name: string | null;
       summary_total_sets: number;
       summary_total_reps: number;
       summary_highest_load: number | null;
@@ -1205,6 +1209,7 @@ export function useWeekPlans() {
         prescription_raw: snapshot.prescription_raw,
         notes: snapshot.notes,
         variation_note: snapshot.variation_note,
+        display_name: snapshot.display_name,
         summary_total_sets: snapshot.summary_total_sets,
         summary_total_reps: snapshot.summary_total_reps,
         summary_highest_load: snapshot.summary_highest_load,
@@ -1627,6 +1632,7 @@ export function useWeekPlans() {
             prescription_raw: ex.prescription_raw,
             notes: ex.notes,
             variation_note: ex.variation_note ?? null,
+            display_name: ex.display_name ?? null,
             summary_total_sets: ex.summary_total_sets,
             summary_total_reps: ex.summary_total_reps,
             summary_highest_load: ex.summary_highest_load,

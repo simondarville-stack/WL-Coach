@@ -26,6 +26,7 @@ function planned(
     summary_highest_load: 100,
     summary_avg_load: 100,
     variation_note: null,
+    display_name: null,
     is_combo: false,
     combo_notation: null,
     combo_color: null,

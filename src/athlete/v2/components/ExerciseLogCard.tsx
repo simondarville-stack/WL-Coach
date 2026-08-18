@@ -19,6 +19,7 @@ import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { GppLogCard } from './GppLogCard';
 import { useAutoCommit } from '../lib/useAutoCommit';
 import { plannedNote } from '../../../lib/plannedNote';
+import { plannedRowLabel } from '../../../lib/plannedRowLabel';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -200,16 +201,11 @@ export function ExerciseLogCard({
    *  combo_notation (e.g. "Snatch Complex"), then fall back to
    *  "Member1 + Member2 + ..." — same logic the coach side uses, so
    *  athletes don't see the first member's name as the exercise title. */
-  const plannedName = planned.exercise.is_combo
-    ? planned.exercise.combo_notation ??
-      (planned.comboMembers.length > 0
-        ? planned.comboMembers
-            .map(m => m.exercise?.name)
-            .filter((n): n is string => !!n)
-            .join(' + ')
-        : planned.exerciseDef?.name) ??
-      '(unknown exercise)'
-    : planned.exerciseDef?.name ?? '(unknown exercise)';
+  const plannedName = plannedRowLabel(planned.exercise, {
+    memberNames: planned.comboMembers.map(m => m.exercise?.name),
+    exerciseName: planned.exerciseDef?.name,
+    fallback: '(unknown exercise)',
+  });
 
   // Sentinel exercises (free-text blocks) carry their content in
   // planned.exercise.notes, not in a structured prescription. Render

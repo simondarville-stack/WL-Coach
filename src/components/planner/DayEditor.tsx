@@ -21,6 +21,7 @@ import { SourceBadge } from './SourceBadge';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { Button } from '../ui';
+import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 interface MacroTargetData {
   reps: number | null;
@@ -414,12 +415,12 @@ export function DayEditor({
                         ))}
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                        {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
+                        {plannedRowLabel(ex, { memberNames: members.map(m => m.exercise.name) })}
                       </span>
                     </>
                   ) : (
                     <>
-                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{ex.exercise.name}</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{plannedRowLabel(ex, { exerciseName: ex.exercise.name })}</span>
                       {/* Legacy variation_note surfaces only until the folded
                           note (ex.notes, shown below) takes over. */}
                       {!ex.notes?.trim() && ex.variation_note && (

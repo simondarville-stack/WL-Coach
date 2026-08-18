@@ -11,6 +11,7 @@ import type {
 import type { MacroContext } from './WeeklyPlanner';
 import { getSentinelType, getYouTubeThumbnail } from './sentinelUtils';
 import { plannedNote } from '../../lib/plannedNote';
+import { plannedRowLabel } from '../../lib/plannedRowLabel';
 import { AutoGrowTextarea } from '../ui';
 import { PrescriptionGrid } from './PrescriptionGrid';
 import { detectIntendedUnit } from '../../lib/prescriptionParser';
@@ -119,7 +120,11 @@ export function ExerciseDetail({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
-  const [comboName, setComboName] = useState(plannedExercise?.combo_notation ?? '');
+  // The row's own name: a combo's `combo_notation`, or a plain row's
+  // `display_name` override. Empty means "use the automatic name".
+  const [rowName, setRowName] = useState(
+    (plannedExercise?.is_combo ? plannedExercise?.combo_notation : plannedExercise?.display_name) ?? '',
+  );
   // Single folded note: notes is the written field, legacy variation_note
   // pre-fills when notes is still empty (see src/lib/plannedNote.ts).
   const initialNote = plannedExercise ? (plannedNote(plannedExercise) ?? '') : '';
@@ -148,9 +153,19 @@ export function ExerciseDetail({
     notesTimerRef.current = setTimeout(() => { void saveNotes(id, value); }, 400);
   }
 
-  function saveComboNameDebounced(value: string) {
+  /** A combo names itself in `combo_notation`; a plain row overrides its
+   *  catalogue name in `display_name`. One editor, one debounce, and the row
+   *  kind picks the column. */
+  const nameField: 'combo_notation' | 'display_name' = isCombo ? 'combo_notation' : 'display_name';
+
+  function saveRowNameDebounced(value: string) {
     if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
-    comboNameTimerRef.current = setTimeout(() => { void saveSettingsField('combo_notation', value); }, 400);
+    comboNameTimerRef.current = setTimeout(() => { void saveSettingsField(nameField, value); }, 400);
+  }
+
+  function flushRowName() {
+    if (comboNameTimerRef.current) { clearTimeout(comboNameTimerRef.current); comboNameTimerRef.current = null; }
+    void saveSettingsField(nameField, rowName).then(() => debouncedRefresh());
   }
 
   function saveMediaDescriptionDebounced(id: string, value: string) {
@@ -264,7 +279,7 @@ export function ExerciseDetail({
     } finally { setUploading(false); }
   }
 
-  async function saveSettingsField(field: 'unit' | 'combo_notation', value: string) {
+  async function saveSettingsField(field: 'unit' | 'combo_notation' | 'display_name', value: string) {
     if (!plannedExercise) return;
     await supabase.from('planned_exercises').update({ [field]: value || null }).eq('id', plannedExercise.id);
     if (field === 'unit') await onSaved();
@@ -279,9 +294,9 @@ export function ExerciseDetail({
       // Supabase query builders are PromiseLike, not strict Promise.
       const tasks: PromiseLike<unknown>[] = [
         saveNotes(id, notesRef.current).catch(() => {}),
-        ...(isCombo
-          ? [supabase.from('planned_exercises').update({ combo_notation: comboName || null }).eq('id', id)]
-          : []),
+        ...(sentinel
+          ? []
+          : [supabase.from('planned_exercises').update({ [nameField]: rowName || null }).eq('id', id)]),
       ];
       if (saveMediaDescription && (sentinel === 'image' || sentinel === 'video')) {
         tasks.push(saveMediaDescription(id, mediaDescriptionRef.current).catch(() => {}));
@@ -296,9 +311,17 @@ export function ExerciseDetail({
   const exerciseName = sentinel === 'text' ? 'Free text'
     : sentinel === 'video' ? 'Video'
     : sentinel === 'image' ? 'Image'
-    : isCombo && members.length > 0
-    ? (plannedExercise?.combo_notation || members.map(m => m.exercise.name).join(' + '))
-    : (plannedExercise?.exercise.name ?? 'Exercise');
+    : plannedRowLabel(plannedExercise ?? {}, {
+        memberNames: members.map(m => m.exercise.name),
+        exerciseName: plannedExercise?.exercise.name,
+      });
+
+  /** What the name box shows when the coach has typed nothing — the name the
+   *  row would carry on its own, so clearing the field is visibly a reset
+   *  rather than a blank. */
+  const autoName = isCombo
+    ? members.map(m => m.exercise.name).join(' + ') || 'Combo'
+    : plannedExercise?.exercise.name ?? 'Exercise';
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '6px 8px', fontSize: 13,
@@ -347,7 +370,57 @@ export function ExerciseDetail({
             </button>
           )}
           <div>
-            <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
+            {/* The title IS the name editor. A coach writing a variation
+                ("Snatch from blocks") renames the row here; it stays a plain
+                heading until focused, and never touches exercise_id — every
+                set, log and analysis row keeps pointing at the catalogue
+                exercise. Sentinels have no name to override. */}
+            {plannedExercise && !sentinel ? (
+              <input
+                type="text"
+                value={rowName}
+                onChange={e => { setRowName(e.target.value); saveRowNameDebounced(e.target.value); }}
+                onBlur={e => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'transparent';
+                  flushRowName();
+                }}
+                placeholder={autoName}
+                title={
+                  rowName.trim()
+                    ? `Renamed for this row only — logged under "${autoName}". Clear to restore.`
+                    : 'Rename this row only (for variations)'
+                }
+                style={{
+                  fontSize: 14, fontWeight: 500, lineHeight: 1.25, margin: 0,
+                  width: Math.max(12, Math.min(44, (rowName || autoName).length + 2)) + 'ch',
+                  maxWidth: 360,
+                  padding: '1px 4px', marginLeft: -4,
+                  color: 'var(--color-text-primary)',
+                  background: 'transparent',
+                  border: '1px solid transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  outline: 'none',
+                }}
+                onFocus={e => {
+                  e.currentTarget.style.background = 'var(--color-bg-primary)';
+                  e.currentTarget.style.borderColor = 'var(--color-border-secondary)';
+                }}
+                onMouseEnter={e => {
+                  if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'var(--color-border-tertiary)';
+                }}
+                onMouseLeave={e => {
+                  if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'transparent';
+                }}
+              />
+            ) : (
+              <h2 style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', lineHeight: 1.25, margin: 0 }}>{exerciseName}</h2>
+            )}
+            {plannedExercise && !sentinel && rowName.trim() && !isCombo && (
+              <p style={{ fontSize: 10, color: 'var(--color-text-tertiary)', margin: 0 }}>
+                logged as {autoName}
+              </p>
+            )}
             {plannedExercise && plannedNote(plannedExercise) && (
               <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', margin: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plannedNote(plannedExercise)}</p>
             )}
@@ -825,19 +898,8 @@ export function ExerciseDetail({
                 {UNIT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-            {isCombo && (
-              <div>
-                <label style={labelStyle}>Combo name</label>
-                <input
-                  type="text"
-                  value={comboName}
-                  onChange={e => { setComboName(e.target.value); saveComboNameDebounced(e.target.value); }}
-                  onBlur={() => { if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current); void saveSettingsField('combo_notation', comboName); }}
-                  placeholder={members.map(m => m.exercise.name).join(' + ')}
-                  style={inputStyle}
-                />
-              </div>
-            )}
+            {/* The combo's name moved to the header, where a plain row's name
+                override also lives — one name, one place, for both kinds. */}
           </div>
         )}
       </div>

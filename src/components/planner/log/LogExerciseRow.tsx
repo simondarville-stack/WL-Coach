@@ -23,6 +23,7 @@ import { getSentinelType } from '../sentinelUtils';
 import { SentinelDisplay } from '../SentinelDisplay';
 import { computeExerciseSummary, isQuantifiedUnit, isAbsoluteLoadUnit } from './logSummary';
 import { PlanActual } from './PlanActual';
+import { plannedRowLabel } from '../../../lib/plannedRowLabel';
 
 interface LogExerciseRowProps {
   planned: (PlannedExercise & { exercise: Exercise }) | null;
@@ -73,9 +74,10 @@ export function LogExerciseRow({
       offPlanCombo.members.map(m => m.name).filter(Boolean).join(' + ') ||
       '(combination)'
     : planned?.is_combo
-    ? planned.combo_notation?.trim() ||
-      plannedMembers.map(m => m.exercise.name).filter(Boolean).join(' + ') ||
-      null
+    ? plannedRowLabel(planned, {
+        memberNames: plannedMembers.map(m => m.exercise.name),
+        fallback: '',
+      }) || null
     : null;
 
   // Detect substitution: planned slot exists, athlete logged a
@@ -90,7 +92,9 @@ export function LogExerciseRow({
     ? comboName
     : isSubstituted
     ? logged!.exercise!.name
-    : planned?.exercise?.name ?? logged?.exercise?.name ?? '(unknown exercise)';
+    : planned
+    ? plannedRowLabel(planned, { exerciseName: planned.exercise?.name, fallback: logged?.exercise?.name ?? '(unknown exercise)' })
+    : logged?.exercise?.name ?? '(unknown exercise)';
   // Legacy variation_note surfaces only until the folded note (planned.notes,
   // rendered below) takes over.
   const variationNote = planned && !planned.notes?.trim() ? planned.variation_note ?? null : null;

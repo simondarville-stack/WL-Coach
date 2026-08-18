@@ -30,6 +30,7 @@ export interface ClipboardExerciseSnapshot {
   prescription_raw: string | null;
   notes: string | null;
   variation_note: string | null;
+  display_name: string | null;
   summary_total_sets: number;
   summary_total_reps: number;
   summary_highest_load: number | null;

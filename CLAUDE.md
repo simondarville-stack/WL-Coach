@@ -119,8 +119,18 @@ settles and ships must satisfy the full rule. Principles 3 and 4 apply always.
 
 ## Prescription notation
 
+**The binding spec is `docs/DISPLAY_CONVENTIONS.md`** — read it before rendering
+a prescription, a number, a date or a time on any new surface.
+
 Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
 `src/components/planner/StackedNotation.tsx` (display) — don't fork it.
+
+- **Stacked Load Notation is the ONLY coach-facing display format for a
+  prescription.** Inline `load×reps×sets` text is an input/storage form, never a
+  display form. This holds on every surface, including the ones that keep
+  getting missed: clipboard previews, template previews, print output. If you
+  are calling `parsePrescription` and joining the result into a string for
+  display, use `<StackedNotation raw unit isCombo />` instead.
 
 - **Input grammar:** `load × reps` implies `sets = 1`; `load × reps × sets`
   defines sets explicitly; comma-separated segments are allowed (e.g.

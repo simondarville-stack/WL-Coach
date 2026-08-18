@@ -78,6 +78,7 @@ interface AthleteSummary {
 export function CoachInbox() {
   const ownerId = getOwnerId();
   const accessibleAthletes = useAthleteStore(s => s.athletes);
+  const globalAthlete = useAthleteStore(s => s.selectedAthlete);
 
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +104,15 @@ export function CoachInbox() {
   useEffect(() => {
     void loadThreads();
   }, [loadThreads]);
+
+  // Follow the header's athlete dropdown, the way the planner, macro, analysis
+  // and PR surfaces do. The inbox kept a private selection, so switching
+  // athlete up there left the coach reading the previous athlete's threads.
+  // Only a positive selection re-points: clearing it (or picking a group, which
+  // the inbox has no notion of) leaves the open conversation alone.
+  useEffect(() => {
+    if (globalAthlete) setSelectedAthleteId(globalAthlete.id);
+  }, [globalAthlete]);
 
   // Refresh on tab focus — coaches often leave inbox in a background
   // tab while waiting for athletes to log — and whenever read-state changes

@@ -26,6 +26,7 @@ interface PlannedRow {
   summary_highest_load: number | null;
   summary_avg_load: number | null;
   variation_note: string | null;
+  display_name: string | null;
   is_combo: boolean;
   combo_notation: string | null;
   combo_color: string | null;
@@ -53,7 +54,7 @@ export async function copyWeekAsDraft(
 
   const { data: sourceExRaw, error: exErr } = await supabase
     .from('planned_exercises')
-    .select('id, day_index, exercise_id, position, notes, unit, prescription_raw, summary_total_sets, summary_total_reps, summary_highest_load, summary_avg_load, variation_note, is_combo, combo_notation, combo_color, metadata')
+    .select('id, day_index, exercise_id, position, notes, unit, prescription_raw, summary_total_sets, summary_total_reps, summary_highest_load, summary_avg_load, variation_note, display_name, is_combo, combo_notation, combo_color, metadata')
     .eq('weekplan_id', sourcePlan.id)
     .order('day_index')
     .order('position');
@@ -127,6 +128,7 @@ export async function copyWeekAsDraft(
       summary_avg_load: ex.summary_avg_load,
       variation_note: ex.variation_note,
       is_combo: ex.is_combo,
+      display_name: ex.display_name ?? null,
       combo_notation: ex.combo_notation,
       combo_color: ex.combo_color,
       metadata: ex.metadata ?? undefined,

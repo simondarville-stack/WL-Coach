@@ -373,6 +373,11 @@ export interface PlannedExercise {
   summary_highest_load: number | null;
   summary_avg_load: number | null;
   variation_note: string | null;
+  /** Coach override for this row's displayed name (a variation like "Snatch
+   *  from blocks"). NULL = use the catalogue name. Never affects exercise_id,
+   *  so logs and analysis stay under the original exercise. Resolve it through
+   *  `plannedRowLabel`, never by reading this field directly. */
+  display_name: string | null;
   is_combo: boolean;
   combo_notation: string | null;
   combo_color: string | null;

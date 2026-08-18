@@ -16,11 +16,36 @@ defers others).
 * Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
   _(untouched on purpose — it says "ask me before doing it". See the note under
   #Batch of 04/08/2026 for what I'd want to know before starting.)_
+* Ín the inbox it should be easier to see and navigate to unread messages. Propose 3 UI improvements to easier navigate. 
+* Is it possibile to have push notifications from a webapp? 
+* When opening an excercise in the weekly planner, there is a table that displayes the previous prescriptions. Also make a table that shows the previous actuals. They should both show the trainings in the graph window, when updating the window, it should load more sessions. 
+* We need to ideate on a way to input excercises that is a "Skill Based Entry". This is a more soft-constrained excercise block. The idea is not entirely finish, but I want to be able to use the way we are currently prescriping a series. But it should be possible to set a time cap, a rep range, a load anchor (max set) and some ghost values like reps and average weight (for analysis purposes, not to show the athlete). Lets ideate on this and prototype before implementing. So ask me a series of quoestions and give me some ideas on how this should/could work. It would be preferable if we can stille manipulate from the planner without having to enter the excercise menu. 
+* When inputting an athlete in the top right dropdown, the page you are on should shift to this athlete. This should be the case for planner, macros, analysis, inbox, personal records etc. 
+* Divide the settings menu into sub-menus for the different tools/functions in the programme. It should be 1:1 with the other menus, and also keep a General settings tab. 
+* When an excercise is added, it should be possible to overwrite the name. This will only change this one instance, and all data will still be saved under the original excercise. This is used for creating variations. The name should be edited from the top when entering the excercise. Also move the name of a combination excercise to the same position when opening the combination excercise menu. 
+* We have two ways of creating the day cards. they can either be free and names "Unit 1" "unit 2" etc, and are by default NOT bound to a specific time of the week. We need the following options:
+- to be able to reorganize these cards
+- when it is a specific week, the current design is very messy. I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
+* The weekly planner overview (the menu before entering the actual weekly planner) does not place the training units correctly when they have a specified time and weekday. 
+* Any item in the clipboard should have a preview if double clicked on. It should all be with the stacked notation. Please add this to our specifications sheet somewhere, because it keeps getting lost, and i see the weight x reps x set notation which i don't want. 
+* When doing the weekly planner, and the mode is set to specific days and times, the AM/PM dividing line should be the same for all days. 
+* if an excercise has a total time, it should be possible to start a timer from the athlete app
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Per-exercise planner summary toggle (already shipped 17/08/2026, commit 5784219)
+**Wrong:** every exercise showed the summary column in the weekly planner with no
+way to turn it off.
+**Changed:** the exercise form (create AND edit) carries a checkbox "Individual
+Exercise Summary in the planner", stored as `exercises.show_planner_summary`
+(migration `20260816090000`, default on). `DayCard` passes it into
+`AnalysisColumn`; when off, only the corner +/#/eye icon strip renders. Note the
+toggle is **catalogue-level** — it affects the exercise everywhere, not one
+planned instance. If a per-instance override is wanted, that's a new item.
+Verified in code on 18/08/2026 while triaging this list; no further work done.
 
 #Ratio Analysis: symmetric analysis blocks, and search instead of a 300-option dropdown (05/08/2026, v0.38.1 → 0.39.0)
 **Wrong (columns):** the sheet asked the same question at two levels and answered

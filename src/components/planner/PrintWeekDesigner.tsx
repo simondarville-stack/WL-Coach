@@ -20,6 +20,7 @@ import { parsePrescription, parseComboPrescription, parseFreeTextPrescription, L
 import { formatSeconds } from '../../lib/exerciseFeatures';
 import { fetchWeekLog } from '../../lib/trainingLogService';
 import type { TrainingLogSet } from '../../lib/database.types';
+import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 // ─── Types & defaults ──────────────────────────────────────────────────────
 
@@ -855,12 +856,10 @@ function ExerciseRow({
       <div className="dz-row-body">
         <div className="dz-row-head">
           <h3 className="dz-ex-name">
-            {ex.is_combo
-              ? (ex.combo_notation?.trim()
-                  || (members && members.length > 0
-                    ? members.map(m => m.exercise.name).join(' + ')
-                    : ex.exercise.name))
-              : ex.exercise.name}
+            {plannedRowLabel(ex, {
+              memberNames: (members ?? []).map(m => m.exercise.name),
+              exerciseName: ex.exercise.name,
+            })}
           </h3>
           {options.showExerciseCodes && !ex.is_combo && ex.exercise.exercise_code && (
             <span className="dz-ex-code">{ex.exercise.exercise_code}</span>

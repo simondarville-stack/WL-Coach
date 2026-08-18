@@ -24,6 +24,7 @@ import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
 import { MARK_DAY, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
+import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 interface DayCardProps {
   dayIndex: number;
@@ -775,7 +776,7 @@ export function DayCard({
                               ))}
                             </div>
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
-                              {ex.combo_notation || members.map(m => m.exercise.name).join(' + ')}
+                              {plannedRowLabel(ex, { memberNames: members.map(m => m.exercise.name) })}
                             </span>
                             <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>
@@ -813,7 +814,7 @@ export function DayCard({
                         <>
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, minWidth: 0 }}>
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
-                              {ex.exercise.name}
+                              {plannedRowLabel(ex, { exerciseName: ex.exercise.name })}
                             </span>
                             <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
                           </div>

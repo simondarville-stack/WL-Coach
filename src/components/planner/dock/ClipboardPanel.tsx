@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Video, Image as ImageIcon, Dumbbell, Layers, Trash2 } from 'lucide-react';
 import type { ClipboardItem, ClipboardExerciseDisplay } from './useClipboardState';
 import { DockGroupCard } from './DockGroupCard';
-import { ClipboardWeekPreviewDialog } from './ClipboardWeekPreviewDialog';
+import { ClipboardPreviewDialog } from './ClipboardPreviewDialog';
 import { MARK_CLIPBOARD } from '../dragPayload';
 
 interface ClipboardPanelProps {
@@ -185,7 +185,9 @@ interface ExerciseCardProps {
 
 function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
   const { display, snapshot } = item;
+  const [showPreview, setShowPreview] = useState(false);
   return (
+    <>
     <div
       draggable
       onDragStart={e => {
@@ -193,7 +195,8 @@ function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
         e.dataTransfer.setData(MARK_CLIPBOARD, '1');
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      title={display.label}
+      onDoubleClick={() => setShowPreview(true)}
+      title={`${display.label} — double-click to preview`}
       style={{
         position: 'relative',
         display: 'flex',
@@ -244,6 +247,8 @@ function ExerciseCard({ item, onRemove }: ExerciseCardProps) {
       </div>
       <RemoveBtn onClick={onRemove} />
     </div>
+    {showPreview && <ClipboardPreviewDialog item={item} onClose={() => setShowPreview(false)} />}
+    </>
   );
 }
 
@@ -253,7 +258,9 @@ interface DayCardItemProps {
 }
 
 function DayCard({ item, onRemove }: DayCardItemProps) {
+  const [showPreview, setShowPreview] = useState(false);
   return (
+    <>
     <div
       draggable
       onDragStart={e => {
@@ -261,7 +268,8 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
         e.dataTransfer.setData(MARK_CLIPBOARD, '1');
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      title={`${item.label} — ${item.exercises.length} exercise${item.exercises.length === 1 ? '' : 's'}`}
+      onDoubleClick={() => setShowPreview(true)}
+      title={`${item.label} — ${item.exercises.length} exercise${item.exercises.length === 1 ? '' : 's'} · double-click to preview`}
       style={{
         position: 'relative',
         display: 'flex',
@@ -333,6 +341,8 @@ function DayCard({ item, onRemove }: DayCardItemProps) {
       </div>
       <RemoveBtn onClick={onRemove} />
     </div>
+    {showPreview && <ClipboardPreviewDialog item={item} onClose={() => setShowPreview(false)} />}
+    </>
   );
 }
 
@@ -398,7 +408,7 @@ function WeekCard({ item, onRemove }: WeekCardItemProps) {
           },
         }))}
       />
-      {showPreview && <ClipboardWeekPreviewDialog week={item} onClose={() => setShowPreview(false)} />}
+      {showPreview && <ClipboardPreviewDialog item={item} onClose={() => setShowPreview(false)} />}
     </>
   );
 }
