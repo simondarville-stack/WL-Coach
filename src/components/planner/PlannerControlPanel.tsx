@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings2, Copy, Printer, BarChart2, Trash2,
@@ -16,7 +16,7 @@ import type { MacroContext } from './WeeklyPlanner';
 import { calculateAge } from '../../lib/calculations';
 import { abbreviateExercise } from './sentinelUtils';
 import { calculateRestInfo } from '../../lib/restCalculation';
-import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { computeMetrics, DEFAULT_VISIBLE_METRICS, METRICS, type MetricKey } from '../../lib/metrics';
 import { Button, Modal } from '../ui';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -321,10 +321,72 @@ export function PlannerControlPanel({
   }, [plannedExercises, comboMembers, athletePRs, selectedAthlete?.competition_total]);
 
   const visibleMetrics: MetricKey[] = (settings?.visible_summary_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS;
+
   const showStress     = settings?.show_stress_metric ?? false;
   const repsProgress   = macroWeekTarget && metrics.reps > 0
     ? Math.min(100, Math.round((metrics.reps / macroWeekTarget) * 100))
     : null;
+
+  /** The week's metrics, in the app-wide order, with the per-metric value
+   *  rendering each one needs. A metric that resolves to nothing (no max on a
+   *  mobility-only week, no K without a competition total) drops out entirely
+   *  rather than printing a zero. */
+  const metricItems = METRICS
+    .filter(def => visibleMetrics.includes(def.key))
+    .map(def => {
+      switch (def.key) {
+        case 'max':
+          return metrics.max > 0 ? { key: def.key, node: <MetricItem label="Max" value={metrics.max} /> } : null;
+        case 'avg':
+          return metrics.avg > 0 ? { key: def.key, node: <MetricItem label="Avg" value={metrics.avg} /> } : null;
+        case 'reps':
+          return {
+            key: def.key,
+            node: (
+              <MetricItem
+                label="R"
+                value={
+                  <>
+                    <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.reps}</span>
+                    {macroWeekTarget != null && (
+                      <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>/ {macroWeekTarget}</span>
+                    )}
+                    {repsProgress !== null && (
+                      <span style={{ marginLeft: '6px', fontWeight: 500, color: complianceColorToken(repsProgress) }}>
+                        ({repsProgress}%)
+                      </span>
+                    )}
+                  </>
+                }
+              />
+            ),
+          };
+        case 'sets':
+          return { key: def.key, node: <MetricItem label="S" value={metrics.sets} /> };
+        case 'tonnage':
+          return metrics.tonnage > 0
+            ? {
+                key: def.key,
+                node: (
+                  <MetricItem
+                    label="T"
+                    value={
+                      <>
+                        <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.tonnage.toLocaleString()}</span>
+                        <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>kg</span>
+                      </>
+                    }
+                  />
+                ),
+              }
+            : null;
+        case 'k':
+          return metrics.k != null
+            ? { key: def.key, node: <MetricItem label="K" value={`${(metrics.k * 100).toFixed(0)}%`} /> }
+            : null;
+      }
+    })
+    .filter((x): x is { key: MetricKey; node: React.ReactElement } => x !== null);
 
   const athleteInitials = selectedAthlete?.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) ?? '';
   const athleteAge      = selectedAthlete?.birthdate ? calculateAge(selectedAthlete.birthdate) : null;
@@ -596,77 +658,20 @@ export function PlannerControlPanel({
           fontSize: 'var(--text-label)',
         }}
       >
-        {visibleMetrics.includes('sets') && (
-          <MetricItem label="S" value={metrics.sets} />
-        )}
-
-        {visibleMetrics.includes('reps') && (
-          <>
-            {visibleMetrics.includes('sets') && <MetricSeparator />}
-            <MetricItem
-              label="R"
-              value={
-                <>
-                  <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.reps}</span>
-                  {macroWeekTarget != null && (
-                    <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>/ {macroWeekTarget}</span>
-                  )}
-                  {repsProgress !== null && (
-                    <span
-                      style={{
-                        marginLeft: '6px',
-                        fontWeight: 500,
-                        color: complianceColorToken(repsProgress),
-                      }}
-                    >
-                      ({repsProgress}%)
-                    </span>
-                  )}
-                </>
-              }
-            />
-          </>
-        )}
-
-        {visibleMetrics.includes('max') && metrics.max > 0 && (
-          <>
-            <MetricSeparator />
-            <MetricItem label="Max" value={metrics.max} />
-          </>
-        )}
-
-        {visibleMetrics.includes('avg') && metrics.avg > 0 && (
-          <>
-            <MetricSeparator />
-            <MetricItem label="Avg" value={metrics.avg} />
-          </>
-        )}
-
-        {visibleMetrics.includes('tonnage') && metrics.tonnage > 0 && (
-          <>
-            <MetricSeparator />
-            <MetricItem
-              label="T"
-              value={
-                <>
-                  <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{metrics.tonnage.toLocaleString()}</span>
-                  <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '4px' }}>kg</span>
-                </>
-              }
-            />
-          </>
-        )}
-
-        {visibleMetrics.includes('k') && metrics.k != null && (
-          <>
-            <MetricSeparator />
-            <MetricItem label="K" value={`${(metrics.k * 100).toFixed(0)}%`} />
-          </>
-        )}
+        {/* Rendered in METRICS order, not hand-sequenced: the order of these
+            metrics is one product decision and it lives in lib/metrics. The
+            old hand-written sequence also emitted a leading separator whenever
+            the metrics before it happened to be hidden or zero. */}
+        {metricItems.map((item, i) => (
+          <Fragment key={item.key}>
+            {i > 0 && <MetricSeparator />}
+            {item.node}
+          </Fragment>
+        ))}
 
         {showStress && totalStress > 0 && (
           <>
-            <MetricSeparator />
+            {metricItems.length > 0 && <MetricSeparator />}
             <MetricItem label="Stress" value={totalStress} />
           </>
         )}
