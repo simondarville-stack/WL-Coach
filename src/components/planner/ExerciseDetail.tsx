@@ -22,6 +22,7 @@ import { StackedNotation } from './StackedNotation';
 import { targetMaxRaw } from '../../lib/plannerMacro';
 import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 import { ExercisePrescriptionHistory } from './ExercisePrescriptionHistory';
+import { ExerciseActualsHistory } from './ExerciseActualsHistory';
 import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 
@@ -120,6 +121,10 @@ export function ExerciseDetail({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
+  // The week window the history chart is showing. Both history tables filter
+  // to it, so the numbers under the chart are the ones plotted in it.
+  const [chartRange, setChartRange] = useState<{ from: string; to: string } | null>(null);
+
   // The row's own name: a combo's `combo_notation`, or a plain row's
   // `display_name` override. Empty means "use the automatic name".
   const [rowName, setRowName] = useState(
@@ -285,7 +290,11 @@ export function ExerciseDetail({
     if (field === 'unit') await onSaved();
   }
 
-  function handleClose() {
+  /** Commit every debounced edit and refresh the planner behind us. Both
+   *  leaving routes need this: "back" used to be a pure view switch, so a
+   *  renamed row (or a renamed combo, before it) kept showing its old name on
+   *  the day card until something else happened to refetch. */
+  function flushPendingEdits() {
     [comboNameTimerRef, notesTimerRef, mediaDescriptionTimerRef, refreshTimerRef].forEach(r => {
       if (r.current) { clearTimeout(r.current); r.current = null; }
     });
@@ -305,6 +314,10 @@ export function ExerciseDetail({
     } else {
       void onSaved();
     }
+  }
+
+  function handleClose() {
+    flushPendingEdits();
     onClose();
   }
 
@@ -360,7 +373,7 @@ export function ExerciseDetail({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {onBack && (
             <button
-              onClick={onBack}
+              onClick={() => { flushPendingEdits(); onBack(); }}
               style={{ padding: 4, borderRadius: 'var(--radius-sm)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center' }}
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
@@ -706,9 +719,34 @@ export function ExerciseDetail({
         {/* Prescription */}
         {plannedExercise && !sentinel && (
           <div>
-            <ExerciseHistoryChart exerciseId={plannedExercise.exercise_id} athleteId={athleteId} macroContext={macroContext} currentWeekStart={weekStart} />
+            <ExerciseHistoryChart
+              exerciseId={plannedExercise.exercise_id}
+              athleteId={athleteId}
+              macroContext={macroContext}
+              currentWeekStart={weekStart}
+              onVisibleRangeChange={setChartRange}
+            />
+            {/* Written beside performed, both scoped to the chart's window:
+                zoom or pan the chart and these follow it. */}
             {athleteId && (
-              <ExercisePrescriptionHistory exerciseId={plannedExercise.exercise_id} athleteId={athleteId} weekStart={weekStart} />
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <ExercisePrescriptionHistory
+                    exerciseId={plannedExercise.exercise_id}
+                    athleteId={athleteId}
+                    weekStart={weekStart}
+                    range={chartRange}
+                  />
+                </div>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <ExerciseActualsHistory
+                    exerciseId={plannedExercise.exercise_id}
+                    athleteId={athleteId}
+                    weekStart={weekStart}
+                    range={chartRange}
+                  />
+                </div>
+              </div>
             )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={sectionHeaderStyle}>Prescription</span>

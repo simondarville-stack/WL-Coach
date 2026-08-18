@@ -1,0 +1,266 @@
+import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { formatKg, formatLoadReps, groupLoadReps } from '../../lib/loadRepsFormat';
+import { isoMonday } from '../../lib/dateUtils';
+
+interface ActualRow {
+  /** The real date the session happened — a log is an event, not a week. */
+  date: string;
+  /** Monday of that date, so the row can be filtered by the chart's week window. */
+  weekStart: string;
+  /** "80×3, 85×2×3" built from the completed sets. */
+  performed: string | null;
+  totalSets: number | null;
+  totalReps: number | null;
+  highestLoad: number | null;
+  isCurrentWeek: boolean;
+}
+
+interface ExerciseActualsHistoryProps {
+  exerciseId: string;
+  athleteId: string;
+  /** The week being planned, so its own logged sessions can be marked. */
+  weekStart: string;
+  /** Rows shown before the coach expands the table. */
+  limit?: number;
+  /** How far back to fetch. Matches the history chart's three-year fetch so a
+   *  coach panning the chart back never outruns the table. */
+  fetchWeeks?: number;
+  /** Restrict rows to the chart's visible window (inclusive, Monday-anchored).
+   *  Omitted → show everything fetched. */
+  range?: { from: string; to: string } | null;
+}
+
+function formatShort(date: string): string {
+  const d = new Date(date + 'T00:00:00Z');
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+}
+function formatFull(date: string): string {
+  const d = new Date(date + 'T00:00:00Z');
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * The performed counterpart to ExercisePrescriptionHistory: what the athlete
+ * actually lifted, one row per completed session. Planned and performed stay
+ * separate records — this table never reads or writes plan data, it only
+ * reports the log.
+ *
+ * v2 logging writes per-set rows into `training_log_sets` and leaves
+ * `performed_raw` empty; v1 rows only have the summary string. Both are read,
+ * with the set rows preferred, matching ExerciseHistoryChart's Performed series
+ * so the table and the chart cannot disagree.
+ */
+export function ExerciseActualsHistory({
+  exerciseId,
+  athleteId,
+  weekStart,
+  limit = 6,
+  fetchWeeks = 156,
+  range = null,
+}: ExerciseActualsHistoryProps) {
+  const [rows, setRows] = useState<ActualRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const from = new Date(weekStart + 'T00:00:00Z');
+        from.setUTCDate(from.getUTCDate() - fetchWeeks * 7);
+        const lookBack = from.toISOString().slice(0, 10);
+
+        const { data: logRows } = await supabase
+          .from('training_log_exercises')
+          .select('id, performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
+          .eq('exercise_id', exerciseId)
+          .eq('session.athlete_id', athleteId)
+          .eq('session.status', 'completed')
+          .gte('session.date', lookBack);
+
+        const ids = (logRows ?? []).map(r => r.id);
+        type SetRow = {
+          log_exercise_id: string;
+          performed_load: number | null;
+          performed_reps: number | null;
+          status: string;
+        };
+        let loggedSets: SetRow[] = [];
+        if (ids.length > 0) {
+          const { data } = await supabase
+            .from('training_log_sets')
+            .select('log_exercise_id, performed_load, performed_reps, status')
+            .in('log_exercise_id', ids);
+          loggedSets = (data ?? []) as SetRow[];
+        }
+        const setsByLogEx = new Map<string, SetRow[]>();
+        for (const s of loggedSets) {
+          if (s.status !== 'completed') continue;
+          const list = setsByLogEx.get(s.log_exercise_id) ?? [];
+          list.push(s);
+          setsByLogEx.set(s.log_exercise_id, list);
+        }
+
+        const collected: ActualRow[] = [];
+        for (const r of logRows ?? []) {
+          const session = r.session as unknown as { date: string } | null;
+          if (!session?.date) continue;
+
+          const sets = setsByLogEx.get(r.id) ?? [];
+          const entries = sets
+            .filter(s => (s.performed_load ?? 0) > 0 && (s.performed_reps ?? 0) > 0)
+            .map(s => ({ load: s.performed_load as number, reps: s.performed_reps as number }));
+
+          let performed: string | null;
+          let totalSets: number | null;
+          let totalReps: number | null;
+          let highestLoad: number | null;
+
+          if (entries.length > 0) {
+            performed = formatLoadReps(groupLoadReps(entries));
+            totalSets = entries.length;
+            totalReps = entries.reduce((sum, e) => sum + e.reps, 0);
+            highestLoad = Math.max(...entries.map(e => e.load));
+          } else {
+            // v1 row: the summary string is all there is. Reported as written
+            // rather than re-derived, and its set/rep counts stay unknown.
+            performed = r.performed_raw?.trim() || null;
+            totalSets = null;
+            totalReps = null;
+            highestLoad = null;
+          }
+
+          // A session with no completed set and no summary string recorded
+          // nothing — showing it as a blank row would read as a failed lift.
+          if (!performed) continue;
+
+          collected.push({
+            date: session.date,
+            weekStart: isoMonday(session.date),
+            performed,
+            totalSets,
+            totalReps,
+            highestLoad,
+            isCurrentWeek: isoMonday(session.date) === weekStart,
+          });
+        }
+        collected.sort((a, b) => (a.date < b.date ? 1 : -1));
+
+        if (!cancelled) setRows(collected);
+      } catch {
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [exerciseId, athleteId, weekStart, fetchWeeks]);
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', padding: '8px 0' }}>
+        Loading actuals…
+      </div>
+    );
+  }
+
+  // Filter to the chart's window, so panning the chart moves this table with it.
+  const inRange = range
+    ? rows.filter(r => r.weekStart >= range.from && r.weekStart <= range.to)
+    : rows;
+
+  if (inRange.length === 0) {
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <span style={{
+          display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em',
+          color: 'var(--color-text-secondary)', marginBottom: 6,
+        }}>
+          Recent actuals
+        </span>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          {rows.length > 0
+            ? 'Nothing logged in the chart window'
+            : 'No logged sessions for this exercise'}
+        </div>
+      </div>
+    );
+  }
+
+  const visible = expanded ? inRange : inRange.slice(0, limit);
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <span style={{
+        display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em',
+        color: 'var(--color-text-secondary)', marginBottom: 6,
+      }}>
+        Recent actuals{' '}
+        <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>{inRange.length}</span>
+      </span>
+      <div style={expanded ? { maxHeight: 260, overflowY: 'auto' } : undefined}>
+        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+          <tbody>
+            {visible.map((r, i) => (
+              <tr
+                key={`${r.date}-${i}`}
+                style={{
+                  borderBottom: '1px solid var(--color-border-tertiary)',
+                  background: r.isCurrentWeek ? 'var(--color-accent-muted)' : 'transparent',
+                }}
+              >
+                <td
+                  title={formatFull(r.date)}
+                  style={{
+                    padding: '6px 8px 6px 0', width: 52, whiteSpace: 'nowrap',
+                    color: r.isCurrentWeek ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                    fontWeight: r.isCurrentWeek ? 600 : 500,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatShort(r.date)}
+                </td>
+                <td style={{
+                  padding: '6px 0', fontFamily: 'var(--font-mono)',
+                  color: 'var(--color-text-primary)', wordBreak: 'break-word',
+                }}>
+                  {r.performed}
+                </td>
+                <td style={{
+                  padding: '6px 0 6px 8px', textAlign: 'right', whiteSpace: 'nowrap',
+                  color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {expanded && (r.totalSets != null || r.totalReps != null) && (
+                    <span style={{ marginRight: 8, fontSize: 10 }}>
+                      S{r.totalSets ?? 0} R{r.totalReps ?? 0}
+                    </span>
+                  )}
+                  {r.highestLoad != null && r.highestLoad > 0 ? formatKg(r.highestLoad) : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {inRange.length > limit && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          onKeyDown={e => { if (e.key === 'Enter') e.stopPropagation(); }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', padding: '6px 0 0',
+            cursor: 'pointer', fontSize: 11, color: 'var(--color-text-tertiary)',
+          }}
+        >
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {expanded ? 'Show less' : `Show all ${inRange.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
