@@ -23,7 +23,7 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
-import { MARK_DAY, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
+import { MARK_DAY, MARK_DAY_REORDER, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 interface DayCardProps {
@@ -68,6 +68,10 @@ interface DayCardProps {
     target?: { exId: string; position: 'before' | 'after' },
   ) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  /** Move this card to another card's position. Only supplied where position
+   *  is the coach's to choose — a calendar-mapped card sits where its weekday
+   *  puts it, so it gets no grip. */
+  onReorderDay?: (fromDayIndex: number, toDayIndex: number) => void;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
@@ -114,6 +118,7 @@ export function DayCard({
   onClearDay,
   onExerciseDrop,
   onDayDrop,
+  onReorderDay,
   onDockExerciseDrop,
   onDockTemplateDrop,
   onDockTemplateDayDrop,
@@ -132,6 +137,7 @@ export function DayCard({
 }: DayCardProps) {
   const { createExercise } = useExercises();
   const [isDragOver, setIsDragOver] = useState(false);
+  const [reorderOver, setReorderOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [showComboModal, setShowComboModal] = useState(false);
   const [showNewExerciseModal, setShowNewExerciseModal] = useState(false);
@@ -353,19 +359,40 @@ export function DayCard({
     // arming the card would flash the "Drop to move here" move affordance
     // for a gesture that doesn't move anything.
     if (e.dataTransfer.types.includes(MARK_PRESET)) return;
+    // A reorder drag is not a move-content drag: arming "Drop here" would
+    // promise the wrong outcome. getData() is blocked during dragover, so the
+    // kind has to be read off the type list.
+    if (e.dataTransfer.types.includes(MARK_DAY_REORDER)) {
+      if (!onReorderDay) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setReorderOver(true);
+      return;
+    }
     e.preventDefault();
     setIsDragOver(true);
   }
 
   function handleCardDragLeave(e: React.DragEvent) {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false);
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+      setReorderOver(false);
+    }
   }
 
   async function handleCardDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragOver(false);
+    setReorderOver(false);
     const data = e.dataTransfer.getData('text/plain');
     if (!data) return;
+    // Reordering moves the CARD, never its contents — handled before anything
+    // that would touch exercises, and a drop on itself is a no-op.
+    if (data.startsWith('DAYORDER:')) {
+      const from = parseInt(data.slice('DAYORDER:'.length), 10);
+      if (!Number.isNaN(from) && from !== dayIndex) onReorderDay?.(from, dayIndex);
+      return;
+    }
     const isCopy = e.ctrlKey || e.metaKey;
     const isReplace = e.shiftKey;
     // Accept both prefixes during the rename window — a card already on
@@ -421,9 +448,13 @@ export function DayCard({
     <>
       <div
         style={{
+          position: 'relative',
           background: isDragOver ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
           borderRadius: 'var(--radius-md)',
           border: isDragOver ? '0.5px solid var(--color-accent-border)' : '0.5px solid var(--color-border-secondary)',
+          // A reorder drag shows WHERE the card will land, rather than the
+          // move-content highlight — two gestures, two affordances.
+          boxShadow: reorderOver ? 'inset 3px 0 0 0 var(--color-accent)' : undefined,
           display: 'flex', flexDirection: 'column',
           minHeight: isEmpty ? 120 : 160,
           transition: 'border-color 0.15s, background 0.15s, box-shadow 0.15s',
@@ -468,6 +499,31 @@ export function DayCard({
             onNavigateToDay();
           }}
         >
+          {onReorderDay && (
+            <span
+              draggable
+              // stopPropagation, or the header's own dragstart fires too and
+              // the browser sends BOTH payloads — the last write would win and
+              // a reorder would silently become a content move.
+              onDragStart={e => {
+                e.stopPropagation();
+                e.dataTransfer.setData('text/plain', `DAYORDER:${dayIndex}`);
+                e.dataTransfer.setData(MARK_DAY_REORDER, '1');
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onClick={e => e.stopPropagation()}
+              title="Drag to reorder this unit"
+              style={{
+                display: 'inline-flex', alignItems: 'center',
+                marginLeft: -4, marginRight: -2,
+                cursor: 'grab',
+                color: headerHovered ? 'var(--color-text-tertiary)' : 'transparent',
+                transition: 'color 0.1s',
+              }}
+            >
+              <GripVertical size={12} />
+            </span>
+          )}
           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>{dayName}</span>
           {restInfo && restInfo.hoursFromPrevious !== null && (
             <RestBadge hours={restInfo.hoursFromPrevious} recoveryLevel={restInfo.recoveryLevel} />

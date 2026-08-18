@@ -29,17 +29,63 @@ defers others).
   ranges, ≥≈≤ soft signs, ⏱ durations, and the Σ/S/Ø summary overrides, which
   are the closest existing analogue to "ghost" analysis-only values.)_
 * We have two ways of creating the day cards. they can either be free and names "Unit 1" "unit 2" etc, and are by default NOT bound to a specific time of the week. We need the following options:
-- to be able to reorganize these cards
+- ~~to be able to reorganize these cards~~ DONE 18/08/2026 — see #Reorder unit
+  cards below.
 - when it is a specific week, the current design is very messy. I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
-  _(questions asked 18/08/2026 — blocked on your answers before prototyping.
-  Note reordering free cards DOES already exist, but only inside the Day-config
-  modal (drag the rows), not by dragging the cards in the planner grid. The
-  AM/PM fix below landed as an interim step and is deliberately reversible.)_
+  _(questions asked 18/08/2026 — STILL BLOCKED on your answers before
+  prototyping. The AM/PM fix landed as an interim step and is deliberately
+  reversible.)_
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Reorder unit cards from the planner grid (18/08/2026, v0.48.0 → 0.49.0)
+**Wrong:** reordering existed, but only inside the Day-config modal — drag the
+rows in a list, then press Save. Rearranging a week meant opening a dialog to
+do it at one remove from the cards you were actually looking at. On the grid
+itself there was no reorder gesture at all: dragging a card header moves that
+unit's CONTENT into another unit, which is a different (and destructive)
+operation.
+
+**Changed:** a grip handle (⋮⋮, appears on hover) at the left of each unit
+header. Drag it onto another card and the unit takes that position; the target
+card shows an accent bar on its leading edge as the insertion cue. Saves
+immediately — the modal defers to its Save button, but everything on the grid
+autosaves.
+
+Three things this had to get right:
+- **The two gestures must never be confused.** The grip writes its own payload
+  (`DAYORDER:<slot>`) under its own marker (`MARK_DAY_REORDER`), distinct from
+  the header's `DAY:<slot>` / `MARK_DAY`. The grip's `dragstart` calls
+  `stopPropagation`, or the header's handler fires too and the browser carries
+  BOTH payloads — last write wins and a reorder silently becomes a content
+  move. A reorder drag also arms a different affordance on hover (insertion
+  bar, not "Drop here"), because `getData()` is blocked during `dragover` and
+  the kind has to be read off the type list.
+- **A reorder is not throwable.** Dragging a card to a new position and missing
+  must not delete the unit, so the marker is deliberately absent from
+  `ThrowKind` and `parseThrowPayload` returns null for the prefix.
+- **Only where position is the coach's to choose.** Free-mode cards and the
+  calendar view's "Unscheduled" shelf get a grip; calendar-mapped cards do not,
+  because their position comes from their weekday and a drag there would
+  promise something the layout cannot honour.
+The splice runs over the FULL `day_display_order`, not the visible subset —
+the order also carries inactive days, and rebuilding it from what is on screen
+would drop them.
+
+**Verified** on Ida Mørck's free 03/08 week: five cards, five grips. Dragging
+card 1 onto card 4 moved it to fourth with its content intact (R 94 · S 24 ·
+5,6t travelled with the card, so nothing moved between units), and
+`day_display_order` persisted as `[2,3,4,1,5]` with `active_days` untouched.
+The header's content-move drag still emits `DAY:2` + its own marker, unbroken.
+The scheduled 17/08 week renders ten cards and **zero** grips. Test data
+restored (`day_display_order` back to null).
+
+*Note:* unlabelled units are named by POSITION (`defaultUnitLabel`), so
+reordering renumbers "Unit 1…5" — the same behaviour the Day-config modal has
+always had. Units the coach has named keep their names.
 
 #Desktop notifications for the coach (18/08/2026, v0.47.0 → 0.48.0)
 The cheap half of the push-notification question, built on its own because it

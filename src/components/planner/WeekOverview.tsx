@@ -55,6 +55,9 @@ interface WeekOverviewProps {
   onClearDay: (dayIndex: number) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  /** Reorder the unit cards. Applied only where position is the coach's to
+   *  choose — see the call sites below. */
+  onReorderDay?: (fromDayIndex: number, toDayIndex: number) => void;
   onDockExerciseDrop?: (exerciseId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDrop?: (templateId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
   onDockTemplateDayDrop?: (templateDayId: string, dayIndex: number, isReplace: boolean) => Promise<void>;
@@ -96,6 +99,7 @@ export function WeekOverview({
   onClearDay,
   onExerciseDrop,
   onDayDrop,
+  onReorderDay,
   onDockExerciseDrop,
   onDockTemplateDrop,
   onDockTemplateDayDrop,
@@ -137,7 +141,7 @@ export function WeekOverview({
   // One definition of the card. The calendar bands, the unscheduled shelf and
   // abstract mode all render the same DayCard with the same wiring; three
   // copies of a 30-prop list is three places to forget a prop.
-  const renderCard = (slotIndex: number, dayName: string) => (
+  const renderCard = (slotIndex: number, dayName: string, reorderable = false) => (
     <DayCard
       key={slotIndex}
       dayIndex={slotIndex}
@@ -159,6 +163,7 @@ export function WeekOverview({
       onClearDay={onClearDay}
       onExerciseDrop={onExerciseDrop}
       onDayDrop={onDayDrop}
+      onReorderDay={reorderable ? onReorderDay : undefined}
       onDockExerciseDrop={onDockExerciseDrop}
       onDockTemplateDrop={onDockTemplateDrop}
       onDockTemplateDayDrop={onDockTemplateDayDrop}
@@ -285,7 +290,9 @@ export function WeekOverview({
               Unscheduled
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
-              {unscheduledDays.map(day => renderCard(day.index, day.name))}
+              {/* Unscheduled units have no weekday to place them, so their
+                  order is the coach's — same as abstract mode. */}
+              {unscheduledDays.map(day => renderCard(day.index, day.name, true))}
             </div>
           </div>
         )}
@@ -297,7 +304,7 @@ export function WeekOverview({
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
-        {visibleDays.map(day => renderCard(day.index, day.name))}
+        {visibleDays.map(day => renderCard(day.index, day.name, true))}
       </div>
     </div>
   );
