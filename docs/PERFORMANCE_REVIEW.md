@@ -1,6 +1,8 @@
 # EMOS Performance Review
 
-**Date:** 18/08/2026 · **Version reviewed:** 0.49.0 (main, acbc3a2) · **Status:** findings + recommended plan, no fixes applied yet.
+**Date:** 18/08/2026 · **Version reviewed:** 0.49.0 (main, acbc3a2) · **Status:** Phases 1–4 shipped in **0.49.2** (18/08/2026).
+
+> **Shipped results:** dashboard + full app boot measured at **77 requests** (was ~350–400 for the dashboard alone, largely sequential); entry bundle **395 kB / 118 kB gzip** (was 3,874 kB / 1,088 kB); planner/dashboard interaction re-renders cut via day-scoped state patches + memoization; FK-index + RLS-initplan migration applied (`20260818190000`). Deferred follow-ups: group-plan sync batching (A7), `fetchFacts` stage-parallelization (A9), copy/paste/template per-row loops (A10, A13), full `React.memo(DayCard)` handler-chain stabilization, MacroExcelIO xlsx dynamic import, permissive-policy consolidation (auth phase).
 
 ## Verdict
 
