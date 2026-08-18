@@ -15,11 +15,11 @@ import { StackedNotation } from '../../../components/planner/StackedNotation';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription, topSetOnlyPrescription } from '../../../lib/prescriptionParser';
-import { formatSeconds } from '../../../lib/exerciseFeatures';
 import { GppLogCard } from './GppLogCard';
 import { useAutoCommit } from '../lib/useAutoCommit';
 import { plannedNote } from '../../../lib/plannedNote';
 import { plannedRowLabel } from '../../../lib/plannedRowLabel';
+import { DurationTimer } from './DurationTimer';
 
 interface ExerciseLogCardProps {
   planned: PlannedExerciseFull;
@@ -355,15 +355,22 @@ export function ExerciseLogCard({
                 isCombo={planned.exercise.is_combo}
               />
             )}
+            {/* Prescribed durations are tappable: the chip reads as before
+                until the athlete starts it, then counts down in place. */}
             {!hideDurations && planned.exercise.metadata?.features?.totalTime != null && (
-              <span className="text-[11px] text-gray-500 font-medium">
-                ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
-              </span>
+              <DurationTimer
+                seconds={planned.exercise.metadata.features.totalTime}
+                icon="⏱"
+                storageKey={`emos.athlete.timer.${planned.exercise.id}.total`}
+              />
             )}
             {!hideDurations && planned.exercise.metadata?.features?.restTime != null && (
-              <span className="text-[11px] text-gray-500 font-medium">
-                ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
-              </span>
+              <DurationTimer
+                seconds={planned.exercise.metadata.features.restTime}
+                icon="⏸"
+                label="rest"
+                storageKey={`emos.athlete.timer.${planned.exercise.id}.rest`}
+              />
             )}
             {!hideDurations && planned.exercise.metadata?.features?.tempo != null && (
               <span className="text-[11px] text-gray-500 font-medium" title="Tempo: eccentric · pause · concentric · pause">

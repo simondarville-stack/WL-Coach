@@ -17,24 +17,146 @@ defers others).
   _(untouched on purpose — it says "ask me before doing it". See the note under
   #Batch of 04/08/2026 for what I'd want to know before starting.)_
 * Ín the inbox it should be easier to see and navigate to unread messages. Propose 3 UI improvements to easier navigate. 
+  _(3 proposals delivered 18/08/2026 — awaiting your pick before building:
+  (1) a "new messages" divider + jump-to-first-unread inside a thread,
+  (2) the sidebar unread badge deep-linking into the Unread filter with the
+  first unread athlete expanded, (3) a next-unread stepper in the inbox header
+  that cycles unread threads across athletes. Recommended first: (1).)_
 * Is it possibile to have push notifications from a webapp? 
-* When opening an excercise in the weekly planner, there is a table that displayes the previous prescriptions. Also make a table that shows the previous actuals. They should both show the trainings in the graph window, when updating the window, it should load more sessions. 
+  _(Answered 18/08/2026: yes — Web Push (service worker + VAPID). Works on
+  Chrome/Edge/Firefox/Android; iOS Safari only from 16.4+ AND only once the app
+  is installed to the home screen as a PWA. EMOS has no PWA infrastructure at
+  all today (no manifest, no service worker; the athlete app polls unread every
+  60 s), so this is its own feature branch: manifest + SW + a push_subscriptions
+  table + a Supabase edge function. Say the word and I'll scope it.)_
 * We need to ideate on a way to input excercises that is a "Skill Based Entry". This is a more soft-constrained excercise block. The idea is not entirely finish, but I want to be able to use the way we are currently prescriping a series. But it should be possible to set a time cap, a rep range, a load anchor (max set) and some ghost values like reps and average weight (for analysis purposes, not to show the athlete). Lets ideate on this and prototype before implementing. So ask me a series of quoestions and give me some ideas on how this should/could work. It would be preferable if we can stille manipulate from the planner without having to enter the excercise menu. 
-* When inputting an athlete in the top right dropdown, the page you are on should shift to this athlete. This should be the case for planner, macros, analysis, inbox, personal records etc. 
-* Divide the settings menu into sub-menus for the different tools/functions in the programme. It should be 1:1 with the other menus, and also keep a General settings tab. 
-* When an excercise is added, it should be possible to overwrite the name. This will only change this one instance, and all data will still be saved under the original excercise. This is used for creating variations. The name should be edited from the top when entering the excercise. Also move the name of a combination excercise to the same position when opening the combination excercise menu. 
+  _(questions asked 18/08/2026 — see the reply; blocked on your answers. Most of
+  the primitives it would compose from already shipped in 0.41.0: rep/set/load
+  ranges, ≥≈≤ soft signs, ⏱ durations, and the Σ/S/Ø summary overrides, which
+  are the closest existing analogue to "ghost" analysis-only values.)_
 * We have two ways of creating the day cards. they can either be free and names "Unit 1" "unit 2" etc, and are by default NOT bound to a specific time of the week. We need the following options:
 - to be able to reorganize these cards
 - when it is a specific week, the current design is very messy. I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
-* The weekly planner overview (the menu before entering the actual weekly planner) does not place the training units correctly when they have a specified time and weekday. 
-* Any item in the clipboard should have a preview if double clicked on. It should all be with the stacked notation. Please add this to our specifications sheet somewhere, because it keeps getting lost, and i see the weight x reps x set notation which i don't want. 
-* When doing the weekly planner, and the mode is set to specific days and times, the AM/PM dividing line should be the same for all days. 
-* if an excercise has a total time, it should be possible to start a timer from the athlete app
+  _(questions asked 18/08/2026 — blocked on your answers before prototyping.
+  Note reordering free cards DOES already exist, but only inside the Day-config
+  modal (drag the rows), not by dragging the cards in the planner grid. The
+  AM/PM fix below landed as an interim step and is deliberately reversible.)_
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Batch of 18/08/2026 — 8 items (v0.45.2 → 0.46.0)
+
+**The planner overview placed units by slot number, not weekday — and hid most
+of the week.** `usePlannerWeekOverview` bucketed rows by
+`planned_exercises.day_index`, which is a *slot* (a unit's identity), never
+resolving the weekday through `week_plans.day_schedule` — which it fetched and
+then never read. A unit sitting in slot 0 but scheduled for Saturday rendered
+under **Mon**. Worse, the seven buckets truncated at index 7: `addNewDay`
+allocates `max+1`, so adding and removing units pushes slots past 7, and every
+such unit vanished from the grid **and from every total derived from it**.
+Measured on Ida Mørck's 17/08 week: 23 of its 33 rows sat at slot ≥ 7, so the
+overview reported **119 of 460 reps** — 74 % of the week's volume missing, with
+tonnage and compliance wrong to match.
+*Changed:* units resolve through `day_schedule`, the day list covers every slot
+present (ordered by `day_display_order`), and totals read the exercise rows
+directly so they can't drift from the grid's bucketing. Units with no weekday
+left-pack into free columns, which reproduces the old reading for free weeks
+exactly. Verified against the live DB: all 9 units now render on Mon/Mon/Tue/
+Tue/Wed/Wed/Fri/Fri/Sat with 33 exercise bands, and the totals read 460 / 124 /
+27,0 t — an exact match for the database.
+
+**AM/PM divider aligned across the week.** There was no divider at all: each
+weekday column stacked its sessions at natural card height, so the boundary sat
+wherever that column's first card happened to end (Mon's PM card began at
+y≈1247, Tue's at y≈1111 — a 136 px stagger). Sessions now split into morning
+and afternoon **grid rows spanning the whole week**, so the line is at one
+height for every day; measured after: every AM card starts at 689, the PM band
+at 1276, for all four two-session days. That alignment is only definable in a
+single row, so the week no longer wraps — it scrolls sideways inside its own
+container (page itself does not scroll horizontally). Untimed sessions sit in
+the first band: DayConfigModal requires a time as soon as two units share a
+weekday, so an untimed one is the day's only session and has no AM/PM meaning
+to guess at. A weekday label row was added because a fixed grid has to name its
+columns. Boundary is `AM_END_MINUTES`, flagged COACH-CONFIG.
+*Interim by intent* — the scheduled-week redesign is still open above.
+
+**A table of previous actuals, and both tables follow the chart window.** The
+exercise view listed what had been *prescribed* and plotted what was performed,
+but never listed the actuals. New `ExerciseActualsHistory` reads the log the
+same way the chart's Performed series does — per-set rows from
+`training_log_sets`, falling back to a v1 `performed_raw` summary — so the table
+and the chart cannot disagree; rows are dated by the session, not the week,
+because a log is an event. Both tables now filter to the chart's visible window
+and sit side by side beneath it: on Ida's Træk the default 16-week window shows
+11 prescriptions / 9 actuals, and Show-all takes them to 13 / 10 (all 10 logged
+rows). The prescriptions fetch went 104 → 156 weeks to match the chart's pannable
+range.
+
+**The athlete dropdown now re-points the Inbox.** Planner, macro, analysis, PRs
+and the library already followed the global athlete store; the inbox kept a
+private `selectedAthleteId`, so switching athlete in the header left the coach
+reading the previous athlete's threads. Only a positive selection re-points —
+clearing it, or picking a group (which the inbox has no notion of), leaves the
+open conversation alone. *Not changed:* the competition calendar, which is a
+multi-athlete surface by design.
+
+**Settings split into sub-menus, 1:1 with the app's modules.** It was one
+~1000-line scroll of 13 sections, so finding the planner's grid options meant
+knowing roughly how far down they lived. Now seven tabs — General · Weekly
+planner · Macro cycles · Analysis · Dashboard · Athletes · Fieldcoach — with the
+chosen tab remembered per device. All 13 sections were preserved and verified
+present tab by tab; nothing was dropped or rewritten, only grouped.
+
+**Per-instance exercise names (variations).** A coach writing "Snatch from
+blocks" had no way to rename one row: `planned_exercises` had no name field at
+all, and the combo's name (`combo_notation`) was editable only in a Settings
+block ~500 px *below* the title it fed. New `planned_exercises.display_name`
+holds the override and the **exercise view's title is now the editor** for both
+row kinds, which is also where the combo name moved to. `exercise_id` is never
+touched, so every set, log and analysis row stays attached to the catalogue
+exercise — a caption under the title says what it is logged as. Eight separate
+label fallback chains now route through one `lib/plannedRowLabel`, which is what
+would otherwise have let the override reach some surfaces and not others; it
+renders in the day card, day editor, log rows, print, Fieldcoach and the athlete
+app. Verified live: renaming one Træk row wrote `display_name` while
+`exercise_id` stayed on the catalogue Træk, the two other Træk rows kept their
+own name, and clearing it restored the original. *Fixed on the way:* the
+exercise view's **back arrow was a pure view switch** with no flush and no
+refresh, so a renamed row — or a renamed combo, true all along — kept showing
+its old name on the day card until something else refetched. Both leaving routes
+now run one `flushPendingEdits`. All test renames were reverted; the column
+holds no rows.
+*Not carried:* programme templates, which would need their own column — applying
+a template gives the catalogue name.
+
+**Clipboard previews, in stacked notation, and a specifications sheet.**
+Double-click preview existed only for parked *weeks*; exercise and training-unit
+items had none. All three now open one dialog. Their prescriptions — and the
+programme-template preview's — rendered inline `load×reps×sets` via a
+`readableLines` helper, which is exactly the notation you didn't want; both now
+use `StackedNotation`, and `readableLines` is gone. Verified: both preview kinds
+render divider rules and contain no `×` string.
+**There was no specifications sheet in the repo** — display conventions lived
+ad hoc in CLAUDE.md and code comments, which is why this kept getting lost. Now
+`docs/DISPLAY_CONVENTIONS.md`, binding, covering stacked notation (with the
+exact exceptions), comma decimals, European dates/times/Monday weeks, the
+slot-vs-weekday distinction, and data-driven colour. CLAUDE.md points at it and
+states the notation rule as a hard requirement.
+
+**Timer in the athlete app.** ⏱ total time and ⏸ rest were display-only chips.
+They're now tappable countdowns. Two things drove the design: it counts
+**wall-clock** (state is the absolute end timestamp, the interval only
+re-renders), so a sleeping phone or backgrounded tab can't silently make a rest
+run slow; and it's mirrored to sessionStorage per row, so collapsing the card or
+leaving the screen resumes the same countdown instead of resetting a rest the
+athlete is relying on. Tap to start/pause, ✕ to reset, one vibration at zero.
+Writes no training data — a timer is not a log.
+
+*Also here:* the three duplicated 30-prop `DayCard` call sites in `WeekOverview`
+collapsed into one.
 
 #Per-exercise planner summary toggle (already shipped 17/08/2026, commit 5784219)
 **Wrong:** every exercise showed the summary column in the weekly planner with no

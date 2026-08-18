@@ -26,7 +26,39 @@ const LIFT_SLOTS: Array<{ value: Exercise['lift_slot']; label: string }> = [
   { value: 'clean_pull',   label: 'Clean Pull' },
 ];
 
+/** Settings sub-menus, mirroring the app's own modules so a coach looks for a
+ *  setting where they look for the feature. */
+const SETTINGS_TABS = [
+  { key: 'general', label: 'General' },
+  { key: 'planner', label: 'Weekly planner' },
+  { key: 'macro', label: 'Macro cycles' },
+  { key: 'analysis', label: 'Analysis' },
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'athletes', label: 'Athletes' },
+  { key: 'fieldcoach', label: 'Fieldcoach' },
+] as const;
+
+type SettingsTab = typeof SETTINGS_TABS[number]['key'];
+
+/** Device-local: a coach who lives in the planner's settings returns to them. */
+const TAB_PREF_KEY = 'emos.settings.tab';
+
+function readTabPref(): SettingsTab {
+  try {
+    const raw = localStorage.getItem(TAB_PREF_KEY);
+    if (SETTINGS_TABS.some(t => t.key === raw)) return raw as SettingsTab;
+  } catch { /* private mode */ }
+  return 'general';
+}
+
 export function GeneralSettings() {
+  const [tab, setTab] = useState<SettingsTab>(readTabPref);
+
+  const selectTab = (next: SettingsTab) => {
+    setTab(next);
+    try { localStorage.setItem(TAB_PREF_KEY, next); } catch { /* private mode */ }
+  };
+
   const { settings, loading, saving, fetchSettings, updateSettings } = useSettings();
   const { activeCoach, setActiveCoach, coaches, setCoaches } = useCoachStore();
   const { updateCoach, deleteCoach } = useCoachProfiles();
@@ -298,201 +330,732 @@ export function GeneralSettings() {
 
   return (
     <div className="p-6">
-      <h1 className="text-base font-medium mb-4 text-gray-900">General Settings</h1>
+      <h1 className="text-base font-medium mb-4 text-gray-900">Settings</h1>
 
-      {/* Coach Profile */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Coach profile</h2>
-        <p className="text-sm text-gray-600 mb-4">This environment's identity. Shown on printed programmes.</p>
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              value={coachName}
-              onChange={e => setCoachName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Club</label>
-            <input
-              type="text"
-              value={coachClub}
-              onChange={e => setCoachClub(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={coachEmail}
-              onChange={e => setCoachEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Coach ID</label>
-            <div className="flex items-center gap-2">
-              <div
-                className="flex-1 px-3 py-2 text-xs rounded-lg select-all"
-                style={{
-                  fontFamily: 'monospace',
-                  background: 'var(--color-bg-secondary)',
-                  border: '0.5px solid var(--color-border-tertiary)',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                {activeCoach?.id ?? '—'}
+      {/* Sub-menus, 1:1 with the app's own modules. Settings used to be one
+          1000-line scroll, so finding the planner's grid options meant knowing
+          roughly how far down they lived. */}
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="flex flex-wrap gap-1 border-b border-gray-200 mb-6"
+      >
+        {SETTINGS_TABS.map(t => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => selectTab(t.key)}
+            className={
+              'px-3 py-1.5 text-sm font-medium -mb-px border-b-2 transition-colors ' +
+              (tab === t.key
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-gray-500 hover:text-gray-800')
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'general' && (
+        <div className="space-y-6">
+          {/* Coach Profile */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Coach profile</h2>
+            <p className="text-sm text-gray-600 mb-4">This environment's identity. Shown on printed programmes.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={coachName}
+                  onChange={e => setCoachName(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Club</label>
+                <input
+                  type="text"
+                  value={coachClub}
+                  onChange={e => setCoachClub(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={coachEmail}
+                  onChange={e => setCoachEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Coach ID</label>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex-1 px-3 py-2 text-xs rounded-lg select-all"
+                    style={{
+                      fontFamily: 'monospace',
+                      background: 'var(--color-bg-secondary)',
+                      border: '0.5px solid var(--color-border-tertiary)',
+                      color: 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {activeCoach?.id ?? '—'}
+                  </div>
+                  <button
+                    type="button"
+                    title="Copy Coach ID"
+                    onClick={() => {
+                      if (activeCoach?.id) {
+                        navigator.clipboard.writeText(activeCoach.id);
+                        setCopiedCoachId(true);
+                        setTimeout(() => setCopiedCoachId(false), 2000);
+                      }
+                    }}
+                    className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                  >
+                    {copiedCoachId ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  onClick={handleSaveCoachProfile}
+                  disabled={savingCoach}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {savingCoach ? 'Saving…' : 'Save profile'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-sm text-red-600 hover:text-red-700"
+                >
+                  Delete this environment…
+                </button>
+              ) : (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                  <p className="text-sm text-red-800 font-medium mb-2">Delete environment?</p>
+                  <p className="text-xs text-red-700 mb-3">
+                    This will permanently delete all athletes, exercises, plans, and settings in this environment. This cannot be undone.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDeleteEnvironment}
+                      className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                    >
+                      Delete permanently
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'planner' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Grid Input Mode</h2>
+              <p className="text-sm text-gray-600 mb-4">Configure settings for the grid-based prescription editor</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Load Increment (kg)</label>
+                <p className="text-sm text-gray-600 mb-3">
+                  Auto-increment for new column load when adding columns in grid mode
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="50"
+                    step="0.5"
+                    value={gridLoadIncrement}
+                    onChange={(e) => setGridLoadIncrement(Math.max(0.5, Math.min(50, parseFloat(e.target.value) || 5)))}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-600">kg</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment</label>
+                <p className="text-sm text-gray-600 mb-3">
+                  Value change per click on load/reps/sets cells (left-click increases, right-click decreases)
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0.5"
+                    max="10"
+                    step="0.5"
+                    value={gridClickIncrement}
+                    onChange={(e) => setGridClickIncrement(Math.max(0.5, Math.min(10, parseFloat(e.target.value) || 1)))}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Default starting load</label>
+                <p className="text-sm text-gray-600 mb-3">
+                  Seed value for the first column when starting a fresh prescription. Applies to % and kg alike — pick whatever makes sense for your typical first set.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    max="500"
+                    step="1"
+                    value={defaultPrescriptionLoad}
+                    onChange={(e) => setDefaultPrescriptionLoad(Math.max(0, Math.min(500, parseFloat(e.target.value) || 0)))}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Percentage → kg rounding</label>
+                <p className="text-sm text-gray-600 mb-3">
+                  Defaults the conversion modal uses when converting percentage prescriptions to kg. Coaches can still toggle and override per conversion.
+                </p>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pctToKgRoundEnabled}
+                      onChange={(e) => setPctToKgRoundEnabled(e.target.checked)}
+                    />
+                    <span>Round by default</span>
+                  </label>
+                  <div className={`flex items-center gap-2 ${pctToKgRoundEnabled ? '' : 'opacity-40'}`}>
+                    <span className="text-sm text-gray-600">to nearest</span>
+                    <input
+                      type="number"
+                      min="0.05"
+                      max="50"
+                      step="0.05"
+                      disabled={!pctToKgRoundEnabled}
+                      value={pctToKgRoundIncrement}
+                      onChange={(e) => setPctToKgRoundIncrement(Math.max(0.05, Math.min(50, parseFloat(e.target.value) || 0.5)))}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-600">kg</span>
+                  </div>
+                </div>
+              </div>
+
+              {gridSaveError && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  {gridSaveError}
+                </div>
+              )}
+
+              {(gridLoadIncrement !== settings?.grid_load_increment
+                || gridClickIncrement !== settings?.grid_click_increment
+                || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)
+                || pctToKgRoundEnabled !== (settings?.percent_to_kg_round_enabled ?? true)
+                || pctToKgRoundIncrement !== (settings?.percent_to_kg_round_increment ?? 0.5)) && (
+                <button
+                  onClick={updateGridSettings}
+                  disabled={saving}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {saving ? 'Saving…' : 'Save Grid Settings'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Layout preferences</h2>
+              <p className="text-sm text-gray-600 mb-4">Choose how exercise and day dialogs open in the weekly planner</p>
+            </div>
+            <div className="flex gap-3">
+              {([
+                {
+                  value: 'center' as const,
+                  label: 'Centered dialog',
+                  preview: (
+                    <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/10 rounded" />
+                      <div className="relative w-14 h-7 bg-white border border-gray-300 rounded shadow-sm" />
+                    </div>
+                  ),
+                },
+                {
+                  value: 'sidebar' as const,
+                  label: 'Side panel',
+                  preview: (
+                    <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-end overflow-hidden">
+                      <div className="absolute inset-0 bg-black/10 rounded" />
+                      <div className="relative w-10 h-full bg-white border-l border-gray-300" />
+                    </div>
+                  ),
+                },
+              ] as const).map(({ value, label, preview }) => {
+                const active = (settings?.dialog_mode ?? 'center') === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={async () => {
+                      if (!settings) return;
+                      await updateSettings(settings.id, { dialog_mode: value });
+                    }}
+                    className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                      active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    {preview}
+                    <p className={`text-xs font-medium mt-2 ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
+            <p className="text-sm text-gray-600 mb-5">Control which metrics appear in the planner. K% requires an athlete competition total to be set.</p>
+
+            <div className="space-y-6">
+              {/* Day card metrics */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Day card — top of card</label>
+                <p className="text-xs text-gray-400 mb-3">Shown in the compact strip at the top of each day card in the week overview.</p>
+                <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+                  {METRIC_ORDER.map(key => {
+                    const def = METRICS.find(m => m.key === key)!;
+                    return (
+                      <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={visibleCardMetrics.includes(key)}
+                          onChange={() => void toggleCardMetric(key)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-gray-700">{def.label}</span>
+                          {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
+                        </div>
+                        <span className="text-xs text-gray-400">{def.description}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Week summary metrics */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Week summary — top of week</label>
+                <p className="text-xs text-gray-400 mb-3">Shown in the week total summary bar above the day cards.</p>
+                <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+                  {METRIC_ORDER.map(key => {
+                    const def = METRICS.find(m => m.key === key)!;
+                    return (
+                      <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={visibleMetrics.includes(key)}
+                          onChange={() => void toggleMetric(key)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-gray-700">{def.label}</span>
+                          {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
+                        </div>
+                        <span className="text-xs text-gray-400">{def.description}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'macro' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Macro timeline</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Which metric drives the load silhouette (macro targets) and the week-planned marker on the
+                macro timeline. Falls back to the other metric when a macro carries no targets for the chosen one.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              {([
+                { value: 'reps' as const, label: 'Σreps', hint: 'Macro Σreps targets vs. week-planned reps' },
+                { value: 'tonnage' as const, label: 'Tonnage', hint: 'Macro tonnage targets vs. week-planned kg volume' },
+              ] as const).map(({ value, label, hint }) => {
+                const active = (settings?.timeline_metric ?? 'reps') === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={async () => {
+                      if (!settings) return;
+                      await updateSettings(settings.id, { timeline_metric: value });
+                    }}
+                    className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                      active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <p className={`text-xs font-medium ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5">
+              <h3 className="text-sm font-medium text-gray-900 mb-1">Active-week detail</h3>
+              <p className="text-xs text-gray-600 mb-2">
+                Which target metrics the macro table expands on the week you are planning. The rest of the
+                macro stays on the single metric selected in the table itself.
+              </p>
+              <div className="flex gap-4">
+                {([
+                  { value: 'reps' as const, label: 'Σreps target' },
+                  { value: 'max' as const, label: 'Max target' },
+                  { value: 'avg' as const, label: 'Average target' },
+                ] as const).map(({ value, label }) => {
+                  const current = settings?.timeline_week_detail ?? ['reps', 'max', 'avg'];
+                  const checked = current.includes(value);
+                  return (
+                    <label key={value} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={async () => {
+                          if (!settings) return;
+                          const next = checked
+                            ? current.filter(v => v !== value)
+                            : [...current, value];
+                          await updateSettings(settings.id, { timeline_week_detail: next });
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Week types</h2>
+            <p className="text-sm text-gray-600 mb-4">Define the week classification labels used in the macro planner. Each type has a name, abbreviation (1–3 chars), and color.</p>
+
+            <div className="space-y-1 mb-3">
+              {/* Header row */}
+              <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
+                <span>Name</span>
+                <span>Abbr</span>
+                <span>Color</span>
+                <span />
+              </div>
+
+              {weekTypes.map((wt, idx) => (
+                <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
+                  <input
+                    type="text"
+                    value={wt.name}
+                    onChange={e => void updateWeekType(idx, { name: e.target.value })}
+                    onBlur={e => { if (e.target.value.trim()) void saveWeekTypes(weekTypes); }}
+                    placeholder="Name…"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={wt.abbreviation}
+                    maxLength={3}
+                    onChange={e => void updateWeekType(idx, { abbreviation: e.target.value })}
+                    onBlur={() => { if (!duplicateAbbr) void saveWeekTypes(weekTypes); }}
+                    placeholder="h"
+                    className={`px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                      duplicateAbbr && wt.abbreviation === duplicateAbbr ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                    }`}
+                  />
+                  <label
+                    className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
+                    style={{ backgroundColor: wt.color }}
+                    title={wt.color}
+                  >
+                    <input
+                      type="color"
+                      value={wt.color}
+                      onChange={e => void updateWeekType(idx, { color: e.target.value })}
+                      className="opacity-0 w-0 h-0"
+                    />
+                  </label>
+                  <button
+                    onClick={() => void deleteWeekType(idx)}
+                    title="Delete week type"
+                    className="text-gray-300 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {duplicateAbbr && (
+              <p className="text-xs text-red-600 mb-3">Abbreviation "{duplicateAbbr}" is already in use. Choose a unique abbreviation.</p>
+            )}
+
+            <button
+              onClick={() => void addWeekType()}
+              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+            >
+              <Plus size={14} /> Add week type
+            </button>
+          </div>
+
+          {/* Phase type presets */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Phase type presets</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Define the phase types available when creating a macro phase. Each preset has a name, a key (stored in the database), and a default color.
+            </p>
+
+            <div className="space-y-1 mb-3">
+              <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
+                <span>Label</span>
+                <span>Key</span>
+                <span>Color</span>
+                <span />
+              </div>
+
+              {phaseTypePresets.map((preset, idx) => (
+                <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
+                  <input
+                    type="text"
+                    value={preset.label}
+                    onChange={e => void updatePhasePreset(idx, { label: e.target.value })}
+                    onBlur={() => { if (preset.label.trim()) void savePhaseTypePresets(phaseTypePresets); }}
+                    placeholder="Preparatory…"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <input
+                    type="text"
+                    value={preset.value}
+                    onChange={e => void updatePhasePreset(idx, { value: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                    onBlur={() => { if (preset.value.trim()) void savePhaseTypePresets(phaseTypePresets); }}
+                    placeholder="preparatory"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                  <label
+                    className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
+                    style={{ backgroundColor: preset.color }}
+                    title={preset.color}
+                  >
+                    <input
+                      type="color"
+                      value={preset.color}
+                      onChange={e => void updatePhasePreset(idx, { color: e.target.value })}
+                      onBlur={() => void savePhaseTypePresets(phaseTypePresets)}
+                      className="opacity-0 w-0 h-0"
+                    />
+                  </label>
+                  <button
+                    onClick={() => void deletePhasePreset(idx)}
+                    title="Delete preset"
+                    className="text-gray-300 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => void addPhasePreset()}
+              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+            >
+              <Plus size={14} /> Add phase type
+            </button>
+          </div>
+
+          {/* Macro table columns */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Macro Table Columns</h2>
+            <p className="text-sm text-gray-600 mb-4">Default columns for new macro cycle tables. Training Week, Dates and Events always seed a new table; every column (including those) can still be toggled per macro from its own “Table view” menu.</p>
+            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+              {(Object.keys(MACRO_TABLE_COLUMN_LABELS) as MacroTableColumnKey[])
+                .filter(col => !STRUCTURAL_MACRO_COLUMNS.includes(col))
+                .map(col => (
+                <label key={col} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={macroTableColumns.includes(col)}
+                    onChange={() => void toggleMacroTableColumn(col)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">{MACRO_TABLE_COLUMN_LABELS[col]}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'analysis' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-medium text-gray-900 mb-1">RAW Scoring</h2>
+                <p className="text-sm text-gray-600">
+                  Enable athletes to record Readiness and Wellbeing scores with their training logs
+                </p>
+              </div>
+
               <button
-                type="button"
-                title="Copy Coach ID"
-                onClick={() => {
-                  if (activeCoach?.id) {
-                    navigator.clipboard.writeText(activeCoach.id);
-                    setCopiedCoachId(true);
-                    setTimeout(() => setCopiedCoachId(false), 2000);
-                  }
-                }}
-                className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                onClick={toggleRawScoring}
+                disabled={saving}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  settings?.raw_enabled ? 'bg-blue-600' : 'bg-gray-300'
+                } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                {copiedCoachId ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    settings?.raw_enabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
               </button>
             </div>
+
+            {settings?.raw_enabled && (
+              <>
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h3 className="text-sm font-medium text-blue-900 mb-2">About RAW Scoring</h3>
+                  <p className="text-sm text-blue-800">
+                    RAW scoring helps athletes assess their readiness before training across four pillars: Sleep, Physical condition, Mood, and Nutrition. Based on their scores, the system provides volume adjustment recommendations.
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">RAW Average Days</label>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Number of days to calculate the rolling RAW average in the coach dashboard
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={rawAverageDays}
+                      onChange={(e) => setRawAverageDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 7)))}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-600">days</span>
+                    {rawAverageDays !== settings.raw_average_days && (
+                      <button
+                        onClick={updateRawAverageDays}
+                        disabled={saving}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              onClick={handleSaveCoachProfile}
-              disabled={savingCoach}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingCoach ? 'Saving…' : 'Save profile'}
-            </button>
-          </div>
         </div>
+      )}
 
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          {!showDeleteConfirm ? (
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="text-sm text-red-600 hover:text-red-700"
-            >
-              Delete this environment…
-            </button>
-          ) : (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-              <p className="text-sm text-red-800 font-medium mb-2">Delete environment?</p>
-              <p className="text-xs text-red-700 mb-3">
-                This will permanently delete all athletes, exercises, plans, and settings in this environment. This cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleDeleteEnvironment}
-                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
-                >
-                  Delete permanently
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+      {tab === 'dashboard' && (
+        <div className="space-y-6">
+          <FlagSettingsSection />
         </div>
-      </div>
+      )}
 
-      {/* Lift slots */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Lift slots</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Assign one exercise per slot. Used by the analysis module to identify canonical lifts for ratio and trend calculations.
-        </p>
-        <div className="space-y-2">
-          {LIFT_SLOTS.map(({ value: slot, label }) => {
-            const holder = exercises.find(e => (e.lift_slot as string | null) === (slot as string));
-            const isSaving = savingSlot === slot;
-            const sortedExercises = [...exercises].sort((a, b) => a.name.localeCompare(b.name));
-            return (
-              <div key={slot as string} className="flex items-center gap-3">
-                <span className="text-sm text-gray-700 w-28 shrink-0">{label}</span>
-                <select
-                  value={holder?.id ?? ''}
-                  disabled={isSaving}
-                  onChange={e => handleSlotChange(slot, e.target.value || null)}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
-                >
-                  <option value="">— None —</option>
-                  {sortedExercises.map(ex => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.name}{ex.exercise_code ? ` (${ex.exercise_code})` : ''}
-                    </option>
-                  ))}
-                </select>
-                {isSaving && (
-                  <span className="text-xs text-gray-400 shrink-0">Saving…</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-medium text-gray-900 mb-1">RAW Scoring</h2>
-            <p className="text-sm text-gray-600">
-              Enable athletes to record Readiness and Wellbeing scores with their training logs
+      {tab === 'athletes' && (
+        <div className="space-y-6">
+          {/* Lift slots */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <h2 className="text-lg font-medium text-gray-900 mb-1">Lift slots</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Assign one exercise per slot. Used by the analysis module to identify canonical lifts for ratio and trend calculations.
             </p>
+            <div className="space-y-2">
+              {LIFT_SLOTS.map(({ value: slot, label }) => {
+                const holder = exercises.find(e => (e.lift_slot as string | null) === (slot as string));
+                const isSaving = savingSlot === slot;
+                const sortedExercises = [...exercises].sort((a, b) => a.name.localeCompare(b.name));
+                return (
+                  <div key={slot as string} className="flex items-center gap-3">
+                    <span className="text-sm text-gray-700 w-28 shrink-0">{label}</span>
+                    <select
+                      value={holder?.id ?? ''}
+                      disabled={isSaving}
+                      onChange={e => handleSlotChange(slot, e.target.value || null)}
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                    >
+                      <option value="">— None —</option>
+                      {sortedExercises.map(ex => (
+                        <option key={ex.id} value={ex.id}>
+                          {ex.name}{ex.exercise_code ? ` (${ex.exercise_code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {isSaving && (
+                      <span className="text-xs text-gray-400 shrink-0">Saving…</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <button
-            onClick={toggleRawScoring}
-            disabled={saving}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              settings?.raw_enabled ? 'bg-blue-600' : 'bg-gray-300'
-            } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                settings?.raw_enabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-
-        {settings?.raw_enabled && (
-          <>
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="text-sm font-medium text-blue-900 mb-2">About RAW Scoring</h3>
-              <p className="text-sm text-blue-800">
-                RAW scoring helps athletes assess their readiness before training across four pillars: Sleep, Physical condition, Mood, and Nutrition. Based on their scores, the system provides volume adjustment recommendations.
-              </p>
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Bodyweight Tracking</h2>
+              <p className="text-sm text-gray-600 mb-4">Configure the moving average window for bodyweight trend calculations</p>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <label className="block text-sm font-medium text-gray-700 mb-2">RAW Average Days</label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Moving average window (days)</label>
               <p className="text-sm text-gray-600 mb-3">
-                Number of days to calculate the rolling RAW average in the coach dashboard
+                Used for the dashboard bodyweight card and trend calculation
               </p>
               <div className="flex items-center gap-3">
                 <input
                   type="number"
-                  min="1"
+                  min="3"
                   max="30"
-                  value={rawAverageDays}
-                  onChange={(e) => setRawAverageDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 7)))}
+                  value={bodyweightMaDays}
+                  onChange={(e) => setBodyweightMaDays(Math.max(3, Math.min(30, parseInt(e.target.value) || 7)))}
                   className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <span className="text-sm text-gray-600">days</span>
-                {rawAverageDays !== settings.raw_average_days && (
+                {bodyweightMaDays !== (settings?.bodyweight_ma_days ?? 7) && (
                   <button
-                    onClick={updateRawAverageDays}
+                    onClick={updateBodyweightMaDays}
                     disabled={saving}
                     className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
@@ -501,524 +1064,48 @@ export function GeneralSettings() {
                 )}
               </div>
             </div>
-          </>
-        )}
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Grid Input Mode</h2>
-          <p className="text-sm text-gray-600 mb-4">Configure settings for the grid-based prescription editor</p>
+          </div>
         </div>
+      )}
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Load Increment (kg)</label>
-            <p className="text-sm text-gray-600 mb-3">
-              Auto-increment for new column load when adding columns in grid mode
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="0.5"
-                max="50"
-                step="0.5"
-                value={gridLoadIncrement}
-                onChange={(e) => setGridLoadIncrement(Math.max(0.5, Math.min(50, parseFloat(e.target.value) || 5)))}
-                className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-600">kg</span>
+      {tab === 'fieldcoach' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Fieldcoach</h2>
+              <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach view (/fieldcoach)</p>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Click Increment</label>
-            <p className="text-sm text-gray-600 mb-3">
-              Value change per click on load/reps/sets cells (left-click increases, right-click decreases)
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="0.5"
-                max="10"
-                step="0.5"
-                value={gridClickIncrement}
-                onChange={(e) => setGridClickIncrement(Math.max(0.5, Math.min(10, parseFloat(e.target.value) || 1)))}
-                className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Default starting load</label>
-            <p className="text-sm text-gray-600 mb-3">
-              Seed value for the first column when starting a fresh prescription. Applies to % and kg alike — pick whatever makes sense for your typical first set.
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min="0"
-                max="500"
-                step="1"
-                value={defaultPrescriptionLoad}
-                onChange={(e) => setDefaultPrescriptionLoad(Math.max(0, Math.min(500, parseFloat(e.target.value) || 0)))}
-                className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Percentage → kg rounding</label>
-            <p className="text-sm text-gray-600 mb-3">
-              Defaults the conversion modal uses when converting percentage prescriptions to kg. Coaches can still toggle and override per conversion.
-            </p>
-            <div className="flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={pctToKgRoundEnabled}
-                  onChange={(e) => setPctToKgRoundEnabled(e.target.checked)}
-                />
-                <span>Round by default</span>
-              </label>
-              <div className={`flex items-center gap-2 ${pctToKgRoundEnabled ? '' : 'opacity-40'}`}>
-                <span className="text-sm text-gray-600">to nearest</span>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Bold intensity threshold</label>
+              <p className="text-sm text-gray-600 mb-3">
+                Exercises prescribed at or above this intensity (% of the reference max) render bold in the field view's session tables.
+              </p>
+              <div className="flex items-center gap-3">
                 <input
                   type="number"
-                  min="0.05"
-                  max="50"
-                  step="0.05"
-                  disabled={!pctToKgRoundEnabled}
-                  value={pctToKgRoundIncrement}
-                  onChange={(e) => setPctToKgRoundIncrement(Math.max(0.05, Math.min(50, parseFloat(e.target.value) || 0.5)))}
+                  min="50"
+                  max="100"
+                  step="1"
+                  value={fieldBoldPct}
+                  onChange={(e) => setFieldBoldPct(Math.max(50, Math.min(100, parseFloat(e.target.value) || 90)))}
                   className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-600">kg</span>
+                <span className="text-sm text-gray-600">%</span>
+                {fieldBoldPct !== (settings?.field_bold_intensity_pct ?? 90) && (
+                  <button
+                    onClick={updateFieldBoldPct}
+                    disabled={saving}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                )}
               </div>
             </div>
           </div>
-
-          {gridSaveError && (
-            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-              {gridSaveError}
-            </div>
-          )}
-
-          {(gridLoadIncrement !== settings?.grid_load_increment
-            || gridClickIncrement !== settings?.grid_click_increment
-            || defaultPrescriptionLoad !== (settings?.default_prescription_load ?? 50)
-            || pctToKgRoundEnabled !== (settings?.percent_to_kg_round_enabled ?? true)
-            || pctToKgRoundIncrement !== (settings?.percent_to_kg_round_increment ?? 0.5)) && (
-            <button
-              onClick={updateGridSettings}
-              disabled={saving}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save Grid Settings'}
-            </button>
-          )}
         </div>
-      </div>
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Bodyweight Tracking</h2>
-          <p className="text-sm text-gray-600 mb-4">Configure the moving average window for bodyweight trend calculations</p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Moving average window (days)</label>
-          <p className="text-sm text-gray-600 mb-3">
-            Used for the dashboard bodyweight card and trend calculation
-          </p>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              min="3"
-              max="30"
-              value={bodyweightMaDays}
-              onChange={(e) => setBodyweightMaDays(Math.max(3, Math.min(30, parseInt(e.target.value) || 7)))}
-              className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-600">days</span>
-            {bodyweightMaDays !== (settings?.bodyweight_ma_days ?? 7) && (
-              <button
-                onClick={updateBodyweightMaDays}
-                disabled={saving}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                Save
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Fieldcoach</h2>
-          <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach view (/fieldcoach)</p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Bold intensity threshold</label>
-          <p className="text-sm text-gray-600 mb-3">
-            Exercises prescribed at or above this intensity (% of the reference max) render bold in the field view's session tables.
-          </p>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              min="50"
-              max="100"
-              step="1"
-              value={fieldBoldPct}
-              onChange={(e) => setFieldBoldPct(Math.max(50, Math.min(100, parseFloat(e.target.value) || 90)))}
-              className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-600">%</span>
-            {fieldBoldPct !== (settings?.field_bold_intensity_pct ?? 90) && (
-              <button
-                onClick={updateFieldBoldPct}
-                disabled={saving}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                Save
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Layout preferences</h2>
-          <p className="text-sm text-gray-600 mb-4">Choose how exercise and day dialogs open in the weekly planner</p>
-        </div>
-        <div className="flex gap-3">
-          {([
-            {
-              value: 'center' as const,
-              label: 'Centered dialog',
-              preview: (
-                <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-center">
-                  <div className="absolute inset-0 bg-black/10 rounded" />
-                  <div className="relative w-14 h-7 bg-white border border-gray-300 rounded shadow-sm" />
-                </div>
-              ),
-            },
-            {
-              value: 'sidebar' as const,
-              label: 'Side panel',
-              preview: (
-                <div className="w-full h-10 bg-gray-100 rounded relative flex items-center justify-end overflow-hidden">
-                  <div className="absolute inset-0 bg-black/10 rounded" />
-                  <div className="relative w-10 h-full bg-white border-l border-gray-300" />
-                </div>
-              ),
-            },
-          ] as const).map(({ value, label, preview }) => {
-            const active = (settings?.dialog_mode ?? 'center') === value;
-            return (
-              <button
-                key={value}
-                onClick={async () => {
-                  if (!settings) return;
-                  await updateSettings(settings.id, { dialog_mode: value });
-                }}
-                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
-                  active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
-                }`}
-              >
-                {preview}
-                <p className={`text-xs font-medium mt-2 ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <div>
-          <h2 className="text-lg font-medium text-gray-900 mb-1">Macro timeline</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Which metric drives the load silhouette (macro targets) and the week-planned marker on the
-            macro timeline. Falls back to the other metric when a macro carries no targets for the chosen one.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          {([
-            { value: 'reps' as const, label: 'Σreps', hint: 'Macro Σreps targets vs. week-planned reps' },
-            { value: 'tonnage' as const, label: 'Tonnage', hint: 'Macro tonnage targets vs. week-planned kg volume' },
-          ] as const).map(({ value, label, hint }) => {
-            const active = (settings?.timeline_metric ?? 'reps') === value;
-            return (
-              <button
-                key={value}
-                onClick={async () => {
-                  if (!settings) return;
-                  await updateSettings(settings.id, { timeline_metric: value });
-                }}
-                className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
-                  active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
-                }`}
-              >
-                <p className={`text-xs font-medium ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
-                <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-5">
-          <h3 className="text-sm font-medium text-gray-900 mb-1">Active-week detail</h3>
-          <p className="text-xs text-gray-600 mb-2">
-            Which target metrics the macro table expands on the week you are planning. The rest of the
-            macro stays on the single metric selected in the table itself.
-          </p>
-          <div className="flex gap-4">
-            {([
-              { value: 'reps' as const, label: 'Σreps target' },
-              { value: 'max' as const, label: 'Max target' },
-              { value: 'avg' as const, label: 'Average target' },
-            ] as const).map(({ value, label }) => {
-              const current = settings?.timeline_week_detail ?? ['reps', 'max', 'avg'];
-              const checked = current.includes(value);
-              return (
-                <label key={value} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={async () => {
-                      if (!settings) return;
-                      const next = checked
-                        ? current.filter(v => v !== value)
-                        : [...current, value];
-                      await updateSettings(settings.id, { timeline_week_detail: next });
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                  {label}
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Week types</h2>
-        <p className="text-sm text-gray-600 mb-4">Define the week classification labels used in the macro planner. Each type has a name, abbreviation (1–3 chars), and color.</p>
-
-        <div className="space-y-1 mb-3">
-          {/* Header row */}
-          <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
-            <span>Name</span>
-            <span>Abbr</span>
-            <span>Color</span>
-            <span />
-          </div>
-
-          {weekTypes.map((wt, idx) => (
-            <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 64px 40px 28px' }}>
-              <input
-                type="text"
-                value={wt.name}
-                onChange={e => void updateWeekType(idx, { name: e.target.value })}
-                onBlur={e => { if (e.target.value.trim()) void saveWeekTypes(weekTypes); }}
-                placeholder="Name…"
-                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <input
-                type="text"
-                value={wt.abbreviation}
-                maxLength={3}
-                onChange={e => void updateWeekType(idx, { abbreviation: e.target.value })}
-                onBlur={() => { if (!duplicateAbbr) void saveWeekTypes(weekTypes); }}
-                placeholder="h"
-                className={`px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                  duplicateAbbr && wt.abbreviation === duplicateAbbr ? 'border-red-400 bg-red-50' : 'border-gray-200'
-                }`}
-              />
-              <label
-                className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
-                style={{ backgroundColor: wt.color }}
-                title={wt.color}
-              >
-                <input
-                  type="color"
-                  value={wt.color}
-                  onChange={e => void updateWeekType(idx, { color: e.target.value })}
-                  className="opacity-0 w-0 h-0"
-                />
-              </label>
-              <button
-                onClick={() => void deleteWeekType(idx)}
-                title="Delete week type"
-                className="text-gray-300 hover:text-red-500 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {duplicateAbbr && (
-          <p className="text-xs text-red-600 mb-3">Abbreviation "{duplicateAbbr}" is already in use. Choose a unique abbreviation.</p>
-        )}
-
-        <button
-          onClick={() => void addWeekType()}
-          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
-        >
-          <Plus size={14} /> Add week type
-        </button>
-      </div>
-
-      {/* Phase type presets */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Phase type presets</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Define the phase types available when creating a macro phase. Each preset has a name, a key (stored in the database), and a default color.
-        </p>
-
-        <div className="space-y-1 mb-3">
-          <div className="grid gap-2 px-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
-            <span>Label</span>
-            <span>Key</span>
-            <span>Color</span>
-            <span />
-          </div>
-
-          {phaseTypePresets.map((preset, idx) => (
-            <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 1fr 40px 28px' }}>
-              <input
-                type="text"
-                value={preset.label}
-                onChange={e => void updatePhasePreset(idx, { label: e.target.value })}
-                onBlur={() => { if (preset.label.trim()) void savePhaseTypePresets(phaseTypePresets); }}
-                placeholder="Preparatory…"
-                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <input
-                type="text"
-                value={preset.value}
-                onChange={e => void updatePhasePreset(idx, { value: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-                onBlur={() => { if (preset.value.trim()) void savePhaseTypePresets(phaseTypePresets); }}
-                placeholder="preparatory"
-                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
-              />
-              <label
-                className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
-                style={{ backgroundColor: preset.color }}
-                title={preset.color}
-              >
-                <input
-                  type="color"
-                  value={preset.color}
-                  onChange={e => void updatePhasePreset(idx, { color: e.target.value })}
-                  onBlur={() => void savePhaseTypePresets(phaseTypePresets)}
-                  className="opacity-0 w-0 h-0"
-                />
-              </label>
-              <button
-                onClick={() => void deletePhasePreset(idx)}
-                title="Delete preset"
-                className="text-gray-300 hover:text-red-500 transition-colors"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={() => void addPhasePreset()}
-          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
-        >
-          <Plus size={14} /> Add phase type
-        </button>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Weekly Planner Display</h2>
-        <p className="text-sm text-gray-600 mb-5">Control which metrics appear in the planner. K% requires an athlete competition total to be set.</p>
-
-        <div className="space-y-6">
-          {/* Day card metrics */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Day card — top of card</label>
-            <p className="text-xs text-gray-400 mb-3">Shown in the compact strip at the top of each day card in the week overview.</p>
-            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
-              {METRIC_ORDER.map(key => {
-                const def = METRICS.find(m => m.key === key)!;
-                return (
-                  <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="checkbox"
-                      checked={visibleCardMetrics.includes(key)}
-                      onChange={() => void toggleCardMetric(key)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-700">{def.label}</span>
-                      {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
-                    </div>
-                    <span className="text-xs text-gray-400">{def.description}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Week summary metrics */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Week summary — top of week</label>
-            <p className="text-xs text-gray-400 mb-3">Shown in the week total summary bar above the day cards.</p>
-            <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
-              {METRIC_ORDER.map(key => {
-                const def = METRICS.find(m => m.key === key)!;
-                return (
-                  <label key={key} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="checkbox"
-                      checked={visibleMetrics.includes(key)}
-                      onChange={() => void toggleMetric(key)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-gray-700">{def.label}</span>
-                      {def.unit && <span className="text-xs text-gray-400 ml-1">({def.unit})</span>}
-                    </div>
-                    <span className="text-xs text-gray-400">{def.description}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Macro table columns */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mt-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-1">Macro Table Columns</h2>
-        <p className="text-sm text-gray-600 mb-4">Default columns for new macro cycle tables. Training Week, Dates and Events always seed a new table; every column (including those) can still be toggled per macro from its own “Table view” menu.</p>
-        <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
-          {(Object.keys(MACRO_TABLE_COLUMN_LABELS) as MacroTableColumnKey[])
-            .filter(col => !STRUCTURAL_MACRO_COLUMNS.includes(col))
-            .map(col => (
-            <label key={col} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-              <input
-                type="checkbox"
-                checked={macroTableColumns.includes(col)}
-                onChange={() => void toggleMacroTableColumn(col)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm font-medium text-gray-700">{MACRO_TABLE_COLUMN_LABELS[col]}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <FlagSettingsSection />
+      )}
     </div>
   );
 }
