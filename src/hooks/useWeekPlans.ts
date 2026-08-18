@@ -437,12 +437,21 @@ export function useWeekPlans() {
   };
 
   const normalizeSetLinePositions = async (lines: PlannedSetLine[]): Promise<void> => {
-    await Promise.all(
-      lines
-        .map((line, i) => ({ line, newPos: i + 1 }))
-        .filter(({ line, newPos }) => line.position !== newPos)
-        .map(({ line, newPos }) => supabase.from('planned_set_lines').update({ position: newPos }).eq('id', line.id))
-    );
+    // Sequential, ascending. Compacting to 1..n only ever moves a line DOWN
+    // (newPos = i+1 ≤ its current position), so in ascending order each target
+    // slot has always been vacated by the previous update. The old parallel
+    // Promise.all raced the (planned_exercise_id, position) unique constraint —
+    // whichever update landed first could hit a slot not yet freed — and never
+    // checked the results, so those collisions failed silently.
+    for (const [i, line] of lines.entries()) {
+      const newPos = i + 1;
+      if (line.position === newPos) continue;
+      const { error } = await supabase
+        .from('planned_set_lines')
+        .update({ position: newPos })
+        .eq('id', line.id);
+      if (error) throw error;
+    }
   };
 
   const saveSetLinesWithSummary = async (

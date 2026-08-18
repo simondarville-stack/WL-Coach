@@ -692,13 +692,27 @@ export function useMacroCycles() {
 
   // --- Cycle extend / trim ---
 
-  const extendCycle = async (cycleId: string, lastWeekNumber: number, lastWeekStart: string, newEndDate: string, defaultWeekType: string): Promise<void> => {
+  const extendCycle = async (cycleId: string, newEndDate: string, defaultWeekType: string): Promise<void> => {
+    // The extension tail is derived from the DB's actual last week, not from
+    // the caller's local snapshot: the snapshot can be stale (pre-shift, a
+    // second tab, a co-coach), and weeks computed from a stale tail collided
+    // with existing rows on the (macrocycle_id, week_start) unique constraint.
+    const { data: lastRows, error: lastErr } = await supabase
+      .from('macro_weeks')
+      .select('week_number, week_start')
+      .eq('macrocycle_id', cycleId)
+      .order('week_number', { ascending: false })
+      .limit(1);
+    if (lastErr) throw lastErr;
+    const last = lastRows?.[0];
+    if (!last) return;
+
     // Step by 7 days with STRING date math (addDaysToISO) — never
     // `new Date(...).toISOString().slice(0,10)`, which rolls back a day for
     // positive-UTC coaches and produced non-Monday week_starts (DD-01/02).
     const weeks: { week_start: string; week_number: number; week_type: string; week_type_text: string; notes: string; macrocycle_id: string }[] = [];
-    let cur = addDaysToISO(lastWeekStart, 7);
-    let weekNum = lastWeekNumber + 1;
+    let cur = addDaysToISO(last.week_start, 7);
+    let weekNum = last.week_number + 1;
     // Monday-to-Monday compare: the week HOLDING the new end date is part of
     // the cycle, whichever weekday that date falls on.
     const lastMonday = isoMonday(newEndDate);
@@ -714,7 +728,11 @@ export function useMacroCycles() {
       cur = addDaysToISO(cur, 7);
     }
     if (weeks.length > 0) {
-      const { error } = await supabase.from('macro_weeks').insert(weeks);
+      // ignoreDuplicates: a week that appeared concurrently wins and keeps
+      // its data — extension must never overwrite an existing week.
+      const { error } = await supabase
+        .from('macro_weeks')
+        .upsert(weeks, { onConflict: 'macrocycle_id,week_start', ignoreDuplicates: true });
       if (error) throw error;
     }
   };

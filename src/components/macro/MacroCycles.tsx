@@ -1139,22 +1139,13 @@ ${how}.${warn}`)) return;
       await shiftMacroWeeks(selectedCycle.id, shiftDays);
     }
     // 2) Reconcile the tail against the desired end, operating on the SHIFTED
-    //    weeks: extend adds Mondays past the (shifted) last week; trim deletes
-    //    weeks now beyond the desired end. `macroWeeks` here is the pre-shift
-    //    snapshot, so the shifted last-week start is derived explicitly.
+    //    weeks: extend adds Mondays past the last week; trim deletes weeks now
+    //    beyond the desired end. extendCycle reads the last week from the DB
+    //    (post-shift), so no shifted snapshot needs deriving here.
     if (desiredEnd > slidEnd) {
-      const lastWeek = macroWeeks[macroWeeks.length - 1];
-      if (lastWeek) {
-        const s = await fetchSettingsSilent();
-        const defaultWeekType = s?.week_types?.[0]?.abbreviation ?? '';
-        await extendCycle(
-          selectedCycle.id,
-          lastWeek.week_number,
-          addDaysToISO(lastWeek.week_start, shiftDays),
-          desiredEnd,
-          defaultWeekType,
-        );
-      }
+      const s = await fetchSettingsSilent();
+      const defaultWeekType = s?.week_types?.[0]?.abbreviation ?? '';
+      await extendCycle(selectedCycle.id, desiredEnd, defaultWeekType);
     } else if (desiredEnd < slidEnd) {
       await trimCycle(selectedCycle.id, desiredEnd);
     }

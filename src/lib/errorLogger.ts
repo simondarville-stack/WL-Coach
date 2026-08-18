@@ -70,6 +70,15 @@ function normaliseError(err: unknown): NormalisedError {
       code: (err as { code?: string }).code ?? null,
     };
   }
+  if (typeof err === 'string') {
+    // Rejections sometimes arrive as pre-stringified errors ("TypeError:
+    // NetworkError when attempting to fetch resource."). Recover the name
+    // from the prefix so these group by kind instead of all filing under
+    // UnknownError.
+    const m = /^([A-Z][A-Za-z]*(?:Error|Exception)):\s*(.+)$/s.exec(err);
+    if (m) return { name: m[1], message: m[2], stack: null, code: null };
+    return { name: 'UnknownError', message: err, stack: null, code: null };
+  }
   if (err && typeof err === 'object') {
     const e = err as { name?: string; message?: string; stack?: string; code?: string };
     return {
@@ -149,6 +158,7 @@ export async function logError(err: unknown, opts: LogErrorOptions = {}): Promis
  * handlers stored on a module flag.
  */
 let installed = false;
+let mutedReported = false;
 export function installGlobalHandlers(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
@@ -164,6 +174,13 @@ export function installGlobalHandlers(): void {
     // third-party throw is distinguishable from a genuine app error at a
     // glance rather than by forensics.
     const muted = event.error == null;
+    if (muted) {
+      // One muted report per page load. Identical opaque reports carry zero
+      // extra signal, and iOS Firefox re-fires them on a timer for as long
+      // as the tab stays open — 107 of the log's first 137 rows were this.
+      if (mutedReported) return;
+      mutedReported = true;
+    }
     void logError(
       event.error ?? { name: 'Error', message: event.message, stack: null },
       {
@@ -173,13 +190,23 @@ export function installGlobalHandlers(): void {
           lineno: event.lineno,
           colno: event.colno,
           muted,
+          visibility: document.visibilityState,
+          online: navigator.onLine,
         },
       },
     );
   });
 
   window.addEventListener('unhandledrejection', (event) => {
-    void logError(event.reason, { source: 'promise' });
+    // visibility/online distinguish "flaky gym wifi woke a background tab"
+    // from a failure during active use — the two need different responses.
+    void logError(event.reason, {
+      source: 'promise',
+      context: {
+        visibility: document.visibilityState,
+        online: navigator.onLine,
+      },
+    });
   });
 
   // Click breadcrumbs. Walk up from the click target looking for an

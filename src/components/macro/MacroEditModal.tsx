@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import type { MacroCycle } from '../../lib/database.types';
 import { Button } from '../ui';
 import { DateInput } from '../ui/DateInput';
+import { describeError } from '../../lib/errorMessage';
 
 interface MacroEditModalProps {
   cycle: MacroCycle;
@@ -23,12 +24,18 @@ export function MacroEditModal({ cycle, loading, onClose, onSave }: MacroEditMod
   const [startDate, setStartDate] = useState(cycle.start_date);
   const [endDate, setEndDate] = useState(cycle.end_date);
   const [submitting, setSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!name.trim() || !startDate || !endDate) return;
     setSubmitting(true);
+    setSaveError(null);
     try {
       await onSave({ name: name.trim(), startDate, endDate });
+    } catch (err) {
+      // Keep the modal open so the coach can retry — a swallowed rejection
+      // here previously surfaced as nothing but an error-log row (#21).
+      setSaveError(describeError(err));
     } finally {
       setSubmitting(false);
     }
@@ -85,6 +92,12 @@ export function MacroEditModal({ cycle, loading, onClose, onSave }: MacroEditMod
           <p className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
             Add competitions and training camps from the toolbar’s <span className="font-medium">Add event</span> menu.
           </p>
+
+          {saveError && (
+            <p className="text-xs px-3 py-2 rounded-md bg-[var(--color-danger-bg)] text-[color:var(--color-danger-text)]">
+              {saveError}
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-[color:var(--color-border-tertiary)] flex-shrink-0">
