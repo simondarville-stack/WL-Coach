@@ -16,7 +16,7 @@
  * It calls useThreadChat itself — the surface passes the hook config plus the
  * presentation props, and holds no thread state of its own.
  */
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { useThreadChat, type UseThreadChatArgs } from '../../hooks/useThreadChat';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
@@ -50,12 +50,27 @@ export function MobileThreadPane({
   safeArea = false,
 }: MobileThreadPaneProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const { messages, coachNames, loading, sending, error, draft, setDraft, send } = useThreadChat(chat);
+  const firstUnreadRef = useRef<HTMLDivElement | null>(null);
+  const { messages, coachNames, loading, sending, error, draft, setDraft, send, firstUnreadId } = useThreadChat(chat);
 
+  // Open on the first unread message when there is one; otherwise at the
+  // bottom, as before. Jumping to the bottom past a block of unread messages is
+  // exactly how a reader misses them.
+  //
+  // The unread jump happens once per boundary: firstUnreadId is frozen for the
+  // thread, so without the guard every later send would yank the view back up
+  // to the divider instead of following the message just written.
+  const unreadScrolledRef = useRef<string | null>(null);
   useEffect(() => {
+    if (loading) return;
+    if (firstUnreadId && unreadScrolledRef.current !== firstUnreadId && firstUnreadRef.current) {
+      unreadScrolledRef.current = firstUnreadId;
+      firstUnreadRef.current.scrollIntoView({ block: 'center' });
+      return;
+    }
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, loading]);
+  }, [messages.length, loading, firstUnreadId]);
 
   return (
     <>
@@ -78,12 +93,24 @@ export function MobileThreadPane({
           )
         ) : (
           messages.map(m => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              isOwn={m.sender_type === chat.role}
-              senderLabel={senderLabelFor(m, coachNames)}
-            />
+            <Fragment key={m.id}>
+              {/* Where the reader left off. Same marker the coach inbox draws,
+                  from the same frozen boundary in useThreadChat. */}
+              {m.id === firstUnreadId && (
+                <div ref={firstUnreadRef} className="flex items-center gap-2 py-0.5">
+                  <span className="flex-1 h-px bg-blue-500/40" />
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-blue-400">
+                    New
+                  </span>
+                  <span className="flex-1 h-px bg-blue-500/40" />
+                </div>
+              )}
+              <MessageBubble
+                message={m}
+                isOwn={m.sender_type === chat.role}
+                senderLabel={senderLabelFor(m, coachNames)}
+              />
+            </Fragment>
           ))
         )}
       </div>

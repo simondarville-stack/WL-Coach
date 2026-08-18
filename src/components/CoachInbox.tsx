@@ -12,7 +12,7 @@
  * Mirrors the athlete app's structure so both sides see the same
  * organization.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -30,7 +30,7 @@ import {
   Send,
   X as XIcon,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   defaultSlotLabel,
   fetchInboxThreads,
@@ -79,6 +79,7 @@ export function CoachInbox() {
   const ownerId = getOwnerId();
   const accessibleAthletes = useAthleteStore(s => s.athletes);
   const globalAthlete = useAthleteStore(s => s.selectedAthlete);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +88,10 @@ export function CoachInbox() {
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [showOther, setShowOther] = useState(false);
+  /** Which thread the unread stepper / deep link last jumped to. The nonce
+   *  makes a repeat jump to the same thread still register downstream. */
+  const [focus, setFocus] = useState<{ athleteId: string; sessionId: string | null; nonce: number } | null>(null);
+  const focusSeq = useRef(0);
 
   const loadThreads = useCallback(async () => {
     setError(null);
@@ -170,6 +175,54 @@ export function CoachInbox() {
       .sort((a, b) => a.name.localeCompare(b.name));
     return { activeSummaries: active, otherAthletes: other };
   }, [threads, accessibleAthletes]);
+
+  // Every unread thread, in the order the rail lists them — the stepper's
+  // itinerary. Threads, not athletes: one athlete can have several unread
+  // units, and stopping on the athlete would leave the coach hunting again.
+  const unreadThreads = useMemo(() => {
+    const out: { athleteId: string; sessionId: string | null }[] = [];
+    for (const s of activeSummaries) {
+      if (s.generalThread && s.generalThread.unreadCount > 0) {
+        out.push({ athleteId: s.athleteId, sessionId: null });
+      }
+      for (const t of s.sessionThreads) {
+        if (t.unreadCount > 0) out.push({ athleteId: s.athleteId, sessionId: t.sessionId });
+      }
+    }
+    return out;
+  }, [activeSummaries]);
+
+  /** Jump to the first unread thread that isn't the one already open.
+   *  Opening a thread marks it read, so it drops out of `unreadThreads` on the
+   *  next refresh — "first remaining" is therefore also "the next one", and it
+   *  stays correct however the list reshuffles underneath. */
+  const stepToUnread = useCallback(() => {
+    const next =
+      unreadThreads.find(
+        t => !(focus && t.athleteId === focus.athleteId && t.sessionId === focus.sessionId),
+      ) ?? unreadThreads[0];
+    if (!next) return;
+    focusSeq.current += 1;
+    setSelectedAthleteId(next.athleteId);
+    setShowOther(false);
+    setFocus({ ...next, nonce: focusSeq.current });
+  }, [unreadThreads, focus]);
+
+  // Arriving from the sidebar's unread badge (/inbox?unread=1): filter to
+  // unread and land on the first one. Applied once, after the threads have
+  // actually loaded, then the param is dropped so a refresh or a Back doesn't
+  // hijack a later visit.
+  const deepLinkAppliedRef = useRef(false);
+  useEffect(() => {
+    if (searchParams.get('unread') !== '1' || deepLinkAppliedRef.current) return;
+    setUnreadOnly(true);
+    if (unreadThreads.length === 0) return;
+    deepLinkAppliedRef.current = true;
+    stepToUnread();
+    const next = new URLSearchParams(searchParams);
+    next.delete('unread');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, unreadThreads, stepToUnread]);
 
   // Search + unread filters compose with the active/other split.
   const q = searchQuery.trim().toLowerCase();
@@ -281,6 +334,37 @@ export function CoachInbox() {
               <Mail size={10} />
               Unread
             </button>
+            <button
+              onClick={stepToUnread}
+              disabled={unreadThreads.length === 0}
+              title={
+                unreadThreads.length === 0
+                  ? 'No unread messages'
+                  : `Go to the next unread conversation (${unreadThreads.length} left)`
+              }
+              style={{
+                padding: '2px 7px',
+                fontSize: 10,
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-border-secondary)',
+                background: 'var(--color-bg-primary)',
+                color: unreadThreads.length === 0 ? 'var(--color-text-tertiary)' : 'var(--color-accent)',
+                cursor: unreadThreads.length === 0 ? 'default' : 'pointer',
+                opacity: unreadThreads.length === 0 ? 0.6 : 1,
+                fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <ChevronDown size={10} />
+              Next unread
+              {unreadThreads.length > 0 && (
+                <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
+                  {unreadThreads.length}
+                </span>
+              )}
+            </button>
             <span style={{ flex: 1 }} />
             <button
               onClick={() => {
@@ -390,6 +474,7 @@ export function CoachInbox() {
             generalThread={selectedSummary.generalThread}
             sessionThreads={selectedSummary.sessionThreads}
             onMessagesChanged={loadThreads}
+            focus={focus && focus.athleteId === selectedSummary.athleteId ? focus : null}
           />
         ) : selectedOther ? (
           <AthleteConversation
@@ -508,6 +593,7 @@ function AthleteConversation({
   generalThread,
   sessionThreads,
   onMessagesChanged,
+  focus = null,
 }: {
   athleteId: string;
   athleteName: string;
@@ -516,6 +602,9 @@ function AthleteConversation({
   generalThread: InboxThread | null;
   sessionThreads: InboxThread[];
   onMessagesChanged: () => Promise<void>;
+  /** Thread the unread stepper wants opened, with a nonce so repeat jumps to
+   *  the same thread still apply. Null when this athlete is not the target. */
+  focus?: { sessionId: string | null; nonce: number } | null;
 }) {
   type View =
     | 'general'
@@ -525,6 +614,26 @@ function AthleteConversation({
     | { kind: 'unit'; unit: UnitTarget };
   const [view, setView] = useState<View>('general');
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Open the thread the stepper picked. Gated on the nonce rather than on the
+  // props themselves: `sessionThreads` gets a fresh identity on every inbox
+  // refresh, and re-applying on that would drag the coach back out of whatever
+  // they navigated to next.
+  const appliedFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus || appliedFocusRef.current === focus.nonce) return;
+    if (focus.sessionId == null) {
+      appliedFocusRef.current = focus.nonce;
+      setView('general');
+      return;
+    }
+    const target = sessionThreads.find(t => t.sessionId === focus.sessionId);
+    // Threads for a just-selected athlete can arrive a render late; leaving the
+    // nonce unapplied means the next render tries again.
+    if (!target) return;
+    appliedFocusRef.current = focus.nonce;
+    setView({ kind: 'session', thread: target });
+  }, [focus, sessionThreads]);
 
   // Resolve which training unit each session thread belongs to, plus
   // the coach's day labels for the involved weeks (usually one or two
@@ -822,6 +931,7 @@ function ChatPane({
     draft: reply,
     setDraft: setReply,
     send: handleSend,
+    firstUnreadId,
   } = useThreadChat({
     kind: thread.kind,
     initialSessionId: thread.sessionId,
@@ -836,6 +946,15 @@ function ChatPane({
     unreadCount: thread.unreadCount,
     onMessagesChanged,
   });
+
+  // Land the coach ON the first unread message rather than at the bottom of a
+  // long thread. Keyed on the id, so it fires once per thread — scrolling on
+  // every render would fight the coach's own scrolling.
+  const firstUnreadRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!firstUnreadId || loading) return;
+    firstUnreadRef.current?.scrollIntoView({ block: 'center' });
+  }, [firstUnreadId, loading]);
 
   // Prefer the session's own slot (week_start + day_index): the performed
   // date can fall in a different week than the unit was planned for.
@@ -961,11 +1080,31 @@ function ChatPane({
           </div>
         ) : (
           messages.map(m => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              senderLabel={coachLabelFor(m, coachNames, activeCoachId, athleteName)}
-            />
+            <Fragment key={m.id}>
+              {m.id === firstUnreadId && (
+                <div
+                  ref={firstUnreadRef}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    margin: '4px 0 2px',
+                  }}
+                >
+                  <span style={{ flex: 1, height: '0.5px', background: 'var(--color-accent-border)' }} />
+                  <span style={{
+                    fontSize: 9, fontWeight: 600, letterSpacing: '0.06em',
+                    textTransform: 'uppercase', color: 'var(--color-accent)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    New
+                  </span>
+                  <span style={{ flex: 1, height: '0.5px', background: 'var(--color-accent-border)' }} />
+                </div>
+              )}
+              <MessageBubble
+                message={m}
+                senderLabel={coachLabelFor(m, coachNames, activeCoachId, athleteName)}
+              />
+            </Fragment>
           ))
         )}
       </div>
