@@ -16,6 +16,7 @@
  * The companion `LoggedStackedNotation` applies the same column visual
  * to actually-performed sets from training_log_sets.
  */
+import { memo } from 'react';
 import {
   parsePrescription,
   parseComboPrescription,
@@ -86,7 +87,10 @@ const stackPair: React.CSSProperties = {
   gap: 2,
 };
 
-export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
+// memo: all props are primitives, and this renders once per set-line column
+// in every planner row — memoizing skips the re-parse of the prescription
+// string on every parent re-render (hover, drag, unrelated cell edits).
+export const StackedNotation = memo(function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
   if (!raw) return null;
 
   // Combo must win against the free-text-reps unit branch:
@@ -191,7 +195,7 @@ export function StackedNotation({ raw, unit, isCombo }: StackedNotationProps) {
       })}
     </div>
   );
-}
+});
 
 interface LoggedStackedNotationProps {
   sets: TrainingLogSet[];

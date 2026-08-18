@@ -1,10 +1,8 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { athleteMacroScopeFilter } from '../lib/plannerMacro';
-import { getOwnerId } from '../lib/ownerContext';
 import { computeMetrics, type ComputedMetrics } from '../lib/metrics';
 import { expandForCounting } from '../lib/comboExpansion';
-import type { WeekTypeConfig } from '../lib/database.types';
 import { weekState, type WeekState } from '../lib/weekUtils';
 
 // Minimal exercise shape loaded for the overview (subset of Exercise columns).
@@ -134,7 +132,6 @@ interface LoadParams {
 export function usePlannerWeekOverview() {
   const [weeks, setWeeks] = useState<WeekSummary[]>([]);
   const [macroBlocks, setMacroBlocks] = useState<MacroBlock[]>([]);
-  const [, setWeekTypeConfigs] = useState<WeekTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async ({
@@ -493,17 +490,6 @@ export function usePlannerWeekOverview() {
       });
 
       setWeeks(summaries);
-
-      // 7. Load coach-defined week type configs (still surfaced for
-      //    future consumers — phaseBarCells used to read them).
-      const { data: settings } = await supabase
-        .from('general_settings')
-        .select('week_types')
-        .eq('owner_id', getOwnerId())
-        .maybeSingle();
-      setWeekTypeConfigs(
-        (settings?.week_types as WeekTypeConfig[] | undefined) ?? []
-      );
     } catch (err) {
       console.error('Failed to load week overview:', err);
     } finally {

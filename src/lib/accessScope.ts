@@ -73,8 +73,11 @@ export interface AccessibleGroups {
   accessById: Record<string, AccessRole>;
 }
 
-export async function fetchAccessibleGroups(coachId: string): Promise<AccessibleGroups> {
-  const access = await resolveGroupAccess(coachId);
+export async function fetchAccessibleGroups(
+  coachId: string,
+  preResolvedGroupAccess?: Map<string, AccessRole>,
+): Promise<AccessibleGroups> {
+  const access = preResolvedGroupAccess ?? await resolveGroupAccess(coachId);
   const ids = Array.from(access.keys());
   if (ids.length === 0) return { groups: [], accessById: {} };
 
@@ -98,10 +101,13 @@ export async function fetchAccessibleGroups(coachId: string): Promise<Accessible
  * direct share, group-member cascade). Id-only queries; call
  * fetchAccessibleAthletes when you need the full rows.
  */
-export async function resolveAthleteAccess(coachId: string): Promise<Map<string, AccessRole>> {
+export async function resolveAthleteAccess(
+  coachId: string,
+  preResolvedGroupAccess?: Map<string, AccessRole>,
+): Promise<Map<string, AccessRole>> {
   const access = new Map<string, AccessRole>();
 
-  const groupAccess = await resolveGroupAccess(coachId);
+  const groupAccess = preResolvedGroupAccess ?? await resolveGroupAccess(coachId);
   const groupIds = Array.from(groupAccess.keys());
 
   const [ownedRes, directRes, membersRes] = await Promise.all([
@@ -159,9 +165,9 @@ export interface AccessibleAthletes {
 
 export async function fetchAccessibleAthletes(
   coachId: string,
-  opts: { activeOnly?: boolean } = {},
+  opts: { activeOnly?: boolean; groupAccess?: Map<string, AccessRole> } = {},
 ): Promise<AccessibleAthletes> {
-  const access = await resolveAthleteAccess(coachId);
+  const access = await resolveAthleteAccess(coachId, opts.groupAccess);
   const ids = Array.from(access.keys());
   if (ids.length === 0) return { athletes: [], accessById: {}, hostNameById: {} };
 

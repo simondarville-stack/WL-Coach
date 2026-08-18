@@ -4,8 +4,9 @@ import { getOwnerId } from '../lib/ownerContext';
 import {
   fetchAccessibleAthletes,
   fetchAccessibleGroups,
-  getAccessibleAthleteIds,
+  resolveGroupAccess,
 } from '../lib/accessScope';
+import { fetchByIds } from '../lib/queryPaging';
 import type {
   Athlete,
   MacroCycle,
@@ -75,6 +76,144 @@ export interface GroupStatus {
   nextWeekStart: string;
 }
 
+interface ResolvedMacro {
+  macrocycle: MacroCycle;
+  macroWeeks: MacroWeek[];
+  currentMacroWeek: MacroWeek | null;
+}
+
+/**
+ * The macrocycle to show as "current" per athlete, resolved for the whole
+ * roster in two round trips. Several cycles can carry is_active=true at once
+ * (creating a new cycle doesn't deactivate the old one), so per athlete we
+ * pick the active cycle whose weeks cover today; if none does, fall back to
+ * the most recently created active one.
+ */
+async function resolveCurrentMacros(athleteIds: string[]): Promise<Map<string, ResolvedMacro>> {
+  const result = new Map<string, ResolvedMacro>();
+  if (athleteIds.length === 0) return result;
+
+  const { data: actives } = await supabase
+    .from('macrocycles')
+    .select('*')
+    .in('athlete_id', athleteIds)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  const activeCycles = (actives ?? []) as MacroCycle[];
+  if (activeCycles.length === 0) return result;
+
+  const weeks = await fetchByIds(activeCycles.map(m => m.id), (ids, from, to) =>
+    supabase
+      .from('macro_weeks')
+      .select('*')
+      .in('macrocycle_id', ids)
+      .order('week_start')
+      .order('id')
+      .range(from, to),
+  );
+  const weeksByCycle = new Map<string, MacroWeek[]>();
+  for (const w of weeks as MacroWeek[]) {
+    const arr = weeksByCycle.get(w.macrocycle_id);
+    if (arr) arr.push(w);
+    else weeksByCycle.set(w.macrocycle_id, [w]);
+  }
+
+  // Query order is created_at DESC, so each athlete's list keeps that order.
+  const cyclesByAthlete = new Map<string, MacroCycle[]>();
+  for (const m of activeCycles) {
+    if (!m.athlete_id) continue;
+    const arr = cyclesByAthlete.get(m.athlete_id);
+    if (arr) arr.push(m);
+    else cyclesByAthlete.set(m.athlete_id, [m]);
+  }
+
+  for (const [athleteId, cycles] of cyclesByAthlete) {
+    let resolved: ResolvedMacro | null = null;
+    let fallback: ResolvedMacro | null = null;
+    for (const macrocycle of cycles) {
+      const macroWeeks = weeksByCycle.get(macrocycle.id) ?? [];
+      const currentMacroWeek = findCurrentMacroWeek(macroWeeks);
+      if (currentMacroWeek) {
+        resolved = { macrocycle, macroWeeks, currentMacroWeek };
+        break;
+      }
+      if (!fallback) fallback = { macrocycle, macroWeeks, currentMacroWeek: null };
+    }
+    const pick = resolved ?? fallback;
+    if (pick) result.set(athleteId, pick);
+  }
+  return result;
+}
+
+interface WeekPlanContext {
+  weekStartISO: string;
+  nextWeekStartISO: string;
+  /** `${athleteId}|${weekStart}` → week plan id */
+  athletePlanByKey: Map<string, string>;
+  /** `${groupId}|${weekStart}` → week plan id (group plans only) */
+  groupPlanByKey: Map<string, string>;
+  /** Week plan ids that contain at least one planned exercise. */
+  plansWithExercises: Set<string>;
+}
+
+/**
+ * Current + next week plans for every athlete and group, plus which of those
+ * plans actually contain exercises — shared by the status board, the group
+ * board and the macro-alignment panel so none of them re-query per row.
+ */
+async function fetchWeekPlanContext(
+  athleteIds: string[],
+  groupIds: string[],
+  weekStartISO: string,
+  nextWeekStartISO: string,
+): Promise<WeekPlanContext> {
+  const weekStarts = [weekStartISO, nextWeekStartISO];
+  const [athletePlans, groupPlans] = await Promise.all([
+    fetchByIds(athleteIds, (ids, from, to) =>
+      supabase
+        .from('week_plans')
+        .select('id, athlete_id, week_start')
+        .in('athlete_id', ids)
+        .in('week_start', weekStarts)
+        .order('id')
+        .range(from, to),
+    ),
+    fetchByIds(groupIds, (ids, from, to) =>
+      supabase
+        .from('week_plans')
+        .select('id, group_id, week_start')
+        .eq('is_group_plan', true)
+        .in('group_id', ids)
+        .in('week_start', weekStarts)
+        .order('id')
+        .range(from, to),
+    ),
+  ]);
+
+  const athletePlanByKey = new Map<string, string>();
+  for (const p of athletePlans) {
+    if (p.athlete_id) athletePlanByKey.set(`${p.athlete_id}|${p.week_start}`, p.id);
+  }
+  const groupPlanByKey = new Map<string, string>();
+  for (const p of groupPlans) {
+    if (p.group_id) groupPlanByKey.set(`${p.group_id}|${p.week_start}`, p.id);
+  }
+
+  const planIds = [...athletePlans.map(p => p.id), ...groupPlans.map(p => p.id)];
+  const plansWithExercises = new Set<string>();
+  const peRows = await fetchByIds(planIds, (ids, from, to) =>
+    supabase
+      .from('planned_exercises')
+      .select('weekplan_id')
+      .in('weekplan_id', ids)
+      .order('id')
+      .range(from, to),
+  );
+  for (const row of peRows) plansWithExercises.add(row.weekplan_id);
+
+  return { weekStartISO, nextWeekStartISO, athletePlanByKey, groupPlanByKey, plansWithExercises };
+}
+
 export function useCoachDashboard() {
   const [athleteStatuses, setAthleteStatuses] = useState<AthleteStatus[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
@@ -94,151 +233,96 @@ export function useCoachDashboard() {
     return data;
   }
 
-  /**
-   * The macrocycle to show as "current" for an athlete. Several cycles can
-   * carry is_active=true at once (creating a new cycle doesn't deactivate the
-   * old one), so a naive maybeSingle() on is_active errors out and the
-   * dashboard shows no macro at all. Pick the active cycle whose weeks cover
-   * today; if none does, fall back to the most recently created active one.
-   */
-  async function resolveCurrentMacro(athleteId: string): Promise<{
-    macrocycle: MacroCycle;
-    macroWeeks: MacroWeek[];
-    currentMacroWeek: MacroWeek | null;
-  } | null> {
-    const { data: actives } = await supabase
-      .from('macrocycles')
-      .select('*')
-      .eq('athlete_id', athleteId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
-    if (!actives || actives.length === 0) return null;
-
-    let fallback: {
-      macrocycle: MacroCycle;
-      macroWeeks: MacroWeek[];
-      currentMacroWeek: MacroWeek | null;
-    } | null = null;
-
-    for (const macrocycle of actives as MacroCycle[]) {
-      const { data: weeks } = await supabase
-        .from('macro_weeks')
-        .select('*')
-        .eq('macrocycle_id', macrocycle.id)
-        .order('week_start');
-      const macroWeeks = (weeks ?? []) as MacroWeek[];
-      const currentMacroWeek = findCurrentMacroWeek(macroWeeks);
-      if (currentMacroWeek) return { macrocycle, macroWeeks, currentMacroWeek };
-      if (!fallback) fallback = { macrocycle, macroWeeks, currentMacroWeek: null };
-    }
-    return fallback;
-  }
-
-  async function loadAthleteStatuses(settingsData: GeneralSettingsType | null) {
-    // Owned + shared (direct and via group cascade), active only.
-    const { athletes } = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
-    if (!athletes) return;
-
+  async function loadAthleteStatuses(
+    settingsData: GeneralSettingsType | null,
+    athletes: Athlete[],
+    macros: Map<string, ResolvedMacro>,
+    ctx: WeekPlanContext,
+  ) {
     const rawAverageDays = settingsData?.raw_average_days || 7;
-    const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
-    const statuses: AthleteStatus[] = [];
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - rawAverageDays);
+    const cutoffISO = cutoffDate.toISOString().split('T')[0];
 
-    for (const athlete of athletes) {
-      const currentMacro = await resolveCurrentMacro(athlete.id);
-      const macrocycle = currentMacro?.macrocycle ?? null;
-      const currentMacroWeek = currentMacro?.currentMacroWeek ?? null;
-      const totalMacroWeeks = currentMacro ? currentMacro.macroWeeks.length : null;
-
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - rawAverageDays);
-
-      const { data: recentSessions } = await supabase
+    const recentSessions = await fetchByIds(athletes.map(a => a.id), (ids, from, to) =>
+      supabase
         .from('training_log_sessions')
-        .select('*')
-        .eq('athlete_id', athlete.id)
+        .select('id, athlete_id, date, raw_total')
+        .in('athlete_id', ids)
         .neq('status', 'planned')
-        .gte('date', cutoffDate.toISOString().split('T')[0])
-        .order('date', { ascending: false });
+        .gte('date', cutoffISO)
+        .order('date', { ascending: false })
+        .order('id')
+        .range(from, to),
+    );
 
-      const lastTrainingDate = recentSessions && recentSessions.length > 0
-        ? new Date(recentSessions[0].date)
-        : null;
+    // Query order is date DESC, so each athlete's list keeps latest-first.
+    const sessionsByAthlete = new Map<string, { date: string; raw_total: number | null }[]>();
+    for (const s of recentSessions) {
+      const arr = sessionsByAthlete.get(s.athlete_id);
+      if (arr) arr.push(s);
+      else sessionsByAthlete.set(s.athlete_id, [s]);
+    }
 
-      const latestRaw = recentSessions && recentSessions.length > 0
-        ? recentSessions[0].raw_total
-        : null;
-
-      const rawAverage = computeRawAverage(
-        (recentSessions || []).map(s => s.raw_total)
-      );
-
-      const { data: currentWeekPlan } = await supabase
-        .from('week_plans')
-        .select('id')
-        .eq('athlete_id', athlete.id)
-        .eq('week_start', weekStartISO)
-        .maybeSingle();
-
-      const { data: nextWeekPlan } = await supabase
-        .from('week_plans')
-        .select('id')
-        .eq('athlete_id', athlete.id)
-        .eq('week_start', nextWeekStartISO)
-        .maybeSingle();
-
-      let currentWeekPlanned = false;
-      if (currentWeekPlan) {
-        const { data: plannedExercises } = await supabase
-          .from('planned_exercises')
-          .select('id')
-          .eq('weekplan_id', currentWeekPlan.id)
-          .limit(1);
-        currentWeekPlanned = (plannedExercises?.length || 0) > 0;
-      }
-
-      let nextWeekPlanned = false;
-      if (nextWeekPlan) {
-        const { data: plannedExercises } = await supabase
-          .from('planned_exercises')
-          .select('id')
-          .eq('weekplan_id', nextWeekPlan.id)
-          .limit(1);
-        nextWeekPlanned = (plannedExercises?.length || 0) > 0;
-      }
-
-      statuses.push({
+    const { weekStartISO, nextWeekStartISO, athletePlanByKey, plansWithExercises } = ctx;
+    const statuses: AthleteStatus[] = athletes.map(athlete => {
+      const macro = macros.get(athlete.id) ?? null;
+      const sessions = sessionsByAthlete.get(athlete.id) ?? [];
+      const currentPlanId = athletePlanByKey.get(`${athlete.id}|${weekStartISO}`);
+      const nextPlanId = athletePlanByKey.get(`${athlete.id}|${nextWeekStartISO}`);
+      return {
         athlete,
-        currentMacrocycle: macrocycle || null,
-        currentMacroWeek,
-        totalMacroWeeks,
-        lastTrainingDate,
-        latestRaw,
-        rawAverage,
-        currentWeekPlanned,
-        nextWeekPlanned,
+        currentMacrocycle: macro?.macrocycle ?? null,
+        currentMacroWeek: macro?.currentMacroWeek ?? null,
+        totalMacroWeeks: macro ? macro.macroWeeks.length : null,
+        lastTrainingDate: sessions.length > 0 ? new Date(sessions[0].date) : null,
+        latestRaw: sessions.length > 0 ? sessions[0].raw_total : null,
+        rawAverage: computeRawAverage(sessions.map(s => s.raw_total)),
+        currentWeekPlanned: currentPlanId ? plansWithExercises.has(currentPlanId) : false,
+        nextWeekPlanned: nextPlanId ? plansWithExercises.has(nextPlanId) : false,
         currentWeekStart: weekStartISO,
         nextWeekStart: nextWeekStartISO,
-      });
-    }
+      };
+    });
 
     setAthleteStatuses(statuses);
   }
 
-  async function loadActivityFeed() {
-    const athleteIds = await getAccessibleAthleteIds(getOwnerId());
-    const idFilter = athleteIds.length > 0 ? athleteIds : [''];
+  async function loadActivityFeed(accessibleAthleteIds: string[]) {
+    const idFilter = accessibleAthleteIds.length > 0 ? accessibleAthleteIds : [''];
 
-    const { data: sessions } = await supabase
-      .from('training_log_sessions')
-      .select('*, athlete:athletes(name)')
-      .in('athlete_id', idFilter)
-      .order('date', { ascending: false })
-      .limit(30);
+    // The three sources are independent — fetch them together. Each carries
+    // its own LIMIT, so no paging is needed here.
+    const [sessionsRes, macrocyclesRes, prsRes] = await Promise.all([
+      supabase
+        .from('training_log_sessions')
+        .select('*, athlete:athletes(name)')
+        .in('athlete_id', idFilter)
+        .order('date', { ascending: false })
+        .limit(30),
+      // Scope recent-macrocycle activity to accessible athletes (owned +
+      // shared) rather than owner_id, so a co-coach sees activity on
+      // athletes shared with them.
+      supabase
+        .from('macrocycles')
+        .select('*, athlete:athletes(name)')
+        .in('athlete_id', idFilter)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      // Recent PRs — deep-link to the Log for the week the PR was achieved.
+      supabase
+        .from('athlete_pr_history')
+        .select('athlete_id, exercise_id, rep_count, value_kg, achieved_date, created_at, athlete:athletes(name), exercise:exercises(name)')
+        .in('athlete_id', idFilter)
+        .order('achieved_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(15),
+    ]);
 
     const events: ActivityEvent[] = [];
 
-    if (sessions) {
-      for (const session of sessions) {
+    if (sessionsRes.data) {
+      for (const session of sessionsRes.data) {
         const athlete = session.athlete as unknown as { name: string };
         if (session.status === 'completed') {
           events.push({
@@ -268,18 +352,8 @@ export function useCoachDashboard() {
       }
     }
 
-    // Scope recent-macrocycle activity to accessible athletes (owned +
-    // shared) rather than owner_id, so a co-coach sees activity on
-    // athletes shared with them. idFilter is computed above.
-    const { data: macrocycles } = await supabase
-      .from('macrocycles')
-      .select('*, athlete:athletes(name)')
-      .in('athlete_id', idFilter)
-      .order('created_at', { ascending: false })
-      .limit(10);
-
-    if (macrocycles) {
-      for (const macro of macrocycles) {
+    if (macrocyclesRes.data) {
+      for (const macro of macrocyclesRes.data) {
         const athlete = macro.athlete as unknown as { name: string };
         events.push({
           type: 'macrocycle_created',
@@ -290,17 +364,8 @@ export function useCoachDashboard() {
       }
     }
 
-    // Recent PRs — deep-link to the Log for the week the PR was achieved.
-    const { data: prs } = await supabase
-      .from('athlete_pr_history')
-      .select('athlete_id, exercise_id, rep_count, value_kg, achieved_date, created_at, athlete:athletes(name), exercise:exercises(name)')
-      .in('athlete_id', idFilter)
-      .order('achieved_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(15);
-
-    if (prs) {
-      for (const pr of prs) {
+    if (prsRes.data) {
+      for (const pr of prsRes.data) {
         const athlete = pr.athlete as unknown as { name: string } | null;
         const exercise = pr.exercise as unknown as { name: string | null } | null;
         if (!athlete) continue;
@@ -319,67 +384,102 @@ export function useCoachDashboard() {
     setActivityFeed(events.slice(0, 30));
   }
 
-  async function loadMacroAlignments() {
-    const alignments: MacroAlignment[] = [];
-
-    const { athletes } = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
-    if (!athletes) return;
-
-    const { weekStartISO } = getCurrentAndNextWeekStart();
-
+  async function loadMacroAlignments(
+    athletes: Athlete[],
+    macros: Map<string, ResolvedMacro>,
+    ctx: WeekPlanContext,
+  ) {
+    // Only athletes with an active cycle, a macro week covering today AND a
+    // week plan this week can produce alignment rows.
+    const eligible: {
+      athlete: Athlete;
+      macrocycle: MacroCycle;
+      currentWeekId: string;
+      weekPlanId: string;
+    }[] = [];
     for (const athlete of athletes) {
-      const currentMacro = await resolveCurrentMacro(athlete.id);
-      if (!currentMacro) continue;
+      const macro = macros.get(athlete.id);
+      const weekPlanId = ctx.athletePlanByKey.get(`${athlete.id}|${ctx.weekStartISO}`);
+      if (!macro?.currentMacroWeek || !weekPlanId) continue;
+      eligible.push({
+        athlete,
+        macrocycle: macro.macrocycle,
+        currentWeekId: macro.currentMacroWeek.id,
+        weekPlanId,
+      });
+    }
+    if (eligible.length === 0) {
+      setMacroAlignments([]);
+      return;
+    }
 
-      const { macrocycle, currentMacroWeek: currentWeek } = currentMacro;
-
-      if (!currentWeek) continue;
-
-      const { data: trackedExercises } = await supabase
+    type TrackedRow = {
+      id: string;
+      macrocycle_id: string;
+      exercise_id: string;
+      exercise: { name: string } | null;
+    };
+    const cycleIds = Array.from(new Set(eligible.map(e => e.macrocycle.id)));
+    const trackedRows = (await fetchByIds(cycleIds, (ids, from, to) =>
+      supabase
         .from('macro_tracked_exercises')
-        .select('*, exercise:exercises(name)')
-        .eq('macrocycle_id', macrocycle.id);
+        .select('id, macrocycle_id, exercise_id, exercise:exercises(name)')
+        .in('macrocycle_id', ids)
+        .order('id')
+        .range(from, to),
+    )) as unknown as TrackedRow[];
 
-      if (!trackedExercises) continue;
+    const trackedByCycle = new Map<string, TrackedRow[]>();
+    for (const t of trackedRows) {
+      const arr = trackedByCycle.get(t.macrocycle_id);
+      if (arr) arr.push(t);
+      else trackedByCycle.set(t.macrocycle_id, [t]);
+    }
 
-      const { data: weekPlan } = await supabase
-        .from('week_plans')
-        .select('*')
-        .eq('athlete_id', athlete.id)
-        .eq('week_start', weekStartISO)
-        .maybeSingle();
+    const macroWeekIds = Array.from(new Set(eligible.map(e => e.currentWeekId)));
+    const weekPlanIds = Array.from(new Set(eligible.map(e => e.weekPlanId)));
 
-      if (!weekPlan) continue;
-
-      for (const tracked of trackedExercises) {
-        const exercise = tracked.exercise as unknown as { name: string };
-
-        const { data: targets } = await supabase
+    const [targetRows, plannedRows] = await Promise.all([
+      fetchByIds(macroWeekIds, (ids, from, to) =>
+        supabase
           .from('macro_targets')
-          .select('*')
-          .eq('macro_week_id', currentWeek.id)
-          .eq('tracked_exercise_id', tracked.id)
-          .maybeSingle();
-
-        if (!targets) continue;
-
-        const { data: plannedExercises } = await supabase
+          .select('macro_week_id, tracked_exercise_id, target_reps')
+          .in('macro_week_id', ids)
+          .order('macro_week_id')
+          .order('tracked_exercise_id')
+          .range(from, to),
+      ),
+      fetchByIds(weekPlanIds, (ids, from, to) =>
+        supabase
           .from('planned_exercises')
-          .select('summary_total_reps')
-          .eq('weekplan_id', weekPlan.id)
-          .eq('exercise_id', tracked.exercise_id);
+          .select('weekplan_id, exercise_id, summary_total_reps')
+          .in('weekplan_id', ids)
+          .order('id')
+          .range(from, to),
+      ),
+    ]);
 
-        const totalPlannedReps = (plannedExercises || []).reduce(
-          (sum, pe) => sum + (pe.summary_total_reps || 0),
-          0
-        );
+    const targetRepsByKey = new Map<string, number>();
+    for (const t of targetRows) {
+      targetRepsByKey.set(`${t.macro_week_id}|${t.tracked_exercise_id}`, t.target_reps || 0);
+    }
+    const plannedRepsByKey = new Map<string, number>();
+    for (const pe of plannedRows) {
+      const key = `${pe.weekplan_id}|${pe.exercise_id}`;
+      plannedRepsByKey.set(key, (plannedRepsByKey.get(key) ?? 0) + (pe.summary_total_reps || 0));
+    }
 
-        const targetReps = targets.target_reps || 0;
-
+    const alignments: MacroAlignment[] = [];
+    for (const e of eligible) {
+      for (const tracked of trackedByCycle.get(e.macrocycle.id) ?? []) {
+        const targetKey = `${e.currentWeekId}|${tracked.id}`;
+        if (!targetRepsByKey.has(targetKey)) continue;
+        const targetReps = targetRepsByKey.get(targetKey)!;
         if (targetReps === 0) continue;
 
-        let status: 'on-target' | 'close' | 'off-target' = 'off-target';
+        const totalPlannedReps = plannedRepsByKey.get(`${e.weekPlanId}|${tracked.exercise_id}`) ?? 0;
 
+        let status: 'on-target' | 'close' | 'off-target' = 'off-target';
         if (totalPlannedReps === targetReps) {
           status = 'on-target';
         } else if (Math.abs(totalPlannedReps - targetReps) <= targetReps * 0.15) {
@@ -387,9 +487,9 @@ export function useCoachDashboard() {
         }
 
         alignments.push({
-          athleteId: athlete.id,
-          athleteName: athlete.name,
-          exerciseName: exercise.name,
+          athleteId: e.athlete.id,
+          athleteName: e.athlete.name,
+          exerciseName: tracked.exercise?.name ?? '',
           status,
           planned: totalPlannedReps,
           target: targetReps,
@@ -414,107 +514,92 @@ export function useCoachDashboard() {
       .lte('event_date', eightWeeksFromNow.toISOString().split('T')[0])
       .order('event_date');
 
-    const events: UpcomingEvent[] = [];
-
-    if (eventsData) {
-      for (const event of eventsData) {
-        const { data: eventAthletes } = await supabase
-          .from('event_athletes')
-          .select('athlete:athletes(name)')
-          .eq('event_id', event.id);
-
-        type EventAthleteRow = { athlete: { name: string } | null };
-        const athleteNames = (eventAthletes as unknown as EventAthleteRow[] | null)?.map(ea => ea.athlete?.name ?? '').filter(Boolean).join(', ') || 'All Athletes';
-
-        const eventDate = new Date(event.event_date);
-        eventDate.setHours(0, 0, 0, 0);
-        const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        const weeksUntil = Math.ceil(daysUntil / 7);
-
-        events.push({
-          date: eventDate,
-          athleteName: athleteNames,
-          note: event.name,
-          daysUntil,
-          weeksUntil,
-          eventData: event,
-        });
-      }
+    if (!eventsData || eventsData.length === 0) {
+      setUpcomingEvents([]);
+      return;
     }
+
+    type EventAthleteRow = { event_id: string; athlete: { name: string } | null };
+    const links = (await fetchByIds(eventsData.map(e => e.id), (ids, from, to) =>
+      supabase
+        .from('event_athletes')
+        .select('event_id, athlete:athletes(name)')
+        .in('event_id', ids)
+        .order('event_id')
+        .order('athlete_id')
+        .range(from, to),
+    )) as unknown as EventAthleteRow[];
+
+    const namesByEvent = new Map<string, string[]>();
+    for (const link of links) {
+      const name = link.athlete?.name ?? '';
+      if (!name) continue;
+      const arr = namesByEvent.get(link.event_id);
+      if (arr) arr.push(name);
+      else namesByEvent.set(link.event_id, [name]);
+    }
+
+    const events: UpcomingEvent[] = eventsData.map(event => {
+      const athleteNames = (namesByEvent.get(event.id) ?? []).join(', ') || 'All Athletes';
+      const eventDate = new Date(event.event_date);
+      eventDate.setHours(0, 0, 0, 0);
+      const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const weeksUntil = Math.ceil(daysUntil / 7);
+      return {
+        date: eventDate,
+        athleteName: athleteNames,
+        note: event.name,
+        daysUntil,
+        weeksUntil,
+        eventData: event,
+      };
+    });
 
     setUpcomingEvents(events);
   }
 
-  async function loadGroupStatuses() {
-    const { groups } = await fetchAccessibleGroups(getOwnerId());
-
-    if (!groups || groups.length === 0) {
+  async function loadGroupStatuses(groups: TrainingGroup[], ctx: WeekPlanContext) {
+    if (groups.length === 0) {
       setGroupStatuses([]);
       return;
     }
 
-    const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
-    const statuses: GroupStatus[] = [];
-
-    for (const group of groups) {
-      const { data: members } = await supabase
+    type GroupMemberRow = { group_id: string; athlete: { id: string; name: string } | null };
+    const memberRows = (await fetchByIds(groups.map(g => g.id), (ids, from, to) =>
+      supabase
         .from('group_members')
-        .select('athlete:athlete_id(id, name)')
-        .eq('group_id', group.id)
-        .is('left_at', null);
+        .select('group_id, athlete:athlete_id(id, name)')
+        .in('group_id', ids)
+        .is('left_at', null)
+        .order('group_id')
+        .order('athlete_id')
+        .range(from, to),
+    )) as unknown as GroupMemberRow[];
 
-      type GroupMemberRow = { athlete: { id: string; name: string } | null };
-      const memberList = ((members || []) as unknown as GroupMemberRow[]).map(m => ({
-        id: m.athlete?.id ?? '',
-        name: m.athlete?.name ?? '',
-      })).filter(m => m.id);
+    const membersByGroup = new Map<string, { id: string; name: string }[]>();
+    for (const row of memberRows) {
+      if (!row.athlete?.id) continue;
+      const entry = { id: row.athlete.id, name: row.athlete.name };
+      const arr = membersByGroup.get(row.group_id);
+      if (arr) arr.push(entry);
+      else membersByGroup.set(row.group_id, [entry]);
+    }
 
-      const { data: currentWeekPlan } = await supabase
-        .from('week_plans')
-        .select('id')
-        .eq('group_id', group.id)
-        .eq('is_group_plan', true)
-        .eq('week_start', weekStartISO)
-        .maybeSingle();
-
-      const { data: nextWeekPlan } = await supabase
-        .from('week_plans')
-        .select('id')
-        .eq('group_id', group.id)
-        .eq('is_group_plan', true)
-        .eq('week_start', nextWeekStartISO)
-        .maybeSingle();
-
-      let currentWeekPlanned = false;
-      if (currentWeekPlan) {
-        const { data: pe } = await supabase
-          .from('planned_exercises')
-          .select('id')
-          .eq('weekplan_id', currentWeekPlan.id)
-          .limit(1);
-        currentWeekPlanned = (pe?.length || 0) > 0;
-      }
-
-      let nextWeekPlanned = false;
-      if (nextWeekPlan) {
-        const { data: pe } = await supabase
-          .from('planned_exercises')
-          .select('id')
-          .eq('weekplan_id', nextWeekPlan.id)
-          .limit(1);
-        nextWeekPlanned = (pe?.length || 0) > 0;
-      }
-
-      statuses.push({
+    const { weekStartISO, nextWeekStartISO, groupPlanByKey, plansWithExercises } = ctx;
+    const statuses: GroupStatus[] = groups.map(group => {
+      const memberList = membersByGroup.get(group.id) ?? [];
+      const currentPlanId = groupPlanByKey.get(`${group.id}|${weekStartISO}`);
+      const nextPlanId = groupPlanByKey.get(`${group.id}|${nextWeekStartISO}`);
+      return {
         group,
         memberCount: memberList.length,
         members: memberList,
-        currentWeekPlanned,
-        nextWeekPlanned,
+        currentWeekPlanned: currentPlanId ? plansWithExercises.has(currentPlanId) : false,
+        nextWeekPlanned: nextPlanId ? plansWithExercises.has(nextPlanId) : false,
         currentWeekStart: weekStartISO,
         nextWeekStart: nextWeekStartISO,
-      });
-    }
+      };
+    });
 
     setGroupStatuses(statuses);
   }
@@ -522,13 +607,36 @@ export function useCoachDashboard() {
   async function loadDashboardData() {
     try {
       setLoading(true);
-      const settingsData = await loadSettings();
+      const ownerId = getOwnerId();
+
+      // One access-scope resolution shared by the athlete and group fetches —
+      // this used to run four times per refresh, each a multi-stage waterfall.
+      const groupAccess = await resolveGroupAccess(ownerId);
+      const [settingsData, accessible, accessibleGroups] = await Promise.all([
+        loadSettings(),
+        // Owned + shared (direct and via group cascade), active only.
+        fetchAccessibleAthletes(ownerId, { activeOnly: true, groupAccess }),
+        fetchAccessibleGroups(ownerId, groupAccess),
+      ]);
+      const athletes = accessible.athletes;
+      // accessById covers ALL accessible athletes (including inactive) — the
+      // activity feed keeps that wider scope, as before.
+      const allAccessibleIds = Object.keys(accessible.accessById);
+      const groups = accessibleGroups.groups;
+      const athleteIds = athletes.map(a => a.id);
+      const { weekStartISO, nextWeekStartISO } = getCurrentAndNextWeekStart();
+
+      const [macros, ctx] = await Promise.all([
+        resolveCurrentMacros(athleteIds),
+        fetchWeekPlanContext(athleteIds, groups.map(g => g.id), weekStartISO, nextWeekStartISO),
+      ]);
+
       await Promise.all([
-        loadAthleteStatuses(settingsData),
-        loadActivityFeed(),
-        loadMacroAlignments(),
+        loadAthleteStatuses(settingsData, athletes, macros, ctx),
+        loadActivityFeed(allAccessibleIds),
+        loadMacroAlignments(athletes, macros, ctx),
         loadUpcomingEvents(),
-        loadGroupStatuses(),
+        loadGroupStatuses(groups, ctx),
       ]);
     } finally {
       setLoading(false);

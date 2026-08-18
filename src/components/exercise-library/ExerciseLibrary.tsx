@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useAthletes } from '../../hooks/useAthletes';
 import { ExerciseFormModal } from '../ExerciseFormModal';
-import { ExerciseBulkImportModal } from '../ExerciseBulkImportModal';
+// Lazy: the bulk-import modal drags the whole xlsx codec with it — loaded
+// only when the coach actually opens Import.
+const ExerciseBulkImportModal = lazy(() =>
+  import('../ExerciseBulkImportModal').then(m => ({ default: m.ExerciseBulkImportModal })),
+);
 import { ExerciseDetailPanel } from './ExerciseDetailPanel';
 import { ExerciseListPanel } from './ExerciseListPanel';
 import { ExerciseCategoryNav } from './ExerciseCategoryNav';
@@ -235,13 +239,15 @@ export function ExerciseLibrary() {
       />
 
       {showBulkImport && (
-        <ExerciseBulkImportModal
-          onClose={() => setShowBulkImport(false)}
-          onComplete={async () => {
-            await Promise.all([fetchExercises(), fetchCategories()]);
-            setShowBulkImport(false);
-          }}
-        />
+        <Suspense fallback={null}>
+          <ExerciseBulkImportModal
+            onClose={() => setShowBulkImport(false)}
+            onComplete={async () => {
+              await Promise.all([fetchExercises(), fetchCategories()]);
+              setShowBulkImport(false);
+            }}
+          />
+        </Suspense>
       )}
     </>
   );

@@ -4,10 +4,14 @@ import { ChevronDown, User, Users } from 'lucide-react';
 import { useAthleteStore } from '../store/athleteStore';
 
 export function AthleteSelector() {
-  const {
-    athletes, selectedAthlete, setSelectedAthlete,
-    groups, selectedGroup, setSelectedGroup,
-  } = useAthleteStore();
+  // Per-key selectors: this component is always mounted in the header, so a
+  // whole-store subscription would re-render it on every unrelated store write.
+  const athletes = useAthleteStore(s => s.athletes);
+  const selectedAthlete = useAthleteStore(s => s.selectedAthlete);
+  const setSelectedAthlete = useAthleteStore(s => s.setSelectedAthlete);
+  const groups = useAthleteStore(s => s.groups);
+  const selectedGroup = useAthleteStore(s => s.selectedGroup);
+  const setSelectedGroup = useAthleteStore(s => s.setSelectedGroup);
   const navigate = useNavigate();
 
   const [isOpen, setIsOpen] = useState(false);

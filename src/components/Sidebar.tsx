@@ -83,7 +83,11 @@ interface SidebarProps {
 
 export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool, onOpenPrilepin }: SidebarProps) {
   const navigate = useNavigate();
-  const { activeCoach, coaches, setActiveCoach } = useCoachStore();
+  // Per-key selectors — the Sidebar is always mounted, so a whole-store
+  // subscription would re-render it on every unrelated store write.
+  const activeCoach = useCoachStore(s => s.activeCoach);
+  const coaches = useCoachStore(s => s.coaches);
+  const setActiveCoach = useCoachStore(s => s.setActiveCoach);
   // A clicked desktop notification lands on the unread, same target the badge
   // deep-links to.
   const inboxUnread = useInboxUnreadCount({

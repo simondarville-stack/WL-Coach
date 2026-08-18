@@ -15,6 +15,7 @@
  *
  * Pure: derives all numbers from plannedExercises + weekLog + config.
  */
+import { useMemo } from 'react';
 import type {
   Exercise,
   PlannedExercise,
@@ -210,37 +211,46 @@ export function LogWeekOverview({
   showAllWeekdays,
 }: LogWeekOverviewProps) {
   // Planned aggregate across all visible days.
-  const plannedAgg = visibleDays.reduce<Totals>(
-    (acc, day) => {
-      const t = plannedTotals(plannedExercises[day.index] ?? []);
-      return {
-        sets: acc.sets + t.sets,
-        reps: acc.reps + t.reps,
-        tonnage: acc.tonnage + t.tonnage,
-        loadReps: acc.loadReps + t.loadReps,
-      };
-    },
-    { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
+  const plannedAgg = useMemo(
+    () => visibleDays.reduce<Totals>(
+      (acc, day) => {
+        const t = plannedTotals(plannedExercises[day.index] ?? []);
+        return {
+          sets: acc.sets + t.sets,
+          reps: acc.reps + t.reps,
+          tonnage: acc.tonnage + t.tonnage,
+          loadReps: acc.loadReps + t.loadReps,
+        };
+      },
+      { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
+    ),
+    [visibleDays, plannedExercises],
   );
 
   // Performed aggregate across every day with a log (incl. bonus days).
-  const performedAgg = Object.values(weekLog).reduce<Totals>(
-    (acc, log) => {
-      const t = performedTotals(log);
-      return {
-        sets: acc.sets + t.sets,
-        reps: acc.reps + t.reps,
-        tonnage: acc.tonnage + t.tonnage,
-        loadReps: acc.loadReps + t.loadReps,
-      };
-    },
-    { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
+  const performedAgg = useMemo(
+    () => Object.values(weekLog).reduce<Totals>(
+      (acc, log) => {
+        const t = performedTotals(log);
+        return {
+          sets: acc.sets + t.sets,
+          reps: acc.reps + t.reps,
+          tonnage: acc.tonnage + t.tonnage,
+          loadReps: acc.loadReps + t.loadReps,
+        };
+      },
+      { sets: 0, reps: 0, tonnage: 0, loadReps: 0 },
+    ),
+    [weekLog],
   );
 
   const plannedSessions = visibleDays.length;
   // Count any day with real training — not only those formally finished —
   // so a fully-logged-but-not-finished session isn't under-reported.
-  const completedSessions = Object.values(weekLog).filter(hasLoggedWork).length;
+  const completedSessions = useMemo(
+    () => Object.values(weekLog).filter(hasLoggedWork).length,
+    [weekLog],
+  );
 
   // Avg kg/rep divides tonnage by load-bearing reps only, so loadless work
   // (bodyweight accessories logged with no kg) never dilutes the mean.
@@ -248,32 +258,36 @@ export function LogWeekOverview({
   const plannedAvg = plannedAgg.loadReps > 0 ? plannedAgg.tonnage / plannedAgg.loadReps : 0;
 
   // Day strip data: one entry per visible day + each bonus day after.
-  const visibleIndices = new Set(visibleDays.map(d => d.index));
-  const bonusIndices = Object.keys(weekLog)
-    .map(Number)
-    .filter(idx => !visibleIndices.has(idx))
-    .sort((a, b) => a - b);
-  const stripDays = [
-    ...visibleDays.map(d => ({
-      key: `v${d.index}`,
-      label: d.name,
-      status: deriveDayStatus(weekLog[d.index]),
-      isBonus: false,
-    })),
-    ...bonusIndices.map(idx => ({
-      key: `b${idx}`,
-      label: 'Bonus',
-      status: deriveDayStatus(weekLog[idx]),
-      isBonus: true,
-    })),
-  ];
+  const stripDays = useMemo(() => {
+    const visibleIndices = new Set(visibleDays.map(d => d.index));
+    const bonusIndices = Object.keys(weekLog)
+      .map(Number)
+      .filter(idx => !visibleIndices.has(idx))
+      .sort((a, b) => a - b);
+    return [
+      ...visibleDays.map(d => ({
+        key: `v${d.index}`,
+        label: d.name,
+        status: deriveDayStatus(weekLog[d.index]),
+        isBonus: false,
+      })),
+      ...bonusIndices.map(idx => ({
+        key: `b${idx}`,
+        label: 'Bonus',
+        status: deriveDayStatus(weekLog[idx]),
+        isBonus: true,
+      })),
+    ];
+  }, [visibleDays, weekLog]);
 
   // Columns for the per-metric tables are keyed to the training UNIT
   // (day_index), so two units performed on the same calendar date don't
   // collapse into one column and lose all but the first unit's readings.
-  const dayNames = Object.fromEntries(visibleDays.map(d => [d.index, d.name]));
-  const plannedDayIndices = visibleDays.map(d => d.index);
-  const columns = buildUnitColumns(weekLog, dayNames, plannedDayIndices, showAllWeekdays);
+  const columns = useMemo(() => {
+    const dayNames = Object.fromEntries(visibleDays.map(d => [d.index, d.name]));
+    const plannedDayIndices = visibleDays.map(d => d.index);
+    return buildUnitColumns(weekLog, dayNames, plannedDayIndices, showAllWeekdays);
+  }, [visibleDays, weekLog, showAllWeekdays]);
 
   // Default to pre-feature behaviour (RAW + BW shown) when no config row
   // exists yet. VAS / custom stay off until the coach opts in.

@@ -1,8 +1,12 @@
+import { lazy, Suspense } from 'react';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
 import { DAYS_OF_WEEK } from '../../lib/constants';
 import { DayConfigModal } from '../DayConfigModal';
 import type { DaySchedule } from '../DayConfigModal';
-import { PrintWeek } from './PrintWeek';
+// Lazy for two reasons: the print view is rarely opened, and a static import
+// here pinned PrintWeek into the planner chunk, defeating the athlete app's
+// own lazy import of the same module (Vite warned about exactly this).
+const PrintWeek = lazy(() => import('./PrintWeek').then(m => ({ default: m.PrintWeek })));
 
 interface PlannerModalsProps {
   // DayConfig
@@ -63,14 +67,16 @@ export function PlannerModals({
       )}
 
       {showPrintModal && (selectedAthlete || selectedGroup) && (
-        <PrintWeek
-          athlete={selectedAthlete}
-          group={selectedGroup}
-          weekStart={selectedDate}
-          onClose={onPrintClose}
-          dayLabels={dayLabels}
-          weekDescription={weekDescription}
-        />
+        <Suspense fallback={null}>
+          <PrintWeek
+            athlete={selectedAthlete}
+            group={selectedGroup}
+            weekStart={selectedDate}
+            onClose={onPrintClose}
+            dayLabels={dayLabels}
+            weekDescription={weekDescription}
+          />
+        </Suspense>
       )}
     </>
   );

@@ -1,7 +1,6 @@
 // Export helpers: CSV / TSV / XLSX from the result, SVG from a rendered chart,
 // and print. All read the already-aggregated AnalysisResult — no re-aggregation.
 
-import * as XLSX from 'xlsx';
 import type { AnalysisResult } from '../../../lib/analysis';
 import { dimLabel } from './dimensions';
 
@@ -64,8 +63,11 @@ export function resultToTsv(result: AnalysisResult): string {
   return serialize(result, '\t');
 }
 
-/** A real .xlsx workbook (numbers stay numeric so Excel can sum them). */
-export function downloadXlsx(result: AnalysisResult, filename: string): void {
+/** A real .xlsx workbook (numbers stay numeric so Excel can sum them).
+ *  xlsx is loaded on demand — it's ~300 kB minified and this is the only
+ *  place the analysis chunk needs it. */
+export async function downloadXlsx(result: AnalysisResult, filename: string): Promise<void> {
+  const XLSX = await import('xlsx');
   const { header, rows } = buildTidy(result);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   const wb = XLSX.utils.book_new();

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GripVertical, Video, Image as ImageIcon, ChevronRight, BookmarkPlus, Dumbbell } from 'lucide-react';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { useExercises } from '../../hooks/useExercises';
@@ -198,13 +198,30 @@ export function DayCard({
 
   // Expand combos into their member instances so each member's reps count
   // under its own exercise and tick (a combo merely governs structure).
-  const dayMetrics = computeMetrics(
-    exercises
-      .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
-      .map(c => ({ ...c, counts_towards_totals: c.exercise.counts_towards_totals })),
-    competitionTotal,
+  // Memoized: this is a full prescription-parse pass over the day, and it
+  // used to re-run on every render — including plain row hovers.
+  const dayMetrics = useMemo(
+    () => computeMetrics(
+      exercises
+        .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
+        .map(c => ({ ...c, counts_towards_totals: c.exercise.counts_towards_totals })),
+      competitionTotal,
+    ),
+    [exercises, comboMembers, competitionTotal],
   );
   const isEmpty = exercises.length === 0;
+
+  // Per-row ≥-menu entries parse the prescription just to decide whether the
+  // entry is offered — memoized so hover/drag re-renders don't re-parse the
+  // whole day. Keyed on the day's exercise array (its identity only changes
+  // when a row in THIS day changes).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const signItemsByExId = useMemo(() => {
+    const m = new Map<string, FeatureMenuItem[]>();
+    for (const ex of exercises) m.set(ex.id, signMenuItem(ex));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercises]);
 
   async function handleAddExercise(exercise: Exercise, preset?: CoachPreset) {
     setAdding(true);
@@ -575,7 +592,7 @@ export function DayCard({
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {exercises.map(ex => {
                 const sentinel = getSentinelType(ex.exercise.exercise_code);
-                const members = ex.is_combo ? (comboMembers[ex.id] ?? []).sort((a, b) => a.position - b.position) : null;
+                const members = ex.is_combo ? (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position) : null;
                 const borderColor = sentinel === 'text'
                   ? 'transparent'
                   : sentinel
@@ -912,7 +929,7 @@ export function DayCard({
                         ex={ex}
                         rowHovered={isHovered}
                         onSaveFeatures={f => handleFeaturesSave(ex, f)}
-                        extraFeatureItems={signMenuItem(ex)}
+                        extraFeatureItems={signItemsByExId.get(ex.id) ?? []}
                         presetItems={[
                           ...presetMenuItems(ex),
                           ...saveAsPresetItem(ex),
