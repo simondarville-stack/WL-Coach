@@ -600,6 +600,31 @@ export function useWeekPlans() {
     await supabase.from('planned_exercises').update({ source: 'individual' }).eq('id', plannedExId).eq('source', 'group');
   };
 
+  /**
+   * Optimistically patch ONE planned exercise in state, touching only the
+   * array of the day that contains it. Every other day keeps its array
+   * identity, so week-level memos and (memoized) day cards keyed on those
+   * arrays skip re-rendering — the old shape rebuilt every day's array on
+   * every cell edit, which repainted the entire week per click.
+   */
+  const patchPlannedExercise = (
+    plannedExId: string,
+    patch: (ex: PlannedExercise & { exercise: Exercise }) => PlannedExercise & { exercise: Exercise },
+  ) => {
+    setPlannedExercises(prev => {
+      for (const key of Object.keys(prev)) {
+        const day = Number(key);
+        const list = prev[day];
+        const idx = list.findIndex(ex => ex.id === plannedExId);
+        if (idx === -1) continue;
+        const nextList = list.slice();
+        nextList[idx] = patch(list[idx]);
+        return { ...prev, [day]: nextList };
+      }
+      return prev;
+    });
+  };
+
   // Public entry point for persisting a prescription. Mirrors the edit to a
   // localStorage draft BEFORE the destructive write so a dropped connection
   // mid-save can't lose the coach's typing, then clears the draft only after
@@ -629,29 +654,19 @@ export function useWeekPlans() {
     // (sentRawsRef), so this never remounts it. Same computePrescriptionSummary
     // the write path uses, so the cached summary stays consistent.
     const baseSummary = computePrescriptionSummary(data.prescription, data.unit, !!data.isCombo);
-    setPlannedExercises(prev => {
-      let changed = false;
-      const next: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-      for (const key of Object.keys(prev)) {
-        const day = Number(key);
-        next[day] = prev[day].map(ex => {
-          if (ex.id !== plannedExId) return ex;
-          changed = true;
-          // Feature overrides (Σ/Ø) survive prescription edits — same rule the
-          // write path applies.
-          const summary = applyFeatureOverrides(baseSummary, ex.metadata?.features);
-          return {
-            ...ex,
-            prescription_raw: data.prescription,
-            unit: data.unit,
-            summary_total_sets: summary.total_sets,
-            summary_total_reps: summary.total_reps,
-            summary_highest_load: summary.highest_load,
-            summary_avg_load: summary.avg_load,
-          };
-        });
-      }
-      return changed ? next : prev;
+    patchPlannedExercise(plannedExId, ex => {
+      // Feature overrides (Σ/Ø) survive prescription edits — same rule the
+      // write path applies.
+      const summary = applyFeatureOverrides(baseSummary, ex.metadata?.features);
+      return {
+        ...ex,
+        prescription_raw: data.prescription,
+        unit: data.unit,
+        summary_total_sets: summary.total_sets,
+        summary_total_reps: summary.total_reps,
+        summary_highest_load: summary.highest_load,
+        summary_avg_load: summary.avg_load,
+      };
     });
 
     // Serialize the DB write per exercise: chain after any in-flight write so a
@@ -708,19 +723,7 @@ export function useWeekPlans() {
     // The editor autosaves, so a full refetch per save would be both wasteful
     // and destructive (it re-renders the card under an open editor). Same
     // optimistic-patch shape savePrescription uses.
-    setPlannedExercises(prev => {
-      let changed = false;
-      const next: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-      for (const key of Object.keys(prev)) {
-        const day = Number(key);
-        next[day] = prev[day].map(ex => {
-          if (ex.id !== plannedExId) return ex;
-          changed = true;
-          return { ...ex, metadata: { ...(ex.metadata ?? {}), gpp } };
-        });
-      }
-      return changed ? next : prev;
-    });
+    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: { ...(ex.metadata ?? {}), gpp } }));
   };
 
   /**
@@ -766,26 +769,14 @@ export function useWeekPlans() {
 
     // Optimistic in-memory patch — same shape savePrescription uses, so the
     // analysis column and day totals update live without a refetch.
-    setPlannedExercises(prev => {
-      let changed = false;
-      const nextState: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-      for (const key of Object.keys(prev)) {
-        const day = Number(key);
-        nextState[day] = prev[day].map(ex => {
-          if (ex.id !== plannedExId) return ex;
-          changed = true;
-          return {
-            ...ex,
-            metadata: next as PlannedExerciseMetadata,
-            summary_total_sets: summary.total_sets,
-            summary_total_reps: summary.total_reps,
-            summary_highest_load: summary.highest_load,
-            summary_avg_load: summary.avg_load,
-          };
-        });
-      }
-      return changed ? nextState : prev;
-    });
+    patchPlannedExercise(plannedExId, ex => ({
+      ...ex,
+      metadata: next as PlannedExerciseMetadata,
+      summary_total_sets: summary.total_sets,
+      summary_total_reps: summary.total_reps,
+      summary_highest_load: summary.highest_load,
+      summary_avg_load: summary.avg_load,
+    }));
   };
 
   /**
@@ -816,19 +807,7 @@ export function useWeekPlans() {
     if (error) throw error;
     await supabase.from('planned_exercises').update({ source: 'individual' } as never).eq('id', plannedExId).eq('source', 'group');
 
-    setPlannedExercises(prev => {
-      let changed = false;
-      const nextState: Record<number, (PlannedExercise & { exercise: Exercise })[]> = {};
-      for (const key of Object.keys(prev)) {
-        const day = Number(key);
-        nextState[day] = prev[day].map(ex => {
-          if (ex.id !== plannedExId) return ex;
-          changed = true;
-          return { ...ex, metadata: next as PlannedExerciseMetadata };
-        });
-      }
-      return changed ? nextState : prev;
-    });
+    patchPlannedExercise(plannedExId, ex => ({ ...ex, metadata: next as PlannedExerciseMetadata }));
   };
 
   /**

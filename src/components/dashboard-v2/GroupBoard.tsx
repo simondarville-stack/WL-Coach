@@ -1,13 +1,17 @@
 // Groups view — one row per training group, with the group's own plan state
 // surfaced. Expanding a group shows its roster with per-member status.
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Star, UsersRound } from 'lucide-react';
 import type { AthleteStatus, GroupStatus } from '../../hooks/useCoachDashboard';
 import type { AthleteEnrichment } from '../../hooks/useCoachDashboardV2';
 import {
   Avatar, WeekPill, RawChip, EventTag, FlagDot, ComplianceSpark, lastTrainLabel,
 } from './atoms';
+
+// Stable fallback so a missing map entry doesn't hand GroupRow a fresh
+// array reference every render (which would defeat its memo).
+const NO_MEMBERS: AthleteStatus[] = [];
 
 interface Props {
   groupStatuses: GroupStatus[];
@@ -43,6 +47,18 @@ export function GroupBoard({
     return [...groupStatuses].sort((a, b) => idx(a.group.id) - idx(b.group.id));
   }, [groupStatuses, pinned]);
 
+  // Memoised so local-state re-renders (expand, pin) hand each GroupRow the
+  // same array reference and the row's memo can skip.
+  const memberStatusesByGroup = useMemo(() => {
+    const m: Record<string, AthleteStatus[]> = {};
+    groupStatuses.forEach(gs => {
+      m[gs.group.id] = gs.members
+        .map(mm => statusByAthleteId[mm.id])
+        .filter((s): s is AthleteStatus => !!s);
+    });
+    return m;
+  }, [groupStatuses, statusByAthleteId]);
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
@@ -66,28 +82,22 @@ export function GroupBoard({
                 </td>
               </tr>
             )}
-            {ordered.map(gs => {
-              const isExpanded = expandedId === gs.group.id;
-              const memberStatuses = gs.members
-                .map(m => statusByAthleteId[m.id])
-                .filter((s): s is AthleteStatus => !!s);
-              return (
-                <GroupRow
-                  key={gs.group.id}
-                  groupStatus={gs}
-                  memberStatuses={memberStatuses}
-                  getEnrichment={getEnrichment}
-                  expanded={isExpanded}
-                  pinned={pinned.includes(gs.group.id)}
-                  onTogglePin={() => onTogglePin(gs.group.id)}
-                  onSetExpanded={() => onSetExpanded(isExpanded ? null : gs.group.id)}
-                  onJumpToAthlete={onJumpToAthlete}
-                  onOpenGroupPlanner={onOpenGroupPlanner}
-                  onOpenEvent={onOpenEvent}
-                  onOpenAthleteInfo={onOpenAthleteInfo}
-                />
-              );
-            })}
+            {ordered.map(gs => (
+              <GroupRow
+                key={gs.group.id}
+                groupStatus={gs}
+                memberStatuses={memberStatusesByGroup[gs.group.id] ?? NO_MEMBERS}
+                getEnrichment={getEnrichment}
+                expanded={expandedId === gs.group.id}
+                pinned={pinned.includes(gs.group.id)}
+                onTogglePin={onTogglePin}
+                onSetExpanded={onSetExpanded}
+                onJumpToAthlete={onJumpToAthlete}
+                onOpenGroupPlanner={onOpenGroupPlanner}
+                onOpenEvent={onOpenEvent}
+                onOpenAthleteInfo={onOpenAthleteInfo}
+              />
+            ))}
           </tbody>
         </table>
       </div>
@@ -101,15 +111,19 @@ interface RowProps {
   getEnrichment: (athleteId: string) => AthleteEnrichment;
   expanded: boolean;
   pinned: boolean;
-  onTogglePin: () => void;
-  onSetExpanded: () => void;
+  // Row-scoped callbacks take the id/next-value so the parent can pass its
+  // stable handlers straight through — a per-row closure would defeat memo.
+  onTogglePin: (groupId: string) => void;
+  onSetExpanded: (id: string | null) => void;
   onJumpToAthlete: (status: AthleteStatus) => void;
   onOpenGroupPlanner: (gs: GroupStatus, weekStart?: string) => void;
   onOpenEvent: (eventId: string) => void;
   onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
-function GroupRow({
+// Memoised so the 60 s dashboard poll (and expand/pin local state in the
+// parent) only repaints rows whose props actually changed.
+const GroupRow = memo(function GroupRow({
   groupStatus, memberStatuses, getEnrichment, expanded, pinned,
   onTogglePin, onSetExpanded, onJumpToAthlete, onOpenGroupPlanner,
   onOpenEvent, onOpenAthleteInfo,
@@ -135,12 +149,12 @@ function GroupRow({
     <>
       <tr
         id={`v2-group-${groupStatus.group.id}`}
-        onClick={onSetExpanded}
+        onClick={() => onSetExpanded(expanded ? null : groupStatus.group.id)}
         className={`border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${expandedBg || tintBg} ${borderL}`}
       >
         <td className="w-8 py-3 px-2">
           <button
-            onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+            onClick={(e) => { e.stopPropagation(); onTogglePin(groupStatus.group.id); }}
             title={pinned ? 'Unpin' : 'Pin to top'}
             className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'}`}
           >
@@ -217,7 +231,7 @@ function GroupRow({
       )}
     </>
   );
-}
+});
 
 function GroupExpansion({
   groupStatus, memberStatuses, getEnrichment, flaggedCount,

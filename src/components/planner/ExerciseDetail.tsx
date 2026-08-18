@@ -111,7 +111,7 @@ export function ExerciseDetail({
   const isCombo = plannedExercise?.is_combo ?? false;
   const sentinel = getSentinelType(plannedExercise?.exercise.exercise_code ?? null);
   const members = isCombo && plannedExercise
-    ? (comboMembers[plannedExercise.id] ?? []).sort((a, b) => a.position - b.position)
+    ? (comboMembers[plannedExercise.id] ?? []).slice().sort((a, b) => a.position - b.position)
     : [];
 
   const hasMacro = !!macroContext && !isCombo && !sentinel && !!plannedExercise;

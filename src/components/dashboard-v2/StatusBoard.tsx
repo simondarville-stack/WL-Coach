@@ -5,7 +5,7 @@
 // per-row severity tint (red for "no plan this week", amber for warnings)
 // is preserved because it's the panel's primary signal.
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Star } from 'lucide-react';
 import type { AthleteStatus, GroupStatus } from '../../hooks/useCoachDashboard';
 import type { AthleteEnrichment } from '../../hooks/useCoachDashboardV2';
@@ -175,8 +175,8 @@ function SectionContent({
           expanded={expandedId === s.athlete.id}
           pulse={pulseId === s.athlete.id}
           pinned={pinned.includes(s.athlete.id)}
-          onTogglePin={() => onTogglePin(s.athlete.id)}
-          onSetExpanded={() => onSetExpanded(expandedId === s.athlete.id ? null : s.athlete.id)}
+          onTogglePin={onTogglePin}
+          onSetExpanded={onSetExpanded}
           onOpenPlanner={onOpenPlanner}
           onOpenMacro={onOpenMacro}
           onOpenEvent={onOpenEvent}
@@ -234,15 +234,19 @@ interface RowProps {
   expanded: boolean;
   pulse: boolean;
   pinned: boolean;
-  onTogglePin: () => void;
-  onSetExpanded: () => void;
+  // Row-scoped callbacks take the id/next-value so the parent can pass its
+  // stable handlers straight through — a per-row closure would defeat memo.
+  onTogglePin: (id: string) => void;
+  onSetExpanded: (id: string | null) => void;
   onOpenPlanner: (status: AthleteStatus, weekStart?: string) => void;
   onOpenMacro: (status: AthleteStatus) => void;
   onOpenEvent: (eventId: string) => void;
   onOpenAthleteInfo: (status: AthleteStatus) => void;
 }
 
-function AthleteRowV2({
+// Memoised so the 60 s dashboard poll (and expand/pulse/pin local state in
+// the parent) only repaints rows whose props actually changed.
+const AthleteRowV2 = memo(function AthleteRowV2({
   status, enrichment, expanded, pulse, pinned,
   onTogglePin, onSetExpanded,
   onOpenPlanner, onOpenMacro, onOpenEvent, onOpenAthleteInfo,
@@ -267,12 +271,12 @@ function AthleteRowV2({
     <>
       <tr
         id={`v2-row-${a.id}`}
-        onClick={onSetExpanded}
+        onClick={() => onSetExpanded(expanded ? null : a.id)}
         className={`border-b border-gray-100 cursor-pointer transition-colors duration-200 hover:bg-gray-50 ${pulseBg || expandedBg || tintBg} ${borderL}`}
       >
         <td className="w-8 py-3 px-2">
           <button
-            onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+            onClick={(e) => { e.stopPropagation(); onTogglePin(a.id); }}
             title={pinned ? 'Unpin' : 'Pin to top'}
             className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'}`}
           >
@@ -367,4 +371,4 @@ function AthleteRowV2({
       )}
     </>
   );
-}
+});

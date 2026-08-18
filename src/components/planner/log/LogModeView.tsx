@@ -6,7 +6,7 @@
  * did. P4 adds coach reply support: post comments to either the session
  * (whole day) or one exercise (inline thread).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import type {
   PlannedExercise,
@@ -242,9 +242,32 @@ export function LogModeView({
     return () => ctrl.abort();
   }, [loadAll]);
 
-  const totalLogged = Object.values(weekLog).reduce(
-    (sum, d) => sum + d.exercises.length, 0,
+  const totalLogged = useMemo(
+    () => Object.values(weekLog).reduce(
+      (sum, d) => sum + d.exercises.length, 0,
+    ),
+    [weekLog],
   );
+
+  // Bonus athlete-added days: sessions whose day_index isn't in visibleDays.
+  const extraDayIndices = useMemo(() => {
+    const visibleIndices = new Set(visibleDays.map(d => d.index));
+    return Object.keys(weekLog)
+      .map(k => Number(k))
+      .filter(idx => !visibleIndices.has(idx))
+      .sort((a, b) => a - b);
+  }, [visibleDays, weekLog]);
+
+  // Planned exercise matching the logged row open in the edit modal (null
+  // while the modal is closed or the logged row is off-plan).
+  const plannedForEdit = useMemo(() => {
+    if (!editingLogged?.log.planned_exercise_id) return null;
+    return (
+      Object.values(plannedExercises)
+        .flat()
+        .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
+    );
+  }, [editingLogged, plannedExercises]);
 
   return (
     <div>
@@ -337,43 +360,30 @@ export function LogModeView({
       {/* Bonus athlete-added days: sessions whose day_index isn't in
           visibleDays. Labelled from day_labels when present, else
           falls back to "Extra N". Rendered under a separator. */}
-      {!loading && !error && (() => {
-        const visibleIndices = new Set(visibleDays.map(d => d.index));
-        const extras = Object.keys(weekLog)
-          .map(k => Number(k))
-          .filter(idx => !visibleIndices.has(idx))
-          .sort((a, b) => a - b);
-        if (extras.length === 0) return null;
-        return (
-          <>
-            <div className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 mt-3 mb-2 px-1">
-              Added by athlete
-            </div>
-            {extras.map((idx, i) => {
-              const label = dayLabels?.[idx]?.trim() || `Extra ${i + 1}`;
-              return (
-                <LogDayCard
-                  key={`extra-${idx}`}
-                  dayName={label}
-                  highlight={highlightDayIndex != null && idx === highlightDayIndex}
-                  openComments={openCommentsDayIndex != null && idx === openCommentsDayIndex}
-                  plannedExercises={[]}
-                  dayLog={weekLog[idx] ?? null}
-                  onPostSessionComment={postSessionComment}
-                  onEditGppExercise={setEditingGpp}
-                />
-              );
-            })}
-          </>
-        );
-      })()}
+      {!loading && !error && extraDayIndices.length > 0 && (
+        <>
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 mt-3 mb-2 px-1">
+            Added by athlete
+          </div>
+          {extraDayIndices.map((idx, i) => {
+            const label = dayLabels?.[idx]?.trim() || `Extra ${i + 1}`;
+            return (
+              <LogDayCard
+                key={`extra-${idx}`}
+                dayName={label}
+                highlight={highlightDayIndex != null && idx === highlightDayIndex}
+                openComments={openCommentsDayIndex != null && idx === openCommentsDayIndex}
+                plannedExercises={[]}
+                dayLog={weekLog[idx] ?? null}
+                onPostSessionComment={postSessionComment}
+                onEditGppExercise={setEditingGpp}
+              />
+            );
+          })}
+        </>
+      )}
 
       {editingLogged && (() => {
-        const plannedForEdit = editingLogged.log.planned_exercise_id
-          ? Object.values(plannedExercises)
-              .flat()
-              .find(p => p.id === editingLogged.log.planned_exercise_id) ?? null
-          : null;
         // A combo's log row points at the anchor exercise, so the raw
         // logged.exercise.name would title the modal with one member.
         const comboTitle = plannedForEdit?.is_combo

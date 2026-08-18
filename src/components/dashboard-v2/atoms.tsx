@@ -5,7 +5,7 @@
 // gray-100/200 borders. The slightly denser bits (color-tinted backgrounds
 // for RAW / week pills) stay, because they carry signal.
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { RawPillars, BwSummary } from '../../hooks/useCoachDashboardV2';
 
@@ -245,7 +245,9 @@ export function RawPillarsBreakdown({
   );
 }
 
-export function Sparkline({
+// The SVG atoms below are memoised: they render per row, so skipping them
+// when props are referentially equal keeps hover/expand re-renders cheap.
+export const Sparkline = memo(function Sparkline({
   points, width = 60, height = 18, stroke = '#185FA5', max, dotsLast,
 }: {
   points: number[]; width?: number; height?: number;
@@ -268,9 +270,9 @@ export function Sparkline({
       {dotsLast && <circle cx={lastX} cy={lastY} r={2.2} fill={stroke} />}
     </svg>
   );
-}
+});
 
-export function ComplianceSpark({
+export const ComplianceSpark = memo(function ComplianceSpark({
   values, width = 70, height = 20,
 }: { values: (number | null)[]; width?: number; height?: number }) {
   // Only completed weeks have a graded compliance; the in-progress week is null
@@ -290,7 +292,7 @@ export function ComplianceSpark({
       </span>
     </div>
   );
-}
+});
 
 export function BwDelta({
   bw, expanded, onClick,
@@ -451,7 +453,7 @@ export function FlagChip({ id }: { id: string }) {
 // palette so it sits inside the rest of the EMOS panels. If no explicit
 // width is passed the chart measures its container and re-renders on
 // resize, so the bar count adapts to whatever space is available.
-export function PlannedActualChart({
+export const PlannedActualChart = memo(function PlannedActualChart({
   planned, actual, labels, yMax,
   width, height = 130,
 }: {
@@ -481,7 +483,7 @@ export function PlannedActualChart({
       />
     </div>
   );
-}
+});
 
 function PlannedActualChartInner({
   planned, actual, labels, yMax,
