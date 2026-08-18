@@ -1310,6 +1310,28 @@ export function WeeklyPlanner() {
 
   const handleDragEnd = () => setDraggedDayIndex(null);
 
+  /**
+   * Move a unit card to another card's position, straight from the grid.
+   * Reordering already existed, but only inside the Day-config modal, so
+   * rearranging a week meant opening a dialog to drag rows in a list.
+   *
+   * Splices the FULL `day_display_order`, not the visible subset: the order
+   * also carries inactive days, and rebuilding it from what happens to be on
+   * screen would drop them. Persisted immediately — the modal defers to its
+   * Save button, but everything on the grid autosaves.
+   */
+  const reorderDayCards = (fromDayIndex: number, toDayIndex: number) => {
+    if (!currentWeekPlan || fromDayIndex === toDayIndex) return;
+    const next = [...dayDisplayOrder];
+    const from = next.indexOf(fromDayIndex);
+    const to = next.indexOf(toDayIndex);
+    if (from === -1 || to === -1) return;
+    next.splice(from, 1);
+    next.splice(to, 0, fromDayIndex);
+    setDayDisplayOrder(next);
+    void updateWeekPlan(currentWeekPlan.id, { day_display_order: next });
+  };
+
   const saveDayLabels = async () => {
     if (!currentWeekPlan) return;
     try {
@@ -1808,6 +1830,7 @@ export function WeeklyPlanner() {
                 comboMembers={comboMembers}
                 allExercises={allExercises}
                 daySchedule={(currentWeekPlan?.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? null}
+                onReorderDay={reorderDayCards}
                 visibleCardMetrics={(settings?.visible_card_metrics as MetricKey[] | undefined) ?? DEFAULT_VISIBLE_METRICS}
                 competitionTotal={planSelection.athlete?.competition_total ?? null}
                 onNavigateToDay={handleNavigateToDay}

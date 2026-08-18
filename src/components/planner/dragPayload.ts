@@ -15,6 +15,13 @@
 export const MARK_EXERCISE = 'application/x-emos-exercise';
 /** Set by DayCard's unit header (a whole training unit). */
 export const MARK_DAY = 'application/x-emos-day';
+/** Set by the unit header's grip handle — REORDERS the cards on the grid.
+ *  Deliberately distinct from MARK_DAY: dragging the header itself moves a
+ *  unit's CONTENT into another unit, which is a different gesture with a
+ *  different (destructive) outcome, and the two must never be confused. Also
+ *  deliberately not a ThrowKind — dragging a card to a new position and
+ *  missing must not delete the unit. */
+export const MARK_DAY_REORDER = 'application/x-emos-day-reorder';
 /** Set by the clipboard panel's cards. */
 export const MARK_CLIPBOARD = 'application/x-emos-clipboard';
 /** Set by the dock's preset cards ("PRESET:<id>"). Deliberately NOT a
@@ -46,6 +53,11 @@ export function throwKindFromTypes(types: readonly string[]): ThrowKind | null {
  */
 export function parseThrowPayload(text: string): ThrowPayload | null {
   if (!text) return null;
+
+  // A reorder drag carries no throwable thing — it moves a card's POSITION,
+  // and there is nothing to delete if it lands nowhere. Checked before the
+  // 'DAY:' prefix, which it would otherwise not match anyway.
+  if (text.startsWith('DAYORDER:')) return null;
 
   if (text.startsWith('DAY:')) {
     const dayIndex = parseInt(text.slice(4), 10);
