@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { fetchWeeklyAggregates } from './useAnalysis';
+import { fetchWeeklyAggregatesForAthletes } from './useAnalysis';
 import {
   useCoachDashboard,
   type AthleteStatus,
@@ -260,33 +260,23 @@ export function useCoachDashboardV2() {
       const endDate = new Date().toISOString().slice(0, 10);
       const startDate = new Date(Date.now() - HISTORY_WEEKS * 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
-      const compEntries = await Promise.all(
-        statuses.map(async (s) => {
-          const aggs = await fetchWeeklyAggregates({
-            athleteId: s.athlete.id, startDate, endDate,
-          });
-          const window = aggs.slice(-HISTORY_WEEKS);
-          return [
-            s.athlete.id,
-            {
-              comp: window.map(a => a.complianceReps),
-              raw: window.map(a => a.rawTotal ?? 0),
-              repsPlanned: window.map(a => a.plannedReps),
-              repsActual: window.map(a => a.performedReps),
-            },
-          ] as const;
-        }),
-      );
+      // One batched fetch for the whole roster — this used to run a
+      // ~10-query pipeline per athlete, re-downloading the host's exercise
+      // catalogue and phase table once per athlete on every poll.
+      const aggsByAthlete = await fetchWeeklyAggregatesForAthletes({
+        athleteIds, startDate, endDate,
+      });
       const compByAthlete: Record<string, (number | null)[]> = {};
       const rawTrendByAthlete: Record<string, number[]> = {};
       const repsPlannedByAthlete: Record<string, number[]> = {};
       const repsActualByAthlete: Record<string, number[]> = {};
-      compEntries.forEach(([id, vals]) => {
-        compByAthlete[id] = vals.comp;
-        rawTrendByAthlete[id] = vals.raw;
-        repsPlannedByAthlete[id] = vals.repsPlanned;
-        repsActualByAthlete[id] = vals.repsActual;
-      });
+      for (const id of athleteIds) {
+        const window = (aggsByAthlete.get(id) ?? []).slice(-HISTORY_WEEKS);
+        compByAthlete[id] = window.map(a => a.complianceReps);
+        rawTrendByAthlete[id] = window.map(a => a.rawTotal ?? 0);
+        repsPlannedByAthlete[id] = window.map(a => a.plannedReps);
+        repsActualByAthlete[id] = window.map(a => a.performedReps);
+      }
 
       // 4) Phase metadata per athlete.
       //

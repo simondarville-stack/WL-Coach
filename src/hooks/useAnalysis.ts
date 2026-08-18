@@ -1,6 +1,7 @@
 // TODO: Consider extracting parsePlannedExercise and parsePerformedRaw into src/lib/calculations.ts
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { fetchByIds } from '../lib/queryPaging';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { weekState, type WeekState } from '../lib/weekUtils';
 import { findPhaseForWeek } from '../lib/macroPhases';
@@ -156,99 +157,211 @@ function parsePlannedExercise(pe: {
 // ─── Main fetch functions ────────────────────────────────────────────────────
 
 export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<WeeklyAggregate[]> {
-  const { athleteId, startDate, endDate, exerciseFilter = [], categoryFilter = [] } = params;
+  const map = await fetchWeeklyAggregatesForAthletes({
+    athleteIds: [params.athleteId],
+    startDate: params.startDate,
+    endDate: params.endDate,
+    exerciseFilter: params.exerciseFilter,
+    categoryFilter: params.categoryFilter,
+  });
+  return map.get(params.athleteId) ?? [];
+}
 
-  // Resolve the athlete's host coach. Week plans, macrocycles, phases
-  // and the exercise library all belong to the host — for a shared
-  // athlete this is NOT the active coach. Filtering by the active
-  // coach's owner_id (as before) zeroed out the planned-volume side of
-  // every weekly aggregate, which silently broke compliance on the
-  // dashboard. Falling back to getOwnerId keeps unshared athletes
-  // working when the row is somehow missing.
-  const { data: athleteRow } = await supabase
+// Row shapes the aggregation below works on — kept explicit (and cast onto
+// the query results, as before) so the compute path is independent of how
+// precisely the generated client types each select string.
+type AggWeekPlanRow = { id: string; athlete_id: string | null; owner_id: string; week_start: string };
+type AggMacroWeekRow = {
+  id: string; week_start: string; week_number: number; week_type: string | null;
+  week_type_text: string | null; total_reps_target: number | null; macrocycle_id: string;
+  macrocycles: { owner_id: string } | null;
+};
+type AggMacroPhaseRow = {
+  id: string; name: string; color: string; owner_id: string; macrocycle_id: string;
+  start_week_number: number; end_week_number: number;
+};
+type AggSessionRow = {
+  id: string; athlete_id: string; date: string; week_start: string | null;
+  raw_total: number | null; session_rpe: number | null; status: string;
+};
+type AggBwRow = { athlete_id: string; date: string; weight_kg: number };
+type AggExerciseRow = { id: string; name: string; category: string; color: string; owner_id: string };
+type AggPlannedExerciseRow = {
+  id: string; weekplan_id: string; day_index: number; exercise_id: string;
+  prescription_raw: string | null; summary_total_sets: number | null; summary_total_reps: number | null;
+  summary_highest_load: number | null; summary_avg_load: number | null; is_combo: boolean;
+};
+type AggLogExerciseRow = {
+  id: string; session_id: string; exercise_id: string; performed_raw: string; status: string; planned_exercise_id: string | null;
+};
+type AggLogSetRow = {
+  log_exercise_id: string;
+  performed_load: number | null;
+  performed_reps: number | null;
+  status: 'pending' | 'completed' | 'skipped' | 'failed';
+};
+
+/**
+ * Batched form of fetchWeeklyAggregates — one set of round trips for N
+ * athletes instead of ~10 per athlete. The dashboard enrichment layer calls
+ * this once per poll for the whole roster.
+ *
+ * Host note (kept from the single-athlete version): week plans, macrocycles,
+ * phases and the exercise library belong to each athlete's HOST coach — for
+ * a shared athlete this is NOT the active coach. Filtering by the active
+ * coach's owner_id zeroed out the planned-volume side of every weekly
+ * aggregate, which silently broke compliance on the dashboard. Host-scoped
+ * data is fetched once per distinct host, not once per athlete; getOwnerId
+ * stays the fallback when an athlete row is somehow missing.
+ */
+export async function fetchWeeklyAggregatesForAthletes(params: {
+  athleteIds: string[];
+  startDate: string;
+  endDate: string;
+  exerciseFilter?: string[];
+  categoryFilter?: string[];
+}): Promise<Map<string, WeeklyAggregate[]>> {
+  const { athleteIds, startDate, endDate, exerciseFilter = [], categoryFilter = [] } = params;
+  const result = new Map<string, WeeklyAggregate[]>();
+  if (athleteIds.length === 0) return result;
+
+  const { data: athleteRows } = await supabase
     .from('athletes')
-    .select('owner_id')
-    .eq('id', athleteId)
-    .maybeSingle();
-  const hostOwnerId = (athleteRow?.owner_id as string | undefined) ?? getOwnerId();
+    .select('id, owner_id')
+    .in('id', athleteIds);
+  const hostByAthlete = new Map(
+    (athleteRows ?? []).map(r => [r.id as string, r.owner_id as string]),
+  );
+  const fallbackOwner = getOwnerId();
+  const hostOf = (athleteId: string) => hostByAthlete.get(athleteId) ?? fallbackOwner;
+  const hostIds = Array.from(new Set(athleteIds.map(hostOf)));
 
-  const [
-    weekPlansRes,
-    macroWeeksRes,
-    macroPhasesRes,
-    sessionsRes,
-    bodyweightRes,
-    exercisesRes,
-  ] = await Promise.all([
-    supabase
-      .from('week_plans')
-      .select('id, week_start')
-      .eq('owner_id', hostOwnerId)
-      .eq('athlete_id', athleteId)
-      .gte('week_start', startDate)
-      .lte('week_start', endDate)
-      .order('week_start'),
-    supabase
-      .from('macro_weeks')
-      .select('week_start, week_number, week_type, week_type_text, total_reps_target, macrocycle_id, macrocycles!inner(owner_id)')
-      .eq('macrocycles.owner_id', hostOwnerId)
-      .gte('week_start', startDate)
-      .lte('week_start', endDate),
-    supabase
-      .from('macro_phases')
-      // start/end week numbers are what actually assigns a week to a phase —
-      // see lib/macroPhases. Ordered by position so overlapping ranges resolve
-      // in the coach's own order.
-      .select('id, name, color, macrocycle_id, start_week_number, end_week_number')
-      .eq('owner_id', hostOwnerId)
-      .order('position'),
-    supabase
-      .from('training_log_sessions')
-      .select('id, date, week_start, raw_total, session_rpe, status')
-      .eq('athlete_id', athleteId)
-      .neq('status', 'planned')
-      .gte('date', startDate)
-      .lte('date', endDate),
-    supabase
-      .from('bodyweight_entries')
-      .select('date, weight_kg')
-      .eq('athlete_id', athleteId)
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date'),
-    supabase
-      .from('exercises')
-      .select('id, name, category, color')
-      .eq('owner_id', hostOwnerId),
-  ]);
+  const [weekPlansRaw, macroWeeksRaw, macroPhasesRaw, sessionsRaw, bwRaw, exercisesRaw] =
+    await Promise.all([
+      fetchByIds(athleteIds, (ids, from, to) => supabase
+        .from('week_plans')
+        .select('id, athlete_id, owner_id, week_start')
+        .in('athlete_id', ids)
+        .gte('week_start', startDate)
+        .lte('week_start', endDate)
+        .order('week_start')
+        .order('id')
+        .range(from, to)),
+      fetchByIds(hostIds, (ids, from, to) => supabase
+        .from('macro_weeks')
+        .select('id, week_start, week_number, week_type, week_type_text, total_reps_target, macrocycle_id, macrocycles!inner(owner_id)')
+        .in('macrocycles.owner_id', ids)
+        .gte('week_start', startDate)
+        .lte('week_start', endDate)
+        .order('id')
+        .range(from, to)),
+      fetchByIds(hostIds, (ids, from, to) => supabase
+        .from('macro_phases')
+        // start/end week numbers are what actually assigns a week to a phase —
+        // see lib/macroPhases. Ordered by position so overlapping ranges resolve
+        // in the coach's own order.
+        .select('id, name, color, owner_id, macrocycle_id, start_week_number, end_week_number')
+        .in('owner_id', ids)
+        .order('position')
+        .order('id')
+        .range(from, to)),
+      fetchByIds(athleteIds, (ids, from, to) => supabase
+        .from('training_log_sessions')
+        .select('id, athlete_id, date, week_start, raw_total, session_rpe, status')
+        .in('athlete_id', ids)
+        .neq('status', 'planned')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('id')
+        .range(from, to)),
+      fetchByIds(athleteIds, (ids, from, to) => supabase
+        .from('bodyweight_entries')
+        .select('athlete_id, date, weight_kg')
+        .in('athlete_id', ids)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date')
+        .order('id')
+        .range(from, to)),
+      fetchByIds(hostIds, (ids, from, to) => supabase
+        .from('exercises')
+        .select('id, name, category, color, owner_id')
+        .in('owner_id', ids)
+        .order('id')
+        .range(from, to)),
+    ]);
 
-  const weekPlans = weekPlansRes.data ?? [];
-  const macroWeeks = macroWeeksRes.data ?? [];
-  const macroPhases = macroPhasesRes.data ?? [];
-  const sessions = sessionsRes.data ?? [];
-  const bwEntries = bodyweightRes.data ?? [];
-  const exercises = (exercisesRes.data ?? []).filter(
-    (e: { id: string; name: string; category: string; color: string }) => e.category !== '— System'
-  ) as Array<{ id: string; name: string; category: string; color: string }>;
+  // Keep only week plans owned by the athlete's host — mirrors the original
+  // per-athlete .eq('owner_id', hostOwnerId) filter.
+  const allWeekPlans = (weekPlansRaw as unknown as AggWeekPlanRow[]).filter(
+    w => w.athlete_id && w.owner_id === hostOf(w.athlete_id),
+  );
+  const allMacroWeeks = macroWeeksRaw as unknown as AggMacroWeekRow[];
+  const allMacroPhases = macroPhasesRaw as unknown as AggMacroPhaseRow[];
+  const allSessions = sessionsRaw as unknown as AggSessionRow[];
+  const allBwEntries = bwRaw as unknown as AggBwRow[];
+  const allExercises = exercisesRaw as unknown as AggExerciseRow[];
 
-  const exerciseMap = new Map(exercises.map(e => [e.id, e]));
-
-  // Fetch planned exercises for all week plans
-  const weekPlanIds = weekPlans.map(w => w.id);
-  let plannedExercises: Array<{
-    id: string; weekplan_id: string; day_index: number; exercise_id: string;
-    prescription_raw: string | null; summary_total_sets: number | null; summary_total_reps: number | null;
-    summary_highest_load: number | null; summary_avg_load: number | null; is_combo: boolean;
-  }> = [];
-
-  if (weekPlanIds.length > 0) {
-    const peRes = await supabase
+  const [plannedRaw, logExRaw] = await Promise.all([
+    fetchByIds(allWeekPlans.map(w => w.id), (ids, from, to) => supabase
       .from('planned_exercises')
       .select('id, weekplan_id, day_index, exercise_id, prescription_raw, summary_total_sets, summary_total_reps, summary_highest_load, summary_avg_load, is_combo')
-      .in('weekplan_id', weekPlanIds);
-    plannedExercises = (peRes.data ?? []) as typeof plannedExercises;
-  }
+      .in('weekplan_id', ids)
+      .order('id')
+      .range(from, to)),
+    fetchByIds(allSessions.map(s => s.id), (ids, from, to) => supabase
+      .from('training_log_exercises')
+      .select('id, session_id, exercise_id, performed_raw, status, planned_exercise_id')
+      .in('session_id', ids)
+      .order('id')
+      .range(from, to)),
+  ]);
+  const allPlannedExercises = plannedRaw as unknown as AggPlannedExerciseRow[];
+  const allLogExercises = logExRaw as unknown as AggLogExerciseRow[];
 
+  const allLogSets = (await fetchByIds(allLogExercises.map(le => le.id), (ids, from, to) => supabase
+    .from('training_log_sets')
+    .select('log_exercise_id, performed_load, performed_reps, status')
+    .in('log_exercise_id', ids)
+    .order('id')
+    .range(from, to))) as unknown as AggLogSetRow[];
+
+  // ── Partition per athlete / host ─────────────────────────────────────────
+  const groupRows = <T,>(rows: T[], key: (row: T) => string): Map<string, T[]> => {
+    const map = new Map<string, T[]>();
+    for (const row of rows) {
+      const k = key(row);
+      const arr = map.get(k);
+      if (arr) arr.push(row);
+      else map.set(k, [row]);
+    }
+    return map;
+  };
+
+  const plansByAthleteMap = groupRows(allWeekPlans, w => w.athlete_id ?? '');
+  const sessionsByAthleteMap = groupRows(allSessions, s => s.athlete_id);
+  const bwByAthleteMap = groupRows(allBwEntries, b => b.athlete_id);
+  const macroWeeksByHost = groupRows(allMacroWeeks, mw => mw.macrocycles?.owner_id ?? '');
+  const phasesByHost = groupRows(allMacroPhases, p => p.owner_id);
+  const exercisesByHost = groupRows(
+    allExercises.filter(e => e.category !== '— System'),
+    e => e.owner_id,
+  );
+  const plannedByPlanAll = groupRows(allPlannedExercises, pe => pe.weekplan_id);
+  const logExBySessionAll = groupRows(allLogExercises, le => le.session_id);
+  const logSetsByLogEx = groupRows(allLogSets, s => s.log_exercise_id);
+
+  const computeForAthlete = (athleteId: string): WeeklyAggregate[] => {
+  const host = hostOf(athleteId);
+  const exercises = exercisesByHost.get(host) ?? [];
+  const exerciseMap = new Map(exercises.map(e => [e.id, e]));
+  const weekPlans = plansByAthleteMap.get(athleteId) ?? [];
+  const sessions = sessionsByAthleteMap.get(athleteId) ?? [];
+  const bwEntries = bwByAthleteMap.get(athleteId) ?? [];
+  const macroWeeks = macroWeeksByHost.get(host) ?? [];
+  const macroPhases = phasesByHost.get(host) ?? [];
+
+  let plannedExercises = weekPlans.flatMap(w => plannedByPlanAll.get(w.id) ?? []);
   // Apply filters
   if (exerciseFilter.length > 0) {
     plannedExercises = plannedExercises.filter(pe => exerciseFilter.includes(pe.exercise_id));
@@ -260,39 +373,14 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
     });
   }
 
-  // Fetch training log exercises for sessions in range
-  const sessionIds = sessions.map(s => s.id);
-  let logExercises: Array<{
-    id: string; session_id: string; exercise_id: string; performed_raw: string; status: string; planned_exercise_id: string | null;
-  }> = [];
-
-  if (sessionIds.length > 0) {
-    const leRes = await supabase
-      .from('training_log_exercises')
-      .select('id, session_id, exercise_id, performed_raw, status, planned_exercise_id')
-      .in('session_id', sessionIds);
-    logExercises = (leRes.data ?? []) as typeof logExercises;
-  }
+  const logExercises = sessions.flatMap(s => logExBySessionAll.get(s.id) ?? []);
 
   // v2 training log persists actual reps/load per row in training_log_sets;
   // performed_raw on the exercise row is left blank. Aggregate the sets
   // per log_exercise so the per-week loop can read totals directly. The
   // fallback to parsePerformedRaw stays for legacy v1 rows that only have
   // the summary string.
-  const logExIds = logExercises.map(le => le.id);
-  let logSets: Array<{
-    log_exercise_id: string;
-    performed_load: number | null;
-    performed_reps: number | null;
-    status: 'pending' | 'completed' | 'skipped' | 'failed';
-  }> = [];
-  if (logExIds.length > 0) {
-    const lsRes = await supabase
-      .from('training_log_sets')
-      .select('log_exercise_id, performed_load, performed_reps, status')
-      .in('log_exercise_id', logExIds);
-    logSets = (lsRes.data ?? []) as typeof logSets;
-  }
+  const logSets = logExercises.flatMap(le => logSetsByLogEx.get(le.id) ?? []);
   const setAggByLogEx = new Map<string, { sets: number; reps: number; tonnage: number; maxLoad: number; avgLoad: number }>();
   const loadSamplesByLogEx = new Map<string, number[]>();
   for (const s of logSets) {
@@ -485,6 +573,12 @@ export async function fetchWeeklyAggregates(params: AnalysisParams): Promise<Wee
       avgBodyweight,
     };
   });
+  };
+
+  for (const athleteId of athleteIds) {
+    result.set(athleteId, computeForAthlete(athleteId));
+  }
+  return result;
 }
 
 export async function fetchExerciseTimeSeries(

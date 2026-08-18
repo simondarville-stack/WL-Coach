@@ -1,6 +1,6 @@
 // TODO: Consider extracting macro context loading into a dedicated hook (or unifying with useMacroContext.ts)
 // TODO: Consider extracting print-mode rendering into a PrintManager component
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useWeekPlans } from '../../hooks/useWeekPlans';
@@ -98,6 +98,8 @@ export function WeeklyPlanner() {
   const [panelView, setPanelView] = useState<PanelView>('overview');
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+  /** Throttles the tab-return refresh — focus + visibilitychange both fire on one alt-tab. */
+  const lastReturnRefreshRef = useRef(0);
 
   const { exercises: allExercises } = useExercises();
   const { fetchAllAthletes } = useAthletes();
@@ -343,6 +345,8 @@ export function WeeklyPlanner() {
     }
   }, [storeSelectedGroup]);
 
+  const planAthleteId = planSelection.athlete?.id ?? null;
+  const planGroupId = planSelection.group?.id ?? null;
   useEffect(() => {
     if (planSelection.athlete || planSelection.group) {
       loadWeekPlan();
@@ -367,7 +371,12 @@ export function WeeklyPlanner() {
     setPanelView('overview');
     setSelectedDayIndex(null);
     setSelectedExerciseId(null);
-  }, [selectedDate, planSelection]);
+    // Keyed on the selected ids, not the planSelection object: the effects
+    // above rebuild planSelection with fresh-but-identical content on mount
+    // and on store refreshes, which used to re-fire this effect and load the
+    // entire week (plan + exercises + combos + macro context + PRs) twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, planSelection.type, planAthleteId, planGroupId]);
 
   useEffect(() => {
     if (currentWeekPlan) {
@@ -402,28 +411,28 @@ export function WeeklyPlanner() {
   }, [panelView]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        loadExercises();
-        if (selectedAthlete && currentWeekPlan) {
-          loadPlannedExercises(currentWeekPlan.id);
-          loadMacroContext(selectedAthlete.id, null, selectedDate);
-        }
-      }
-    };
-    const handleFocus = () => {
+    // `focus` and `visibilitychange` BOTH fire on a single alt-tab back, and
+    // each used to trigger the full exercises + planned + macro reload — so
+    // every return to the tab fetched everything twice. One handler with a
+    // short throttle collapses the pair into a single refresh.
+    const refreshOnReturn = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastReturnRefreshRef.current < 3000) return;
+      lastReturnRefreshRef.current = now;
       loadExercises();
       if (selectedAthlete && currentWeekPlan) {
         loadPlannedExercises(currentWeekPlan.id);
         loadMacroContext(selectedAthlete.id, null, selectedDate);
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    window.addEventListener('focus', refreshOnReturn);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+      window.removeEventListener('focus', refreshOnReturn);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAthlete, currentWeekPlan]);
 
   // Refresh the exercise library on tab focus / visibility change. Uses
@@ -535,11 +544,16 @@ export function WeeklyPlanner() {
     }
   };
 
-  // Close any dialog — wait briefly for any in-flight saves, then refresh so day cards reflect changes
+  // Close any dialog — flip back to the overview immediately (the board
+  // already shows the dialog's saves via the optimistic patches in
+  // useWeekPlans), then re-sync from the DB in the background. The short
+  // delay stays so an in-flight blur-save can commit before the read;
+  // without it the refresh could overwrite a newer local patch with
+  // pre-save rows. What changed: the coach no longer waits on either step.
   const closeDialog = async () => {
+    setPanelView('overview');
     await new Promise(resolve => setTimeout(resolve, 150));
     await handleRefresh();
-    setPanelView('overview');
   };
 
   const handleDeleteExercise = async (plannedExerciseId: string) => {
@@ -547,12 +561,22 @@ export function WeeklyPlanner() {
     const dayIndex = Object.entries(plannedExercises).find(
       ([, exs]) => exs.some(ex => ex.id === plannedExerciseId)
     )?.[0];
+    // Optimistic: drop the row locally instead of refetching the whole week
+    // afterwards. Positions renormalize in the DB; the local order is already
+    // correct without renumbering.
+    setPlannedExercises(prev => {
+      if (!dayIndex) return prev;
+      const day = Number(dayIndex);
+      const list = prev[day];
+      if (!list) return prev;
+      return { ...prev, [day]: list.filter(ex => ex.id !== plannedExerciseId) };
+    });
     try {
       await deletePlannedExercise(plannedExerciseId);
       if (dayIndex) await normalizePositions(currentWeekPlan.id, parseInt(dayIndex));
-      await handleRefresh();
     } catch {
-      // error already set in hook
+      // error already set in hook — restore the row from the DB
+      await handleRefresh();
     }
   };
 
@@ -563,11 +587,13 @@ export function WeeklyPlanner() {
     if (!currentWeekPlan) return;
     const ids = (plannedExercises[dayIndex] || []).map(ex => ex.id);
     if (ids.length === 0) return;
+    // Optimistic: empty the unit locally instead of refetching the week.
+    setPlannedExercises(prev => ({ ...prev, [dayIndex]: [] }));
     try {
       await deleteDayExercises(ids);
-      await handleRefresh();
     } catch {
-      // error already set in hook
+      // error already set in hook — restore from the DB
+      await handleRefresh();
     }
   };
 

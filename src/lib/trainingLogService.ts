@@ -68,32 +68,40 @@ export async function fetchWeekLog(
 
   const sessionIds = sessions.map(s => s.id);
 
-  const { data: exRows, error: exErr } = await supabase
-    .from('training_log_exercises')
-    .select('*, exercise:exercises(*)')
-    .in('session_id', sessionIds);
-  if (exErr) throw exErr;
-  const exercises = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
-  const exIds = exercises.map(e => e.id);
+  // Messages depend only on the session ids, so they load alongside the
+  // exercises → sets chain instead of after it.
+  const [{ exercises, sets }, messages] = await Promise.all([
+    (async () => {
+      const { data: exRows, error: exErr } = await supabase
+        .from('training_log_exercises')
+        .select('*, exercise:exercises(*)')
+        .in('session_id', sessionIds);
+      if (exErr) throw exErr;
+      const exs = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
+      const exIds = exs.map(e => e.id);
 
-  let sets: TrainingLogSet[] = [];
-  if (exIds.length > 0) {
-    const { data: setRows, error: setErr } = await supabase
-      .from('training_log_sets')
-      .select('*')
-      .in('log_exercise_id', exIds)
-      .order('set_number', { ascending: true });
-    if (setErr) throw setErr;
-    sets = (setRows ?? []) as TrainingLogSet[];
-  }
-
-  const { data: msgRows, error: msgErr } = await supabase
-    .from('training_log_messages')
-    .select('*')
-    .in('session_id', sessionIds)
-    .order('created_at', { ascending: true });
-  if (msgErr) throw msgErr;
-  const messages = (msgRows ?? []) as TrainingLogMessage[];
+      let setRowsAll: TrainingLogSet[] = [];
+      if (exIds.length > 0) {
+        const { data: setRows, error: setErr } = await supabase
+          .from('training_log_sets')
+          .select('*')
+          .in('log_exercise_id', exIds)
+          .order('set_number', { ascending: true });
+        if (setErr) throw setErr;
+        setRowsAll = (setRows ?? []) as TrainingLogSet[];
+      }
+      return { exercises: exs, sets: setRowsAll };
+    })(),
+    (async () => {
+      const { data: msgRows, error: msgErr } = await supabase
+        .from('training_log_messages')
+        .select('*')
+        .in('session_id', sessionIds)
+        .order('created_at', { ascending: true });
+      if (msgErr) throw msgErr;
+      return (msgRows ?? []) as TrainingLogMessage[];
+    })(),
+  ]);
 
   const out: Record<number, DayLog> = {};
   for (const s of sessions) {
@@ -136,32 +144,41 @@ export async function fetchSessionForSlot(
   if (!sessionRow) return null;
   const session = sessionRow as TrainingLogSession;
 
-  const { data: exRows, error: exErr } = await supabase
-    .from('training_log_exercises')
-    .select('*, exercise:exercises(*)')
-    .eq('session_id', session.id)
-    .order('position', { ascending: true });
-  if (exErr) throw exErr;
-  const exercises = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
-  const exIds = exercises.map(e => e.id);
+  // Messages depend only on the session id, so they load alongside the
+  // exercises → sets chain instead of after it.
+  const [{ exercises, sets }, msgRows] = await Promise.all([
+    (async () => {
+      const { data: exRows, error: exErr } = await supabase
+        .from('training_log_exercises')
+        .select('*, exercise:exercises(*)')
+        .eq('session_id', session.id)
+        .order('position', { ascending: true });
+      if (exErr) throw exErr;
+      const exs = (exRows ?? []) as unknown as Array<TrainingLogExercise & { exercise: Exercise | null }>;
+      const exIds = exs.map(e => e.id);
 
-  let sets: TrainingLogSet[] = [];
-  if (exIds.length > 0) {
-    const { data: setRows, error: setErr } = await supabase
-      .from('training_log_sets')
-      .select('*')
-      .in('log_exercise_id', exIds)
-      .order('set_number', { ascending: true });
-    if (setErr) throw setErr;
-    sets = (setRows ?? []) as TrainingLogSet[];
-  }
-
-  const { data: msgRows, error: msgErr } = await supabase
-    .from('training_log_messages')
-    .select('*')
-    .eq('session_id', session.id)
-    .order('created_at', { ascending: true });
-  if (msgErr) throw msgErr;
+      let setRowsAll: TrainingLogSet[] = [];
+      if (exIds.length > 0) {
+        const { data: setRows, error: setErr } = await supabase
+          .from('training_log_sets')
+          .select('*')
+          .in('log_exercise_id', exIds)
+          .order('set_number', { ascending: true });
+        if (setErr) throw setErr;
+        setRowsAll = (setRows ?? []) as TrainingLogSet[];
+      }
+      return { exercises: exs, sets: setRowsAll };
+    })(),
+    (async () => {
+      const { data, error: msgErr } = await supabase
+        .from('training_log_messages')
+        .select('*')
+        .eq('session_id', session.id)
+        .order('created_at', { ascending: true });
+      if (msgErr) throw msgErr;
+      return data;
+    })(),
+  ]);
 
   return {
     date: session.date,
@@ -324,18 +341,17 @@ export async function fetchAthleteDay(
    *  trips on mobile. (UF-44 / H4) */
   knownWeekPlanId?: string | null,
 ): Promise<AthleteDayData> {
-  const weekPlanId = knownWeekPlanId !== undefined
-    ? knownWeekPlanId
-    : (await resolveAthleteWeekPlanId(athleteId, weekStart)).weekPlanId;
+  // The four loads are independent chains (the planned side needs the
+  // weekPlanId resolution first; log, metrics config and definitions don't),
+  // so they run concurrently. On a phone network this used to be ~10 fully
+  // sequential round trips; the longest chain is now 4.
+  const weekPlanIdPromise: Promise<string | null> = knownWeekPlanId !== undefined
+    ? Promise.resolve(knownWeekPlanId)
+    : resolveAthleteWeekPlanId(athleteId, weekStart).then(r => r.weekPlanId);
 
-  const planned = weekPlanId ? await fetchPlannedDay(weekPlanId, dayIndex) : [];
-
-  const log = await fetchSessionForSlot(athleteId, weekStart, dayIndex);
-
-  // Metric tracking config + definitions. Athlete app shows VAS, custom
-  // inputs, etc. based on this; we fetch in parallel and tolerate the
-  // tables being empty (no config yet, no definitions yet).
-  const [metricsConfig, metricDefinitions] = await Promise.all([
+  const [planned, log, metricsConfig, metricDefinitions] = await Promise.all([
+    weekPlanIdPromise.then(id => (id ? fetchPlannedDay(id, dayIndex) : [])),
+    fetchSessionForSlot(athleteId, weekStart, dayIndex),
     fetchWeekMetricsConfig(athleteId, weekStart),
     fetchMetricDefinitions(athleteId),
   ]);
@@ -364,23 +380,30 @@ export async function fetchPlannedDay(
   const pes = (peRows ?? []) as unknown as Array<PlannedExercise & { exercise: Exercise }>;
   if (pes.length === 0) return [];
 
+  // Set lines and combo members both key off the planned rows — one round
+  // trip of latency instead of two.
   const peIds = pes.map(p => p.id);
-  const { data: slRows, error: slErr } = await supabase
-    .from('planned_set_lines')
-    .select('*')
-    .in('planned_exercise_id', peIds)
-    .order('position');
-  if (slErr) throw slErr;
-  const setLines = (slRows ?? []) as PlannedSetLine[];
+  const comboIds = pes.filter(p => p.is_combo).map(p => p.id);
+  const [slRes, cmRes] = await Promise.all([
+    supabase
+      .from('planned_set_lines')
+      .select('*')
+      .in('planned_exercise_id', peIds)
+      .order('position'),
+    comboIds.length > 0
+      ? supabase
+          .from('planned_exercise_combo_members')
+          .select('planned_exercise_id, exercise_id, position, exercise:exercise_id(*)')
+          .in('planned_exercise_id', comboIds)
+          .order('position')
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (slRes.error) throw slRes.error;
+  const setLines = (slRes.data ?? []) as PlannedSetLine[];
 
   const comboMembersByPlanned = new Map<string, ComboMemberEntry[]>();
-  const comboIds = pes.filter(p => p.is_combo).map(p => p.id);
   if (comboIds.length > 0) {
-    const { data: cmRows, error: cmErr } = await supabase
-      .from('planned_exercise_combo_members')
-      .select('planned_exercise_id, exercise_id, position, exercise:exercise_id(*)')
-      .in('planned_exercise_id', comboIds)
-      .order('position');
+    const { data: cmRows, error: cmErr } = cmRes;
     if (cmErr) throw cmErr;
     type Row = {
       planned_exercise_id: string;
@@ -480,49 +503,54 @@ export async function fetchWeekOverview(
   let weekBrief: string | null = null;
   const plannedCounts = new Map<number, number>();
 
-  if (weekPlanId) {
-    const { data: wpRow, error: wpErr } = await supabase
-      .from('week_plans')
-      .select('id, active_days, day_labels, day_schedule, week_description')
-      .eq('id', weekPlanId)
-      .maybeSingle();
-    if (wpErr) throw wpErr;
+  // The plan row, its planned counts and the week's log sessions are three
+  // independent reads (the first two key on weekPlanId, the third on the
+  // athlete) — one round trip of latency instead of three. Sessions are
+  // fetched whether or not a week_plan exists so athlete-created bonus
+  // sessions surface even with no coach plan.
+  const [wpRes, peRes, sessionsRes] = await Promise.all([
+    weekPlanId
+      ? supabase
+          .from('week_plans')
+          .select('id, active_days, day_labels, day_schedule, week_description')
+          .eq('id', weekPlanId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    weekPlanId
+      ? supabase.from('planned_exercises').select('day_index').eq('weekplan_id', weekPlanId)
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from('training_log_sessions')
+      .select('day_index, status, date, skipped_reason')
+      .eq('athlete_id', athleteId)
+      .eq('week_start', weekStart),
+  ]);
+  if (wpRes.error) throw wpRes.error;
+  if (peRes.error) throw peRes.error;
+  if (sessionsRes.error) throw sessionsRes.error;
 
-    if (wpRow) {
-      const wp = wpRow as {
-        id: string;
-        active_days: number[];
-        day_labels: Record<number, string> | null;
-        day_schedule: Record<number, { weekday: number; time: string | null }> | null;
-        week_description: string | null;
-      };
-      resolvedWeekPlanId = wp.id;
-      planSource = source;
-      activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
-      labels = wp.day_labels ?? {};
-      schedule = wp.day_schedule ?? {};
-      weekBrief = wp.week_description ?? null;
+  if (wpRes.data) {
+    const wp = wpRes.data as {
+      id: string;
+      active_days: number[];
+      day_labels: Record<number, string> | null;
+      day_schedule: Record<number, { weekday: number; time: string | null }> | null;
+      week_description: string | null;
+    };
+    resolvedWeekPlanId = wp.id;
+    planSource = source;
+    activeDays = (wp.active_days ?? []).slice().sort((a, b) => a - b);
+    labels = wp.day_labels ?? {};
+    schedule = wp.day_schedule ?? {};
+    weekBrief = wp.week_description ?? null;
 
-      // Planned counts per day
-      const { data: peRows, error: peErr } = await supabase
-        .from('planned_exercises')
-        .select('day_index')
-        .eq('weekplan_id', wp.id);
-      if (peErr) throw peErr;
-      ((peRows ?? []) as Array<{ day_index: number }>).forEach(r => {
-        plannedCounts.set(r.day_index, (plannedCounts.get(r.day_index) ?? 0) + 1);
-      });
-    }
+    // Planned counts per day
+    ((peRes.data ?? []) as Array<{ day_index: number }>).forEach(r => {
+      plannedCounts.set(r.day_index, (plannedCounts.get(r.day_index) ?? 0) + 1);
+    });
   }
 
-  // Existing log sessions for the week. Fetched whether or not a week_plan
-  // exists so athlete-created bonus sessions surface even with no coach plan.
-  const { data: sessionRows, error: sErr } = await supabase
-    .from('training_log_sessions')
-    .select('day_index, status, date, skipped_reason')
-    .eq('athlete_id', athleteId)
-    .eq('week_start', weekStart);
-  if (sErr) throw sErr;
+  const { data: sessionRows } = sessionsRes;
   const sessionByDay = new Map<number, { status: string; date: string; skipped_reason: string | null }>();
   ((sessionRows ?? []) as Array<{ day_index: number; status: string; date: string; skipped_reason: string | null }>).forEach(
     r => sessionByDay.set(r.day_index, { status: r.status, date: r.date, skipped_reason: r.skipped_reason }),
