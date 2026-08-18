@@ -8,11 +8,7 @@ import { X, Loader2 } from 'lucide-react';
 import { fetchTemplateFull } from '../../../lib/templateService';
 import { AdaptiveDialog } from '../../ui/AdaptiveDialog';
 import type { ProgramTemplateFull } from '../../../lib/database.types';
-import {
-  parsePrescription,
-  parseFreeTextPrescription,
-  parseComboPrescription,
-} from '../../../lib/prescriptionParser';
+import { StackedNotation } from '../StackedNotation';
 
 interface TemplatePreviewDialogProps {
   templateId: string;
@@ -145,7 +141,6 @@ function DayPreview({ day }: { day: ProgramTemplateFull['days'][number] }) {
 }
 
 function ExercisePreview({ ex }: { ex: ProgramTemplateFull['days'][number]['exercises'][number] }) {
-  const lines = readableLines(ex.prescription_raw, ex.unit, ex.is_combo);
   return (
     <div
       style={{
@@ -170,47 +165,7 @@ function ExercisePreview({ ex }: { ex: ProgramTemplateFull['days'][number]['exer
           {ex.notes}
         </span>
       )}
-      {lines.length > 0 && (
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-          {lines.join('  ·  ')}
-        </span>
-      )}
+      <StackedNotation raw={ex.prescription_raw} unit={ex.unit} isCombo={ex.is_combo} />
     </div>
   );
-}
-
-/** Pretty-print the prescription_raw for read-only display in the
- *  preview. Falls back to the raw string if parsing fails. */
-export function readableLines(raw: string | null, unit: string | null, isCombo: boolean): string[] {
-  if (!raw) return [];
-  const sym = unit === 'percentage' ? '%' : '';
-  try {
-    if (unit === 'free_text_reps') {
-      const lines = parseFreeTextPrescription(raw);
-      return lines.map(l =>
-        l.sets > 1
-          ? `${l.loadText}×${l.reps}×${l.sets}`
-          : `${l.loadText}×${l.reps}`,
-      );
-    }
-    if (isCombo) {
-      const lines = parseComboPrescription(raw);
-      return lines.map(l => {
-        const load = l.loadText
-          ? l.loadText
-          : l.loadMax != null
-          ? `${l.load}-${l.loadMax}${sym}`
-          : `${l.load}${sym}`;
-        const reps = l.multiplier != null ? `${l.multiplier}(${l.repsText})` : l.repsText;
-        return l.sets > 1 ? `${load}×${reps}×${l.sets}` : `${load}×${reps}`;
-      });
-    }
-    const lines = parsePrescription(raw);
-    return lines.map(l => {
-      const load = l.loadMax != null ? `${l.load}-${l.loadMax}${sym}` : `${l.load}${sym}`;
-      return l.sets > 1 ? `${load}×${l.reps}×${l.sets}` : `${load}×${l.reps}`;
-    });
-  } catch {
-    return [raw];
-  }
 }

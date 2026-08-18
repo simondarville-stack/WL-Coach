@@ -19,9 +19,12 @@ interface ExercisePrescriptionHistoryProps {
   weekStart: string;
   /** How many prior prescriptions to show before the coach expands the table. */
   limit?: number;
-  /** How far back to fetch. Two years by default — the expanded table has to
-   *  have something to expand INTO. */
+  /** How far back to fetch. Matches the history chart's three-year fetch so a
+   *  coach panning the chart back never outruns the table. */
   fetchWeeks?: number;
+  /** Restrict rows to the chart's visible window (inclusive, Monday-anchored).
+   *  Omitted → show everything fetched. */
+  range?: { from: string; to: string } | null;
 }
 
 // European date: DD.MM (year omitted to stay compact; shown on hover via title).
@@ -45,7 +48,8 @@ export function ExercisePrescriptionHistory({
   athleteId,
   weekStart,
   limit = 6,
-  fetchWeeks = 104,
+  fetchWeeks = 156,
+  range = null,
 }: ExercisePrescriptionHistoryProps) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,20 +124,32 @@ export function ExercisePrescriptionHistory({
     );
   }
 
-  if (rows.length === 0) {
+  // Filter to the chart's window, so panning the chart moves this table with it.
+  const inRange = range
+    ? rows.filter(r => r.weekStart >= range.from && r.weekStart <= range.to)
+    : rows;
+
+  if (inRange.length === 0) {
     return (
-      <div style={{
-        fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic',
-        padding: '8px 0',
-      }}>
-        No earlier prescriptions for this exercise
+      <div style={{ marginBottom: 16 }}>
+        <span style={{
+          display: 'block', fontSize: 11, fontWeight: 500, letterSpacing: '0.05em',
+          color: 'var(--color-text-secondary)', marginBottom: 6,
+        }}>
+          Recent prescriptions
+        </span>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
+          {rows.length > 0
+            ? 'Nothing prescribed in the chart window'
+            : 'No earlier prescriptions for this exercise'}
+        </div>
       </div>
     );
   }
 
   // Slice at RENDER, not in the fetch — everything collected stays available
   // so "Show all" is instant and needs no second query.
-  const visible = expanded ? rows : rows.slice(0, limit);
+  const visible = expanded ? inRange : inRange.slice(0, limit);
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -142,7 +158,7 @@ export function ExercisePrescriptionHistory({
         color: 'var(--color-text-secondary)', marginBottom: 6,
       }}>
         Recent prescriptions{' '}
-        <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>{rows.length}</span>
+        <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400 }}>{inRange.length}</span>
       </span>
       {/* Cap the expanded height so a long history cannot push past the
           dialog's own 85vh and strand the content below it. */}
@@ -197,7 +213,7 @@ export function ExercisePrescriptionHistory({
         </tbody>
       </table>
       </div>
-      {rows.length > limit && (
+      {inRange.length > limit && (
         <button
           type="button"
           onClick={() => setExpanded(v => !v)}
@@ -211,7 +227,7 @@ export function ExercisePrescriptionHistory({
           }}
         >
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          {expanded ? 'Show less' : `Show all ${rows.length}`}
+          {expanded ? 'Show less' : `Show all ${inRange.length}`}
         </button>
       )}
     </div>

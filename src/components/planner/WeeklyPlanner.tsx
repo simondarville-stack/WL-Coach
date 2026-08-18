@@ -57,6 +57,7 @@ import { ConfirmModal } from '../log/ConfirmModal';
 import { UndoToast } from '../log/UndoToast';
 import { ThrowAwayHint, useThrowAwayZone } from './ThrowAwayZone';
 import type { ThrowPayload } from './dragPayload';
+import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 export interface MacroContext {
   macroId: string;
@@ -814,7 +815,7 @@ export function WeeklyPlanner() {
     }
     if (ex.is_combo) {
       const members = (comboMembers[ex.id] ?? []).slice().sort((a, b) => a.position - b.position);
-      const label = ex.combo_notation || members.map(m => m.exercise.name).join(' + ') || 'Combo';
+      const label = plannedRowLabel(ex, { memberNames: members.map(m => m.exercise.name), fallback: 'Combo' });
       return {
         label,
         color: ex.combo_color || members[0]?.exercise.color || '#94a3b8',
@@ -823,7 +824,7 @@ export function WeeklyPlanner() {
       };
     }
     return {
-      label: ex.exercise.name,
+      label: plannedRowLabel(ex, { exerciseName: ex.exercise.name }),
       color: ex.exercise.color || '#94a3b8',
       sentinel: 'exercise',
       caption: ex.exercise.category ?? null,
@@ -876,6 +877,7 @@ export function WeeklyPlanner() {
       prescription_raw: ex.prescription_raw,
       notes: ex.notes,
       variation_note: ex.variation_note,
+      display_name: ex.display_name ?? null,
       summary_total_sets: ex.summary_total_sets ?? 0,
       summary_total_reps: ex.summary_total_reps ?? 0,
       summary_highest_load: ex.summary_highest_load,

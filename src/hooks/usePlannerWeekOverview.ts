@@ -51,12 +51,22 @@ export interface MacroTargets {
 }
 
 export interface DaySummary {
-  dayIndex: number;
+  /** The unit's own slot number — its identity in planned_exercises.day_index.
+   *  NOT a weekday, and not bounded by 7: addNewDay allocates max+1, so a week
+   *  that has had units added and removed can carry slot 8. */
+  slotIndex: number;
+  /** Weekday 0=Mon..6=Sun resolved through week_plans.day_schedule, or null
+   *  when this unit has no weekday (a free "Unit N", or a straggler in an
+   *  otherwise-scheduled week). */
+  weekday: number | null;
+  /** Clock time from day_schedule, when the coach set one. */
+  time: string | null;
+  /** The coach's label for the unit, from week_plans.day_labels. */
+  label: string | null;
   exercises: { exerciseId: string; color: string; name: string; code: string }[];
   rawExercises: ExerciseRaw[];
   totalReps: number;
   tonnage: number;
-  isRest: boolean;
   isLogged: boolean;
   dayMetrics: ComputedMetrics;
 }
@@ -66,6 +76,10 @@ export interface WeekSummary {
   weekPlanId: string | null;
   activeDays: number[];
   dayLabels: Record<number, string> | null;
+  /** True when this week is calendar-mapped (day_schedule holds any entry), so
+   *  its units carry weekdays and belong under the Mon–Sun columns. */
+  isScheduled: boolean;
+  /** One entry per training unit, in display order — NOT seven weekday buckets. */
   days: DaySummary[];
   totalReps: number;
   totalTonnage: number;
@@ -382,32 +396,54 @@ export function usePlannerWeekOverview() {
           avgLoad: s.totalReps > 0 ? Math.round(s.weightedLoadSum / s.totalReps) : 0,
         }));
 
-        // Build day summaries
-        const days: DaySummary[] = [];
-        for (let di = 0; di < 7; di++) {
-          const dayExs = wpExercises.filter(e => e.dayIndex === di);
-          const isRest = !activeDays.includes(di);
-          const dayMetrics = computeMetrics(
-            wpMetricRows.filter(e => e.dayIndex === di).map(e => ({
-              summary_total_sets: e.sets,
-              summary_total_reps: e.reps,
-              summary_highest_load: e.highestLoad,
-              summary_avg_load: e.avgLoad,
-              counts_towards_totals: e.countsTowardsTotals,
-            })),
-            competitionTotal,
-          );
-          days.push({
-            dayIndex: di,
+        // Build one summary per training UNIT. The old shape was seven buckets
+        // indexed 0..6 by day_index, which conflated the slot number with the
+        // weekday and silently dropped any unit at slot >= 7 — from the grid
+        // AND from every total derived from it.
+        const schedule = wp?.day_schedule ?? null;
+        const dayLabels = wp?.day_labels ?? null;
+        const slotSet = new Set<number>(activeDays);
+        wpExercises.forEach(e => slotSet.add(e.dayIndex));
+        // A logged session on a slot the plan no longer carries is still
+        // something that happened this week; show it rather than hide it.
+        logged.forEach(di => slotSet.add(di));
+
+        // Display order follows the coach's own arrangement when there is one
+        // (the Day-config modal writes day_display_order), else slot order.
+        const displayOrder = wp?.day_display_order ?? [];
+        const orderRank = (slot: number) => {
+          const i = displayOrder.indexOf(slot);
+          return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+        };
+        const slots = Array.from(slotSet).sort(
+          (a, b) => (orderRank(a) - orderRank(b)) || (a - b),
+        );
+
+        const days: DaySummary[] = slots.map(slot => {
+          const dayExs = wpExercises.filter(e => e.dayIndex === slot);
+          const entry = schedule?.[slot];
+          return {
+            slotIndex: slot,
+            weekday: entry?.weekday ?? null,
+            time: entry?.time ?? null,
+            label: dayLabels?.[slot] ?? null,
             exercises: dayExs.map(e => ({ exerciseId: e.exerciseId, color: e.color, name: e.name, code: e.code })),
             rawExercises: dayExs,
             totalReps: dayExs.reduce((s, e) => s + e.reps, 0),
             tonnage: dayExs.reduce((s, e) => s + e.tonnage, 0),
-            isRest: isRest && dayExs.length === 0,
-            isLogged: logged.has(di),
-            dayMetrics,
-          });
-        }
+            isLogged: logged.has(slot),
+            dayMetrics: computeMetrics(
+              wpMetricRows.filter(e => e.dayIndex === slot).map(e => ({
+                summary_total_sets: e.sets,
+                summary_total_reps: e.reps,
+                summary_highest_load: e.highestLoad,
+                summary_avg_load: e.avgLoad,
+                counts_towards_totals: e.countsTowardsTotals,
+              })),
+              competitionTotal,
+            ),
+          };
+        });
 
         // Week-level metrics
         const weekMetrics = computeMetrics(
@@ -421,11 +457,16 @@ export function usePlannerWeekOverview() {
           competitionTotal,
         );
 
-        const totalReps = days.reduce((s, d) => s + d.totalReps, 0);
-        const totalTonnage = days.reduce((s, d) => s + d.tonnage, 0);
+        // Totals read the exercise rows directly, so they cannot drift from
+        // however the grid happens to bucket units into columns.
+        const totalReps = wpExercises.reduce((s, e) => s + e.reps, 0);
+        const totalTonnage = wpExercises.reduce((s, e) => s + e.tonnage, 0);
         const avgLoad = totalReps > 0 ? Math.round(totalTonnage / totalReps) : null;
-        const plannedDays = days.filter(d => !d.isRest && d.exercises.length > 0).length;
-        const loggedDays = days.filter(d => d.isLogged).length;
+        const plannedDays = days.filter(d => d.exercises.length > 0).length;
+        // Compliance asks "did they train what was written", so a logged bonus
+        // session counts as neither numerator nor denominator — it is shown in
+        // the grid but would otherwise push compliance above 100%.
+        const loggedDays = days.filter(d => d.isLogged && d.exercises.length > 0).length;
         // A graded compliance % is a source of truth only once the week is over;
         // the current/future week reports progress (loggedDays / plannedDays) instead.
         const state = weekState(ws);
@@ -436,6 +477,7 @@ export function usePlannerWeekOverview() {
           weekPlanId: wp?.id || null,
           activeDays,
           dayLabels: wp?.day_labels || null,
+          isScheduled: !!schedule && Object.keys(schedule).length > 0,
           days,
           totalReps,
           totalTonnage,

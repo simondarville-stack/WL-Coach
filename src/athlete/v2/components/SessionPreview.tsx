@@ -23,6 +23,7 @@ import { StackedNotation, LoggedStackedNotation } from '../../../components/plan
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { formatWeekdayDateLong } from '../../../lib/dateUtils';
+import { plannedRowLabel } from '../../../lib/plannedRowLabel';
 
 interface SessionPreviewProps {
   slotLabel: string;
@@ -271,16 +272,11 @@ function PreviewExerciseRow({
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <h3 className="text-sm font-bold text-white">
-            {planned.exercise.is_combo
-              ? planned.exercise.combo_notation ??
-                (planned.comboMembers.length > 0
-                  ? planned.comboMembers
-                      .map(m => m.exercise?.name)
-                      .filter((n): n is string => !!n)
-                      .join(' + ')
-                  : planned.exerciseDef?.name) ??
-                '(unknown exercise)'
-              : planned.exerciseDef?.name ?? '(unknown exercise)'}
+            {plannedRowLabel(planned.exercise, {
+              memberNames: planned.comboMembers.map(m => m.exercise?.name),
+              exerciseName: planned.exerciseDef?.name,
+              fallback: '(unknown exercise)',
+            })}
           </h3>
           {/* Legacy variation_note fallback — the folded note
               (exercise.notes) renders in its own block below. */}

@@ -65,6 +65,10 @@ interface ExerciseHistoryChartProps {
    *  marker and the look-ahead window follow THIS week, not the real today,
    *  so the chart gives direction relative to where the coach is writing. */
   currentWeekStart?: string;
+  /** Reports the Monday-anchored week range currently in the chart window, so
+   *  the history tables beside the chart can show exactly the sessions it is
+   *  showing. Fires on zoom, pan and Show-all. */
+  onVisibleRangeChange?: (range: { from: string; to: string }) => void;
 }
 
 /** How far back we FETCH. The coach can pan across all of it. */
@@ -135,7 +139,7 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
   );
 }
 
-export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart }: ExerciseHistoryChartProps) {
+export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart, onVisibleRangeChange }: ExerciseHistoryChartProps) {
   const [data, setData]     = useState<ChartPoint[]>([]);
   /** The dense Monday grid the x-axis is indexed on; the viewport counts WEEKS,
    *  not points, so zoom still reads "16 wk" however many sessions that is. */
@@ -485,6 +489,16 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
     () => (viewport ? clampViewport(viewport, weeks.length) : fullViewport(weeks.length)),
     [viewport, weeks.length],
   );
+  // Publish the window as dates so the tables beside the chart can filter to
+  // it. Reported from `weeks` (the dense Monday grid), not from the points, so
+  // the range still means something when the window holds no session at all.
+  useEffect(() => {
+    if (!onVisibleRangeChange || weeks.length === 0) return;
+    const from = weeks[Math.max(0, Math.min(vp.start, weeks.length - 1))];
+    const to = weeks[Math.max(0, Math.min(vp.end, weeks.length - 1))];
+    if (from && to) onVisibleRangeChange({ from, to });
+  }, [vp.start, vp.end, weeks, onVisibleRangeChange]);
+
   /** Points inside the window, with one week of margin either side so the
    *  lines run to the edges instead of stopping short of them. */
   const visible = useMemo(
