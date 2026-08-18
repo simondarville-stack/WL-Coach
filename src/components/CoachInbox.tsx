@@ -16,6 +16,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import {
   AlertCircle,
   ArrowLeft,
+  Bell,
+  BellOff,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -55,6 +57,13 @@ import {
 } from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
 import { onInboxChanged } from '../lib/inboxEvents';
+import {
+  isNotifyEnabled,
+  notifyPermission,
+  requestNotifyPermission,
+  setNotifyEnabled,
+  type NotifyPermission,
+} from '../lib/desktopNotify';
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import { AdaptiveDialog } from './ui/AdaptiveDialog';
@@ -92,6 +101,25 @@ export function CoachInbox() {
    *  makes a repeat jump to the same thread still register downstream. */
   const [focus, setFocus] = useState<{ athleteId: string; sessionId: string | null; nonce: number } | null>(null);
   const focusSeq = useRef(0);
+  /** Desktop-notification state, re-read rather than assumed: the coach can
+   *  revoke permission in browser settings without the app hearing about it. */
+  const [notifyState, setNotifyState] = useState<{ perm: NotifyPermission; on: boolean }>(
+    () => ({ perm: notifyPermission(), on: isNotifyEnabled() }),
+  );
+
+  const toggleNotify = useCallback(async () => {
+    let perm = notifyPermission();
+    // Asking must happen from this click — the prompt is one-shot per origin,
+    // so it is never fired on load.
+    if (perm === 'default') perm = await requestNotifyPermission();
+    if (perm !== 'granted') {
+      setNotifyState({ perm, on: false });
+      return;
+    }
+    const next = !isNotifyEnabled();
+    setNotifyEnabled(next);
+    setNotifyState({ perm, on: next });
+  }, []);
 
   const loadThreads = useCallback(async () => {
     setError(null);
@@ -269,6 +297,29 @@ export function CoachInbox() {
             Inbox
           </span>
           <span style={{ flex: 1 }} />
+          <button
+            onClick={toggleNotify}
+            disabled={notifyState.perm === 'unsupported' || notifyState.perm === 'denied'}
+            title={
+              notifyState.perm === 'unsupported'
+                ? 'This browser cannot show desktop notifications'
+                : notifyState.perm === 'denied'
+                  ? 'Notifications are blocked for this site — re-enable them in your browser settings'
+                  : notifyState.on
+                    ? 'Desktop notifications on — you will be alerted about new messages while EMOS is open in another tab. Click to turn off.'
+                    : 'Get a desktop notification when an athlete messages you while EMOS sits in another tab'
+            }
+            style={{
+              display: 'inline-flex', alignItems: 'center',
+              padding: 3, marginRight: 2,
+              background: 'transparent', border: 'none', borderRadius: 'var(--radius-sm)',
+              cursor: notifyState.perm === 'unsupported' || notifyState.perm === 'denied' ? 'default' : 'pointer',
+              color: notifyState.on ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              opacity: notifyState.perm === 'unsupported' || notifyState.perm === 'denied' ? 0.4 : 1,
+            }}
+          >
+            {notifyState.on ? <Bell size={13} /> : <BellOff size={13} />}
+          </button>
           <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
             {activeSummaries.length} active
           </span>

@@ -16,13 +16,13 @@ defers others).
 * Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
   _(untouched on purpose — it says "ask me before doing it". See the note under
   #Batch of 04/08/2026 for what I'd want to know before starting.)_
-* Is it possibile to have push notifications from a webapp? 
-  _(Answered 18/08/2026: yes — Web Push (service worker + VAPID). Works on
-  Chrome/Edge/Firefox/Android; iOS Safari only from 16.4+ AND only once the app
-  is installed to the home screen as a PWA. EMOS has no PWA infrastructure at
-  all today (no manifest, no service worker; the athlete app polls unread every
-  60 s), so this is its own feature branch: manifest + SW + a push_subscriptions
-  table + a Supabase edge function. Say the word and I'll scope it.)_
+* Is it possibile to have push notifications from a webapp?
+  _(Answered 18/08/2026, and the cheap half is BUILT — see #Desktop
+  notifications below. The remaining half is real Web Push for the ATHLETE app,
+  which needs the full PWA project and is still open: manifest + service worker
+  + a push_subscriptions table + a Supabase edge function with VAPID keys, plus
+  Home-Screen-install onboarding for iOS. Athletes have no email column, so
+  there is no simple email fallback for that side without adding one.)_
 * We need to ideate on a way to input excercises that is a "Skill Based Entry". This is a more soft-constrained excercise block. The idea is not entirely finish, but I want to be able to use the way we are currently prescriping a series. But it should be possible to set a time cap, a rep range, a load anchor (max set) and some ghost values like reps and average weight (for analysis purposes, not to show the athlete). Lets ideate on this and prototype before implementing. So ask me a series of quoestions and give me some ideas on how this should/could work. It would be preferable if we can stille manipulate from the planner without having to enter the excercise menu. 
   _(questions asked 18/08/2026 — see the reply; blocked on your answers. Most of
   the primitives it would compose from already shipped in 0.41.0: rep/set/load
@@ -40,6 +40,52 @@ _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Desktop notifications for the coach (18/08/2026, v0.47.0 → 0.48.0)
+The cheap half of the push-notification question, built on its own because it
+needs no PWA, no service worker, no VAPID keys and no backend — just the
+Notifications API.
+
+**Wrong:** both inboxes polled every 60 s **and only while the tab was
+visible**, so a coach with EMOS open in a background tab learned nothing until
+they looked. Which is the case the inbox was already designed around — its own
+code comment says coaches leave it in a background tab waiting for athletes to
+log.
+
+**Changed:** a bell toggle in the inbox rail header. With it on, a new unread
+raises a desktop notification naming the athletes ("2 unread conversations —
+Ida Mørck, Emilia Wódzka"); clicking it focuses the window and lands on
+`/inbox?unread=1`, the same deep link the sidebar badge uses.
+
+Four decisions worth recording:
+- **Permission is only ever requested from that click.** It is one-shot per
+  origin — a denied prompt cannot be re-asked from script, only undone by the
+  user in browser settings — so asking on load would be a permanent own goal.
+  A blocked browser shows the bell disabled and says where to fix it.
+- **The preference is device-local**, not a DB setting. Permission is granted
+  per browser, so a stored "on" would lie on every other device the coach opens.
+- **Hidden tabs are polled only when notifications are on.** That flips the
+  existing `if (!document.hidden)` guard, which would otherwise have made the
+  whole feature inert — but it stays off for everyone else rather than spending
+  a query a minute on a tab nobody is watching.
+- **Nothing fires on a visible tab** (the badge is already the notification),
+  nothing fires on first load (or every page load would announce old mail), and
+  all alerts share one tag so three arrivals replace each other instead of
+  stacking.
+`fetchInboxUnreadCount` became a wrapper over a new `fetchInboxUnreadSummary`
+so the badge and the notification read the same single query and cannot
+disagree about what is unread.
+
+**Verified** against live data with the Notification constructor stubbed (the
+automated browser blocks the real prompt — which incidentally verified the
+denied branch for real: bell disabled, correct explanation). Going 0 → 2 unread
+on a hidden tab produced exactly one notification, titled "2 unread
+conversations" with body "Ida Mørck, Emilia Wódzka" and tag
+`emos-inbox-unread`. Raising it to 3 on a *visible* tab produced none. Another
+poll window at an unchanged count produced none. All borrowed read-state was
+restored.
+
+**Not built — still the open half:** athlete-side push. That needs the PWA.
 
 #Inbox unread navigation — all 3 proposals built (18/08/2026, v0.46.0 → 0.47.0)
 **Wrong:** unread had badges, unread-first sorting and an Unread filter chip —

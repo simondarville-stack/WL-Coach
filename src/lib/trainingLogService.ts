@@ -1532,7 +1532,16 @@ async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread
  *  (sessions OR per-athlete general threads) with at least one unread
  *  athlete message — matches what the user sees as "unread threads"
  *  rather than "unread messages". */
-export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
+export interface InboxUnreadSummary {
+  /** Distinct unread THREADS — what the sidebar badge shows. */
+  threads: number;
+  /** Athletes those threads belong to, for naming a notification. */
+  athleteIds: string[];
+}
+
+/** One query behind both the badge and the desktop notification, so the two
+ *  can never disagree about what is unread. */
+export async function fetchInboxUnreadSummary(ownerId: string): Promise<InboxUnreadSummary> {
   const { data, error } = await supabase
     .from('training_log_messages')
     .select('session_id, athlete_id')
@@ -1545,11 +1554,17 @@ export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
   // "general:<athleteId>" for general messages — both flavours feed
   // the same badge.
   const keys = new Set<string>();
+  const athletes = new Set<string>();
   for (const r of rows) {
     if (r.session_id) keys.add(r.session_id);
     else if (r.athlete_id) keys.add(`general:${r.athlete_id}`);
+    if (r.athlete_id) athletes.add(r.athlete_id);
   }
-  return keys.size;
+  return { threads: keys.size, athleteIds: Array.from(athletes) };
+}
+
+export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
+  return (await fetchInboxUnreadSummary(ownerId)).threads;
 }
 
 // ─── General (no-session) thread helpers ─────────────────────────────────

@@ -84,7 +84,11 @@ interface SidebarProps {
 export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalendarTool, onOpenPrilepin }: SidebarProps) {
   const navigate = useNavigate();
   const { activeCoach, coaches, setActiveCoach } = useCoachStore();
-  const inboxUnread = useInboxUnreadCount();
+  // A clicked desktop notification lands on the unread, same target the badge
+  // deep-links to.
+  const inboxUnread = useInboxUnreadCount({
+    onOpenInbox: () => navigate('/inbox?unread=1'),
+  });
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('emos_sidebar_collapsed') === 'true';
   });
