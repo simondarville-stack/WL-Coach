@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EMOS — scheduled week, v3</title>
+<style>
+:root{
+  --font-sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --text-body:14px; --text-label:13px; --text-caption:11px;
+  --color-bg-page:#FAFAF9; --color-bg-primary:#FFF; --color-bg-secondary:#F4F4F2; --color-bg-tertiary:#E9E9E6;
+  --color-text-primary:#1A1A18; --color-text-secondary:#5F5E5A; --color-text-tertiary:#8B8A83;
+  --color-border-tertiary:rgba(0,0,0,.08); --color-border-secondary:rgba(0,0,0,.15); --color-border-primary:rgba(0,0,0,.25);
+  --color-accent:#185FA5; --color-accent-muted:rgba(24,95,165,.08); --color-accent-border:rgba(24,95,165,.2);
+  --radius-sm:4px; --radius-md:8px;
+  --col-floor:190px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-bg-page);color:var(--color-text-primary);font-family:var(--font-sans);font-size:var(--text-body)}
+.wrap{padding:20px 24px;max-width:1700px}
+h1{font-size:16px;font-weight:600;margin:0 0 2px}
+.sub{font-size:var(--text-caption);color:var(--color-text-tertiary);margin-bottom:16px}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.btn{font-size:var(--text-caption);font-weight:500;padding:4px 9px;border-radius:var(--radius-sm);
+     border:1px solid var(--color-border-secondary);background:var(--color-bg-primary);color:var(--color-text-secondary);cursor:pointer}
+.btn:hover{background:var(--color-bg-secondary)}
+.btn.on{border-color:var(--color-accent-border);background:var(--color-accent-muted);color:var(--color-accent)}
+.spacer{flex:1}
+
+.week{display:grid;grid-template-columns:repeat(7,minmax(var(--col-floor),1fr));
+      column-gap:8px;row-gap:6px;overflow-x:auto;padding-bottom:6px;align-items:start}
+
+/* Every day names itself the same way. A rest day is simply a day with no
+   cards under it — no box, no label, nothing to render. */
+.dayhead{grid-row:1;display:flex;align-items:baseline;gap:5px;padding:0 2px 5px;
+         border-bottom:1px solid var(--color-border-tertiary)}
+.dayhead .wd{font-size:var(--text-caption);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-secondary)}
+.dayhead .dt{font-size:var(--text-caption);color:var(--color-text-tertiary);font-family:var(--font-mono)}
+.dayhead .n{margin-left:auto;font-size:9px;color:var(--color-text-tertiary)}
+
+.band{display:flex;flex-direction:column;gap:8px}
+.pmrule{grid-column:1/-1;grid-row:3;display:flex;align-items:center;gap:6px;padding:1px 0}
+.pmrule .lbl{font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--color-text-tertiary)}
+.pmrule .ln{flex:1;height:1px;background:var(--color-border-tertiary)}
+
+.card{background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);
+      overflow:hidden;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.card:hover{border-color:var(--color-accent-border);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.card .hd{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--color-border-tertiary)}
+.grip{color:var(--color-border-primary);font-size:10px;cursor:grab}
+.card .nm{font-size:var(--text-label);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.time{margin-left:auto;font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-text-secondary);
+      background:var(--color-bg-secondary);border-radius:var(--radius-sm);padding:0 4px;flex-shrink:0}
+.chev{color:var(--color-text-tertiary);font-size:9px;flex-shrink:0;transition:transform .12s}
+.card.open .chev{transform:rotate(90deg)}
+.metrics{display:flex;flex-wrap:wrap;gap:0 6px;padding:4px 8px;font-family:var(--font-mono);font-size:var(--text-caption);
+         color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary);font-variant-numeric:tabular-nums}
+.metrics b{color:var(--color-text-secondary);font-weight:500}
+.exlist{padding:5px 8px 7px;display:flex;flex-direction:column;gap:5px}
+.exrow{min-width:0}
+.ex{display:flex;align-items:center;gap:5px;min-width:0}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.exn{font-size:var(--text-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-primary)}
+
+/* Per-exercise max & average, in stacked notation:
+      max            average weight
+      ───            ──────────────
+      reps at max    average reps            + total sets to the right    */
+.exsum{padding-left:11px;margin-top:2px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.exsum .lead{font-size:9px;letter-spacing:.04em;color:var(--color-text-tertiary);text-transform:uppercase}
+
+.exp{display:none;padding:3px 0 2px 11px}
+.card.open .exp{display:block}
+.card.open{border-color:var(--color-accent-border)}
+
+/* stacked load notation — the canonical read-only visual */
+.stack{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pair{display:flex;align-items:center;gap:2px}
+.col{display:flex;flex-direction:column;align-items:center;line-height:1;min-width:1.6rem}
+.col .ld,.col .rp{font-family:var(--font-mono);font-size:var(--text-caption);font-weight:500;color:var(--color-text-primary)}
+.col.muted .ld,.col.muted .rp{color:var(--color-text-secondary)}
+.col .rule{width:100%;border-top:1px solid var(--color-border-primary);margin:1px 0}
+.col.muted .rule{border-top-color:var(--color-border-secondary)}
+.sets{font-size:var(--text-caption);color:var(--color-text-secondary);font-weight:500}
+.setsmall{font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary);font-variant-numeric:tabular-nums}
+.setsmall b{color:var(--color-text-secondary);font-weight:500}
+.prose{font-size:var(--text-caption);color:var(--color-text-secondary);font-style:italic;line-height:1.4}
+
+.shelf{margin-top:18px}
+.shelf h2{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0 0 6px}
+.shelfgrid{display:grid;grid-template-columns:repeat(7,minmax(var(--col-floor),1fr));column-gap:8px;row-gap:8px;overflow-x:auto;align-items:start}
+.note{margin-top:20px;padding:10px 12px;border-left:2px solid var(--color-accent);background:var(--color-accent-muted);
+      font-size:var(--text-caption);color:var(--color-text-secondary);line-height:1.6;border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.measure{margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Scheduled week — prototype v3</h1>
+  <div class="sub">v3: rest days are just an empty day · Max · Ø · R · S everywhere · per-exercise max and average as stacked notation</div>
+
+  <div class="toolbar">
+    <button class="btn on" id="sc-ida">Ida Mørck · 17–23/08 (9 units)</button>
+    <button class="btn" id="sc-emilia">Emilia Wódzka · 06–12/04 (the sizing bug)</button>
+    <span class="spacer"></span>
+    <button class="btn" id="toggleSum">Hide per-exercise values</button>
+    <button class="btn" id="expandAll">Expand all</button>
+  </div>
+
+  <div class="week" id="week"></div>
+  <div class="shelf" id="shelf" style="display:none">
+    <h2>Unscheduled</h2>
+    <div class="shelfgrid" id="shelfgrid"></div>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="measure" id="measure"></div>
+</div>
+
+<script>
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const C = {pull:'#2563eb', jerk:'#dc2626', squat:'#7c3aed', mob:'#059669', gpp:'#d97706', other:'#64748b'};
+let showSums = true;
+
+// ex = [name, colour, prescription, summary|null]
+// summary: Hi = max load, HiR = reps at that max, O = average weight,
+//          OR = average reps, S = total sets.
+// null  = the exercise's planner summary is switched OFF in its settings.
+const IDA = {
+  dates:['17/08','18/08','19/08','20/08','21/08','22/08','23/08'],
+  units:[
+    {wd:0,t:'10:00',n:'Mandag 1',m:{Max:85,Avg:71,R:54,S:19,T:'2,4t',K:'33%'},ex:[
+      ['Teknisk forøvelse',C.other,'Træk uden afsæt. Fokus på at trække op imod brystet',null],
+      ['Træk',C.pull,'50-66×3×4, 66-70×2×3',{Hi:70,HiR:2,O:58,OR:'2,6',S:7}],
+      ['Træk Dødløft',C.pull,'75-85×3×6',{Hi:85,HiR:3,O:80,OR:3,S:6}],
+      ['Stem',C.jerk,'Moderat% × 3 × 6',{Hi:null,HiR:null,O:null,OR:3,S:6}],
+      ['Bevægelighed',C.mob,'10 min',null],['GPP',C.gpp,null,null]]},
+    {wd:0,t:'16:00',n:'Mandag 2',m:{Max:90,Avg:74,R:65,S:16,T:'2,9t',K:'38%'},ex:[
+      ['Knickstød',C.jerk,'75-85×2(1+1)×5',{Hi:85,HiR:4,O:80,OR:4,S:5}],
+      ['Stødhiv',C.jerk,'70-80×4×2, 80-90×3×4',{Hi:90,HiR:3,O:81,OR:'3,3',S:6}],
+      ['Ben Foran',C.squat,'60-85×5×5',{Hi:85,HiR:5,O:72,OR:5,S:5}],
+      ['Bevægelighed',C.mob,'10 min',null]]},
+    {wd:1,t:'10:00',n:'Tirsdag 1',m:{Max:75,Avg:52,R:63,S:18,T:'2,1t',K:'29%'},ex:[
+      ['Power Trækhiv',C.pull,'36-45×4×6',{Hi:45,HiR:4,O:40,OR:4,S:6}],
+      ['Råtræk',C.pull,'48-54×3×6',{Hi:54,HiR:3,O:51,OR:3,S:6}],
+      ['Trækiv',C.pull,'55-65×4×3, 65-75×3×3',{Hi:75,HiR:3,O:64,OR:'3,5',S:6}],
+      ['Springvariationer',C.other,'Pogo jumps (alle 5 varianter)',null]]},
+    {wd:1,t:'16:00',n:'Tirsdag 2',m:{Max:null,Avg:null,R:0,S:0,T:'—',K:'—'},ex:[
+      ['Anden AFØ',C.other,'Let cykel',null],
+      ['Bevægelighed',C.mob,'RomWod 20-30 min',null]]},
+    {wd:2,t:'10:00',n:'Onsdag 1',m:{Max:70,Avg:44,R:72,S:19,T:'1,9t',K:'27%'},ex:[
+      ['Styrketræk',C.pull,'35-45×3×7',{Hi:45,HiR:3,O:40,OR:3,S:7}],
+      ['Stem',C.jerk,'27-37×5×6',{Hi:37,HiR:5,O:32,OR:5,S:6}],
+      ['Bevægelighed',C.mob,'10 min',null],
+      ['PushPress',C.jerk,'55-65×4×3, 65-70×3×3',{Hi:70,HiR:3,O:63,OR:'3,5',S:6}]]},
+    {wd:2,t:'16:00',n:'Onsdag 2',m:{Max:110,Avg:88,R:54,S:17,T:'2,6t',K:'42%'},ex:[
+      ['Stødvend',C.jerk,'70×2, 75×2, 80×2, 85×2×3',{Hi:85,HiR:2,O:80,OR:2,S:6}],
+      ['Knickstød',C.jerk,'70-80×2×6',{Hi:80,HiR:2,O:75,OR:2,S:6}],
+      ['Ben Bagpå',C.squat,'80×6, 90×6, 100×6, 105×6, 110×6',{Hi:110,HiR:6,O:97,OR:6,S:5}],
+      ['Bevægelighed',C.mob,'',null]]},
+    {wd:4,t:'10:00',n:'Fredag 1',m:{Max:null,Avg:null,R:60,S:10,T:'—',K:'—'},ex:[
+      ['Styrketræk',C.pull,'Let×3(1+1)×5',{Hi:null,HiR:null,O:null,OR:6,S:5}],
+      ['Frivend',C.jerk,'Let×3(1+1)×5',{Hi:null,HiR:null,O:null,OR:6,S:5}],
+      ['Bevægelighed',C.mob,'20-30 minutter',null]]},
+    {wd:4,t:'16:00',n:'Fredag 2',m:{Max:90,Avg:74,R:32,S:14,T:'1,4t',K:'38%'},ex:[
+      ['Træk',C.pull,'60-65×3×2, 65-75×2×5',{Hi:75,HiR:2,O:69,OR:'2,3',S:7}],
+      ['Stød',C.jerk,'70-80×2-3×3, 85-90×2×4',{Hi:90,HiR:2,O:81,OR:'2,3',S:7}],
+      ['Bevægelighed',C.mob,'10 min',null]]},
+    {wd:5,t:'10:00',n:'Lørdag 1',m:{Max:110,Avg:98,R:60,S:11,T:'2,9t',K:'46%'},ex:[
+      ['Stød Dødløft',C.jerk,'90-100×6×3, 100-110×4×3',{Hi:110,HiR:4,O:100,OR:5,S:6}],
+      ['Ben Bagpå',C.squat,'80×6, 90×6, 100×6, 105×6, 110×6',{Hi:110,HiR:6,O:97,OR:6,S:5}],
+      ['GPP',C.gpp,null,null]]}
+  ],
+  unscheduled:[]
+};
+
+const EMILIA = {
+  dates:['06/04','07/04','08/04','09/04','10/04','11/04','12/04'],
+  units:[
+    {wd:0,t:null,n:'Monday',m:{Max:60,Avg:48,R:24,S:8,T:'1,2t',K:'30%'},ex:[
+      ['Træk',C.pull,'45-60×3×4',{Hi:60,HiR:3,O:52,OR:3,S:4}],
+      ['Ben Foran',C.squat,'50-60×4×4',{Hi:60,HiR:4,O:55,OR:4,S:4}]]},
+    {wd:2,t:null,n:'Wednesday',m:{Max:52,Avg:44,R:18,S:6,T:'0,8t',K:'26%'},ex:[
+      ['Stød',C.jerk,'40-52×3×6',{Hi:52,HiR:3,O:46,OR:3,S:6}],
+      ['Bevægelighed',C.mob,'10 min',null]]}
+  ],
+  unscheduled:[
+    {n:'Thursday',t:null,m:{Max:55,Avg:46,R:20,S:5,T:'0,9t',K:'27%'},ex:[
+      ['Råtræk',C.pull,'44-55×4×5',{Hi:55,HiR:4,O:49,OR:4,S:5}]]},
+    {n:'Friday',t:null,m:{Max:48,Avg:40,R:15,S:5,T:'0,6t',K:'24%'},ex:[
+      ['Stem',C.jerk,'36-48×3×5',{Hi:48,HiR:3,O:42,OR:3,S:5}]]},
+    {n:'Saturday',t:null,m:{Max:70,Avg:62,R:12,S:4,T:'0,7t',K:'35%'},ex:[
+      ['Ben Bagpå',C.squat,'55-70×3×4',{Hi:70,HiR:3,O:62,OR:3,S:4}]]}
+  ]
+};
+
+function stacked(raw){
+  if(raw === null || raw === undefined || raw === '') return '';
+  if(!/[×x]/.test(raw)) return '<div class="prose">' + raw + '</div>';
+  const segs = raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  let out = '<div class="stack">';
+  for(const s of segs){
+    const p = s.split(/[×x]/).map(function(v){return v.trim();});
+    if(p.length < 2){ out += '<div class="prose">' + s + '</div>'; continue; }
+    out += '<div class="pair"><div class="col"><span class="ld">' + p[0] + '</span>' +
+           '<div class="rule"></div><span class="rp">' + p[1] + '</span></div>' +
+           (p[2] && p[2] !== '1' ? '<span class="sets">' + p[2] + '</span>' : '') + '</div>';
+  }
+  return out + '</div>';
+}
+
+/** One stacked column: value over its reps. */
+function stackCol(load, reps, muted){
+  return '<div class="col' + (muted ? ' muted' : '') + '">' +
+         '<span class="ld">' + (load == null ? '—' : load) + '</span>' +
+         '<div class="rule"></div>' +
+         '<span class="rp">' + (reps == null ? '—' : reps) + '</span></div>';
+}
+
+/**
+ * Per-exercise max and average, in stacked notation:
+ *   max / reps at max     average weight / average reps     · S total sets
+ * Order follows Max → Ø → reps → sets, the same order as everywhere else.
+ */
+function exSummary(s){
+  if(!s || !showSums) return '';
+  const hasLoads = s.Hi != null || s.O != null;
+  if(!hasLoads && s.S == null) return '';
+  return '<div class="exsum">' +
+    (hasLoads
+      ? stackCol(s.Hi, s.HiR, false) + stackCol(s.O, s.OR, true)
+      : stackCol(null, s.OR, true)) +
+    (s.S != null ? '<span class="setsmall"><b>S</b> ' + s.S + '</span>' : '') +
+    '</div>';
+}
+
+function card(u){
+  const m = u.m;
+  // Max · Ø · R · S · tonnage · K — the app-wide order.
+  const met = (m.Max != null ? '<b>Max</b> ' + m.Max + ' · ' : '') +
+              (m.Avg != null ? '<b>Ø</b> ' + m.Avg + ' · ' : '') +
+              '<b>R</b> ' + m.R + ' · <b>S</b> ' + m.S + ' · ' + m.T + ' · ' + m.K;
+  const exs = u.ex.map(function(e){
+    const n = e[0], c = e[1], p = e[2], s = e[3];
+    return '<div class="exrow">' +
+             '<div class="ex"><span class="dot" style="background:' + c + '"></span><span class="exn">' + n + '</span></div>' +
+             exSummary(s) +
+             (p !== null && p !== undefined && p !== '' ? '<div class="exp">' + stacked(p) + '</div>' : '') +
+           '</div>';
+  }).join('');
+  return '<div class="card">' +
+    '<div class="hd"><span class="grip">⣿</span><span class="nm">' + u.n + '</span>' +
+      (u.t ? '<span class="time">' + u.t + '</span>' : '') + '<span class="chev">▸</span></div>' +
+    '<div class="metrics">' + met + '</div><div class="exlist">' + exs + '</div></div>';
+}
+
+let CURRENT = null;
+
+function render(D){
+  CURRENT = D;
+  const am = [], pm = [];
+  for(let d = 0; d < 7; d++){ am[d] = []; pm[d] = []; }
+  D.units.forEach(function(u){
+    const isAm = !u.t || parseInt(u.t, 10) < 12;
+    (isAm ? am : pm)[u.wd].push(u);
+  });
+  const anyPm = pm.some(function(x){ return x.length; });
+  const anyAm = am.some(function(x){ return x.length; });
+  let html = '';
+  for(let d = 0; d < 7; d++){
+    const count = am[d].length + pm[d].length;
+    html += '<div class="dayhead" style="grid-column:' + (d+1) + '">' +
+            '<span class="wd">' + DAYS[d] + '</span><span class="dt">' + D.dates[d] + '</span>' +
+            (count ? '<span class="n">' + count + '</span>' : '') + '</div>';
+    // A rest day renders nothing below its title — it is just a day with no
+    // cards in it.
+    if(am[d].length) html += '<div class="band" style="grid-column:' + (d+1) + ';grid-row:2">' + am[d].map(card).join('') + '</div>';
+    if(pm[d].length) html += '<div class="band" style="grid-column:' + (d+1) + ';grid-row:' + (anyAm && anyPm ? 4 : 2) + '">' + pm[d].map(card).join('') + '</div>';
+  }
+  if(anyPm && anyAm) html += '<div class="pmrule"><span class="lbl">PM</span><span class="ln"></span></div>';
+  document.getElementById('week').innerHTML = html;
+
+  const shelf = document.getElementById('shelf');
+  if(D.unscheduled.length){
+    shelf.style.display = '';
+    document.getElementById('shelfgrid').innerHTML = D.unscheduled.map(card).join('');
+  } else {
+    shelf.style.display = 'none';
+    document.getElementById('shelfgrid').innerHTML = '';
+  }
+
+  document.getElementById('note').innerHTML = (D === EMILIA)
+    ? '<b>The sizing problem, fixed.</b> Today this week renders its two scheduled columns at <b>411&nbsp;px</b> each and drops the three unscheduled units <i>underneath</i> at <b>499&nbsp;px</b>. Here every card is one width and the unscheduled shelf shares the same column track.'
+    : 'Thu and Sun are simply days with no cards — title only. Each exercise shows <b>max / reps at max</b> and <b>average weight / average reps</b> as stacked notation, with total sets to the right; exercises whose planner summary is off (mobility, GPP, the technical drill) show none. Unit strip and per-exercise values both read <b>Max → Ø → R → S</b>.';
+
+  measure();
+}
+
+function measure(){
+  const cards = [...document.querySelectorAll('.card')].filter(function(c){ return c.offsetParent !== null; });
+  const widths = [...new Set(cards.map(function(c){ return Math.round(c.getBoundingClientRect().width); }))];
+  document.getElementById('measure').textContent =
+    cards.length + ' cards · distinct widths: ' + widths.join(', ') + ' px';
+}
+
+['week','shelfgrid'].forEach(function(id){
+  document.getElementById(id).addEventListener('click', function(e){
+    const c = e.target.closest('.card');
+    if(c) c.classList.toggle('open');
+  });
+});
+
+function setActive(b){
+  document.querySelectorAll('.toolbar .btn').forEach(function(x){
+    if(x.id.indexOf('sc-') === 0) x.classList.remove('on');
+  });
+  b.classList.add('on');
+}
+document.getElementById('sc-ida').onclick = function(e){ render(IDA); setActive(e.target); };
+document.getElementById('sc-emilia').onclick = function(e){ render(EMILIA); setActive(e.target); };
+document.getElementById('toggleSum').onclick = function(){
+  showSums = !showSums;
+  this.textContent = showSums ? 'Hide per-exercise values' : 'Show per-exercise values';
+  this.classList.toggle('on', !showSums);
+  render(CURRENT);
+};
+document.getElementById('expandAll').onclick = function(){
+  const cards = [...document.querySelectorAll('.card')];
+  const mostOpen = cards.filter(function(c){ return c.classList.contains('open'); }).length > cards.length / 2;
+  cards.forEach(function(c){ c.classList.toggle('open', !mostOpen); });
+  this.classList.toggle('on', !mostOpen);
+  this.textContent = mostOpen ? 'Expand all' : 'Collapse all';
+};
+window.addEventListener('resize', measure);
+
+render(IDA);
+</script>
+</body>
+</html>

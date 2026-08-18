@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EMOS — scheduled week, v1</title>
+<style>
+:root{
+  --font-sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --text-body:14px; --text-label:13px; --text-caption:11px;
+  --color-bg-page:#FAFAF9; --color-bg-primary:#FFF; --color-bg-secondary:#F4F4F2; --color-bg-tertiary:#E9E9E6;
+  --color-text-primary:#1A1A18; --color-text-secondary:#5F5E5A; --color-text-tertiary:#8B8A83;
+  --color-border-tertiary:rgba(0,0,0,.08); --color-border-secondary:rgba(0,0,0,.15); --color-border-primary:rgba(0,0,0,.25);
+  --color-accent:#185FA5; --color-accent-muted:rgba(24,95,165,.08); --color-accent-border:rgba(24,95,165,.2);
+  --radius-sm:4px; --radius-md:8px;
+  /* The readable floor for one day column. Below this the week scrolls. */
+  --col-floor:184px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-bg-page);color:var(--color-text-primary);font-family:var(--font-sans);font-size:var(--text-body)}
+.wrap{padding:20px 24px;max-width:1600px}
+h1{font-size:16px;font-weight:600;margin:0 0 2px}
+.sub{font-size:var(--text-caption);color:var(--color-text-tertiary);margin-bottom:16px}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.btn{font-size:var(--text-caption);font-weight:500;padding:4px 9px;border-radius:var(--radius-sm);
+     border:1px solid var(--color-border-secondary);background:var(--color-bg-primary);color:var(--color-text-secondary);cursor:pointer}
+.btn:hover{background:var(--color-bg-secondary)}
+.btn.on{border-color:var(--color-accent-border);background:var(--color-accent-muted);color:var(--color-accent)}
+.spacer{flex:1}
+
+/* ---- the week grid: SEVEN EQUAL columns, always ---- */
+.week{display:grid;grid-template-columns:repeat(7,minmax(var(--col-floor),1fr));
+      column-gap:8px;row-gap:6px;overflow-x:auto;padding-bottom:6px;align-items:start}
+
+.dayhead{grid-row:1;display:flex;align-items:baseline;gap:5px;padding:0 2px 5px;
+         border-bottom:1px solid var(--color-border-tertiary)}
+.dayhead .wd{font-size:var(--text-caption);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-secondary)}
+.dayhead .dt{font-size:var(--text-caption);color:var(--color-text-tertiary);font-family:var(--font-mono)}
+.dayhead.rest .wd,.dayhead.rest .dt{color:var(--color-text-tertiary);font-weight:500}
+.dayhead .n{margin-left:auto;font-size:9px;color:var(--color-text-tertiary)}
+
+/* a rest day is a full, quiet column — same width as every other day */
+.restcol{grid-row:2/-1;border-radius:var(--radius-md);background:var(--color-bg-secondary);
+         border:1px dashed var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;min-height:110px}
+.restcol span{font-size:var(--text-caption);color:var(--color-text-tertiary)}
+
+.band{display:flex;flex-direction:column;gap:8px}
+.pmrule{grid-column:1/-1;grid-row:3;display:flex;align-items:center;gap:6px;padding:1px 0}
+.pmrule .lbl{font-size:9px;font-weight:600;letter-spacing:.06em;color:var(--color-text-tertiary)}
+.pmrule .ln{flex:1;height:1px;background:var(--color-border-tertiary)}
+
+/* ---- the card ---- */
+.card{background:var(--color-bg-primary);border:1px solid var(--color-border-secondary);border-radius:var(--radius-md);
+      overflow:hidden;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.card:hover{border-color:var(--color-accent-border);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.card .hd{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--color-border-tertiary)}
+.grip{color:var(--color-border-primary);font-size:10px;cursor:grab}
+.card .nm{font-size:var(--text-label);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.time{margin-left:auto;font-family:var(--font-mono);font-size:var(--text-caption);color:var(--color-text-secondary);
+      background:var(--color-bg-secondary);border-radius:var(--radius-sm);padding:0 4px;flex-shrink:0}
+.chev{color:var(--color-text-tertiary);font-size:9px;flex-shrink:0;transition:transform .12s}
+.card.open .chev{transform:rotate(90deg)}
+.metrics{display:flex;flex-wrap:wrap;gap:0 6px;padding:4px 8px;font-family:var(--font-mono);font-size:var(--text-caption);
+         color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary);font-variant-numeric:tabular-nums}
+.metrics b{color:var(--color-text-secondary);font-weight:500}
+.exlist{padding:4px 8px 7px;display:flex;flex-direction:column;gap:2px}
+.ex{display:flex;align-items:center;gap:5px;min-width:0}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.exn{font-size:var(--text-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-primary)}
+.exp{display:none;padding:1px 0 4px 11px}
+.card.open .exp{display:block}
+.card.open{border-color:var(--color-accent-border)}
+
+/* stacked load notation — the canonical prescription display */
+.stack{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pair{display:flex;align-items:center;gap:2px}
+.col{display:flex;flex-direction:column;align-items:center;line-height:1;min-width:1.5rem}
+.col .ld,.col .rp{font-family:var(--font-mono);font-size:var(--text-caption);font-weight:500;color:var(--color-text-primary)}
+.col .rule{width:100%;border-top:1px solid var(--color-border-primary);margin:1px 0}
+.sets{font-size:var(--text-caption);color:var(--color-text-secondary);font-weight:500}
+.prose{font-size:var(--text-caption);color:var(--color-text-secondary);font-style:italic;line-height:1.4}
+
+.shelf{margin-top:18px}
+.shelf h2{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0 0 6px}
+/* same column track as the week, so nothing is a different size */
+.shelfgrid{display:grid;grid-template-columns:repeat(7,minmax(var(--col-floor),1fr));column-gap:8px;row-gap:8px;overflow-x:auto;align-items:start}
+.note{margin-top:20px;padding:10px 12px;border-left:2px solid var(--color-accent);background:var(--color-accent-muted);
+      font-size:var(--text-caption);color:var(--color-text-secondary);line-height:1.6;border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+.measure{margin-top:8px;font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Scheduled week — prototype v1</h1>
+  <div class="sub">Seven equal columns · dated headers · aligned AM/PM · condensed cards that expand · rest days as full quiet columns</div>
+
+  <div class="toolbar">
+    <button class="btn on" id="sc-ida">Ida Mørck · 17–23/08 (9 units)</button>
+    <button class="btn" id="sc-emilia">Emilia Wódzka · 06–12/04 (the sizing bug)</button>
+    <span class="spacer"></span>
+    <button class="btn" id="expandAll">Expand all</button>
+  </div>
+
+  <div class="week" id="week"></div>
+  <div class="shelf" id="shelf" style="display:none">
+    <h2>Unscheduled</h2>
+    <div class="shelfgrid" id="shelfgrid"></div>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="measure" id="measure"></div>
+</div>
+
+<script>
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const C = {pull:'#2563eb', jerk:'#dc2626', squat:'#7c3aed', mob:'#059669', gpp:'#d97706', other:'#64748b'};
+
+const IDA = {
+  dates:['17/08','18/08','19/08','20/08','21/08','22/08','23/08'],
+  units:[
+    {wd:0,t:'10:00',n:'Mandag 1',m:{R:54,S:19,Max:85,Avg:71,T:'2,4t',K:'33%'},ex:[
+      ['Teknisk forøvelse',C.other,'Træk uden afsæt. Fokus på at trække op imod brystet'],
+      ['Træk',C.pull,'50-66×3×4, 66-70×2×3'],['Træk Dødløft',C.pull,'75-85×3×6'],
+      ['Stem',C.jerk,'Moderat% × 3 × 6'],['Bevægelighed',C.mob,'10 min'],['GPP',C.gpp,null]]},
+    {wd:0,t:'16:00',n:'Mandag 2',m:{R:65,S:16,Max:90,Avg:74,T:'2,9t',K:'38%'},ex:[
+      ['Knickstød',C.jerk,'75-85×2(1+1)×5'],['Stødhiv',C.jerk,'70-80×4×2, 80-90×3×4'],
+      ['Ben Foran',C.squat,'60-85×5×5'],['Bevægelighed',C.mob,'10 min']]},
+    {wd:1,t:'10:00',n:'Tirsdag 1',m:{R:63,S:18,Max:75,Avg:52,T:'2,1t',K:'29%'},ex:[
+      ['Power Trækhiv',C.pull,'36-45×4×6'],['Råtræk',C.pull,'48-54×3×6'],
+      ['Trækiv',C.pull,'55-65×4×3, 65-75×3×3'],['Springvariationer',C.other,'Pogo jumps (alle 5 varianter)']]},
+    {wd:1,t:'16:00',n:'Tirsdag 2',m:{R:0,S:0,Max:null,Avg:null,T:'—',K:'—'},ex:[
+      ['Anden AFØ',C.other,'Let cykel'],['Bevægelighed',C.mob,'RomWod 20-30 min']]},
+    {wd:2,t:'10:00',n:'Onsdag 1',m:{R:72,S:19,Max:70,Avg:44,T:'1,9t',K:'27%'},ex:[
+      ['Styrketræk',C.pull,'35-45×3×7'],['Stem',C.jerk,'27-37×5×6'],
+      ['Bevægelighed',C.mob,'10 min'],['PushPress',C.jerk,'55-65×4×3, 65-70×3×3']]},
+    {wd:2,t:'16:00',n:'Onsdag 2',m:{R:54,S:17,Max:110,Avg:88,T:'2,6t',K:'42%'},ex:[
+      ['Stødvend',C.jerk,'70×2, 75×2, 80×2, 85×2×3'],['Knickstød',C.jerk,'70-80×2×6'],
+      ['Ben Bagpå',C.squat,'80×6, 90×6, 100×6, 105×6, 110×6'],['Bevægelighed',C.mob,'']]},
+    {wd:4,t:'10:00',n:'Fredag 1',m:{R:60,S:10,Max:null,Avg:null,T:'—',K:'—'},ex:[
+      ['Styrketræk',C.pull,'Let×3(1+1)×5'],['Frivend',C.jerk,'Let×3(1+1)×5'],
+      ['Bevægelighed',C.mob,'20-30 minutter']]},
+    {wd:4,t:'16:00',n:'Fredag 2',m:{R:32,S:14,Max:90,Avg:74,T:'1,4t',K:'38%'},ex:[
+      ['Træk',C.pull,'60-65×3×2, 65-75×2×5'],['Stød',C.jerk,'70-80×2-3×3, 85-90×2×4'],
+      ['Bevægelighed',C.mob,'10 min']]},
+    {wd:5,t:'10:00',n:'Lørdag 1',m:{R:60,S:11,Max:110,Avg:98,T:'2,9t',K:'46%'},ex:[
+      ['Stød Dødløft',C.jerk,'90-100×6×3, 100-110×4×3'],
+      ['Ben Bagpå',C.squat,'80×6, 90×6, 100×6, 105×6, 110×6'],['GPP',C.gpp,null]]}
+  ],
+  unscheduled:[]
+};
+
+const EMILIA = {
+  dates:['06/04','07/04','08/04','09/04','10/04','11/04','12/04'],
+  units:[
+    {wd:0,t:null,n:'Monday',m:{R:24,S:8,Max:60,Avg:48,T:'1,2t',K:'30%'},ex:[
+      ['Træk',C.pull,'45-60×3×4'],['Ben Foran',C.squat,'50-60×4×4']]},
+    {wd:2,t:null,n:'Wednesday',m:{R:18,S:6,Max:52,Avg:44,T:'0,8t',K:'26%'},ex:[
+      ['Stød',C.jerk,'40-52×3×6'],['Bevægelighed',C.mob,'10 min']]}
+  ],
+  unscheduled:[
+    {n:'Thursday',t:null,m:{R:20,S:5,Max:55,Avg:46,T:'0,9t',K:'27%'},ex:[['Råtræk',C.pull,'44-55×4×5']]},
+    {n:'Friday',t:null,m:{R:15,S:5,Max:48,Avg:40,T:'0,6t',K:'24%'},ex:[['Stem',C.jerk,'36-48×3×5']]},
+    {n:'Saturday',t:null,m:{R:12,S:4,Max:70,Avg:62,T:'0,7t',K:'35%'},ex:[['Ben Bagpå',C.squat,'55-70×3×4']]}
+  ]
+};
+
+function stacked(raw){
+  if(raw === null || raw === undefined || raw === '') return '';
+  if(!/[×x]/.test(raw)) return '<div class="prose">' + raw + '</div>';
+  const segs = raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  let out = '<div class="stack">';
+  for(const s of segs){
+    const p = s.split(/[×x]/).map(function(v){return v.trim();});
+    if(p.length < 2){ out += '<div class="prose">' + s + '</div>'; continue; }
+    const load = p[0], reps = p[1], sets = p[2];
+    out += '<div class="pair"><div class="col"><span class="ld">' + load + '</span>' +
+           '<div class="rule"></div><span class="rp">' + reps + '</span></div>' +
+           (sets && sets !== '1' ? '<span class="sets">' + sets + '</span>' : '') + '</div>';
+  }
+  return out + '</div>';
+}
+
+function card(u){
+  const m = u.m;
+  const met = '<b>R</b> ' + m.R + ' · <b>S</b> ' + m.S +
+              (m.Max ? ' · <b>Max</b> ' + m.Max : '') +
+              (m.Avg ? ' · <b>Ø</b> ' + m.Avg : '') + ' · ' + m.T + ' · ' + m.K;
+  const exs = u.ex.map(function(e){
+    const n = e[0], c = e[1], p = e[2];
+    return '<div class="ex"><span class="dot" style="background:' + c + '"></span><span class="exn">' + n + '</span></div>' +
+           (p !== null && p !== undefined && p !== '' ? '<div class="exp">' + stacked(p) + '</div>' : '');
+  }).join('');
+  return '<div class="card">' +
+    '<div class="hd"><span class="grip">⣿</span><span class="nm">' + u.n + '</span>' +
+      (u.t ? '<span class="time">' + u.t + '</span>' : '') + '<span class="chev">▸</span></div>' +
+    '<div class="metrics">' + met + '</div><div class="exlist">' + exs + '</div></div>';
+}
+
+function render(D){
+  const am = [], pm = [];
+  for(let d = 0; d < 7; d++){ am[d] = []; pm[d] = []; }
+  D.units.forEach(function(u){
+    const isAm = !u.t || parseInt(u.t, 10) < 12;
+    (isAm ? am : pm)[u.wd].push(u);
+  });
+  const anyPm = pm.some(function(x){ return x.length; });
+  const anyAm = am.some(function(x){ return x.length; });
+  let html = '';
+  for(let d = 0; d < 7; d++){
+    const count = am[d].length + pm[d].length;
+    const rest = count === 0;
+    html += '<div class="dayhead' + (rest ? ' rest' : '') + '" style="grid-column:' + (d+1) + '">' +
+            '<span class="wd">' + DAYS[d] + '</span><span class="dt">' + D.dates[d] + '</span>' +
+            (count ? '<span class="n">' + count + '</span>' : '') + '</div>';
+    if(rest){
+      html += '<div class="restcol" style="grid-column:' + (d+1) + '"><span>rest</span></div>';
+      continue;
+    }
+    if(am[d].length) html += '<div class="band" style="grid-column:' + (d+1) + ';grid-row:2">' + am[d].map(card).join('') + '</div>';
+    if(pm[d].length) html += '<div class="band" style="grid-column:' + (d+1) + ';grid-row:' + (anyAm && anyPm ? 4 : 2) + '">' + pm[d].map(card).join('') + '</div>';
+  }
+  if(anyPm && anyAm) html += '<div class="pmrule"><span class="lbl">PM</span><span class="ln"></span></div>';
+  document.getElementById('week').innerHTML = html;
+
+  const shelf = document.getElementById('shelf');
+  if(D.unscheduled.length){
+    shelf.style.display = '';
+    document.getElementById('shelfgrid').innerHTML = D.unscheduled.map(card).join('');
+  } else {
+    shelf.style.display = 'none';
+    // Clear it too, or its cards linger in the DOM at zero width and pollute
+    // the measurement readout below.
+    document.getElementById('shelfgrid').innerHTML = '';
+  }
+
+  document.getElementById('note').innerHTML = (D === EMILIA)
+    ? '<b>This is the sizing problem you described.</b> Today this week renders its two scheduled columns at <b>411&nbsp;px</b> each — they absorb all the width the five 28&nbsp;px rest slivers leave — and drops the three unscheduled units <i>underneath</i> at <b>499&nbsp;px</b>. Three different card widths in one view. Here every card is the same width and the unscheduled shelf uses the same column track.'
+    : 'Nine units across five training days. Every card is the same width; the AM/PM divider sits at one height for the whole week; Thu and Sun are full quiet columns rather than rotated slivers. Click a card to expand it, or use <b>Expand all</b>.';
+
+  measure();
+}
+
+function measure(){
+  const cards = [...document.querySelectorAll('.card')];
+  const widths = [...new Set(cards.map(function(c){ return Math.round(c.getBoundingClientRect().width); }))];
+  document.getElementById('measure').textContent =
+    cards.length + ' cards · distinct widths: ' + widths.join(', ') + ' px';
+}
+
+document.getElementById('week').addEventListener('click', function(e){
+  const c = e.target.closest('.card');
+  if(c) c.classList.toggle('open');
+});
+document.getElementById('shelfgrid').addEventListener('click', function(e){
+  const c = e.target.closest('.card');
+  if(c) c.classList.toggle('open');
+});
+
+function setActive(b){
+  document.querySelectorAll('.toolbar .btn').forEach(function(x){
+    if(x.id.indexOf('sc-') === 0) x.classList.remove('on');
+  });
+  b.classList.add('on');
+}
+document.getElementById('sc-ida').onclick = function(e){ render(IDA); setActive(e.target); };
+document.getElementById('sc-emilia').onclick = function(e){ render(EMILIA); setActive(e.target); };
+document.getElementById('expandAll').onclick = function(){
+  const cards = [...document.querySelectorAll('.card')];
+  const mostOpen = cards.filter(function(c){ return c.classList.contains('open'); }).length > cards.length / 2;
+  cards.forEach(function(c){ c.classList.toggle('open', !mostOpen); });
+  this.classList.toggle('on', !mostOpen);
+  this.textContent = mostOpen ? 'Expand all' : 'Collapse all';
+};
+window.addEventListener('resize', measure);
+
+render(IDA);
+</script>
+</body>
+</html>

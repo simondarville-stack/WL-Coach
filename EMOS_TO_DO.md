@@ -32,14 +32,49 @@ defers others).
 - ~~to be able to reorganize these cards~~ DONE 18/08/2026 — see #Reorder unit
   cards below.
 - when it is a specific week, the current design is very messy. I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
-  _(questions asked 18/08/2026 — STILL BLOCKED on your answers before
-  prototyping. The AM/PM fix landed as an interim step and is deliberately
-  reversible.)_
+  _(IN PROGRESS 18/08/2026. Questions answered; prototypes at
+  `mockup/scheduled-week-v1..v3.html` — seven equal columns, dated headers,
+  rest days as a title with no cards, aligned AM/PM, condensed cards with
+  click-to-expand + expand-all, per-exercise max/average in stacked notation.
+  The app-wide metric reorder it needs has shipped (see below); the
+  `WeekOverview` rebuild itself is not built yet. The AM/PM fix stands as a
+  reversible interim.)_
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Metric order is Max · Avg · Reps · Sets, app-wide (18/08/2026, v0.49.0 → 0.49.1)
+**Wrong:** metrics read `R · S · Max · Avg · T · K` — reps and sets before the
+loads a coach actually scans for. And the order was written down in **three**
+places that could disagree: the `METRICS` array (which every metric strip
+renders through), a hand-maintained `METRIC_ORDER` literal beside it (settings
+pickers, week-summary selector), and a hand-sequenced block of JSX in
+`PlannerControlPanel` (the week header). They already had drifted.
+
+**Changed:** `METRICS` is now ordered **max → avg → reps → sets → tonnage → k**
+and is the single ordering authority.
+- `METRIC_ORDER` is *derived* (`METRICS.map(m => m.key)`) instead of being a
+  second literal, so the two can never disagree again.
+- The week header strip in `PlannerControlPanel` now renders
+  `METRICS.filter(visible)` with per-metric value renderers, rather than six
+  hand-ordered JSX blocks.
+
+*Fixed on the way:* the hand-written header emitted a **leading separator**
+whenever the metrics before it were hidden or zero — a stray "·" at the start
+of the strip. Separators are now placed between rendered items, so that cannot
+happen. (Found by writing the new version, not by seeing it.)
+
+**Verified live** on Ida Mørck's 17/08 week: day card reads `Max 85 · Avg 71 ·
+R 54 · S 19 · T 2.5t · K 39%`; the week header reads `Avg 71 · R 460/320 (100%)
+· S 124 · T 26.972 kg · K 39%` (no Max because this coach's saved
+`visible_summary_metrics` omits it — the remaining five are in the new order);
+the Settings → Weekly planner picker lists Max and Avg first.
+*Caught by verifying rather than by the compiler:* the first attempt put the
+new item list above `repsProgress`'s declaration and the planner crashed with
+"Cannot access 'repsProgress' before initialization". Typecheck passed it;
+opening the page did not.
 
 #Reorder unit cards from the planner grid (18/08/2026, v0.48.0 → 0.49.0)
 **Wrong:** reordering existed, but only inside the Day-config modal — drag the

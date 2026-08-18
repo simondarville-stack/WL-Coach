@@ -9,23 +9,14 @@ export interface MetricDefinition {
   defaultVisible: boolean;
 }
 
+/**
+ * The metrics, in the order they are READ: max, average, reps, sets, then the
+ * derived totals. This array is the single ordering authority — MetricStrip
+ * renders `METRICS.filter(visible)`, so changing the order here changes every
+ * strip in the app at once (day cards, the week grid, the planner's week list,
+ * the macro table, the settings pickers).
+ */
 export const METRICS: MetricDefinition[] = [
-  {
-    key: 'reps',
-    label: 'Reps',
-    shortLabel: 'R',
-    unit: '',
-    description: 'Total repetitions',
-    defaultVisible: true,
-  },
-  {
-    key: 'sets',
-    label: 'Sets',
-    shortLabel: 'S',
-    unit: '',
-    description: 'Total sets',
-    defaultVisible: true,
-  },
   {
     key: 'max',
     label: 'Max',
@@ -41,6 +32,22 @@ export const METRICS: MetricDefinition[] = [
     unit: 'kg',
     description: 'Average load (weighted by reps)',
     defaultVisible: false,
+  },
+  {
+    key: 'reps',
+    label: 'Reps',
+    shortLabel: 'R',
+    unit: '',
+    description: 'Total repetitions',
+    defaultVisible: true,
+  },
+  {
+    key: 'sets',
+    label: 'Sets',
+    shortLabel: 'S',
+    unit: '',
+    description: 'Total sets',
+    defaultVisible: true,
   },
   {
     key: 'tonnage',
@@ -60,9 +67,12 @@ export const METRICS: MetricDefinition[] = [
   },
 ];
 
-export const METRIC_ORDER: MetricKey[] = ['reps', 'sets', 'max', 'avg', 'tonnage', 'k'];
+/** Derived, never hand-written: a second literal here silently drifted from
+ *  METRICS and would put the settings pickers and the week summary in a
+ *  different order from every metric strip. */
+export const METRIC_ORDER: MetricKey[] = METRICS.map(m => m.key);
 
-export const DEFAULT_VISIBLE_METRICS: MetricKey[] = ['reps', 'sets', 'max', 'tonnage'];
+export const DEFAULT_VISIBLE_METRICS: MetricKey[] = ['max', 'reps', 'sets', 'tonnage'];
 
 export interface ComputedMetrics {
   reps: number;
