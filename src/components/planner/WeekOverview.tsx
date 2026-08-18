@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type {
   WeekPlan,
   PlannedExercise,
@@ -9,6 +10,20 @@ import { DayCard } from './DayCard';
 import { calculateRestInfo, buildWeekdayCells } from '../../lib/restCalculation';
 import type { ScheduleEntry } from '../../lib/restCalculation';
 import type { MetricKey } from '../../lib/metrics';
+
+/** The AM/PM boundary, in minutes from midnight.
+ *  COACH-CONFIG candidate — a coach training at 05:00 may draw it elsewhere. */
+const AM_END_MINUTES = 12 * 60;
+
+/** Which band a session belongs to. An untimed session is the day's only one
+ *  (DayConfigModal requires a time as soon as two units share a weekday), so it
+ *  has no AM/PM meaning and sits in the first band rather than being guessed
+ *  into the afternoon. */
+function isMorning(time: string | null): boolean {
+  if (!time) return true;
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + (m || 0) < AM_END_MINUTES;
+}
 
 interface WeekOverviewProps {
   weekPlan: WeekPlan | null;
@@ -119,84 +134,146 @@ export function WeekOverview({
   const restInfoList = calculateRestInfo(activeSlots, schedule);
   const restInfoMap = new Map(restInfoList.map(r => [r.slotIndex, r]));
 
+  // One definition of the card. The calendar bands, the unscheduled shelf and
+  // abstract mode all render the same DayCard with the same wiring; three
+  // copies of a 30-prop list is three places to forget a prop.
+  const renderCard = (slotIndex: number, dayName: string) => (
+    <DayCard
+      key={slotIndex}
+      dayIndex={slotIndex}
+      dayName={dayName}
+      weekPlanId={weekPlan.id}
+      exercises={plannedExercises[slotIndex] || []}
+      comboMembers={comboMembers}
+      allExercises={allExercises}
+      restInfo={restInfoMap.get(slotIndex)}
+      visibleMetrics={visibleCardMetrics}
+      competitionTotal={competitionTotal}
+      onNavigateToDay={() => onNavigateToDay(slotIndex)}
+      onNavigateToExercise={id => onNavigateToExercise(slotIndex, id)}
+      addExerciseToDay={addExerciseToDay}
+      createComboExercise={createComboExercise}
+      onRefresh={onRefresh}
+      onReorderInDay={onReorderInDay}
+      onDeleteExercise={onDeleteExercise}
+      onClearDay={onClearDay}
+      onExerciseDrop={onExerciseDrop}
+      onDayDrop={onDayDrop}
+      onDockExerciseDrop={onDockExerciseDrop}
+      onDockTemplateDrop={onDockTemplateDrop}
+      onDockTemplateDayDrop={onDockTemplateDayDrop}
+      onClipboardItemDrop={onClipboardItemDrop}
+      onSaveAsTemplate={onSaveAsTemplate}
+      savePrescription={savePrescription}
+      saveGppSection={saveGppSection}
+      saveExerciseFeatures={saveExerciseFeatures}
+      presets={presets}
+      onManagePresets={onManagePresets}
+      onSaveAsPreset={onSaveAsPreset}
+      saveAthleteVisibility={saveAthleteVisibility}
+      loadIncrement={loadIncrement}
+      defaultPrescriptionLoad={defaultPrescriptionLoad}
+      isLinkedToGroupPlan={isLinkedToGroupPlan}
+    />
+  );
+
   // ── Calendar-mapped view ──────────────────────────────────────────────────
   if (isCalendarMapped) {
     const cells = buildWeekdayCells(activeSlots, schedule);
     const unscheduledDays = visibleDays.filter(d => !schedule![d.index]);
 
+    // Split every day's sessions into a morning and an afternoon band. The
+    // bands are grid ROWS spanning the whole week, so the AM/PM divider sits at
+    // one height for all days instead of wherever each column's first card
+    // happened to end. That alignment is only definable in a single row, so the
+    // week no longer wraps — it scrolls sideways when it does not fit, which
+    // also keeps the week's shape readable.
+    const banded = cells.map(cell => ({
+      cell,
+      am: cell.trainingSessions.filter(s => isMorning(s.time)),
+      pm: cell.trainingSessions.filter(s => !isMorning(s.time)),
+    }));
+    const showDivider = banded.some(b => b.am.length > 0) && banded.some(b => b.pm.length > 0);
+    const pmRow = showDivider ? 4 : 2;
+
+    const session = (slotIndex: number, time: string | null, showTime: boolean) => (
+      <div key={slotIndex}>
+        {showTime && time && (
+          <div style={{
+            fontSize: 9, color: 'var(--color-text-tertiary)', fontWeight: 500,
+            marginBottom: 2, textAlign: 'center',
+          }}>
+            {time}
+          </div>
+        )}
+        {renderCard(slotIndex, visibleDays.find(d => d.index === slotIndex)?.name ?? `Day ${slotIndex}`)}
+      </div>
+    );
+
     return (
       <div style={{ padding: 16 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {cells.map(cell => (
-            cell.isRestDay ? (
-              <div
-                key={cell.weekday}
-                style={{ flex: '0 0 2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, alignSelf: 'stretch', padding: '4px 0' }}
-              >
-                <div style={{ flex: 1, borderLeft: '1px dashed var(--color-border-tertiary)', width: 0 }} />
-                <span style={{
-                  fontSize: 8, color: 'var(--color-text-tertiary)', userSelect: 'none',
-                  writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: banded.map(b => (b.cell.isRestDay ? '1.75rem' : 'minmax(260px, 1fr)')).join(' '),
+          gridTemplateRows: showDivider ? 'auto auto auto auto' : 'auto auto',
+          columnGap: 8,
+          rowGap: 6,
+          overflowX: 'auto',
+          alignItems: 'start',
+        }}>
+          {banded.map(({ cell, am, pm }, col) => (
+            <Fragment key={cell.weekday}>
+              {/* Weekday label — in a fixed grid the column has to name itself,
+                  or an aligned band cannot be read back to a day. */}
+              <div style={{
+                gridColumn: col + 1, gridRow: 1,
+                fontSize: 9, fontWeight: 500, textAlign: 'center',
+                color: 'var(--color-text-tertiary)', userSelect: 'none',
+                overflow: 'hidden',
+              }}>
+                {cell.weekdayName}
+              </div>
+
+              {cell.isRestDay ? (
+                <div style={{
+                  gridColumn: col + 1, gridRow: `2 / -1`,
+                  display: 'flex', justifyContent: 'center',
+                  alignSelf: 'stretch', padding: '4px 0',
                 }}>
-                  {cell.weekdayName}
-                </span>
-              </div>
-            ) : (
-              <div key={cell.weekday} style={{ flex: '1 1 360px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {cell.trainingSessions.map(session => {
-                  const dayEntry = visibleDays.find(d => d.index === session.slotIndex);
-                  return (
-                    <div key={session.slotIndex}>
-                      {cell.trainingSessions.length > 1 && session.time && (
-                        <div style={{
-                          fontSize: 9, color: 'var(--color-text-tertiary)', fontWeight: 500,
-                          marginBottom: 2, textAlign: 'center',
-                        }}>
-                          {session.time}
-                        </div>
-                      )}
-                      <DayCard
-                        dayIndex={session.slotIndex}
-                        dayName={dayEntry?.name ?? `Day ${session.slotIndex}`}
-                        weekPlanId={weekPlan.id}
-                        exercises={plannedExercises[session.slotIndex] || []}
-                        comboMembers={comboMembers}
-                        allExercises={allExercises}
-                        restInfo={restInfoMap.get(session.slotIndex)}
-                        visibleMetrics={visibleCardMetrics}
-                        competitionTotal={competitionTotal}
-                        onNavigateToDay={() => onNavigateToDay(session.slotIndex)}
-                        onNavigateToExercise={id => onNavigateToExercise(session.slotIndex, id)}
-                        addExerciseToDay={addExerciseToDay}
-                        createComboExercise={createComboExercise}
-                        onRefresh={onRefresh}
-                        onReorderInDay={onReorderInDay}
-                        onDeleteExercise={onDeleteExercise}
-                        onClearDay={onClearDay}
-                        onExerciseDrop={onExerciseDrop}
-                        onDayDrop={onDayDrop}
-                        onDockExerciseDrop={onDockExerciseDrop}
-                        onDockTemplateDrop={onDockTemplateDrop}
-                        onDockTemplateDayDrop={onDockTemplateDayDrop}
-                        onClipboardItemDrop={onClipboardItemDrop}
-                        onSaveAsTemplate={onSaveAsTemplate}
-                        savePrescription={savePrescription}
-                        saveGppSection={saveGppSection}
-                        saveExerciseFeatures={saveExerciseFeatures}
-                        presets={presets}
-                        onManagePresets={onManagePresets}
-                        onSaveAsPreset={onSaveAsPreset}
-                        saveAthleteVisibility={saveAthleteVisibility}
-                        loadIncrement={loadIncrement}
-                        defaultPrescriptionLoad={defaultPrescriptionLoad}
-                        isLinkedToGroupPlan={isLinkedToGroupPlan}
-                      />
+                  <div style={{ borderLeft: '1px dashed var(--color-border-tertiary)', width: 0 }} />
+                </div>
+              ) : (
+                <>
+                  {am.length > 0 && (
+                    <div style={{ gridColumn: col + 1, gridRow: 2, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {am.map(s => session(s.slotIndex, s.time, cell.trainingSessions.length > 1))}
                     </div>
-                  );
-                })}
-              </div>
-            )
+                  )}
+                  {pm.length > 0 && (
+                    <div style={{ gridColumn: col + 1, gridRow: pmRow, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {pm.map(s => session(s.slotIndex, s.time, cell.trainingSessions.length > 1))}
+                    </div>
+                  )}
+                </>
+              )}
+            </Fragment>
           ))}
+
+          {showDivider && (
+            <div style={{
+              gridColumn: '1 / -1', gridRow: 3,
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '2px 0',
+            }}>
+              <span style={{
+                fontSize: 9, fontWeight: 500, letterSpacing: '0.05em',
+                color: 'var(--color-text-tertiary)', userSelect: 'none',
+              }}>
+                PM
+              </span>
+              <span style={{ flex: 1, height: '0.5px', background: 'var(--color-border-tertiary)' }} />
+            </div>
+          )}
         </div>
 
         {unscheduledDays.length > 0 && (
@@ -208,44 +285,7 @@ export function WeekOverview({
               Unscheduled
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
-              {unscheduledDays.map(day => (
-                <DayCard
-                  key={day.index}
-                  dayIndex={day.index}
-                  dayName={day.name}
-                  weekPlanId={weekPlan.id}
-                  exercises={plannedExercises[day.index] || []}
-                  comboMembers={comboMembers}
-                  allExercises={allExercises}
-                  visibleMetrics={visibleCardMetrics}
-                  competitionTotal={competitionTotal}
-                  onNavigateToDay={() => onNavigateToDay(day.index)}
-                  onNavigateToExercise={id => onNavigateToExercise(day.index, id)}
-                  addExerciseToDay={addExerciseToDay}
-                  createComboExercise={createComboExercise}
-                  onRefresh={onRefresh}
-                  onReorderInDay={onReorderInDay}
-                  onDeleteExercise={onDeleteExercise}
-                  onClearDay={onClearDay}
-                  onExerciseDrop={onExerciseDrop}
-                  onDayDrop={onDayDrop}
-                  onDockExerciseDrop={onDockExerciseDrop}
-                  onDockTemplateDrop={onDockTemplateDrop}
-                  onDockTemplateDayDrop={onDockTemplateDayDrop}
-                  onClipboardItemDrop={onClipboardItemDrop}
-                  onSaveAsTemplate={onSaveAsTemplate}
-                  savePrescription={savePrescription}
-                        saveGppSection={saveGppSection}
-                        saveExerciseFeatures={saveExerciseFeatures}
-                        presets={presets}
-                        onManagePresets={onManagePresets}
-                        onSaveAsPreset={onSaveAsPreset}
-                        saveAthleteVisibility={saveAthleteVisibility}
-                  loadIncrement={loadIncrement}
-                  defaultPrescriptionLoad={defaultPrescriptionLoad}
-                  isLinkedToGroupPlan={isLinkedToGroupPlan}
-                />
-              ))}
+              {unscheduledDays.map(day => renderCard(day.index, day.name))}
             </div>
           </div>
         )}
@@ -257,45 +297,7 @@ export function WeekOverview({
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
-        {visibleDays.map(day => (
-          <DayCard
-            key={day.index}
-            dayIndex={day.index}
-            dayName={day.name}
-            weekPlanId={weekPlan.id}
-            exercises={plannedExercises[day.index] || []}
-            comboMembers={comboMembers}
-            allExercises={allExercises}
-            restInfo={restInfoMap.get(day.index)}
-            visibleMetrics={visibleCardMetrics}
-            competitionTotal={competitionTotal}
-            onNavigateToDay={() => onNavigateToDay(day.index)}
-            onNavigateToExercise={id => onNavigateToExercise(day.index, id)}
-            addExerciseToDay={addExerciseToDay}
-            createComboExercise={createComboExercise}
-            onRefresh={onRefresh}
-            onReorderInDay={onReorderInDay}
-            onDeleteExercise={onDeleteExercise}
-            onClearDay={onClearDay}
-            onExerciseDrop={onExerciseDrop}
-            onDayDrop={onDayDrop}
-            onDockExerciseDrop={onDockExerciseDrop}
-            onDockTemplateDrop={onDockTemplateDrop}
-            onDockTemplateDayDrop={onDockTemplateDayDrop}
-            onClipboardItemDrop={onClipboardItemDrop}
-            onSaveAsTemplate={onSaveAsTemplate}
-            savePrescription={savePrescription}
-                        saveGppSection={saveGppSection}
-                        saveExerciseFeatures={saveExerciseFeatures}
-                        presets={presets}
-                        onManagePresets={onManagePresets}
-                        onSaveAsPreset={onSaveAsPreset}
-                        saveAthleteVisibility={saveAthleteVisibility}
-            loadIncrement={loadIncrement}
-            defaultPrescriptionLoad={defaultPrescriptionLoad}
-            isLinkedToGroupPlan={isLinkedToGroupPlan}
-          />
-        ))}
+        {visibleDays.map(day => renderCard(day.index, day.name))}
       </div>
     </div>
   );

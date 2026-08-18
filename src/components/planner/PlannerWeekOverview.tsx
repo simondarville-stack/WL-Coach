@@ -10,7 +10,7 @@ import {
 } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
 import type { Athlete, TrainingGroup } from '../../lib/database.types';
-import { usePlannerWeekOverview, type MacroBlock, type PhaseBlock } from '../../hooks/usePlannerWeekOverview';
+import { usePlannerWeekOverview, type MacroBlock, type PhaseBlock, type DaySummary } from '../../hooks/usePlannerWeekOverview';
 import { formatDateShort } from '../../lib/dateUtils';
 import { useState } from 'react';
 
@@ -56,6 +56,42 @@ interface PlannerWeekOverviewProps {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+/** Minutes from midnight, matching restCalculation's "untimed sits at noon". */
+function timeRank(time: string | null): number {
+  if (!time) return 12 * 60;
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+/**
+ * Place each training unit under the weekday it is actually scheduled for.
+ *
+ * The slot number (planned_exercises.day_index) is an identity, not a weekday —
+ * a unit sitting in slot 0 can be scheduled for Saturday. Units with no weekday
+ * (a whole free week of "Unit 1…N", or a straggler in an otherwise-scheduled
+ * week) left-pack into the columns no scheduled unit claims, which reproduces
+ * the old left-to-right reading for free weeks.
+ */
+function layoutByWeekday(days: DaySummary[]): DaySummary[][] {
+  const columns: DaySummary[][] = [[], [], [], [], [], [], []];
+  const floating: DaySummary[] = [];
+
+  for (const d of days) {
+    if (d.weekday !== null && d.weekday >= 0 && d.weekday <= 6) columns[d.weekday].push(d);
+    else floating.push(d);
+  }
+  // Two units on one weekday read top-to-bottom in clock order (AM above PM).
+  columns.forEach(col => col.sort((a, b) => timeRank(a.time) - timeRank(b.time)));
+
+  let next = 0;
+  for (const d of floating) {
+    while (next < 7 && columns[next].length > 0) next++;
+    if (next >= 7) columns[6].push(d); // more units than columns: stack on the last
+    else columns[next].push(d);
+  }
+  return columns;
+}
 
 function getMacroForWeek(macroBlocks: MacroBlock[], weekStart: string): MacroBlock | null {
   return macroBlocks.find(m => weekStart >= m.startDate && weekStart <= m.endDate) || null;
@@ -387,83 +423,106 @@ export function PlannerWeekOverview({
                     )}
                   </div>
 
-                  {/* Day blocks */}
+                  {/* Day blocks — one column per weekday, each holding the
+                      unit(s) actually scheduled for it. */}
                   <div style={{ flex: 1, display: 'flex', gap: 4, alignItems: 'stretch', minHeight: 90 }}>
-                    {week.days.map((day) => {
-                      const di = day.dayIndex;
-                      const hasData = day.exercises.length > 0;
-                      // Simplified: two states only. Occupied = has exercises.
-                      // Empty = anything else (rest, no plan, future). The
-                      // macro phase bar above already encodes time
-                      // relationship; cells don't need to repeat it.
-                      const occupied = hasData;
-
-                      const dayBlockStyle: React.CSSProperties = occupied
-                        ? {
-                            background: 'var(--color-bg-primary)',
-                            border: `0.5px solid ${
-                              isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'
-                            }`,
-                          }
-                        : {
-                            background: 'var(--color-bg-secondary)',
-                            border: 'none',
-                          };
-
-                      return (
-                        <div
-                          key={di}
-                          style={{
+                    {layoutByWeekday(week.days).map((units, wd) => (
+                      <div
+                        key={wd}
+                        style={{
+                          flex: 1, minWidth: 0,
+                          display: 'flex', flexDirection: 'column', gap: 3,
+                        }}
+                      >
+                        {units.length === 0 ? (
+                          <div style={{
                             flex: 1, borderRadius: 'var(--radius-md)',
-                            display: 'flex', flexDirection: 'column',
-                            padding: '4px 4px 6px', minWidth: 0,
-                            ...dayBlockStyle,
-                          }}
-                        >
-                          {/* Exercise bands */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
-                            {day.exercises.slice(0, 6).map((ex, ei) => (
-                              <div
-                                key={ei}
-                                style={{
-                                  borderRadius: 2, padding: '1px 4px',
-                                  display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
-                                  backgroundColor: ex.color + '22',
-                                  borderLeft: `2.5px solid ${ex.color}cc`,
-                                }}
-                              >
-                                <span style={{
-                                  fontSize: 'var(--text-caption)', lineHeight: 1.3, fontWeight: 500,
-                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                  color: 'var(--color-text-primary)',
-                                }}>
-                                  {ex.name}
-                                </span>
-                              </div>
-                            ))}
-                            {day.exercises.length > 6 && (
-                              <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', paddingLeft: 4 }}>
-                                +{day.exercises.length - 6}
-                              </span>
-                            )}
-                          </div>
+                            background: 'var(--color-bg-secondary)',
+                          }} />
+                        ) : units.map(day => {
+                          const hasData = day.exercises.length > 0;
+                          // Two states only. Occupied = has exercises. The macro
+                          // phase bar above already encodes time relationship;
+                          // cells don't need to repeat it.
+                          const floating = week.isScheduled && day.weekday === null;
+                          const caption = [day.time, day.label].filter(Boolean).join(' · ');
 
-                          {/* Metric strip */}
-                          {hasData && (
-                            <div style={{ marginTop: 4, textAlign: 'center' }}>
-                              <MetricStrip
-                                metrics={day.dayMetrics}
-                                visibleMetrics={visibleMetrics}
-                                size="sm"
-                                showLabels={false}
-                                separator="·"
-                                className="leading-tight"
-                              />
+                          return (
+                            <div
+                              key={day.slotIndex}
+                              title={floating ? `${day.label ?? `Unit ${day.slotIndex + 1}`} — no weekday assigned` : undefined}
+                              style={{
+                                flex: 1, borderRadius: 'var(--radius-md)',
+                                display: 'flex', flexDirection: 'column',
+                                padding: '4px 4px 6px', minWidth: 0,
+                                background: hasData ? 'var(--color-bg-primary)' : 'var(--color-bg-secondary)',
+                                border: hasData
+                                  ? `0.5px ${floating ? 'dashed' : 'solid'} ${
+                                      isCurrent ? 'var(--color-accent-border)' : 'var(--color-border-tertiary)'
+                                    }`
+                                  : floating
+                                  ? '0.5px dashed var(--color-border-tertiary)'
+                                  : 'none',
+                              }}
+                            >
+                              {caption && (
+                                <div style={{
+                                  fontSize: 'var(--text-caption)', lineHeight: 1.2,
+                                  color: 'var(--color-text-tertiary)',
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                  padding: '0 2px 2px',
+                                  fontVariantNumeric: 'tabular-nums',
+                                }}>
+                                  {caption}
+                                </div>
+                              )}
+
+                              {/* Exercise bands */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                                {day.exercises.slice(0, 6).map((ex, ei) => (
+                                  <div
+                                    key={ei}
+                                    style={{
+                                      borderRadius: 2, padding: '1px 4px',
+                                      display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
+                                      backgroundColor: ex.color + '22',
+                                      borderLeft: `2.5px solid ${ex.color}cc`,
+                                    }}
+                                  >
+                                    <span style={{
+                                      fontSize: 'var(--text-caption)', lineHeight: 1.3, fontWeight: 500,
+                                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                      color: 'var(--color-text-primary)',
+                                    }}>
+                                      {ex.name}
+                                    </span>
+                                  </div>
+                                ))}
+                                {day.exercises.length > 6 && (
+                                  <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', paddingLeft: 4 }}>
+                                    +{day.exercises.length - 6}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Metric strip */}
+                              {hasData && (
+                                <div style={{ marginTop: 4, textAlign: 'center' }}>
+                                  <MetricStrip
+                                    metrics={day.dayMetrics}
+                                    visibleMetrics={visibleMetrics}
+                                    size="sm"
+                                    showLabels={false}
+                                    separator="·"
+                                    className="leading-tight"
+                                  />
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    ))}
                   </div>
 
                   {/* Stats column */}
