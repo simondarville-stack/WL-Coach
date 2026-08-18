@@ -27,6 +27,15 @@
   to = "/index.html"
   status = 200
 
+# Hashed build assets never change content under the same name, so let
+# browsers cache them for a year instead of revalidating a ~1 MB bundle on
+# every visit. index.html keeps Netlify's default revalidation, which is what
+# picks up new deploys.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # Security headers applied to every response. A Content-Security-Policy is
 # intentionally NOT set here: a correct policy must enumerate the Supabase,
 # Google Fonts, YouTube-thumbnail and QR-code origins and be tested against the

@@ -290,7 +290,7 @@ export function AnalysisModule() {
                       padding: 4,
                     }}
                   >
-                    <ExportItem label="Excel (.xlsx)" onClick={() => { if (result) downloadXlsx(result, 'analysis.xlsx'); setExportOpen(false); }} />
+                    <ExportItem label="Excel (.xlsx)" onClick={() => { if (result) void downloadXlsx(result, 'analysis.xlsx'); setExportOpen(false); }} />
                     <ExportItem label="CSV (table)" onClick={() => { if (result) downloadText('analysis.csv', resultToCsv(result), 'text/csv;charset=utf-8'); setExportOpen(false); }} />
                     <ExportItem label="Copy table" onClick={() => { if (result) void copyResultToClipboard(result); setExportOpen(false); }} />
                     <ExportItem label="Chart SVG" onClick={() => { exportChartSvg(resultRef.current, 'analysis-chart.svg'); setExportOpen(false); }} />

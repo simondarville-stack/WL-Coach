@@ -1,36 +1,50 @@
-import { useEffect, useState, type ReactNode, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode, type FormEvent } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
-import { AthleteApp } from './athlete/v2/AthleteApp';
-import { FieldApp } from './field/FieldApp';
 import { Button, Input } from './components/ui';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
 import { useCoachProfiles } from './hooks/useCoachProfiles';
-import { ExerciseLibrary } from './components/exercise-library/ExerciseLibrary';
-import { AnalysisModule } from './components/analysis/builder/AnalysisModule';
-import { WeeklyPlanner } from './components/planner/WeeklyPlanner';
-import { TemplatesPage } from './components/templates/TemplatesPage';
-import { TemplateEditor } from './components/templates/TemplateEditor';
-import { Athletes } from './components/Athletes';
-import { MacroCycles } from './components/macro/MacroCycles';
-import { GeneralSettings } from './components/GeneralSettings';
-import { CoachDashboardV2 } from './components/dashboard-v2/CoachDashboardV2';
 import { AthleteSelector } from './components/AthleteSelector';
-import { CompetitionCalendar } from './components/calendar/CompetitionCalendar';
-import { TrainingGroups } from './components/TrainingGroups';
 import { Sidebar } from './components/Sidebar';
-import { RepMaxCalculator } from './components/tools/RepMaxCalculator';
-import { Calculator } from './components/tools/Calculator';
-import { CalendarTool } from './components/tools/CalendarTool';
-import { PrilepinTable } from './components/tools/PrilepinTable';
-import { PRPage } from './components/PRPage';
-import { CoachInbox } from './components/CoachInbox';
-import { SystemGuide } from './components/system/SystemGuide';
-import { ErrorLogViewer } from './components/system/ErrorLogViewer';
-import { InvitationsPage } from './components/system/InvitationsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Route-level code splitting: every module surface is its own chunk, loaded
+// on first visit. Before this, the whole app (planner + macro + analysis +
+// athlete app + both chart libraries + xlsx + mathjs) shipped as one 3.9 MB
+// bundle that every visitor — athletes on phones included — parsed up front.
+const AthleteApp = lazy(() => import('./athlete/v2/AthleteApp').then(m => ({ default: m.AthleteApp })));
+const FieldApp = lazy(() => import('./field/FieldApp').then(m => ({ default: m.FieldApp })));
+const ExerciseLibrary = lazy(() => import('./components/exercise-library/ExerciseLibrary').then(m => ({ default: m.ExerciseLibrary })));
+const AnalysisModule = lazy(() => import('./components/analysis/builder/AnalysisModule').then(m => ({ default: m.AnalysisModule })));
+const WeeklyPlanner = lazy(() => import('./components/planner/WeeklyPlanner').then(m => ({ default: m.WeeklyPlanner })));
+const TemplatesPage = lazy(() => import('./components/templates/TemplatesPage').then(m => ({ default: m.TemplatesPage })));
+const TemplateEditor = lazy(() => import('./components/templates/TemplateEditor').then(m => ({ default: m.TemplateEditor })));
+const Athletes = lazy(() => import('./components/Athletes').then(m => ({ default: m.Athletes })));
+const MacroCycles = lazy(() => import('./components/macro/MacroCycles').then(m => ({ default: m.MacroCycles })));
+const GeneralSettings = lazy(() => import('./components/GeneralSettings').then(m => ({ default: m.GeneralSettings })));
+const CoachDashboardV2 = lazy(() => import('./components/dashboard-v2/CoachDashboardV2').then(m => ({ default: m.CoachDashboardV2 })));
+const CompetitionCalendar = lazy(() => import('./components/calendar/CompetitionCalendar').then(m => ({ default: m.CompetitionCalendar })));
+const TrainingGroups = lazy(() => import('./components/TrainingGroups').then(m => ({ default: m.TrainingGroups })));
+const RepMaxCalculator = lazy(() => import('./components/tools/RepMaxCalculator').then(m => ({ default: m.RepMaxCalculator })));
+const Calculator = lazy(() => import('./components/tools/Calculator').then(m => ({ default: m.Calculator })));
+const CalendarTool = lazy(() => import('./components/tools/CalendarTool').then(m => ({ default: m.CalendarTool })));
+const PrilepinTable = lazy(() => import('./components/tools/PrilepinTable').then(m => ({ default: m.PrilepinTable })));
+const PRPage = lazy(() => import('./components/PRPage').then(m => ({ default: m.PRPage })));
+const CoachInbox = lazy(() => import('./components/CoachInbox').then(m => ({ default: m.CoachInbox })));
+const SystemGuide = lazy(() => import('./components/system/SystemGuide').then(m => ({ default: m.SystemGuide })));
+const ErrorLogViewer = lazy(() => import('./components/system/ErrorLogViewer').then(m => ({ default: m.ErrorLogViewer })));
+const InvitationsPage = lazy(() => import('./components/system/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
+
+/** Route-chunk loading state — same minimal spinner the app boot uses. */
+function RouteFallback() {
+  return (
+    <div className="min-h-full flex items-center justify-center py-24">
+      <div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-6 h-6" />
+    </div>
+  );
+}
 import { logError, setActorResolver } from './lib/errorLogger';
 import { useRouteBreadcrumbs } from './hooks/useRouteBreadcrumbs';
 import { useAthletes } from './hooks/useAthletes';
@@ -131,9 +145,11 @@ function AppRouter() {
   const location = useLocation();
   if (location.pathname === '/athlete' || location.pathname.startsWith('/athlete/')) {
     return (
-      <Routes>
-        <Route path="/athlete/*" element={<AthleteApp />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/athlete/*" element={<AthleteApp />} />
+        </Routes>
+      </Suspense>
     );
   }
   // Fieldcoach (formerly /field, then /Coach-overview) — coach-facing, so it
@@ -147,7 +163,9 @@ function AppRouter() {
   if (isFieldcoachPath) {
     return (
       <CoachGate>
-        <FieldApp />
+        <Suspense fallback={<RouteFallback />}>
+          <FieldApp />
+        </Suspense>
       </CoachGate>
     );
   }
@@ -278,6 +296,7 @@ function CoachApp() {
 
         <main className="flex-1 overflow-y-auto">
           <ErrorBoundary>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<CoachDashboardV2 onNavigateToPlanner={handleNavigateToPlanner} onNavigateToGroupPlanner={handleNavigateToGroupPlanner} onNavigateToMacro={handleNavigateToMacro} onNavigateToPRs={handleNavigateToPRs} />} />
@@ -307,6 +326,7 @@ function CoachApp() {
               <Route path="/system/invitations" element={<InvitationsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
+            </Suspense>
           </ErrorBoundary>
 
           {showNewCoachModal && (
@@ -323,6 +343,7 @@ function CoachApp() {
 
         </main>
       </div>
+      <Suspense fallback={null}>
       {showCalendarTool && (
         <CalendarTool
           onClose={() => setShowCalendarTool(false)}
@@ -364,6 +385,7 @@ function CoachApp() {
           }
         />
       )}
+      </Suspense>
     </div>
   );
 }
