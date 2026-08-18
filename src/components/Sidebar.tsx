@@ -196,11 +196,21 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
             {/* Nav items */}
             {section.items.map((item) => {
               const Icon = item.icon;
+              // With unread waiting, the nav item deep-links straight to them:
+              // ?unread=1 filters the inbox and opens the first unread thread.
+              // The Unread chip in there toggles back to everything, so this
+              // costs nothing when the coach wanted the full list.
+              const pendingUnread = item.badge ? badgeValue(item.badge) : 0;
+              const to = pendingUnread > 0 ? `${item.path}?unread=1` : item.path;
               return (
                 <NavLink
                   key={item.path}
-                  to={item.path}
-                  title={collapsed ? item.label : undefined}
+                  to={to}
+                  title={
+                    pendingUnread > 0
+                      ? `${item.label} — ${pendingUnread} unread`
+                      : collapsed ? item.label : undefined
+                  }
                   className={({ isActive }) =>
                     `w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
                       collapsed

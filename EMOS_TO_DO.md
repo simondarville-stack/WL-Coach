@@ -16,12 +16,6 @@ defers others).
 * Save this to a day where it is the only one. Ask me before doing it: Should we test out a way to view the log, so it resembles the daycards more from the planning?
   _(untouched on purpose — it says "ask me before doing it". See the note under
   #Batch of 04/08/2026 for what I'd want to know before starting.)_
-* Ín the inbox it should be easier to see and navigate to unread messages. Propose 3 UI improvements to easier navigate. 
-  _(3 proposals delivered 18/08/2026 — awaiting your pick before building:
-  (1) a "new messages" divider + jump-to-first-unread inside a thread,
-  (2) the sidebar unread badge deep-linking into the Unread filter with the
-  first unread athlete expanded, (3) a next-unread stepper in the inbox header
-  that cycles unread threads across athletes. Recommended first: (1).)_
 * Is it possibile to have push notifications from a webapp? 
   _(Answered 18/08/2026: yes — Web Push (service worker + VAPID). Works on
   Chrome/Edge/Firefox/Android; iOS Safari only from 16.4+ AND only once the app
@@ -46,6 +40,65 @@ _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Inbox unread navigation — all 3 proposals built (18/08/2026, v0.46.0 → 0.47.0)
+**Wrong:** unread had badges, unread-first sorting and an Unread filter chip —
+everything needed to *count* unread, nothing to *reach* it. Opening a long
+thread dropped the coach in with no cue where the unread part started, and
+finding the next unread meant scanning the rail by eye.
+
+**1. A "new messages" divider, and the thread opens on it.** The tricky part is
+that opening a thread marks it read, so a live computation would erase the
+divider in the same breath as drawing it. `useThreadChat` now captures the
+unread boundary on the FIRST load of each thread and freezes it
+(`firstUnreadId`), which is also the behaviour a reader wants — the marker must
+not move while they read under it. The capture is gated on the thread key, not
+on the message list, because a unit thread's key changes when its session row is
+born mid-conversation and that must not re-capture. The view scrolls to the
+divider rather than the bottom: landing at the bottom past a block of unread
+messages is exactly how they get missed, and on the mobile pane the jump is
+guarded to fire once per boundary, or every later send would yank the view back
+up to the divider.
+*It shipped to all three thread surfaces*, because they share the hook and the
+two mobile ones share `MobileThreadPane` — the coach inbox, the athlete app and
+the field app.
+Verified on both sides with real threads: coach-side, the divider landed after
+four read messages and immediately before the one marked unread; athlete-side,
+after three and immediately before the coach message marked unread — not at the
+top, not at the bottom.
+
+**2. The sidebar Inbox item deep-links to the unread.** With unread waiting it
+points at `/inbox?unread=1` (title "Inbox — 4 unread"); the inbox switches on
+the Unread filter, opens the first unread thread, then drops the parameter so a
+refresh or a Back doesn't hijack a later visit. With nothing unread it is a
+plain `/inbox` as before. *Chose the whole nav item rather than the badge*: a
+button nested inside a link is invalid markup and a poor keyboard target, and
+the Unread chip inside toggles straight back to everything.
+
+**3. A "Next unread" stepper** beside the Unread chip, showing how many are
+left. It walks unread **threads**, not athletes — one athlete can have several
+unread units, and stopping at the athlete leaves the coach hunting again. It
+always goes to the first unread that isn't the one already open, which stays
+correct as the list reshuffles: opening a thread marks it read, so it drops out
+and "first remaining" *is* "next". Verified end to end: 4 unread → the deep link
+opened one → the stepper walked 3 → 2 → 1 → 0 and disabled itself, with exactly
+one divider rendered at every stop, and the sidebar badge cleared.
+
+All read-state used for the test was captured first and restored exactly,
+including the one message that was genuinely unread beforehand.
+
+**Found while testing, NOT fixed — needs a decision.** A coach message in the
+GENERAL thread of a **shared** athlete is stamped with the coach's environment,
+so the athlete's app never renders it, while their unread badge counts it
+forever and can never be cleared. `fetchGeneralThreadMessages` filters
+`owner_id`; `fetchAthleteGeneralUnreadCount` does not. The session path already
+solved this by stamping the athlete's HOST env (`sessionOwnerId`), but the
+general path never got the same treatment. One row in production is affected
+(Mikkel Maryat Johansen). It isn't a one-line fix: re-stamping to the host env
+may hide the message from the *coach* instead, since the coach's queries scope
+by their own env — so it needs a call on whether the general thread should scope
+by `athlete_id` alone, the way the planner's week queries already do. Spun out
+as its own task.
 
 #Batch of 18/08/2026 — 8 items (v0.45.2 → 0.46.0)
 

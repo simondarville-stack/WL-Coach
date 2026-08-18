@@ -86,6 +86,31 @@ export interface ThreadChatState {
   setDraft: (v: string) => void;
   send: () => Promise<void>;
   reload: () => Promise<void>;
+  /**
+   * Id of the first message that was still unread AT THE MOMENT THIS THREAD WAS
+   * OPENED, or null if there was none. Surfaces render a "new messages" divider
+   * above it.
+   *
+   * It has to be frozen, not derived: opening a thread marks everything read
+   * (the effect below), so a live computation would erase the divider in the
+   * same breath as drawing it. Captured once per thread and held until the
+   * caller switches threads — which is also the behaviour a reader wants, since
+   * the marker must not jump around while they are reading under it.
+   */
+  firstUnreadId: string | null;
+}
+
+/** The first message from the OTHER party that this role has not read. */
+function firstUnreadOf(
+  messages: TrainingLogMessage[],
+  role: 'coach' | 'athlete',
+): string | null {
+  const other: 'athlete' | 'coach' = role === 'coach' ? 'athlete' : 'coach';
+  const hit = messages.find(
+    m => m.sender_type === other
+      && (role === 'coach' ? m.coach_read_at : m.athlete_read_at) == null,
+  );
+  return hit?.id ?? null;
 }
 
 /** Stable identity for "which thread is this", used to reset per-thread state. */
@@ -117,6 +142,7 @@ export function useThreadChat({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
 
   // The session id can be born mid-conversation: on a unit with no log session
   // yet, the first message creates the row (ensureSession) and the thread
@@ -137,6 +163,7 @@ export function useThreadChat({
     setCreatedSessionId(null);
     setDraft('');
     setError(null);
+    setFirstUnreadId(null);
   }
   const sessionId = initialSessionId ?? createdSessionId;
 
@@ -147,6 +174,12 @@ export function useThreadChat({
   unitRef.current = unit;
   const onMessagesChangedRef = useRef(onMessagesChanged);
   onMessagesChangedRef.current = onMessagesChanged;
+  // Which thread the divider was captured for. `reload` cannot depend on
+  // threadKey (a unit thread's key changes when its session row is born
+  // mid-conversation, which must NOT re-capture and move the marker).
+  const threadKeyRef = useRef(threadKey);
+  threadKeyRef.current = threadKey;
+  const capturedForRef = useRef<string | null>(null);
 
   // `silent` skips the loading flag: the initial open shows a spinner, but a
   // post-send refetch must NOT — flipping loading there blanks the whole
@@ -163,6 +196,12 @@ export function useThreadChat({
             : [] // a unit with no session row yet — nothing to show
           : await fetchGeneralThreadMessages(athleteId, ownerId);
       setMessages(m);
+      // Capture the unread boundary on the FIRST load of this thread only —
+      // later reloads (a send, a poll) must leave the divider where it is.
+      if (capturedForRef.current !== threadKeyRef.current) {
+        capturedForRef.current = threadKeyRef.current;
+        setFirstUnreadId(firstUnreadOf(m, role));
+      }
       setCoachNames(await fetchCoachNamesForMessages(m));
     } catch (e) {
       console.error('[useThreadChat] load failed', e);
@@ -170,7 +209,7 @@ export function useThreadChat({
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [kind, sessionId, athleteId, ownerId]);
+  }, [kind, sessionId, athleteId, ownerId, role]);
 
   useEffect(() => {
     void reload();
@@ -263,5 +302,6 @@ export function useThreadChat({
     setDraft,
     send,
     reload,
+    firstUnreadId,
   };
 }
