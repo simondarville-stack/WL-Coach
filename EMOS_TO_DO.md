@@ -31,19 +31,64 @@ defers others).
 * We have two ways of creating the day cards. they can either be free and names "Unit 1" "unit 2" etc, and are by default NOT bound to a specific time of the week. We need the following options:
 - ~~to be able to reorganize these cards~~ DONE 18/08/2026 — see #Reorder unit
   cards below.
-- when it is a specific week, the current design is very messy. I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
-  _(IN PROGRESS 18/08/2026. Questions answered; prototypes at
-  `mockup/scheduled-week-v1..v3.html` — seven equal columns, dated headers,
-  rest days as a title with no cards, aligned AM/PM, condensed cards with
-  click-to-expand + expand-all, per-exercise max/average in stacked notation.
-  The app-wide metric reorder it needs has shipped (see below); the
-  `WeekOverview` rebuild itself is not built yet. The AM/PM fix stands as a
-  reversible interim.)_
+- ~~when it is a specific week, the current design is very messy.~~ DONE 18/08/2026 — see #Scheduled week rebuilt below. Original wording: I would like it to be more structured and easy to see where in the week a training has been placed. Ask me some quoestions about this, build a prototype and then lets build a better way to display this. Please call on UI skills to assist you. 
+  _(both sub-items done 18/08/2026. Prototypes kept at
+  `mockup/scheduled-week-v1..v3.html` as the design record.)_
 
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Scheduled week rebuilt (18/08/2026, v0.49.3 → 0.50.0)
+**Wrong:** a calendar-mapped week rendered seven columns of FULL day cards —
+each carrying an editable prescription grid per exercise — in unequal tracks.
+Rest days were 28 px slivers with rotated labels and the training days split
+whatever width was left. Measured on Emilia Wódzka's 06/04 week: two scheduled
+columns at **411 px** each beside five 28 px slivers, with her three
+unscheduled units dumped underneath at **499 px** — three card widths in one
+view, and no way to see where in the week anything sat.
+
+**Changed**, after four questions and three prototypes
+(`mockup/scheduled-week-v1..v3.html`):
+- **Equal columns that wrap.** `repeat(auto-fit, minmax(190px, 1fr))` — every
+  card is the same width at every viewport, and days that do not fit continue
+  on the next row rather than hiding behind a horizontal scrollbar. Measured
+  after: 4 columns x 232 px with Fri-Sun beneath, one distinct card width, and
+  scrollWidth === clientWidth.
+- **Every column names its day** — `MON 17/08` plus a unit count. A rest day is
+  simply a day with nothing under its title; the grey box and the rotated
+  sliver are both gone.
+- **Condensed cards by default**: name, time, the unit's metric strip, the
+  exercise list. Click one to open the real `DayCard`, or **Expand all** to
+  open the week for writing — editing behaviour still lives in exactly one
+  component and none of it changed.
+- **Per-exercise numbers in stacked notation**: `max / reps at max` beside
+  `average weight / average reps` (muted), then `R` total reps and `S` sets, in
+  the Max -> O -> R -> S order. Shown only for exercises whose planner summary
+  is on, so mobility, GPP and technical drills stay quiet.
+
+New `lib/condensedExerciseSummary.ts` owns those figures. It reads the same
+stored `summary_*` columns the planner's analysis column shows, so the two
+cannot disagree and the coach's feature overrides are honoured for free. Only
+two values are derived: *reps at max* (reps of the heaviest parsed set line —
+what the macro calls `target_reps_at_max`) and *average reps* (total / sets,
+one decimal, comma).
+
+**Traded deliberately:** the week-wide AM/PM divider from 0.46.0 is gone. One
+rule at a single height cannot survive columns that wrap onto a second row; the
+clock time on each card carries that now. Say the word if you would rather have
+the divider back and accept sideways scrolling.
+
+**Scope**, confirmed against the code: only the Plan-mode week grid on a week
+that has weekdays assigned. Free weeks, Log mode, the day/exercise panels,
+print, Fieldcoach, the athlete app and the planner's week-list page are
+untouched — verified live that the free 03/08 week still renders its own grid
+with its reorder grips and no condensed cards.
+
+*Caught by verifying:* the first cut put the new `useState`/`useMemo` below the
+existing `if (!weekPlan) return` — a conditional hook that would have thrown the
+moment a plan loaded. Typecheck passed it; the guard now sits below the hooks.
 
 #Metric order is Max · Avg · Reps · Sets, app-wide (18/08/2026, v0.49.0 → 0.49.1)
 **Wrong:** metrics read `R · S · Max · Avg · T · K` — reps and sets before the
