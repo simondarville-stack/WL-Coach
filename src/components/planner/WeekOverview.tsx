@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type {
   WeekPlan,
   PlannedExercise,
@@ -9,11 +9,20 @@ import type {
 import { DayCard } from './DayCard';
 import { calculateRestInfo, buildWeekdayCells } from '../../lib/restCalculation';
 import type { ScheduleEntry } from '../../lib/restCalculation';
-import type { MetricKey } from '../../lib/metrics';
+import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
+import { expandForCounting } from '../../lib/comboExpansion';
+import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
+import { DayCardCondensed } from './DayCardCondensed';
 
 /** The AM/PM boundary, in minutes from midnight.
  *  COACH-CONFIG candidate — a coach training at 05:00 may draw it elsewhere. */
 const AM_END_MINUTES = 12 * 60;
+
+/** Narrowest a day column may become before the week scrolls instead. Seven of
+ *  these is the width at which the week stops fitting a laptop; below it the
+ *  exercise names stop being readable, which is the point of the card. */
+// COACH-CONFIG candidate.
+const COLUMN_FLOOR = 190;
 
 /** Which band a session belongs to. An untimed session is the day's only one
  *  (DayConfigModal requires a time as soon as two units share a weekday), so it
@@ -118,6 +127,52 @@ export function WeekOverview({
   defaultPrescriptionLoad,
   isLinkedToGroupPlan = false,
 }: WeekOverviewProps) {
+  const activeSlots = visibleDays.map(d => d.index);
+  const schedule = (daySchedule && Object.keys(daySchedule).length > 0)
+    ? daySchedule as Record<number, ScheduleEntry>
+    : null;
+  const isCalendarMapped = !!schedule;
+
+  const restInfoList = calculateRestInfo(activeSlots, schedule);
+  const restInfoMap = new Map(restInfoList.map(r => [r.slotIndex, r]));
+
+  // Which units are open for editing. The scheduled week shows condensed cards
+  // by default — seven columns of full prescription grids is the density that
+  // made it unreadable — and swaps in the real DayCard for the ones opened, so
+  // editing behaviour lives in exactly one component.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggleExpanded = useCallback((slot: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(slot)) next.delete(slot); else next.add(slot);
+      return next;
+    });
+  }, []);
+  const allExpanded = activeSlots.length > 0 && activeSlots.every(s => expanded.has(s));
+  const toggleExpandAll = useCallback(() => {
+    setExpanded(prev => (activeSlots.every(s => prev.has(s)) ? new Set() : new Set(activeSlots)));
+  }, [activeSlots]);
+
+  // Same computation the full card runs, so a unit's condensed strip and its
+  // expanded strip cannot report different numbers.
+  const metricsBySlot = useMemo(() => {
+    const out = new Map<number, ReturnType<typeof computeMetrics>>();
+    for (const slot of activeSlots) {
+      const rows = plannedExercises[slot] || [];
+      out.set(slot, computeMetrics(
+        rows
+          .flatMap(ex => expandForCounting(ex, comboMembers[ex.id]))
+          .map(c => ({ ...c, counts_towards_totals: c.exercise.counts_towards_totals })),
+        competitionTotal ?? null,
+      ));
+    }
+    return out;
+  }, [activeSlots, plannedExercises, comboMembers, competitionTotal]);
+  const metricsForSlot = (slot: number) =>
+    metricsBySlot.get(slot) ?? computeMetrics([], competitionTotal ?? null);
+
+  // Guarded AFTER the hooks above: an early return before them would change the
+  // hook count between renders the moment a week plan loads.
   if (!weekPlan) {
     return (
       <div style={{
@@ -128,15 +183,6 @@ export function WeekOverview({
       </div>
     );
   }
-
-  const activeSlots = visibleDays.map(d => d.index);
-  const schedule = (daySchedule && Object.keys(daySchedule).length > 0)
-    ? daySchedule as Record<number, ScheduleEntry>
-    : null;
-  const isCalendarMapped = !!schedule;
-
-  const restInfoList = calculateRestInfo(activeSlots, schedule);
-  const restInfoMap = new Map(restInfoList.map(r => [r.slotIndex, r]));
 
   // One definition of the card. The calendar bands, the unscheduled shelf and
   // abstract mode all render the same DayCard with the same wiring; three
@@ -187,112 +233,121 @@ export function WeekOverview({
     const cells = buildWeekdayCells(activeSlots, schedule);
     const unscheduledDays = visibleDays.filter(d => !schedule![d.index]);
 
-    // Split every day's sessions into a morning and an afternoon band. The
-    // bands are grid ROWS spanning the whole week, so the AM/PM divider sits at
-    // one height for all days instead of wherever each column's first card
-    // happened to end. That alignment is only definable in a single row, so the
-    // week no longer wraps — it scrolls sideways when it does not fit, which
-    // also keeps the week's shape readable.
+    // Morning before afternoon within each day. A single week-wide AM/PM rule
+    // cannot survive columns that wrap onto a second row, so the clock time on
+    // each card carries that information instead.
     const banded = cells.map(cell => ({
       cell,
       am: cell.trainingSessions.filter(s => isMorning(s.time)),
       pm: cell.trainingSessions.filter(s => !isMorning(s.time)),
     }));
-    const showDivider = banded.some(b => b.am.length > 0) && banded.some(b => b.pm.length > 0);
-    const pmRow = showDivider ? 4 : 2;
 
-    const session = (slotIndex: number, time: string | null, showTime: boolean) => (
-      <div key={slotIndex}>
-        {showTime && time && (
-          <div style={{
-            fontSize: 9, color: 'var(--color-text-tertiary)', fontWeight: 500,
-            marginBottom: 2, textAlign: 'center',
-          }}>
-            {time}
+    const session = (slotIndex: number, time: string | null) => {
+      const name = visibleDays.find(d => d.index === slotIndex)?.name ?? `Day ${slotIndex}`;
+      if (expanded.has(slotIndex)) {
+        return (
+          <div key={slotIndex} onDoubleClick={() => toggleExpanded(slotIndex)}>
+            {renderCard(slotIndex, name)}
           </div>
-        )}
-        {renderCard(slotIndex, visibleDays.find(d => d.index === slotIndex)?.name ?? `Day ${slotIndex}`)}
-      </div>
-    );
+        );
+      }
+      const rows = plannedExercises[slotIndex] || [];
+      return (
+        <DayCardCondensed
+          key={slotIndex}
+          dayName={name}
+          time={time}
+          exercises={rows}
+          comboMembers={comboMembers}
+          dayMetrics={metricsForSlot(slotIndex)}
+          visibleMetrics={visibleCardMetrics ?? DEFAULT_VISIBLE_METRICS}
+          onOpen={() => toggleExpanded(slotIndex)}
+        />
+      );
+    };
 
     return (
       <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            onClick={toggleExpandAll}
+            title={allExpanded ? 'Collapse every unit' : 'Expand every unit for writing'}
+            style={{
+              fontSize: 'var(--text-caption)', fontWeight: 500,
+              padding: '3px 9px', borderRadius: 'var(--radius-sm)',
+              border: '0.5px solid ' + (allExpanded ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'),
+              background: allExpanded ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: allExpanded ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+              cursor: 'pointer',
+            }}
+          >
+            {allExpanded ? 'Collapse all' : 'Expand all'}
+          </button>
+        </div>
+
         <div style={{
           display: 'grid',
-          gridTemplateColumns: banded.map(b => (b.cell.isRestDay ? '1.75rem' : 'minmax(260px, 1fr)')).join(' '),
-          gridTemplateRows: showDivider ? 'auto auto auto auto' : 'auto auto',
+          // Equal columns, and they WRAP rather than scroll: days that do not
+          // fit continue on the next row instead of hiding behind a horizontal
+          // scrollbar. auto-fit keeps every column the same width whatever the
+          // viewport, so no day is ever wider than another.
+          gridTemplateColumns: `repeat(auto-fit, minmax(${COLUMN_FLOOR}px, 1fr))`,
           columnGap: 8,
-          rowGap: 6,
-          overflowX: 'auto',
+          rowGap: 10,
           alignItems: 'start',
         }}>
-          {banded.map(({ cell, am, pm }, col) => (
-            <Fragment key={cell.weekday}>
-              {/* Weekday label — in a fixed grid the column has to name itself,
-                  or an aligned band cannot be read back to a day. */}
+          {banded.map(({ cell, am, pm }) => (
+            <div key={cell.weekday} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Every column names its own day. A rest day is simply a day
+                  with no cards under this title. */}
               <div style={{
-                gridColumn: col + 1, gridRow: 1,
-                fontSize: 9, fontWeight: 500, textAlign: 'center',
-                color: 'var(--color-text-tertiary)', userSelect: 'none',
-                overflow: 'hidden',
+                display: 'flex', alignItems: 'baseline', gap: 5,
+                padding: '0 2px 5px',
+                borderBottom: '0.5px solid var(--color-border-tertiary)',
+                userSelect: 'none', overflow: 'hidden',
               }}>
-                {cell.weekdayName}
+                <span style={{
+                  fontSize: 'var(--text-caption)', fontWeight: 600, letterSpacing: '0.04em',
+                  textTransform: 'uppercase', color: 'var(--color-text-secondary)',
+                }}>
+                  {cell.weekdayName}
+                </span>
+                <span style={{
+                  fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {formatDateShort(addDaysToISO(weekPlan.week_start, cell.weekday))}
+                </span>
+                {cell.trainingSessions.length > 0 && (
+                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+                    {cell.trainingSessions.length}
+                  </span>
+                )}
               </div>
 
-              {cell.isRestDay ? (
-                <div style={{
-                  gridColumn: col + 1, gridRow: `2 / -1`,
-                  display: 'flex', justifyContent: 'center',
-                  alignSelf: 'stretch', padding: '4px 0',
-                }}>
-                  <div style={{ borderLeft: '1px dashed var(--color-border-tertiary)', width: 0 }} />
-                </div>
-              ) : (
-                <>
-                  {am.length > 0 && (
-                    <div style={{ gridColumn: col + 1, gridRow: 2, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {am.map(s => session(s.slotIndex, s.time, cell.trainingSessions.length > 1))}
-                    </div>
-                  )}
-                  {pm.length > 0 && (
-                    <div style={{ gridColumn: col + 1, gridRow: pmRow, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {pm.map(s => session(s.slotIndex, s.time, cell.trainingSessions.length > 1))}
-                    </div>
-                  )}
-                </>
-              )}
-            </Fragment>
+              {am.map(sn => session(sn.slotIndex, sn.time))}
+              {pm.map(sn => session(sn.slotIndex, sn.time))}
+            </div>
           ))}
 
-          {showDivider && (
-            <div style={{
-              gridColumn: '1 / -1', gridRow: 3,
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '2px 0',
-            }}>
-              <span style={{
-                fontSize: 9, fontWeight: 500, letterSpacing: '0.05em',
-                color: 'var(--color-text-tertiary)', userSelect: 'none',
-              }}>
-                PM
-              </span>
-              <span style={{ flex: 1, height: '0.5px', background: 'var(--color-border-tertiary)' }} />
-            </div>
-          )}
         </div>
 
         {unscheduledDays.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <p style={{
-              fontSize: 10, fontWeight: 500, color: 'var(--color-text-tertiary)',
-              letterSpacing: '0.05em', marginBottom: 8,
+              fontSize: 10, fontWeight: 600, color: 'var(--color-text-tertiary)',
+              letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6,
             }}>
               Unscheduled
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 12 }}>
-              {/* Unscheduled units have no weekday to place them, so their
-                  order is the coach's — same as abstract mode. */}
-              {unscheduledDays.map(day => renderCard(day.index, day.name, true))}
+            {/* The same column track as the week, so an unscheduled unit is not
+                a third card size on the same screen. */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fit, minmax(${COLUMN_FLOOR}px, 1fr))`,
+              columnGap: 8, rowGap: 8, alignItems: 'start',
+            }}>
+              {unscheduledDays.map(day => session(day.index, null))}
             </div>
           </div>
         )}
