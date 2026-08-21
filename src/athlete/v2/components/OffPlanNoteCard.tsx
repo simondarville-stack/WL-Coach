@@ -7,10 +7,10 @@
  * blur / debounce / app-background like the other free-text fields so a note
  * typed right before the phone locks isn't lost.
  */
-import { useEffect, useState } from 'react';
 import { StickyNote, Trash2 } from 'lucide-react';
 import type { TrainingLogExercise } from '../../../lib/database.types';
-import { useAutoCommit } from '../lib/useAutoCommit';
+import { AutoGrowTextarea } from '../../../components/ui';
+import { useNoteDraft } from '../lib/useNoteDraft';
 
 interface OffPlanNoteCardProps {
   logExercise: TrainingLogExercise;
@@ -21,16 +21,7 @@ interface OffPlanNoteCardProps {
 }
 
 export function OffPlanNoteCard({ logExercise, onUpdateText, onDelete }: OffPlanNoteCardProps) {
-  const initial = logExercise.metadata?.text ?? '';
-  const [text, setText] = useState(initial);
-  useEffect(() => {
-    setText(logExercise.metadata?.text ?? '');
-  }, [logExercise.metadata?.text]);
-
-  const commit = () => {
-    if ((logExercise.metadata?.text ?? '') !== text) void onUpdateText(text);
-  };
-  useAutoCommit(text, commit);
+  const text = useNoteDraft(logExercise.metadata?.text ?? '', onUpdateText);
 
   return (
     <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
@@ -43,13 +34,11 @@ export function OffPlanNoteCard({ logExercise, onUpdateText, onDelete }: OffPlan
               Added by you
             </span>
           </div>
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onBlur={commit}
+          <AutoGrowTextarea
+            {...text.bind}
             placeholder="Write a note…"
             rows={2}
-            className="w-full mt-2 text-sm bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none italic"
+            className="w-full mt-2 text-sm bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 italic"
           />
         </div>
         {onDelete && (

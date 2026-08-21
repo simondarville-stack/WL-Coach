@@ -18,7 +18,8 @@ import type {
   GppSection,
   GppRow,
 } from '../../../lib/database.types';
-import { useAutoCommit } from '../lib/useAutoCommit';
+import { useNoteDraft } from '../lib/useNoteDraft';
+import { AutoGrowTextarea } from '../../../components/ui';
 
 interface GppLogCardProps {
   /** Planned section the coach wrote, or null if blank / athlete-authored. */
@@ -62,22 +63,14 @@ export function GppLogCard({
     : athleteSection?.rows ?? [];
 
   const [rows, setRows] = useState<GppRow[]>(initialRows);
-  const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
   // Authored blocks own their title/description (no planned section to read).
   const [authoredTitle, setAuthoredTitle] = useState(athleteSection?.title ?? '');
   const [authoredDescription, setAuthoredDescription] = useState(athleteSection?.description ?? '');
 
-  useEffect(() => {
-    setNotes(loggedExercise?.performed_notes ?? '');
-  }, [loggedExercise?.performed_notes]);
-
-  // Persist notes on blur AND on debounce / app-background / unmount (mobile
-  // lock doesn't fire blur). GPP rows already persist immediately via the
-  // save queue; this only covers the free-text note. Self-guards.
-  const commitNotes = () => {
-    if ((loggedExercise?.performed_notes ?? '') !== notes) void onUpdateNotes(notes);
-  };
-  useAutoCommit(notes, commitNotes);
+  // Persists on blur / debounce / app-background / unmount (mobile lock doesn't
+  // fire blur), and holds the athlete's caret against the save's own echo. GPP
+  // rows already persist immediately via the save queue; this is the note only.
+  const notes = useNoteDraft(loggedExercise?.performed_notes ?? '', onUpdateNotes);
 
   // Re-seed when the planned rows content changes — e.g. coach added,
   // removed, or reordered a row from the planner. A stable JSON hash
@@ -310,13 +303,11 @@ export function GppLogCard({
         )}
 
         <div className="pt-1">
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            onBlur={commitNotes}
+          <AutoGrowTextarea
+            {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>

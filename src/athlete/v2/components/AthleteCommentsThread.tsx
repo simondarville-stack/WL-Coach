@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { Send, MessageSquare } from 'lucide-react';
 import type { TrainingLogMessage } from '../../../lib/database.types';
+import { AutoGrowTextarea } from '../../../components/ui';
 import { formatTimestamp } from '../../../lib/logFormatUtils';
 
 interface AthleteCommentsThreadProps {
@@ -77,7 +78,7 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
       )}
 
       <div className="flex items-end gap-1.5">
-        <textarea
+        <AutoGrowTextarea
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
@@ -91,7 +92,8 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
           }}
           placeholder="Message your coach…"
           rows={compact ? 1 : 2}
-          className={`flex-1 ${textSize} bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none`}
+          style={{ maxHeight: '9rem' }}
+          className={`flex-1 ${textSize} bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500`}
           disabled={posting}
         />
         <button

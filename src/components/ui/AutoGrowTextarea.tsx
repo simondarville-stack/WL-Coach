@@ -8,8 +8,11 @@ import { useLayoutEffect, useRef, type TextareaHTMLAttributes } from 'react';
  * (covering uncontrolled typing).
  *
  * Pass `rows` for the initial/minimum height; the box only ever grows from
- * there. Callers' `style` is preserved, but `resize`/`overflow` are forced —
- * a manual resize handle or an inner scrollbar would defeat the purpose.
+ * there. Callers' `style` is preserved, but `resize` is forced off — a manual
+ * drag handle defeats the purpose. `overflow` is normally forced hidden too,
+ * since an inner scrollbar is exactly what this exists to avoid; a caller that
+ * caps the growth with `style.maxHeight` gets `overflow: auto` instead, so text
+ * past the cap is still reachable.
  */
 export function AutoGrowTextarea({
   onInput,
@@ -43,7 +46,7 @@ export function AutoGrowTextarea({
         fit(e.currentTarget);
         onInput?.(e);
       }}
-      style={{ ...style, resize: 'none', overflow: 'hidden' }}
+      style={{ ...style, resize: 'none', overflow: style?.maxHeight != null ? 'auto' : 'hidden' }}
       {...rest}
     />
   );

@@ -5,7 +5,7 @@
  * "Log as prescribed" copies planned values into performed and marks all
  * sets completed.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
@@ -16,7 +16,8 @@ import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import { SentinelDisplay } from '../../../components/planner/SentinelDisplay';
 import { parseFreeTextPrescription, topSetOnlyPrescription } from '../../../lib/prescriptionParser';
 import { GppLogCard } from './GppLogCard';
-import { useAutoCommit } from '../lib/useAutoCommit';
+import { useNoteDraft } from '../lib/useNoteDraft';
+import { AutoGrowTextarea } from '../../../components/ui';
 import { plannedNote } from '../../../lib/plannedNote';
 import { plannedRowLabel } from '../../../lib/plannedRowLabel';
 import { DurationTimer } from './DurationTimer';
@@ -79,24 +80,15 @@ export function ExerciseLogCard({
   readOnly = false,
 }: ExerciseLogCardProps) {
   const [expanded, setExpanded] = useState(true);
-  const [notes, setNotes] = useState(loggedExercise?.performed_notes ?? '');
   const [savingPrescribed, setSavingPrescribed] = useState(false);
   /** Extra ad-hoc set rows beyond the planned set lines. */
   const [extraRows, setExtraRows] = useState(0);
 
-  // Sync notes on primitive dep so a parent re-render with a new
-  // loggedExercise reference doesn't reset what the user is typing.
-  useEffect(() => {
-    setNotes(loggedExercise?.performed_notes ?? '');
-  }, [loggedExercise?.performed_notes]);
-
-  // Commit notes on blur AND on debounce / app-background / unmount, so a
-  // note typed right before locking the phone or switching days isn't lost.
-  // Self-guards on a real change; shared by the sentinel and standard cards.
-  const commitNotes = () => {
-    if ((loggedExercise?.performed_notes ?? '') !== notes) void onUpdateNotes(notes);
-  };
-  useAutoCommit(notes, commitNotes);
+  // Commits on blur + debounce + app-background/unmount, so a note typed right
+  // before locking the phone or switching days isn't lost — and the save's own
+  // echo can't overwrite the caret mid-sentence. Shared by the sentinel and
+  // standard cards below.
+  const notes = useNoteDraft(loggedExercise?.performed_notes ?? '', onUpdateNotes);
 
   const removedSetNumbers = useMemo(
     () => loggedExercise?.metadata?.removed_set_numbers ?? [],
@@ -222,13 +214,11 @@ export function ExerciseLogCard({
           theme="dark"
         />
         <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2">
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            onBlur={commitNotes}
+          <AutoGrowTextarea
+            {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
@@ -549,17 +539,11 @@ export function ExerciseLogCard({
 
           {!readOnly && (
             <div className="pt-1">
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                onBlur={() => {
-                  if ((loggedExercise?.performed_notes ?? '') !== notes) {
-                    void onUpdateNotes(notes);
-                  }
-                }}
+              <AutoGrowTextarea
+                {...notes.bind}
                 placeholder="Notes on this exercise…"
                 rows={2}
-                className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+                className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
               />
             </div>
           )}

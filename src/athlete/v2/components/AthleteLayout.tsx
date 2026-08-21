@@ -5,11 +5,18 @@
  * the active screen via <Outlet>. Pads the bottom of the page so content
  * isn't hidden behind the fixed nav. The Coach tab shows an unread
  * badge that polls every 60 s while the tab is visible.
+ *
+ * The bar hides itself while the software keyboard is up. iOS Safari does not
+ * reflow the page for the keyboard, so a `position: fixed` bar ends up pinned
+ * under it and skates around as the page scrolls — very visible while writing
+ * a session note. The bar is fixed, so hiding it reflows nothing; the page
+ * keeps its `pb-20` and gains the screen space instead.
  */
 import { NavLink, Outlet } from 'react-router-dom';
 import { Calendar, CalendarDays, CalendarRange, MessageCircle, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
+import { useKeyboardOpen } from '../lib/useKeyboardOpen';
 import { fetchAthleteInboxUnreadCount } from '../../../lib/trainingLogService';
 import { onInboxChanged } from '../../../lib/inboxEvents';
 
@@ -24,12 +31,15 @@ const TABS = [
 export function AthleteLayout() {
   const { athlete } = useAuth();
   const unread = useCoachThreadUnread(athlete?.id ?? null);
+  const keyboardOpen = useKeyboardOpen();
 
   return (
     <div className="min-h-screen bg-gray-950 text-white pb-20">
       <Outlet />
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800"
+        className={`fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800${
+          keyboardOpen ? ' hidden' : ''
+        }`}
         aria-label="Athlete navigation"
       >
         <div className="max-w-2xl mx-auto px-2 py-1.5 flex justify-around">

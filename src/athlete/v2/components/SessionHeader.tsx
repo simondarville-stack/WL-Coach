@@ -13,10 +13,10 @@
  * Defaults when no config exists: RAW + BW on, VAS off, no custom —
  * matches the pre-feature UX.
  */
-import { useEffect, useState } from 'react';
 import { Calendar, Ban } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
-import { useAutoCommit } from '../lib/useAutoCommit';
+import { AutoGrowTextarea } from '../../../components/ui';
+import { useNoteDraft } from '../lib/useNoteDraft';
 import { BodyweightField } from './BodyweightField';
 import { RawScoreDial, type RawScores } from './RawScoreDial';
 import { VasField } from './VasField';
@@ -77,16 +77,9 @@ export function SessionHeader({
   onPatchPerformedOn,
   onPatchPerformedAt,
 }: SessionHeaderProps) {
-  const [notes, setNotes] = useState(session?.session_notes ?? '');
-
-  useEffect(() => setNotes(session?.session_notes ?? ''), [session?.session_notes]);
-
-  // Persist on blur AND on debounce / app-background, so a note typed right
-  // before the phone is locked isn't lost. Self-guards on a real change.
-  const commitNotes = () => {
-    if ((session?.session_notes ?? '') !== notes) void onPatchNotes(notes);
-  };
-  useAutoCommit(notes, commitNotes);
+  // Persists on blur + debounce + app-background, and refuses to let the
+  // server's echo of its own save overwrite what is being typed.
+  const notes = useNoteDraft(session?.session_notes ?? '', onPatchNotes);
 
   const raw: RawScores = {
     sleep: session?.raw_sleep ?? null,
@@ -176,13 +169,11 @@ export function SessionHeader({
         <label className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
           Session notes
         </label>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          onBlur={commitNotes}
+        <AutoGrowTextarea
+          {...notes.bind}
           placeholder="How did it feel? Anything to flag to the coach?"
           rows={2}
-          className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
         />
       </div>
     </div>

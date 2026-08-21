@@ -19,6 +19,7 @@
 import { Fragment, useEffect, useRef } from 'react';
 import { Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { useThreadChat, type UseThreadChatArgs } from '../../hooks/useThreadChat';
+import { AutoGrowTextarea } from '../ui';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
 import type { TrainingLogMessage } from '../../lib/database.types';
 
@@ -135,7 +136,11 @@ export function MobileThreadPane({
             <Paperclip size={14} />
           </button>
         )}
-        <textarea
+        {/* Grows with the message instead of scrolling inside two lines — a
+            paragraph typed on a phone was previously invisible above the last
+            line, which made it impossible to proof-read or tap back into.
+            Capped so a long message can't push the Send button off-screen. */}
+        <AutoGrowTextarea
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
@@ -145,8 +150,9 @@ export function MobileThreadPane({
             }
           }}
           rows={2}
+          style={{ maxHeight: '9rem' }}
           placeholder={placeholder}
-          className="flex-1 resize-none rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
+          className="flex-1 rounded-md bg-gray-900 border border-gray-800 text-white text-[13px] leading-snug px-3 py-2 outline-none focus:border-gray-700"
         />
         <button
           type="button"

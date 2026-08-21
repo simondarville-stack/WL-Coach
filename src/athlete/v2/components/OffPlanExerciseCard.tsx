@@ -17,7 +17,8 @@ import type {
   ExerciseStub,
 } from '../../../lib/database.types';
 import { SetEntryRow } from './SetEntryRow';
-import { useAutoCommit } from '../lib/useAutoCommit';
+import { useNoteDraft } from '../lib/useNoteDraft';
+import { AutoGrowTextarea } from '../../../components/ui';
 
 interface OffPlanExerciseCardProps {
   logExercise: TrainingLogExercise;
@@ -52,16 +53,9 @@ export function OffPlanExerciseCard({
   onDeleteSet,
   onUpdateNotes,
 }: OffPlanExerciseCardProps) {
-  const [notes, setNotes] = useState(logExercise.performed_notes ?? '');
-  useEffect(() => {
-    setNotes(logExercise.performed_notes ?? '');
-  }, [logExercise.performed_notes]);
-  // Persist on blur AND on debounce / app-background / unmount (mobile lock
-  // doesn't fire blur). Self-guards on a real change.
-  const commitNotes = () => {
-    if ((logExercise.performed_notes ?? '') !== notes) void onUpdateNotes(notes);
-  };
-  useAutoCommit(notes, commitNotes);
+  // Persists on blur / debounce / app-background / unmount (mobile lock doesn't
+  // fire blur), echo-safe so a save can't move the caret mid-sentence.
+  const notes = useNoteDraft(logExercise.performed_notes ?? '', onUpdateNotes);
   const sortedSets = loggedSets.slice().sort((a, b) => a.set_number - b.set_number);
   /**
    * Number of empty trailing rows the user has explicitly requested via
@@ -191,13 +185,11 @@ export function OffPlanExerciseCard({
         </button>
 
         <div className="pt-1">
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            onBlur={commitNotes}
+          <AutoGrowTextarea
+            {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
           />
         </div>
       </div>
