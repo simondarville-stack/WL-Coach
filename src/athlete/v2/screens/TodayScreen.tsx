@@ -264,6 +264,83 @@ export function TodayScreen() {
     [data],
   );
 
+  // Load the athlete's PR history once per athlete (newest-first).
+  const athleteId = athlete?.id ?? null;
+  useEffect(() => {
+    if (!athleteId) { setPrHistory([]); return; }
+    let cancelled = false;
+    fetchPRHistory(athleteId)
+      .then(h => { if (!cancelled) setPrHistory(h); })
+      .catch(() => { /* PR prompt is best-effort; ignore load failures */ });
+    return () => { cancelled = true; };
+  }, [athleteId]);
+
+  /**
+   * After a set is saved, decide whether it would be a new PR at its rep count
+   * and, if so, surface the register-PR prompt. Best-effort and limited to
+   * quantified single lifts (not combos), a positive kg load, a whole rep
+   * count in 1–10, and a completed set.
+   *
+   * The bar is the same the PR table shows: the current record at that rep
+   * count if one exists, otherwise the value ESTIMATED at that rep count from
+   * the athlete's other PRs (same multi-anchor model as buildPRRows). So a
+   * logged xRM above the estimate also prompts. Only an exercise with no PRs
+   * at all has no bar and stays silent.
+   */
+  const checkForPR = useCallback((args: {
+    exerciseId: string | null | undefined;
+    exerciseName: string | null | undefined;
+    isCombo: boolean;
+    repCount: number | null;
+    valueKg: number | null;
+    status: string;
+    achievedDate: string;
+  }) => {
+    const { exerciseId, exerciseName, isCombo, repCount, valueKg, status, achievedDate } = args;
+    if (status !== 'completed' || isCombo || !exerciseId) return;
+    if (valueKg == null || !Number.isFinite(valueKg) || valueKg <= 0) return;
+    if (repCount == null || !Number.isInteger(repCount) || repCount < 1 || repCount > 10) return;
+
+    // Current record per rep count (prHistory is newest-first, so the first
+    // match is the current value) — the table's "current" semantics.
+    const currentByRep = new Map<number, number>();
+    for (const h of prHistory) {
+      if (h.exercise_id !== exerciseId || h.rep_count < 1 || h.rep_count > 10) continue;
+      if (!currentByRep.has(h.rep_count)) currentByRep.set(h.rep_count, h.value_kg);
+    }
+
+    const realAtRep = currentByRep.get(repCount);
+    let threshold: number;
+    let isEstimate: boolean;
+    if (realAtRep != null) {
+      threshold = realAtRep;
+      isEstimate = false;
+    } else {
+      const anchors = Array.from(currentByRep, ([reps, valueKg]) => ({ reps, valueKg }));
+      if (anchors.length === 0) return;            // no PRs at all → no bar
+      threshold = roundToHalf(estimateAtRepsFromAnchors(anchors, repCount));
+      isEstimate = true;
+    }
+    if (!(valueKg > threshold)) return;
+
+    const key = `${exerciseId}:${repCount}:${valueKg}`;
+    if (prDismissedRef.current.has(key)) return;
+    setPrPrompt({
+      exerciseId,
+      exerciseName: exerciseName ?? 'this lift',
+      repCount,
+      valueKg,
+      achievedDate,
+      previous: threshold,
+      isEstimate,
+    });
+  }, [prHistory]);
+
+  // Every hook must be called ABOVE this line. The PR-history effect and
+  // checkForPR used to sit further down, past the guard, so the render that
+  // resolved `athlete` from null called two more hooks than the one before it
+  // — React matches hooks by call order, so that is a "rendered more hooks
+  // than during the previous render" crash waiting on a profile switch.
   if (!athlete) return null;
 
   // ─── Mutation helpers ────────────────────────────────────────────────────
@@ -453,78 +530,6 @@ export function TodayScreen() {
       exerciseId: planned.exercise.exercise_id,
       position: planned.exercise.position,
     });
-
-  // Load the athlete's PR history once per athlete (newest-first).
-  const athleteId = athlete?.id ?? null;
-  useEffect(() => {
-    if (!athleteId) { setPrHistory([]); return; }
-    let cancelled = false;
-    fetchPRHistory(athleteId)
-      .then(h => { if (!cancelled) setPrHistory(h); })
-      .catch(() => { /* PR prompt is best-effort; ignore load failures */ });
-    return () => { cancelled = true; };
-  }, [athleteId]);
-
-  /**
-   * After a set is saved, decide whether it would be a new PR at its rep count
-   * and, if so, surface the register-PR prompt. Best-effort and limited to
-   * quantified single lifts (not combos), a positive kg load, a whole rep
-   * count in 1–10, and a completed set.
-   *
-   * The bar is the same the PR table shows: the current record at that rep
-   * count if one exists, otherwise the value ESTIMATED at that rep count from
-   * the athlete's other PRs (same multi-anchor model as buildPRRows). So a
-   * logged xRM above the estimate also prompts. Only an exercise with no PRs
-   * at all has no bar and stays silent.
-   */
-  const checkForPR = useCallback((args: {
-    exerciseId: string | null | undefined;
-    exerciseName: string | null | undefined;
-    isCombo: boolean;
-    repCount: number | null;
-    valueKg: number | null;
-    status: string;
-    achievedDate: string;
-  }) => {
-    const { exerciseId, exerciseName, isCombo, repCount, valueKg, status, achievedDate } = args;
-    if (status !== 'completed' || isCombo || !exerciseId) return;
-    if (valueKg == null || !Number.isFinite(valueKg) || valueKg <= 0) return;
-    if (repCount == null || !Number.isInteger(repCount) || repCount < 1 || repCount > 10) return;
-
-    // Current record per rep count (prHistory is newest-first, so the first
-    // match is the current value) — the table's "current" semantics.
-    const currentByRep = new Map<number, number>();
-    for (const h of prHistory) {
-      if (h.exercise_id !== exerciseId || h.rep_count < 1 || h.rep_count > 10) continue;
-      if (!currentByRep.has(h.rep_count)) currentByRep.set(h.rep_count, h.value_kg);
-    }
-
-    const realAtRep = currentByRep.get(repCount);
-    let threshold: number;
-    let isEstimate: boolean;
-    if (realAtRep != null) {
-      threshold = realAtRep;
-      isEstimate = false;
-    } else {
-      const anchors = Array.from(currentByRep, ([reps, valueKg]) => ({ reps, valueKg }));
-      if (anchors.length === 0) return;            // no PRs at all → no bar
-      threshold = roundToHalf(estimateAtRepsFromAnchors(anchors, repCount));
-      isEstimate = true;
-    }
-    if (!(valueKg > threshold)) return;
-
-    const key = `${exerciseId}:${repCount}:${valueKg}`;
-    if (prDismissedRef.current.has(key)) return;
-    setPrPrompt({
-      exerciseId,
-      exerciseName: exerciseName ?? 'this lift',
-      repCount,
-      valueKg,
-      achievedDate,
-      previous: threshold,
-      isEstimate,
-    });
-  }, [prHistory]);
 
   const handleRegisterPR = () => {
     if (!prPrompt || !athlete) return;
