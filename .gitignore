@@ -29,3 +29,6 @@ dist-ssr
 
 # Vite writes a temp compiled config next to vite.config.ts when it loads it
 vite.config.ts.timestamp-*.mjs
+
+# Netlify CLI local state — machine-specific (absolute publish paths).
+.netlify/
