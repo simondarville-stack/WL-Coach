@@ -51,7 +51,7 @@ import type {
 import { isExerciseDone } from '../../../lib/trainingLogModel';
 import { formatWeekday, formatTime24, combineDateTimeToISO } from '../../../lib/dateUtils';
 import { expectedPlannedSetCount } from '../../../lib/plannedSetCount';
-import { fetchPRHistory, insertPRHistory, syncAthletePRs } from '../../../lib/prTable';
+import { fetchPRHistory, insertPRHistory, raiseLowerReps, supersededLowerReps, syncAthletePRs } from '../../../lib/prTable';
 import { estimateAtRepsFromAnchors, roundToHalf } from '../../../lib/xrmUtils';
 import { SessionHeader } from '../components/SessionHeader';
 import { SessionPreview } from '../components/SessionPreview';
@@ -543,9 +543,42 @@ export function TodayScreen() {
         valueKg,
         achievedDate,
       });
+
+      // A PR at more reps beats the records at fewer reps — see
+      // supersededLowerReps. Asked, never applied silently.
+      const stale = await supersededLowerReps(athlete.id, exerciseId, repCount, valueKg);
+      let raised = false;
+      if (stale.length > 0) {
+        const list = stale.map(x => `${x.repCount}RM (${x.currentKg} kg)`).join(', ');
+        raised = window.confirm(
+          `This ${repCount}RM of ${valueKg} kg is higher than your current ${list}.
+
+` +
+          `Raise ${stale.length === 1 ? 'it' : 'them'} to ${valueKg} kg as well?
+
+` +
+          'Your older entries stay in the history either way.',
+        );
+        if (raised) {
+          await raiseLowerReps({
+            athleteId: athlete.id,
+            exerciseId,
+            repCounts: stale.map(x => x.repCount),
+            valueKg,
+            achievedDate,
+            sourceRepCount: repCount,
+          });
+        }
+      }
+
       await syncAthletePRs(athlete.id, exerciseId);
-      // Prepend so it becomes the current record for subsequent checks.
-      setPrHistory(prev => [entry, ...prev]);
+      if (raised) {
+        // Several rows landed at once; re-read rather than reconstruct them.
+        setPrHistory(await fetchPRHistory(athlete.id));
+      } else {
+        // Prepend so it becomes the current record for subsequent checks.
+        setPrHistory(prev => [entry, ...prev]);
+      }
     });
   };
 

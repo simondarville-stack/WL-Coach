@@ -240,6 +240,82 @@ export async function insertPRHistory(args: {
   return data as AthletePRHistory;
 }
 
+export interface SupersededPR {
+  repCount: number;
+  /** The rep count's CURRENT best — the most recent entry, which is what the
+   *  PR table shows and what syncAthletePRs feeds the estimator. */
+  currentKg: number;
+}
+
+/**
+ * Lower rep counts whose current best sits BELOW a newly logged xRM.
+ *
+ * Reps and load trade off monotonically: a 6RM at 80 kg means 80 kg is also
+ * within reach for 5, 4, 3, 2 and 1 reps. So an older 5RM of 75 kg is not a
+ * ceiling, it is a stale record — and because the estimator blends every rep
+ * anchor, leaving it in drags the whole implied-1RM curve down.
+ *
+ * Returns them for the caller to CONFIRM. Nothing is overwritten silently: the
+ * athlete may have a real reason for a low entry, and PRs are their data.
+ */
+export async function supersededLowerReps(
+  athleteId: string,
+  exerciseId: string,
+  repCount: number,
+  valueKg: number,
+): Promise<SupersededPR[]> {
+  const { data } = await supabase
+    .from('athlete_pr_history')
+    .select('rep_count, value_kg, achieved_date, created_at')
+    .eq('athlete_id', athleteId)
+    .eq('exercise_id', exerciseId)
+    .lt('rep_count', repCount)
+    .order('achieved_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  const rows = (data as Pick<AthletePRHistory, 'rep_count' | 'value_kg'>[] | null) ?? [];
+  // First row per rep count wins — the query is already newest-first, the same
+  // ordering syncAthletePRs uses to decide the current PR.
+  const currentByRep = new Map<number, number>();
+  for (const r of rows) {
+    if (!currentByRep.has(r.rep_count)) currentByRep.set(r.rep_count, r.value_kg);
+  }
+
+  return Array.from(currentByRep, ([rep, kg]) => ({ repCount: rep, currentKg: kg }))
+    .filter(x => x.currentKg < valueKg)
+    .sort((a, b) => b.repCount - a.repCount);
+}
+
+/**
+ * Record the new value against each superseded rep count, as its own history
+ * entry on the same date. Deliberately additive — the older entries stay in the
+ * history, so nothing the athlete actually lifted is erased; only the CURRENT
+ * best moves up.
+ */
+export async function raiseLowerReps(args: {
+  athleteId: string;
+  exerciseId: string;
+  repCounts: number[];
+  valueKg: number;
+  achievedDate: string;
+  /** The rep count that triggered this, named in the entry's note. */
+  sourceRepCount: number;
+}): Promise<void> {
+  if (args.repCounts.length === 0) return;
+  const { error } = await supabase
+    .from('athlete_pr_history')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stale generated types
+    .insert(args.repCounts.map(rep => ({
+      athlete_id: args.athleteId,
+      exercise_id: args.exerciseId,
+      rep_count: rep,
+      value_kg: args.valueKg,
+      achieved_date: args.achievedDate,
+      notes: `Carried from the ${args.sourceRepCount}RM of ${args.valueKg} kg`,
+    })) as any);
+  if (error) throw error;
+}
+
 /** Service helper: update an existing PR history entry by id. */
 export async function updatePRHistory(
   id: string,

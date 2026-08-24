@@ -262,6 +262,15 @@ export function WeekOverview({
           dayMetrics={metricsForSlot(slotIndex)}
           visibleMetrics={visibleCardMetrics ?? DEFAULT_VISIBLE_METRICS}
           onOpen={() => toggleExpanded(slotIndex)}
+          dropTargets={{
+            dayIndex: slotIndex,
+            onClipboardItemDrop,
+            onDockExerciseDrop,
+            onDockTemplateDrop,
+            onDockTemplateDayDrop,
+            onDayDrop,
+            onExerciseDrop,
+          }}
         />
       );
     };

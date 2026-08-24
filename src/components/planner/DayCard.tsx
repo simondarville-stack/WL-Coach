@@ -24,6 +24,7 @@ import { expandForCounting } from '../../lib/comboExpansion';
 import { plannedNote } from '../../lib/plannedNote';
 import { MetricStrip } from '../ui/MetricStrip';
 import { MARK_DAY, MARK_DAY_REORDER, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
+import { routeCardDrop } from './cardDropRouting';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
 
 interface DayCardProps {
@@ -402,63 +403,18 @@ export function DayCard({
     setIsDragOver(false);
     setReorderOver(false);
     const data = e.dataTransfer.getData('text/plain');
-    if (!data) return;
-    // Reordering moves the CARD, never its contents — handled before anything
-    // that would touch exercises, and a drop on itself is a no-op.
-    if (data.startsWith('DAYORDER:')) {
-      const from = parseInt(data.slice('DAYORDER:'.length), 10);
-      if (!Number.isNaN(from) && from !== dayIndex) onReorderDay?.(from, dayIndex);
-      return;
-    }
-    const isCopy = e.ctrlKey || e.metaKey;
-    const isReplace = e.shiftKey;
-    // Accept both prefixes during the rename window — a card already on
-    // screen when the bundle reloads might still emit the legacy CANVAS:
-    // marker until the user reloads the page.
-    if (data.startsWith('CLIPBOARD:week-day:')) {
-      // A single day from a parked week → "week-day:<weekId>:<srcDayIndex>".
-      const rest = data.slice('CLIPBOARD:week-day:'.length);
-      if (rest && onClipboardItemDrop) await onClipboardItemDrop(`week-day:${rest}`, dayIndex, isReplace);
-    } else if (data.startsWith('CLIPBOARD:week:')) {
-      // A whole parked week → apply all its days (prompts append/overwrite).
-      const weekId = data.slice('CLIPBOARD:week:'.length);
-      if (weekId && onClipboardItemDrop) await onClipboardItemDrop(`week:${weekId}`, dayIndex, isReplace);
-    } else if (
-      data.startsWith('CLIPBOARD:exercise:') ||
-      data.startsWith('CLIPBOARD:day:') ||
-      data.startsWith('CANVAS:exercise:') ||
-      data.startsWith('CANVAS:day:')
-    ) {
-      const clipboardId = data.slice(data.lastIndexOf(':') + 1);
-      if (!clipboardId || !onClipboardItemDrop) return;
-      await onClipboardItemDrop(clipboardId, dayIndex, isReplace);
-    } else if (data.startsWith('DOCK:exercise:')) {
-      const exerciseId = data.slice('DOCK:exercise:'.length);
-      if (!exerciseId || !onDockExerciseDrop) return;
-      await onDockExerciseDrop(exerciseId, dayIndex, isReplace);
-    } else if (data.startsWith('DOCK:template-day:')) {
-      const templateDayId = data.slice('DOCK:template-day:'.length);
-      if (!templateDayId || !onDockTemplateDayDrop) return;
-      await onDockTemplateDayDrop(templateDayId, dayIndex, isReplace);
-    } else if (data.startsWith('DOCK:template:')) {
-      const templateId = data.slice('DOCK:template:'.length);
-      if (!templateId || !onDockTemplateDrop) return;
-      await onDockTemplateDrop(templateId, dayIndex, isReplace);
-    } else if (data.startsWith('DAY:')) {
-      const sourceDay = parseInt(data.slice(4), 10);
-      if (isNaN(sourceDay) || sourceDay === dayIndex) return;
-      await onDayDrop(sourceDay, dayIndex, isCopy, isReplace);
-    } else {
-      const parts = data.split(':');
-      if (parts.length < 3) return;
-      const fromDay = parseInt(parts[0], 10);
-      const dragType = parts[1];
-      const itemId = parts[2];
-      if (isNaN(fromDay) || fromDay === dayIndex || !itemId) return;
-      if (dragType === 'exercise') {
-        await onExerciseDrop(fromDay, itemId, dayIndex, isCopy, isReplace);
-      }
-    }
+    // Routing is shared with the scheduled week's condensed card — see
+    // cardDropRouting. Both card shapes must accept exactly the same drags.
+    await routeCardDrop(data, e.ctrlKey || e.metaKey, e.shiftKey, {
+      dayIndex,
+      onClipboardItemDrop,
+      onDockExerciseDrop,
+      onDockTemplateDrop,
+      onDockTemplateDayDrop,
+      onDayDrop,
+      onExerciseDrop,
+      onReorderDay,
+    });
   }
 
   return (

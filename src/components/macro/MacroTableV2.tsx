@@ -10,7 +10,7 @@ import type { FillGuidePreview } from './fillGuidePlan';
 import { MacroGridCell } from './MacroGridCell';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
 import { getExerciseCategoryShade } from '../../lib/colorUtils';
-import { getWeekTypeColor } from '../../lib/weekUtils';
+import { getWeekTypeColor, getMondayOfWeekISO } from '../../lib/weekUtils';
 import { getISOWeek as isoWeekOfDate, formatDateShort, addDaysToISO } from '../../lib/dateUtils';
 
 export type MacroTableColumnKey = 'week' | 'dates' | 'events' | 'weektype' | 'k' | 'tonnage' | 'avg' | 'kvalue' | 'notes';
@@ -747,6 +747,9 @@ export function MacroTableV2({
           {(() => {
             let lastPhaseId: string | null = null;
             const rows: React.ReactNode[] = [];
+            // Monday of the real current week — the anchor for the current-week
+            // marker below. Computed once per render, not per row.
+            const todayMonday = getMondayOfWeekISO(new Date());
 
             macroWeeks.forEach((week) => {
               const phase = weekToPhase.get(week.id);
@@ -825,6 +828,11 @@ export function MacroTableV2({
                 : undefined;
 
               const phaseColor = phase?.color;
+              // Which week the coach is actually in. Marked with an accent rule
+              // and accent week number rather than a row background: the row's
+              // hover handlers assign backgroundColor directly, so a background
+              // tint here would be wiped the first time the mouse crossed it.
+              const isCurrentWeek = week.week_start === todayMonday;
 
               rows.push(
                 <tr
@@ -855,7 +863,12 @@ export function MacroTableV2({
                       className={`${stickyTd('week')} text-center px-1 py-0.5`}
                       style={{ width: weekColWidth, left: stickyLeft['week'] }}
                     >
-                      <span className="text-[13px] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>{week.week_number}</span>
+                      <span
+                        className="text-[13px] font-semibold leading-none"
+                        style={{ color: isCurrentWeek ? 'var(--color-accent)' : 'var(--color-text-primary)' }}
+                      >
+                        {week.week_number}
+                      </span>
                     </td>
                   )}
 
@@ -863,10 +876,20 @@ export function MacroTableV2({
                   {showCol('dates') && (
                     <td
                       className={`${stickyTd('dates')} text-center px-1 py-0.5`}
-                      style={{ width: STICKY_COL_WIDTHS.dates, left: stickyLeft['dates'] }}
+                      title={isCurrentWeek ? 'Current week' : undefined}
+                      style={{
+                        width: STICKY_COL_WIDTHS.dates,
+                        left: stickyLeft['dates'],
+                        boxShadow: isCurrentWeek ? 'inset 2px 0 0 0 var(--color-accent)' : undefined,
+                      }}
                     >
                       <div className="flex flex-col items-center leading-tight">
-                        <span className="text-[10px] font-medium leading-none" style={{ color: 'var(--color-text-secondary)' }}>W{getISOWeek(week.week_start)}</span>
+                        <span
+                          className="text-[10px] font-medium leading-none"
+                          style={{ color: isCurrentWeek ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}
+                        >
+                          W{getISOWeek(week.week_start)}
+                        </span>
                         <span className="text-[8px] leading-none mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
                           {formatDateShort(week.week_start)}–{formatDateShort(addDaysToISO(week.week_start, 6))}
                         </span>

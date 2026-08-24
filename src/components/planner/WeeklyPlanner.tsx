@@ -1051,6 +1051,27 @@ export function WeeklyPlanner() {
       return;
     }
 
+    // A single exercise lifted out of a parked week's preview:
+    // "week-ex:<weekId>:<srcDayIndex>:<position>".
+    if (clipboardItemId.startsWith('week-ex:')) {
+      const [, weekId, srcStr, idxStr] = clipboardItemId.split(':');
+      const week = clipboard.findById(weekId);
+      if (!week || week.kind !== 'week') return;
+      const day = week.days.find(d => d.dayIndex === Number(srcStr));
+      const picked = day?.exercises[Number(idxStr)];
+      if (!picked) return;
+      if (isReplace) {
+        const targetIds = (plannedExercises[dayIndex] || []).map(ex => ex.id);
+        if (targetIds.length > 0) await deleteDayExercises(targetIds);
+      }
+      const base = isReplace ? 0 : (plannedExercises[dayIndex] || []).length;
+      await insertExerciseSnapshot(picked.snapshot, currentWeekPlan.id, dayIndex, base + 1, {
+        source: planSelection.type === 'individual' ? 'individual' : null,
+      });
+      await handleRefresh();
+      return;
+    }
+
     // A whole parked week → ask append vs overwrite.
     if (clipboardItemId.startsWith('week:')) {
       handleApplyWeekFromClipboard(clipboardItemId.slice('week:'.length));
