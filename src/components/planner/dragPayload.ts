@@ -70,7 +70,11 @@ export function parseThrowPayload(text: string): ThrowPayload | null {
     // remove, so it is not throwable.
     const parts = text.split(':');
     if (parts.length < 3) return null;
-    if (parts[1] === 'week-day') return null;
+    // Slices of a parked week — a day or a single exercise from inside it.
+    // Neither is an item of its own, so there is nothing to remove; without
+    // this guard parts[2] is the WEEK's id and a missed drop would throw the
+    // whole parked week away.
+    if (parts[1] === 'week-day' || parts[1] === 'week-ex') return null;
     return { kind: 'clipboard', itemId: parts[2] };
   }
 

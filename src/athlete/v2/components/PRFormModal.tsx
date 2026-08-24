@@ -15,6 +15,8 @@ import {
   REP_COUNTS,
   type RepCount,
   insertPRHistory,
+  supersededLowerReps,
+  raiseLowerReps,
   updatePRHistory,
   deletePRHistory,
   syncAthletePRs,
@@ -96,6 +98,34 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
           valueKg: weight,
           achievedDate: date,
         });
+
+        // A PR at more reps beats the records at fewer reps: a 6RM of 80 kg
+        // means 80 kg is within reach for 5, 4, 3... too, so an older 5RM of
+        // 75 kg is stale and drags the implied-1RM estimate down. Offered, never
+        // applied silently — these are the athlete's own records.
+        const stale = await supersededLowerReps(mode.athleteId, mode.exerciseId, repCount, weight);
+        if (stale.length > 0) {
+          const list = stale.map(x => `${x.repCount}RM (${x.currentKg} kg)`).join(', ');
+          const ok = window.confirm(
+            `This ${repCount}RM of ${weight} kg is higher than your current ${list}.
+
+` +
+            `Raise ${stale.length === 1 ? 'it' : 'them'} to ${weight} kg as well?
+
+` +
+            'Your older entries stay in the history either way.',
+          );
+          if (ok) {
+            await raiseLowerReps({
+              athleteId: mode.athleteId,
+              exerciseId: mode.exerciseId,
+              repCounts: stale.map(x => x.repCount),
+              valueKg: weight,
+              achievedDate: date,
+              sourceRepCount: repCount,
+            });
+          }
+        }
       } else {
         await updatePRHistory(mode.entryId, {
           valueKg: weight,

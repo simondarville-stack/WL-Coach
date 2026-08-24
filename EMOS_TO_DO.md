@@ -35,10 +35,66 @@ defers others).
   _(both sub-items done 18/08/2026. Prototypes kept at
   `mockup/scheduled-week-v1..v3.html` as the design record.)_
 
+
 _(everything below is done; new items go above this line.)_
 
 ##DONE
 For every item that has been done, write what was wrong, what was changed and add a date.
+
+#Clipboard preview becomes a working palette · current week marked · xRM cascade (19/08/2026, v0.50.1 -> 0.51.0)
+Three items.
+
+**1. The clipboard preview is now a palette, not a dialog.** Stacked notation
+was already there (0.46.0); what was missing was everything that makes it usable
+while building. It was an `AdaptiveDialog` — modal by contract: dimmed backdrop,
+focus trap, scroll lock. All correct for a dialog and all fatal here, because
+the backdrop swallows exactly the drops the coach wants to make. It is now a
+floating panel: **non-modal** (verified: zero backdrops in the DOM), **movable
+by its header**, closed by Escape or ×. From an opened week you can drag out a
+**single day** or a **single exercise** onto the week behind it — new payload
+`CLIPBOARD:week-ex:<weekId>:<dayIndex>:<position>` beside the existing
+`week-day`.
+
+*Three things this uncovered, each of which would have made the feature inert or
+destructive:*
+- **`week-ex` was routed nowhere.** DayCard's handler fell through to its
+  generic `<day>:exercise:<id>` branch, parsed `"CLIPBOARD"` as a day index, got
+  NaN and returned — a silent no-op.
+- **Condensed cards had no drop handling at all.** The rebuilt scheduled week
+  renders `DayCardCondensed`, which never got `onDrop`, so every drag onto a
+  collapsed unit was swallowed. Routing now lives in one place
+  (`cardDropRouting.ts`) used by both card shapes, so they cannot diverge again.
+- A missed drop would have **thrown the whole parked week away**:
+  `parseThrowPayload` reads `parts[2]` as an item id, which for `week-ex` is the
+  WEEK's id. It joins `week-day` in the not-throwable guard.
+*Also fixed:* the panel's drag clamp used `min(innerWidth - 240, x)`, which goes
+negative on a narrow window and pins the panel to the top-left corner mid-drag.
+
+**Verified end to end**: dragging exercise 1 of day 1 out of a parked week onto
+Ida Mørck's Lørdag unit inserted exactly one row — Træk at position 4, carrying
+the snapshot's prescription — and nothing else. Test row removed.
+
+**2. The macro table marks the current week.** An accent rule down the dates
+cell, with the week number and ISO week in accent. Deliberately NOT a row
+background: the row's own hover handlers assign `backgroundColor` directly, so a
+tint there is wiped the first time the mouse crosses it.
+
+**3. A higher-rep PR now offers to raise the lower ones.** Reps and load trade
+off monotonically — a 6RM at 120 kg means 120 kg is within reach for 5, 4, 3…
+too — so an older 5RM of 110 kg is not a ceiling but a stale record, and because
+the estimator blends every rep anchor it drags the whole implied-1RM curve down.
+On logging an xRM, `supersededLowerReps` finds the lower rep counts whose
+CURRENT best (most recent entry — the same rule `syncAthletePRs` uses) sits
+below it, and asks. Confirmed only, never silent; older entries stay in the
+history, only the current best moves. Wired into both PR paths: the athlete's PR
+form and the in-session PR prompt.
+
+*Validated against live data, and your example is really in there:* **Ida Mørck
+/ Ben Bagpå has a 6RM of 120 kg while her current 5RM is 110 and 4RM is 115.**
+Running the helper's logic as SQL across every athlete returns exactly that one
+case — so the rule is neither too eager nor too narrow. Her existing records
+were left alone: the feature triggers on newly logged PRs, and back-filling the
+old ones is your call.
 
 #Scheduled week rebuilt (18/08/2026, v0.49.3 → 0.50.0)
 **Wrong:** a calendar-mapped week rendered seven columns of FULL day cards —

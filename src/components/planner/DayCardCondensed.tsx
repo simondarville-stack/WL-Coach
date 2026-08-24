@@ -7,12 +7,15 @@
 // cannot read at a glance; clicking it swaps in the real DayCard, so editing is
 // unchanged and lives in exactly one component.
 
+import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { PlannedExercise, Exercise, ComboMemberEntry } from '../../lib/database.types';
 import type { MetricKey, ComputedMetrics } from '../../lib/metrics';
 import { MetricStrip } from '../ui/MetricStrip';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
 import { condensedExerciseSummary } from '../../lib/condensedExerciseSummary';
+import { routeCardDrop, type CardDropTargets } from './cardDropRouting';
+import { MARK_PRESET } from './dragPayload';
 
 interface DayCardCondensedProps {
   dayName: string;
@@ -23,6 +26,10 @@ interface DayCardCondensedProps {
   dayMetrics: ComputedMetrics;
   visibleMetrics: MetricKey[];
   onOpen: () => void;
+  /** Same drop routing the full card uses. Without it a condensed card would
+   *  silently swallow every drag — a day pulled out of a parked week, a dock
+   *  exercise, a unit moved from another column. */
+  dropTargets: Omit<CardDropTargets, 'dayIndex'> & { dayIndex: number };
 }
 
 /** Comma decimals, and no trailing ",0" on a whole number. */
@@ -59,23 +66,43 @@ export function DayCardCondensed({
   dayMetrics,
   visibleMetrics,
   onOpen,
+  dropTargets,
 }: DayCardCondensedProps) {
   const isEmpty = exercises.length === 0;
+  const [dragOver, setDragOver] = useState(false);
 
   return (
     <div
       onClick={onOpen}
       title="Click to open this unit"
+      onDragOver={e => {
+        // Preset drags target individual exercise rows, which a condensed card
+        // does not render — arming here would promise a drop that cannot land.
+        if (e.dataTransfer.types.includes(MARK_PRESET)) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
+      }}
+      onDrop={e => {
+        e.preventDefault();
+        setDragOver(false);
+        void routeCardDrop(
+          e.dataTransfer.getData('text/plain'),
+          e.ctrlKey || e.metaKey,
+          e.shiftKey,
+          dropTargets,
+        );
+      }}
       style={{
-        background: 'var(--color-bg-primary)',
-        border: '0.5px solid var(--color-border-secondary)',
+        background: dragOver ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+        border: '0.5px solid ' + (dragOver ? 'var(--color-accent-border)' : 'var(--color-border-secondary)'),
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
         cursor: 'pointer',
-        transition: 'border-color 0.12s, box-shadow 0.12s',
+        transition: 'border-color 0.12s, background 0.12s',
       }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-accent-border)'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border-secondary)'; }}
     >
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px',
