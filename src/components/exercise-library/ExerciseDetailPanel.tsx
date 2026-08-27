@@ -35,6 +35,12 @@ interface ExerciseDetailPanelProps {
   onSelectExercise: (exerciseId: string) => void;
   relatedExercises: Exercise[];
   allExercises: Exercise[];
+  /** True when the exercise lives in a catalogue the active coach cannot
+   *  edit (viewer role on a shared club catalogue): hides Edit/Archive and
+   *  disables inline notes editing. */
+  readOnly?: boolean;
+  /** Catalogue label shown in the header for shared rows (club name). */
+  libraryLabel?: string | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -304,6 +310,8 @@ export function ExerciseDetailPanel({
   onSelectExercise,
   relatedExercises,
   allExercises,
+  readOnly = false,
+  libraryLabel = null,
 }: ExerciseDetailPanelProps) {
   const [athletePRs, setAthletePRs] = useState<AthletePRRow[]>([]);
   const [prHistory, setPrHistory] = useState<Map<number, number>>(new Map());
@@ -475,6 +483,7 @@ export function ExerciseDetailPanel({
               <span style={{ fontFamily: 'var(--font-mono)' }}>{exercise.exercise_code} · </span>
             )}
             {catName}
+            {libraryLabel && <span> · {libraryLabel}{readOnly ? ' (read-only)' : ''}</span>}
           </div>
         </div>
         <button
@@ -781,7 +790,7 @@ export function ExerciseDetailPanel({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
             <SectionLabel>Notes</SectionLabel>
-            {!editingNotes && (
+            {!editingNotes && !readOnly && (
               <button
                 onClick={() => setEditingNotes(true)}
                 style={{
@@ -814,14 +823,14 @@ export function ExerciseDetailPanel({
                 fontSize: 'var(--text-body)',
                 color: notesValue ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)',
                 fontStyle: notesValue ? 'normal' : 'italic',
-                cursor: 'text',
+                cursor: readOnly ? 'default' : 'text',
                 minHeight: 28,
                 lineHeight: 'var(--leading-body)',
                 margin: 0,
               }}
-              onClick={() => setEditingNotes(true)}
+              onClick={() => { if (!readOnly) setEditingNotes(true); }}
             >
-              {notesValue || 'Click to add notes…'}
+              {notesValue || (readOnly ? 'No notes.' : 'Click to add notes…')}
             </p>
           )}
         </div>
@@ -861,24 +870,35 @@ export function ExerciseDetailPanel({
         borderTop: '0.5px solid var(--color-border-tertiary)',
         flexShrink: 0,
       }}>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Edit2 size={13} />}
-          style={{ flex: 1 }}
-          onClick={() => onEdit(exercise)}
-        >
-          Edit
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Archive size={13} />}
-          style={{ flex: 1 }}
-          onClick={() => onArchive(exercise.id)}
-        >
-          Archive
-        </Button>
+        {readOnly ? (
+          <div style={{
+            flex: 1, textAlign: 'center', fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-tertiary)', padding: '4px 0',
+          }}>
+            Read-only — this exercise belongs to a shared catalogue you can view but not edit.
+          </div>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Edit2 size={13} />}
+              style={{ flex: 1 }}
+              onClick={() => onEdit(exercise)}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Archive size={13} />}
+              style={{ flex: 1 }}
+              onClick={() => onArchive(exercise.id)}
+            >
+              Archive
+            </Button>
+          </>
+        )}
       </div>
 
       {/* xRM Modal */}

@@ -6,6 +6,7 @@ import {
 import { fetchExerciseTimeSeries, fetchWeeklyAggregates } from '../../../hooks/useAnalysis';
 import { supabase } from '../../../lib/supabase';
 import { getOwnerId } from '../../../lib/ownerContext';
+import { catalogueOrFilter } from '../../../lib/libraryScope';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -19,7 +20,7 @@ export function CompetitionLiftTrends({ athleteId, startDate, endDate }: Props) 
       setLoading(true);
       try {
         const [exRes, aggRes] = await Promise.all([
-          supabase.from('exercises').select('id, name, lift_slot').eq('owner_id', getOwnerId()),
+          catalogueOrFilter(getOwnerId()).then(f => supabase.from('exercises').select('id, name, lift_slot').or(f)),
           fetchWeeklyAggregates({ athleteId, startDate, endDate }),
         ]);
 

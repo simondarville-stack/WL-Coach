@@ -9,16 +9,18 @@
  * stamps revoked_at so the host sees it was turned down.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Check, X, RefreshCw, Inbox, User, Users } from 'lucide-react';
+import { Check, X, RefreshCw, Inbox, User, Users, BookOpen } from 'lucide-react';
 import { useAthleteCollaborators } from '../../hooks/useAthleteCollaborators';
 import { useTrainingGroupCollaborators } from '../../hooks/useTrainingGroupCollaborators';
+import { useExerciseLibraries } from '../../hooks/useExerciseLibraries';
+import { useExerciseStore } from '../../store/exerciseStore';
 import { useCoachStore } from '../../store/coachStore';
 import { useAthleteStore } from '../../store/athleteStore';
 
 type UnifiedInvite = {
   id: string;
-  kind: 'athlete' | 'group';
-  role: 'co_coach' | 'viewer';
+  kind: 'athlete' | 'group' | 'library';
+  role: 'co_coach' | 'viewer' | 'editor';
   inviterName: string;
   targetName: string;
   invitedAt: string;
@@ -30,6 +32,8 @@ export function InvitationsPage() {
   const refreshAthletes = useAthleteStore(s => s.fetchAthletes);
   const athleteCollab = useAthleteCollaborators();
   const groupCollab = useTrainingGroupCollaborators();
+  const libraries = useExerciseLibraries();
+  const invalidateExerciseCache = useExerciseStore(s => s.invalidate);
 
   const [invites, setInvites] = useState<UnifiedInvite[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,9 +43,10 @@ export function InvitationsPage() {
     if (!activeCoachId) return;
     setError(null);
     try {
-      const [athleteInvites, groupInvites] = await Promise.all([
+      const [athleteInvites, groupInvites, libraryInvites] = await Promise.all([
         athleteCollab.listPendingInvites(activeCoachId),
         groupCollab.listPendingInvites(activeCoachId),
+        libraries.listPendingInvites(activeCoachId),
       ]);
       const merged: UnifiedInvite[] = [
         ...athleteInvites.map(i => ({
@@ -62,6 +67,15 @@ export function InvitationsPage() {
           invitedAt: i.invited_at,
           notes: i.notes,
         })),
+        ...libraryInvites.map(i => ({
+          id: i.id,
+          kind: 'library' as const,
+          role: i.role,
+          inviterName: i.inviter?.name ?? 'A coach',
+          targetName: i.library?.name ?? 'a catalogue',
+          invitedAt: i.invited_at,
+          notes: i.notes,
+        })),
       ].sort((a, b) => b.invitedAt.localeCompare(a.invitedAt));
       setInvites(merged);
     } catch (e) {
@@ -77,10 +91,16 @@ export function InvitationsPage() {
     setBusy(inv.id);
     try {
       if (inv.kind === 'athlete') await athleteCollab.acceptInvite(inv.id);
-      else await groupCollab.acceptInvite(inv.id);
-      // Both kinds can change the accessible-athlete set (a group brings
-      // its members via the cascade), so refresh the athlete store.
-      await refreshAthletes(true);
+      else if (inv.kind === 'group') await groupCollab.acceptInvite(inv.id);
+      else {
+        // Catalogue invite: the shared exercise tree becomes visible
+        // immediately, so drop the cached exercise list.
+        await libraries.acceptInvite(inv.id);
+        invalidateExerciseCache();
+      }
+      // Athlete/group shares change the accessible-athlete set (a group
+      // brings its members via the cascade), so refresh the athlete store.
+      if (inv.kind !== 'library') await refreshAthletes(true);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to accept');
@@ -93,7 +113,8 @@ export function InvitationsPage() {
     setBusy(inv.id);
     try {
       if (inv.kind === 'athlete') await athleteCollab.declineInvite(inv.id);
-      else await groupCollab.declineInvite(inv.id);
+      else if (inv.kind === 'group') await groupCollab.declineInvite(inv.id);
+      else await libraries.declineInvite(inv.id);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to decline');
@@ -144,13 +165,15 @@ export function InvitationsPage() {
             className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3"
           >
             <span className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-              {inv.kind === 'group' ? <Users size={14} /> : <User size={14} />}
+              {inv.kind === 'group' ? <Users size={14} /> : inv.kind === 'library' ? <BookOpen size={14} /> : <User size={14} />}
             </span>
             <div className="flex-1 min-w-0">
               <div className="text-sm text-gray-900">
                 <strong>{inv.inviterName}</strong> invited you to{' '}
-                {inv.role === 'co_coach' ? 'co-coach' : 'view'}{' '}
-                {inv.kind === 'group' ? 'the group ' : ''}
+                {inv.kind === 'library'
+                  ? (inv.role === 'editor' ? 'edit' : 'view (read-only)')
+                  : inv.role === 'co_coach' ? 'co-coach' : 'view'}{' '}
+                {inv.kind === 'group' ? 'the group ' : inv.kind === 'library' ? 'the exercise catalogue ' : ''}
                 <strong>{inv.targetName}</strong>.
               </div>
               <div className="text-xs text-gray-500 mt-0.5">

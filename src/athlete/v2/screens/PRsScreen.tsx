@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Loader2, Plus, Search, Trophy } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { catalogueOrFilter } from '../../../lib/libraryScope';
 import { describeError } from '../../../lib/errorMessage';
 import { buildPRRows, fetchPRHistory, type ExerciseRow } from '../../../lib/prTable';
 import type { Exercise } from '../../../lib/database.types';
@@ -48,7 +49,9 @@ export function PRsScreen() {
         .select('*')
         .eq('track_pr', true)
         .eq('is_archived', false)
-        .eq('owner_id', athlete.owner_id)
+        // The coach's visible catalogues (personal + shared club), not just
+        // owner_id rows — club exercises keep their creator's owner_id.
+        .or(await catalogueOrFilter(athlete.owner_id))
         // Drop the "— System" sentinel placeholders (TEXT / IMAGE /
         // VIDEO / GPP) — they're not lifts to record PRs against.
         .neq('category', '— System')

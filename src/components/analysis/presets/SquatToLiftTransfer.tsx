@@ -3,6 +3,7 @@ import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCo
 import { fetchExerciseTimeSeries } from '../../../hooks/useAnalysis';
 import { supabase } from '../../../lib/supabase';
 import { getOwnerId } from '../../../lib/ownerContext';
+import { catalogueOrFilter } from '../../../lib/libraryScope';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -14,7 +15,7 @@ export function SquatToLiftTransfer({ athleteId, startDate, endDate }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const { data: exercises } = await supabase.from('exercises').select('id, name, lift_slot').eq('owner_id', getOwnerId());
+        const { data: exercises } = await supabase.from('exercises').select('id, name, lift_slot').or(await catalogueOrFilter(getOwnerId()));
         const exList = (exercises ?? []) as Array<{ id: string; name: string; lift_slot: string | null }>;
 
         // Primary: lift_slot; fallback: name heuristic

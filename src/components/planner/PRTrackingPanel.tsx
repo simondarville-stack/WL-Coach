@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Trophy, X, ArrowLeft, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { supabase } from '../../lib/supabase';
+import { catalogueOrFilter } from '../../lib/libraryScope';
 import { estimate1RM, roundToHalf } from '../../lib/xrmUtils';
 import {
   buildPRRows,
@@ -108,13 +109,13 @@ export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlig
         supabase
           .from('exercises')
           .select('*')
-          // Use the HOST coach's library (athlete.owner_id), not the
-          // active coach's. For a shared athlete the PR table must show
+          // Use the HOST coach's visible catalogues (athlete.owner_id), not
+          // the active coach's. For a shared athlete the PR table must show
           // the catalogue the athlete's programmes are written against —
           // otherwise a co-coach sees their own exercises here.
           .eq('track_pr', true)
           .eq('is_archived', false)
-          .eq('owner_id', athlete.owner_id)
+          .or(await catalogueOrFilter(athlete.owner_id))
           // Hide the "— System" category — those rows are sentinel
           // placeholders for TEXT / IMAGE / VIDEO / GPP blocks, not
           // lifts the athlete sets a PR on.

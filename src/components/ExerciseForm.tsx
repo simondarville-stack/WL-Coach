@@ -14,6 +14,14 @@ interface ExerciseFormProps {
    *  from a specific category section (e.g. an empty one). Ignored when
    *  editing, where the exercise's own category wins. */
   initialCategory?: string | null;
+  /** Catalogues the coach can write into (personal + clubs where editor).
+   *  When provided with >1 option, the form shows a Library select and
+   *  includes library_id in the save payload — moving an exercise between
+   *  catalogues preserves its id (promote/demote). Omitted (planner quick
+   *  create): library_id is left to the DB default (host's personal). */
+  libraryOptions?: Array<{ id: string; label: string; isClub: boolean }>;
+  /** Preselected library for a new exercise (normally the personal one). */
+  defaultLibraryId?: string | null;
 }
 
 const PRESET_COLORS = [
@@ -31,7 +39,7 @@ function isProtectedCategory(name: string): boolean {
   return name.toLowerCase().includes('system');
 }
 
-export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [], initialCategory = null }: ExerciseFormProps) {
+export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [], initialCategory = null, libraryOptions, defaultLibraryId = null }: ExerciseFormProps) {
   const { categories, fetchCategories } = useExercises();
 
   const [name, setName] = useState('');
@@ -47,8 +55,11 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
   const [trackPr, setTrackPr] = useState(true);
   const [prReferenceId, setPrReferenceId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
+  const [libraryId, setLibraryId] = useState<string | null>(defaultLibraryId);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const selectedLibrary = libraryOptions?.find(o => o.id === libraryId) ?? null;
 
   useEffect(() => {
     fetchCategories();
@@ -71,6 +82,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
       setTrackPr(editingExercise.track_pr ?? true);
       setPrReferenceId(editingExercise.pr_reference_exercise_id ?? null);
       setParentId(editingExercise.parent_exercise_id ?? null);
+      setLibraryId(editingExercise.library_id ?? defaultLibraryId);
     } else {
       resetForm();
     }
@@ -94,6 +106,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     setTrackPr(true);
     setPrReferenceId(null);
     setParentId(null);
+    setLibraryId(defaultLibraryId);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -117,6 +130,9 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         parent_exercise_id: parentId,
         notes: notes.trim() || null,
         link: link.trim() || null,
+        // Only the library screen offers catalogue placement; other callers
+        // (planner quick create) leave library_id to the DB default.
+        ...(libraryOptions && libraryId ? { library_id: libraryId } : {}),
       });
       if (!editingExercise) {
         resetForm();
@@ -190,6 +206,37 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         </p>
       </div>
 
+      {libraryOptions && libraryOptions.length > 1 && (
+        <div>
+          <label htmlFor="library" className="block text-sm font-medium text-gray-700 mb-1">
+            Library
+          </label>
+          <select
+            id="library"
+            value={libraryId ?? ''}
+            onChange={(e) => {
+              const next = e.target.value || null;
+              setLibraryId(next);
+              // A club exercise must not stay parented to an exercise outside
+              // its catalogue — clear a now-invalid parent link.
+              const nextOpt = libraryOptions.find(o => o.id === next);
+              if (nextOpt?.isClub && parentId) {
+                const parent = allExercises.find(p => p.id === parentId);
+                if (parent && parent.library_id !== next) setParentId(null);
+              }
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {libraryOptions.map(o => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            Personal exercises are private to you; club-catalogue exercises are shared with every member coach. Moving an exercise keeps its id, so all planned and logged history follows it.
+          </p>
+        </div>
+      )}
+
       <div>
         <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
           Category *
@@ -213,13 +260,17 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         // Parent exercise (optional): a child rolls up into this parent for
         // analysis + planner totals. Candidates exclude self, System sentinels,
         // archived, and any DESCENDANT of the edited exercise (full multi-hop
-        // cycle guard via the shared resolver — not just one hop).
+        // cycle guard via the shared resolver — not just one hop). A club
+        // exercise may only parent within its own catalogue (a shared tree
+        // must never hang off someone's personal exercise); personal
+        // exercises may parent to anything visible, club included.
         const parentIndex = buildParentIndex(allExercises);
         const candidates = allExercises
           .filter(e =>
             e.id !== editingExercise?.id &&
             e.category !== '— System' &&
             !e.is_archived &&
+            !(selectedLibrary?.isClub && e.library_id !== selectedLibrary.id) &&
             !(editingExercise ? wouldCreateCycle(editingExercise.id, e.id, parentIndex) : false),
           )
           .sort((a, b) => a.name.localeCompare(b.name));

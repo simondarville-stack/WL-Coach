@@ -1,8 +1,15 @@
-import { lazy, Suspense, useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthleteStore } from '../../store/athleteStore';
+import { useExerciseStore } from '../../store/exerciseStore';
+import { useCoachStore } from '../../store/coachStore';
 import { useAthletes } from '../../hooks/useAthletes';
+import {
+  resolveLibraryScope, invalidateLibraryScope, canEditCatalogueRow, libraryLabelFor,
+  type CoachLibraryScope,
+} from '../../lib/libraryScope';
+import { CatalogueSharingModal } from './CatalogueSharingModal';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 // Lazy: the bulk-import modal drags the whole xlsx codec with it — loaded
 // only when the coach actually opens Import.
@@ -18,6 +25,8 @@ import type { Exercise } from '../../lib/database.types';
 export function ExerciseLibrary() {
   const { selectedAthlete } = useAthleteStore();
   const { athletes, fetchAllAthletes } = useAthletes();
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? '00000000-0000-0000-0000-000000000001');
+  const invalidateExerciseCache = useExerciseStore(s => s.invalidate);
 
   const {
     exercises, categories, setExercises,
@@ -35,10 +44,48 @@ export function ExerciseLibrary() {
   // specific section (e.g. "Add an exercise here" on an empty category).
   const [createInCategory, setCreateInCategory] = useState<string | null>(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showSharing, setShowSharing] = useState(false);
   const [athletePRMap, setAthletePRMap] = useState<Map<string, { pr_value_kg: number | null; pr_date: string | null }>>(new Map());
+
+  // Which catalogues the active coach can see/edit — drives the read-only
+  // gating (viewer role on a shared club catalogue) and the library badges.
+  const [scope, setScope] = useState<CoachLibraryScope | null>(null);
+  useEffect(() => {
+    let alive = true;
+    resolveLibraryScope(activeCoachId).then(s => { if (alive) setScope(s); });
+    return () => { alive = false; };
+  }, [activeCoachId, showSharing]);
 
   useEffect(() => { fetchExercises(); fetchCategories(); fetchAllAthletes(); }, []);
   useEffect(() => { loadPRs(); }, [selectedAthlete?.id]);
+
+  // Optimistic default while the scope resolves: everything editable (the
+  // write guards in useExercises are authoritative anyway).
+  const canEdit = useCallback(
+    (ex: Exercise) => (scope ? canEditCatalogueRow(scope, ex) : true),
+    [scope],
+  );
+  const clubLibraryIds = useMemo(
+    () => new Set((scope?.clubs ?? []).map(c => c.libraryId)),
+    [scope],
+  );
+  const libraryOptions = useMemo(() => {
+    if (!scope?.available || !scope.personalLibraryId) return undefined;
+    return [
+      { id: scope.personalLibraryId, label: 'Personal', isClub: false },
+      ...scope.clubs
+        .filter(c => c.role === 'editor')
+        .map(c => ({ id: c.libraryId, label: c.name, isClub: true })),
+    ];
+  }, [scope]);
+
+  const handleSharingChanged = useCallback(() => {
+    invalidateLibraryScope();
+    invalidateExerciseCache();
+    void fetchExercises();
+    void fetchCategories();
+    resolveLibraryScope(activeCoachId).then(setScope);
+  }, [activeCoachId]);
 
   const loadPRs = useCallback(async () => {
     if (!selectedAthlete) { setAthletePRMap(new Map()); return; }
@@ -180,6 +227,13 @@ export function ExerciseLibrary() {
         }}
         onMoveExercise={handleMoveExercise}
         hasSidePanel={selectedExerciseId !== null}
+        onOpenSharing={() => setShowSharing(true)}
+        libraryBadge={ex => (scope ? libraryLabelFor(scope, ex) : null)}
+        canEditExercise={id => {
+          const ex = exercises.find(e => e.id === id);
+          return ex ? canEdit(ex) : true;
+        }}
+        clubLibraryIds={clubLibraryIds}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}
@@ -210,6 +264,8 @@ export function ExerciseLibrary() {
               onSelectExercise={setSelectedExerciseId}
               relatedExercises={relatedExercises}
               allExercises={exercises}
+              readOnly={!canEdit(selectedExercise)}
+              libraryLabel={scope ? libraryLabelFor(scope, selectedExercise) : null}
             />
           </div>
         </AdaptiveDialog>
@@ -236,7 +292,16 @@ export function ExerciseLibrary() {
         onSave={handleSave}
         allExercises={exercises}
         initialCategory={createInCategory}
+        libraryOptions={libraryOptions}
+        defaultLibraryId={scope?.personalLibraryId ?? null}
       />
+
+      {showSharing && (
+        <CatalogueSharingModal
+          onClose={() => setShowSharing(false)}
+          onChanged={handleSharingChanged}
+        />
+      )}
 
       {showBulkImport && (
         <Suspense fallback={null}>

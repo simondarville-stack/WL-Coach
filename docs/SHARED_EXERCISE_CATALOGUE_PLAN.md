@@ -1,6 +1,19 @@
 # Plan — a club exercise catalogue, plus personal extras
 
-Status: **design decided, not built.** Written 22/07/2026 for the TO-DO item
+Status: **Phases 1–2 SHIPPED in 0.52.0 (27/08/2026)** — schema
+(`exercise_libraries` / `exercise_library_members` / `library_id` on
+exercises+categories, backfilled as a no-op), library-based catalogue
+resolution (`src/lib/libraryScope.ts`), the Catalogue-sharing UI on the
+Exercise Library screen (create club catalogue, seed from personal —
+id-preserving, invite editors/viewers), catalogue invites on the Invitations
+page, and read-only enforcement for viewer coaches (detail panel, tree drag,
+and write guards in `useExercises`). The 27/08 request "a coach locks onto
+another coach's exercise tree read-only" is the **viewer role** on a club
+catalogue seeded by the head coach. **Phase 3 (adopt/remap wizard for
+pre-existing overlapping libraries) and most of Phase 4 (duplicate detection,
+guarded demote, Duplicates panel) are still open.**
+
+Originally written 22/07/2026 for the TO-DO item
 "Give me a plan for how two coaches can share the same exercise catalogue. We
 need to make sure that the unique ID is the same, so they can both plan and
 analyse each other's athletes." Revised the same day with the coach's answers

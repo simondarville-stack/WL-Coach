@@ -17,6 +17,9 @@ export interface CategoryRow {
   name: string;
   display_order: number;
   color: string;
+  /** Which catalogue this category belongs to (exercise_libraries.id).
+   *  Null only on rows predating the shared-catalogue migration. */
+  library_id: string | null;
   created_at: string;
 }
 export type DefaultUnit = 'percentage' | 'absolute_kg' | 'rpe' | 'free_text' | 'free_text_reps' | 'other';
@@ -187,6 +190,12 @@ export interface Exercise {
    *  NULL sorts after ordered siblings, then by name. Display-only. */
   display_order: number | null;
   lift_slot: 'snatch' | 'clean_and_jerk' | 'front_squat' | 'back_squat' | 'snatch_pull' | 'clean_pull' | null;
+  /** Which catalogue this exercise lives in (exercise_libraries.id).
+   *  Personal library = private to its coach; club library = shared with the
+   *  library's members. Moving between libraries preserves the id, so all
+   *  planned/logged/PR references survive. Null only on rows predating the
+   *  shared-catalogue migration (inserts default via DB trigger). */
+  library_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1004,6 +1013,37 @@ export interface TrainingGroupCollaborator {
   created_at: string;
 }
 
+/* ---- Shared exercise catalogues (exercise_libraries) ---- */
+
+export type LibraryRole = 'editor' | 'viewer';
+
+/** A catalogue of exercises + categories. Every coach has exactly one
+ *  'personal' library; 'club' libraries are shared via
+ *  exercise_library_members (editors shape the tree, viewers lock on
+ *  read-only). */
+export interface ExerciseLibrary {
+  id: string;
+  name: string;
+  kind: 'club' | 'personal';
+  owner_coach_id: string | null; // set iff kind = 'personal'
+  created_at: string;
+}
+
+/** Membership of a coach in a club library. Mirrors athlete_collaborators
+ *  (invite / accept / revoke lifecycle). */
+export interface ExerciseLibraryMember {
+  id: string;
+  library_id: string;
+  coach_id: string;
+  role: LibraryRole;
+  invited_by: string;
+  invited_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 /* ---- Soll–Ist analysis (sollist_*). Domain-facing shapes live in
  * src/lib/sollIst.ts; these are the raw table rows. ---- */
 export interface SollIstModelDbRow {
@@ -1323,6 +1363,18 @@ export interface Database {
         Row: TrainingGroupCollaborator & Record<string, unknown>;
         Insert: Partial<Omit<TrainingGroupCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<TrainingGroupCollaborator, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      exercise_libraries: {
+        Row: ExerciseLibrary & Record<string, unknown>;
+        Insert: Partial<Omit<ExerciseLibrary, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ExerciseLibrary, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      exercise_library_members: {
+        Row: ExerciseLibraryMember & Record<string, unknown>;
+        Insert: Partial<Omit<ExerciseLibraryMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ExerciseLibraryMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
     };
