@@ -1,7 +1,8 @@
 // TODO: Consider extracting parsePlannedExercise and parsePerformedRaw into src/lib/calculations.ts
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
-import { fetchByIds } from '../lib/queryPaging';
+import { fetchByIds, fetchAllRows } from '../lib/queryPaging';
+import { catalogueOrFilter } from '../lib/libraryScope';
 import { parsePrescription, parseComboPrescription } from '../lib/prescriptionParser';
 import { weekState, type WeekState } from '../lib/weekUtils';
 import { findPhaseForWeek } from '../lib/macroPhases';
@@ -235,6 +236,9 @@ export async function fetchWeeklyAggregatesForAthletes(params: {
   const fallbackOwner = getOwnerId();
   const hostOf = (athleteId: string) => hostByAthlete.get(athleteId) ?? fallbackOwner;
   const hostIds = Array.from(new Set(athleteIds.map(hostOf)));
+  // Exercise metadata spans the hosts' visible catalogues, not their owner_id
+  // rows — club-catalogue exercises keep the owner_id of whoever created them.
+  const catalogueFilter = await catalogueOrFilter(hostIds);
 
   const [weekPlansRaw, macroWeeksRaw, macroPhasesRaw, sessionsRaw, bwRaw, exercisesRaw] =
     await Promise.all([
@@ -283,10 +287,10 @@ export async function fetchWeeklyAggregatesForAthletes(params: {
         .order('date')
         .order('id')
         .range(from, to)),
-      fetchByIds(hostIds, (ids, from, to) => supabase
+      fetchAllRows((from, to) => supabase
         .from('exercises')
         .select('id, name, category, color, owner_id')
-        .in('owner_id', ids)
+        .or(catalogueFilter)
         .order('id')
         .range(from, to)),
     ]);

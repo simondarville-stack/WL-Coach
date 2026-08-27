@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tree, type NodeRendererProps } from 'react-arborist';
-import { ChevronRight, GripVertical, Layers } from 'lucide-react';
+import { ChevronRight, GripVertical, Layers, Lock } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { buildParentIndex, wouldCreateCycle } from '../../lib/exerciseHierarchy';
@@ -47,6 +47,13 @@ interface ExerciseTreeProps {
   ) => void;
   /** Optional live search — filters exercises by name/code, keeping ancestors. */
   searchTerm?: string;
+  /** False for exercises in read-only catalogues (viewer role): the row shows
+   *  a lock and cannot be dragged. Omitted = everything editable. */
+  canEditExercise?: (id: string) => boolean;
+  /** Club catalogue ids the coach can see. A club exercise must stay parented
+   *  within its own catalogue (a shared tree must never hang off someone's
+   *  personal exercise); personal exercises may parent anywhere visible. */
+  clubLibraryIds?: Set<string>;
 }
 
 function isProtectedCategory(name: string): boolean {
@@ -62,8 +69,20 @@ const byOrder = (a: Exercise, b: Exercise) =>
 
 export function ExerciseTree({
   exercises, categories, selectedExerciseId, onSelectExercise, onMoveExercise, searchTerm,
+  canEditExercise, clubLibraryIds,
 }: ExerciseTreeProps) {
   const parentIndex = useMemo(() => buildParentIndex(exercises), [exercises]);
+  const libraryById = useMemo(
+    () => new Map(exercises.map(e => [e.id, e.library_id] as const)),
+    [exercises],
+  );
+
+  // Club exercises must keep their parent inside the same catalogue.
+  const crossLibraryParent = (dragId: string, parentExerciseId: string): boolean => {
+    const dragLib = libraryById.get(dragId);
+    if (!dragLib || !clubLibraryIds?.has(dragLib)) return false;
+    return libraryById.get(parentExerciseId) !== dragLib;
+  };
 
   const data = useMemo<ExTreeNode[]>(() => {
     const exIds = new Set(exercises.map(e => e.id));
@@ -198,7 +217,13 @@ export function ExerciseTree({
             </span>
             {d.isCompetition && <Badge variant="danger">COMP</Badge>}
             {d.childCount > 0 && <span style={countBadge} title={`${d.childCount} variation(s)`}>{d.childCount}</span>}
-            <GripVertical size={11} style={{ marginLeft: 'auto', color: 'var(--color-text-tertiary)', opacity: 0.5, flexShrink: 0 }} />
+            {canEditExercise && !canEditExercise(d.id) ? (
+              <span title="Read-only — shared catalogue" style={{ marginLeft: 'auto', display: 'flex', flexShrink: 0 }}>
+                <Lock size={10} style={{ color: 'var(--color-text-tertiary)', opacity: 0.7 }} />
+              </span>
+            ) : (
+              <GripVertical size={11} style={{ marginLeft: 'auto', color: 'var(--color-text-tertiary)', opacity: 0.5, flexShrink: 0 }} />
+            )}
           </>
         )}
       </div>
@@ -225,14 +250,18 @@ export function ExerciseTree({
           }}
           disableMultiSelection
           // Only exercises drag; categories are fixed top-level buckets.
-          disableDrag={(d) => d.kind === 'category'}
+          // Rows in read-only catalogues (viewer role) don't drag either.
+          disableDrag={(d) => d.kind === 'category' || (canEditExercise ? !canEditExercise(d.id) : false)}
           // Reject: dropping at the very top (exercises must live under a
-          // category) and dropping onto your own descendant (cycle).
+          // category), dropping onto your own descendant (cycle), and
+          // parenting a club exercise outside its own catalogue.
           disableDrop={({ parentNode, dragNodes }) => {
             if (!parentNode) return true;
             if (parentNode.data.kind === 'category') return false;
             const dragId = dragNodes[0]?.id;
-            return dragId ? wouldCreateCycle(dragId, parentNode.id, parentIndex) : false;
+            if (!dragId) return false;
+            return wouldCreateCycle(dragId, parentNode.id, parentIndex)
+              || crossLibraryParent(dragId, parentNode.id);
           }}
           onMove={({ dragIds, parentNode, index }) => {
             const dragId = dragIds[0];
@@ -243,11 +272,14 @@ export function ExerciseTree({
             if (p.kind === 'category') {
               newParentId = null;
               category = p.categoryName;
-            } else if (!wouldCreateCycle(dragId, parentNode.id, parentIndex)) {
+            } else if (
+              !wouldCreateCycle(dragId, parentNode.id, parentIndex)
+              && !crossLibraryParent(dragId, parentNode.id)
+            ) {
               newParentId = parentNode.id;
               category = undefined;
             } else {
-              return; // cycle — reject
+              return; // cycle or cross-catalogue parent — reject
             }
             // The target group's ordered exercise ids after the move, so the
             // dropped position persists as display_order for the whole group.

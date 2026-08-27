@@ -6,6 +6,7 @@ import { DEFAULT_UNITS } from '../lib/constants';
 import { useExercises } from '../hooks/useExercises';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
+import { resolveLibraryScope } from '../lib/libraryScope';
 import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
 
 interface ExerciseBulkImportModalProps {
@@ -174,14 +175,19 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
   const loadExisting = useCallback(async () => {
     try {
       setExistingLoading(true);
-      const { data, error } = await supabase
+      // Import is a PERSONAL-library workflow: match/replace only the coach's
+      // own rows. Never touch club-catalogue exercises (which share this
+      // coach's owner_id when they seeded the catalogue).
+      const scope = await resolveLibraryScope(getOwnerId());
+      let q = supabase
         .from('exercises')
         .select('*')
-        .eq('owner_id', getOwnerId())
         .eq('is_archived', false)
-        .neq('category', '— System')
-        .order('category')
-        .order('name');
+        .neq('category', '— System');
+      q = scope.available && scope.personalLibraryId
+        ? q.eq('library_id', scope.personalLibraryId)
+        : q.eq('owner_id', getOwnerId());
+      const { data, error } = await q.order('category').order('name');
       if (error) throw error;
       setExistingExercises((data as Exercise[] | null) ?? []);
     } finally {
@@ -266,6 +272,10 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
     setImportError(null);
     try {
       const ownerId = getOwnerId();
+      // Personal-library scoping (see loadExisting): the import must never
+      // archive or overwrite club-catalogue rows.
+      const scope = await resolveLibraryScope(ownerId);
+      const personalLibId = scope.available ? scope.personalLibraryId : null;
 
       // 1. Auto-create any categories that don't exist yet.
       const knownNames = new Set(categories.map(c => c.name));
@@ -281,22 +291,28 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
       //    The merge logic below will then restore + overwrite anything
       //    that's still in the incoming template, leaving the rest archived.
       if (importMode === 'swap') {
-        const { error: archiveErr } = await supabase
+        let archiveQ = supabase
           .from('exercises')
           .update({ is_archived: true })
-          .eq('owner_id', ownerId)
           .eq('is_archived', false)
           .neq('category', '— System');
+        archiveQ = personalLibId
+          ? archiveQ.eq('library_id', personalLibId)
+          : archiveQ.eq('owner_id', ownerId);
+        const { error: archiveErr } = await archiveQ;
         if (archiveErr) throw archiveErr;
       }
 
       // 3. Fetch every existing exercise for this owner (active + archived,
       //    non-system) so we can match incoming rows by code OR name.
-      const { data: existing, error: existingErr } = await supabase
+      let existingQ = supabase
         .from('exercises')
         .select('id, exercise_code, name, is_archived')
-        .eq('owner_id', ownerId)
         .neq('category', '— System');
+      existingQ = personalLibId
+        ? existingQ.eq('library_id', personalLibId)
+        : existingQ.eq('owner_id', ownerId);
+      const { data: existing, error: existingErr } = await existingQ;
       if (existingErr) throw existingErr;
 
       const byCode = new Map<string, { id: string; is_archived: boolean }>();
@@ -361,11 +377,14 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
       let parentsCyclic = 0;
       const parentRows = parsedRows.filter(r => r.data && r.parentRef);
       if (parentRows.length > 0) {
-        const { data: allNow, error: allErr } = await supabase
+        let allNowQ = supabase
           .from('exercises')
           .select('id, exercise_code, name, parent_exercise_id')
-          .eq('owner_id', ownerId)
           .neq('category', '— System');
+        allNowQ = personalLibId
+          ? allNowQ.eq('library_id', personalLibId)
+          : allNowQ.eq('owner_id', ownerId);
+        const { data: allNow, error: allErr } = await allNowQ;
         if (allErr) throw allErr;
         const list = (allNow as { id: string; exercise_code: string | null; name: string; parent_exercise_id: string | null }[] | null) ?? [];
         const byCode2 = new Map<string, (typeof list)[number]>();

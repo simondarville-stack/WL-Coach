@@ -22,6 +22,7 @@
 
 import { supabase } from '../supabase';
 import { getOwnerId } from '../ownerContext';
+import { catalogueOrFilter } from '../libraryScope';
 import { isoMonday, isoAddDays, snapToMonday } from '../dateUtils';
 import { parsePrescription, parseComboPrescription, rangeMid } from '../prescriptionParser';
 import { expandForCounting } from '../comboExpansion';
@@ -731,11 +732,14 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
     for (const g of (groups ?? []) as Array<{ id: string; name: string }>) groupLabels[g.id] = g.name;
   }
 
-  // 5. Exercises (host-owned) + PR bests.
+  // 5. Exercises (the hosts' visible catalogues — club-catalogue exercises
+  // keep the owner_id of whoever created them, so an owner filter would drop
+  // them) + PR bests.
+  const catalogueFilter = await catalogueOrFilter(hostOwners);
   const { data: exRows } = await supabase
     .from('exercises')
     .select('id, name, category, color, lift_slot, is_competition_lift, counts_towards_totals, default_unit, pr_reference_exercise_id, parent_exercise_id')
-    .in('owner_id', hostOwners);
+    .or(catalogueFilter);
   const exercisesById: Record<string, RawExercise> = {};
   const exerciseColors: Record<string, string> = {}; // name → colour (for chart series)
   for (const e of (exRows ?? []) as RawExercise[]) {
@@ -748,7 +752,7 @@ export async function fetchFacts(query: AnalysisQuery, now?: string): Promise<Fe
   const { data: catRows } = await supabase
     .from('categories')
     .select('name, color')
-    .in('owner_id', hostOwners);
+    .or(catalogueFilter);
   for (const c of (catRows ?? []) as Array<{ name: string; color: string | null }>) {
     if (c.color) categoryColors[c.name] = c.color;
   }

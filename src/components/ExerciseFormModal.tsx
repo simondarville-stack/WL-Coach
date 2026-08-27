@@ -10,6 +10,9 @@ interface ExerciseFormModalProps {
   allExercises?: Exercise[];
   /** Preselect a category when creating (e.g. "add to this empty category"). */
   initialCategory?: string | null;
+  /** Catalogue placement options (see ExerciseForm) — library screen only. */
+  libraryOptions?: Array<{ id: string; label: string; isClub: boolean }>;
+  defaultLibraryId?: string | null;
 }
 
 export function ExerciseFormModal({
@@ -19,6 +22,8 @@ export function ExerciseFormModal({
   onSave,
   allExercises = [],
   initialCategory = null,
+  libraryOptions,
+  defaultLibraryId = null,
 }: ExerciseFormModalProps) {
   if (!isOpen) return null;
 
@@ -45,6 +50,8 @@ export function ExerciseFormModal({
             onCancelEdit={onClose}
             allExercises={allExercises}
             initialCategory={initialCategory}
+            libraryOptions={libraryOptions}
+            defaultLibraryId={defaultLibraryId}
           />
         </div>
       </div>

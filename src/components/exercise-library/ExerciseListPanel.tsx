@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Search, Plus, Grid3X3, List, ListTree, Upload,
-  ChevronRight, Layers, X as XIcon, AlertTriangle, SlidersHorizontal,
+  ChevronRight, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2,
 } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
@@ -32,6 +32,25 @@ const UNIT_LABELS: Record<string, string> = {
 // Filter options exposed to coaches mirror the canonical create-form
 // list so the library shows the same vocabulary the planner uses.
 const UNIT_OPTIONS = DEFAULT_UNITS;
+
+/** Small neutral chip naming the catalogue an exercise comes from. Only
+ *  rendered for rows outside the coach's own personal library (a chip on
+ *  every row carries no signal). */
+export function LibraryChip({ label }: { label: string }) {
+  return (
+    <span
+      title={`From the "${label}" catalogue`}
+      style={{
+        fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+        background: 'var(--color-bg-secondary)', border: '0.5px solid var(--color-border-tertiary)',
+        padding: '0 5px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: 0,
+        maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 const LIFT_SLOT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '__none__', label: 'No slot' },
@@ -277,9 +296,11 @@ interface ExerciseCardProps {
   athletePR: { pr_value_kg: number | null; pr_date: string | null } | null;
   onClick: () => void;
   isDuplicate?: boolean;
+  /** Catalogue chip label (club name / "Shared"); null = no chip. */
+  libraryLabel?: string | null;
 }
 
-export function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDuplicate }: ExerciseCardProps) {
+export function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDuplicate, libraryLabel }: ExerciseCardProps) {
   return (
     <div
       onClick={onClick}
@@ -323,6 +344,7 @@ export function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDupli
           {exercise.exercise_code || exercise.name}
         </span>
         {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
+        {libraryLabel && <LibraryChip label={libraryLabel} />}
         {isDuplicate && (
           <span title="Duplicate exercise name" style={{ display: 'inline-flex' }}>
             <AlertTriangle
@@ -371,9 +393,11 @@ interface ExerciseListRowProps {
   athletePR: { pr_value_kg: number | null } | null;
   onClick: () => void;
   isDuplicate?: boolean;
+  /** Catalogue chip label (club name / "Shared"); null = no chip. */
+  libraryLabel?: string | null;
 }
 
-export function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDuplicate }: ExerciseListRowProps) {
+export function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDuplicate, libraryLabel }: ExerciseListRowProps) {
   const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
 
   return (
@@ -421,8 +445,11 @@ export function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDu
         )}
       </div>
 
-      <div style={{ color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {exercise.name}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span style={{ color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {exercise.name}
+        </span>
+        {libraryLabel && <LibraryChip label={libraryLabel} />}
       </div>
 
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
@@ -548,6 +575,16 @@ interface ExerciseListPanelProps {
     orderedSiblingIds: string[],
   ) => void;
   hasSidePanel: boolean;
+  /** Opens the catalogue-sharing dialog (club libraries, invites, seeding). */
+  onOpenSharing: () => void;
+  /** Catalogue label for a row (club name / "Shared"); null = own personal
+   *  library, no chip. */
+  libraryBadge?: (ex: Exercise) => string | null;
+  /** False for rows in read-only catalogues (viewer role) — gates tree drag. */
+  canEditExercise?: (id: string) => boolean;
+  /** Club catalogue ids visible to the coach — the tree uses this to keep
+   *  club exercises parented within their own catalogue. */
+  clubLibraryIds?: Set<string>;
 }
 
 function isProtectedCategory(cat: Category): boolean {
@@ -566,6 +603,10 @@ export function ExerciseListPanel({
   onCreateExercise,
   onMoveExercise,
   hasSidePanel,
+  onOpenSharing,
+  libraryBadge,
+  canEditExercise,
+  clubLibraryIds,
 }: ExerciseListPanelProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('list');
   const [searchQuery, setSearchQuery] = useState('');
@@ -630,6 +671,7 @@ export function ExerciseListPanel({
               athletePR={athletePRMap.get(ex.id) ?? null}
               onClick={() => onSelectExercise(ex.id === selectedExerciseId ? null : ex.id)}
               isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
+              libraryLabel={libraryBadge?.(ex) ?? null}
             />
           ))}
         </div>
@@ -645,6 +687,7 @@ export function ExerciseListPanel({
             athletePR={athletePRMap.get(ex.id) ?? null}
             onClick={() => onSelectExercise(ex.id === selectedExerciseId ? null : ex.id)}
             isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
+            libraryLabel={libraryBadge?.(ex) ?? null}
           />
         ))}
       </div>
@@ -763,6 +806,9 @@ export function ExerciseListPanel({
           )}
         </div>
 
+        <Button variant="secondary" size="sm" icon={<Share2 size={12} />} onClick={onOpenSharing}>
+          Sharing
+        </Button>
         <Button variant="secondary" size="sm" icon={<Layers size={12} />} onClick={onOpenCategoryModal}>
           Categories
         </Button>
@@ -784,6 +830,8 @@ export function ExerciseListPanel({
             onSelectExercise={onSelectExercise}
             onMoveExercise={onMoveExercise}
             searchTerm={searchQuery.trim() || undefined}
+            canEditExercise={canEditExercise}
+            clubLibraryIds={clubLibraryIds}
           />
         ) : (
         <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -836,6 +884,7 @@ export function ExerciseListPanel({
             const orphanCat: Category = {
               id: '__unspecified__', name: 'Unspecified', owner_id: '',
               color: 'var(--color-gray-400)', display_order: 9999, created_at: '',
+              library_id: null,
             };
             const isCollapsed = collapsedCategories.has(orphanCat.id);
             return (

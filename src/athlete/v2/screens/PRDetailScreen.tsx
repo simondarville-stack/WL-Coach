@@ -20,6 +20,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { supabase } from '../../../lib/supabase';
+import { catalogueOrFilter } from '../../../lib/libraryScope';
 import { describeError } from '../../../lib/errorMessage';
 import {
   buildPRRows,
@@ -74,7 +75,9 @@ export function PRDetailScreen() {
           .from('exercises')
           .select('*')
           .eq('id', exerciseId)
-          .eq('owner_id', athlete.owner_id)
+          // Guard by the coach's visible catalogues (personal + shared club)
+          // rather than owner_id — club exercises keep their creator's owner.
+          .or(await catalogueOrFilter(athlete.owner_id))
           // Defensive: refuse to render PR detail for a "— System"
           // sentinel even if the URL was hand-edited.
           .neq('category', '— System')
