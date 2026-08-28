@@ -11,6 +11,7 @@ import {
 } from '../../lib/libraryScope';
 import { CatalogueSharingModal } from './CatalogueSharingModal';
 import { DuplicatesPanel, type DuplicatePair } from './DuplicatesPanel';
+import { PrunePanel } from './PrunePanel';
 import { matchExercise } from '../../lib/exerciseMatching';
 import { useExerciseUsage } from '../../hooks/useExerciseUsage';
 import { rollUpUsage, type UsageRollup } from '../../lib/exerciseUsage';
@@ -35,7 +36,7 @@ export function ExerciseLibrary() {
   const {
     exercises, categories, setExercises, setCategories,
     fetchExercises, fetchCategories,
-    createExercise, updateExercise, restoreExercise, bulkReorderExercises,
+    createExercise, updateExercise, restoreExercise, bulkArchiveExercises, bulkReorderExercises,
     createCategory, updateCategory, deleteCategory,
     bulkReorderCategories,
   } = useExercises();
@@ -52,6 +53,7 @@ export function ExerciseLibrary() {
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showSharing, setShowSharing] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showPrune, setShowPrune] = useState(false);
   const [athletePRMap, setAthletePRMap] = useState<Map<string, { pr_value_kg: number | null; pr_date: string | null }>>(new Map());
   // Archived rows are kept out of the main store (everything downstream
   // assumes it holds only active exercises) and merged in for display only.
@@ -112,16 +114,17 @@ export function ExerciseLibrary() {
     for (const r of usageRollup.values()) max = Math.max(max, r.family.planned);
     return max;
   }, [usageRollup]);
-  const unusedCount = useMemo(() => {
-    if (usageWeeks == null) return 0;
-    let n = 0;
-    for (const ex of exercises) {
-      if (ex.category === '— System') continue;
+  /** The prune set: active, non-sentinel exercises with no family usage at
+   *  all in the window. Same rule the "N unused" hint counts. */
+  const pruneCandidates = useMemo(() => {
+    if (usageWeeks == null) return [];
+    return exercises.filter(ex => {
+      if (ex.category === '— System') return false;
       const r = usageRollup.get(ex.id);
-      if (!r || (r.family.planned === 0 && r.family.logged === 0)) n++;
-    }
-    return n;
+      return !r || (r.family.planned === 0 && r.family.logged === 0);
+    });
   }, [usageWeeks, exercises, usageRollup]);
+  const unusedCount = pruneCandidates.length;
 
   /** Active rows, plus archived ones when the coach asks to see them. */
   const visibleExercises = useMemo(() => {
@@ -429,6 +432,7 @@ export function ExerciseLibrary() {
         usageMax={usageMax}
         usageLoading={usageLoading}
         unusedCount={unusedCount}
+        onOpenPrune={() => setShowPrune(true)}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}
@@ -496,6 +500,25 @@ export function ExerciseLibrary() {
         <CatalogueSharingModal
           onClose={() => setShowSharing(false)}
           onChanged={handleSharingChanged}
+        />
+      )}
+
+      {showPrune && usageWeeks != null && (
+        <PrunePanel
+          candidates={pruneCandidates}
+          allExercises={exercises}
+          weeks={usageWeeks}
+          canArchive={canEdit}
+          libraryBadge={ex => (scope ? libraryLabelFor(scope, ex) : null)}
+          onArchive={bulkArchiveExercises}
+          onClose={() => setShowPrune(false)}
+          onChanged={() => {
+            // Archived rows leave the active set and join the archived list;
+            // usage counts are unaffected, so only the catalogue refetches.
+            invalidateExerciseCache();
+            void fetchExercises();
+            void loadArchived();
+          }}
         />
       )}
 
