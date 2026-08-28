@@ -16,6 +16,7 @@ import {
   Hash,
   Trophy,
   Mail,
+  PlaySquare,
   AlertTriangle,
   Layers,
   UserPlus,
@@ -60,6 +61,7 @@ const sections: NavSection[] = [
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
       // { path: '/training-log', label: 'Training log', icon: ClipboardList }, // hidden: out of scope
       { path: '/inbox', label: 'Inbox', icon: Mail, badge: 'inbox' },
+      { path: '/review', label: 'Review feed', icon: PlaySquare },
       { path: '/prs', label: 'Personal Records', icon: Trophy },
     ],
   },

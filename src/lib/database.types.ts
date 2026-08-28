@@ -607,6 +607,9 @@ export interface TrainingLogSession {
   bodyweight_kg: number | null;
   vas_score: number | null;
   custom_metrics: Record<string, CustomMetricEntry>;
+  /** Stamped when a coach reviews this session in the Review feed.
+   *  Null = new (not yet reviewed). See migration add_session_coach_reviewed_at. */
+  coach_reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }

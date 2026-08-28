@@ -1,0 +1,411 @@
+/**
+ * ReviewCards — the card renderers for the coach Review feed scroller.
+ *
+ * Three card kinds share one visual frame (dark stage, phone-width column):
+ *   VideoCard   — full-bleed clip, autoplays while in view
+ *   ThreadCard  — unread athlete question(s), reply inline
+ *   SessionCard — completed-session summary (performed work via StackedNotation)
+ *
+ * Every card carries a ComposeBar: quick-reaction chips + a comment box that
+ * posts into the existing athlete-visible message thread.
+ */
+import { useEffect, useRef, useState } from 'react';
+import {
+  Check,
+  CheckCircle2,
+  ChevronUp,
+  ClipboardList,
+  MessageCircle,
+  Send,
+  Video,
+} from 'lucide-react';
+import type { Athlete } from '../../lib/database.types';
+import type {
+  ReviewSessionItem,
+  ReviewThreadItem,
+  ReviewVideoItem,
+} from '../../lib/reviewFeedService';
+import { StackedNotation } from '../planner/StackedNotation';
+import { formatDateShort } from '../../lib/dateUtils';
+
+// COACH-CONFIG candidate: reaction presets should eventually be coach-defined.
+export const QUICK_REACTIONS = ['👍', '💪 Strong work', '🔥 Great session', '👀 Noted — more later'];
+
+// ─── Shared bits ───────────────────────────────────────────────────────────
+
+function AthleteBadge({ athlete, context }: { athlete: Athlete | undefined; context: string }) {
+  const name = athlete?.name ?? 'Unknown athlete';
+  return (
+    <div className="flex items-center gap-2.5 min-w-0">
+      {athlete?.photo_url ? (
+        <img
+          src={athlete.photo_url}
+          alt=""
+          className="w-8 h-8 rounded-full object-cover border border-white/20"
+        />
+      ) : (
+        <div className="w-8 h-8 rounded-full bg-white/15 text-white flex items-center justify-center text-sm font-medium">
+          {name.charAt(0).toUpperCase()}
+        </div>
+      )}
+      <div className="min-w-0 leading-tight">
+        <div className="text-sm font-medium text-white truncate">{name}</div>
+        <div className="text-[11px] text-white/60 truncate">{context}</div>
+      </div>
+    </div>
+  );
+}
+
+function SeenDot({ seen }: { seen: boolean }) {
+  return seen ? (
+    <span className="flex items-center gap-1 text-[11px] text-emerald-400/90">
+      <Check size={12} /> seen
+    </span>
+  ) : (
+    <span className="flex items-center gap-1 text-[11px] text-sky-300">
+      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" /> new
+    </span>
+  );
+}
+
+interface ComposeBarProps {
+  placeholder: string;
+  onSend: (text: string) => Promise<void>;
+  /** Hide the emoji chips (e.g. on question cards a bare 👍 is a non-answer). */
+  showReactions?: boolean;
+}
+
+function ComposeBar({ placeholder, onSend, showReactions = true }: ComposeBarProps) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const send = async (body: string) => {
+    const trimmed = body.trim();
+    if (trimmed === '' || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSend(trimmed);
+      setSent(prev => [...prev, trimmed]);
+      setText('');
+    } catch {
+      setError('Send failed — try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {sent.map((s, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-[11px] text-emerald-300/90 px-1">
+          <CheckCircle2 size={12} className="shrink-0" />
+          <span className="truncate">Sent: {s}</span>
+        </div>
+      ))}
+      {showReactions && (
+        <div className="flex flex-wrap gap-1.5">
+          {QUICK_REACTIONS.map(r => (
+            <button
+              key={r}
+              type="button"
+              disabled={busy}
+              onClick={() => void send(r)}
+              className="px-2 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-xs transition-colors disabled:opacity-50"
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={e => {
+          e.preventDefault();
+          void send(text);
+        }}
+      >
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 min-w-0 bg-white/10 text-white placeholder-white/40 text-sm rounded-full px-3.5 py-2 outline-none focus:bg-white/15 focus:ring-1 focus:ring-white/30"
+        />
+        <button
+          type="submit"
+          disabled={busy || text.trim() === ''}
+          title="Send comment"
+          className="w-9 h-9 shrink-0 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center disabled:opacity-40"
+        >
+          <Send size={15} />
+        </button>
+      </form>
+      {error && <div className="text-[11px] text-red-300 px-1">{error}</div>}
+    </div>
+  );
+}
+
+interface CardFrameProps {
+  athlete: Athlete | undefined;
+  context: string;
+  seen: boolean;
+  kindIcon: React.ReactNode;
+  children: React.ReactNode;
+  composer: ComposeBarProps;
+}
+
+/** Common frame: header row, content area, composer pinned at the bottom. */
+function CardFrame({ athlete, context, seen, kindIcon, children, composer }: CardFrameProps) {
+  return (
+    <div className="h-full flex flex-col px-3 py-3 gap-2">
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <AthleteBadge athlete={athlete} context={context} />
+        <div className="flex items-center gap-2 text-white/50">
+          <SeenDot seen={seen} />
+          {kindIcon}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0">{children}</div>
+      <div className="shrink-0">
+        <ComposeBar {...composer} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Video card ────────────────────────────────────────────────────────────
+
+interface VideoCardProps {
+  item: ReviewVideoItem;
+  athlete: Athlete | undefined;
+  seen: boolean;
+  /** Card is the one currently in view — drives autoplay. */
+  active: boolean;
+  onComment: (text: string) => Promise<void>;
+}
+
+export function VideoCard({ item, athlete, seen, active, onComment }: VideoCardProps) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (active) {
+      // Muted autoplay, reel-style; the native controls allow unmuting.
+      el.muted = true;
+      void el.play().catch(() => undefined);
+    } else {
+      el.pause();
+    }
+  }, [active]);
+
+  const context = [
+    item.exerciseName,
+    item.video.set_number != null ? `set ${item.video.set_number}` : null,
+    item.sessionDate ? formatDateShort(item.sessionDate) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <CardFrame
+      athlete={athlete}
+      context={context}
+      seen={seen}
+      kindIcon={<Video size={16} />}
+      composer={{
+        placeholder: `Comment on ${item.exerciseName}…`,
+        onSend: onComment,
+      }}
+    >
+      <div className="relative h-full rounded-2xl overflow-hidden bg-black">
+        <video
+          ref={ref}
+          src={item.video.video_url}
+          className="w-full h-full object-contain"
+          controls
+          loop
+          playsInline
+          preload="metadata"
+        />
+        {item.video.description && (
+          <div className="absolute bottom-12 left-2 right-2 text-xs text-white bg-black/50 rounded-lg px-2.5 py-1.5 pointer-events-none">
+            {item.video.description}
+          </div>
+        )}
+      </div>
+    </CardFrame>
+  );
+}
+
+// ─── Thread (question) card ────────────────────────────────────────────────
+
+interface ThreadCardProps {
+  item: ReviewThreadItem;
+  athlete: Athlete | undefined;
+  seen: boolean;
+  onReply: (text: string) => Promise<void>;
+}
+
+export function ThreadCard({ item, athlete, seen, onReply }: ThreadCardProps) {
+  const context = item.sessionId
+    ? `Session ${item.sessionDate ? formatDateShort(item.sessionDate) : ''}`.trim()
+    : 'Direct message';
+  return (
+    <CardFrame
+      athlete={athlete}
+      context={context}
+      seen={seen}
+      kindIcon={<MessageCircle size={16} />}
+      composer={{ placeholder: 'Reply…', onSend: onReply, showReactions: false }}
+    >
+      <div className="h-full rounded-2xl bg-white/[0.06] border border-white/10 p-3 overflow-y-auto">
+        <div className="text-[11px] uppercase tracking-wide text-white/40 mb-2">
+          {item.messages.length === 1 ? 'New message' : `${item.messages.length} new messages`}
+        </div>
+        <div className="space-y-2">
+          {item.messages.map(m => (
+            <div key={m.id} className="max-w-[90%]">
+              <div className="bg-white text-gray-900 text-sm rounded-2xl rounded-tl-sm px-3 py-2 whitespace-pre-wrap">
+                {m.message}
+              </div>
+              <div className="text-[10px] text-white/40 mt-0.5 px-1">
+                {formatDateShort(m.created_at)}{' '}
+                {new Date(m.created_at).toLocaleTimeString('de-DE', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </CardFrame>
+  );
+}
+
+// ─── Session review card ───────────────────────────────────────────────────
+
+const STATUS_GLYPH: Record<string, { glyph: string; cls: string }> = {
+  completed: { glyph: '✓', cls: 'text-emerald-600' },
+  skipped: { glyph: '✗', cls: 'text-red-500' },
+  in_progress: { glyph: '●', cls: 'text-amber-500' },
+  pending: { glyph: '○', cls: 'text-gray-400' },
+};
+
+interface SessionCardProps {
+  item: ReviewSessionItem;
+  athlete: Athlete | undefined;
+  seen: boolean;
+  onComment: (text: string) => Promise<void>;
+}
+
+export function SessionCard({ item, athlete, seen, onComment }: SessionCardProps) {
+  const s = item.session;
+  const metrics: string[] = [];
+  if (s.session_rpe != null) metrics.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
+  if (s.duration_minutes != null) metrics.push(`${s.duration_minutes} min`);
+  if (s.bodyweight_kg != null) metrics.push(`BW ${String(s.bodyweight_kg).replace('.', ',')} kg`);
+
+  return (
+    <CardFrame
+      athlete={athlete}
+      context={`Session ${formatDateShort(s.date)}${s.session_label ? ` · ${s.session_label}` : ''}`}
+      seen={seen}
+      kindIcon={<ClipboardList size={16} />}
+      composer={{ placeholder: 'Comment on this session…', onSend: onComment }}
+    >
+      {/* Light panel so StackedNotation's token colours render as designed. */}
+      <div className="h-full rounded-2xl bg-white overflow-y-auto">
+        <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div className="text-sm font-medium text-gray-900">Completed session</div>
+          {metrics.length > 0 && (
+            <div className="text-[11px] text-gray-500">{metrics.join(' · ')}</div>
+          )}
+        </div>
+        <div className="divide-y divide-gray-50">
+          {item.exercises.map(ex => {
+            const st = STATUS_GLYPH[ex.status] ?? STATUS_GLYPH.pending;
+            return (
+              <div key={ex.id} className="px-3.5 py-2 flex items-start gap-2.5">
+                <span className={`text-xs mt-0.5 ${st.cls}`} title={ex.status}>
+                  {st.glyph}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[13px] font-medium text-gray-800 truncate">
+                      {ex.name}
+                    </span>
+                    {ex.offPlan && (
+                      <span
+                        className="text-[10px] px-1 rounded bg-amber-50 text-amber-700 border border-amber-200"
+                        title="Added by the athlete — not in the plan"
+                      >
+                        off-plan
+                      </span>
+                    )}
+                  </div>
+                  {ex.performedRaw.trim() !== '' && (
+                    <div className="mt-0.5">
+                      <StackedNotation
+                        raw={ex.performedRaw}
+                        unit="kg"
+                        isCombo={ex.performedRaw.includes('+')}
+                      />
+                    </div>
+                  )}
+                  {ex.performedNotes.trim() !== '' && (
+                    <div className="text-[11px] text-gray-500 mt-0.5">{ex.performedNotes}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {item.exercises.length === 0 && (
+            <div className="px-3.5 py-3 text-xs text-gray-400">No logged exercises.</div>
+          )}
+        </div>
+        {s.session_notes.trim() !== '' && (
+          <div className="px-3.5 py-2 border-t border-gray-100 text-xs text-gray-600">
+            <span className="text-gray-400">Athlete notes:</span> {s.session_notes}
+          </div>
+        )}
+      </div>
+    </CardFrame>
+  );
+}
+
+// ─── End card ──────────────────────────────────────────────────────────────
+
+export function EndCard({
+  total,
+  onBackToTop,
+}: {
+  total: number;
+  onBackToTop: () => void;
+}) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
+      <div className="w-14 h-14 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+        <Check size={28} />
+      </div>
+      <div className="text-lg font-medium text-white">All caught up</div>
+      <div className="text-sm text-white/60">
+        {total === 0
+          ? 'Nothing new from your athletes right now.'
+          : `You have reviewed all ${total} new item${total === 1 ? '' : 's'}.`}
+      </div>
+      {total > 0 && (
+        <button
+          type="button"
+          onClick={onBackToTop}
+          className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-sm transition-colors"
+        >
+          <ChevronUp size={15} /> Back to top
+        </button>
+      )}
+    </div>
+  );
+}
