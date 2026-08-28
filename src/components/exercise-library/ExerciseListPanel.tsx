@@ -13,8 +13,9 @@
  */
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2, Archive,
+  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2, Archive, Flame,
 } from 'lucide-react';
+import { USAGE_WINDOWS, type UsageRollup } from '../../lib/exerciseUsage';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { StandardPage, Button, Input } from '../ui';
@@ -309,6 +310,14 @@ interface ExerciseListPanelProps {
   canEditCategory?: (categoryId: string) => boolean;
   /** Persist a category reorder from the tree. */
   onReorderCategories?: (orderedCategoryIds: string[]) => void;
+  /** Usage column: null = off (and no query runs). */
+  usageWeeks: number | null;
+  onUsageWeeksChange: (weeks: number | null) => void;
+  usageFor?: (exerciseId: string) => UsageRollup | null;
+  usageMax?: number;
+  usageLoading?: boolean;
+  /** Exercises with no planned or logged use in the window — the prune count. */
+  unusedCount?: number;
 }
 
 export function ExerciseListPanel({
@@ -335,6 +344,12 @@ export function ExerciseListPanel({
   archivedCount = 0,
   canEditCategory,
   onReorderCategories,
+  usageWeeks,
+  onUsageWeeksChange,
+  usageFor,
+  usageMax = 0,
+  usageLoading = false,
+  unusedCount = 0,
 }: ExerciseListPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
@@ -464,6 +479,45 @@ export function ExerciseListPanel({
           </button>
         )}
 
+        {/* Usage window — off by default, so the catalogue costs no extra
+            query until a coach asks "what do I still actually use?". */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Flame
+            size={12}
+            style={{
+              color: usageWeeks ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              marginRight: 4,
+            }}
+          />
+          <select
+            value={usageWeeks ?? ''}
+            onChange={e => onUsageWeeksChange(e.target.value ? Number(e.target.value) : null)}
+            title="Show how often each exercise was planned and logged in a rolling window"
+            style={{
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              padding: '4px 6px',
+              background: usageWeeks ? 'var(--color-bg-secondary)' : 'var(--color-bg-primary)',
+              color: usageWeeks ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            }}
+          >
+            <option value="">Usage: off</option>
+            {USAGE_WINDOWS.map(w => (
+              <option key={w} value={w}>Usage: {w} weeks</option>
+            ))}
+          </select>
+        </div>
+
+        {usageWeeks != null && !usageLoading && unusedCount > 0 && (
+          <span
+            title={`${unusedCount} exercise(s) neither planned nor logged in the last ${usageWeeks} weeks — candidates to archive.`}
+            style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}
+          >
+            {unusedCount} unused
+          </span>
+        )}
+
         {/* Archived rows — shown dimmed in place, so a coach can find and
             restore what was archived (incl. rows a duplicate-merge archived). */}
         {onToggleArchived && (archivedCount > 0 || showArchived) && (
@@ -530,6 +584,9 @@ export function ExerciseListPanel({
           contextActions={contextActions}
           canEditCategory={canEditCategory}
           onReorderCategories={onReorderCategories}
+          usageFor={usageWeeks != null ? usageFor : undefined}
+          usageMax={usageMax}
+          usageWeeks={usageWeeks ?? 12}
         />
       </div>
     </StandardPage>

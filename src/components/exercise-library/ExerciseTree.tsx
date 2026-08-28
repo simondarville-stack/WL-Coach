@@ -28,6 +28,7 @@ import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { useCoachStore } from '../../store/coachStore';
 import { buildParentIndex, wouldCreateCycle } from '../../lib/exerciseHierarchy';
+import { heatIntensity, describeUsage, type UsageRollup } from '../../lib/exerciseUsage';
 import { ColorDot, Badge } from '../ui';
 import { LibraryChip } from './LibraryChip';
 
@@ -141,6 +142,12 @@ interface ExerciseTreeProps {
   onCreateInCategory?: (categoryName: string) => void;
   /** Right-click menu actions on exercise rows. */
   contextActions?: TreeContextActions;
+  /** Usage rollup for a row — omitted when the usage column is off. */
+  usageFor?: (exerciseId: string) => UsageRollup | null;
+  /** Largest family planned-count in view, for scaling the heat. */
+  usageMax?: number;
+  /** Window the counts cover, for the tooltip. */
+  usageWeeks?: number;
   /** False for categories in read-only catalogues — they don't drag. */
   canEditCategory?: (categoryId: string) => boolean;
   /** Persist a category reorder (real category ids, in the new order).
@@ -163,6 +170,7 @@ export function ExerciseTree({
   exercises, categories, selectedExerciseId, onSelectExercise, onMoveExercise, searchTerm,
   canEditExercise, clubLibraryIds, athletePRMap, duplicateNames, libraryBadge, onCreateInCategory,
   contextActions, canEditCategory, onReorderCategories,
+  usageFor, usageMax = 0, usageWeeks = 12,
 }: ExerciseTreeProps) {
   const parentIndex = useMemo(() => buildParentIndex(exercises), [exercises]);
   const treeRef = useRef<TreeApi<ExTreeNode> | null>(null);
@@ -303,6 +311,51 @@ export function ExerciseTree({
     return () => { window.removeEventListener('resize', measure); ro.disconnect(); };
   }, []);
 
+  /**
+   * Usage cell. Planned count carries the heat (that is the coach's own
+   * vocabulary); a row that is never planned but IS logged shows the logged
+   * count in parentheses instead — athletes do it off-plan, so it must not
+   * read as dead. Nothing at all in the window shows a dash: the pruning
+   * candidate.
+   */
+  function UsageCell({ planned, logged, title }: { planned: number; logged: number; title: string }) {
+    const intensity = heatIntensity(planned, usageMax);
+    const base: React.CSSProperties = {
+      fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)',
+      fontVariantNumeric: 'tabular-nums', textAlign: 'right',
+      width: 42, flexShrink: 0, borderRadius: 'var(--radius-sm)',
+      padding: '0 4px',
+    };
+    if (planned > 0) {
+      return (
+        <span
+          title={title}
+          style={{
+            ...base,
+            color: 'var(--color-text-primary)',
+            // color-mix keeps this on the brand token instead of a hardcoded
+            // rgba; unsupported browsers simply get no tint.
+            background: `color-mix(in srgb, var(--color-accent) ${Math.round((0.06 + intensity * 0.36) * 100)}%, transparent)`,
+          }}
+        >
+          {planned}
+        </span>
+      );
+    }
+    if (logged > 0) {
+      return (
+        <span title={title} style={{ ...base, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>
+          ({logged})
+        </span>
+      );
+    }
+    return (
+      <span title={title} style={{ ...base, color: 'var(--color-text-tertiary)', opacity: 0.6 }}>
+        –
+      </span>
+    );
+  }
+
   function Node({ node, style, dragHandle }: NodeRendererProps<ExTreeNode>) {
     const d = node.data;
     const isCat = d.kind === 'category';
@@ -375,6 +428,31 @@ export function ExerciseTree({
                 <Plus size={12} />
               </button>
             )}
+            {usageFor && (() => {
+              // A category's usage is the sum over its root exercises' family
+              // totals — those already include their variations, so nothing
+              // is double-counted. Answers "is this whole section still alive?"
+              let planned = 0;
+              let logged = 0;
+              for (const child of d.children) {
+                const u = usageFor(child.id);
+                if (u) { planned += u.family.planned; logged += u.family.logged; }
+              }
+              return (
+                <>
+                  <span style={{ flex: 1 }} />
+                  <UsageCell
+                    planned={planned}
+                    logged={logged}
+                    title={
+                      planned === 0 && logged === 0
+                        ? `Nothing in ${d.name} was planned or logged in the last ${usageWeeks} weeks.`
+                        : `${d.name}: planned ${planned}×, logged ${logged}× in the last ${usageWeeks} weeks.`
+                    }
+                  />
+                </>
+              );
+            })()}
           </>
         ) : (
           <>
@@ -408,6 +486,16 @@ export function ExerciseTree({
             )}
             {d.childCount > 0 && <span style={countBadge} title={`${d.childCount} variation(s)`}>{d.childCount}</span>}
             <span style={{ flex: 1 }} />
+            {usageFor && (() => {
+              const u = usageFor(d.id);
+              return (
+                <UsageCell
+                  planned={u?.family.planned ?? 0}
+                  logged={u?.family.logged ?? 0}
+                  title={describeUsage(u ?? { own: { planned: 0, logged: 0 }, family: { planned: 0, logged: 0 } }, usageWeeks)}
+                />
+              );
+            })()}
             {d.prValue != null && (
               <span
                 title="Selected athlete's PR"
