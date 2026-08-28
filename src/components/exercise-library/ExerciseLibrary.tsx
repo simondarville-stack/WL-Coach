@@ -12,6 +12,8 @@ import {
 import { CatalogueSharingModal } from './CatalogueSharingModal';
 import { DuplicatesPanel, type DuplicatePair } from './DuplicatesPanel';
 import { matchExercise } from '../../lib/exerciseMatching';
+import { useExerciseUsage } from '../../hooks/useExerciseUsage';
+import { rollUpUsage, type UsageRollup } from '../../lib/exerciseUsage';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 // Lazy: the bulk-import modal drags the whole xlsx codec with it — loaded
 // only when the coach actually opens Import.
@@ -55,6 +57,23 @@ export function ExerciseLibrary() {
   // assumes it holds only active exercises) and merged in for display only.
   const [archivedExercises, setArchivedExercises] = useState<Exercise[]>([]);
   const [showArchived, setShowArchived] = useState(false);
+  // Usage window (weeks) or null = column off. Remembered per coach, like the
+  // tree's expand state — a per-viewer preference, not shared data.
+  const [usageWeeks, setUsageWeeks] = useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(`emos_exercise_usage_weeks:${activeCoachId}`);
+      return raw ? (Number(raw) || null) : null;
+    } catch { return null; }
+  });
+  const changeUsageWeeks = useCallback((weeks: number | null) => {
+    setUsageWeeks(weeks);
+    try {
+      const key = `emos_exercise_usage_weeks:${activeCoachId}`;
+      if (weeks == null) localStorage.removeItem(key);
+      else localStorage.setItem(key, String(weeks));
+    } catch { /* storage blocked — the choice just won't persist */ }
+  }, [activeCoachId]);
+  const { usage, usageLoading } = useExerciseUsage(usageWeeks);
 
   // Which catalogues the active coach can see/edit — drives the read-only
   // gating (viewer role on a shared club catalogue) and the library badges.
@@ -81,6 +100,28 @@ export function ExerciseLibrary() {
     setArchivedExercises((data ?? []) as Exercise[]);
   }, [activeCoachId]);
   useEffect(() => { void loadArchived(); }, [loadArchived]);
+
+  /** Own + family usage per exercise, and the scale/prune numbers the
+   *  toolbar and heat shading need. Computed over the visible catalogue. */
+  const usageRollup = useMemo(
+    () => (usageWeeks == null ? new Map<string, UsageRollup>() : rollUpUsage(exercises, usage)),
+    [usageWeeks, exercises, usage],
+  );
+  const usageMax = useMemo(() => {
+    let max = 0;
+    for (const r of usageRollup.values()) max = Math.max(max, r.family.planned);
+    return max;
+  }, [usageRollup]);
+  const unusedCount = useMemo(() => {
+    if (usageWeeks == null) return 0;
+    let n = 0;
+    for (const ex of exercises) {
+      if (ex.category === '— System') continue;
+      const r = usageRollup.get(ex.id);
+      if (!r || (r.family.planned === 0 && r.family.logged === 0)) n++;
+    }
+    return n;
+  }, [usageWeeks, exercises, usageRollup]);
 
   /** Active rows, plus archived ones when the coach asks to see them. */
   const visibleExercises = useMemo(() => {
@@ -382,6 +423,12 @@ export function ExerciseLibrary() {
         archivedCount={archivedExercises.length}
         canEditCategory={canEditCategoryById}
         onReorderCategories={handleReorderCategoriesFromTree}
+        usageWeeks={usageWeeks}
+        onUsageWeeksChange={changeUsageWeeks}
+        usageFor={id => usageRollup.get(id) ?? null}
+        usageMax={usageMax}
+        usageLoading={usageLoading}
+        unusedCount={unusedCount}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}
