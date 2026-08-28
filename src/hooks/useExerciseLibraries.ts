@@ -26,6 +26,41 @@ export interface LibraryInviteWithContext extends ExerciseLibraryMember {
   inviter: Pick<CoachProfile, 'id' | 'name'> | null;
 }
 
+/* ---- Phase-3 adoption (adopt_exercise_library RPC) ---- */
+
+export type AdoptAction = 'merge' | 'move' | 'keep';
+
+export interface AdoptMappingEntry {
+  source_id: string;
+  action: AdoptAction;
+  target_id?: string | null; // required for 'merge'
+}
+
+/** Slim exercise shape the adopt wizard matches on. */
+export interface AdoptExercise {
+  id: string;
+  name: string;
+  exercise_code: string | null;
+  category: string;
+  aliases: string[] | null;
+}
+
+/** Report returned by adopt_exercise_library — identical shape for the
+ *  dry run and the real run. */
+export interface AdoptReport {
+  dry_run: boolean;
+  merged: number;
+  moved: number;
+  kept: number;
+  categories_created: number;
+  references_repointed: number;
+  references: Record<string, number>;
+  conflicts_kept: Record<string, number>;
+  parent_links_repointed: number;
+  pr_references_repointed: number;
+  parent_links_cleared: number;
+}
+
 export function useExerciseLibraries() {
   /** Club libraries the coach belongs to (accepted, not revoked), with role. */
   const listMyClubs = async (
@@ -202,6 +237,48 @@ export function useExerciseLibraries() {
     invalidateLibraryScope();
   };
 
+  /** Active non-system exercises of the source (personal) and target (club)
+   *  libraries — the adopt wizard's matching inputs. */
+  const fetchAdoptCandidates = async (
+    personalLibraryId: string,
+    targetLibraryId: string,
+  ): Promise<{ source: AdoptExercise[]; target: AdoptExercise[] }> => {
+    const fetchFor = async (libraryId: string): Promise<AdoptExercise[]> => {
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('id, name, exercise_code, category, aliases')
+        .eq('library_id', libraryId)
+        .eq('is_archived', false)
+        .neq('category', '— System')
+        .order('category')
+        .order('name');
+      if (error) throw error;
+      return (data ?? []) as AdoptExercise[];
+    };
+    const [source, target] = await Promise.all([fetchFor(personalLibraryId), fetchFor(targetLibraryId)]);
+    return { source, target };
+  };
+
+  /** Run the adoption (or its dry run). One transaction server-side; the
+   *  report is identical either way, so the wizard previews exactly what
+   *  the confirm will do. */
+  const adoptLibrary = async (params: {
+    fromLibraryId: string;
+    toLibraryId: string;
+    mapping: AdoptMappingEntry[];
+    dryRun: boolean;
+  }): Promise<AdoptReport> => {
+    const { data, error } = await supabase.rpc('adopt_exercise_library', {
+      p_from: params.fromLibraryId,
+      p_to: params.toLibraryId,
+      p_mapping: params.mapping,
+      p_dry_run: params.dryRun,
+    });
+    if (error) throw error;
+    if (!params.dryRun) invalidateLibraryScope();
+    return data as unknown as AdoptReport;
+  };
+
   return {
     listMyClubs,
     createClubLibrary,
@@ -215,5 +292,7 @@ export function useExerciseLibraries() {
     revokeAccess,
     countSeedable,
     seedFromLibrary,
+    fetchAdoptCandidates,
+    adoptLibrary,
   };
 }

@@ -9,9 +9,17 @@ id-preserving, invite editors/viewers), catalogue invites on the Invitations
 page, and read-only enforcement for viewer coaches (detail panel, tree drag,
 and write guards in `useExercises`). The 27/08 request "a coach locks onto
 another coach's exercise tree read-only" is the **viewer role** on a club
-catalogue seeded by the head coach. **Phase 3 (adopt/remap wizard for
-pre-existing overlapping libraries) and most of Phase 4 (duplicate detection,
-guarded demote, Duplicates panel) are still open.**
+catalogue seeded by the head coach. **Phase 3 SHIPPED in 0.54.0 (28/08/2026)**:
+the adopt wizard (`AdoptLibraryWizard`, launched from the Catalogue-sharing
+modal and the /club matrix) auto-matches by code → name → aliases, takes a
+per-row merge/move/keep decision, shows a server-computed dry-run report, and
+executes `adopt_exercise_library()` in one transaction (repointing all 11
+referencing tables — four more than §5.3 listed — with conflict-safe handling
+of the three unique constraints, alias folding, category copies, and
+parent/PR-edge remapping; merged sources are archived, never deleted). The
+legacy `UNIQUE (categories.owner_id, name)` was dropped per §3. **Most of
+Phase 4 (duplicate detection at create time, guarded demote, Duplicates
+panel) is still open.**
 
 **Club layer SHIPPED in 0.53.0 (28/08/2026)** — the §4 deferral is resolved:
 `clubs` + `club_members` (admin/coach, invite lifecycle) and the reserved

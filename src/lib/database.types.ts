@@ -1440,6 +1440,14 @@ export interface Database {
         Args: { p_weekplan_id: string; p_day_index: number | null };
         Returns: number;
       };
+      /** Phase-3 adoption: fold a personal library into a club catalogue in
+       *  one transaction, driven by a reviewed per-exercise mapping.
+       *  p_dry_run=true returns the full report without writing. Domain
+       *  types (AdoptMappingEntry / AdoptReport) live in useExerciseLibraries. */
+      adopt_exercise_library: {
+        Args: { p_from: string; p_to: string; p_mapping: unknown; p_dry_run: boolean };
+        Returns: unknown;
+      };
     };
     Enums: {
       [_ in never]: never;
