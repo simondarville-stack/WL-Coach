@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Layers,
   UserPlus,
+  Building2,
   type LucideIcon,
 } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
@@ -66,6 +67,7 @@ const sections: NavSection[] = [
     label: 'System',
     items: [
       { path: '/library', label: 'Exercise library', icon: BookOpen },
+      { path: '/club', label: 'Club', icon: Building2 },
       { path: '/settings', label: 'Settings', icon: Settings },
       { path: '/system/invitations', label: 'Invitations', icon: UserPlus },
       { path: '/system/errors', label: 'Error log', icon: AlertTriangle },

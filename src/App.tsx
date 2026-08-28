@@ -36,6 +36,7 @@ const CoachInbox = lazy(() => import('./components/CoachInbox').then(m => ({ def
 const SystemGuide = lazy(() => import('./components/system/SystemGuide').then(m => ({ default: m.SystemGuide })));
 const ErrorLogViewer = lazy(() => import('./components/system/ErrorLogViewer').then(m => ({ default: m.ErrorLogViewer })));
 const InvitationsPage = lazy(() => import('./components/system/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
+const ClubAdminPage = lazy(() => import('./components/club/ClubAdminPage').then(m => ({ default: m.ClubAdminPage })));
 
 /** Route-chunk loading state — same minimal spinner the app boot uses. */
 function RouteFallback() {
@@ -321,6 +322,7 @@ function CoachApp() {
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
               <Route path="/library" element={<ExerciseLibrary />} />
+              <Route path="/club" element={<ClubAdminPage />} />
               <Route path="/system" element={<SystemGuide />} />
               <Route path="/system/errors" element={<ErrorLogViewer />} />
               <Route path="/system/invitations" element={<InvitationsPage />} />

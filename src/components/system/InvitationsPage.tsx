@@ -9,18 +9,19 @@
  * stamps revoked_at so the host sees it was turned down.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Check, X, RefreshCw, Inbox, User, Users, BookOpen } from 'lucide-react';
+import { Check, X, RefreshCw, Inbox, User, Users, BookOpen, Building2 } from 'lucide-react';
 import { useAthleteCollaborators } from '../../hooks/useAthleteCollaborators';
 import { useTrainingGroupCollaborators } from '../../hooks/useTrainingGroupCollaborators';
 import { useExerciseLibraries } from '../../hooks/useExerciseLibraries';
+import { useClubs } from '../../hooks/useClubs';
 import { useExerciseStore } from '../../store/exerciseStore';
 import { useCoachStore } from '../../store/coachStore';
 import { useAthleteStore } from '../../store/athleteStore';
 
 type UnifiedInvite = {
   id: string;
-  kind: 'athlete' | 'group' | 'library';
-  role: 'co_coach' | 'viewer' | 'editor';
+  kind: 'athlete' | 'group' | 'library' | 'club';
+  role: 'co_coach' | 'viewer' | 'editor' | 'admin' | 'coach';
   inviterName: string;
   targetName: string;
   invitedAt: string;
@@ -33,6 +34,7 @@ export function InvitationsPage() {
   const athleteCollab = useAthleteCollaborators();
   const groupCollab = useTrainingGroupCollaborators();
   const libraries = useExerciseLibraries();
+  const clubsHook = useClubs();
   const invalidateExerciseCache = useExerciseStore(s => s.invalidate);
 
   const [invites, setInvites] = useState<UnifiedInvite[] | null>(null);
@@ -43,10 +45,11 @@ export function InvitationsPage() {
     if (!activeCoachId) return;
     setError(null);
     try {
-      const [athleteInvites, groupInvites, libraryInvites] = await Promise.all([
+      const [athleteInvites, groupInvites, libraryInvites, clubInvites] = await Promise.all([
         athleteCollab.listPendingInvites(activeCoachId),
         groupCollab.listPendingInvites(activeCoachId),
         libraries.listPendingInvites(activeCoachId),
+        clubsHook.listPendingInvites(activeCoachId),
       ]);
       const merged: UnifiedInvite[] = [
         ...athleteInvites.map(i => ({
@@ -76,6 +79,15 @@ export function InvitationsPage() {
           invitedAt: i.invited_at,
           notes: i.notes,
         })),
+        ...clubInvites.map(i => ({
+          id: i.id,
+          kind: 'club' as const,
+          role: i.role,
+          inviterName: i.inviter?.name ?? 'A coach',
+          targetName: i.club?.name ?? 'a club',
+          invitedAt: i.invited_at,
+          notes: i.notes,
+        })),
       ].sort((a, b) => b.invitedAt.localeCompare(a.invitedAt));
       setInvites(merged);
     } catch (e) {
@@ -92,15 +104,20 @@ export function InvitationsPage() {
     try {
       if (inv.kind === 'athlete') await athleteCollab.acceptInvite(inv.id);
       else if (inv.kind === 'group') await groupCollab.acceptInvite(inv.id);
-      else {
+      else if (inv.kind === 'library') {
         // Catalogue invite: the shared exercise tree becomes visible
         // immediately, so drop the cached exercise list.
         await libraries.acceptInvite(inv.id);
         invalidateExerciseCache();
+      } else {
+        // Club invite: acceptance provisions access to every club catalogue
+        // (admin → editor, coach → viewer), so the exercise cache is stale.
+        await clubsHook.acceptInvite(inv.id);
+        invalidateExerciseCache();
       }
       // Athlete/group shares change the accessible-athlete set (a group
       // brings its members via the cascade), so refresh the athlete store.
-      if (inv.kind !== 'library') await refreshAthletes(true);
+      if (inv.kind === 'athlete' || inv.kind === 'group') await refreshAthletes(true);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to accept');
@@ -114,7 +131,8 @@ export function InvitationsPage() {
     try {
       if (inv.kind === 'athlete') await athleteCollab.declineInvite(inv.id);
       else if (inv.kind === 'group') await groupCollab.declineInvite(inv.id);
-      else await libraries.declineInvite(inv.id);
+      else if (inv.kind === 'library') await libraries.declineInvite(inv.id);
+      else await clubsHook.declineInvite(inv.id);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to decline');
@@ -165,16 +183,28 @@ export function InvitationsPage() {
             className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3"
           >
             <span className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-              {inv.kind === 'group' ? <Users size={14} /> : inv.kind === 'library' ? <BookOpen size={14} /> : <User size={14} />}
+              {inv.kind === 'group' ? <Users size={14} />
+                : inv.kind === 'library' ? <BookOpen size={14} />
+                : inv.kind === 'club' ? <Building2 size={14} />
+                : <User size={14} />}
             </span>
             <div className="flex-1 min-w-0">
               <div className="text-sm text-gray-900">
-                <strong>{inv.inviterName}</strong> invited you to{' '}
-                {inv.kind === 'library'
-                  ? (inv.role === 'editor' ? 'edit' : 'view (read-only)')
-                  : inv.role === 'co_coach' ? 'co-coach' : 'view'}{' '}
-                {inv.kind === 'group' ? 'the group ' : inv.kind === 'library' ? 'the exercise catalogue ' : ''}
-                <strong>{inv.targetName}</strong>.
+                {inv.kind === 'club' ? (
+                  <>
+                    <strong>{inv.inviterName}</strong> invited you to join the club{' '}
+                    <strong>{inv.targetName}</strong> as {inv.role === 'admin' ? 'an admin' : 'a coach'}.
+                  </>
+                ) : (
+                  <>
+                    <strong>{inv.inviterName}</strong> invited you to{' '}
+                    {inv.kind === 'library'
+                      ? (inv.role === 'editor' ? 'edit' : 'view (read-only)')
+                      : inv.role === 'co_coach' ? 'co-coach' : 'view'}{' '}
+                    {inv.kind === 'group' ? 'the group ' : inv.kind === 'library' ? 'the exercise catalogue ' : ''}
+                    <strong>{inv.targetName}</strong>.
+                  </>
+                )}
               </div>
               <div className="text-xs text-gray-500 mt-0.5">
                 Invited {formatRelativeTime(inv.invitedAt)}
