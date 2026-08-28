@@ -17,6 +17,30 @@ interface UsageRow {
   logged_count: number;
 }
 
+/** Last planned / logged date per exercise (ISO, or null for never) — the
+ *  prune flow's staleness column. Fetched on demand, not with the counts:
+ *  only the prune panel needs it. */
+export interface LastUsed {
+  lastPlanned: string | null;
+  lastLogged: string | null;
+}
+
+export async function fetchExerciseLastUsed(
+  exerciseIds: string[],
+): Promise<Map<string, LastUsed>> {
+  const out = new Map<string, LastUsed>();
+  if (exerciseIds.length === 0) return out;
+  const { data, error } = await supabase.rpc('exercise_last_used', {
+    p_exercise_ids: exerciseIds,
+  });
+  if (error) throw error;
+  type Row = { exercise_id: string; last_planned: string | null; last_logged: string | null };
+  for (const row of ((data ?? []) as unknown as Row[])) {
+    out.set(row.exercise_id, { lastPlanned: row.last_planned, lastLogged: row.last_logged });
+  }
+  return out;
+}
+
 export function useExerciseUsage(weeks: number | null) {
   const [usage, setUsage] = useState<Map<string, UsageCounts>>(new Map());
   const [loading, setLoading] = useState(false);

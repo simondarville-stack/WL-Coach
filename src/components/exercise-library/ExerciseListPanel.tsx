@@ -318,6 +318,8 @@ interface ExerciseListPanelProps {
   usageLoading?: boolean;
   /** Exercises with no planned or logged use in the window — the prune count. */
   unusedCount?: number;
+  /** Opens the prune review panel. */
+  onOpenPrune?: () => void;
 }
 
 export function ExerciseListPanel({
@@ -350,6 +352,7 @@ export function ExerciseListPanel({
   usageMax = 0,
   usageLoading = false,
   unusedCount = 0,
+  onOpenPrune,
 }: ExerciseListPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
@@ -510,12 +513,20 @@ export function ExerciseListPanel({
         </div>
 
         {usageWeeks != null && !usageLoading && unusedCount > 0 && (
-          <span
-            title={`${unusedCount} exercise(s) neither planned nor logged in the last ${usageWeeks} weeks — candidates to archive.`}
-            style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}
+          <button
+            type="button"
+            onClick={onOpenPrune}
+            title={`${unusedCount} exercise(s) neither planned nor logged in the last ${usageWeeks} weeks — review and archive them.`}
+            style={{
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              color: 'var(--color-text-secondary)', whiteSpace: 'nowrap',
+              background: 'var(--color-bg-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', padding: '5px 10px', cursor: 'pointer',
+            }}
           >
-            {unusedCount} unused
-          </span>
+            {unusedCount} unused…
+          </button>
         )}
 
         {/* Archived rows — shown dimmed in place, so a coach can find and

@@ -154,6 +154,40 @@ export function useExercises() {
     }
   };
 
+  /**
+   * Archive many exercises at once (the prune flow). Rows the coach may not
+   * edit — a viewer's club-catalogue rows — are skipped rather than failing
+   * the batch, and reported back so the UI can say so. Archiving is
+   * reversible; nothing is deleted.
+   */
+  const bulkArchiveExercises = async (
+    ids: string[],
+  ): Promise<{ archived: number; skipped: number }> => {
+    if (ids.length === 0) return { archived: 0, skipped: 0 };
+    try {
+      const { data: rows, error: readError } = await supabase
+        .from('exercises')
+        .select('id, owner_id, library_id')
+        .in('id', ids);
+      if (readError) throw readError;
+      const scope = await resolveLibraryScope(getOwnerId());
+      const allowed = ((rows ?? []) as Array<{ id: string; owner_id: string; library_id: string | null }>)
+        .filter(r => canEditCatalogueRow(scope, r))
+        .map(r => r.id);
+      if (allowed.length > 0) {
+        const { error } = await supabase
+          .from('exercises')
+          .update({ is_archived: true })
+          .in('id', allowed);
+        if (error) throw error;
+      }
+      return { archived: allowed.length, skipped: ids.length - allowed.length };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to archive exercises');
+      throw err;
+    }
+  };
+
   const restoreExercise = async (id: string) => {
     try {
       const { error } = await supabase.from('exercises').update({ is_archived: false }).eq('id', id);
@@ -324,6 +358,7 @@ export function useExercises() {
     bulkCreateExercises,
     updateExercise,
     deleteExercise,
+    bulkArchiveExercises,
     restoreExercise,
     bulkReorderExercises,
     fetchCategories,

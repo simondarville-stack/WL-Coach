@@ -1455,6 +1455,12 @@ export interface Database {
         Args: { p_since: string; p_exercise_ids: string[] | null };
         Returns: Array<{ exercise_id: string; planned_count: number; logged_count: number }>;
       };
+      /** Last time each exercise was planned / logged, no window. Null in a
+       *  column means never. Drives the prune flow's staleness column. */
+      exercise_last_used: {
+        Args: { p_exercise_ids: string[] | null };
+        Returns: Array<{ exercise_id: string; last_planned: string | null; last_logged: string | null }>;
+      };
     };
     Enums: {
       [_ in never]: never;
