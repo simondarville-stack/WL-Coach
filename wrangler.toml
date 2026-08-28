@@ -12,6 +12,20 @@
 name = "emos"
 compatibility_date = "2026-08-28"
 
+# Versioned preview URLs (<version-id>-emos.<subdomain>.workers.dev) are
+# PUBLIC, and they keep serving each version's own assets after that version
+# stops being the live one. They default to matching the workers.dev setting,
+# which is enabled — so the 0.60.1 deployment went on serving its sourcemaps
+# from its preview URL even after the main hostname was fixed.
+#
+# This must live here, not only in the dashboard: the dashboard toggle is
+# overwritten by the next `wrangler deploy`, and every push to main deploys.
+#
+# To re-enable previews later (they are genuinely useful — e.g. testing a CSP
+# against a branch before it reaches production), flip this to true AND put
+# them behind Cloudflare Access, so a preview is not world-readable.
+preview_urls = false
+
 [assets]
 directory = "./dist"
 

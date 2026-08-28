@@ -177,6 +177,12 @@ the browser). It is hosted on **Cloudflare Workers static assets**:
 - Build-time env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked
   into the bundle at build time — they are Workers Builds **environment
   variables**, not runtime secrets.
+- `preview_urls = false` in `wrangler.toml`. Versioned preview URLs are public
+  and keep serving each version's own assets after it stops being live — that
+  is how 0.60.1's sourcemaps outlived the fix on the main hostname. Keep this
+  in the file, not just the dashboard: the dashboard toggle is overwritten by
+  the next deploy, and every push to `main` deploys. Re-enable only together
+  with Cloudflare Access.
 - `netlify.toml` is the **rollback target**, not the live config. Its header
   and redirect rules mirror the Cloudflare ones — change both or neither, or
   retire it once Cloudflare has been stable.
