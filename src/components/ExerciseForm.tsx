@@ -14,6 +14,10 @@ interface ExerciseFormProps {
    *  from a specific category section (e.g. an empty one). Ignored when
    *  editing, where the exercise's own category wins. */
   initialCategory?: string | null;
+  /** Preselected parent for a new exercise — the tree's "Add variation"
+   *  entry point. Also suggests the parent as the PR reference, mirroring
+   *  the parent picker's behaviour. Ignored when editing. */
+  initialParentId?: string | null;
   /** Catalogues the coach can write into (personal + clubs where editor).
    *  When provided with >1 option, the form shows a Library select and
    *  includes library_id in the save payload — moving an exercise between
@@ -39,7 +43,7 @@ function isProtectedCategory(name: string): boolean {
   return name.toLowerCase().includes('system');
 }
 
-export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [], initialCategory = null, libraryOptions, defaultLibraryId = null }: ExerciseFormProps) {
+export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercises = [], initialCategory = null, initialParentId = null, libraryOptions, defaultLibraryId = null }: ExerciseFormProps) {
   const { categories, fetchCategories } = useExercises();
 
   const [name, setName] = useState('');
@@ -86,7 +90,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     } else {
       resetForm();
     }
-  }, [editingExercise, categories, initialCategory]);
+  }, [editingExercise, categories, initialCategory, initialParentId]);
 
   const resetForm = () => {
     setName('');
@@ -104,8 +108,10 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
     setCountsTowardsTotals(true);
     setShowPlannerSummary(true);
     setTrackPr(true);
-    setPrReferenceId(null);
-    setParentId(null);
+    // "Add variation" preselects the parent — and, like the parent picker,
+    // suggests it as the %/PR reference (still editable).
+    setPrReferenceId(initialParentId ?? null);
+    setParentId(initialParentId ?? null);
     setLibraryId(defaultLibraryId);
   };
 

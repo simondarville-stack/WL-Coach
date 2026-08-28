@@ -20,7 +20,7 @@ import type { Category } from '../../hooks/useExercises';
 import { StandardPage, Button, Input } from '../ui';
 import { DEFAULT_UNITS } from '../../lib/constants';
 import { buildParentIndex } from '../../lib/exerciseHierarchy';
-import { ExerciseTree } from './ExerciseTree';
+import { ExerciseTree, type TreeContextActions } from './ExerciseTree';
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -299,6 +299,8 @@ interface ExerciseListPanelProps {
    *  When > 0 the toolbar shows the Duplicates entry point. */
   duplicatesCount?: number;
   onOpenDuplicates?: () => void;
+  /** Right-click menu actions on tree rows. */
+  contextActions?: TreeContextActions;
 }
 
 export function ExerciseListPanel({
@@ -319,6 +321,7 @@ export function ExerciseListPanel({
   clubLibraryIds,
   duplicatesCount = 0,
   onOpenDuplicates,
+  contextActions,
 }: ExerciseListPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
@@ -489,6 +492,7 @@ export function ExerciseListPanel({
           duplicateNames={duplicateNames}
           libraryBadge={libraryBadge}
           onCreateInCategory={name => onCreateExercise(name)}
+          contextActions={contextActions}
         />
       </div>
     </StandardPage>

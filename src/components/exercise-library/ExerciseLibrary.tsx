@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useExercises } from '../../hooks/useExercises';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -45,6 +45,8 @@ export function ExerciseLibrary() {
   // Category preselected when the coach starts the create form from a
   // specific section (e.g. "Add an exercise here" on an empty category).
   const [createInCategory, setCreateInCategory] = useState<string | null>(null);
+  // Parent preselected by the tree's "Add variation" context-menu entry.
+  const [createParentId, setCreateParentId] = useState<string | null>(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showSharing, setShowSharing] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -93,6 +95,57 @@ export function ExerciseLibrary() {
   // Phase-4 hygiene: personal exercises that duplicate a club-catalogue one
   // (shared matching rule — code / name / alias). Detected over the already
   // loaded visible set, so this costs no extra queries.
+  // Latest duplicate pairs for the context menu's hasDuplicate check —
+  // a ref because the pairs memo is derived further down.
+  const duplicatePairsRef = useRef<DuplicatePair[]>([]);
+
+  // Right-click actions for the tree rows. Wired here so the tree stays a
+  // pure catalogue view and every mutation goes through the guarded hooks.
+  const treeContextActions = useMemo(() => ({
+    onEdit: (id: string) => {
+      const ex = exercises.find(e => e.id === id);
+      if (!ex) return;
+      setEditingExercise(ex);
+      setCreateInCategory(null);
+      setCreateParentId(null);
+      setShowCreateModal(true);
+    },
+    onArchive: (id: string) => { void handleArchive(id); },
+    onAddVariation: (parentId: string) => {
+      const parent = exercises.find(e => e.id === parentId);
+      setEditingExercise(null);
+      setCreateInCategory(parent?.category ?? null);
+      setCreateParentId(parentId);
+      setShowCreateModal(true);
+    },
+    moveTargetsFor: (id: string) => {
+      // Promote is personal → club only, and only where the coach edits
+      // the target catalogue. Club rows move via the club admin surfaces.
+      if (!scope?.available || !scope.personalLibraryId) return [];
+      const ex = exercises.find(e => e.id === id);
+      if (!ex || ex.library_id !== scope.personalLibraryId) return [];
+      return scope.clubs
+        .filter(c => c.role === 'editor')
+        .map(c => ({ id: c.libraryId, name: c.name }));
+    },
+    onMoveToLibrary: (exerciseId: string, libraryId: string, libraryName: string) => {
+      const ex = exercises.find(e => e.id === exerciseId);
+      if (!ex) return;
+      if (!window.confirm(
+        `Move "${ex.name}" into the "${libraryName}" catalogue?\n\n` +
+        'The exercise keeps its id (all history follows it) and becomes visible to every member of the catalogue.',
+      )) return;
+      void (async () => {
+        await updateExercise(exerciseId, { library_id: libraryId } as Partial<Exercise>);
+        setExercises(exercises.map(e => (e.id === exerciseId ? { ...e, library_id: libraryId } as Exercise : e)));
+        await fetchExercises();
+      })();
+    },
+    hasDuplicate: (id: string) => duplicatePairsRef.current.some(p => p.personal.id === id),
+    onReviewDuplicate: () => setShowDuplicates(true),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [exercises, scope]);
+
   const duplicatePairs = useMemo<DuplicatePair[]>(() => {
     if (!scope?.available || !scope.personalLibraryId || scope.clubs.length === 0) return [];
     const clubNameById = new Map(scope.clubs.map(c => [c.libraryId, c.name]));
@@ -110,6 +163,7 @@ export function ExerciseLibrary() {
     }
     return pairs;
   }, [exercises, scope]);
+  duplicatePairsRef.current = duplicatePairs;
 
   const loadPRs = useCallback(async () => {
     if (!selectedAthlete) { setAthletePRMap(new Map()); return; }
@@ -156,6 +210,7 @@ export function ExerciseLibrary() {
     }
     await fetchExercises();
     setShowCreateModal(false);
+    setCreateParentId(null);
   };
 
   // Drag-to-move from the tree view: parentId=null promotes to a category root
@@ -247,6 +302,7 @@ export function ExerciseLibrary() {
         onCreateExercise={(category) => {
           setEditingExercise(null);
           setCreateInCategory(category ?? null);
+          setCreateParentId(null);
           setShowCreateModal(true);
         }}
         onMoveExercise={handleMoveExercise}
@@ -260,6 +316,7 @@ export function ExerciseLibrary() {
         clubLibraryIds={clubLibraryIds}
         duplicatesCount={duplicatePairs.length}
         onOpenDuplicates={() => setShowDuplicates(true)}
+        contextActions={treeContextActions}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}
@@ -313,11 +370,12 @@ export function ExerciseLibrary() {
 
       <ExerciseFormModal
         isOpen={showCreateModal}
-        onClose={() => { setShowCreateModal(false); setEditingExercise(null); setCreateInCategory(null); }}
+        onClose={() => { setShowCreateModal(false); setEditingExercise(null); setCreateInCategory(null); setCreateParentId(null); }}
         editingExercise={editingExercise}
         onSave={handleSave}
         allExercises={exercises}
         initialCategory={createInCategory}
+        initialParentId={createParentId}
         libraryOptions={libraryOptions}
         defaultLibraryId={scope?.personalLibraryId ?? null}
       />
