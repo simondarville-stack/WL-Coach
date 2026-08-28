@@ -10,6 +10,8 @@ import {
   type CoachLibraryScope,
 } from '../../lib/libraryScope';
 import { CatalogueSharingModal } from './CatalogueSharingModal';
+import { DuplicatesPanel, type DuplicatePair } from './DuplicatesPanel';
+import { matchExercise } from '../../lib/exerciseMatching';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 // Lazy: the bulk-import modal drags the whole xlsx codec with it — loaded
 // only when the coach actually opens Import.
@@ -45,6 +47,7 @@ export function ExerciseLibrary() {
   const [createInCategory, setCreateInCategory] = useState<string | null>(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showSharing, setShowSharing] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [athletePRMap, setAthletePRMap] = useState<Map<string, { pr_value_kg: number | null; pr_date: string | null }>>(new Map());
 
   // Which catalogues the active coach can see/edit — drives the read-only
@@ -86,6 +89,27 @@ export function ExerciseLibrary() {
     void fetchCategories();
     resolveLibraryScope(activeCoachId).then(setScope);
   }, [activeCoachId]);
+
+  // Phase-4 hygiene: personal exercises that duplicate a club-catalogue one
+  // (shared matching rule — code / name / alias). Detected over the already
+  // loaded visible set, so this costs no extra queries.
+  const duplicatePairs = useMemo<DuplicatePair[]>(() => {
+    if (!scope?.available || !scope.personalLibraryId || scope.clubs.length === 0) return [];
+    const clubNameById = new Map(scope.clubs.map(c => [c.libraryId, c.name]));
+    const clubRows = exercises.filter(e => e.library_id != null && clubNameById.has(e.library_id));
+    if (clubRows.length === 0) return [];
+    const personalRows = exercises.filter(
+      e => e.library_id === scope.personalLibraryId && e.category !== '— System',
+    );
+    const pairs: DuplicatePair[] = [];
+    for (const personal of personalRows) {
+      const { match, matchBy } = matchExercise(personal, clubRows);
+      if (match && matchBy) {
+        pairs.push({ personal, club: match, matchBy, clubLabel: clubNameById.get(match.library_id!) ?? 'Club' });
+      }
+    }
+    return pairs;
+  }, [exercises, scope]);
 
   const loadPRs = useCallback(async () => {
     if (!selectedAthlete) { setAthletePRMap(new Map()); return; }
@@ -234,6 +258,8 @@ export function ExerciseLibrary() {
           return ex ? canEdit(ex) : true;
         }}
         clubLibraryIds={clubLibraryIds}
+        duplicatesCount={duplicatePairs.length}
+        onOpenDuplicates={() => setShowDuplicates(true)}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}
@@ -299,6 +325,15 @@ export function ExerciseLibrary() {
       {showSharing && (
         <CatalogueSharingModal
           onClose={() => setShowSharing(false)}
+          onChanged={handleSharingChanged}
+        />
+      )}
+
+      {showDuplicates && scope?.personalLibraryId && (
+        <DuplicatesPanel
+          pairs={duplicatePairs}
+          personalLibraryId={scope.personalLibraryId}
+          onClose={() => setShowDuplicates(false)}
           onChanged={handleSharingChanged}
         />
       )}
