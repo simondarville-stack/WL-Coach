@@ -14,6 +14,7 @@ import type {
   ComboMemberEntry,
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
+  TrainingLogVideo,
 } from '../../../lib/database.types';
 import {
   fetchWeekLog,
@@ -24,6 +25,7 @@ import {
   setLogExerciseGppSection,
   fetchWeekMetricsConfig,
   fetchMetricDefinitions,
+  markLogVideoReviewed,
 } from '../../../lib/trainingLogService';
 import type { GppSection } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
@@ -148,6 +150,38 @@ export function LogModeView({
     },
     [],
   );
+
+  /**
+   * Stamp a clip reviewed the first time the coach plays it, and clear the
+   * "new footage" highlight locally so it doesn't survive until the next
+   * reload. Failures are swallowed: not recording a view is a cosmetic loss,
+   * and surfacing an error over a video the coach is already watching would
+   * be worse than the miss.
+   */
+  const handleVideoOpened = useCallback((video: TrainingLogVideo) => {
+    if (video.coach_reviewed_at !== null) return;
+    const reviewedAt = new Date().toISOString();
+    setWeekLog(prev => {
+      const entries = Object.entries(prev).map(([k, day]) => [
+        Number(k),
+        {
+          ...day,
+          exercises: day.exercises.map(le =>
+            le.videos.some(v => v.id === video.id)
+              ? {
+                  ...le,
+                  videos: le.videos.map(v =>
+                    v.id === video.id ? { ...v, coach_reviewed_at: reviewedAt } : v,
+                  ),
+                }
+              : le,
+          ),
+        },
+      ] as const);
+      return Object.fromEntries(entries) as Record<number, DayLog>;
+    });
+    markLogVideoReviewed(video.id).catch(() => undefined);
+  }, []);
 
   const postSessionComment = useCallback(
     async (sessionId: string, body: string) => {
@@ -354,6 +388,7 @@ export function LogModeView({
           onDeleteSession={onDeleteSession}
           onEditLoggedExercise={setEditingLogged}
           onEditGppExercise={setEditingGpp}
+          onVideoOpened={handleVideoOpened}
         />
       ))}
 
@@ -377,6 +412,7 @@ export function LogModeView({
                 dayLog={weekLog[idx] ?? null}
                 onPostSessionComment={postSessionComment}
                 onEditGppExercise={setEditingGpp}
+                onVideoOpened={handleVideoOpened}
               />
             );
           })}

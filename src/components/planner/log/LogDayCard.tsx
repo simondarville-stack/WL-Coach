@@ -8,8 +8,8 @@
  * the bottom.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare, Trash2, Ban } from 'lucide-react';
-import type { PlannedExercise, Exercise, ComboMemberEntry } from '../../../lib/database.types';
+import { ChevronDown, ChevronRight, MessageSquare, Trash2, Ban, Video } from 'lucide-react';
+import type { PlannedExercise, Exercise, ComboMemberEntry, TrainingLogVideo } from '../../../lib/database.types';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { LogExerciseRow } from './LogExerciseRow';
 import { LogCommentsThread } from './LogCommentsThread';
@@ -46,6 +46,8 @@ interface LogDayCardProps {
     planned: PlannedExercise & { exercise: Exercise };
     logged: LoggedExerciseFull | null;
   }) => void;
+  /** Coach played a clip — routed up so it can be stamped as reviewed. */
+  onVideoOpened?: (video: TrainingLogVideo) => void;
 }
 
 export function LogDayCard({
@@ -60,6 +62,7 @@ export function LogDayCard({
   onDeleteSession,
   onEditLoggedExercise,
   onEditGppExercise,
+  onVideoOpened,
 }: LogDayCardProps) {
   const session = dayLog?.session ?? null;
   const [threadOpen, setThreadOpen] = useState(openComments);
@@ -98,6 +101,10 @@ export function LogDayCard({
 
   const sessionMessages = (dayLog?.messages ?? []).filter(m => !m.exercise_id);
   const sessionCommentCount = sessionMessages.length;
+
+  const dayVideos = (dayLog?.exercises ?? []).flatMap(le => le.videos);
+  const dayVideoCount = dayVideos.length;
+  const unwatchedVideoCount = dayVideos.filter(v => v.coach_reviewed_at === null).length;
 
   // The coach's main workflow is Log mode, not the Inbox — but reading an
   // athlete's comment here never marked it read, so the sidebar/Inbox unread
@@ -174,6 +181,21 @@ export function LogDayCard({
             {sessionCommentCount > 0 && (
               <span><MessageSquare size={10} className="inline-block mr-0.5" />{sessionCommentCount}</span>
             )}
+            {/* Footage count sits in the collapsed header so a coach scanning
+                a week sees which days have something to watch without
+                expanding each one. Blue while anything is unwatched. */}
+            {dayVideoCount > 0 && (
+              <span
+                className={unwatchedVideoCount > 0 ? 'text-blue-600 font-medium' : undefined}
+                title={
+                  unwatchedVideoCount > 0
+                    ? `${dayVideoCount} video${dayVideoCount > 1 ? 's' : ''}, ${unwatchedVideoCount} not yet watched`
+                    : `${dayVideoCount} video${dayVideoCount > 1 ? 's' : ''}`
+                }
+              >
+                <Video size={10} className="inline-block mr-0.5" />{dayVideoCount}
+              </span>
+            )}
           </div>
         )}
       </button>
@@ -222,6 +244,7 @@ export function LogDayCard({
               logged={ledg}
               plannedComboMembers={comboMembers?.[ex.id]}
               messages={dayLog?.messages}
+              onVideoOpened={onVideoOpened}
               onEdit={ledg && onEditLoggedExercise ? () => onEditLoggedExercise(ledg) : undefined}
               onDelete={
                 ledg && onDeleteLogExercise
@@ -248,6 +271,7 @@ export function LogDayCard({
                 planned={null}
                 logged={le}
                 messages={dayLog?.messages}
+                onVideoOpened={onVideoOpened}
                 onDelete={
                   onDeleteLogExercise ? () => onDeleteLogExercise(le.log.id) : undefined
                 }

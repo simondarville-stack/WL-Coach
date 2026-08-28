@@ -8,7 +8,8 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
-import type { TrainingLogSet, TrainingLogExercise, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
+import type { TrainingLogSet, TrainingLogExercise, TrainingLogVideo, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
+import { LogVideoStrip } from '../../../components/planner/LogVideoStrip';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
 import { StackedNotation } from '../../../components/planner/StackedNotation';
@@ -56,6 +57,14 @@ interface ExerciseLogCardProps {
   /** When true (a save is in flight at session level), disable the "Log as
    *  prescribed" button and all set-entry inputs to prevent double-writes. */
   globalSaving?: boolean;
+  /** Clips already attached to this exercise. */
+  videos?: TrainingLogVideo[];
+  /** Attach a clip. Provided only when the athlete owns this log; the
+   *  parent handles creating the session/log-exercise rows first, so a
+   *  video can be the very first thing recorded against an exercise. */
+  onAddVideo?: (file: File) => Promise<void>;
+  /** Delete one of the athlete's own clips. */
+  onDeleteVideo?: (video: TrainingLogVideo) => void;
   /** View-only render for the group viewer: hides Log-as-prescribed,
    *  Mark-complete, Substitute, Add-set, set delete, and the notes editor,
    *  and threads `readOnly` to every SetEntryRow so inputs are disabled.
@@ -76,6 +85,9 @@ export function ExerciseLogCard({
   onSaveGppSection,
   onRequestSubstitute,
   performedExercise,
+  videos = [],
+  onAddVideo,
+  onDeleteVideo,
   globalSaving = false,
   readOnly = false,
 }: ExerciseLogCardProps) {
@@ -536,6 +548,14 @@ export function ExerciseLogCard({
               )}
             </>
           )}
+
+          <LogVideoStrip
+            videos={videos}
+            theme="dark"
+            onAdd={readOnly ? undefined : onAddVideo}
+            onDelete={readOnly ? undefined : onDeleteVideo}
+            disabled={globalSaving}
+          />
 
           {!readOnly && (
             <div className="pt-1">

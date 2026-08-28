@@ -13,7 +13,8 @@
  */
 import { PlayCircle, MessageSquare, Ban } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
-import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet } from '../../../lib/database.types';
+import type { PlannedExercise, Exercise, ExerciseStub, TrainingLogSet, TrainingLogVideo } from '../../../lib/database.types';
+import { LogVideoStrip } from '../../../components/planner/LogVideoStrip';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import type { DayLog, LoggedExerciseFull } from '../../../lib/trainingLogModel';
 import { computeDelta, sumPerformedReps } from '../../../lib/trainingLogModel';
@@ -41,6 +42,16 @@ interface SessionPreviewProps {
    *  ("check with your coach", "Added by you", …) for neutral coach wording;
    *  layout and data are identical. Defaults to the athlete app's voice. */
   viewerRole?: 'athlete' | 'coach';
+  /** Whether to render what was actually logged (the "Did" row, athlete
+   *  notes and clips).
+   *
+   *  Defaults to `!readOnly`, which is right for the group viewer — a group
+   *  plan has no logs to show. It is a separate prop because the coach
+   *  drill-in is also read-only yet exists precisely to watch a session fill
+   *  in, so it opts back in. */
+  showLogged?: boolean;
+  /** Coach played a clip — lets the coach surfaces stamp it reviewed. */
+  onVideoOpened?: (video: TrainingLogVideo) => void;
 }
 
 // Binary states: only "Done" surfaces. Everything else renders no pill.
@@ -55,7 +66,10 @@ export function SessionPreview({
   isBonus,
   readOnly = false,
   viewerRole = 'athlete',
+  showLogged,
+  onVideoOpened,
 }: SessionPreviewProps) {
+  const renderLogged = showLogged ?? !readOnly;
   const prettyDate = formatWeekdayDateLong(date);
   const session = log?.session ?? null;
   const status = session?.status ?? 'pending';
@@ -153,7 +167,9 @@ export function SessionPreview({
                 planned={p}
                 logged={loggedByPlannedId.get(p.exercise.id) ?? null}
                 readOnly={readOnly}
+                showLogged={renderLogged}
                 viewerRole={viewerRole}
+                onVideoOpened={onVideoOpened}
               />
             ))}
             {offPlan.length > 0 && (
@@ -163,7 +179,12 @@ export function SessionPreview({
                 </div>
                 <ul className="divide-y divide-gray-800/60">
                   {offPlan.map(le => (
-                    <PreviewOffPlanRow key={le.log.id} logged={le} />
+                    <PreviewOffPlanRow
+                      key={le.log.id}
+                      logged={le}
+                      viewerRole={viewerRole}
+                      onVideoOpened={onVideoOpened}
+                    />
                   ))}
                 </ul>
               </li>
@@ -221,12 +242,16 @@ function PreviewExerciseRow({
   planned,
   logged,
   readOnly = false,
+  showLogged,
   viewerRole = 'athlete',
+  onVideoOpened,
 }: {
   planned: PlannedExerciseFull;
   logged: LoggedExerciseFull | null;
   readOnly?: boolean;
+  showLogged?: boolean;
   viewerRole?: 'athlete' | 'coach';
+  onVideoOpened?: (video: TrainingLogVideo) => void;
 }) {
   const sentinel = getSentinelType(planned.exerciseDef?.exercise_code ?? null);
   if (sentinel === 'text' || sentinel === 'image' || sentinel === 'video' || sentinel === 'gpp') {
@@ -352,7 +377,7 @@ function PreviewExerciseRow({
           </div>
         )}
 
-        {!readOnly && (
+        {(showLogged ?? !readOnly) && (
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
               Did
@@ -396,12 +421,29 @@ function PreviewExerciseRow({
             {logged.log.performed_notes}
           </p>
         )}
+
+        {(showLogged ?? !readOnly) && (
+          <LogVideoStrip
+            videos={logged?.videos ?? []}
+            theme="dark"
+            onOpen={onVideoOpened}
+            highlightUnreviewed={viewerRole === 'coach'}
+          />
+        )}
       </div>
     </li>
   );
 }
 
-function PreviewOffPlanRow({ logged }: { logged: LoggedExerciseFull }) {
+function PreviewOffPlanRow({
+  logged,
+  viewerRole = 'athlete',
+  onVideoOpened,
+}: {
+  logged: LoggedExerciseFull;
+  viewerRole?: 'athlete' | 'coach';
+  onVideoOpened?: (video: TrainingLogVideo) => void;
+}) {
   // logged.exercise can be a full Exercise or an ExerciseStub (id/name/color
   // only) right after an off-plan insert. The downstream display fields read
   // name + color, both of which are on the stub, so widen the receiver.
@@ -484,6 +526,13 @@ function PreviewOffPlanRow({ logged }: { logged: LoggedExerciseFull }) {
             {logged.log.performed_notes}
           </p>
         )}
+
+        <LogVideoStrip
+          videos={logged.videos}
+          theme="dark"
+          onOpen={onVideoOpened}
+          highlightUnreviewed={viewerRole === 'coach'}
+        />
       </div>
     </li>
   );

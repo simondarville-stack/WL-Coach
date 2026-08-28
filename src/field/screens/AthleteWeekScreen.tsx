@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AthleteWeekScreen — Field View: one athlete's entire week, every training
  * slot rendered read-only with plan beside log (SessionPreview shows both),
  * navigable across weeks. Opened by tapping an athlete's header on the
@@ -78,7 +78,7 @@ export function AthleteWeekScreen() {
           <h1 className="text-base font-bold truncate flex-1">{athleteName || 'Athlete'}</h1>
           {athleteId && (
             <button
-              onClick={() => navigate(`/fieldcoach/a/${athleteId}/macro`)}
+              onClick={() => navigate(`/coach/a/${athleteId}/macro`)}
               className="p-2 text-gray-400 hover:text-white"
               aria-label="Macro cycle"
               title="Macro cycle"

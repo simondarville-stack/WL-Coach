@@ -1,5 +1,5 @@
 /**
- * Coach-facing macro overview for the Fieldcoach surface.
+ * Coach-facing macro overview for the coach mobile app (/coach).
  *
  * The athlete's macro view (`athleteMacroService`) is deliberately number-free —
  * rhythm only, "the loads stay with the coach". This is the other half: the

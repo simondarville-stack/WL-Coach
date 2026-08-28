@@ -1,5 +1,5 @@
-/**
- * fieldView — domain logic for the coach Overview (/fieldcoach).
+﻿/**
+ * fieldView — domain logic for the coach Overview (/coach).
  *
  * Two pure pieces, no Supabase access (the useFieldWeek hook feeds them):
  *
@@ -339,6 +339,25 @@ export interface SessionProgress {
 export function isSessionLive(log: DayLog | null): boolean {
   if (!log?.session) return false;
   return log.session.status === 'in_progress' || hasLoggedWork(log);
+}
+
+/**
+ * Whether the athlete is mid-session *right now* — the signal behind the
+ * "training now" pulse on an Upcoming card.
+ *
+ * Deliberately narrower than isSessionLive: that one also returns true for a
+ * finished session that carries logged work, which is most sessions by the
+ * end of the day. Marking those as live would leave the pulse on all evening.
+ */
+export function isSessionInProgress(log: DayLog | null): boolean {
+  const session = log?.session;
+  if (!session) return false;
+  if (session.status === 'completed' || session.status === 'skipped') return false;
+  // Nullish rather than strict null: a partially-selected session row leaves
+  // these undefined, and treating that as "finished" would silently suppress
+  // the pulse for every athlete.
+  if (session.completed_at != null) return false;
+  return session.status === 'in_progress' || session.started_at != null;
 }
 
 /**

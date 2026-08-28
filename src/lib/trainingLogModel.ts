@@ -10,6 +10,7 @@ import type {
   TrainingLogExercise,
   TrainingLogSet,
   TrainingLogMessage,
+  TrainingLogVideo,
   Exercise,
   ExerciseStub,
 } from './database.types';
@@ -70,6 +71,9 @@ export interface LoggedExerciseFull {
    *  (e.g. immediately after addOffPlanLogExercise before a full reload),
    *  or null if the underlying exercise was deleted. (E-05 / UF-32) */
   exercise: Exercise | ExerciseStub | null;
+  /** Clips the athlete attached to this exercise, oldest first. Always
+   *  present (empty when there are none) so no consumer has to guard. */
+  videos: TrainingLogVideo[];
 }
 
 export interface DayLog {

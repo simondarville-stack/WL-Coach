@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UpcomingScreen — the Field View home: one card per athlete showing their
  * next open training session as a compact highlight table.
  *
@@ -15,6 +15,7 @@ import { CompactSessionTable } from '../components/CompactSessionTable';
 import { EnvironmentSwitcher } from '../components/EnvironmentSwitcher';
 import { rawAxisRange } from '../../lib/trainingLogModel';
 import type { NextSessionResolution } from '../../lib/fieldView';
+import { isSessionInProgress } from '../../lib/fieldView';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const RAW_MAX = rawAxisRange().max;
@@ -197,7 +198,7 @@ export function UpcomingScreen() {
                   <div key={gc.group.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                     <div className="flex items-stretch">
                       <button
-                        onClick={() => navigate(`/fieldcoach/g/${gc.group.id}?w=${weekStart}`)}
+                        onClick={() => navigate(`/coach/g/${gc.group.id}?w=${weekStart}`)}
                         className="flex-1 min-w-0 px-3 pt-2.5 pb-2 text-left"
                       >
                         <span className="flex items-center justify-between gap-2">
@@ -226,7 +227,7 @@ export function UpcomingScreen() {
                     {hasTable && !collapsed && (
                       <button
                         onClick={() =>
-                          navigate(`/fieldcoach/g/${gc.group.id}/d/${gc.next.day!.dayIndex}?w=${weekStart}`)
+                          navigate(`/coach/g/${gc.group.id}/d/${gc.next.day!.dayIndex}?w=${weekStart}`)
                         }
                         className="w-full text-left active:bg-gray-800/50"
                         aria-label={`Open ${gc.group.name}'s group programme for ${gc.next.day!.label}`}
@@ -257,12 +258,21 @@ export function UpcomingScreen() {
             return (
               <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                 <button
-                  onClick={() => navigate(`/fieldcoach/a/${card.athlete.id}?w=${weekStart}`)}
+                  onClick={() => navigate(`/coach/a/${card.athlete.id}?w=${weekStart}`)}
                   className="w-full px-3 pt-2.5 pb-2 text-left"
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white flex items-center gap-1 min-w-0">
                       <span className="truncate">{card.athlete.name}</span>
+                      {/* Training right now — the one thing a coach on the
+                          floor scans this list for. */}
+                      {isSessionInProgress(card.log) && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0"
+                          title="Training now"
+                          aria-label="Training now"
+                        />
+                      )}
                       {card.hostName && (
                         <span className="text-[10px] font-normal text-gray-600 shrink-0">· {card.hostName}</span>
                       )}
@@ -291,7 +301,7 @@ export function UpcomingScreen() {
                 {hasTable && (
                   <button
                     onClick={() =>
-                      navigate(`/fieldcoach/a/${card.athlete.id}/d/${card.next.day!.dayIndex}?w=${weekStart}`)
+                      navigate(`/coach/a/${card.athlete.id}/d/${card.next.day!.dayIndex}?w=${weekStart}`)
                     }
                     className="w-full text-left active:bg-gray-800/50"
                     aria-label={`Open ${card.athlete.name}'s programme for ${card.next.day!.label}`}

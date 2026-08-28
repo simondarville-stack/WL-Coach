@@ -13,6 +13,7 @@ import type {
   TrainingLogExerciseMetadata,
   TrainingLogSet,
   TrainingLogMessage,
+  TrainingLogVideo,
   Exercise,
   PlannedExercise,
   PlannedSetLine,
@@ -70,7 +71,7 @@ export async function fetchWeekLog(
 
   // Messages depend only on the session ids, so they load alongside the
   // exercises → sets chain instead of after it.
-  const [{ exercises, sets }, messages] = await Promise.all([
+  const [{ exercises, sets, videos }, messages] = await Promise.all([
     (async () => {
       const { data: exRows, error: exErr } = await supabase
         .from('training_log_exercises')
@@ -90,7 +91,8 @@ export async function fetchWeekLog(
         if (setErr) throw setErr;
         setRowsAll = (setRows ?? []) as TrainingLogSet[];
       }
-      return { exercises: exs, sets: setRowsAll };
+      const videoRows = await fetchVideosForLogExercises(exIds);
+      return { exercises: exs, sets: setRowsAll, videos: videoRows };
     })(),
     (async () => {
       const { data: msgRows, error: msgErr } = await supabase
@@ -121,7 +123,12 @@ export async function fetchWeekLog(
     const exSets = sets
       .filter(s => s.log_exercise_id === ex.id)
       .sort((a, b) => a.set_number - b.set_number);
-    const entry: LoggedExerciseFull = { log: ex, sets: exSets, exercise: ex.exercise };
+    const entry: LoggedExerciseFull = {
+      log: ex,
+      sets: exSets,
+      exercise: ex.exercise,
+      videos: videos.filter(v => v.log_exercise_id === ex.id),
+    };
     day.exercises.push(entry);
   }
   Object.values(out).forEach(d => d.exercises.sort((a, b) => a.log.position - b.log.position));
@@ -146,7 +153,7 @@ export async function fetchSessionForSlot(
 
   // Messages depend only on the session id, so they load alongside the
   // exercises → sets chain instead of after it.
-  const [{ exercises, sets }, msgRows] = await Promise.all([
+  const [{ exercises, sets, videos }, msgRows] = await Promise.all([
     (async () => {
       const { data: exRows, error: exErr } = await supabase
         .from('training_log_exercises')
@@ -167,7 +174,8 @@ export async function fetchSessionForSlot(
         if (setErr) throw setErr;
         setRowsAll = (setRows ?? []) as TrainingLogSet[];
       }
-      return { exercises: exs, sets: setRowsAll };
+      const videoRows = await fetchVideosForLogExercises(exIds);
+      return { exercises: exs, sets: setRowsAll, videos: videoRows };
     })(),
     (async () => {
       const { data, error: msgErr } = await supabase
@@ -188,6 +196,7 @@ export async function fetchSessionForSlot(
       log: ex,
       exercise: ex.exercise,
       sets: sets.filter(s => s.log_exercise_id === ex.id).sort((a, b) => a.set_number - b.set_number),
+      videos: videos.filter(v => v.log_exercise_id === ex.id),
     })),
     messages: (msgRows ?? []) as TrainingLogMessage[],
   };
@@ -912,6 +921,130 @@ export async function upsertLoggedSet(patch: SetPatch): Promise<TrainingLogSet> 
 
 export async function deleteLoggedSet(setId: string): Promise<void> {
   const { error } = await supabase.from('training_log_sets').delete().eq('id', setId);
+  if (error) throw error;
+}
+
+// ─── Videos ───────────────────────────────────────────────────────────────
+
+/** Bucket holding athlete-recorded training clips. Public, like the two
+ *  buckets that came before it — athletes have no authenticated identity to
+ *  scope a signed URL to until the auth phase lands. */
+export const LOG_VIDEO_BUCKET = 'log-videos';
+
+/** Mirrors the bucket's own file_size_limit so the UI can reject an oversized
+ *  file before spending the upload rather than after. */
+export const LOG_VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+
+/** Clips for a set of log exercises, oldest first. Returns [] for an empty
+ *  input rather than issuing a pointless `in ()` query. */
+export async function fetchVideosForLogExercises(
+  logExerciseIds: string[],
+): Promise<TrainingLogVideo[]> {
+  if (logExerciseIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('training_log_videos')
+    .select('*')
+    .in('log_exercise_id', logExerciseIds)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as TrainingLogVideo[];
+}
+
+/**
+ * Upload one clip and attach it to a logged exercise.
+ *
+ * Storage write first, row second: an orphaned object costs bytes, whereas an
+ * orphaned row would render as a broken video in every log view. If the row
+ * insert fails the object is removed again so a retry doesn't accumulate
+ * duplicates.
+ */
+export async function uploadLogVideo(params: {
+  file: File;
+  logExerciseId: string;
+  athleteId: string;
+  setNumber?: number | null;
+  description?: string | null;
+  uploadedBy?: 'athlete' | 'coach';
+  ownerId?: string | null;
+}): Promise<TrainingLogVideo> {
+  const { file, logExerciseId, athleteId } = params;
+
+  if (file.size > LOG_VIDEO_MAX_BYTES) {
+    throw new Error(
+      `Video is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is ${LOG_VIDEO_MAX_BYTES / 1024 / 1024} MB.`,
+    );
+  }
+
+  // `name` can be absent or extension-less for a clip handed over straight
+  // from a camera capture, so fall back rather than writing a path ending in
+  // a stray dot.
+  const rawExt = file.name.includes('.') ? file.name.split('.').pop() : '';
+  const ext = (rawExt || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const storagePath = `${athleteId}/${logExerciseId}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(LOG_VIDEO_BUCKET)
+    .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrlData } = supabase.storage
+    .from(LOG_VIDEO_BUCKET)
+    .getPublicUrl(storagePath);
+
+  const { data, error } = await supabase
+    .from('training_log_videos')
+    .insert({
+      log_exercise_id: logExerciseId,
+      athlete_id: athleteId,
+      set_number: params.setNumber ?? null,
+      video_url: publicUrlData.publicUrl,
+      storage_path: storagePath,
+      description: params.description ?? null,
+      uploaded_by: params.uploadedBy ?? 'athlete',
+      owner_id: params.ownerId ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    await supabase.storage.from(LOG_VIDEO_BUCKET).remove([storagePath]);
+    throw error;
+  }
+  return data as TrainingLogVideo;
+}
+
+/** Delete a clip and its stored object. The object goes first so a failure
+ *  leaves the row pointing at something that still plays. */
+export async function deleteLogVideo(video: TrainingLogVideo): Promise<void> {
+  // storage_path is null only for rows predating the column; fall back to the
+  // URL-splitting the event-videos path uses.
+  const path = video.storage_path ?? extractStoragePath(video.video_url);
+  if (path) {
+    await supabase.storage.from(LOG_VIDEO_BUCKET).remove([path]);
+  }
+  const { error } = await supabase.from('training_log_videos').delete().eq('id', video.id);
+  if (error) throw error;
+}
+
+function extractStoragePath(url: string): string | null {
+  const marker = `/${LOG_VIDEO_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  return url.slice(idx + marker.length).split('?')[0] || null;
+}
+
+/**
+ * Stamp a clip as reviewed the first time a coach opens it.
+ *
+ * Idempotent by design: the `is null` guard means re-opening an old clip does
+ * not move the timestamp, so "reviewed on" keeps meaning first-viewed.
+ */
+export async function markLogVideoReviewed(videoId: string): Promise<void> {
+  const { error } = await supabase
+    .from('training_log_videos')
+    .update({ coach_reviewed_at: new Date().toISOString() })
+    .eq('id', videoId)
+    .is('coach_reviewed_at', null);
   if (error) throw error;
 }
 

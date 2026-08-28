@@ -1,9 +1,13 @@
 /**
- * AthleteDayScreen — Field View drill-in: one athlete's full programme for
+ * AthleteDayScreen — coach mobile drill-in: one athlete's full programme for
  * one training slot, rendered with the same read-only SessionPreview the
  * athlete app uses (planned prescription beside anything already logged).
+ *
+ * This is the "watch a session happen" screen, so it refreshes on a short
+ * cadence while visible — a coach on the gym floor sees sets tick in, notes
+ * appear and clips arrive without pulling to refresh.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, MessageSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -11,9 +15,11 @@ import {
   fetchAthleteDay,
   fetchWeekOverview,
   defaultSlotLabel,
+  markLogVideoReviewed,
   type AthleteDayData,
   type WeekOverview,
 } from '../../lib/trainingLogService';
+import type { TrainingLogVideo } from '../../lib/database.types';
 import { getMondayOfWeekISO } from '../../lib/weekUtils';
 import { addDaysToISO, toLocalISO } from '../../lib/dateUtils';
 import { SessionPreview } from '../../athlete/v2/components/SessionPreview';
@@ -35,28 +41,72 @@ export function AthleteDayScreen() {
   const [error, setError] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
 
+  const aliveRef = useRef(true);
   useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
+
+  const load = useCallback(async () => {
     if (!athleteId || Number.isNaN(dayIndex)) return;
-    let alive = true;
-    (async () => {
-      try {
-        const [{ data: athleteRow }, ov] = await Promise.all([
-          supabase.from('athletes').select('name, owner_id').eq('id', athleteId).maybeSingle(),
-          fetchWeekOverview(athleteId, weekStart),
-        ]);
-        const dd = await fetchAthleteDay(athleteId, weekStart, dayIndex, ov.weekPlanId);
-        if (!alive) return;
-        const a = athleteRow as { name: string; owner_id: string } | null;
-        setAthleteName(a?.name ?? '');
-        setAthleteOwnerId(a?.owner_id ?? null);
-        setOverview(ov);
-        setDayData(dd);
-      } catch (e) {
-        if (alive) setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
-    return () => { alive = false; };
+    try {
+      const [{ data: athleteRow }, ov] = await Promise.all([
+        supabase.from('athletes').select('name, owner_id').eq('id', athleteId).maybeSingle(),
+        fetchWeekOverview(athleteId, weekStart),
+      ]);
+      const dd = await fetchAthleteDay(athleteId, weekStart, dayIndex, ov.weekPlanId);
+      if (!aliveRef.current) return;
+      const a = athleteRow as { name: string; owner_id: string } | null;
+      setAthleteName(a?.name ?? '');
+      setAthleteOwnerId(a?.owner_id ?? null);
+      setOverview(ov);
+      setDayData(dd);
+      setError(null);
+    } catch (e) {
+      if (aliveRef.current) setError(e instanceof Error ? e.message : String(e));
+    }
   }, [athleteId, weekStart, dayIndex]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Live refresh. 30 s rather than the 60 s the rest of the app uses: this is
+  // the one screen a coach watches while the set is actually being lifted.
+  // Skipped while hidden so a backgrounded phone isn't polling, with an
+  // immediate catch-up refresh when it comes back.
+  useEffect(() => {
+    const refreshIfVisible = () => { if (!document.hidden) void load(); };
+    const id = window.setInterval(refreshIfVisible, 30_000);
+    window.addEventListener('focus', refreshIfVisible);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', refreshIfVisible);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
+  }, [load]);
+
+  /** Stamp a clip reviewed on first play, clearing its highlight locally so
+   *  it doesn't stay ringed until the next poll. Best-effort. */
+  const handleVideoOpened = useCallback((video: TrainingLogVideo) => {
+    if (video.coach_reviewed_at !== null) return;
+    const reviewedAt = new Date().toISOString();
+    setDayData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le => ({
+            ...le,
+            videos: le.videos.map(v =>
+              v.id === video.id ? { ...v, coach_reviewed_at: reviewedAt } : v,
+            ),
+          })),
+        },
+      };
+    });
+    markLogVideoReviewed(video.id).catch(() => undefined);
+  }, []);
 
   const dayOverview = overview?.days.find(d => d.dayIndex === dayIndex) ?? null;
   const weekday = dayOverview?.weekday ?? null;
@@ -106,7 +156,9 @@ export function AthleteDayScreen() {
             onStart={() => {}}
             isBonus={dayOverview?.isBonus ?? false}
             readOnly
+            showLogged
             viewerRole="coach"
+            onVideoOpened={handleVideoOpened}
           />
         )}
       </div>
