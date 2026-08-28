@@ -1,0 +1,18 @@
+# Files in the build output that must never be uploaded as static assets.
+# Vite copies public/ verbatim into dist/, so this lands at the root of the
+# asset directory, where wrangler reads it. Patterns are .gitignore-style.
+
+# Sourcemaps. vite builds with sourcemap: 'hidden' (see vite.config.ts), which
+# omits the //# sourceMappingURL comment but still WRITES the .map file — and
+# a map carries `sourcesContent`, i.e. the complete EMOS TypeScript source,
+# verbatim, readable by anyone who appends '.map' to a bundle URL.
+#
+# `npm run build:deploy` already deletes these, but that only protects deploys
+# that remember to use it: a plain `npm run build` in a CI build command
+# silently publishes the whole source. This file is the guard that does not
+# depend on anyone picking the right script — it is enforced by wrangler at
+# upload time, on every deploy, however the build was invoked.
+#
+# Local builds keep their maps, which is the point: a captured production
+# stack is still mappable by rebuilding the same SHA.
+*.map

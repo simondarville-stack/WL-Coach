@@ -166,10 +166,14 @@ the browser). It is hosted on **Cloudflare Workers static assets**:
   `not_found_handling = "single-page-application"` is what makes deep links
   like `/analysis` or `/athlete/a/<id>` survive a hard refresh.
 - `public/_headers` — cache + security headers; Vite copies it into `dist/`.
+- `public/.assetsignore` — `*.map`. **The load-bearing guard.** vite emits
+  `.map` files (`sourcemap: 'hidden'` hides the comment, not the file) and a
+  map embeds `sourcesContent`, i.e. the whole EMOS source verbatim. This file
+  stops wrangler uploading them however the build was invoked. It is enforced
+  at deploy time and does not depend on anyone choosing the right script —
+  which is exactly how the source leaked once, in 0.60.1.
 - `npm run build:deploy` — `vite build` plus `scripts/strip-sourcemaps.mjs`.
-  **Never publish `dist/` from a bare `npm run build`:** vite emits `.map`
-  files (`sourcemap: 'hidden'` hides the comment, not the file), and shipping
-  them exposes the entire source at a guessable URL.
+  Second, independent guard; prefer it as the CI build command.
 - Build-time env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked
   into the bundle at build time — they are Workers Builds **environment
   variables**, not runtime secrets.
