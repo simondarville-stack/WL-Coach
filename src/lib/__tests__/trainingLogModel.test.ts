@@ -7,6 +7,7 @@ function exercise(over: { status?: string; sets?: { status: string }[] } = {}): 
     log: { id: 'le1', status: over.status ?? 'pending' } as never,
     sets: (over.sets ?? []) as never,
     exercise: null,
+    videos: [],
   };
 }
 

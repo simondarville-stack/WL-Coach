@@ -59,6 +59,7 @@ function loggedGpp(rows: GppSection['rows']): LoggedExerciseFull {
     log: { id: 'le1', metadata: { gpp: { title: 'Core', description: '', rows } } } as never,
     sets: [],
     exercise: null,
+    videos: [],
   };
 }
 

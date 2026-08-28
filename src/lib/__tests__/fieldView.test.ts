@@ -446,6 +446,7 @@ function loggedEx(over: {
     } as never,
     sets: (over.sets ?? []) as never,
     exercise: null,
+    videos: [],
   };
 }
 

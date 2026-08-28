@@ -473,7 +473,7 @@ export function TodayScreen() {
         ...prev,
         log: {
           ...prev.log,
-          exercises: [...prev.log.exercises, { log: logEx, sets: [], exercise: exerciseDef }],
+          exercises: [...prev.log.exercises, { log: logEx, sets: [], exercise: exerciseDef, videos: [] }],
         },
       };
     });

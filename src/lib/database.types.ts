@@ -712,6 +712,27 @@ export interface TrainingLogSet {
   updated_at: string;
 }
 
+/** A video clip attached to one logged exercise. Athletes record these from
+ *  the log; coaches watch them from Log mode and the coach mobile app. */
+export interface TrainingLogVideo {
+  id: string;
+  log_exercise_id: string;
+  athlete_id: string;
+  /** Which set the clip shows, when the athlete tagged one. Null for a clip
+   *  that covers the exercise as a whole. */
+  set_number: number | null;
+  video_url: string;
+  /** Object key inside the `log-videos` bucket. Null only for rows written
+   *  before the column existed; deletes fall back to parsing the URL. */
+  storage_path: string | null;
+  description: string | null;
+  uploaded_by: 'athlete' | 'coach';
+  /** Stamped the first time a coach opens the clip — drives "new footage". */
+  coach_reviewed_at: string | null;
+  owner_id: string | null;
+  created_at: string;
+}
+
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
@@ -1279,6 +1300,12 @@ export interface Database {
         Row: TrainingLogSet & Record<string, unknown>;
         Insert: Partial<Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
         Update: Partial<Omit<TrainingLogSet, 'id' | 'created_at' | 'updated_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      training_log_videos: {
+        Row: TrainingLogVideo & Record<string, unknown>;
+        Insert: Partial<Omit<TrainingLogVideo, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<TrainingLogVideo, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
       training_log_messages: {
