@@ -26,6 +26,7 @@ import {
 import { useCoachStore } from '../store/coachStore';
 import { useAthleteStore } from '../store/athleteStore';
 import { useInboxUnreadCount } from '../hooks/useInboxUnreadCount';
+import { useReviewFeedCount } from '../hooks/useReviewFeedCount';
 import { VERSION_LABEL, BUILD_INFO } from '../lib/version';
 
 interface NavItem {
@@ -33,8 +34,8 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   /** Optional badge key. The Sidebar resolves this to a live count and
-   *  renders a chip next to the label. Currently only 'inbox' is wired. */
-  badge?: 'inbox';
+   *  renders a chip next to the label. */
+  badge?: 'inbox' | 'review';
 }
 
 interface NavSection {
@@ -61,7 +62,7 @@ const sections: NavSection[] = [
       { path: '/training-groups', label: 'Training groups', icon: UsersRound },
       // { path: '/training-log', label: 'Training log', icon: ClipboardList }, // hidden: out of scope
       { path: '/inbox', label: 'Inbox', icon: Mail, badge: 'inbox' },
-      { path: '/review', label: 'Review feed', icon: PlaySquare },
+      { path: '/review', label: 'Review feed', icon: PlaySquare, badge: 'review' },
       { path: '/prs', label: 'Personal Records', icon: Trophy },
     ],
   },
@@ -97,12 +98,14 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
   const inboxUnread = useInboxUnreadCount({
     onOpenInbox: () => navigate('/inbox?unread=1'),
   });
+  const reviewCount = useReviewFeedCount();
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('emos_sidebar_collapsed') === 'true';
   });
 
   const badgeValue = (key: NavItem['badge']): number => {
     if (key === 'inbox') return inboxUnread;
+    if (key === 'review') return reviewCount;
     return 0;
   };
 
@@ -213,7 +216,10 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
               // The Unread chip in there toggles back to everything, so this
               // costs nothing when the coach wanted the full list.
               const pendingUnread = item.badge ? badgeValue(item.badge) : 0;
-              const to = pendingUnread > 0 ? `${item.path}?unread=1` : item.path;
+              // The ?unread=1 deep-link is inbox semantics; the review feed
+              // is already "unread only" by construction.
+              const to =
+                pendingUnread > 0 && item.badge === 'inbox' ? `${item.path}?unread=1` : item.path;
               return (
                 <NavLink
                   key={item.path}

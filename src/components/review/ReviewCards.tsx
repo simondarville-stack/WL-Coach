@@ -73,9 +73,12 @@ interface ComposeBarProps {
   onSend: (text: string) => Promise<void>;
   /** Hide the emoji chips (e.g. on question cards a bare 👍 is a non-answer). */
   showReactions?: boolean;
+  /** Sends made outside this bar (keyboard quick reactions) — shown in the
+   *  same "Sent:" confirmation list so the feedback lands on the card. */
+  externalSent?: string[];
 }
 
-function ComposeBar({ placeholder, onSend, showReactions = true }: ComposeBarProps) {
+function ComposeBar({ placeholder, onSend, showReactions = true, externalSent }: ComposeBarProps) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string[]>([]);
@@ -99,7 +102,7 @@ function ComposeBar({ placeholder, onSend, showReactions = true }: ComposeBarPro
 
   return (
     <div className="mt-2 space-y-1.5">
-      {sent.map((s, i) => (
+      {[...(externalSent ?? []), ...sent].map((s, i) => (
         <div key={i} className="flex items-center gap-1.5 text-[11px] text-emerald-300/90 px-1">
           <CheckCircle2 size={12} className="shrink-0" />
           <span className="truncate">Sent: {s}</span>
@@ -184,9 +187,11 @@ interface VideoCardProps {
   /** Card is the one currently in view — drives autoplay. */
   active: boolean;
   onComment: (text: string) => Promise<void>;
+  /** Keyboard quick reactions already sent for this card. */
+  externalSent?: string[];
 }
 
-export function VideoCard({ item, athlete, seen, active, onComment }: VideoCardProps) {
+export function VideoCard({ item, athlete, seen, active, onComment, externalSent }: VideoCardProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -218,6 +223,7 @@ export function VideoCard({ item, athlete, seen, active, onComment }: VideoCardP
       composer={{
         placeholder: `Comment on ${item.exerciseName}…`,
         onSend: onComment,
+        externalSent,
       }}
     >
       <div className="relative h-full rounded-2xl overflow-hidden bg-black">
@@ -300,9 +306,11 @@ interface SessionCardProps {
   athlete: Athlete | undefined;
   seen: boolean;
   onComment: (text: string) => Promise<void>;
+  /** Keyboard quick reactions already sent for this card. */
+  externalSent?: string[];
 }
 
-export function SessionCard({ item, athlete, seen, onComment }: SessionCardProps) {
+export function SessionCard({ item, athlete, seen, onComment, externalSent }: SessionCardProps) {
   const s = item.session;
   const metrics: string[] = [];
   if (s.session_rpe != null) metrics.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
@@ -315,7 +323,7 @@ export function SessionCard({ item, athlete, seen, onComment }: SessionCardProps
       context={`Session ${formatDateShort(s.date)}${s.session_label ? ` · ${s.session_label}` : ''}`}
       seen={seen}
       kindIcon={<ClipboardList size={16} />}
-      composer={{ placeholder: 'Comment on this session…', onSend: onComment }}
+      composer={{ placeholder: 'Comment on this session…', onSend: onComment, externalSent }}
     >
       {/* Light panel so StackedNotation's token colours render as designed. */}
       <div className="h-full rounded-2xl bg-white overflow-y-auto">

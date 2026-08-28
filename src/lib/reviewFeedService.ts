@@ -13,12 +13,22 @@
  * rings) stays consistent with the feed for free.
  */
 import { supabase } from './supabase';
+import { emitInboxChanged } from './inboxEvents';
 import type {
   TrainingLogExercise,
   TrainingLogMessage,
   TrainingLogSession,
   TrainingLogVideo,
 } from './database.types';
+
+/** Default lookback for session cards — single source shared by the feed,
+ *  the sidebar badge and the dashboard panel so their numbers can never
+ *  disagree. COACH-CONFIG candidate. */
+export const REVIEW_SESSION_LOOKBACK_DAYS = 7;
+
+function lookbackSinceDate(lookbackDays: number): string {
+  return new Date(Date.now() - lookbackDays * 86_400_000).toISOString().slice(0, 10);
+}
 
 // ─── Feed item types ───────────────────────────────────────────────────────
 
@@ -88,9 +98,7 @@ interface SessionStub {
 export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
   const { athleteIds, lookbackDays } = args;
   if (athleteIds.length === 0) return [];
-  const sinceDate = new Date(Date.now() - lookbackDays * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  const sinceDate = lookbackSinceDate(lookbackDays);
 
   // The three sources are independent — fetch them concurrently.
   const [videoRows, messageRows, sessionRows] = await Promise.all([
@@ -280,4 +288,117 @@ export async function markSessionReviewed(sessionId: string): Promise<void> {
     .eq('id', sessionId)
     .is('coach_reviewed_at', null);
   if (error) throw error;
+  // Same "your count may be stale" channel the inbox badge uses — the
+  // review badge and dashboard panel subscribe to it too.
+  emitInboxChanged();
+}
+
+// ─── Lightweight counts (sidebar badge) ────────────────────────────────────
+
+export interface ReviewFeedCounts {
+  videos: number;
+  threads: number;
+  sessions: number;
+  /** Cards in the feed = videos + threads + sessions. */
+  total: number;
+}
+
+/**
+ * Cheap card count for the sidebar badge — same filters as fetchReviewFeed
+ * but head-only counts (plus one thin select to count distinct message
+ * threads), no joins.
+ */
+export async function fetchReviewFeedCounts(
+  athleteIds: string[],
+  lookbackDays: number = REVIEW_SESSION_LOOKBACK_DAYS,
+): Promise<ReviewFeedCounts> {
+  if (athleteIds.length === 0) return { videos: 0, threads: 0, sessions: 0, total: 0 };
+  const sinceDate = lookbackSinceDate(lookbackDays);
+
+  const [videos, threadRows, sessions] = await Promise.all([
+    (async () => {
+      const { count, error } = await supabase
+        .from('training_log_videos')
+        .select('id', { count: 'exact', head: true })
+        .is('coach_reviewed_at', null)
+        .eq('uploaded_by', 'athlete')
+        .in('athlete_id', athleteIds);
+      if (error) throw error;
+      return count ?? 0;
+    })(),
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_log_messages')
+        .select('session_id, athlete_id')
+        .eq('sender_type', 'athlete')
+        .is('coach_read_at', null)
+        .in('athlete_id', athleteIds);
+      if (error) throw error;
+      return (data ?? []) as { session_id: string | null; athlete_id: string | null }[];
+    })(),
+    (async () => {
+      const { count, error } = await supabase
+        .from('training_log_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'completed')
+        .is('coach_reviewed_at', null)
+        .in('athlete_id', athleteIds)
+        .gte('date', sinceDate);
+      if (error) throw error;
+      return count ?? 0;
+    })(),
+  ]);
+
+  const threadKeys = new Set<string>();
+  for (const r of threadRows) {
+    if (r.session_id) threadKeys.add(r.session_id);
+    else if (r.athlete_id) threadKeys.add(`general:${r.athlete_id}`);
+  }
+  const threads = threadKeys.size;
+  return { videos, threads, sessions, total: videos + threads + sessions };
+}
+
+// ─── Per-athlete review status (dashboard panel) ───────────────────────────
+
+export interface AthleteReviewStatus {
+  athleteId: string;
+  /** Completed sessions inside the lookback window. */
+  completed: number;
+  /** Of those, how many the coach has reviewed. */
+  reviewed: number;
+}
+
+/**
+ * Reviewed-vs-completed per athlete over the lookback window. One thin
+ * query, aggregated client-side; athletes with no completed sessions in
+ * the window are omitted.
+ */
+export async function fetchReviewStatusByAthlete(
+  athleteIds: string[],
+  lookbackDays: number = REVIEW_SESSION_LOOKBACK_DAYS,
+): Promise<AthleteReviewStatus[]> {
+  if (athleteIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('training_log_sessions')
+    .select('athlete_id, coach_reviewed_at')
+    .eq('status', 'completed')
+    .in('athlete_id', athleteIds)
+    .gte('date', lookbackSinceDate(lookbackDays));
+  if (error) throw error;
+  const rows = (data ?? []) as { athlete_id: string; coach_reviewed_at: string | null }[];
+
+  const byAthlete = new Map<string, AthleteReviewStatus>();
+  for (const r of rows) {
+    let s = byAthlete.get(r.athlete_id);
+    if (!s) {
+      s = { athleteId: r.athlete_id, completed: 0, reviewed: 0 };
+      byAthlete.set(r.athlete_id, s);
+    }
+    s.completed += 1;
+    if (r.coach_reviewed_at != null) s.reviewed += 1;
+  }
+  // Most outstanding work first; fully-reviewed athletes sink to the bottom.
+  return [...byAthlete.values()].sort(
+    (a, b) => (b.completed - b.reviewed) - (a.completed - a.reviewed),
+  );
 }

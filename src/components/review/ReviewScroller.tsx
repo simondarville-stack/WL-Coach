@@ -26,6 +26,7 @@ import { useCoachStore } from '../../store/coachStore';
 import {
   fetchReviewFeed,
   markSessionReviewed,
+  REVIEW_SESSION_LOOKBACK_DAYS,
   type ReviewFeedItem,
 } from '../../lib/reviewFeedService';
 import {
@@ -35,7 +36,8 @@ import {
   markGeneralThreadRead,
   sendGeneralMessage,
 } from '../../lib/trainingLogService';
-import { EndCard, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
+import { emitInboxChanged } from '../../lib/inboxEvents';
+import { EndCard, QUICK_REACTIONS, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
 
 /** How long a card must stay in view before it counts as reviewed. */
 const SEEN_DWELL_MS = 700;
@@ -48,17 +50,22 @@ export function ReviewScroller() {
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
 
-  const [lookbackDays, setLookbackDays] = useState<number>(7);
+  const [lookbackDays, setLookbackDays] = useState<number>(REVIEW_SESSION_LOOKBACK_DAYS);
   const [items, setItems] = useState<ReviewFeedItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  /** Quick reactions sent via the keyboard, per card key — the cards render
+   *  these in their "Sent:" confirmation list. */
+  const [keyboardSent, setKeyboardSent] = useState<Record<string, string[]>>({});
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLElement>());
   const dwellTimers = useRef(new Map<string, number>());
   const itemsRef = useRef<ReviewFeedItem[] | null>(null);
   itemsRef.current = items;
+  const activeKeyRef = useRef<string | null>(null);
+  activeKeyRef.current = activeKey;
 
   // ── Load (snapshot — reviewing a card does not reshuffle the feed) ───────
   const load = useCallback(async () => {
@@ -105,7 +112,12 @@ export function ReviewScroller() {
           await markSessionReviewed(item.session.id);
         }
       };
-      persist().catch(() => undefined);
+      // On success, poke the shared read-state channel so the sidebar badge
+      // and the dashboard panel resync. (The message markers emit on their
+      // own; videos and sessions need this nudge.)
+      persist()
+        .then(() => emitInboxChanged())
+        .catch(() => undefined);
     },
     [athleteById, ownerId],
   );
@@ -195,6 +207,64 @@ export function ReviewScroller() {
     [athleteById, ownerId, activeCoachId, commentOnSession, markSeen],
   );
 
+  // ── Keyboard flow: ↑/↓ snap between cards, 1–4 quick reactions ──────────
+  const quickReact = useCallback(
+    async (item: ReviewFeedItem, text: string) => {
+      if (item.kind === 'thread') return; // a bare reaction is a non-answer
+      try {
+        if (item.kind === 'video') {
+          await commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`);
+        } else {
+          await commentOnSession(item, item.session.id, text);
+        }
+        setKeyboardSent(prev => ({
+          ...prev,
+          [item.key]: [...(prev[item.key] ?? []), text],
+        }));
+      } catch {
+        // Silent — the on-card buttons remain the reliable path.
+      }
+    },
+    [commentOnSession],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
+      ) {
+        return;
+      }
+      const feed = itemsRef.current;
+      if (!feed) return;
+      const keys = [...feed.map(i => i.key), 'end'];
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const cur = activeKeyRef.current;
+        const curIdx = cur ? keys.indexOf(cur) : -1;
+        const nextIdx = Math.min(
+          keys.length - 1,
+          Math.max(0, (curIdx === -1 ? 0 : curIdx) + (e.key === 'ArrowDown' ? 1 : -1)),
+        );
+        cardRefs.current.get(keys[nextIdx])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+
+      if (e.key >= '1' && e.key <= String(QUICK_REACTIONS.length)) {
+        const item = feed.find(i => i.key === activeKeyRef.current);
+        if (!item || item.kind === 'thread') return;
+        e.preventDefault();
+        void quickReact(item, QUICK_REACTIONS[Number(e.key) - 1]);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [quickReact]);
+
   // ── Render ───────────────────────────────────────────────────────────────
   const total = items?.length ?? 0;
   const seenCount = items ? items.filter(i => seen.has(i.key)).length : 0;
@@ -210,6 +280,7 @@ export function ReviewScroller() {
               : total === 0
                 ? 'Nothing to review'
                 : `${seenCount} of ${total} reviewed`}
+            <span className="hidden md:inline text-white/30"> · ↑↓ navigate · 1–4 react</span>
           </span>
           <span className="flex items-center gap-1.5">
             <label className="text-white/40">
@@ -271,6 +342,7 @@ export function ReviewScroller() {
                   onComment={text =>
                     commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
                   }
+                  externalSent={keyboardSent[item.key]}
                 />
               )}
               {item.kind === 'thread' && (
@@ -287,12 +359,13 @@ export function ReviewScroller() {
                   athlete={athleteById.get(item.athleteId)}
                   seen={seen.has(item.key)}
                   onComment={text => commentOnSession(item, item.session.id, text)}
+                  externalSent={keyboardSent[item.key]}
                 />
               )}
             </section>
           ))}
           {items != null && !loadError && (
-            <section className="h-full snap-start snap-always">
+            <section ref={registerCard('end')} className="h-full snap-start snap-always">
               <EndCard
                 total={total}
                 onBackToTop={() =>
