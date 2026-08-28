@@ -12,8 +12,9 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Building2, Plus, Send, Pencil, Check, X, LogOut, ArrowRightLeft, Link2, Unlink,
+  Building2, Plus, Send, Pencil, Check, X, LogOut, ArrowRightLeft, Link2, Unlink, GitMerge,
 } from 'lucide-react';
+import { AdoptLibraryWizard } from '../exercise-library/AdoptLibraryWizard';
 import { supabase } from '../../lib/supabase';
 import { useCoachStore } from '../../store/coachStore';
 import { useExerciseStore } from '../../store/exerciseStore';
@@ -69,6 +70,7 @@ export function ClubAdminPage() {
 
   const [newClubName, setNewClubName] = useState('');
   const [editingName, setEditingName] = useState<string | null>(null);
+  const [adoptTarget, setAdoptTarget] = useState<ExerciseLibrary | null>(null);
   const [inviteCoachId, setInviteCoachId] = useState('');
   const [inviteRole, setInviteRole] = useState<ClubRole>('coach');
   const [newCatalogueName, setNewCatalogueName] = useState('');
@@ -335,13 +337,24 @@ export function ClubAdminPage() {
                   <th style={th}>Coach</th>
                   <th style={th}>Club role</th>
                   {catalogues.map(cat => {
-                    const iAmEditor = cellFor(activeCoachId, cat.id)?.role === 'editor';
+                    const myCatalogueRole = cellFor(activeCoachId, cat.id)?.role ?? null;
+                    const iAmEditor = myCatalogueRole === 'editor';
                     return (
                       <th key={cat.id} style={th}>
                         <span>{cat.name}</span>
                         <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 400, marginLeft: 5, fontFamily: 'var(--font-mono)' }}>
                           {exerciseCounts[cat.id] ?? 0}
                         </span>
+                        {myCatalogueRole && (
+                          <button
+                            onClick={() => setAdoptTarget(cat)}
+                            disabled={busy}
+                            title="Adopt my library — match my personal exercises against this catalogue and fold them in"
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', marginLeft: 4, verticalAlign: 'middle' }}
+                          >
+                            <GitMerge size={11} style={{ color: 'var(--color-accent)' }} />
+                          </button>
+                        )}
                         {iAmEditor && (
                           <button
                             onClick={() => void handleSeed(cat)}
@@ -524,6 +537,18 @@ export function ClubAdminPage() {
           Create club
         </Button>
       </div>
+
+      {adoptTarget && (
+        <AdoptLibraryWizard
+          targetLibrary={{ id: adoptTarget.id, name: adoptTarget.name }}
+          isEditor={cellFor(activeCoachId, adoptTarget.id)?.role === 'editor'}
+          onClose={() => setAdoptTarget(null)}
+          onComplete={() => {
+            invalidateExerciseCache();
+            void loadClubDetail();
+          }}
+        />
+      )}
     </div>
   );
 }

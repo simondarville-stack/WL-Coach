@@ -10,7 +10,8 @@
  *      plans against the same exercise ids, so cross-coach analysis works.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { X, Plus, BookOpen, Send, ShieldCheck, Eye, LogOut, ArrowRightLeft, RefreshCw } from 'lucide-react';
+import { X, Plus, BookOpen, Send, ShieldCheck, Eye, LogOut, ArrowRightLeft, RefreshCw, GitMerge } from 'lucide-react';
+import { AdoptLibraryWizard } from './AdoptLibraryWizard';
 import { useCoachStore } from '../../store/coachStore';
 import { useCoachProfiles } from '../../hooks/useCoachProfiles';
 import { useExerciseLibraries, type LibraryMemberWithCoach } from '../../hooks/useExerciseLibraries';
@@ -40,6 +41,9 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
   const [membersByLibrary, setMembersByLibrary] = useState<Record<string, LibraryMemberWithCoach[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Adopt wizard target (Phase 3 — fold my personal library into this club)
+  const [adoptTarget, setAdoptTarget] = useState<ClubEntry | null>(null);
 
   // Create form
   const [newName, setNewName] = useState('');
@@ -215,6 +219,15 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
                     </span>
                   )}
                   <span style={{ flex: 1 }} />
+                  <button
+                    onClick={() => setAdoptTarget(club)}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white"
+                    style={{ fontSize: 'var(--text-caption)', color: 'var(--color-accent)', border: 'none', background: 'none', cursor: 'pointer' }}
+                    title="Match your personal exercises against this catalogue and fold them in (merge histories onto shared ids)"
+                  >
+                    <GitMerge size={11} /> Adopt my library…
+                  </button>
                   {isEditor && (
                     <button
                       onClick={() => void handleSeed(club)}
@@ -359,6 +372,15 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
           </div>
         </div>
       </div>
+
+      {adoptTarget && (
+        <AdoptLibraryWizard
+          targetLibrary={{ id: adoptTarget.library.id, name: adoptTarget.library.name }}
+          isEditor={adoptTarget.membership.role === 'editor'}
+          onClose={() => setAdoptTarget(null)}
+          onComplete={() => { void load(); onChanged(); }}
+        />
+      )}
     </div>
   );
 }
