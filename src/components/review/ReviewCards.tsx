@@ -355,6 +355,8 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
           {item.exercises.map(ex => {
             const st = STATUS_GLYPH[ex.status] ?? STATUS_GLYPH.pending;
             const performedSets = ex.sets.filter(set => set.status !== 'pending');
+            const membersLine =
+              ex.isCombo && ex.comboMembers.length > 0 ? ex.comboMembers.join(' + ') : null;
             return (
               <div key={ex.id} className="px-3.5 py-2 flex items-start gap-2.5">
                 <span className={`text-xs mt-0.5 ${st.cls}`} title={ex.status}>
@@ -365,6 +367,14 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
                     <span className="text-[13px] font-medium text-gray-800 truncate">
                       {ex.name}
                     </span>
+                    {ex.isCombo && (
+                      <span
+                        className="text-[10px] px-1 rounded bg-sky-50 text-sky-700 border border-sky-200"
+                        title={membersLine ?? 'Combination exercise'}
+                      >
+                        combo
+                      </span>
+                    )}
                     {ex.gpp && (
                       <span className="text-[10px] text-gray-500 tabular-nums">
                         {ex.gpp.rows.filter(r => r.done).length}/{ex.gpp.rows.length} done
@@ -379,8 +389,14 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
                       </span>
                     )}
                   </div>
+                  {/* Combo members under the name, unless the name already IS
+                      the joined member list. */}
+                  {membersLine != null && membersLine !== ex.name && (
+                    <div className="text-[11px] text-gray-500 truncate">{membersLine}</div>
+                  )}
                   {/* What the athlete actually did, most specific source first:
-                      GPP rows > logged sets > performed_raw fallback. */}
+                      GPP rows > logged sets > performed_raw fallback (in the
+                      planned row's unit, so % prescriptions render as %). */}
                   {ex.gpp ? (
                     <GppStack gpp={ex.gpp} />
                   ) : performedSets.length > 0 ? (
@@ -391,8 +407,8 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
                     <div className="mt-0.5">
                       <StackedNotation
                         raw={ex.performedRaw}
-                        unit="kg"
-                        isCombo={ex.performedRaw.includes('+')}
+                        unit={ex.unit ?? 'kg'}
+                        isCombo={ex.isCombo || ex.performedRaw.includes('+')}
                       />
                     </div>
                   ) : null}

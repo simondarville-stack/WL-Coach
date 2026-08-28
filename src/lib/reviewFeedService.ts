@@ -16,6 +16,7 @@ import { supabase } from './supabase';
 import { emitInboxChanged } from './inboxEvents';
 import { fetchByIds } from './queryPaging';
 import { METRIC_TRACKING_DEFAULTS } from './trainingLogModel';
+import { plannedRowLabel } from './plannedRowLabel';
 import type {
   AthleteMetricDefinition,
   AthleteWeekMetricsConfig,
@@ -66,6 +67,10 @@ export interface ReviewThreadItem {
 
 export interface SessionReviewExercise {
   id: string;
+  /** Display name resolved the same way log mode resolves it: coach
+   *  display_name override > combo notation/members > GPP title >
+   *  catalogue name (substituted exercise's name when the athlete logged
+   *  a different lift than planned). */
   name: string;
   status: TrainingLogExercise['status'];
   /** Actually performed sets (what the athlete entered), by set_number.
@@ -74,7 +79,15 @@ export interface SessionReviewExercise {
   /** Fallback display when no set rows exist (StackedNotation). */
   performedRaw: string;
   performedNotes: string;
-  /** GPP container — athlete's live copy with done flags/edits. */
+  /** Prescription unit from the planned row (kg / percentage / …) so a
+   *  %-based performedRaw renders with the % sign. Null = unplanned. */
+  unit: string | null;
+  /** Combination exercise (coach-planned or athlete off-plan). */
+  isCombo: boolean;
+  /** Combo member names in position order; empty for non-combos. */
+  comboMembers: string[];
+  /** GPP container — athlete's live copy (done flags) with the planned
+   *  section as fallback. */
   gpp: GppSection | null;
   /** Athlete-authored off-plan note body (TEXT sentinel row). */
   noteText: string | null;
@@ -239,6 +252,41 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
   );
   const defById = new Map(metricDefs.map(d => [d.id, d]));
 
+  // Planned rows behind the logged exercises: naming (coach display_name
+  // override, combo notation), prescription unit, combo members, planned
+  // GPP section. Thin columns only.
+  const plannedIds = [
+    ...new Set(
+      sessionExs.map(ex => ex.planned_exercise_id).filter((id): id is string => id != null),
+    ),
+  ];
+  const plannedRows = await fetchByIds<PlannedStub>(plannedIds, (chunk, from, to) =>
+    supabase
+      .from('planned_exercises')
+      .select('id, exercise_id, unit, display_name, is_combo, combo_notation, metadata')
+      .in('id', chunk)
+      .order('id', { ascending: true })
+      .range(from, to),
+  );
+  const plannedById = new Map(plannedRows.map(p => [p.id, p]));
+
+  const comboPlannedIds = plannedRows.filter(p => p.is_combo).map(p => p.id);
+  const comboMemberRows = await fetchByIds<ComboMemberRow>(comboPlannedIds, (chunk, from, to) =>
+    supabase
+      .from('planned_exercise_combo_members')
+      .select('planned_exercise_id, exercise_id, position')
+      .in('planned_exercise_id', chunk)
+      .order('planned_exercise_id', { ascending: true })
+      .order('position', { ascending: true })
+      .range(from, to),
+  );
+  const comboMembersByPlanned = new Map<string, ComboMemberRow[]>();
+  for (const m of comboMemberRows) {
+    const list = comboMembersByPlanned.get(m.planned_exercise_id) ?? [];
+    list.push(m);
+    comboMembersByPlanned.set(m.planned_exercise_id, list);
+  }
+
   // Dates for sessions referenced by videos/messages but not in the review set.
   const extraSessionIds = new Set<string>();
   for (const le of videoLogExs) extraSessionIds.add(le.session_id);
@@ -259,20 +307,26 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
   for (const s of sessionRows) sessionStubById.set(s.id, s);
   for (const s of extraSessions) sessionStubById.set(s.id, s);
 
-  // Exercise names (catalogue), for video cards and session summaries.
+  // Exercise names (catalogue), for video cards and session summaries —
+  // covers logged, planned and combo-member exercise ids in one lookup.
   const exerciseIds = new Set<string>();
   for (const le of videoLogExs) if (le.exercise_id) exerciseIds.add(le.exercise_id);
   for (const ex of sessionExs) if (ex.exercise_id) exerciseIds.add(ex.exercise_id);
+  for (const p of plannedRows) if (p.exercise_id) exerciseIds.add(p.exercise_id);
+  for (const m of comboMemberRows) exerciseIds.add(m.exercise_id);
   const exerciseNameById = new Map<string, string>();
   if (exerciseIds.size > 0) {
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('id, name')
-      .in('id', [...exerciseIds]);
-    if (error) throw error;
-    for (const row of (data ?? []) as { id: string; name: string }[]) {
-      exerciseNameById.set(row.id, row.name);
-    }
+    const rows = await fetchByIds<{ id: string; name: string }>(
+      [...exerciseIds],
+      (chunk, from, to) =>
+        supabase
+          .from('exercises')
+          .select('id, name')
+          .in('id', chunk)
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+    for (const row of rows) exerciseNameById.set(row.id, row.name);
   }
 
   // ── Assemble ─────────────────────────────────────────────────────────────
@@ -335,27 +389,126 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         configByAthleteWeek.get(`${s.athlete_id}|${s.week_start}`) ?? null,
         defById,
       ),
-      exercises: (exsBySession.get(s.id) ?? []).map(ex => {
-        const gpp = (ex.metadata?.gpp as GppSection | undefined) ?? null;
-        return {
-          id: ex.id,
-          name:
-            (ex.exercise_id && exerciseNameById.get(ex.exercise_id)) ||
-            (gpp?.title || (ex.metadata?.text ? 'Note' : 'Exercise')),
-          status: ex.status,
+      exercises: (exsBySession.get(s.id) ?? []).map(ex =>
+        buildSessionReviewExercise(ex, {
+          planned: ex.planned_exercise_id
+            ? plannedById.get(ex.planned_exercise_id) ?? null
+            : null,
+          comboMembersByPlanned,
+          exerciseNameById,
           sets: setsByLogEx.get(ex.id) ?? [],
-          performedRaw: ex.performed_raw,
-          performedNotes: ex.performed_notes,
-          gpp,
-          noteText: ex.metadata?.text ?? null,
-          offPlan: ex.planned_exercise_id == null,
-        };
-      }),
+        }),
+      ),
     });
   }
 
   items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   return items;
+}
+
+/** Thin naming/unit slice of a planned_exercises row. */
+interface PlannedStub {
+  id: string;
+  exercise_id: string;
+  unit: string | null;
+  display_name: string | null;
+  is_combo: boolean;
+  combo_notation: string | null;
+  metadata: { gpp?: GppSection } | null;
+}
+
+interface ComboMemberRow {
+  planned_exercise_id: string;
+  exercise_id: string;
+  position: number;
+}
+
+/**
+ * Resolve one logged exercise into its display shape, mirroring the rules
+ * LogExerciseRow applies: athlete off-plan combos name themselves from
+ * metadata.combo; planned rows resolve through plannedRowLabel (coach
+ * display_name override > combo notation > members joined > catalogue
+ * name); a substituted lift shows the logged exercise's name; GPP rows
+ * take the section title (planned copy first) and merge the athlete's
+ * done-flagged rows over the planned section.
+ */
+function buildSessionReviewExercise(
+  ex: TrainingLogExercise,
+  ctx: {
+    planned: PlannedStub | null;
+    comboMembersByPlanned: Map<string, ComboMemberRow[]>;
+    exerciseNameById: Map<string, string>;
+    sets: TrainingLogSet[];
+  },
+): SessionReviewExercise {
+  const { planned, comboMembersByPlanned, exerciseNameById, sets } = ctx;
+  const catalogueName = (id: string | null) => (id ? exerciseNameById.get(id) ?? null : null);
+
+  const athleteGpp = (ex.metadata?.gpp as GppSection | undefined) ?? null;
+  const plannedGpp = planned?.metadata?.gpp ?? null;
+  // Athlete copy carries the done flags/edits; planned copy is the fallback
+  // for rows, but the header (title/description) prefers the coach's section.
+  const headerGpp = plannedGpp ?? athleteGpp;
+  const gpp: GppSection | null =
+    athleteGpp || plannedGpp
+      ? {
+          title: headerGpp?.title ?? 'GPP',
+          description: headerGpp?.description ?? '',
+          rows: (athleteGpp ?? plannedGpp)?.rows ?? [],
+        }
+      : null;
+
+  const offPlanCombo = !planned ? ex.metadata?.combo ?? null : null;
+  const plannedMembers = planned?.is_combo
+    ? (comboMembersByPlanned.get(planned.id) ?? [])
+        .slice()
+        .sort((a, b) => a.position - b.position)
+    : [];
+  const comboMembers: string[] = offPlanCombo
+    ? offPlanCombo.members
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map(m => m.name)
+        .filter(Boolean)
+    : plannedMembers
+        .map(m => catalogueName(m.exercise_id))
+        .filter((n): n is string => !!n);
+  const isCombo = offPlanCombo != null || (planned?.is_combo ?? false);
+
+  const substituted =
+    planned != null && ex.exercise_id != null && ex.exercise_id !== planned.exercise_id;
+
+  let name: string;
+  if (gpp) {
+    name = gpp.title.trim() || 'GPP';
+  } else if (offPlanCombo) {
+    name = offPlanCombo.name?.trim() || comboMembers.join(' + ') || '(combination)';
+  } else if (substituted) {
+    name = catalogueName(ex.exercise_id) ?? '(unknown exercise)';
+  } else if (planned) {
+    name = plannedRowLabel(planned, {
+      memberNames: comboMembers,
+      exerciseName: catalogueName(planned.exercise_id),
+      fallback: catalogueName(ex.exercise_id) ?? 'Exercise',
+    });
+  } else {
+    name = catalogueName(ex.exercise_id) ?? (ex.metadata?.text ? 'Note' : 'Exercise');
+  }
+
+  return {
+    id: ex.id,
+    name,
+    status: ex.status,
+    sets,
+    performedRaw: ex.performed_raw,
+    performedNotes: ex.performed_notes,
+    unit: planned?.unit ?? null,
+    isCombo,
+    comboMembers,
+    gpp,
+    noteText: ex.metadata?.text ?? null,
+    offPlan: ex.planned_exercise_id == null,
+  };
 }
 
 /** German-locale comma decimals for metric values. */
