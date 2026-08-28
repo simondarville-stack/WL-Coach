@@ -10,6 +10,8 @@ interface ExerciseFormModalProps {
   allExercises?: Exercise[];
   /** Preselect a category when creating (e.g. "add to this empty category"). */
   initialCategory?: string | null;
+  /** Preselect a parent when creating (the tree's "Add variation"). */
+  initialParentId?: string | null;
   /** Catalogue placement options (see ExerciseForm) — library screen only. */
   libraryOptions?: Array<{ id: string; label: string; isClub: boolean }>;
   defaultLibraryId?: string | null;
@@ -22,6 +24,7 @@ export function ExerciseFormModal({
   onSave,
   allExercises = [],
   initialCategory = null,
+  initialParentId = null,
   libraryOptions,
   defaultLibraryId = null,
 }: ExerciseFormModalProps) {
@@ -50,6 +53,7 @@ export function ExerciseFormModal({
             onCancelEdit={onClose}
             allExercises={allExercises}
             initialCategory={initialCategory}
+            initialParentId={initialParentId}
             libraryOptions={libraryOptions}
             defaultLibraryId={defaultLibraryId}
           />

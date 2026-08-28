@@ -20,12 +20,42 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tree, type NodeRendererProps, type TreeApi } from 'react-arborist';
-import { ChevronRight, GripVertical, Layers, Lock, Plus, AlertTriangle, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import {
+  ChevronRight, GripVertical, Layers, Lock, Plus, AlertTriangle, ChevronsDownUp, ChevronsUpDown,
+  Pencil, Archive, GitBranchPlus, ArrowRightLeft, GitMerge,
+} from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
+import { useCoachStore } from '../../store/coachStore';
 import { buildParentIndex, wouldCreateCycle } from '../../lib/exerciseHierarchy';
 import { ColorDot, Badge } from '../ui';
 import { LibraryChip } from './LibraryChip';
+
+// ── Persisted expand/collapse state ─────────────────────────────────
+// The tree reopens the way the coach left it (per coach, per browser —
+// a per-viewer convenience, deliberately not synced). Unknown ids fall
+// back to openByDefault, so new categories/exercises start expanded.
+
+const OPEN_STATE_KEY = 'emos_exercise_tree_open';
+
+function loadOpenState(coachId: string): Record<string, boolean> | undefined {
+  try {
+    const raw = localStorage.getItem(`${OPEN_STATE_KEY}:${coachId}`);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveOpenState(coachId: string, state: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(`${OPEN_STATE_KEY}:${coachId}`, JSON.stringify(state));
+  } catch {
+    // Storage full/blocked — the tree still works, it just won't remember.
+  }
+}
 
 // Display labels for any unit a row might carry — includes legacy values
 // (rpe, other) so existing exercises tagged with them still render.
@@ -52,6 +82,22 @@ interface ExTreeNode {
   libraryLabel: string | null;
   childCount: number;
   children: ExTreeNode[];
+}
+
+/** Row context-menu actions, wired by ExerciseLibrary. All optional as a
+ *  group: without them, right-click falls through to the browser menu. */
+export interface TreeContextActions {
+  onEdit: (exerciseId: string) => void;
+  onArchive: (exerciseId: string) => void;
+  /** Create a new exercise pre-parented to this one (its variation). */
+  onAddVariation: (parentExerciseId: string) => void;
+  /** Editable club catalogues this exercise could move into (empty for club
+   *  rows or when the coach edits no club) — one menu item per target. */
+  moveTargetsFor: (exerciseId: string) => Array<{ id: string; name: string }>;
+  onMoveToLibrary: (exerciseId: string, libraryId: string, libraryName: string) => void;
+  /** True when the exercise duplicates a club-catalogue one. */
+  hasDuplicate: (exerciseId: string) => boolean;
+  onReviewDuplicate: () => void;
 }
 
 interface ExerciseTreeProps {
@@ -84,6 +130,8 @@ interface ExerciseTreeProps {
   libraryBadge?: (ex: Exercise) => string | null;
   /** "+" affordance on category rows — create an exercise preselecting it. */
   onCreateInCategory?: (categoryName: string) => void;
+  /** Right-click menu actions on exercise rows. */
+  contextActions?: TreeContextActions;
 }
 
 function isProtectedCategory(name: string): boolean {
@@ -100,9 +148,39 @@ const byOrder = (a: Exercise, b: Exercise) =>
 export function ExerciseTree({
   exercises, categories, selectedExerciseId, onSelectExercise, onMoveExercise, searchTerm,
   canEditExercise, clubLibraryIds, athletePRMap, duplicateNames, libraryBadge, onCreateInCategory,
+  contextActions,
 }: ExerciseTreeProps) {
   const parentIndex = useMemo(() => buildParentIndex(exercises), [exercises]);
   const treeRef = useRef<TreeApi<ExTreeNode> | null>(null);
+  const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? '00000000-0000-0000-0000-000000000001');
+  // Read once per coach: initialOpenState only matters at mount.
+  const initialOpenState = useMemo(() => loadOpenState(activeCoachId), [activeCoachId]);
+  const persistOpenState = () => {
+    // openState reflects the committed toggle by the time callbacks fire;
+    // defer a tick anyway so openAll/closeAll batches are fully applied.
+    setTimeout(() => {
+      const state = treeRef.current?.openState;
+      if (state) saveOpenState(activeCoachId, state);
+    }, 0);
+  };
+
+  // Context menu state: which exercise, at which viewport position.
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    // mousedown (not click) so the menu closes before any underlying row
+    // handler runs; menu items use onMouseDown themselves to win the race.
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', close);
+    };
+  }, [menu]);
   const libraryById = useMemo(
     () => new Map(exercises.map(e => [e.id, e.library_id] as const)),
     [exercises],
@@ -221,6 +299,11 @@ export function ExerciseTree({
           if (isCat) { node.toggle(); return; }
           onSelectExercise(d.id === selectedExerciseId ? null : d.id);
         }}
+        onContextMenu={contextActions && !isCat ? (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenu({ id: d.id, x: e.clientX, y: e.clientY });
+        } : undefined}
       >
         {d.childCount > 0 ? (
           <button
@@ -316,14 +399,14 @@ export function ExerciseTree({
       >
         <button
           type="button"
-          onClick={() => treeRef.current?.openAll()}
+          onClick={() => { treeRef.current?.openAll(); persistOpenState(); }}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}
         >
           <ChevronsUpDown size={11} /> Expand all
         </button>
         <button
           type="button"
-          onClick={() => treeRef.current?.closeAll()}
+          onClick={() => { treeRef.current?.closeAll(); persistOpenState(); }}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}
         >
           <ChevronsDownUp size={11} /> Collapse all
@@ -341,6 +424,8 @@ export function ExerciseTree({
             rowHeight={30}
             indent={16}
             openByDefault
+            initialOpenState={initialOpenState}
+            onToggle={() => persistOpenState()}
             searchTerm={searchTerm}
             searchMatch={(node, term) => {
               if (node.data.kind !== 'exercise') return false; // categories kept as ancestors
@@ -392,6 +477,91 @@ export function ExerciseTree({
           </Tree>
         )}
       </div>
+
+      {/* Row context menu */}
+      {menu && contextActions && (() => {
+        const canEdit = canEditExercise ? canEditExercise(menu.id) : true;
+        const targets = contextActions.moveTargetsFor(menu.id);
+        const hasDup = contextActions.hasDuplicate(menu.id);
+        const menuId = menu.id;
+        const itemStyle: React.CSSProperties = {
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          padding: '5px 10px', fontSize: 'var(--text-label)', fontFamily: 'var(--font-sans)',
+          color: 'var(--color-text-primary)', background: 'none', border: 'none',
+          borderRadius: 'var(--radius-sm)', cursor: 'pointer', textAlign: 'left',
+        };
+        const hover = (e: React.MouseEvent<HTMLButtonElement>, on: boolean) => {
+          e.currentTarget.style.background = on ? 'var(--color-bg-secondary)' : 'none';
+        };
+        const MenuItem = ({ icon, label, onAct, danger }: {
+          icon: React.ReactNode; label: string; onAct: () => void; danger?: boolean;
+        }) => (
+          <button
+            type="button"
+            style={{ ...itemStyle, color: danger ? 'var(--color-danger-text, #b91c1c)' : itemStyle.color }}
+            onMouseEnter={e => hover(e, true)}
+            onMouseLeave={e => hover(e, false)}
+            onClick={() => { setMenu(null); onAct(); }}
+          >
+            {icon}
+            {label}
+          </button>
+        );
+        const divider = <div style={{ height: 0.5, background: 'var(--color-border-tertiary)', margin: '3px 6px' }} />;
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              left: Math.min(menu.x, window.innerWidth - 230),
+              top: Math.min(menu.y, window.innerHeight - 240),
+              zIndex: 300, minWidth: 200,
+              background: 'var(--color-bg-primary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.14)',
+              padding: 4,
+            }}
+            onMouseDown={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}
+          >
+            {!canEdit && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                <Lock size={10} /> Read-only — shared catalogue
+              </div>
+            )}
+            {canEdit && (
+              <MenuItem icon={<Pencil size={12} />} label="Edit…" onAct={() => contextActions.onEdit(menuId)} />
+            )}
+            <MenuItem
+              icon={<GitBranchPlus size={12} />}
+              label="Add variation…"
+              onAct={() => contextActions.onAddVariation(menuId)}
+            />
+            {(targets.length > 0 || hasDup) && divider}
+            {targets.map(t => (
+              <MenuItem
+                key={t.id}
+                icon={<ArrowRightLeft size={12} />}
+                label={`Move to "${t.name}"…`}
+                onAct={() => contextActions.onMoveToLibrary(menuId, t.id, t.name)}
+              />
+            ))}
+            {hasDup && (
+              <MenuItem
+                icon={<GitMerge size={12} />}
+                label="Review duplicate…"
+                onAct={() => contextActions.onReviewDuplicate()}
+              />
+            )}
+            {canEdit && (
+              <>
+                {divider}
+                <MenuItem icon={<Archive size={12} />} label="Archive" danger onAct={() => contextActions.onArchive(menuId)} />
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
