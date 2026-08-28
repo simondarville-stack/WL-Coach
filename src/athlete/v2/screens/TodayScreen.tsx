@@ -32,6 +32,8 @@ import {
   setSessionCustomMetric,
   setSubstitutedExercise,
   markMessagesRead,
+  uploadLogVideo,
+  deleteLogVideo,
   defaultSlotLabel,
   type AthleteDayData,
   type PlannedExerciseFull,
@@ -47,6 +49,7 @@ import type {
   GppSection,
   TrainingLogSession,
   TrainingLogSet,
+  TrainingLogVideo,
 } from '../../../lib/database.types';
 import { isExerciseDone } from '../../../lib/trainingLogModel';
 import { formatWeekday, formatTime24, combineDateTimeToISO } from '../../../lib/dateUtils';
@@ -500,6 +503,40 @@ export function TodayScreen() {
     });
   };
 
+  const mergeVideo = (video: TrainingLogVideo) => {
+    setData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le =>
+            le.log.id === video.log_exercise_id
+              ? { ...le, videos: [...le.videos, video] }
+              : le,
+          ),
+        },
+      };
+    });
+  };
+
+  const removeVideo = (videoId: string) => {
+    setData(prev => {
+      if (!prev?.log) return prev;
+      return {
+        ...prev,
+        log: {
+          ...prev.log,
+          exercises: prev.log.exercises.map(le =>
+            le.videos.some(v => v.id === videoId)
+              ? { ...le, videos: le.videos.filter(v => v.id !== videoId) }
+              : le,
+          ),
+        },
+      };
+    });
+  };
+
   const handlePatchBodyweight = (bw: number | null) => patchSession({ bodyweight_kg: bw });
 
   const handlePatchRaw = (raw: RawScores, total: number | null) =>
@@ -653,6 +690,50 @@ export function TodayScreen() {
         achievedDate: session.date,
       });
     });
+
+  /**
+   * Attach a clip to a planned exercise.
+   *
+   * Deliberately outside runSave: an upload over gym wifi can take tens of
+   * seconds, and runSave sets the session-wide `saving` flag that disables
+   * every set input. The athlete keeps logging while the clip goes up; the
+   * strip owns its own spinner. Errors propagate to the strip rather than the
+   * session-level banner for the same reason.
+   */
+  const handleAddVideo = (planned: PlannedExerciseFull) => async (file: File) => {
+    const session = await getOrCreateSession();
+    mergeSession(session);
+    const logEx = await ensureLogEx(planned, session.id);
+    mergeLogExercise(logEx, planned.exerciseDef);
+    const video = await uploadLogVideo({
+      file,
+      logExerciseId: logEx.id,
+      athleteId: athlete.id,
+      ownerId: athlete.owner_id,
+      uploadedBy: 'athlete',
+    });
+    mergeVideo(video);
+  };
+
+  /** Same as handleAddVideo, for a log exercise that already exists (the
+   *  off-plan cards) and so needs no session/log-exercise bootstrap. */
+  const handleAddVideoToLogExercise = (logExerciseId: string) => async (file: File) => {
+    const video = await uploadLogVideo({
+      file,
+      logExerciseId,
+      athleteId: athlete.id,
+      ownerId: athlete.owner_id,
+      uploadedBy: 'athlete',
+    });
+    mergeVideo(video);
+  };
+
+  const handleDeleteVideo = (video: TrainingLogVideo) => {
+    // Optimistic: the tile disappears immediately, and a failed delete
+    // reinstates it on the next load rather than blocking the athlete.
+    removeVideo(video.id);
+    void runSave(async () => { await deleteLogVideo(video); });
+  };
 
   const handleLogAsPrescribed = (planned: PlannedExerciseFull) => (rows: SetRowInput[]) =>
     runSave(async () => {
@@ -1265,6 +1346,9 @@ export function TodayScreen() {
                       onSaveGppSection={handleSaveGppSection(p)}
                       onRequestSubstitute={() => setSubstituting(p)}
                       performedExercise={performed}
+                      videos={le?.videos ?? []}
+                      onAddVideo={handleAddVideo(p)}
+                      onDeleteVideo={handleDeleteVideo}
                       globalSaving={saving}
                     />
                   );
@@ -1310,6 +1394,9 @@ export function TodayScreen() {
                     onDelete={() => handleDeleteOffPlanExercise(le.log.id)}
                     onDeleteSet={handleDeleteSet}
                     onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
+                    videos={le.videos}
+                    onAddVideo={handleAddVideoToLogExercise(le.log.id)}
+                    onDeleteVideo={handleDeleteVideo}
                   />
                 );
               })}

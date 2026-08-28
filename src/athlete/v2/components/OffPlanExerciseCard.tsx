@@ -13,9 +13,11 @@ import { Plus, Trash2 } from 'lucide-react';
 import type {
   TrainingLogSet,
   TrainingLogExercise,
+  TrainingLogVideo,
   Exercise,
   ExerciseStub,
 } from '../../../lib/database.types';
+import { LogVideoStrip } from '../../../components/planner/LogVideoStrip';
 import { SetEntryRow } from './SetEntryRow';
 import { useNoteDraft } from '../lib/useNoteDraft';
 import { AutoGrowTextarea } from '../../../components/ui';
@@ -42,6 +44,10 @@ interface OffPlanExerciseCardProps {
   onDeleteSet?: (setId: string) => void;
   /** Persists athlete-written notes on this exercise. */
   onUpdateNotes: (notes: string) => Promise<void>;
+  /** Clips attached to this exercise. */
+  videos?: TrainingLogVideo[];
+  onAddVideo?: (file: File) => Promise<void>;
+  onDeleteVideo?: (video: TrainingLogVideo) => void;
 }
 
 export function OffPlanExerciseCard({
@@ -52,6 +58,9 @@ export function OffPlanExerciseCard({
   onDelete,
   onDeleteSet,
   onUpdateNotes,
+  videos = [],
+  onAddVideo,
+  onDeleteVideo,
 }: OffPlanExerciseCardProps) {
   // Persists on blur / debounce / app-background / unmount (mobile lock doesn't
   // fire blur), echo-safe so a save can't move the caret mid-sentence.
@@ -183,6 +192,13 @@ export function OffPlanExerciseCard({
           <Plus size={12} />
           Add set
         </button>
+
+        <LogVideoStrip
+          videos={videos}
+          theme="dark"
+          onAdd={onAddVideo}
+          onDelete={onDeleteVideo}
+        />
 
         <div className="pt-1">
           <AutoGrowTextarea
