@@ -202,6 +202,18 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
                     · you are {roleLabel(club.membership.role).toLowerCase()}
                     {!isEditor && ' (read-only)'}
                   </span>
+                  {club.library.club_id && (
+                    <span
+                      title="This catalogue belongs to a club — membership is managed on the Club page"
+                      style={{
+                        fontSize: 'var(--text-caption)', color: 'var(--color-accent)',
+                        background: 'var(--color-bg-primary)', border: '0.5px solid var(--color-border-tertiary)',
+                        padding: '0 6px', borderRadius: 999, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      club-managed
+                    </span>
+                  )}
                   <span style={{ flex: 1 }} />
                   {isEditor && (
                     <button

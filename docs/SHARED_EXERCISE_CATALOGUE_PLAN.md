@@ -13,6 +13,13 @@ catalogue seeded by the head coach. **Phase 3 (adopt/remap wizard for
 pre-existing overlapping libraries) and most of Phase 4 (duplicate detection,
 guarded demote, Duplicates panel) are still open.**
 
+**Club layer SHIPPED in 0.53.0 (28/08/2026)** — the §4 deferral is resolved:
+`clubs` + `club_members` (admin/coach, invite lifecycle) and the reserved
+`exercise_libraries.club_id` adoption seam now exist, with a `/club` admin
+page (member × catalogue role matrix, create/attach/detach catalogues,
+seeding, club invites on the Invitations page). Club membership provisions
+catalogue access automatically (admin → editor, coach → viewer).
+
 Originally written 22/07/2026 for the TO-DO item
 "Give me a plan for how two coaches can share the same exercise catalogue. We
 need to make sure that the unique ID is the same, so they can both plan and

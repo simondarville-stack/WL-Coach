@@ -1026,6 +1026,42 @@ export interface ExerciseLibrary {
   name: string;
   kind: 'club' | 'personal';
   owner_coach_id: string | null; // set iff kind = 'personal'
+  /** The club this catalogue is attached to. Null = standalone (ad-hoc
+   *  shared catalogue, the 0.52.0 flow). Attached catalogues are managed
+   *  from the club admin page: club membership provisions catalogue access. */
+  club_id: string | null;
+  created_at: string;
+}
+
+/* ---- Clubs (organisation layer above coaches) ---- */
+
+export type ClubRole = 'admin' | 'coach';
+
+/** An organisation of coaches. Owns club catalogues via
+ *  exercise_libraries.club_id; will grow toward athletes/groups later.
+ *  Membership is explicit (club_members) — never derived from the free-text
+ *  coach_profiles.club_name. */
+export interface Club {
+  id: string;
+  name: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** A coach's membership of a club. 'admin' runs the club (members,
+ *  catalogues, roles); 'coach' is a member. Invite lifecycle mirrors
+ *  athlete_collaborators. */
+export interface ClubMember {
+  id: string;
+  club_id: string;
+  coach_id: string;
+  role: ClubRole;
+  invited_by: string;
+  invited_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  notes: string | null;
   created_at: string;
 }
 
@@ -1375,6 +1411,18 @@ export interface Database {
         Row: ExerciseLibraryMember & Record<string, unknown>;
         Insert: Partial<Omit<ExerciseLibraryMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ExerciseLibraryMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      clubs: {
+        Row: Club & Record<string, unknown>;
+        Insert: Partial<Omit<Club, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<Club, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      club_members: {
+        Row: ClubMember & Record<string, unknown>;
+        Insert: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Relationships: [];
       };
     };
