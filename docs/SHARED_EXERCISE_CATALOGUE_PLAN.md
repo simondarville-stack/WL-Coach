@@ -17,9 +17,17 @@ executes `adopt_exercise_library()` in one transaction (repointing all 11
 referencing tables — four more than §5.3 listed — with conflict-safe handling
 of the three unique constraints, alias folding, category copies, and
 parent/PR-edge remapping; merged sources are archived, never deleted). The
-legacy `UNIQUE (categories.owner_id, name)` was dropped per §3. **Most of
-Phase 4 (duplicate detection at create time, guarded demote, Duplicates
-panel) is still open.**
+legacy `UNIQUE (categories.owner_id, name)` was dropped per §3.
+
+**Phase 4 Duplicates panel SHIPPED in 0.55.0 (28/08/2026)**: the Exercise
+Library toolbar shows an "N duplicates" chip whenever personal exercises
+match club-catalogue ones (shared rule in `src/lib/exerciseMatching.ts` —
+code → name → alias, also used by the adopt wizard); the panel offers a
+one-row merge per pair (dry-run-backed confirm → the Phase-3 RPC with a
+single-entry mapping). Also 0.55.0: the list/grid catalogue views were
+RETIRED — the tree is the only exercise view, and rows carry unit, athlete
+PR, duplicate flag and catalogue chip. **Still open from Phase 4: duplicate
+detection at create time, guarded demote (club → personal).**
 
 **Club layer SHIPPED in 0.53.0 (28/08/2026)** — the §4 deferral is resolved:
 `clubs` + `club_members` (admin/coach, invite lifecycle) and the reserved

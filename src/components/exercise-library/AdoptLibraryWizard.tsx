@@ -28,6 +28,7 @@ import {
   type AdoptAction, type AdoptExercise, type AdoptMappingEntry, type AdoptReport,
 } from '../../hooks/useExerciseLibraries';
 import { resolveLibraryScope } from '../../lib/libraryScope';
+import { matchExercise, type MatchBy } from '../../lib/exerciseMatching';
 import { Button } from '../ui';
 
 interface AdoptLibraryWizardProps {
@@ -39,8 +40,6 @@ interface AdoptLibraryWizardProps {
   onComplete: () => void;
 }
 
-type MatchBy = 'code' | 'name' | 'alias';
-
 interface MappingRow {
   source: AdoptExercise;
   match: AdoptExercise | null;
@@ -50,23 +49,6 @@ interface MappingRow {
   codeConflict: boolean;
   action: AdoptAction;
   targetId: string | null;
-}
-
-function autoMatch(source: AdoptExercise, targets: AdoptExercise[]): { match: AdoptExercise | null; matchBy: MatchBy | null } {
-  const code = source.exercise_code?.trim().toLowerCase();
-  if (code) {
-    const byCode = targets.find(t => t.exercise_code?.trim().toLowerCase() === code);
-    if (byCode) return { match: byCode, matchBy: 'code' };
-  }
-  const name = source.name.trim().toLowerCase();
-  const byName = targets.find(t => t.name.trim().toLowerCase() === name);
-  if (byName) return { match: byName, matchBy: 'name' };
-  const byAlias = targets.find(t =>
-    (t.aliases ?? []).some(a => a.trim().toLowerCase() === name)
-    || (source.aliases ?? []).some(a => a.trim().toLowerCase() === t.name.trim().toLowerCase()),
-  );
-  if (byAlias) return { match: byAlias, matchBy: 'alias' };
-  return { match: null, matchBy: null };
 }
 
 const cellSelect: React.CSSProperties = {
@@ -124,7 +106,7 @@ export function AdoptLibraryWizard({ targetLibrary, isEditor, onClose, onComplet
       setTargets(target);
       const targetCodes = new Set(target.map(t => t.exercise_code).filter((c): c is string => c != null));
       setRows(source.map(s => {
-        const { match, matchBy } = autoMatch(s, target);
+        const { match, matchBy } = matchExercise(s, target);
         const codeConflict = s.exercise_code != null && targetCodes.has(s.exercise_code);
         const canMove = isEditor && !codeConflict;
         // Matched rows default to merge (the whole point of adoption);

@@ -1,56 +1,32 @@
 /**
  * ExerciseListPanel
  *
- * Renders the search toolbar, view-mode toggle, and the category-grouped
- * exercise list. Stateless with respect to exercises/categories — all data
- * and handlers are passed as props.
+ * Toolbar + the exercise TREE. The list and grid views were retired
+ * (28/08/2026) once the tree settled as THE way exercises are structured —
+ * category → root exercise → variations, drag-to-reparent. The facts those
+ * views carried (unit, athlete PR, duplicate flag, catalogue chip) live on
+ * the tree rows now.
+ *
+ * Stateless with respect to exercises/categories — all data and handlers
+ * are passed as props. Filters are applied structurally: matching exercises
+ * keep their ancestors so a filtered child never floats without context.
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Search, Plus, Grid3X3, List, ListTree, Upload,
-  ChevronRight, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2,
+  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2,
 } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
-import { StandardPage, Button, Input, Badge, ColorDot } from '../ui';
+import { StandardPage, Button, Input } from '../ui';
 import { DEFAULT_UNITS } from '../../lib/constants';
+import { buildParentIndex } from '../../lib/exerciseHierarchy';
 import { ExerciseTree } from './ExerciseTree';
 
 // ── Constants ──────────────────────────────────────────────────────
 
-// Display labels for any unit a row might carry — includes legacy values
-// (rpe, other) so existing exercises tagged with them still render.
-const UNIT_LABELS: Record<string, string> = {
-  absolute_kg: 'kg',
-  percentage: '%',
-  rpe: 'RPE',
-  free_text: 'text',
-  free_text_reps: 'reps',
-  other: 'other',
-};
-
 // Filter options exposed to coaches mirror the canonical create-form
 // list so the library shows the same vocabulary the planner uses.
 const UNIT_OPTIONS = DEFAULT_UNITS;
-
-/** Small neutral chip naming the catalogue an exercise comes from. Only
- *  rendered for rows outside the coach's own personal library (a chip on
- *  every row carries no signal). */
-export function LibraryChip({ label }: { label: string }) {
-  return (
-    <span
-      title={`From the "${label}" catalogue`}
-      style={{
-        fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-        background: 'var(--color-bg-secondary)', border: '0.5px solid var(--color-border-tertiary)',
-        padding: '0 5px', borderRadius: '999px', whiteSpace: 'nowrap', flexShrink: 0,
-        maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
-      }}
-    >
-      {label}
-    </span>
-  );
-}
 
 const LIFT_SLOT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '__none__', label: 'No slot' },
@@ -288,272 +264,6 @@ function FilterPanel({ filters, onChange, onClear, onClose, anchorRef }: FilterP
   );
 }
 
-// ── ExerciseCard ───────────────────────────────────────────────────
-
-interface ExerciseCardProps {
-  exercise: Exercise;
-  isSelected: boolean;
-  athletePR: { pr_value_kg: number | null; pr_date: string | null } | null;
-  onClick: () => void;
-  isDuplicate?: boolean;
-  /** Catalogue chip label (club name / "Shared"); null = no chip. */
-  libraryLabel?: string | null;
-}
-
-export function ExerciseCard({ exercise, isSelected, athletePR, onClick, isDuplicate, libraryLabel }: ExerciseCardProps) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        border: isSelected
-          ? '0.5px solid var(--color-border-secondary)'
-          : '0.5px solid var(--color-border-tertiary)',
-        background: isSelected ? 'var(--color-bg-secondary)' : 'var(--color-bg-primary)',
-        borderRadius: 'var(--radius-md)',
-        padding: '10px 12px',
-        cursor: 'pointer',
-        transition: 'all 100ms ease-out',
-      }}
-      onMouseEnter={e => {
-        if (!isSelected) {
-          e.currentTarget.style.borderColor = 'var(--color-border-secondary)';
-          e.currentTarget.style.background = 'var(--color-bg-secondary)';
-        }
-      }}
-      onMouseLeave={e => {
-        if (!isSelected) {
-          e.currentTarget.style.borderColor = 'var(--color-border-tertiary)';
-          e.currentTarget.style.background = 'var(--color-bg-primary)';
-        }
-      }}
-    >
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', gap: 'var(--space-xs)',
-          marginBottom: '4px', minWidth: 0,
-        }}
-      >
-        <ColorDot color={exercise.color || 'var(--color-gray-400)'} size={6} />
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label)', fontWeight: 500,
-            color: 'var(--color-text-primary)', overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
-          }}
-        >
-          {exercise.exercise_code || exercise.name}
-        </span>
-        {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
-        {libraryLabel && <LibraryChip label={libraryLabel} />}
-        {isDuplicate && (
-          <span title="Duplicate exercise name" style={{ display: 'inline-flex' }}>
-            <AlertTriangle
-              size={11}
-              style={{ color: 'var(--color-warning-text)', flexShrink: 0 }}
-              aria-label="Duplicate exercise name"
-            />
-          </span>
-        )}
-      </div>
-
-      {exercise.exercise_code && exercise.exercise_code !== exercise.name && (
-        <div
-          style={{
-            fontSize: 'var(--text-caption)', color: 'var(--color-text-secondary)',
-            marginBottom: athletePR?.pr_value_kg != null ? '6px' : 0,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}
-        >
-          {exercise.name}
-        </div>
-      )}
-
-      {athletePR?.pr_value_kg != null && (
-        <div
-          style={{
-            fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
-            {athletePR.pr_value_kg}
-          </span>
-          <span style={{ marginLeft: '3px' }}>kg PR</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── ExerciseListRow ────────────────────────────────────────────────
-
-interface ExerciseListRowProps {
-  exercise: Exercise;
-  isSelected: boolean;
-  athletePR: { pr_value_kg: number | null } | null;
-  onClick: () => void;
-  isDuplicate?: boolean;
-  /** Catalogue chip label (club name / "Shared"); null = no chip. */
-  libraryLabel?: string | null;
-}
-
-export function ExerciseListRow({ exercise, isSelected, athletePR, onClick, isDuplicate, libraryLabel }: ExerciseListRowProps) {
-  const unitLabel = UNIT_LABELS[exercise.default_unit as string] ?? exercise.default_unit ?? 'kg';
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '60px 56px 1fr 60px 80px',
-        alignItems: 'center',
-        gap: 'var(--space-md)',
-        padding: '8px var(--space-lg)',
-        background: isSelected ? 'var(--color-bg-secondary)' : 'transparent',
-        borderLeft: isSelected ? '2px solid var(--color-border-secondary)' : '2px solid transparent',
-        borderBottom: '0.5px solid var(--color-border-tertiary)',
-        cursor: 'pointer',
-        transition: 'background 100ms ease-out',
-        fontSize: 'var(--text-label)',
-      }}
-      onMouseEnter={e => {
-        if (!isSelected) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-      }}
-      onMouseLeave={e => {
-        if (!isSelected) e.currentTarget.style.background = 'transparent';
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', minWidth: 0 }}>
-        <ColorDot color={exercise.color || 'var(--color-gray-400)'} size={6} />
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label)',
-            color: 'var(--color-text-primary)', overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}
-        >
-          {exercise.exercise_code || ''}
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {exercise.is_competition_lift && <Badge variant="danger">COMP</Badge>}
-        {isDuplicate && !exercise.is_competition_lift && (
-          <span title="Duplicate exercise name" style={{ display: 'inline-flex' }}>
-            <AlertTriangle size={11} style={{ color: 'var(--color-warning-text)' }} aria-label="Duplicate exercise name" />
-          </span>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-        <span style={{ color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {exercise.name}
-        </span>
-        {libraryLabel && <LibraryChip label={libraryLabel} />}
-      </div>
-
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
-        {unitLabel}
-      </div>
-
-      <div
-        style={{
-          fontFamily: 'var(--font-mono)', fontSize: 'var(--text-label)',
-          color: 'var(--color-text-primary)', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {athletePR?.pr_value_kg != null ? (
-          <>
-            <span style={{ fontWeight: 500 }}>{athletePR.pr_value_kg}</span>
-            <span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', marginLeft: '3px' }}>
-              kg
-            </span>
-          </>
-        ) : (
-          <span style={{ color: 'var(--color-text-tertiary)' }}>—</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── ListViewHeader ─────────────────────────────────────────────────
-
-export function ListViewHeader() {
-  const cell: React.CSSProperties = {
-    fontFamily: 'var(--font-sans)', fontSize: 'var(--text-caption)', fontWeight: 400,
-    color: 'var(--color-text-secondary)', letterSpacing: '0', textTransform: 'none',
-  };
-
-  return (
-    <div
-      style={{
-        display: 'grid', gridTemplateColumns: '60px 56px 1fr 60px 80px', gap: 'var(--space-md)',
-        padding: 'var(--space-sm) var(--space-lg)', borderBottom: '0.5px solid var(--color-border-secondary)',
-        position: 'sticky', top: 0, background: 'var(--color-bg-primary)', zIndex: 2,
-      }}
-    >
-      <div style={cell}>Code</div>
-      <div style={cell}></div>
-      <div style={cell}>Name</div>
-      <div style={cell}>Unit</div>
-      <div style={{ ...cell, textAlign: 'right' }}>PR</div>
-    </div>
-  );
-}
-
-// ── CategorySectionHeader ──────────────────────────────────────────
-
-interface CategorySectionHeaderProps {
-  category: Category;
-  count: number;
-  isCollapsed: boolean;
-  onToggle: () => void;
-}
-
-export function CategorySectionHeader({ category, count, isCollapsed, onToggle }: CategorySectionHeaderProps) {
-  const catColor = category.color && category.color !== 'var(--color-gray-400)' ? category.color : null;
-  const headerBg = catColor ? `${catColor}18` : 'var(--color-bg-secondary)';
-
-  return (
-    <div
-      onClick={onToggle}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-        padding: 'var(--space-md) var(--space-lg)', cursor: 'pointer', userSelect: 'none',
-        borderBottom: '0.5px solid var(--color-border-tertiary)', background: headerBg,
-      }}
-    >
-      <ChevronRight
-        size={12}
-        style={{
-          color: 'var(--color-text-tertiary)', transition: 'transform 100ms ease-out',
-          transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', flexShrink: 0,
-        }}
-      />
-      <ColorDot color={category.color || 'var(--color-gray-400)'} size={8} />
-      <span
-        style={{
-          fontSize: 'var(--text-label)', fontWeight: 500, color: 'var(--color-text-primary)',
-          letterSpacing: 'var(--tracking-section)',
-        }}
-      >
-        {category.name}
-      </span>
-      <span
-        style={{
-          fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-          fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.6)',
-          padding: '1px 6px', borderRadius: '999px', fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {count}
-      </span>
-      <span style={{ flex: 1, height: '0.5px', background: 'var(--color-border-tertiary)' }} />
-    </div>
-  );
-}
-
 // ── ExerciseListPanel ──────────────────────────────────────────────
 
 interface ExerciseListPanelProps {
@@ -565,8 +275,8 @@ interface ExerciseListPanelProps {
   onSelectExercise: (id: string | null) => void;
   onOpenCategoryModal: () => void;
   onOpenBulkImport: () => void;
-  /** `category` preselects it in the create form — used by the per-section
-   *  "Add exercise" affordance so a fresh, empty category is fillable. */
+  /** `category` preselects it in the create form — used by the tree's
+   *  per-category "+" so a fresh, empty category is fillable. */
   onCreateExercise: (category?: string) => void;
   onMoveExercise: (
     exerciseId: string,
@@ -585,10 +295,10 @@ interface ExerciseListPanelProps {
   /** Club catalogue ids visible to the coach — the tree uses this to keep
    *  club exercises parented within their own catalogue. */
   clubLibraryIds?: Set<string>;
-}
-
-function isProtectedCategory(cat: Category): boolean {
-  return cat.name.toLowerCase().includes('system') || cat.name === 'Unspecified';
+  /** Personal exercises that duplicate club-catalogue ones (Phase 4 hygiene).
+   *  When > 0 the toolbar shows the Duplicates entry point. */
+  duplicatesCount?: number;
+  onOpenDuplicates?: () => void;
 }
 
 export function ExerciseListPanel({
@@ -607,92 +317,33 @@ export function ExerciseListPanel({
   libraryBadge,
   canEditExercise,
   clubLibraryIds,
+  duplicatesCount = 0,
+  onOpenDuplicates,
 }: ExerciseListPanelProps) {
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  // Shown by default: a category the coach just created is empty by
-  // definition, and hiding it made it invisible — and unfillable — right
-  // when they wanted to put exercises in it. The toggle below still hides
-  // them for coaches who want a tight list.
-  const [showEmptyCategories, setShowEmptyCategories] = useState(true);
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const filterButtonRef = useRef<HTMLDivElement>(null);
 
   const activeFilterCount = countActiveFilters(filters);
 
-  const visibleCategories = categories
-    .filter(c => !isProtectedCategory(c))
-    .sort((a, b) => a.display_order - b.display_order);
-
-  const knownCategoryNames = new Set(categories.map(c => c.name));
-
-  const searchFiltered = searchQuery.trim()
-    ? exercises.filter(ex => {
-        const q = searchQuery.toLowerCase();
-        return ex.name.toLowerCase().includes(q) || (ex.exercise_code?.toLowerCase() ?? '').includes(q);
-      })
-    : exercises;
-
-  const filteredExercises = applyFilters(searchFiltered, filters);
-
-  const unspecifiedExercises = filteredExercises.filter(ex => {
-    const cat = ex.category as unknown as string | null;
-    return !cat || cat === 'Unspecified' || !knownCategoryNames.has(cat);
-  });
-
-  const emptyCategoryCount = visibleCategories.filter(
-    cat => exercises.filter(ex => (ex.category as unknown as string) === cat.name).length === 0
-  ).length;
-
-  const toggleCollapse = (catId: string) => {
-    setCollapsedCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(catId)) next.delete(catId); else next.add(catId);
-      return next;
-    });
-  };
-
-  function renderExercises(exList: Exercise[]) {
-    if (viewMode === 'grid') {
-      return (
-        <div
-          style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: 'var(--space-sm)', padding: 'var(--space-md) var(--space-lg)',
-          }}
-        >
-          {exList.map(ex => (
-            <ExerciseCard
-              key={ex.id}
-              exercise={ex}
-              isSelected={selectedExerciseId === ex.id}
-              athletePR={athletePRMap.get(ex.id) ?? null}
-              onClick={() => onSelectExercise(ex.id === selectedExerciseId ? null : ex.id)}
-              isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
-              libraryLabel={libraryBadge?.(ex) ?? null}
-            />
-          ))}
-        </div>
-      );
+  // Structural filtering: keep every match plus all its ancestors, so a
+  // filtered variation never renders without the lift it belongs to.
+  const treeExercises = useMemo(() => {
+    if (activeFilterCount === 0) return exercises;
+    const matched = applyFilters(exercises, filters);
+    const parentIndex = buildParentIndex(exercises);
+    const keep = new Set<string>();
+    for (const ex of matched) {
+      let cur: string | null | undefined = ex.id;
+      let guard = 0;
+      while (cur && !keep.has(cur) && guard++ < 32) {
+        keep.add(cur);
+        cur = parentIndex.get(cur);
+      }
     }
-    return (
-      <div>
-        {exList.map(ex => (
-          <ExerciseListRow
-            key={ex.id}
-            exercise={ex}
-            isSelected={selectedExerciseId === ex.id}
-            athletePR={athletePRMap.get(ex.id) ?? null}
-            onClick={() => onSelectExercise(ex.id === selectedExerciseId ? null : ex.id)}
-            isDuplicate={duplicateNames.has(ex.name.toLowerCase())}
-            libraryLabel={libraryBadge?.(ex) ?? null}
-          />
-        ))}
-      </div>
-    );
-  }
+    return exercises.filter(e => keep.has(e.id));
+  }, [exercises, filters, activeFilterCount]);
 
   return (
     <StandardPage hasSidePanel={hasSidePanel}>
@@ -733,34 +384,6 @@ export function ExerciseListPanel({
               <XIcon size={12} />
             </button>
           )}
-        </div>
-
-        {/* View toggle */}
-        <div
-          style={{
-            display: 'flex', gap: '1px', background: 'var(--color-bg-secondary)',
-            borderRadius: 'var(--radius-md)', padding: '2px',
-          }}
-        >
-          {(['list', 'grid', 'tree'] as const).map(mode => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              title={mode === 'tree' ? 'Tree view — drag exercises to build parent-child variations' : undefined}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px',
-                fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
-                background: viewMode === mode ? 'var(--color-bg-primary)' : 'transparent',
-                color: viewMode === mode ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: viewMode === mode ? 500 : 400,
-                border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                transition: 'all 100ms ease-out',
-              }}
-            >
-              {mode === 'grid' ? <Grid3X3 size={12} /> : mode === 'tree' ? <ListTree size={12} /> : <List size={12} />}
-              {mode === 'grid' ? 'Grid' : mode === 'tree' ? 'Tree' : 'List'}
-            </button>
-          ))}
         </div>
 
         {/* Filter button */}
@@ -806,6 +429,25 @@ export function ExerciseListPanel({
           )}
         </div>
 
+        {/* Duplicates vs club catalogues (Phase 4 hygiene) */}
+        {duplicatesCount > 0 && onOpenDuplicates && (
+          <button
+            type="button"
+            onClick={onOpenDuplicates}
+            title="Personal exercises that duplicate a club-catalogue exercise — review and merge them onto the shared ids"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px',
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              background: 'var(--color-warning-bg, #fffbeb)', color: 'var(--color-warning-text, #92400e)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            }}
+          >
+            <AlertTriangle size={12} />
+            {duplicatesCount} duplicate{duplicatesCount === 1 ? '' : 's'}
+          </button>
+        )}
+
         <Button variant="secondary" size="sm" icon={<Share2 size={12} />} onClick={onOpenSharing}>
           Sharing
         </Button>
@@ -820,118 +462,34 @@ export function ExerciseListPanel({
         </Button>
       </div>
 
-      {/* List / Grid / Tree */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {viewMode === 'tree' ? (
-          <ExerciseTree
-            exercises={exercises}
-            categories={categories}
-            selectedExerciseId={selectedExerciseId}
-            onSelectExercise={onSelectExercise}
-            onMoveExercise={onMoveExercise}
-            searchTerm={searchQuery.trim() || undefined}
-            canEditExercise={canEditExercise}
-            clubLibraryIds={clubLibraryIds}
-          />
-        ) : (
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {viewMode === 'list' && <ListViewHeader />}
-
-          {visibleCategories.map(cat => {
-            const catExercises = filteredExercises.filter(ex => (ex.category as unknown as string) === cat.name);
-            if (catExercises.length === 0 && (searchQuery.trim() || !showEmptyCategories)) return null;
-            const isCollapsed = collapsedCategories.has(cat.id);
-            return (
-              <div key={cat.id}>
-                <CategorySectionHeader
-                  category={cat}
-                  count={catExercises.length}
-                  isCollapsed={isCollapsed}
-                  onToggle={() => toggleCollapse(cat.id)}
-                />
-                {!isCollapsed && (
-                  catExercises.length === 0 ? (
-                    <div
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                        padding: 'var(--space-md) var(--space-lg)',
-                        borderBottom: '0.5px solid var(--color-border-tertiary)',
-                        fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-                      }}
-                    >
-                      <span>Empty category.</span>
-                      <button
-                        type="button"
-                        onClick={() => onCreateExercise(cat.name)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                          fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
-                          color: 'var(--color-accent)',
-                        }}
-                      >
-                        <Plus size={11} /> Add an exercise here
-                      </button>
-                      <span>or drag one in from Tree view.</span>
-                    </div>
-                  ) : renderExercises(catExercises)
-                )}
-              </div>
-            );
-          })}
-
-          {unspecifiedExercises.length > 0 && (() => {
-            const orphanCat: Category = {
-              id: '__unspecified__', name: 'Unspecified', owner_id: '',
-              color: 'var(--color-gray-400)', display_order: 9999, created_at: '',
-              library_id: null,
-            };
-            const isCollapsed = collapsedCategories.has(orphanCat.id);
-            return (
-              <div>
-                <CategorySectionHeader
-                  category={orphanCat}
-                  count={unspecifiedExercises.length}
-                  isCollapsed={isCollapsed}
-                  onToggle={() => toggleCollapse(orphanCat.id)}
-                />
-                {!isCollapsed && renderExercises(unspecifiedExercises)}
-              </div>
-            );
-          })()}
-
-          {!searchQuery.trim() && emptyCategoryCount > 0 && (
-            <button
-              onClick={() => setShowEmptyCategories(v => !v)}
-              style={{
-                display: 'block', width: '100%', padding: 'var(--space-sm) var(--space-lg)',
-                fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
-                background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
-                transition: 'color 100ms ease-out',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-secondary)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
-            >
-              {showEmptyCategories
-                ? `Hide ${emptyCategoryCount} empty ${emptyCategoryCount === 1 ? 'category' : 'categories'}`
-                : `${emptyCategoryCount} empty ${emptyCategoryCount === 1 ? 'category' : 'categories'} hidden · Show`}
-            </button>
-          )}
-
-          {filteredExercises.length === 0 && (
-            <div
-              style={{
-                padding: 'var(--space-2xl)', textAlign: 'center',
-                fontSize: 'var(--text-body)', color: 'var(--color-text-tertiary)',
-              }}
-            >
-              {searchQuery.trim() || activeFilterCount > 0
-                ? `No exercises match${searchQuery.trim() ? ` "${searchQuery}"` : ''}${activeFilterCount > 0 ? ' with the current filters' : ''}`
-                : 'No exercises yet. Click "Add exercise" to create one.'}
-            </div>
-          )}
+      {activeFilterCount > 0 && (
+        <div
+          style={{
+            padding: '3px var(--space-lg)', fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-tertiary)', borderBottom: '0.5px solid var(--color-border-tertiary)',
+            flexShrink: 0,
+          }}
+        >
+          Filtered — showing matches (with their parents) only.
         </div>
-        )}
+      )}
+
+      {/* The tree */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <ExerciseTree
+          exercises={treeExercises}
+          categories={categories}
+          selectedExerciseId={selectedExerciseId}
+          onSelectExercise={onSelectExercise}
+          onMoveExercise={onMoveExercise}
+          searchTerm={searchQuery.trim() || undefined}
+          canEditExercise={canEditExercise}
+          clubLibraryIds={clubLibraryIds}
+          athletePRMap={athletePRMap}
+          duplicateNames={duplicateNames}
+          libraryBadge={libraryBadge}
+          onCreateInCategory={name => onCreateExercise(name)}
+        />
       </div>
     </StandardPage>
   );
