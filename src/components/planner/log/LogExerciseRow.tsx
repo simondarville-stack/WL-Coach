@@ -16,7 +16,9 @@ import type {
   ComboMemberEntry,
 } from '../../../lib/database.types';
 import type { LoggedExerciseFull } from '../../../lib/trainingLogModel';
-import { Trash2, Pencil, MessageSquare } from 'lucide-react';
+import { Trash2, Pencil, MessageSquare, Video } from 'lucide-react';
+import { LogVideoStrip } from '../LogVideoStrip';
+import type { TrainingLogVideo } from '../../../lib/database.types';
 import { Button } from '../../ui';
 import { StackedNotation, LoggedStackedNotation } from '../StackedNotation';
 import { getSentinelType } from '../sentinelUtils';
@@ -46,6 +48,9 @@ interface LogExerciseRowProps {
    *  (rows, reps, load, done checkboxes). Same icon pattern as onEdit
    *  but a different modal. */
   onEditGpp?: () => void;
+  /** Fired the first time the coach plays a clip, so the parent can stamp
+   *  coach_reviewed_at and stop highlighting it as new. */
+  onVideoOpened?: (video: TrainingLogVideo) => void;
 }
 
 export function LogExerciseRow({
@@ -56,7 +61,9 @@ export function LogExerciseRow({
   onDelete,
   onEdit,
   onEditGpp,
+  onVideoOpened,
 }: LogExerciseRowProps) {
+  const videos = logged?.videos ?? [];
   const exerciseMessages = logged
     ? (messages ?? []).filter(m => m.exercise_id === logged.log.id)
     : [];
@@ -328,6 +335,21 @@ export function LogExerciseRow({
             )}
           </div>
           <div className="flex items-center gap-2">
+            {videos.length > 0 && (
+              <span
+                className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${
+                  videos.some(v => v.coach_reviewed_at === null) ? 'text-blue-600' : 'text-gray-400'
+                }`}
+                title={
+                  videos.some(v => v.coach_reviewed_at === null)
+                    ? `${videos.length} video${videos.length > 1 ? 's' : ''}, some not yet watched`
+                    : `${videos.length} video${videos.length > 1 ? 's' : ''}`
+                }
+              >
+                <Video size={9} />
+                {videos.length}
+              </span>
+            )}
             {exerciseMessages.length > 0 && (
               <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-600 font-medium" title={`${exerciseMessages.length} comment${exerciseMessages.length > 1 ? 's' : ''}`}>
                 <MessageSquare size={9} />
@@ -444,6 +466,15 @@ export function LogExerciseRow({
             {logged.log.performed_notes}
           </p>
         )}
+
+        {/* Read-only for the coach: clips belong to the athlete who shot them,
+            and the whole log_exercise can already be removed above. */}
+        <LogVideoStrip
+          videos={videos}
+          theme="light"
+          onOpen={onVideoOpened}
+          highlightUnreviewed
+        />
       </div>
     </div>
   );
