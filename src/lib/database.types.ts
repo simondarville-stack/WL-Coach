@@ -1475,6 +1475,19 @@ export interface Database {
         Args: { p_from: string; p_to: string; p_mapping: unknown; p_dry_run: boolean };
         Returns: unknown;
       };
+      /** Planned/logged occurrence counts per exercise since a date, for the
+       *  catalogue's usage column. p_exercise_ids null = every exercise.
+       *  Rows with no usage are omitted (callers default them to zero). */
+      exercise_usage_counts: {
+        Args: { p_since: string; p_exercise_ids: string[] | null };
+        Returns: Array<{ exercise_id: string; planned_count: number; logged_count: number }>;
+      };
+      /** Last time each exercise was planned / logged, no window. Null in a
+       *  column means never. Drives the prune flow's staleness column. */
+      exercise_last_used: {
+        Args: { p_exercise_ids: string[] | null };
+        Returns: Array<{ exercise_id: string; last_planned: string | null; last_logged: string | null }>;
+      };
     };
     Enums: {
       [_ in never]: never;

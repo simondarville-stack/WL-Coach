@@ -13,8 +13,9 @@
  */
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2,
+  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2, Archive, Flame,
 } from 'lucide-react';
+import { USAGE_WINDOWS, type UsageRollup } from '../../lib/exerciseUsage';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
 import { StandardPage, Button, Input } from '../ui';
@@ -301,6 +302,24 @@ interface ExerciseListPanelProps {
   onOpenDuplicates?: () => void;
   /** Right-click menu actions on tree rows. */
   contextActions?: TreeContextActions;
+  /** Archived rows are rendered dimmed in place when on. */
+  showArchived?: boolean;
+  onToggleArchived?: (next: boolean) => void;
+  archivedCount?: number;
+  /** False for categories in read-only catalogues — they don't drag. */
+  canEditCategory?: (categoryId: string) => boolean;
+  /** Persist a category reorder from the tree. */
+  onReorderCategories?: (orderedCategoryIds: string[]) => void;
+  /** Usage column: null = off (and no query runs). */
+  usageWeeks: number | null;
+  onUsageWeeksChange: (weeks: number | null) => void;
+  usageFor?: (exerciseId: string) => UsageRollup | null;
+  usageMax?: number;
+  usageLoading?: boolean;
+  /** Exercises with no planned or logged use in the window — the prune count. */
+  unusedCount?: number;
+  /** Opens the prune review panel. */
+  onOpenPrune?: () => void;
 }
 
 export function ExerciseListPanel({
@@ -322,6 +341,18 @@ export function ExerciseListPanel({
   duplicatesCount = 0,
   onOpenDuplicates,
   contextActions,
+  showArchived = false,
+  onToggleArchived,
+  archivedCount = 0,
+  canEditCategory,
+  onReorderCategories,
+  usageWeeks,
+  onUsageWeeksChange,
+  usageFor,
+  usageMax = 0,
+  usageLoading = false,
+  unusedCount = 0,
+  onOpenPrune,
 }: ExerciseListPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
@@ -451,6 +482,75 @@ export function ExerciseListPanel({
           </button>
         )}
 
+        {/* Usage window — off by default, so the catalogue costs no extra
+            query until a coach asks "what do I still actually use?". */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Flame
+            size={12}
+            style={{
+              color: usageWeeks ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              marginRight: 4,
+            }}
+          />
+          <select
+            value={usageWeeks ?? ''}
+            onChange={e => onUsageWeeksChange(e.target.value ? Number(e.target.value) : null)}
+            title="Show how often each exercise was planned and logged in a rolling window"
+            style={{
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              padding: '4px 6px',
+              background: usageWeeks ? 'var(--color-bg-secondary)' : 'var(--color-bg-primary)',
+              color: usageWeeks ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            }}
+          >
+            <option value="">Usage: off</option>
+            {USAGE_WINDOWS.map(w => (
+              <option key={w} value={w}>Usage: {w} weeks</option>
+            ))}
+          </select>
+        </div>
+
+        {usageWeeks != null && !usageLoading && unusedCount > 0 && (
+          <button
+            type="button"
+            onClick={onOpenPrune}
+            title={`${unusedCount} exercise(s) neither planned nor logged in the last ${usageWeeks} weeks — review and archive them.`}
+            style={{
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              color: 'var(--color-text-secondary)', whiteSpace: 'nowrap',
+              background: 'var(--color-bg-secondary)',
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', padding: '5px 10px', cursor: 'pointer',
+            }}
+          >
+            {unusedCount} unused…
+          </button>
+        )}
+
+        {/* Archived rows — shown dimmed in place, so a coach can find and
+            restore what was archived (incl. rows a duplicate-merge archived). */}
+        {onToggleArchived && (archivedCount > 0 || showArchived) && (
+          <button
+            type="button"
+            onClick={() => onToggleArchived(!showArchived)}
+            title={showArchived ? 'Hide archived exercises' : 'Show archived exercises in place, dimmed'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px',
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              background: showArchived ? 'var(--color-text-primary)' : 'var(--color-bg-secondary)',
+              color: showArchived ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)',
+              border: '0.5px solid',
+              borderColor: showArchived ? 'var(--color-text-primary)' : 'var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            }}
+          >
+            <Archive size={12} />
+            {archivedCount > 0 ? `${archivedCount} archived` : 'Archived'}
+          </button>
+        )}
+
         <Button variant="secondary" size="sm" icon={<Share2 size={12} />} onClick={onOpenSharing}>
           Sharing
         </Button>
@@ -493,6 +593,11 @@ export function ExerciseListPanel({
           libraryBadge={libraryBadge}
           onCreateInCategory={name => onCreateExercise(name)}
           contextActions={contextActions}
+          canEditCategory={canEditCategory}
+          onReorderCategories={onReorderCategories}
+          usageFor={usageWeeks != null ? usageFor : undefined}
+          usageMax={usageMax}
+          usageWeeks={usageWeeks ?? 12}
         />
       </div>
     </StandardPage>
