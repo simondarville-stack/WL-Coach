@@ -15,6 +15,7 @@ import { CompactSessionTable } from '../components/CompactSessionTable';
 import { EnvironmentSwitcher } from '../components/EnvironmentSwitcher';
 import { rawAxisRange } from '../../lib/trainingLogModel';
 import type { NextSessionResolution } from '../../lib/fieldView';
+import { isSessionInProgress } from '../../lib/fieldView';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const RAW_MAX = rawAxisRange().max;
@@ -263,6 +264,15 @@ export function UpcomingScreen() {
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white flex items-center gap-1 min-w-0">
                       <span className="truncate">{card.athlete.name}</span>
+                      {/* Training right now — the one thing a coach on the
+                          floor scans this list for. */}
+                      {isSessionInProgress(card.log) && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0"
+                          title="Training now"
+                          aria-label="Training now"
+                        />
+                      )}
                       {card.hostName && (
                         <span className="text-[10px] font-normal text-gray-600 shrink-0">· {card.hostName}</span>
                       )}

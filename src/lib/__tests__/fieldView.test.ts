@@ -4,6 +4,7 @@ import {
   countSessionProgress,
   findMissedDays,
   isSessionLive,
+  isSessionInProgress,
   resolveNextSession,
   sessionRawTotal,
   summarizeSession,
@@ -453,15 +454,61 @@ function loggedEx(over: {
 function dayLog(over: {
   sessionStatus?: string | null;
   exercises?: LoggedExerciseFull[];
+  startedAt?: string | null;
+  completedAt?: string | null;
 }): DayLog {
   return {
     date: '2026-07-01',
     dayIndex: 0,
-    session: over.sessionStatus === null ? null : ({ status: over.sessionStatus ?? 'pending' } as never),
+    session: over.sessionStatus === null ? null : ({
+      status: over.sessionStatus ?? 'pending',
+      started_at: over.startedAt ?? null,
+      completed_at: over.completedAt ?? null,
+    } as never),
     exercises: over.exercises ?? [],
     messages: [],
   };
 }
+
+// ─── isSessionInProgress ────────────────────────────────────────────────────
+
+describe('isSessionInProgress', () => {
+  it('is false without a session', () => {
+    expect(isSessionInProgress(null)).toBe(false);
+    expect(isSessionInProgress(dayLog({ sessionStatus: null }))).toBe(false);
+  });
+
+  it('is true for an in_progress session', () => {
+    expect(isSessionInProgress(dayLog({ sessionStatus: 'in_progress' }))).toBe(true);
+  });
+
+  it('is true for a pending session the athlete has started', () => {
+    expect(
+      isSessionInProgress(dayLog({ sessionStatus: 'pending', startedAt: '2026-07-01T16:00:00Z' })),
+    ).toBe(true);
+  });
+
+  it('is false once the session is finished, however it was marked', () => {
+    expect(isSessionInProgress(dayLog({ sessionStatus: 'completed' }))).toBe(false);
+    expect(isSessionInProgress(dayLog({ sessionStatus: 'skipped' }))).toBe(false);
+    expect(
+      isSessionInProgress(dayLog({
+        sessionStatus: 'in_progress',
+        startedAt: '2026-07-01T16:00:00Z',
+        completedAt: '2026-07-01T17:30:00Z',
+      })),
+    ).toBe(false);
+  });
+
+  it('is narrower than isSessionLive: a done session with work is live, not in progress', () => {
+    const finished = dayLog({
+      sessionStatus: 'pending',
+      exercises: [loggedEx({ status: 'completed' })],
+    });
+    expect(isSessionLive(finished)).toBe(true);
+    expect(isSessionInProgress(finished)).toBe(false);
+  });
+});
 
 // ─── isSessionLive ──────────────────────────────────────────────────────────
 

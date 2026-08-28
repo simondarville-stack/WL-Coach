@@ -342,6 +342,25 @@ export function isSessionLive(log: DayLog | null): boolean {
 }
 
 /**
+ * Whether the athlete is mid-session *right now* — the signal behind the
+ * "training now" pulse on an Upcoming card.
+ *
+ * Deliberately narrower than isSessionLive: that one also returns true for a
+ * finished session that carries logged work, which is most sessions by the
+ * end of the day. Marking those as live would leave the pulse on all evening.
+ */
+export function isSessionInProgress(log: DayLog | null): boolean {
+  const session = log?.session;
+  if (!session) return false;
+  if (session.status === 'completed' || session.status === 'skipped') return false;
+  // Nullish rather than strict null: a partially-selected session row leaves
+  // these undefined, and treating that as "finished" would silently suppress
+  // the pulse for every athlete.
+  if (session.completed_at != null) return false;
+  return session.status === 'in_progress' || session.started_at != null;
+}
+
+/**
  * n/m exercise progress for one training slot.
  *
  * m counts the coach-planned exercises the athlete can actually log:
