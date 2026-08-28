@@ -8,7 +8,7 @@
  * between the athlete's view of a clip and the coach's.
  */
 import { useRef, useState } from 'react';
-import { Trash2, Video } from 'lucide-react';
+import { FolderPlus, Trash2, Video } from 'lucide-react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
 import { VideoLightbox } from './VideoLightbox';
@@ -16,7 +16,8 @@ import { VideoLightbox } from './VideoLightbox';
 interface LogVideoStripProps {
   videos: TrainingLogVideo[];
   theme: 'dark' | 'light';
-  /** Provide to show the record/attach tile. Omit for a read-only strip. */
+  /** Provide to show the Film and Attach tiles. Omit for a read-only strip.
+   *  Called once per file; a multi-file attach calls it repeatedly. */
   onAdd?: (file: File) => Promise<void>;
   /** Provide to show a delete affordance on each clip. */
   onDelete?: (video: TrainingLogVideo) => void;
@@ -61,25 +62,53 @@ export function LogVideoStrip({
 }: LogVideoStripProps) {
   const t = THEMES[theme];
   const [playing, setPlaying] = useState<TrainingLogVideo | null>(null);
-  const [uploading, setUploading] = useState(false);
+  /** Which button is mid-upload, so the spinner lands on the one tapped. */
+  const [busySource, setBusySource] = useState<'film' | 'attach' | null>(null);
+  /** Sequential upload position, so a multi-file attach shows "2/5". */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const filmRef = useRef<HTMLInputElement | null>(null);
+  const attachRef = useRef<HTMLInputElement | null>(null);
 
   if (videos.length === 0 && !onAdd) return null;
 
-  const handleFile = async (file: File | undefined) => {
-    if (!file || !onAdd) return;
+  /**
+   * Upload the picked files one at a time.
+   *
+   * Sequential rather than concurrent: gym wifi is the constraint, a parallel
+   * burst of several clips tends to starve them all, and doing one at a time
+   * means a failure names the file that failed and leaves the rest attached.
+   */
+  const handleFiles = async (
+    fileList: FileList | null,
+    source: 'film' | 'attach',
+  ) => {
+    const ref = source === 'film' ? filmRef : attachRef;
+    const files = Array.from(fileList ?? []);
+    if (files.length === 0 || !onAdd) return;
     setError(null);
-    setUploading(true);
+    setBusySource(source);
+    const failures: string[] = [];
     try {
-      await onAdd(file);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed.');
+      for (let i = 0; i < files.length; i++) {
+        setProgress(files.length > 1 ? { done: i, total: files.length } : null);
+        try {
+          await onAdd(files[i]);
+        } catch (e) {
+          failures.push(`${files[i].name}: ${e instanceof Error ? e.message : 'upload failed'}`);
+        }
+      }
     } finally {
-      setUploading(false);
-      // Clearing lets the same file be picked again after a failure —
-      // without this the input's change event never refires.
-      if (fileRef.current) fileRef.current.value = '';
+      setBusySource(null);
+      setProgress(null);
+      // Clearing lets the same file be picked again after a failure — without
+      // this the input's change event never refires for an identical pick.
+      if (ref.current) ref.current.value = '';
+    }
+    if (failures.length === files.length) {
+      setError(files.length === 1 ? failures[0] : `None of the ${files.length} clips uploaded. ${failures[0]}`);
+    } else if (failures.length > 0) {
+      setError(`${failures.length} of ${files.length} failed — ${failures.join('; ')}`);
     }
   };
 
@@ -141,29 +170,61 @@ export function LogVideoStrip({
 
         {onAdd && (
           <>
+            {/* Two inputs, because `capture` and `multiple` are mutually
+                exclusive in practice: a phone honouring `capture` opens the
+                camera and returns exactly one clip, ignoring `multiple`.
+                Splitting them keeps the one-tap film-now path for the
+                platform and still allows a batch attach from the roll. */}
             <input
-              ref={fileRef}
+              ref={filmRef}
               type="file"
               accept="video/*"
-              // `capture` makes a phone offer the camera first, which is what
-              // an athlete standing on the platform actually wants. Desktop
-              // browsers ignore it and show the file picker.
               capture="environment"
               className="hidden"
-              onChange={e => { void handleFile(e.target.files?.[0]); }}
+              onChange={e => { void handleFiles(e.target.files, 'film'); }}
+            />
+            <input
+              ref={attachRef}
+              type="file"
+              accept="video/*"
+              multiple
+              className="hidden"
+              onChange={e => { void handleFiles(e.target.files, 'attach'); }}
             />
             <button
               type="button"
-              disabled={disabled || uploading}
-              onClick={() => fileRef.current?.click()}
+              disabled={disabled || busySource !== null}
+              onClick={() => filmRef.current?.click()}
+              title="Film a clip now"
+              aria-label="Film a clip now"
               className={`w-[68px] h-[46px] rounded border border-dashed inline-flex flex-col items-center justify-center gap-0.5 text-[9px] ${t.addTile} disabled:opacity-50`}
             >
-              {uploading ? (
+              {busySource === 'film' ? (
                 <span className="w-3.5 h-3.5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
               ) : (
                 <>
                   <Video size={13} strokeWidth={1.8} />
-                  Video
+                  Film
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              disabled={disabled || busySource !== null}
+              onClick={() => attachRef.current?.click()}
+              title="Attach clips you already recorded (several at once)"
+              aria-label="Attach existing clips"
+              className={`w-[68px] h-[46px] rounded border border-dashed inline-flex flex-col items-center justify-center gap-0.5 text-[9px] ${t.addTile} disabled:opacity-50`}
+            >
+              {busySource === 'attach' ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                  {progress && <span>{progress.done + 1}/{progress.total}</span>}
+                </>
+              ) : (
+                <>
+                  <FolderPlus size={13} strokeWidth={1.8} />
+                  Attach
                 </>
               )}
             </button>
