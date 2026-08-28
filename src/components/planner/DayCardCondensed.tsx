@@ -15,7 +15,7 @@ import { MetricStrip } from '../ui/MetricStrip';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
 import { condensedExerciseSummary } from '../../lib/condensedExerciseSummary';
 import { routeCardDrop, type CardDropTargets } from './cardDropRouting';
-import { MARK_PRESET } from './dragPayload';
+import { MARK_DAY, MARK_PRESET } from './dragPayload';
 
 interface DayCardCondensedProps {
   dayName: string;
@@ -74,7 +74,16 @@ export function DayCardCondensed({
   return (
     <div
       onClick={onOpen}
-      title="Click to open this unit"
+      title="Click to open this unit · drag to move it to another day"
+      // Same DAY: payload the full card's header writes, so a condensed card
+      // can be dragged onto a weekday's drop field (reschedule) or onto
+      // another card (merge contents) without expanding it first.
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', `DAY:${dropTargets.dayIndex}`);
+        e.dataTransfer.setData(MARK_DAY, '1');
+        e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
+      }}
       onDragOver={e => {
         // Preset drags target individual exercise rows, which a condensed card
         // does not render — arming here would promise a drop that cannot land.

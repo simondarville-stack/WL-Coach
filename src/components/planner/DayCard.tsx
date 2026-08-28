@@ -447,7 +447,11 @@ export function DayCard({
             e.dataTransfer.effectAllowed = e.ctrlKey || e.metaKey ? 'copy' : 'move';
           }}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
+            // Two rows — title line, then the metric strip — like the
+            // condensed card. A single line let the strip overflow the card
+            // and bleed into the neighbouring day column in the scheduled
+            // week's narrow columns.
+            display: 'flex', flexDirection: 'column', gap: 3,
             padding: '8px 12px',
             borderBottom: '0.5px solid var(--color-border-tertiary)',
             cursor: 'pointer',
@@ -472,6 +476,7 @@ export function DayCard({
             onNavigateToDay();
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           {onReorderDay && (
             <span
               draggable
@@ -497,17 +502,12 @@ export function DayCard({
               <GripVertical size={12} />
             </span>
           )}
-          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1 }}>{dayName}</span>
+          <span style={{
+            fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', flex: 1,
+            minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{dayName}</span>
           {restInfo && restInfo.hoursFromPrevious !== null && (
             <RestBadge hours={restInfo.hoursFromPrevious} recoveryLevel={restInfo.recoveryLevel} />
-          )}
-          {!isEmpty && (
-            <MetricStrip
-              metrics={dayMetrics}
-              visibleMetrics={visibleMetrics}
-              size="sm"
-              showLabels={true}
-            />
           )}
           {!isEmpty && onSaveAsTemplate && (
             <button
@@ -536,6 +536,16 @@ export function DayCard({
             </button>
           )}
           <ChevronRight size={12} style={{ color: headerHovered ? 'var(--color-text-tertiary)' : 'var(--color-border-secondary)', flexShrink: 0, transition: 'color 0.1s' }} />
+          </div>
+          {!isEmpty && (
+            <MetricStrip
+              metrics={dayMetrics}
+              visibleMetrics={visibleMetrics}
+              size="sm"
+              showLabels={true}
+              className="flex-wrap"
+            />
+          )}
         </div>
 
         {/* Exercise list */}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   WeekPlan,
   PlannedExercise,
@@ -13,16 +13,92 @@ import { computeMetrics, DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../l
 import { expandForCounting } from '../../lib/comboExpansion';
 import { addDaysToISO, formatDateShort } from '../../lib/dateUtils';
 import { DayCardCondensed } from './DayCardCondensed';
+import { MARK_DAY } from './dragPayload';
 
 /** The AM/PM boundary, in minutes from midnight.
  *  COACH-CONFIG candidate — a coach training at 05:00 may draw it elsewhere. */
 const AM_END_MINUTES = 12 * 60;
 
-/** Narrowest a day column may become before the week scrolls instead. Seven of
+/** Narrowest a day column may become before the week re-wraps. Seven of
  *  these is the width at which the week stops fitting a laptop; below it the
  *  exercise names stop being readable, which is the point of the card. */
 // COACH-CONFIG candidate.
 const COLUMN_FLOOR = 190;
+
+/** Horizontal gap between day columns — used both in the grid style and in the
+ *  fits-N-columns arithmetic, so keep them one constant. */
+const COLUMN_GAP = 8;
+
+/** How many columns the scheduled week renders at a given container width.
+ *  Deliberate breaks instead of auto-fit's arbitrary ones: a full week when it
+ *  fits, otherwise Mon–Thu over Fri–Sun (the split a coach actually reads),
+ *  then pairs, then a single column. */
+function columnsForWidth(width: number): number {
+  const fits = (n: number) => width >= n * COLUMN_FLOOR + (n - 1) * COLUMN_GAP;
+  return fits(7) ? 7 : fits(4) ? 4 : fits(2) ? 2 : 1;
+}
+
+/** "2nd" / "3rd" / "4th" — for the add-session drop field's label. */
+function ordinal(n: number): string {
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
+
+/** The field that appears under a weekday's sessions while a unit card is in
+ *  the air. Dropping a unit here assigns it to this weekday as its OWN
+ *  session — the way a coach builds 2-a-day training — unlike dropping onto a
+ *  card, which merges the unit's contents into that card. */
+function ScheduleDropZone({
+  weekday,
+  weekdayName,
+  sessionCount,
+  onScheduleDrop,
+}: {
+  weekday: number;
+  weekdayName: string;
+  sessionCount: number;
+  onScheduleDrop: (slotIndex: number, weekday: number) => Promise<void> | void;
+}) {
+  const [over, setOver] = useState(false);
+  const isRest = sessionCount === 0;
+  return (
+    <div
+      onDragOver={e => {
+        if (!e.dataTransfer.types.includes(MARK_DAY)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        setOver(true);
+      }}
+      onDragLeave={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false);
+      }}
+      onDrop={e => {
+        e.preventDefault();
+        e.stopPropagation();
+        setOver(false);
+        const data = e.dataTransfer.getData('text/plain');
+        if (!data.startsWith('DAY:')) return;
+        const slot = parseInt(data.slice(4), 10);
+        if (!Number.isNaN(slot)) void onScheduleDrop(slot, weekday);
+      }}
+      style={{
+        minHeight: isRest ? 72 : 40,
+        borderRadius: 'var(--radius-md)',
+        border: `1.5px dashed ${over ? 'var(--color-accent)' : 'var(--color-border-secondary)'}`,
+        background: over ? 'var(--color-accent-muted)' : 'var(--color-bg-secondary)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 'var(--text-caption)', fontWeight: 500,
+        color: over ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+        transition: 'border-color 0.12s, background 0.12s',
+        userSelect: 'none',
+      }}
+    >
+      {isRest ? `Move to ${weekdayName}` : `+ ${ordinal(sessionCount + 1)} session`}
+    </div>
+  );
+}
 
 /** Which band a session belongs to. An untimed session is the day's only one
  *  (DayConfigModal requires a time as soon as two units share a weekday), so it
@@ -64,6 +140,10 @@ interface WeekOverviewProps {
   onClearDay: (dayIndex: number) => Promise<void>;
   onExerciseDrop: (fromDay: number, plannedExId: string, toDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
   onDayDrop: (sourceDay: number, destDay: number, isCopy: boolean, isReplace: boolean) => Promise<void>;
+  /** Assign a training unit to a weekday (scheduled view). Fired by the
+   *  per-column drop field — the unit keeps its contents and becomes a session
+   *  of that day, so two units on one weekday = 2-a-day training. */
+  onScheduleDrop?: (slotIndex: number, weekday: number) => Promise<void>;
   /** Reorder the unit cards. Applied only where position is the coach's to
    *  choose — see the call sites below. */
   onReorderDay?: (fromDayIndex: number, toDayIndex: number) => void;
@@ -108,6 +188,7 @@ export function WeekOverview({
   onClearDay,
   onExerciseDrop,
   onDayDrop,
+  onScheduleDrop,
   onReorderDay,
   onDockExerciseDrop,
   onDockTemplateDrop,
@@ -170,6 +251,37 @@ export function WeekOverview({
   }, [activeSlots, plannedExercises, comboMembers, competitionTotal]);
   const metricsForSlot = (slot: number) =>
     metricsBySlot.get(slot) ?? computeMetrics([], competitionTotal ?? null);
+
+  // How many day columns fit. Measured (not media-queried) because the grid's
+  // width depends on the sidebar and dock, not just the viewport. Callback ref
+  // so the observer attaches whenever the scheduled grid (re)mounts.
+  const [gridCols, setGridCols] = useState(7);
+  const gridRO = useRef<ResizeObserver | null>(null);
+  const gridWrapRef = useCallback((el: HTMLDivElement | null) => {
+    gridRO.current?.disconnect();
+    gridRO.current = null;
+    if (!el) return;
+    const update = () => setGridCols(columnsForWidth(el.clientWidth));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    gridRO.current = ro;
+  }, []);
+  useEffect(() => () => gridRO.current?.disconnect(), []);
+
+  // True while a unit card is in the air — the weekday columns grow their
+  // add-session drop fields for exactly that long. Cleared on any drop or
+  // dragend anywhere, since dragleave is unreliable across nested targets.
+  const [unitDragActive, setUnitDragActive] = useState(false);
+  useEffect(() => {
+    const clear = () => setUnitDragActive(false);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('drop', clear);
+    return () => {
+      window.removeEventListener('dragend', clear);
+      window.removeEventListener('drop', clear);
+    };
+  }, []);
 
   // Guarded AFTER the hooks above: an early return before them would change the
   // hook count between renders the moment a week plan loads.
@@ -294,17 +406,23 @@ export function WeekOverview({
           </button>
         </div>
 
-        <div style={{
-          display: 'grid',
-          // Equal columns, and they WRAP rather than scroll: days that do not
-          // fit continue on the next row instead of hiding behind a horizontal
-          // scrollbar. auto-fit keeps every column the same width whatever the
-          // viewport, so no day is ever wider than another.
-          gridTemplateColumns: `repeat(auto-fit, minmax(${COLUMN_FLOOR}px, 1fr))`,
-          columnGap: 8,
-          rowGap: 10,
-          alignItems: 'start',
-        }}>
+        <div
+          ref={gridWrapRef}
+          onDragOver={e => {
+            // A unit card is in the air → grow the per-weekday drop fields.
+            // No preventDefault: the fields and cards are the drop targets.
+            if (e.dataTransfer.types.includes(MARK_DAY)) setUnitDragActive(true);
+          }}
+          style={{
+            display: 'grid',
+            // Explicit equal tracks (auto-fit left a phantom 0px track and
+            // wrapped at arbitrary points like 5+2). columnsForWidth breaks
+            // the week deliberately: 7 across, else Mon–Thu over Fri–Sun.
+            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+            columnGap: COLUMN_GAP,
+            rowGap: 10,
+            alignItems: 'start',
+          }}>
           {banded.map(({ cell, am, pm }) => (
             <div key={cell.weekday} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* Every column names its own day. A rest day is simply a day
@@ -336,6 +454,17 @@ export function WeekOverview({
 
               {am.map(sn => session(sn.slotIndex, sn.time))}
               {pm.map(sn => session(sn.slotIndex, sn.time))}
+
+              {/* Drop field: lands the dragged unit on THIS weekday as its own
+                  session (2nd/3rd of the day), or moves it onto a rest day. */}
+              {unitDragActive && onScheduleDrop && (
+                <ScheduleDropZone
+                  weekday={cell.weekday}
+                  weekdayName={cell.weekdayName}
+                  sessionCount={cell.trainingSessions.length}
+                  onScheduleDrop={onScheduleDrop}
+                />
+              )}
             </div>
           ))}
 
@@ -353,8 +482,8 @@ export function WeekOverview({
                 a third card size on the same screen. */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: `repeat(auto-fit, minmax(${COLUMN_FLOOR}px, 1fr))`,
-              columnGap: 8, rowGap: 8, alignItems: 'start',
+              gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+              columnGap: COLUMN_GAP, rowGap: 8, alignItems: 'start',
             }}>
               {unscheduledDays.map(day => session(day.index, null))}
             </div>

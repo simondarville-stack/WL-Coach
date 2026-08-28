@@ -761,6 +761,24 @@ export function WeeklyPlanner() {
     await handleRefresh();
   };
 
+  /**
+   * Drop a unit card on a weekday's drop field (scheduled view): reassign the
+   * unit to that weekday in day_schedule. Contents stay untouched — the unit
+   * simply becomes a session of that day, which is how a coach builds 2- or
+   * 3-a-day training. Keeps the unit's clock time; with two untimed sessions
+   * on one day the Day-config modal is where times get set.
+   */
+  const handleScheduleDrop = async (slotIndex: number, weekday: number) => {
+    if (!currentWeekPlan) return;
+    const schedule = {
+      ...((currentWeekPlan.day_schedule as Record<number, { weekday: number; time: string | null }> | null) ?? {}),
+    };
+    const prev = schedule[slotIndex];
+    if (prev?.weekday === weekday) return;
+    schedule[slotIndex] = { weekday, time: prev?.time ?? null };
+    await updateWeekPlan(currentWeekPlan.id, { day_schedule: schedule });
+  };
+
   const handleDockExerciseDrop = async (exerciseId: string, dayIndex: number, isReplace: boolean) => {
     if (!currentWeekPlan) return;
     const exercise = allExercises.find(e => e.id === exerciseId);
@@ -1890,6 +1908,7 @@ export function WeeklyPlanner() {
                 onClearDay={handleClearDay}
                 onExerciseDrop={handleExerciseDrop}
                 onDayDrop={handleDayDrop}
+                onScheduleDrop={handleScheduleDrop}
                 onDockExerciseDrop={handleDockExerciseDrop}
                 onDockTemplateDrop={handleDockTemplateDrop}
                 onDockTemplateDayDrop={handleDockTemplateDayDrop}
