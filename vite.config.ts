@@ -15,7 +15,14 @@ function gitSha(): string {
   try {
     return execSync('git rev-parse --short HEAD').toString().trim();
   } catch {
-    return 'unknown';
+    // CI builders may hand over a shallow/bare checkout where `git` is
+    // unavailable. Each platform exports the commit it built, so fall back to
+    // that rather than losing provenance in the deployed app and error logs.
+    const ciSha =
+      process.env.WORKERS_CI_COMMIT_SHA ?? // Cloudflare Workers Builds
+      process.env.CF_PAGES_COMMIT_SHA ?? // Cloudflare Pages
+      process.env.COMMIT_REF; // Netlify
+    return ciSha ? ciSha.slice(0, 7) : 'unknown';
   }
 }
 
@@ -34,8 +41,9 @@ export default defineConfig({
     // be mapped back to a real file/line — without them, "Script error."
     // stacks stay opaque.
     //
-    // They are NOT deployed: netlify.toml deletes dist/**/*.map after the
-    // build, because 'hidden' only hides the comment, not the file — publishing
+    // They are NOT deployed: `npm run build:deploy` runs
+    // scripts/strip-sourcemaps.mjs to delete dist/**/*.map after the build,
+    // because 'hidden' only hides the comment, not the file — publishing
     // dist wholesale exposed the entire source at a guessable URL. Local builds
     // keep the map, and a build of the same SHA reproduces the same offsets, so
     // mapping a production stack still works.

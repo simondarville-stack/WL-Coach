@@ -1,0 +1,33 @@
+# Response headers for the Cloudflare Workers static-asset deploy.
+# Vite copies public/ verbatim into dist/, so this file lands at the root of
+# the asset directory where Workers parses it. It is never served itself.
+#
+# Ported from the [[headers]] blocks in netlify.toml — keep the two in sync
+# while Netlify remains the rollback target.
+
+# Hashed build assets never change content under the same name, so let
+# browsers cache them for a year instead of revalidating a ~400 kB bundle on
+# every visit. Note this overrides the Workers default of
+# `public, max-age=0, must-revalidate`.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Security headers on every response. index.html is deliberately NOT given a
+# Cache-Control here: the Workers default (max-age=0, must-revalidate + ETag)
+# is exactly right, and it is what picks up new deploys.
+#
+# A Content-Security-Policy is intentionally NOT set: a correct policy must
+# enumerate the Supabase, Google Fonts, YouTube-thumbnail and QR-code origins
+# and be tested against the live app first, or it silently breaks data
+# loading. Add it as a separate, verified step.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=()
+
+# Keep the free *.workers.dev preview hostname out of search results; only the
+# custom domain should be indexable.
+https://:version.:subdomain.workers.dev/*
+  X-Robots-Tag: noindex

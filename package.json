@@ -1,11 +1,14 @@
 {
   "name": "emos",
   "private": true,
-  "version": "0.60.0",
+  "version": "0.60.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:deploy": "vite build && node scripts/strip-sourcemaps.mjs",
+    "deploy": "npm run build:deploy && wrangler deploy",
+    "preview:cf": "npm run build:deploy && wrangler dev",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -47,6 +50,7 @@
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
     "vite": "^5.4.2",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "wrangler": "^4.42.0"
   }
 }

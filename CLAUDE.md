@@ -157,6 +157,29 @@ Canonical logic lives in `src/lib/prescriptionParser.ts` (parsing) and
   irreversible rewrites) still require explicit confirmation first — the
   failed-experiment carve-out above applies to those too.
 
+## Hosting & deploy
+
+EMOS is a pure client-side SPA (Vite → `dist/`, Supabase called straight from
+the browser). It is hosted on **Cloudflare Workers static assets**:
+
+- `wrangler.toml` — assets-only Worker (no `main`, no ASSETS binding).
+  `not_found_handling = "single-page-application"` is what makes deep links
+  like `/analysis` or `/athlete/a/<id>` survive a hard refresh.
+- `public/_headers` — cache + security headers; Vite copies it into `dist/`.
+- `npm run build:deploy` — `vite build` plus `scripts/strip-sourcemaps.mjs`.
+  **Never publish `dist/` from a bare `npm run build`:** vite emits `.map`
+  files (`sourcemap: 'hidden'` hides the comment, not the file), and shipping
+  them exposes the entire source at a guessable URL.
+- Build-time env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked
+  into the bundle at build time — they are Workers Builds **environment
+  variables**, not runtime secrets.
+- `netlify.toml` is the **rollback target**, not the live config. Its header
+  and redirect rules mirror the Cloudflare ones — change both or neither, or
+  retire it once Cloudflare has been stable.
+
+Adding an `/api/*` route later means giving the Worker a `main` script plus
+`assets.run_worker_first = ["/api/*"]`; nothing else has to move.
+
 ## Code conventions
 
 - TypeScript strict. No `any` without justification.
