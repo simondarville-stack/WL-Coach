@@ -153,15 +153,20 @@ function AppRouter() {
       </Suspense>
     );
   }
-  // Fieldcoach (formerly /field, then /Coach-overview) — coach-facing, so it
-  // sits behind the same gate as the desktop coach app rather than the
-  // athlete-side access codes. Both legacy prefixes still route here and are
-  // redirected to the current one inside FieldApp, so existing bookmarks work.
+  // The coach mobile app (/coach — formerly /field, /Coach-overview, then
+  // /fieldcoach) — coach-facing, so it sits behind the same gate as the desktop
+  // coach app rather than the athlete-side access codes. Every legacy prefix
+  // still routes here and is redirected to /coach inside FieldApp, so existing
+  // bookmarks work. (The module keeps its `field` name internally.)
+  //
+  // The `=== prefix || startsWith(prefix + '/')` boundary is load-bearing:
+  // '/coach-overview' must not be swallowed by the '/coach' entry (it is a
+  // legacy prefix in its own right, and a bare prefix test would match it).
   const lowerPath = location.pathname.toLowerCase();
-  const isFieldcoachPath = ['/fieldcoach', '/coach-overview', '/field'].some(
+  const isCoachMobilePath = ['/coach', '/fieldcoach', '/coach-overview', '/field'].some(
     prefix => lowerPath === prefix || lowerPath.startsWith(prefix + '/'),
   );
-  if (isFieldcoachPath) {
+  if (isCoachMobilePath) {
     return (
       <CoachGate>
         <Suspense fallback={<RouteFallback />}>

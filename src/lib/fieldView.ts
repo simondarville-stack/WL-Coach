@@ -1,5 +1,5 @@
-/**
- * fieldView — domain logic for the coach Overview (/fieldcoach).
+﻿/**
+ * fieldView — domain logic for the coach Overview (/coach).
  *
  * Two pure pieces, no Supabase access (the useFieldWeek hook feeds them):
  *

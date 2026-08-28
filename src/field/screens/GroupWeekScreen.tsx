@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GroupWeekScreen — Field View: a training group's entire group-level week
  * plan, every slot rendered read-only, navigable across weeks. Planned side
  * only (a group has no log).
@@ -91,7 +91,7 @@ export function GroupWeekScreen() {
           <h1 className="text-base font-bold truncate flex-1">{groupName || 'Group'}</h1>
           {groupId && (
             <button
-              onClick={() => navigate(`/fieldcoach/g/${groupId}/macro`)}
+              onClick={() => navigate(`/coach/g/${groupId}/macro`)}
               className="p-2 -mr-2 text-gray-400 hover:text-white"
               aria-label="Macro cycle"
               title="Macro cycle"

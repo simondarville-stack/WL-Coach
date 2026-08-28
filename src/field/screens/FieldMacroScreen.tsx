@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FieldMacroScreen — the coach's macro cycle, on the phone.
  *
  * The athlete app has a macro tab too, but it is deliberately number-free. The
@@ -7,7 +7,7 @@
  * table for that week (code, top set in stacked notation, avg, Σreps, note).
  *
  * Read-only by construction — no inputs, no writes anywhere in this file.
- * Serves both `/fieldcoach/a/:athleteId/macro` and `/fieldcoach/g/:groupId/macro`.
+ * Serves both `/coach/a/:athleteId/macro` and `/coach/g/:groupId/macro`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -79,8 +79,8 @@ export function FieldMacroScreen() {
 
   const openWeek = (weekStart: string) => {
     navigate(athleteId
-      ? `/fieldcoach/a/${athleteId}?w=${weekStart}`
-      : `/fieldcoach/g/${groupId}?w=${weekStart}`);
+      ? `/coach/a/${athleteId}?w=${weekStart}`
+      : `/coach/g/${groupId}?w=${weekStart}`);
   };
 
   return (

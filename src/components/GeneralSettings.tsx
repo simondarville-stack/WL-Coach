@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Plus, Trash2, Copy, Check } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { useCoachStore } from '../store/coachStore';
@@ -35,7 +35,7 @@ const SETTINGS_TABS = [
   { key: 'analysis', label: 'Analysis' },
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'athletes', label: 'Athletes' },
-  { key: 'fieldcoach', label: 'Fieldcoach' },
+  { key: 'coach-app', label: 'Coach app' },
 ] as const;
 
 type SettingsTab = typeof SETTINGS_TABS[number]['key'];
@@ -1070,12 +1070,12 @@ export function GeneralSettings() {
         </div>
       )}
 
-      {tab === 'fieldcoach' && (
+      {tab === 'coach-app' && (
         <div className="space-y-6">
           <div className="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
             <div>
-              <h2 className="text-lg font-medium text-gray-900 mb-1">Fieldcoach</h2>
-              <p className="text-sm text-gray-600 mb-4">Settings for the mobile coach view (/fieldcoach)</p>
+              <h2 className="text-lg font-medium text-gray-900 mb-1">Coach app</h2>
+              <p className="text-sm text-gray-600 mb-4">Settings for the coach mobile app (/coach)</p>
             </div>
 
             <div>
