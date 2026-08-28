@@ -24,6 +24,8 @@ import { getOwnerId } from '../../lib/ownerContext';
 import { useAthleteStore } from '../../store/athleteStore';
 import { useCoachStore } from '../../store/coachStore';
 import {
+  DEMO_KEY_PREFIX,
+  fetchExampleCards,
   fetchReviewFeed,
   markSessionReviewed,
   REVIEW_SESSION_LOOKBACK_DAYS,
@@ -52,6 +54,9 @@ export function ReviewScroller() {
 
   const [lookbackDays, setLookbackDays] = useState<number>(REVIEW_SESSION_LOOKBACK_DAYS);
   const [items, setItems] = useState<ReviewFeedItem[] | null>(null);
+  /** Example video/question cards ("Show examples") — non-persisting: they
+   *  never mark anything and their composers don't hit the database. */
+  const [demoItems, setDemoItems] = useState<ReviewFeedItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -62,8 +67,14 @@ export function ReviewScroller() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<string, HTMLElement>());
   const dwellTimers = useRef(new Map<string, number>());
+  // Demo cards render above the real feed and take part in snap/keyboard
+  // navigation, but stay out of the progress math.
+  const displayItems = useMemo(
+    () => (items == null ? null : [...(demoItems ?? []), ...items]),
+    [items, demoItems],
+  );
   const itemsRef = useRef<ReviewFeedItem[] | null>(null);
-  itemsRef.current = items;
+  itemsRef.current = displayItems;
   const activeKeyRef = useRef<string | null>(null);
   activeKeyRef.current = activeKey;
 
@@ -91,6 +102,7 @@ export function ReviewScroller() {
   // ── Seen marking ─────────────────────────────────────────────────────────
   const markSeen = useCallback(
     (item: ReviewFeedItem) => {
+      if (item.key.startsWith(DEMO_KEY_PREFIX)) return;
       setSeen(prev => {
         if (prev.has(item.key)) return prev;
         const next = new Set(prev);
@@ -125,7 +137,7 @@ export function ReviewScroller() {
   // ── In-view tracking (autoplay + dwell-to-seen) ──────────────────────────
   useEffect(() => {
     const root = scrollerRef.current;
-    if (!root || !items) return;
+    if (!root || !displayItems) return;
     const timers = dwellTimers.current;
     const observer = new IntersectionObserver(
       entries => {
@@ -159,7 +171,7 @@ export function ReviewScroller() {
       for (const t of timers.values()) window.clearTimeout(t);
       timers.clear();
     };
-  }, [items, markSeen]);
+  }, [displayItems, markSeen]);
 
   const registerCard = useCallback((key: string) => {
     return (el: HTMLElement | null) => {
@@ -175,6 +187,11 @@ export function ReviewScroller() {
   // ── Comment plumbing ─────────────────────────────────────────────────────
   const commentOnSession = useCallback(
     async (item: ReviewFeedItem, sessionId: string | null, text: string) => {
+      if (item.key.startsWith(DEMO_KEY_PREFIX)) {
+        // Example card: show the send feedback, write nothing.
+        await new Promise(r => setTimeout(r, 250));
+        return;
+      }
       if (!sessionId) throw new Error('No session to attach this comment to.');
       await addComment({
         sessionId,
@@ -190,6 +207,10 @@ export function ReviewScroller() {
 
   const replyToThread = useCallback(
     async (item: Extract<ReviewFeedItem, { kind: 'thread' }>, text: string) => {
+      if (item.key.startsWith(DEMO_KEY_PREFIX)) {
+        await new Promise(r => setTimeout(r, 250));
+        return;
+      }
       if (item.sessionId) {
         await commentOnSession(item, item.sessionId, text);
         return;
@@ -206,6 +227,28 @@ export function ReviewScroller() {
     },
     [athleteById, ownerId, activeCoachId, commentOnSession, markSeen],
   );
+
+  // ── Example cards ("Show examples") ──────────────────────────────────────
+  const toggleExamples = useCallback(async () => {
+    if (demoItems != null) {
+      setDemoItems(null);
+      return;
+    }
+    try {
+      setDemoItems(await fetchExampleCards(athletes.map(a => a.id)));
+      scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      // Non-essential — quietly stay off.
+    }
+  }, [demoItems, athletes]);
+
+  // ?demo=1 deep-link opens the examples straight away.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('demo')) return;
+    if (athletes.length === 0 || demoItems != null) return;
+    void toggleExamples();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when athletes resolve
+  }, [athletes.length]);
 
   // ── Keyboard flow: ↑/↓ snap between cards, 1–4 quick reactions ──────────
   const quickReact = useCallback(
@@ -283,6 +326,14 @@ export function ReviewScroller() {
             <span className="hidden md:inline text-white/30"> · ↑↓ navigate · 1–4 react</span>
           </span>
           <span className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void toggleExamples()}
+              title="Example video and question cards — nothing is sent or marked from them"
+              className={`px-1.5 py-0.5 rounded ${demoItems != null ? 'bg-amber-400/20 text-amber-300' : 'hover:bg-white/10 text-white/50'}`}
+            >
+              {demoItems != null ? 'Hide examples' : 'Examples'}
+            </button>
             <label className="text-white/40">
               Sessions from last{' '}
               <select
@@ -331,8 +382,17 @@ export function ReviewScroller() {
               {loadError}
             </div>
           )}
-          {items?.map(item => (
-            <section key={item.key} ref={registerCard(item.key)} className="h-full snap-start snap-always">
+          {displayItems?.map(item => (
+            <section
+              key={item.key}
+              ref={registerCard(item.key)}
+              className="relative h-full snap-start snap-always"
+            >
+              {item.key.startsWith(DEMO_KEY_PREFIX) && (
+                <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-amber-400/90 text-black px-1.5 py-0.5 rounded pointer-events-none">
+                  Example
+                </div>
+              )}
               {item.kind === 'video' && (
                 <VideoCard
                   item={item}

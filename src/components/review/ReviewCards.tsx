@@ -19,13 +19,13 @@ import {
   Send,
   Video,
 } from 'lucide-react';
-import type { Athlete } from '../../lib/database.types';
+import type { Athlete, GppSection } from '../../lib/database.types';
 import type {
   ReviewSessionItem,
   ReviewThreadItem,
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
-import { StackedNotation } from '../planner/StackedNotation';
+import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
 import { formatDateShort } from '../../lib/dateUtils';
 
 // COACH-CONFIG candidate: reaction presets should eventually be coach-defined.
@@ -312,10 +312,9 @@ interface SessionCardProps {
 
 export function SessionCard({ item, athlete, seen, onComment, externalSent }: SessionCardProps) {
   const s = item.session;
-  const metrics: string[] = [];
-  if (s.session_rpe != null) metrics.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
-  if (s.duration_minutes != null) metrics.push(`${s.duration_minutes} min`);
-  if (s.bodyweight_kg != null) metrics.push(`BW ${String(s.bodyweight_kg).replace('.', ',')} kg`);
+  const headerBits: string[] = [];
+  if (s.session_rpe != null) headerBits.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
+  if (s.duration_minutes != null) headerBits.push(`${s.duration_minutes} min`);
 
   return (
     <CardFrame
@@ -329,13 +328,33 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
       <div className="h-full rounded-2xl bg-white overflow-y-auto">
         <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
-          {metrics.length > 0 && (
-            <div className="text-[11px] text-gray-500">{metrics.join(' · ')}</div>
+          {headerBits.length > 0 && (
+            <div className="text-[11px] text-gray-500">{headerBits.join(' · ')}</div>
           )}
         </div>
+        {/* Metrics activated for this athlete/week — value or a quiet "—"
+            when the athlete skipped the entry (that gap is itself signal). */}
+        {item.metrics.length > 0 && (
+          <div className="px-3.5 py-2 border-b border-gray-100 flex flex-wrap gap-1.5">
+            {item.metrics.map(m => (
+              <span
+                key={m.key}
+                className="inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[11px]"
+              >
+                <span className="text-gray-400">{m.label}</span>
+                {m.value != null ? (
+                  <span className="text-gray-800 font-medium tabular-nums">{m.value}</span>
+                ) : (
+                  <span className="text-gray-300">—</span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="divide-y divide-gray-50">
           {item.exercises.map(ex => {
             const st = STATUS_GLYPH[ex.status] ?? STATUS_GLYPH.pending;
+            const performedSets = ex.sets.filter(set => set.status !== 'pending');
             return (
               <div key={ex.id} className="px-3.5 py-2 flex items-start gap-2.5">
                 <span className={`text-xs mt-0.5 ${st.cls}`} title={ex.status}>
@@ -346,6 +365,11 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
                     <span className="text-[13px] font-medium text-gray-800 truncate">
                       {ex.name}
                     </span>
+                    {ex.gpp && (
+                      <span className="text-[10px] text-gray-500 tabular-nums">
+                        {ex.gpp.rows.filter(r => r.done).length}/{ex.gpp.rows.length} done
+                      </span>
+                    )}
                     {ex.offPlan && (
                       <span
                         className="text-[10px] px-1 rounded bg-amber-50 text-amber-700 border border-amber-200"
@@ -355,13 +379,26 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
                       </span>
                     )}
                   </div>
-                  {ex.performedRaw.trim() !== '' && (
+                  {/* What the athlete actually did, most specific source first:
+                      GPP rows > logged sets > performed_raw fallback. */}
+                  {ex.gpp ? (
+                    <GppStack gpp={ex.gpp} />
+                  ) : performedSets.length > 0 ? (
+                    <div className="mt-0.5">
+                      <LoggedStackedNotation sets={ex.sets} />
+                    </div>
+                  ) : ex.performedRaw.trim() !== '' ? (
                     <div className="mt-0.5">
                       <StackedNotation
                         raw={ex.performedRaw}
                         unit="kg"
                         isCombo={ex.performedRaw.includes('+')}
                       />
+                    </div>
+                  ) : null}
+                  {ex.noteText && (
+                    <div className="text-[12px] text-gray-600 mt-0.5 whitespace-pre-wrap">
+                      {ex.noteText}
                     </div>
                   )}
                   {ex.performedNotes.trim() !== '' && (
@@ -382,6 +419,50 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
         )}
       </div>
     </CardFrame>
+  );
+}
+
+/**
+ * GPP rows in the stacked visual grammar: load above the rule, reps below,
+ * set count to the right — same shape StackedNotation draws, hand-laid
+ * because GPP rows are structured fields, not a prescription string.
+ * Unticked rows render dimmed.
+ */
+function GppStack({ gpp }: { gpp: GppSection }) {
+  const mono: React.CSSProperties = {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'var(--text-caption)',
+    color: 'var(--color-text-primary)',
+    fontWeight: 500,
+    lineHeight: 1.25,
+  };
+  return (
+    <div className="mt-1 space-y-1">
+      {gpp.description.trim() !== '' && (
+        <div className="text-[11px] text-gray-500 italic whitespace-pre-wrap">{gpp.description}</div>
+      )}
+      {gpp.rows.map((r, i) => (
+        <div key={i} className={`flex items-center gap-2 ${r.done ? '' : 'opacity-45'}`}>
+          <span className={`text-[11px] ${r.done ? 'text-emerald-600' : 'text-gray-400'}`}>
+            {r.done ? '✓' : '○'}
+          </span>
+          <span className="text-[12px] text-gray-700 flex-1 min-w-0 truncate">{r.exercise}</span>
+          <div className="flex items-start gap-1 shrink-0">
+            <div className="flex flex-col items-center min-w-[2rem]">
+              <span style={mono}>{r.load.trim() !== '' ? r.load : 'BW'}</span>
+              <div
+                style={{ width: '100%', borderTop: '0.5px solid var(--color-border-primary)', margin: '1px 0' }}
+              />
+              <span style={mono}>{r.reps}</span>
+            </div>
+            {r.sets > 1 && (
+              <span className="text-[11px] text-gray-500 font-medium self-center">{r.sets}</span>
+            )}
+          </div>
+        </div>
+      ))}
+      {gpp.rows.length === 0 && <div className="text-[11px] text-gray-400 italic">No rows</div>}
+    </div>
   );
 }
 

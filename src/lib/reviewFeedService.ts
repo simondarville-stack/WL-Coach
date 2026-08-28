@@ -14,10 +14,16 @@
  */
 import { supabase } from './supabase';
 import { emitInboxChanged } from './inboxEvents';
+import { fetchByIds } from './queryPaging';
+import { METRIC_TRACKING_DEFAULTS } from './trainingLogModel';
 import type {
+  AthleteMetricDefinition,
+  AthleteWeekMetricsConfig,
+  GppSection,
   TrainingLogExercise,
   TrainingLogMessage,
   TrainingLogSession,
+  TrainingLogSet,
   TrainingLogVideo,
 } from './database.types';
 
@@ -62,10 +68,26 @@ export interface SessionReviewExercise {
   id: string;
   name: string;
   status: TrainingLogExercise['status'];
+  /** Actually performed sets (what the athlete entered), by set_number.
+   *  Preferred display source — LoggedStackedNotation. */
+  sets: TrainingLogSet[];
+  /** Fallback display when no set rows exist (StackedNotation). */
   performedRaw: string;
   performedNotes: string;
+  /** GPP container — athlete's live copy with done flags/edits. */
+  gpp: GppSection | null;
+  /** Athlete-authored off-plan note body (TEXT sentinel row). */
+  noteText: string | null;
   /** Athlete added this outside the plan. */
   offPlan: boolean;
+}
+
+/** One display-ready metric chip on a session card. Value is formatted
+ *  (comma decimals, unit); null = metric activated but not entered. */
+export interface SessionMetricChip {
+  key: string;
+  label: string;
+  value: string | null;
 }
 
 export interface ReviewSessionItem {
@@ -74,6 +96,8 @@ export interface ReviewSessionItem {
   timestamp: string;
   athleteId: string;
   session: TrainingLogSession;
+  /** Metrics activated for this athlete/week (RAW, BW, VAS, customs). */
+  metrics: SessionMetricChip[];
   exercises: SessionReviewExercise[];
 }
 
@@ -170,6 +194,51 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
           return (data ?? []) as TrainingLogExercise[];
         })();
 
+  // The performed sets behind those exercises (paged: 40 sessions of set
+  // rows can exceed the 1000-row PostgREST cap), plus the metric config
+  // and custom-metric definitions that decide which metrics to surface.
+  const sessionAthleteIds = [...new Set(sessionRows.map(s => s.athlete_id))];
+  const [setRows, metricConfigs, metricDefs] = await Promise.all([
+    fetchByIds<TrainingLogSet>(sessionExs.map(ex => ex.id), (chunk, from, to) =>
+      supabase
+        .from('training_log_sets')
+        .select('*')
+        .in('log_exercise_id', chunk)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    (async () => {
+      if (sessionAthleteIds.length === 0) return [] as AthleteWeekMetricsConfig[];
+      const { data, error } = await supabase
+        .from('athlete_week_metrics_config')
+        .select('*')
+        .in('athlete_id', sessionAthleteIds)
+        .in('week_start', [...new Set(sessionRows.map(s => s.week_start))]);
+      if (error) throw error;
+      return (data ?? []) as AthleteWeekMetricsConfig[];
+    })(),
+    (async () => {
+      if (sessionAthleteIds.length === 0) return [] as AthleteMetricDefinition[];
+      const { data, error } = await supabase
+        .from('athlete_metric_definitions')
+        .select('*')
+        .in('athlete_id', sessionAthleteIds);
+      if (error) throw error;
+      return (data ?? []) as AthleteMetricDefinition[];
+    })(),
+  ]);
+  const setsByLogEx = new Map<string, TrainingLogSet[]>();
+  for (const s of setRows) {
+    const list = setsByLogEx.get(s.log_exercise_id) ?? [];
+    list.push(s);
+    setsByLogEx.set(s.log_exercise_id, list);
+  }
+  for (const list of setsByLogEx.values()) list.sort((a, b) => a.set_number - b.set_number);
+  const configByAthleteWeek = new Map(
+    metricConfigs.map(c => [`${c.athlete_id}|${c.week_start}`, c]),
+  );
+  const defById = new Map(metricDefs.map(d => [d.id, d]));
+
   // Dates for sessions referenced by videos/messages but not in the review set.
   const extraSessionIds = new Set<string>();
   for (const le of videoLogExs) extraSessionIds.add(le.session_id);
@@ -261,20 +330,187 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       timestamp: s.completed_at ?? `${s.date}T23:59:59Z`,
       athleteId: s.athlete_id,
       session: s,
-      exercises: (exsBySession.get(s.id) ?? []).map(ex => ({
-        id: ex.id,
-        name:
-          (ex.exercise_id && exerciseNameById.get(ex.exercise_id)) ||
-          (ex.metadata?.text ? 'Note' : 'Exercise'),
-        status: ex.status,
-        performedRaw: ex.performed_raw,
-        performedNotes: ex.performed_notes,
-        offPlan: ex.planned_exercise_id == null,
-      })),
+      metrics: buildSessionMetricChips(
+        s,
+        configByAthleteWeek.get(`${s.athlete_id}|${s.week_start}`) ?? null,
+        defById,
+      ),
+      exercises: (exsBySession.get(s.id) ?? []).map(ex => {
+        const gpp = (ex.metadata?.gpp as GppSection | undefined) ?? null;
+        return {
+          id: ex.id,
+          name:
+            (ex.exercise_id && exerciseNameById.get(ex.exercise_id)) ||
+            (gpp?.title || (ex.metadata?.text ? 'Note' : 'Exercise')),
+          status: ex.status,
+          sets: setsByLogEx.get(ex.id) ?? [],
+          performedRaw: ex.performed_raw,
+          performedNotes: ex.performed_notes,
+          gpp,
+          noteText: ex.metadata?.text ?? null,
+          offPlan: ex.planned_exercise_id == null,
+        };
+      }),
     });
   }
 
   items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  return items;
+}
+
+/** German-locale comma decimals for metric values. */
+function fmtNum(n: number): string {
+  return String(n).replace('.', ',');
+}
+
+/**
+ * Resolve which metrics are activated for this athlete/week and pair them
+ * with the values the athlete entered on this session. No config row falls
+ * back to the product default (RAW + bodyweight on, VAS off) — the same
+ * rule SessionHeader / LogWeekOverview apply.
+ */
+function buildSessionMetricChips(
+  s: TrainingLogSession,
+  config: AthleteWeekMetricsConfig | null,
+  defById: Map<string, AthleteMetricDefinition>,
+): SessionMetricChip[] {
+  const track = config ?? METRIC_TRACKING_DEFAULTS;
+  const chips: SessionMetricChip[] = [];
+
+  if (track.track_raw) {
+    const pillars: [string, number | null][] = [
+      ['Sleep', s.raw_sleep],
+      ['Phys', s.raw_physical],
+      ['Mood', s.raw_mood],
+      ['Nutr', s.raw_nutrition],
+    ];
+    if (pillars.every(([, v]) => v == null)) {
+      // Activated but nothing entered — one quiet chip, not four empty ones.
+      chips.push({ key: 'raw', label: 'RAW', value: null });
+    } else {
+      for (const [label, v] of pillars) {
+        chips.push({ key: `raw:${label}`, label, value: v == null ? null : fmtNum(v) });
+      }
+      const total =
+        s.raw_total ??
+        (pillars.every(([, v]) => v != null)
+          ? pillars.reduce((sum, [, v]) => sum + (v as number), 0)
+          : null);
+      chips.push({ key: 'raw', label: 'RAW', value: total == null ? null : fmtNum(total) });
+    }
+  }
+  if (track.track_bodyweight) {
+    chips.push({
+      key: 'bw',
+      label: 'BW',
+      value: s.bodyweight_kg == null ? null : `${fmtNum(s.bodyweight_kg)} kg`,
+    });
+  }
+  if (track.track_vas) {
+    chips.push({ key: 'vas', label: 'VAS', value: s.vas_score == null ? null : fmtNum(s.vas_score) });
+  }
+
+  for (const id of config?.enabled_custom_metric_ids ?? []) {
+    const def = defById.get(id);
+    if (!def || def.archived_at != null) continue;
+    const entry = s.custom_metrics?.[id];
+    const value =
+      entry == null
+        ? null
+        : entry.value_number != null
+          ? `${fmtNum(entry.value_number)}${def.unit ? ` ${def.unit}` : ''}`
+          : entry.value_text ?? null;
+    chips.push({ key: `custom:${id}`, label: def.label, value });
+  }
+
+  return chips;
+}
+
+// ─── Example cards (demo mode) ─────────────────────────────────────────────
+
+/** Marks a feed item as a non-persisting example card. */
+export const DEMO_KEY_PREFIX = 'demo:';
+
+/**
+ * Example video + question cards for the scroller's "Show examples" mode,
+ * so a coach can see those card types before athletes have produced any.
+ * The question card reuses the athlete's most recent real message thread
+ * (read-only — demo cards never mark or send); the video card plays a CC0
+ * sample clip because no athlete clip exists yet.
+ */
+export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFeedItem[]> {
+  const items: ReviewFeedItem[] = [];
+  const now = new Date().toISOString();
+
+  // Question card: latest real athlete message, plus up to two more from
+  // the same thread for context.
+  let threadAthleteId: string | null = null;
+  if (athleteIds.length > 0) {
+    const { data } = await supabase
+      .from('training_log_messages')
+      .select('*')
+      .eq('sender_type', 'athlete')
+      .in('athlete_id', athleteIds)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const latest = ((data ?? []) as TrainingLogMessage[])[0];
+    if (latest?.athlete_id) {
+      threadAthleteId = latest.athlete_id;
+      let q = supabase
+        .from('training_log_messages')
+        .select('*')
+        .eq('sender_type', 'athlete')
+        .eq('athlete_id', latest.athlete_id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+      q = latest.session_id ? q.eq('session_id', latest.session_id) : q.is('session_id', null);
+      const { data: threadData } = await q;
+      const messages = ((threadData ?? []) as TrainingLogMessage[]).reverse();
+      let sessionDate: string | null = null;
+      if (latest.session_id) {
+        const { data: sess } = await supabase
+          .from('training_log_sessions')
+          .select('date')
+          .eq('id', latest.session_id)
+          .maybeSingle();
+        sessionDate = (sess as { date: string } | null)?.date ?? null;
+      }
+      items.push({
+        kind: 'thread',
+        key: `${DEMO_KEY_PREFIX}thread`,
+        timestamp: latest.created_at,
+        athleteId: latest.athlete_id,
+        sessionId: latest.session_id,
+        sessionDate,
+        messages,
+      });
+    }
+  }
+
+  // Video card: synthetic row around a CC0 sample clip (MDN media library).
+  items.push({
+    kind: 'video',
+    key: `${DEMO_KEY_PREFIX}video`,
+    timestamp: now,
+    athleteId: threadAthleteId ?? athleteIds[0] ?? '',
+    sessionId: null,
+    sessionDate: now.slice(0, 10),
+    exerciseName: 'Snatch',
+    video: {
+      id: 'demo-video',
+      log_exercise_id: 'demo',
+      athlete_id: threadAthleteId ?? athleteIds[0] ?? '',
+      set_number: 3,
+      video_url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+      storage_path: null,
+      description: 'Example clip — a real card plays the video the athlete attached to a set.',
+      uploaded_by: 'athlete',
+      coach_reviewed_at: null,
+      owner_id: null,
+      created_at: now,
+    },
+  });
+
   return items;
 }
 
