@@ -37,6 +37,7 @@ const SystemGuide = lazy(() => import('./components/system/SystemGuide').then(m 
 const ErrorLogViewer = lazy(() => import('./components/system/ErrorLogViewer').then(m => ({ default: m.ErrorLogViewer })));
 const InvitationsPage = lazy(() => import('./components/system/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
 const ClubAdminPage = lazy(() => import('./components/club/ClubAdminPage').then(m => ({ default: m.ClubAdminPage })));
+const ReviewScroller = lazy(() => import('./components/review/ReviewScroller').then(m => ({ default: m.ReviewScroller })));
 
 /** Route-chunk loading state — same minimal spinner the app boot uses. */
 function RouteFallback() {
@@ -68,6 +69,7 @@ const pageTitles: Record<string, string> = {
   '/settings': 'Settings',
   '/prs': 'Personal Records',
   '/inbox': 'Inbox',
+  '/review': 'Review feed',
   '/system/errors': 'Error log',
   '/system/invitations': 'Invitations',
 };
@@ -323,6 +325,7 @@ function CoachApp() {
               <Route path="/analysis" element={<AnalysisModule />} />
               <Route path="/prs" element={<PRPage />} />
               <Route path="/inbox" element={<CoachInbox />} />
+              <Route path="/review" element={<ReviewScroller />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />

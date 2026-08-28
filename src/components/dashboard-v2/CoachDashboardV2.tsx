@@ -24,6 +24,7 @@ import { StatusBoard } from './StatusBoard';
 import { GroupBoard } from './GroupBoard';
 import { ActivityFeedPanel } from './ActivityFeedPanel';
 import { UpcomingEventsPanel } from './UpcomingEventsPanel';
+import { ReviewStatusPanel } from './ReviewStatusPanel';
 import { AthleteInfoDialog } from './AthleteInfoDialog';
 
 type BoardView = 'athletes' | 'groups';
@@ -275,6 +276,7 @@ export function CoachDashboardV2({
           onOpenEvent={setSelectedEvent}
           onJumpToAthlete={jumpToAthlete}
         />
+        <ReviewStatusPanel />
       </div>
 
       {selectedEvent && (
