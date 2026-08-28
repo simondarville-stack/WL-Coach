@@ -19,10 +19,10 @@
  * dragged position as display_order across the target sibling group.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Tree, type NodeRendererProps, type TreeApi } from 'react-arborist';
+import { Tree, type NodeRendererProps, type TreeApi, type DragPreviewProps } from 'react-arborist';
 import {
   ChevronRight, GripVertical, Layers, Lock, Plus, AlertTriangle, ChevronsDownUp, ChevronsUpDown,
-  Pencil, Archive, GitBranchPlus, ArrowRightLeft, GitMerge,
+  Pencil, Archive, GitBranchPlus, ArrowRightLeft, GitMerge, RotateCcw,
 } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
@@ -75,12 +75,19 @@ interface ExTreeNode {
   color: string | null;
   code: string | null;
   categoryName?: string;      // category nodes: the name to assign on drop-in
+  /** The "Unspecified" bucket — a rendering device, not a real category row:
+   *  it can't be reordered and owns no display_order. */
+  isSynthetic?: boolean;
   isCompetition?: boolean;
   unit: string | null;
   prValue: number | null;     // selected athlete's PR, when one is selected
   isDuplicate: boolean;
+  isArchived: boolean;
   libraryLabel: string | null;
   childCount: number;
+  /** Every node beneath this one, all levels — drives the drag preview so a
+   *  coach can see the whole family is coming along. */
+  descendantCount: number;
   children: ExTreeNode[];
 }
 
@@ -89,6 +96,8 @@ interface ExTreeNode {
 export interface TreeContextActions {
   onEdit: (exerciseId: string) => void;
   onArchive: (exerciseId: string) => void;
+  /** Bring an archived exercise back into the catalogue. */
+  onRestore: (exerciseId: string) => void;
   /** Create a new exercise pre-parented to this one (its variation). */
   onAddVariation: (parentExerciseId: string) => void;
   /** Editable club catalogues this exercise could move into (empty for club
@@ -132,6 +141,11 @@ interface ExerciseTreeProps {
   onCreateInCategory?: (categoryName: string) => void;
   /** Right-click menu actions on exercise rows. */
   contextActions?: TreeContextActions;
+  /** False for categories in read-only catalogues — they don't drag. */
+  canEditCategory?: (categoryId: string) => boolean;
+  /** Persist a category reorder (real category ids, in the new order).
+   *  Omitted = categories stay fixed buckets. */
+  onReorderCategories?: (orderedCategoryIds: string[]) => void;
 }
 
 function isProtectedCategory(name: string): boolean {
@@ -148,7 +162,7 @@ const byOrder = (a: Exercise, b: Exercise) =>
 export function ExerciseTree({
   exercises, categories, selectedExerciseId, onSelectExercise, onMoveExercise, searchTerm,
   canEditExercise, clubLibraryIds, athletePRMap, duplicateNames, libraryBadge, onCreateInCategory,
-  contextActions,
+  contextActions, canEditCategory, onReorderCategories,
 }: ExerciseTreeProps) {
   const parentIndex = useMemo(() => buildParentIndex(exercises), [exercises]);
   const treeRef = useRef<TreeApi<ExTreeNode> | null>(null);
@@ -206,15 +220,18 @@ export function ExerciseTree({
     }
     const buildEx = (ex: Exercise): ExTreeNode => {
       const kids = (childrenByParent.get(ex.id) ?? []).slice().sort(byOrder);
+      const children = kids.map(buildEx);
       return {
         id: ex.id, kind: 'exercise', name: ex.name, color: ex.color, code: ex.exercise_code,
         isCompetition: ex.is_competition_lift,
         unit: UNIT_LABELS[ex.default_unit as string] ?? (ex.default_unit as string) ?? null,
         prValue: athletePRMap?.get(ex.id)?.pr_value_kg ?? null,
         isDuplicate: duplicateNames?.has(ex.name.toLowerCase()) ?? false,
+        isArchived: ex.is_archived,
         libraryLabel: libraryBadge?.(ex) ?? null,
         childCount: kids.length,
-        children: kids.map(buildEx),
+        descendantCount: children.reduce((n, c) => n + 1 + c.descendantCount, 0),
+        children,
       };
     };
 
@@ -238,11 +255,18 @@ export function ExerciseTree({
       }
     }
 
-    const catNode = (id: string, name: string, color: string | null, rs: Exercise[]): ExTreeNode => ({
-      id: `cat:${id}`, kind: 'category', name, color, code: null, categoryName: name,
-      unit: null, prValue: null, isDuplicate: false, libraryLabel: null,
-      childCount: rs.length, children: rs.slice().sort(byOrder).map(buildEx),
-    });
+    const catNode = (
+      id: string, name: string, color: string | null, rs: Exercise[], isSynthetic = false,
+    ): ExTreeNode => {
+      const children = rs.slice().sort(byOrder).map(buildEx);
+      return {
+        id: `cat:${id}`, kind: 'category', name, color, code: null, categoryName: name, isSynthetic,
+        unit: null, prValue: null, isDuplicate: false, isArchived: false, libraryLabel: null,
+        childCount: rs.length,
+        descendantCount: children.reduce((n, c) => n + 1 + c.descendantCount, 0),
+        children,
+      };
+    };
 
     const visibleCategories = categories
       .filter(c => !isProtectedCategory(c.name))
@@ -251,7 +275,7 @@ export function ExerciseTree({
     return [
       ...visibleCategories.map(c => catNode(c.id, c.name, c.color, rootsByCat.get(c.name) ?? [])),
       ...(unspecified.length
-        ? [catNode('__unspecified__', 'Unspecified', 'var(--color-gray-400)', unspecified)]
+        ? [catNode('__unspecified__', 'Unspecified', 'var(--color-gray-400)', unspecified, true)]
         : []),
     ];
   }, [exercises, categories, athletePRMap, duplicateNames, libraryBadge]);
@@ -283,6 +307,8 @@ export function ExerciseTree({
     const d = node.data;
     const isCat = d.kind === 'category';
     const selected = !isCat && d.id === selectedExerciseId;
+    const catDraggable = isCat && !d.isSynthetic && !!onReorderCategories
+      && (canEditCategory ? canEditCategory(d.id.slice(4)) : true);
     return (
       <div
         ref={dragHandle}
@@ -292,7 +318,11 @@ export function ExerciseTree({
           display: 'flex', alignItems: 'center', gap: 6, paddingRight: 10,
           background: selected ? 'var(--color-bg-secondary)' : 'transparent',
           borderLeft: selected ? '2px solid var(--color-accent)' : '2px solid transparent',
-          cursor: isCat ? 'default' : 'grab', userSelect: 'none',
+          cursor: isCat ? (catDraggable ? 'grab' : 'default') : d.isArchived ? 'default' : 'grab',
+          userSelect: 'none',
+          // Archived rows stay in place, dimmed — so "where did it go?" has a
+          // visible answer and Restore is one right-click away.
+          opacity: d.isArchived ? 0.45 : 1,
           fontSize: 'var(--text-label)',
         }}
         onClick={() => {
@@ -324,6 +354,13 @@ export function ExerciseTree({
             <ColorDot color={d.color || 'var(--color-gray-400)'} size={8} />
             <span style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>{d.name}</span>
             <span style={countBadge}>{d.childCount}</span>
+            {catDraggable && (
+              <GripVertical
+                size={11}
+                className="opacity-0 group-hover:opacity-100"
+                style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, transition: 'opacity 100ms ease-out' }}
+              />
+            )}
             {onCreateInCategory && d.categoryName !== 'Unspecified' && (
               <button
                 type="button"
@@ -351,6 +388,18 @@ export function ExerciseTree({
               {d.name}
             </span>
             {d.isCompetition && <Badge variant="danger">COMP</Badge>}
+            {d.isArchived && (
+              <span
+                title="Archived — hidden from planning until restored"
+                style={{
+                  fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)',
+                  border: '0.5px solid var(--color-border-tertiary)', borderRadius: 999,
+                  padding: '0 5px', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
+              >
+                archived
+              </span>
+            )}
             {d.libraryLabel && <LibraryChip label={d.libraryLabel} />}
             {d.isDuplicate && (
               <span title="Duplicate exercise name" style={{ display: 'inline-flex', flexShrink: 0 }}>
@@ -375,7 +424,11 @@ export function ExerciseTree({
                 {d.unit}
               </span>
             )}
-            {canEditExercise && !canEditExercise(d.id) ? (
+            {d.isArchived ? (
+              <span title="Archived" style={{ display: 'flex', flexShrink: 0 }}>
+                <Archive size={10} style={{ color: 'var(--color-text-tertiary)' }} />
+              </span>
+            ) : canEditExercise && !canEditExercise(d.id) ? (
               <span title="Read-only — shared catalogue" style={{ display: 'flex', flexShrink: 0 }}>
                 <Lock size={10} style={{ color: 'var(--color-text-tertiary)', opacity: 0.7 }} />
               </span>
@@ -384,6 +437,47 @@ export function ExerciseTree({
             )}
           </>
         )}
+      </div>
+    );
+  }
+
+  /** Drag preview: a pill following the cursor that names what is moving and,
+   *  for a parent, how many variations travel with it — the subtree moves as
+   *  one family (edges are child→parent), which a single-row ghost hides. */
+  function DragPreview({ offset, mouse, id, isDragging }: DragPreviewProps) {
+    if (!isDragging || !offset || !mouse || !id) return null;
+    const node = treeRef.current?.get(id);
+    if (!node) return null;
+    const d = node.data;
+    const isCat = d.kind === 'category';
+    const carried = isCat ? d.childCount : d.descendantCount;
+    return (
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 200 }}>
+        <div
+          style={{
+            position: 'absolute', left: 0, top: 0,
+            transform: `translate(${mouse.x + 14}px, ${mouse.y + 10}px)`,
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'var(--color-bg-primary)',
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.16)',
+            padding: '3px 9px', fontSize: 'var(--text-caption)',
+            color: 'var(--color-text-primary)', whiteSpace: 'nowrap', maxWidth: 280,
+          }}
+        >
+          {isCat
+            ? <Layers size={11} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+            : <ColorDot color={d.color || 'var(--color-gray-400)'} size={6} />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+          {carried > 0 && (
+            <span style={{ color: 'var(--color-text-tertiary)' }}>
+              +{carried} {isCat
+                ? (carried === 1 ? 'exercise' : 'exercises')
+                : (carried === 1 ? 'variation' : 'variations')}
+            </span>
+          )}
+        </div>
       </div>
     );
   }
@@ -433,27 +527,54 @@ export function ExerciseTree({
               return node.data.name.toLowerCase().includes(q) || (node.data.code?.toLowerCase().includes(q) ?? false);
             }}
             disableMultiSelection
-            // Only exercises drag; categories are fixed top-level buckets.
-            // Rows in read-only catalogues (viewer role) don't drag either.
-            disableDrag={(d) => d.kind === 'category' || (canEditExercise ? !canEditExercise(d.id) : false)}
-            // Reject: dropping at the very top (exercises must live under a
-            // category), dropping onto your own descendant (cycle), and
-            // parenting a club exercise outside its own catalogue.
+            // Exercises drag to reparent; real categories drag to reorder.
+            // Rows in read-only catalogues (viewer role) and archived rows
+            // don't drag at all.
+            disableDrag={(d) => {
+              if (d.kind === 'category') {
+                return d.isSynthetic || !onReorderCategories
+                  || (canEditCategory ? !canEditCategory(d.id.slice(4)) : false);
+              }
+              return d.isArchived || (canEditExercise ? !canEditExercise(d.id) : false);
+            }}
+            // NB: for a top-level drop react-arborist passes the tree ROOT as
+            // parentNode (never null), so the root case must be checked
+            // explicitly — categories may land there, exercises may not.
             disableDrop={({ parentNode, dragNodes }) => {
-              if (!parentNode) return true;
+              const drag = dragNodes[0];
+              if (!parentNode || !drag) return true;
+              if (drag.data.kind === 'category') return !parentNode.isRoot;
+              if (parentNode.isRoot) return true;       // exercises live under a category
               if (parentNode.data.kind === 'category') return false;
-              const dragId = dragNodes[0]?.id;
-              if (!dragId) return false;
-              return wouldCreateCycle(dragId, parentNode.id, parentIndex)
-                || crossLibraryParent(dragId, parentNode.id);
+              return wouldCreateCycle(drag.id, parentNode.id, parentIndex)
+                || crossLibraryParent(drag.id, parentNode.id);
             }}
             onMove={({ dragIds, parentNode, index }) => {
               const dragId = dragIds[0];
               if (!dragId || !parentNode) return;
+
+              // Category reorder: rewrite display_order across the real
+              // categories in their new top-level order (the synthetic
+              // "Unspecified" bucket is not a row and never participates).
+              const dragged = treeRef.current?.get(dragId);
+              if (dragged?.data.kind === 'category') {
+                if (!onReorderCategories || !parentNode.isRoot) return;
+                const ids = data
+                  .filter(n => !n.isSynthetic)
+                  .map(n => n.id)
+                  .filter(id => id !== dragId);
+                const at = Math.max(0, Math.min(index ?? ids.length, ids.length));
+                ids.splice(at, 0, dragId);
+                onReorderCategories(ids.map(id => id.slice(4)));
+                return;
+              }
+
               const p = parentNode.data;
               let newParentId: string | null;
               let category: string | undefined;
-              if (p.kind === 'category') {
+              if (parentNode.isRoot) {
+                return; // exercises must live under a category
+              } else if (p.kind === 'category') {
                 newParentId = null;
                 category = p.categoryName;
               } else if (
@@ -472,6 +593,7 @@ export function ExerciseTree({
               siblings.splice(at, 0, dragId);
               onMoveExercise(dragId, newParentId, category, siblings);
             }}
+            renderDragPreview={DragPreview}
           >
             {Node}
           </Tree>
@@ -484,6 +606,7 @@ export function ExerciseTree({
         const targets = contextActions.moveTargetsFor(menu.id);
         const hasDup = contextActions.hasDuplicate(menu.id);
         const menuId = menu.id;
+        const isArchivedRow = treeRef.current?.get(menuId)?.data.isArchived ?? false;
         const itemStyle: React.CSSProperties = {
           display: 'flex', alignItems: 'center', gap: 8, width: '100%',
           padding: '5px 10px', fontSize: 'var(--text-label)', fontFamily: 'var(--font-sans)',
@@ -532,31 +655,41 @@ export function ExerciseTree({
             {canEdit && (
               <MenuItem icon={<Pencil size={12} />} label="Edit…" onAct={() => contextActions.onEdit(menuId)} />
             )}
-            <MenuItem
-              icon={<GitBranchPlus size={12} />}
-              label="Add variation…"
-              onAct={() => contextActions.onAddVariation(menuId)}
-            />
-            {(targets.length > 0 || hasDup) && divider}
-            {targets.map(t => (
-              <MenuItem
-                key={t.id}
-                icon={<ArrowRightLeft size={12} />}
-                label={`Move to "${t.name}"…`}
-                onAct={() => contextActions.onMoveToLibrary(menuId, t.id, t.name)}
-              />
-            ))}
-            {hasDup && (
-              <MenuItem
-                icon={<GitMerge size={12} />}
-                label="Review duplicate…"
-                onAct={() => contextActions.onReviewDuplicate()}
-              />
-            )}
-            {canEdit && (
+            {/* An archived row is out of circulation: restore it before
+                hanging variations off it or promoting it to a club. */}
+            {isArchivedRow ? (
+              canEdit && (
+                <MenuItem icon={<RotateCcw size={12} />} label="Restore" onAct={() => contextActions.onRestore(menuId)} />
+              )
+            ) : (
               <>
-                {divider}
-                <MenuItem icon={<Archive size={12} />} label="Archive" danger onAct={() => contextActions.onArchive(menuId)} />
+                <MenuItem
+                  icon={<GitBranchPlus size={12} />}
+                  label="Add variation…"
+                  onAct={() => contextActions.onAddVariation(menuId)}
+                />
+                {(targets.length > 0 || hasDup) && divider}
+                {targets.map(t => (
+                  <MenuItem
+                    key={t.id}
+                    icon={<ArrowRightLeft size={12} />}
+                    label={`Move to "${t.name}"…`}
+                    onAct={() => contextActions.onMoveToLibrary(menuId, t.id, t.name)}
+                  />
+                ))}
+                {hasDup && (
+                  <MenuItem
+                    icon={<GitMerge size={12} />}
+                    label="Review duplicate…"
+                    onAct={() => contextActions.onReviewDuplicate()}
+                  />
+                )}
+                {canEdit && (
+                  <>
+                    {divider}
+                    <MenuItem icon={<Archive size={12} />} label="Archive" danger onAct={() => contextActions.onArchive(menuId)} />
+                  </>
+                )}
               </>
             )}
           </div>

@@ -7,7 +7,7 @@ import { useCoachStore } from '../../store/coachStore';
 import { useAthletes } from '../../hooks/useAthletes';
 import {
   resolveLibraryScope, invalidateLibraryScope, canEditCatalogueRow, libraryLabelFor,
-  type CoachLibraryScope,
+  catalogueOrFilter, type CoachLibraryScope,
 } from '../../lib/libraryScope';
 import { CatalogueSharingModal } from './CatalogueSharingModal';
 import { DuplicatesPanel, type DuplicatePair } from './DuplicatesPanel';
@@ -31,9 +31,9 @@ export function ExerciseLibrary() {
   const invalidateExerciseCache = useExerciseStore(s => s.invalidate);
 
   const {
-    exercises, categories, setExercises,
+    exercises, categories, setExercises, setCategories,
     fetchExercises, fetchCategories,
-    createExercise, updateExercise, bulkReorderExercises,
+    createExercise, updateExercise, restoreExercise, bulkReorderExercises,
     createCategory, updateCategory, deleteCategory,
     bulkReorderCategories,
   } = useExercises();
@@ -51,6 +51,10 @@ export function ExerciseLibrary() {
   const [showSharing, setShowSharing] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [athletePRMap, setAthletePRMap] = useState<Map<string, { pr_value_kg: number | null; pr_date: string | null }>>(new Map());
+  // Archived rows are kept out of the main store (everything downstream
+  // assumes it holds only active exercises) and merged in for display only.
+  const [archivedExercises, setArchivedExercises] = useState<Exercise[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Which catalogues the active coach can see/edit — drives the read-only
   // gating (viewer role on a shared club catalogue) and the library badges.
@@ -64,6 +68,27 @@ export function ExerciseLibrary() {
   useEffect(() => { fetchExercises(); fetchCategories(); fetchAllAthletes(); }, []);
   useEffect(() => { loadPRs(); }, [selectedAthlete?.id]);
 
+  // Archived rows in the coach's visible catalogues. Loaded regardless of the
+  // toggle so the toolbar can show the count (they are few by nature).
+  const loadArchived = useCallback(async () => {
+    const { data } = await supabase
+      .from('exercises')
+      .select('*')
+      .or(await catalogueOrFilter(activeCoachId))
+      .eq('is_archived', true)
+      .neq('category', '— System')
+      .order('name');
+    setArchivedExercises((data ?? []) as Exercise[]);
+  }, [activeCoachId]);
+  useEffect(() => { void loadArchived(); }, [loadArchived]);
+
+  /** Active rows, plus archived ones when the coach asks to see them. */
+  const visibleExercises = useMemo(() => {
+    if (!showArchived || archivedExercises.length === 0) return exercises;
+    const seen = new Set(exercises.map(e => e.id));
+    return [...exercises, ...archivedExercises.filter(a => !seen.has(a.id))];
+  }, [exercises, archivedExercises, showArchived]);
+
   // Optimistic default while the scope resolves: everything editable (the
   // write guards in useExercises are authoritative anyway).
   const canEdit = useCallback(
@@ -74,6 +99,11 @@ export function ExerciseLibrary() {
     () => new Set((scope?.clubs ?? []).map(c => c.libraryId)),
     [scope],
   );
+  const canEditCategoryById = useCallback((categoryId: string) => {
+    const cat = categories.find(c => c.id === categoryId);
+    if (!cat) return false;
+    return scope ? canEditCatalogueRow(scope, cat) : true;
+  }, [categories, scope]);
   const libraryOptions = useMemo(() => {
     if (!scope?.available || !scope.personalLibraryId) return undefined;
     return [
@@ -103,7 +133,7 @@ export function ExerciseLibrary() {
   // pure catalogue view and every mutation goes through the guarded hooks.
   const treeContextActions = useMemo(() => ({
     onEdit: (id: string) => {
-      const ex = exercises.find(e => e.id === id);
+      const ex = visibleExercises.find(e => e.id === id);
       if (!ex) return;
       setEditingExercise(ex);
       setCreateInCategory(null);
@@ -111,6 +141,7 @@ export function ExerciseLibrary() {
       setShowCreateModal(true);
     },
     onArchive: (id: string) => { void handleArchive(id); },
+    onRestore: (id: string) => { void handleRestore(id); },
     onAddVariation: (parentId: string) => {
       const parent = exercises.find(e => e.id === parentId);
       setEditingExercise(null);
@@ -144,7 +175,7 @@ export function ExerciseLibrary() {
     hasDuplicate: (id: string) => duplicatePairsRef.current.some(p => p.personal.id === id),
     onReviewDuplicate: () => setShowDuplicates(true),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [exercises, scope]);
+  }), [exercises, visibleExercises, scope]);
 
   const duplicatePairs = useMemo<DuplicatePair[]>(() => {
     if (!scope?.available || !scope.personalLibraryId || scope.clubs.length === 0) return [];
@@ -186,7 +217,9 @@ export function ExerciseLibrary() {
   }
   const duplicateNames = new Set([...nameCounts.entries()].filter(([, n]) => n > 1).map(([k]) => k));
 
-  const selectedExercise = exercises.find(e => e.id === selectedExerciseId) ?? null;
+  // Lookups span archived rows too, so selecting one (or right-clicking it)
+  // works while "show archived" is on.
+  const selectedExercise = visibleExercises.find(e => e.id === selectedExerciseId) ?? null;
   const selectedCategory = selectedExercise
     ? categories.find(c => c.name === (selectedExercise.category as unknown as string)) ?? null
     : null;
@@ -248,8 +281,35 @@ export function ExerciseLibrary() {
 
   const handleArchive = async (exerciseId: string) => {
     await updateExercise(exerciseId, { is_archived: true } as Partial<Exercise>);
-    await fetchExercises();
+    // Drop the row from the store directly: fetchExercises() short-circuits
+    // on a warm cache, so without this the archived row lingers in the tree.
+    setExercises(exercises.filter(e => e.id !== exerciseId));
     if (selectedExerciseId === exerciseId) setSelectedExerciseId(null);
+    await loadArchived();
+  };
+
+  const handleRestore = async (exerciseId: string) => {
+    await restoreExercise(exerciseId);
+    setArchivedExercises(prev => prev.filter(e => e.id !== exerciseId));
+    invalidateExerciseCache();
+    await Promise.all([fetchExercises(), loadArchived()]);
+  };
+
+  /** Category reorder dragged in the tree — optimistic, revert on failure.
+   *  Writes are scoped to editable libraries inside bulkReorderCategories. */
+  const handleReorderCategoriesFromTree = async (orderedIds: string[]) => {
+    const snapshot = categories;
+    const orderMap = new Map(orderedIds.map((id, i) => [id, i] as const));
+    setCategories(
+      categories
+        .map(c => (orderMap.has(c.id) ? { ...c, display_order: orderMap.get(c.id)! } : c))
+        .sort((a, b) => a.display_order - b.display_order),
+    );
+    try {
+      await bulkReorderCategories(orderedIds);
+    } catch {
+      setCategories(snapshot);
+    }
   };
 
   const handleCatRename = async (id: string, name: string) => {
@@ -291,7 +351,7 @@ export function ExerciseLibrary() {
   return (
     <>
       <ExerciseListPanel
-        exercises={exercises}
+        exercises={visibleExercises}
         categories={categories}
         athletePRMap={athletePRMap}
         duplicateNames={duplicateNames}
@@ -310,13 +370,18 @@ export function ExerciseLibrary() {
         onOpenSharing={() => setShowSharing(true)}
         libraryBadge={ex => (scope ? libraryLabelFor(scope, ex) : null)}
         canEditExercise={id => {
-          const ex = exercises.find(e => e.id === id);
+          const ex = visibleExercises.find(e => e.id === id);
           return ex ? canEdit(ex) : true;
         }}
         clubLibraryIds={clubLibraryIds}
         duplicatesCount={duplicatePairs.length}
         onOpenDuplicates={() => setShowDuplicates(true)}
         contextActions={treeContextActions}
+        showArchived={showArchived}
+        onToggleArchived={setShowArchived}
+        archivedCount={archivedExercises.length}
+        canEditCategory={canEditCategoryById}
+        onReorderCategories={handleReorderCategoriesFromTree}
       />
 
       {/* Detail panel — fixed right-edge sidebar */}

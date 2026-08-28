@@ -13,7 +13,7 @@
  */
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
-  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2,
+  Search, Plus, Upload, Layers, X as XIcon, AlertTriangle, SlidersHorizontal, Share2, Archive,
 } from 'lucide-react';
 import type { Exercise } from '../../lib/database.types';
 import type { Category } from '../../hooks/useExercises';
@@ -301,6 +301,14 @@ interface ExerciseListPanelProps {
   onOpenDuplicates?: () => void;
   /** Right-click menu actions on tree rows. */
   contextActions?: TreeContextActions;
+  /** Archived rows are rendered dimmed in place when on. */
+  showArchived?: boolean;
+  onToggleArchived?: (next: boolean) => void;
+  archivedCount?: number;
+  /** False for categories in read-only catalogues — they don't drag. */
+  canEditCategory?: (categoryId: string) => boolean;
+  /** Persist a category reorder from the tree. */
+  onReorderCategories?: (orderedCategoryIds: string[]) => void;
 }
 
 export function ExerciseListPanel({
@@ -322,6 +330,11 @@ export function ExerciseListPanel({
   duplicatesCount = 0,
   onOpenDuplicates,
   contextActions,
+  showArchived = false,
+  onToggleArchived,
+  archivedCount = 0,
+  canEditCategory,
+  onReorderCategories,
 }: ExerciseListPanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ExerciseFilters>(EMPTY_FILTERS);
@@ -451,6 +464,28 @@ export function ExerciseListPanel({
           </button>
         )}
 
+        {/* Archived rows — shown dimmed in place, so a coach can find and
+            restore what was archived (incl. rows a duplicate-merge archived). */}
+        {onToggleArchived && (archivedCount > 0 || showArchived) && (
+          <button
+            type="button"
+            onClick={() => onToggleArchived(!showArchived)}
+            title={showArchived ? 'Hide archived exercises' : 'Show archived exercises in place, dimmed'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px',
+              fontSize: 'var(--text-caption)', fontFamily: 'var(--font-sans)',
+              background: showArchived ? 'var(--color-text-primary)' : 'var(--color-bg-secondary)',
+              color: showArchived ? 'var(--color-bg-primary)' : 'var(--color-text-secondary)',
+              border: '0.5px solid',
+              borderColor: showArchived ? 'var(--color-text-primary)' : 'var(--color-border-secondary)',
+              borderRadius: 'var(--radius-md)', cursor: 'pointer',
+            }}
+          >
+            <Archive size={12} />
+            {archivedCount > 0 ? `${archivedCount} archived` : 'Archived'}
+          </button>
+        )}
+
         <Button variant="secondary" size="sm" icon={<Share2 size={12} />} onClick={onOpenSharing}>
           Sharing
         </Button>
@@ -493,6 +528,8 @@ export function ExerciseListPanel({
           libraryBadge={libraryBadge}
           onCreateInCategory={name => onCreateExercise(name)}
           contextActions={contextActions}
+          canEditCategory={canEditCategory}
+          onReorderCategories={onReorderCategories}
         />
       </div>
     </StandardPage>
