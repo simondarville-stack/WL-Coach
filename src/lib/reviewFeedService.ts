@@ -164,12 +164,44 @@ export interface FetchReviewFeedArgs {
   ownerId: string;
   /** Athletes visible to this coach — scopes every query. */
   athleteIds: string[];
-  /** The window all three sources look back over. */
+  /** The window all three sources look back over. Ignored when an explicit
+   *  windowFromIso is given (history paging). */
   lookbackDays: number;
   /** 'queue' (default): what THIS coach has not reviewed, oldest first.
    *  'history': what they HAVE reviewed, newest first — the feed's
    *  keep-scrolling-past-"all caught up" mode. */
   mode?: 'queue' | 'history';
+  /** Explicit window start, overriding lookbackDays. History paging walks
+   *  backwards in fixed chunks with these. */
+  windowFromIso?: string;
+  /** Exclusive window end. Omit for "up to now". */
+  windowToIso?: string;
+}
+
+/** How far back one history page reaches, in days. Deeper scrollback pages
+ *  in these chunks rather than fetching everything at once. */
+export const REVIEW_HISTORY_PAGE_DAYS = 30;
+
+/**
+ * The window for one history page. Page 0 is the current lookback window
+ * (up to now); each later page reaches another REVIEW_HISTORY_PAGE_DAYS
+ * further back and ends exactly where the previous one started, so pages
+ * tile the timeline without gaps or overlap.
+ */
+export function historyPageWindow(
+  lookbackDays: number,
+  pageIndex: number,
+  nowMs: number = Date.now(),
+): { windowFromIso: string; windowToIso?: string } {
+  const fromDays = lookbackDays + pageIndex * REVIEW_HISTORY_PAGE_DAYS;
+  const toDays =
+    pageIndex === 0 ? 0 : lookbackDays + (pageIndex - 1) * REVIEW_HISTORY_PAGE_DAYS;
+  return {
+    windowFromIso: new Date(nowMs - fromDays * 86_400_000).toISOString(),
+    ...(toDays === 0
+      ? {}
+      : { windowToIso: new Date(nowMs - toDays * 86_400_000).toISOString() }),
+  };
 }
 
 interface SessionStub {
@@ -198,41 +230,49 @@ async function fetchSeenKeySet(ownerId: string, sinceIso: string): Promise<Set<s
 export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
   const { ownerId, athleteIds, lookbackDays, mode = 'queue' } = args;
   if (athleteIds.length === 0) return [];
-  const sinceDate = lookbackSinceDate(lookbackDays);
-  const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
+  // An item cannot be seen before it exists, so bounding the seen lookup by
+  // the window start is safe for every page — including deep history pages.
+  const sinceIso =
+    args.windowFromIso ?? new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
+  const sinceDate = sinceIso.slice(0, 10);
+  const untilIso = args.windowToIso ?? null;
+  const untilDate = untilIso?.slice(0, 10) ?? null;
 
   // The three sources + this coach's seen set are independent — concurrent.
   const [videoRowsAll, messageRows, sessionRowsAll, seen] = await Promise.all([
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_videos')
         .select('*')
         .eq('uploaded_by', 'athlete')
         .in('athlete_id', athleteIds)
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: true });
+        .gte('created_at', sinceIso);
+      if (untilIso) q = q.lt('created_at', untilIso);
+      const { data, error } = await q.order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogVideo[];
     })(),
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_messages')
         .select('*')
         .eq('sender_type', 'athlete')
         .in('athlete_id', athleteIds)
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: true });
+        .gte('created_at', sinceIso);
+      if (untilIso) q = q.lt('created_at', untilIso);
+      const { data, error } = await q.order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogMessage[];
     })(),
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_sessions')
         .select('*')
         .eq('status', 'completed')
         .in('athlete_id', athleteIds)
-        .gte('date', sinceDate)
-        .order('date', { ascending: true });
+        .gte('date', sinceDate);
+      if (untilDate) q = q.lt('date', untilDate);
+      const { data, error } = await q.order('date', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogSession[];
     })(),

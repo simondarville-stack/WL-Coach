@@ -527,6 +527,7 @@ export function EndCard({
   total,
   historyStatus,
   historyCount,
+  historyComplete,
   onBackToTop,
 }: {
   total: number;
@@ -534,6 +535,8 @@ export function EndCard({
    *  ready (cards below), or empty (nothing reviewed in the window). */
   historyStatus: 'idle' | 'loading' | 'ready' | 'empty';
   historyCount: number;
+  /** No deeper pages left — history below is everything there is. */
+  historyComplete: boolean;
   onBackToTop: () => void;
 }) {
   return (
@@ -553,7 +556,8 @@ export function EndCard({
         ) : historyStatus === 'ready' ? (
           <>
             <span>
-              Keep scrolling for history — {historyCount} reviewed item
+              Keep scrolling for history — {historyCount}
+              {historyComplete ? '' : '+'} reviewed item
               {historyCount === 1 ? '' : 's'}, newest first.
             </span>
             <ChevronDown size={16} className="text-white/40 animate-bounce" />

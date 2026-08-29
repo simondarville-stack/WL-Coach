@@ -29,6 +29,7 @@ import {
   DEMO_KEY_PREFIX,
   fetchExampleCards,
   fetchReviewFeed,
+  historyPageWindow,
   markReviewItemSeen,
   markSessionReviewed,
   REVIEW_SESSION_LOOKBACK_DAYS,
@@ -48,6 +49,10 @@ import { EndCard, QUICK_REACTIONS, SessionCard, ThreadCard, VideoCard } from './
 const SEEN_DWELL_MS = 700;
 /** Session cards look this far back. COACH-CONFIG candidate. */
 const LOOKBACK_OPTIONS = [7, 14, 30] as const;
+/** Backstop on scrollback depth: 12 chunks ≈ a year of history. */
+const MAX_HISTORY_PAGES = 12;
+/** Load the next chunk once the coach is this close to the last card. */
+const HISTORY_PREFETCH_MARGIN = 3;
 
 export function ReviewScroller() {
   const ownerId = getOwnerId();
@@ -66,10 +71,13 @@ export function ReviewScroller() {
    *  never mark anything and their composers don't hit the database. */
   const [demoItems, setDemoItems] = useState<ReviewFeedItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  /** Already-reviewed items rendered past the end card, newest first.
-   *  null = not loaded yet (fetched lazily when the coach reaches the end). */
-  const [historyItems, setHistoryItems] = useState<ReviewFeedItem[] | null>(null);
+  /** Already-reviewed items past the end card, newest first, in pages that
+   *  walk backwards in REVIEW_HISTORY_PAGE_DAYS chunks. Empty array = not
+   *  loaded yet; each entry is one page. */
+  const [historyPages, setHistoryPages] = useState<ReviewFeedItem[][]>([]);
+  const [historyStarted, setHistoryStarted] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyExhausted, setHistoryExhausted] = useState(false);
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   /** Quick reactions sent via the keyboard, per card key — the cards render
@@ -85,6 +93,7 @@ export function ReviewScroller() {
     () => (items == null ? null : [...(demoItems ?? []), ...items]),
     [items, demoItems],
   );
+  const historyItems = useMemo(() => historyPages.flat(), [historyPages]);
   const itemsRef = useRef<ReviewFeedItem[] | null>(null);
   itemsRef.current = displayItems;
   const historyRef = useRef<ReviewFeedItem[] | null>(null);
@@ -113,7 +122,12 @@ export function ReviewScroller() {
   // ── Load (snapshot — reviewing a card does not reshuffle the feed) ───────
   const load = useCallback(async () => {
     setItems(null);
-    setHistoryItems(null);
+    historyBusyRef.current = false;
+    emptyPageStreakRef.current = 0;
+    pageCountRef.current = 0;
+    setHistoryPages([]);
+    setHistoryStarted(false);
+    setHistoryExhausted(false);
     setSeen(new Set());
     setLoadError(null);
     try {
@@ -136,38 +150,77 @@ export function ReviewScroller() {
   }, [load]);
 
   // ── History (keep scrolling past "all caught up") ────────────────────────
-  const loadHistory = useCallback(async () => {
-    if (historyRef.current != null) return;
-    setHistoryLoading(prev => {
-      if (prev) return prev;
-      void (async () => {
-        try {
-          const scoped = athleteFilter
-            ? athletes.filter(a => a.id === athleteFilter)
-            : athletes;
-          setHistoryItems(
-            await fetchReviewFeed({
-              ownerId,
-              athleteIds: scoped.map(a => a.id),
-              lookbackDays,
-              mode: 'history',
-            }),
-          );
-        } catch {
-          setHistoryItems([]); // quiet — the queue is the primary content
-        } finally {
-          setHistoryLoading(false);
-        }
-      })();
-      return true;
-    });
+  //
+  // Pages walk backwards in fixed chunks: page 0 is the current window, each
+  // later page another REVIEW_HISTORY_PAGE_DAYS older. Loading is lazy in
+  // both directions — the first page waits until the coach reaches the end
+  // card, deeper pages until they near the bottom of what is rendered.
+  const historyBusyRef = useRef(false);
+  const emptyPageStreakRef = useRef(0);
+  const pageCountRef = useRef(0);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (historyBusyRef.current) return;
+    if (pageCountRef.current >= MAX_HISTORY_PAGES) return;
+    historyBusyRef.current = true;
+    setHistoryStarted(true);
+    setHistoryLoading(true);
+    try {
+      const pageIndex = pageCountRef.current;
+      const scoped = athleteFilter ? athletes.filter(a => a.id === athleteFilter) : athletes;
+      const page = await fetchReviewFeed({
+        ownerId,
+        athleteIds: scoped.map(a => a.id),
+        lookbackDays,
+        mode: 'history',
+        ...historyPageWindow(lookbackDays, pageIndex),
+      });
+      pageCountRef.current = pageIndex + 1;
+      if (page.length === 0) {
+        emptyPageStreakRef.current += 1;
+        // Two consecutive empty chunks = past the end of this coach's
+        // material; stop rather than paging into empty months forever.
+        if (emptyPageStreakRef.current >= 2) setHistoryExhausted(true);
+      } else {
+        emptyPageStreakRef.current = 0;
+        setHistoryPages(prev => [...prev, page]);
+      }
+      if (pageCountRef.current >= MAX_HISTORY_PAGES) setHistoryExhausted(true);
+    } catch {
+      setHistoryExhausted(true); // quiet — the queue is the primary content
+    } finally {
+      setHistoryLoading(false);
+      historyBusyRef.current = false;
+    }
   }, [ownerId, athletes, athleteFilter, lookbackDays]);
 
-  // Fetch lazily the moment the coach reaches the end card, so the queue
-  // load itself stays fast.
+  // Reset paging whenever the feed itself is reloaded or rescoped.
   useEffect(() => {
-    if (activeKey === 'end' && items != null) void loadHistory();
-  }, [activeKey, items, loadHistory]);
+    historyBusyRef.current = false;
+    emptyPageStreakRef.current = 0;
+    pageCountRef.current = 0;
+    setHistoryPages([]);
+    setHistoryStarted(false);
+    setHistoryExhausted(false);
+  }, [ownerId, athleteFilter, lookbackDays]);
+
+  // First page: the moment the coach reaches the end card, so the queue
+  // load itself stays fast. An empty queue starts it immediately — the end
+  // card is then the whole screen and there is nothing to scroll past.
+  useEffect(() => {
+    if (items == null || historyStarted) return;
+    if (activeKey === 'end' || items.length === 0) void loadMoreHistory();
+  }, [activeKey, items, historyStarted, loadMoreHistory]);
+
+  // Deeper pages: when the card in view is within a few of the last one.
+  useEffect(() => {
+    if (!historyStarted || historyExhausted || historyLoading) return;
+    if (!activeKey || historyItems.length === 0) return;
+    const idx = historyItems.findIndex(i => i.key === activeKey);
+    if (idx >= 0 && idx >= historyItems.length - HISTORY_PREFETCH_MARGIN) {
+      void loadMoreHistory();
+    }
+  }, [activeKey, historyItems, historyStarted, historyExhausted, historyLoading, loadMoreHistory]);
 
   // ── Seen marking ─────────────────────────────────────────────────────────
   const markSeen = useCallback(
@@ -507,34 +560,72 @@ export function ReviewScroller() {
         {/* The queue itself, drawn on the edge: one segment per card,
             emerald = reviewed, bright = the card in view. Falls back to a
             continuous bar when the queue is too long to read as segments. */}
-        {items != null && total > 0 && (
+        {items != null && (total > 0 || historyItems.length > 0) && (
           <div
             aria-hidden
-            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-[3px] pointer-events-none"
-            style={{ maxHeight: '70%' }}
+            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex flex-col items-center gap-[3px] pointer-events-none"
+            style={{ maxHeight: '76%' }}
           >
-            {total <= 48 ? (
-              items.map(i => (
-                <div
-                  key={i.key}
-                  className={`w-[3px] rounded-full transition-colors duration-300 ${
-                    seen.has(i.key)
-                      ? 'bg-emerald-500/80'
-                      : activeKey === i.key
-                        ? 'bg-white'
-                        : 'bg-white/20'
-                  }`}
-                  style={{ height: `${Math.max(6, Math.min(22, 320 / total))}px` }}
-                />
-              ))
-            ) : (
-              <div className="w-[3px] h-40 rounded-full bg-white/15 overflow-hidden">
-                <div
-                  className="w-full bg-emerald-500/80 transition-all duration-300"
-                  style={{ height: `${(seenCount / total) * 100}%` }}
-                />
-              </div>
+            {/* The queue: one segment per card, emerald once reviewed. */}
+            {total > 0 &&
+              (total <= 40 ? (
+                items!.map(i => (
+                  <div
+                    key={i.key}
+                    className={`w-[3px] rounded-full transition-colors duration-300 ${
+                      seen.has(i.key)
+                        ? 'bg-emerald-500/80'
+                        : activeKey === i.key
+                          ? 'bg-white'
+                          : 'bg-white/20'
+                    }`}
+                    style={{ height: `${Math.max(6, Math.min(22, 260 / total))}px` }}
+                  />
+                ))
+              ) : (
+                <div className="w-[3px] h-32 rounded-full bg-white/15 overflow-hidden">
+                  <div
+                    className="w-full bg-emerald-500/80 transition-all duration-300"
+                    style={{ height: `${(seenCount / total) * 100}%` }}
+                  />
+                </div>
+              ))}
+            {/* The caught-up line: everything below it is the past. */}
+            {historyItems.length > 0 && (
+              <div
+                className={`w-2 h-px my-0.5 transition-colors ${
+                  activeKey === 'end' ? 'bg-white' : 'bg-white/40'
+                }`}
+              />
             )}
+            {/* History: same grammar, dimmed — you are scrolling back in time. */}
+            {historyItems.length > 0 &&
+              (historyItems.length <= 40 ? (
+                historyItems.map(i => (
+                  <div
+                    key={i.key}
+                    className={`w-[3px] rounded-full transition-colors duration-300 ${
+                      activeKey === i.key ? 'bg-white' : 'bg-white/12'
+                    }`}
+                    style={{
+                      height: `${Math.max(4, Math.min(14, 200 / historyItems.length))}px`,
+                    }}
+                  />
+                ))
+              ) : (
+                <div className="w-[3px] h-24 rounded-full bg-white/12 overflow-hidden">
+                  <div
+                    className="w-full bg-white/40 transition-all duration-300"
+                    style={{
+                      height: `${
+                        ((historyItems.findIndex(i => i.key === activeKey) + 1) /
+                          historyItems.length) *
+                        100
+                      }%`,
+                    }}
+                  />
+                </div>
+              ))}
           </div>
         )}
         <div
@@ -548,7 +639,7 @@ export function ReviewScroller() {
               itemsRef.current != null &&
               el.scrollTop + el.clientHeight >= el.scrollHeight - el.clientHeight
             ) {
-              void loadHistory();
+              void loadMoreHistory();
             }
           }}
         >
@@ -571,22 +662,32 @@ export function ReviewScroller() {
               <EndCard
                 total={total}
                 historyStatus={
-                  historyItems == null
-                    ? historyLoading
-                      ? 'loading'
-                      : 'idle'
+                  !historyStarted || historyLoading
+                    ? 'loading'
                     : historyItems.length > 0
                       ? 'ready'
                       : 'empty'
                 }
-                historyCount={historyItems?.length ?? 0}
+                historyCount={historyItems.length}
+                historyComplete={historyExhausted}
                 onBackToTop={() =>
                   scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
                 }
               />
             </section>
           )}
-          {historyItems?.map(item => renderCard(item, 'history'))}
+          {historyItems.map(item => renderCard(item, 'history'))}
+          {historyStarted && historyLoading && historyItems.length > 0 && (
+            <div className="h-16 flex items-center justify-center gap-2 text-white/40 text-xs">
+              <div className="animate-spin rounded-full border-2 border-white/20 border-t-white/60 w-4 h-4" />
+              Loading older…
+            </div>
+          )}
+          {historyExhausted && historyItems.length > 0 && (
+            <div className="h-16 flex items-center justify-center text-white/30 text-xs">
+              That's the whole history.
+            </div>
+          )}
         </div>
         </div>
       </div>
