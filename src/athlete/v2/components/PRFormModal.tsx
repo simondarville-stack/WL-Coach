@@ -22,6 +22,7 @@ import {
   syncAthletePRs,
 } from '../../../lib/prTable';
 import { describeError } from '../../../lib/errorMessage';
+import { confirmDialog } from '../../../components/ui';
 
 type Mode =
   | {
@@ -106,15 +107,12 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
         const stale = await supersededLowerReps(mode.athleteId, mode.exerciseId, repCount, weight);
         if (stale.length > 0) {
           const list = stale.map(x => `${x.repCount}RM (${x.currentKg} kg)`).join(', ');
-          const ok = window.confirm(
-            `This ${repCount}RM of ${weight} kg is higher than your current ${list}.
-
-` +
-            `Raise ${stale.length === 1 ? 'it' : 'them'} to ${weight} kg as well?
-
-` +
-            'Your older entries stay in the history either way.',
-          );
+          const ok = await confirmDialog({
+            title: `Raise your ${list} to ${weight} kg too?`,
+            message: `This ${repCount}RM of ${weight} kg is higher than ${stale.length === 1 ? 'it' : 'them'}. Your older entries stay in the history either way.`,
+            confirmLabel: stale.length === 1 ? 'Raise it' : 'Raise them',
+            cancelLabel: 'Leave as they are',
+          });
           if (ok) {
             await raiseLowerReps({
               athleteId: mode.athleteId,
@@ -144,9 +142,13 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
 
   const handleDelete = async () => {
     if (mode.kind !== 'edit' || saving) return;
-    if (!window.confirm('Delete this PR entry? Older history for this rep count will become the current PR.')) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: 'Delete this PR entry?',
+      message: 'Older history for this rep count will become the current PR.',
+      confirmLabel: 'Delete entry',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setSaving(true);
     setError(null);
     try {
@@ -164,12 +166,12 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 px-3 py-6">
       <div
-        className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-xl shadow-xl flex flex-col"
+        className="w-full max-w-md bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl shadow-xl flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--color-border-tertiary)]">
           <div className="flex flex-col min-w-0">
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            <span className="text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold">
               {mode.kind === 'add' ? 'Log a PR' : 'Edit PR'}
             </span>
             <span className="text-sm font-bold text-white truncate">{mode.exerciseName}</span>
@@ -178,7 +180,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="p-1.5 rounded-md text-gray-500 hover:bg-gray-800 hover:text-gray-200 disabled:opacity-40"
+            className="tap p-1.5 rounded-md text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[color:var(--color-text-primary)] disabled:opacity-40"
             aria-label="Close"
           >
             <X size={16} />
@@ -187,13 +189,13 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
 
         <div className="px-4 py-4 space-y-4">
           <div>
-            <label className="block text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5">
+            <label className="block text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold mb-1.5">
               Rep count
             </label>
             {mode.kind === 'edit' ? (
-              <div className="text-sm text-gray-300 tabular-nums">
+              <div className="text-sm text-[color:var(--color-text-primary)] tabular-nums">
                 {mode.repCount} {mode.repCount === 1 ? 'rep' : 'reps'}
-                <span className="text-[10px] text-gray-500 ml-2">(rep count can't be changed — delete and re-add)</span>
+                <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] ml-2">(rep count can't be changed — delete and re-add)</span>
               </div>
             ) : (
               <div className="grid grid-cols-5 gap-1.5">
@@ -204,8 +206,8 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
                     onClick={() => setRepCount(rc)}
                     className={`py-2 text-sm font-medium rounded-md tabular-nums border transition-colors ${
                       repCount === rc
-                        ? 'bg-blue-600 border-blue-500 text-white'
-                        : 'bg-gray-950 border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-200'
+                        ? 'bg-[var(--color-accent)] border-[color:var(--color-accent)] text-white'
+                        : 'bg-[var(--color-bg-page)] border-[color:var(--color-border-tertiary)] text-[color:var(--color-text-secondary)] hover:border-[color:var(--color-border-secondary)] hover:text-[color:var(--color-text-primary)]'
                     }`}
                   >
                     {rc}
@@ -218,7 +220,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
           <div>
             <label
               htmlFor="pr-weight"
-              className="block text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5"
+              className="block text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold mb-1.5"
             >
               Weight (kg)
             </label>
@@ -230,14 +232,14 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
               value={weightRaw}
               onChange={e => setWeightRaw(e.target.value)}
               placeholder="e.g. 120,5"
-              className="w-full bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-base text-white tabular-nums focus:border-blue-500 outline-none"
+              className="w-full bg-[var(--color-bg-page)] border border-[color:var(--color-border-tertiary)] rounded-md px-3 py-2 text-base text-white tabular-nums focus:border-[color:var(--color-accent-hover)] outline-none"
             />
           </div>
 
           <div>
             <label
               htmlFor="pr-date"
-              className="block text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1.5"
+              className="block text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold mb-1.5"
             >
               Achieved date
             </label>
@@ -247,7 +249,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
               value={date}
               onChange={e => setDate(e.target.value)}
               max={todayISO()}
-              className="w-full bg-gray-950 border border-gray-800 rounded-md px-3 py-2 text-base text-white focus:border-blue-500 outline-none"
+              className="w-full bg-[var(--color-bg-page)] border border-[color:var(--color-border-tertiary)] rounded-md px-3 py-2 text-base text-white focus:border-[color:var(--color-accent-hover)] outline-none"
             />
           </div>
 
@@ -258,7 +260,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
           )}
         </div>
 
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-800">
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-[color:var(--color-border-tertiary)]">
           {mode.kind === 'edit' && (
             <button
               type="button"
@@ -274,7 +276,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="text-sm text-gray-300 hover:text-white px-3 py-2 disabled:opacity-40"
+            className="text-sm text-[color:var(--color-text-primary)] hover:text-white px-3 py-2 disabled:opacity-40"
           >
             Cancel
           </button>
@@ -282,7 +284,7 @@ export function PRFormModal({ mode, onClose, onChanged }: Props) {
             type="button"
             onClick={() => void handleSave()}
             disabled={!canSave}
-            className="inline-flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold px-4 py-2 rounded-md"
+            className="inline-flex items-center gap-1.5 text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold px-4 py-2 rounded-md"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             Save

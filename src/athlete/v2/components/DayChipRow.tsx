@@ -13,7 +13,7 @@ interface DayChipRowProps {
 export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false }: DayChipRowProps) {
   if (days.length === 0) {
     return (
-      <div className="text-xs text-gray-500 italic text-center py-4">
+      <div className="text-xs text-[color:var(--color-text-secondary)] italic text-center py-4">
         No training planned for this week.
       </div>
     );
@@ -26,7 +26,7 @@ export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false 
         const done = d.status === 'completed';
         const skipped = d.status === 'skipped';
         const Icon = done ? CheckCircle2 : skipped ? Ban : CircleDashed;
-        const iconClass = done ? 'text-emerald-400' : skipped ? 'text-red-400' : 'text-gray-500';
+        const iconClass = done ? 'text-emerald-400' : skipped ? 'text-red-400' : 'text-[color:var(--color-text-secondary)]';
         // Weekday source preference:
         //   1. Coach-set day_schedule weekday (Plan-side scheduling).
         //   2. Calendar weekday of an existing logged session date
@@ -50,20 +50,20 @@ export function DayChipRow({ days, selectedDayIndex, onSelect, disabled = false 
             className={`
               flex-1 min-w-[88px] snap-start rounded-lg border px-3 py-2 text-left transition-colors disabled:opacity-60
               ${selected
-                ? 'bg-blue-950/60 border-blue-600 ring-1 ring-blue-500/50'
-                : 'bg-gray-900 border-gray-800 hover:border-gray-700'}
+                ? 'bg-blue-950/60 border-[color:var(--color-accent)] ring-1 ring-blue-500/50'
+                : 'bg-[var(--color-bg-primary)] border-[color:var(--color-border-tertiary)] hover:border-[color:var(--color-border-secondary)]'}
             `}
           >
             <div className="flex items-center justify-between gap-2 min-h-[14px]">
-              <div className="text-[10px] uppercase tracking-wide font-semibold text-gray-500">
+              <div className="text-[length:var(--text-caption)] uppercase tracking-wide font-semibold text-[color:var(--color-text-secondary)]">
                 {weekdayLabel ?? (d.isBonus ? 'Extra' : '')}
               </div>
               <Icon size={12} className={iconClass} />
             </div>
-            <div className={`text-sm font-bold truncate ${selected ? 'text-white' : 'text-gray-200'}`}>
+            <div className={`text-sm font-bold truncate ${selected ? 'text-white' : 'text-[color:var(--color-text-primary)]'}`}>
               {d.label}
             </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">
+            <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-0.5">
               {d.plannedCount > 0 ? `${d.plannedCount} ex.` : 'no plan'}
             </div>
           </button>

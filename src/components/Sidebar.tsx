@@ -142,13 +142,18 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         onClick={() => navigate('/dashboard')}
         title="EMOS"
       >
+        {/* Wordmark: IBM Plex Sans 700. It was Arial Black until the brand face
+            shipped without weights above 500 — Arial Black stood in for the
+            missing bold, at the cost of falling back to Impact off Windows,
+            which is far more condensed, so the logo's proportions changed per
+            platform. index.html now loads 600/700, so the wordmark is the
+            brand face everywhere. */}
         {!collapsed ? (
-          /* wordmark: font-medium per TASK-024 decision; Arial Black retained for visual weight */
-          <span className="text-[22px] font-medium tracking-[0.15em] uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif', color: 'var(--color-text-primary)' }}>
+          <span className="text-[22px] font-bold tracking-[0.15em] uppercase leading-none" style={{ color: 'var(--color-text-primary)' }}>
             EMOS
           </span>
         ) : (
-          <span className="text-[16px] font-medium tracking-tight uppercase leading-none" style={{ fontFamily: 'Arial Black, Impact, Helvetica, sans-serif', color: 'var(--color-text-primary)' }}>
+          <span className="text-[16px] font-bold tracking-tight uppercase leading-none" style={{ color: 'var(--color-text-primary)' }}>
             E
           </span>
         )}
@@ -170,7 +175,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                 window.location.reload();
               }
             }}
-            className="w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none"
+            className="w-full text-sm rounded-lg px-2 py-1.5 focus:outline-none focus-visible:shadow-focus focus-visible:border-[color:var(--color-accent)]"
             style={{ border: '0.5px solid var(--color-border-primary)', backgroundColor: 'var(--color-bg-primary)', color: 'var(--color-text-primary)' }}
           >
             {coaches.map(c => (
@@ -181,7 +186,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
           </select>
           <button
             onClick={() => onNewCoach?.()}
-            className="w-full mt-1.5 text-[11px] text-blue-600 hover:text-blue-700 text-left px-1"
+            className="w-full mt-1.5 text-[11px] text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] text-left px-1"
           >
             + New environment
           </button>
@@ -250,14 +255,15 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
                       : { minHeight: 36 }),
                   })}
                 >
-                  {({ isActive }) => {
+                  {() => {
                     const badge = item.badge ? badgeValue(item.badge) : 0;
                     return (
                       <>
-                        <Icon
-                          size={16}
-                          className={`flex-shrink-0 ${isActive ? 'text-blue-700' : ''}`}
-                        />
+                        {/* No colour of its own — the NavLink's style sets
+                            var(--color-accent) when active, and the icon
+                            inherits it. It used to hardcode text-[color:var(--color-accent)],
+                            which put two different blues in one nav row. */}
+                        <Icon size={16} className="flex-shrink-0" />
                         {!collapsed && (
                           <span className="whitespace-nowrap overflow-hidden flex-1">
                             {item.label}

@@ -39,13 +39,13 @@ export function CustomMetricField({ definition, value, onChange }: CustomMetricF
   };
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
       <div className="flex items-baseline justify-between mb-2">
-        <label className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
+        <label className="text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
           {definition.label}
         </label>
         {definition.unit && (
-          <span className="text-[10px] text-gray-500">{definition.unit}</span>
+          <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">{definition.unit}</span>
         )}
       </div>
       {definition.value_type === 'number' ? (
@@ -57,7 +57,7 @@ export function CustomMetricField({ definition, value, onChange }: CustomMetricF
           onBlur={commit}
           onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
           placeholder="—"
-          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+          className="w-full bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-[color:var(--color-accent-hover)]"
         />
       ) : (
         <textarea
@@ -66,7 +66,7 @@ export function CustomMetricField({ definition, value, onChange }: CustomMetricF
           onBlur={commit}
           placeholder="—"
           rows={2}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+          className="w-full bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-sm text-white placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)] resize-none"
         />
       )}
     </div>

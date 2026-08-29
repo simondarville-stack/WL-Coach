@@ -170,7 +170,7 @@ export function useWeekPlans() {
       setWeekPlan(plan);
       return plan;
     } catch (err) {
-      const msg = (err as { message?: string })?.message || 'Failed to load week plan';
+      const msg = (err as { message?: string })?.message || 'Couldn’t load week plan. Check your connection and try again.';
       setError(msg);
       return null;
     } finally {
@@ -233,7 +233,7 @@ export function useWeekPlans() {
         setComboMembers({});
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load planned exercises');
+      setError(err instanceof Error ? err.message : 'Couldn’t load planned exercises. Check your connection and try again.');
     }
   };
 
@@ -262,7 +262,7 @@ export function useWeekPlans() {
       const { error } = await supabase.from('planned_exercises').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete exercise');
+      setError(err instanceof Error ? err.message : 'Couldn’t delete exercise. Nothing was deleted.');
       throw err;
     }
   };
@@ -323,7 +323,7 @@ export function useWeekPlans() {
       if (error) throw error;
       setWeekPlan(prev => prev ? { ...prev, ...updates } : prev);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update week plan');
+      setError(err instanceof Error ? err.message : 'Couldn’t update week plan. Nothing was changed.');
       throw err;
     }
   };

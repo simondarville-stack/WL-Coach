@@ -254,7 +254,7 @@ export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlig
           .eq('id', currentEntry.id);
         if (delErr) {
           console.error('PR clear failed:', delErr);
-          setError(delErr.message || 'Failed to clear PR');
+          setError(delErr.message || 'Couldn’t clear PR. Nothing was cleared.');
           return;
         }
         await syncAthletePRs(target.exerciseId);
@@ -286,7 +286,7 @@ export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlig
         });
       if (insertErr) {
         console.error('PR insert failed:', insertErr);
-        setError(insertErr.message || 'Failed to save PR');
+        setError(insertErr.message || 'Couldn’t save PR. Your changes are still on screen.');
         return;
       }
       await syncAthletePRs(target.exerciseId);
@@ -306,7 +306,7 @@ export function PRTrackingPanel({ athlete, onClose, highlightExerciseId, highlig
     const { error: delErr } = await supabase.from('athlete_pr_history').delete().eq('id', id);
     if (delErr) {
       console.error('PR delete failed:', delErr);
-      setError(delErr.message || 'Failed to delete PR');
+      setError(delErr.message || 'Couldn’t delete PR. Nothing was deleted.');
       return;
     }
     if (entry) await syncAthletePRs(entry.exercise_id);

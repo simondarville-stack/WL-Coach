@@ -3,6 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { fetchLiftRatios, type LiftRatio } from '../../hooks/useAnalysis';
 import { supabase } from '../../lib/supabase';
 import { useExerciseStore } from '../../store/exerciseStore';
+import { Spinner } from '../ui';
 
 interface Props {
   athleteId: string;
@@ -99,7 +100,7 @@ export function LiftRatios({ athleteId }: Props) {
     return () => { cancelled = true; };
   }, [athleteId, storeExercises]);
 
-  if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
+  if (loading) return <div className="h-64 flex items-center justify-center"><Spinner size={20} /></div>;
 
   if (!ratios.length) {
     return (
@@ -117,7 +118,7 @@ export function LiftRatios({ athleteId }: Props) {
       {insights.length > 0 && (
         <div className="space-y-2">
           {insights.map((insight, i) => (
-            <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 text-[13px] text-blue-700">
+            <div key={i} className="bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)] rounded-lg px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]">
               {insight}
             </div>
           ))}

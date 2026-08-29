@@ -30,6 +30,63 @@
   }
 }
 
+/* ============================================================
+ * Reduced motion
+ *
+ * The app ships ~91 animate-* classes and ~280 transitions, and two of the
+ * keyframes are attention pulses that repeat three times (pr-cell-blink,
+ * log-day-blink) — both fired by a dashboard deep-link, so they run without
+ * the user having asked for them. Repeated flashing is exactly what a
+ * vestibular or photosensitive user needs to be able to switch off.
+ *
+ * Motion is reduced rather than removed: iteration-count 1 keeps the blink's
+ * job (marking the row you were sent to) while dropping the repetition, and
+ * the near-zero durations let transition/animation end events still fire, so
+ * anything sequenced on them doesn't stall.
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Minimum touch target. The athlete and coach-field apps are used on a phone,
+   one-handed, between sets — icon buttons padded to ~22px were well under the
+   44px iOS / 48dp Android floor. Grows the hit area only; the icon inside
+   keeps its size. touch-action removes the double-tap zoom delay. */
+.tap {
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+/* Same hit area without forcing width — for controls that sit in a row and
+   size themselves horizontally. */
+.tap-y {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+/* For an icon that genuinely has to stay small — a ✕ on a chip, say — where
+   a 44px box would break the layout around it. The hit area is projected by
+   a pseudo-element, so it costs no space and the icon keeps its size. */
+.tap-hit {
+  position: relative;
+  touch-action: manipulation;
+}
+.tap-hit::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }

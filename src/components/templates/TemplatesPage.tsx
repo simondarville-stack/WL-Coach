@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Copy, Trash2, FileText } from 'lucide-react';
 import { useProgramTemplates } from '../../hooks/useProgramTemplates';
 import type { ProgramTemplateSummary } from '../../lib/database.types';
+import { confirmDialog } from '../ui';
 
 export function TemplatesPage() {
   const navigate = useNavigate();
@@ -27,7 +28,13 @@ export function TemplatesPage() {
   };
 
   const handleDelete = async (t: ProgramTemplateSummary) => {
-    if (!window.confirm(`Delete "${t.name}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${t.name}"?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete template',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await deleteTemplate(t.id);
   };
 

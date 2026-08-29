@@ -21,7 +21,7 @@ export function useTrainingGroups() {
       setGroupAccess(accessById);
       storeSetGroups(merged);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load groups');
+      setError(err instanceof Error ? err.message : 'Couldn’t load groups. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -38,7 +38,7 @@ export function useTrainingGroups() {
       if (error) throw error;
       setGroupMembers((data ?? []) as unknown as GroupMemberWithAthlete[]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load group members');
+      setError(err instanceof Error ? err.message : 'Couldn’t load group members. Check your connection and try again.');
     }
   };
 
@@ -53,7 +53,7 @@ export function useTrainingGroups() {
       setGroups(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create group');
+      setError(err instanceof Error ? err.message : 'Couldn’t create group. Nothing was created.');
       throw err;
     }
   };
@@ -67,7 +67,7 @@ export function useTrainingGroups() {
       if (error) throw error;
       setGroups(prev => prev.map(g => g.id === id ? { ...g, name, description, access_code: accessCode } : g));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update group');
+      setError(err instanceof Error ? err.message : 'Couldn’t update group. Nothing was changed.');
       throw err;
     }
   };
@@ -82,7 +82,7 @@ export function useTrainingGroups() {
       if (error) throw error;
       setGroups(prev => prev.filter(g => g.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete group');
+      setError(err instanceof Error ? err.message : 'Couldn’t delete group. Nothing was deleted.');
       throw err;
     }
   };
@@ -95,7 +95,7 @@ export function useTrainingGroups() {
       if (error) throw error;
       await fetchGroupMembers(groupId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add member');
+      setError(err instanceof Error ? err.message : 'Couldn’t add member. Nothing was added.');
       throw err;
     }
   };
@@ -109,7 +109,7 @@ export function useTrainingGroups() {
       if (error) throw error;
       await fetchGroupMembers(groupId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove member');
+      setError(err instanceof Error ? err.message : 'Couldn’t remove member. Nothing was deleted.');
       throw err;
     }
   };

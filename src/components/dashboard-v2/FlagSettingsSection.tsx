@@ -41,7 +41,7 @@ function NumberField({
             const v = Number(e.target.value);
             if (Number.isFinite(v)) onChange(v);
           }}
-          className="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm text-right tabular-nums disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm text-right tabular-nums disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
         />
         {suffix && <span className="text-xs text-gray-500 w-12">{suffix}</span>}
       </div>
@@ -58,7 +58,7 @@ function Toggle({
       onClick={() => !disabled && onChange(!on)}
       disabled={disabled}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        on ? 'bg-blue-600' : 'bg-gray-300'
+        on ? 'bg-[var(--color-accent)]' : 'bg-gray-300'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
       aria-pressed={on}
     >
@@ -83,8 +83,8 @@ export function FlagSettingsSection() {
     const el = sectionRef.current;
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.classList.add('ring-2', 'ring-blue-300');
-    const id = setTimeout(() => el.classList.remove('ring-2', 'ring-blue-300'), 1600);
+    el.classList.add('ring-2', 'ring-[color:var(--color-accent-border)]');
+    const id = setTimeout(() => el.classList.remove('ring-2', 'ring-[color:var(--color-accent-border)]'), 1600);
     return () => clearTimeout(id);
   }, []);
 
@@ -113,7 +113,7 @@ export function FlagSettingsSection() {
         <button
           type="button"
           onClick={resetDefaults}
-          className="text-xs text-gray-500 hover:text-blue-600 underline-offset-2 hover:underline whitespace-nowrap"
+          className="text-xs text-gray-500 hover:text-[color:var(--color-accent-hover)] underline-offset-2 hover:underline whitespace-nowrap"
         >
           Reset defaults
         </button>

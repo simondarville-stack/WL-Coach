@@ -106,12 +106,12 @@ export function RawScoreDial({ value, onChange, disabled }: RawScoreDialProps) {
           <span className={`w-2.5 h-2.5 rounded-full ${BAND_DOT[guidance.band]} mt-1.5 flex-shrink-0`} aria-hidden />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="text-[10px] uppercase tracking-wide font-semibold opacity-70">
+              <span className="text-[length:var(--text-caption)] uppercase tracking-wide font-semibold opacity-70">
                 RAW
               </span>
               <span className="text-base font-bold text-white">
                 {total}
-                <span className="text-[10px] opacity-60 font-normal ml-1">/ {range.max}</span>
+                <span className="text-[length:var(--text-caption)] opacity-60 font-normal ml-1">/ {range.max}</span>
               </span>
               <span className="text-xs font-semibold">{guidance.label}</span>
             </div>
@@ -135,20 +135,20 @@ export function RawScoreDial({ value, onChange, disabled }: RawScoreDialProps) {
 
   // ─── Expanded grid ─────────────────────────────────────────────────────
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 space-y-2.5">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3 space-y-2.5">
       <div className="flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
+        <div className="text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
           Readiness (RAW)
         </div>
         <div className="flex items-center gap-2">
           <div className="text-sm font-bold text-white">
             {total ?? '—'}
-            <span className="text-xs text-gray-500 font-normal ml-1">/ {range.max}</span>
+            <span className="text-xs text-[color:var(--color-text-secondary)] font-normal ml-1">/ {range.max}</span>
           </div>
           {allFilled && (
             <button
               onClick={() => setExpanded(false)}
-              className="text-gray-500 hover:text-white"
+              className="text-[color:var(--color-text-secondary)] hover:text-white"
               title="Collapse"
               aria-label="Collapse readiness"
             >
@@ -164,8 +164,8 @@ export function RawScoreDial({ value, onChange, disabled }: RawScoreDialProps) {
           return (
             <div key={axis.key}>
               <div className="flex items-baseline justify-between mb-0.5 gap-2">
-                <span className="text-xs text-gray-300 font-medium flex-shrink-0">{axis.label}</span>
-                <span className="text-[9px] text-gray-500 text-right truncate" title={desc ?? ''}>
+                <span className="text-xs text-[color:var(--color-text-primary)] font-medium flex-shrink-0">{axis.label}</span>
+                <span className="text-[length:var(--text-micro)] text-[color:var(--color-text-secondary)] text-right truncate" title={desc ?? ''}>
                   {desc ?? 'rate yourself'}
                 </span>
               </div>
@@ -181,7 +181,7 @@ export function RawScoreDial({ value, onChange, disabled }: RawScoreDialProps) {
                         h-10 rounded-md text-xs font-semibold transition-all
                         ${selected
                           ? `${SCORE_COLOR[rating.score]} text-white shadow ring-2 ${SCORE_RING[rating.score]}`
-                          : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-gray-300'}
+                          : 'bg-[var(--color-bg-secondary)] text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[color:var(--color-text-primary)]'}
                         disabled:opacity-50 disabled:cursor-not-allowed
                       `}
                       aria-label={`${axis.label}: ${rating.score} — ${rating.description}`}

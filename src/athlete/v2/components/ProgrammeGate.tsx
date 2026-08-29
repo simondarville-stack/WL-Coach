@@ -30,15 +30,15 @@ export function ProgrammeGate() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-6">
+    <div className="min-h-screen bg-[var(--color-bg-page)] flex items-center justify-center px-6">
       <form onSubmit={submit} className="w-full max-w-xs">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center mx-auto mb-3">
-            <Lock size={20} className="text-blue-400" />
+          <div className="w-12 h-12 rounded-full bg-[var(--color-bg-secondary)] flex items-center justify-center mx-auto mb-3">
+            <Lock size={20} className="text-[color:var(--color-accent)]" />
           </div>
           <h1 className="text-lg font-bold text-white truncate">{name}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
-          <p className="text-sm text-gray-400 mt-3">
+          <p className="text-xs text-[color:var(--color-text-secondary)] mt-0.5">{subtitle}</p>
+          <p className="text-sm text-[color:var(--color-text-secondary)] mt-3">
             Enter the access code your coach gave you.
           </p>
         </div>
@@ -52,7 +52,7 @@ export function ProgrammeGate() {
           autoFocus
           autoComplete="off"
           aria-label="Access code"
-          className="w-full px-4 py-3 text-base rounded-xl bg-gray-900 border border-gray-800 text-white placeholder-gray-600 focus:outline-none focus:border-blue-600"
+          className="w-full px-4 py-3 text-base rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] text-white placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
         />
         {error && (
           <p className="mt-2 text-xs text-red-400">Incorrect code. Try again.</p>
@@ -60,7 +60,7 @@ export function ProgrammeGate() {
 
         <button
           type="submit"
-          className="w-full mt-4 px-4 py-3 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 transition-colors"
+          className="w-full mt-4 px-4 py-3 rounded-xl bg-[var(--color-accent)] text-white text-sm font-semibold hover:bg-[var(--color-accent-hover)] transition-colors"
         >
           Unlock
         </button>
@@ -71,7 +71,7 @@ export function ProgrammeGate() {
           <button
             type="button"
             onClick={cancelGate}
-            className="w-full mt-3 inline-flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-gray-300"
+            className="w-full mt-3 inline-flex items-center justify-center gap-1 text-xs text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]"
           >
             <ChevronLeft size={13} />
             Back to profiles

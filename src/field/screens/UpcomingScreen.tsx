@@ -16,6 +16,7 @@ import { EnvironmentSwitcher } from '../components/EnvironmentSwitcher';
 import { rawAxisRange } from '../../lib/trainingLogModel';
 import type { NextSessionResolution } from '../../lib/fieldView';
 import { isSessionInProgress } from '../../lib/fieldView';
+import { Spinner } from '../../components/ui';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const RAW_MAX = rawAxisRange().max;
@@ -56,10 +57,10 @@ function GroupChip({
     <button
       onClick={onClick}
       aria-pressed={active}
-      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+      className={`tap-y shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
         active
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-900 border border-gray-800 text-gray-400 hover:text-gray-200'
+          ? 'bg-[var(--color-accent)] text-white'
+          : 'bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
       }`}
     >
       {label}
@@ -71,14 +72,14 @@ function nextLabel(next: NextSessionResolution, weekStart: string): { text: stri
   const { kind, day } = next;
   switch (kind) {
     case 'today':
-      return { text: `Today · ${day!.label}`, tone: 'text-blue-400' };
+      return { text: `Today · ${day!.label}`, tone: 'text-[color:var(--color-accent)]' };
     case 'next_up':
-      return { text: `Next up · ${day!.label}`, tone: 'text-gray-400' };
+      return { text: `Next up · ${day!.label}`, tone: 'text-[color:var(--color-text-secondary)]' };
     case 'scheduled': {
       const date = addDaysToISO(weekStart, day!.weekday!);
       return {
         text: `${WEEKDAY_SHORT[day!.weekday!]} ${formatDateShort(date)} · ${day!.label}`,
-        tone: 'text-gray-400',
+        tone: 'text-[color:var(--color-text-secondary)]',
       };
     }
     case 'overdue': {
@@ -91,7 +92,7 @@ function nextLabel(next: NextSessionResolution, weekStart: string): { text: stri
     case 'week_complete':
       return { text: 'week complete · view plan + log', tone: 'text-emerald-400' };
     case 'no_plan':
-      return { text: 'no plan this week', tone: 'text-gray-600' };
+      return { text: 'no plan this week', tone: 'text-[color:var(--color-text-tertiary)]' };
   }
 }
 
@@ -140,7 +141,7 @@ export function UpcomingScreen() {
         <div>
           <h1 className="text-lg font-bold text-white">Upcoming</h1>
           {/* div, not p: the switcher renders a bottom-sheet (block content) */}
-          <div className="text-xs text-gray-500 flex items-center gap-1">
+          <div className="text-xs text-[color:var(--color-text-secondary)] flex items-center gap-1">
             <span>
               {WEEKDAY_SHORT[(today.getDay() + 6) % 7]} {formatDateShort(today.toISOString().slice(0, 10))}
             </span>
@@ -150,7 +151,7 @@ export function UpcomingScreen() {
         </div>
         <button
           onClick={() => void refresh()}
-          className="p-2 text-gray-500 hover:text-gray-300"
+          className="p-2 text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]"
           aria-label="Refresh"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -179,23 +180,23 @@ export function UpcomingScreen() {
 
       {loading && cards.length === 0 && groupCards.length === 0 ? (
         <div className="flex justify-center py-16">
-          <div className="w-8 h-8 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+          <Spinner size={32} />
         </div>
       ) : visibleCards.length === 0 && visibleGroupCards.length === 0 ? (
-        <p className="text-sm text-gray-500 px-1">
+        <p className="text-sm text-[color:var(--color-text-secondary)] px-1">
           {activeGroup ? 'Nothing to show in this group.' : 'No active athletes in this environment.'}
         </p>
       ) : (
         <div className="flex flex-col gap-2 pb-4">
           {visibleGroupCards.length > 0 && (
             <>
-              <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1">Group plans</p>
+              <p className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] px-1">Group plans</p>
               {visibleGroupCards.map(gc => {
                 const glabel = nextLabel(gc.next, weekStart);
                 const collapsed = collapsedGroups.has(gc.group.id);
                 const hasTable = gc.next.day != null && gc.rows.length > 0;
                 return (
-                  <div key={gc.group.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                  <div key={gc.group.id} className="bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl overflow-hidden">
                     <div className="flex items-stretch">
                       <button
                         onClick={() => navigate(`/coach/g/${gc.group.id}?w=${weekStart}`)}
@@ -203,9 +204,9 @@ export function UpcomingScreen() {
                       >
                         <span className="flex items-center justify-between gap-2">
                           <span className="text-sm font-medium text-white flex items-center gap-1.5 min-w-0">
-                            <Users size={13} className="text-gray-500 shrink-0" />
+                            <Users size={13} className="text-[color:var(--color-text-secondary)] shrink-0" />
                             <span className="truncate">{gc.group.name}</span>
-                            <ChevronRight size={13} className="text-gray-600 shrink-0" />
+                            <ChevronRight size={13} className="text-[color:var(--color-text-tertiary)] shrink-0" />
                           </span>
                           <span className={`text-[11px] shrink-0 ${glabel.tone}`}>{glabel.text}</span>
                         </span>
@@ -213,7 +214,7 @@ export function UpcomingScreen() {
                       {hasTable && (
                         <button
                           onClick={() => toggleGroupCollapsed(gc.group.id)}
-                          className="px-3 text-gray-500 hover:text-gray-300"
+                          className="px-3 text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]"
                           aria-expanded={!collapsed}
                           aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${gc.group.name}'s session table`}
                         >
@@ -239,7 +240,7 @@ export function UpcomingScreen() {
                 );
               })}
               {visibleCards.length > 0 && (
-                <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1 mt-1">Athletes</p>
+                <p className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] px-1 mt-1">Athletes</p>
               )}
             </>
           )}
@@ -256,7 +257,7 @@ export function UpcomingScreen() {
               : null;
             const tone = missedSuffix ? 'text-orange-400' : label.tone;
             return (
-              <div key={card.athlete.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div key={card.athlete.id} className="bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl overflow-hidden">
                 <button
                   onClick={() => navigate(`/coach/a/${card.athlete.id}?w=${weekStart}`)}
                   className="w-full px-3 pt-2.5 pb-2 text-left"
@@ -268,20 +269,20 @@ export function UpcomingScreen() {
                           floor scans this list for. */}
                       {isSessionInProgress(card.log) && (
                         <span
-                          className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse shrink-0"
+                          className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse shrink-0"
                           title="Training now"
                           aria-label="Training now"
                         />
                       )}
                       {card.hostName && (
-                        <span className="text-[10px] font-normal text-gray-600 shrink-0">· {card.hostName}</span>
+                        <span className="text-[length:var(--text-caption)] font-normal text-[color:var(--color-text-tertiary)] shrink-0">· {card.hostName}</span>
                       )}
-                      <ChevronRight size={13} className="text-gray-600 shrink-0" />
+                      <ChevronRight size={13} className="text-[color:var(--color-text-tertiary)] shrink-0" />
                     </span>
                     <span className={`text-[11px] shrink-0 flex items-center gap-1 ${tone}`}>
                       {card.next.kind === 'week_complete' && <Check size={12} />}
                       {card.progress && (
-                        <span className="text-blue-400">
+                        <span className="text-[color:var(--color-accent)]">
                           {card.progress.done}/{card.progress.total} exercises ·{' '}
                         </span>
                       )}

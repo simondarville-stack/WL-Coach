@@ -151,7 +151,7 @@ export function MacroCycleToolbar({
                   <button
                     key={mc.id}
                     onClick={() => onSelectCycle(mc)}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${selectedCycle?.id === mc.id ? 'text-blue-600 font-medium' : 'text-gray-700'}`}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${selectedCycle?.id === mc.id ? 'text-[color:var(--color-accent)] font-medium' : 'text-gray-700'}`}
                   >
                     {mc.name}
                   </button>
@@ -300,7 +300,7 @@ export function MacroCycleToolbar({
               <select
                 value={individualViewAthleteId ?? ''}
                 onChange={e => onIndividualViewChange(e.target.value || null)}
-                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                 title="Individual view: see one athlete's actuals"
               >
                 <option value="">Group average actuals</option>

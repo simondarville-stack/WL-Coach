@@ -12,6 +12,8 @@ import { useAthletes } from '../hooks/useAthletes';
 import { useAthleteStore } from '../store/athleteStore';
 import { AdaptiveDialog } from './ui/AdaptiveDialog';
 import { Button } from './ui';
+import { confirmDialog, promptDialog, EmptyState } from './ui';
+import { Spinner } from './ui';
 
 // ── AthleteFormModal ────────────────────────────────────────────────
 
@@ -67,11 +69,17 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
       setLinkCopied(true);
       window.setTimeout(() => setLinkCopied(false), 2000);
     } catch {
-      window.prompt('Copy this athlete link:', url);
+      // Clipboard API needs a secure context / permission. Show the link in a
+      // pre-selected field so it can still be copied by hand.
+      void promptDialog({
+        title: 'Copy this athlete link',
+        confirmLabel: 'Done',
+        input: { initialValue: url, readOnly: true, selectOnOpen: true },
+      });
     }
   };
 
-  const inputCls = 'w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400';
+  const inputCls = 'w-full px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]';
   const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
 
   // This form buffers a whole athlete record, so it is `guarded`: the backdrop
@@ -280,7 +288,7 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
                   type="checkbox"
                   checked={isActive}
                   onChange={e => setIsActive(e.target.checked)}
-                  className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-400"
+                  className="w-3.5 h-3.5 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
                 />
                 <span className="text-xs text-gray-700">Active</span>
               </label>
@@ -289,7 +297,7 @@ function AthleteFormModal({ editingAthlete, onSave, onClose, isSubmitting }: Ath
                   type="checkbox"
                   checked={trackBodyweight}
                   onChange={e => setTrackBodyweight(e.target.checked)}
-                  className="w-3.5 h-3.5 text-blue-600 border-gray-300 rounded focus:ring-blue-400"
+                  className="w-3.5 h-3.5 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
                 />
                 <span className="text-xs text-gray-700">Track bodyweight</span>
               </label>
@@ -377,7 +385,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
             onError={e => { e.currentTarget.style.display = 'none'; }}
           />
         ) : (
-          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[11px] font-medium text-blue-700 flex-shrink-0">
+          <div className="w-6 h-6 rounded-full bg-[var(--color-accent-muted)] flex items-center justify-center text-[11px] font-medium text-[color:var(--color-accent)] flex-shrink-0">
             {initials}
           </div>
         )}
@@ -445,7 +453,7 @@ function AthleteRow({ athlete, isSelected, rowIndex, onClick, onEdit, onPRs, onD
         </button>
         <button
           onClick={e => { e.stopPropagation(); onEdit(); }}
-          className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+          className="p-1 text-[color:var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded transition-colors"
           title="Edit"
         >
           <Edit2 size={13} />
@@ -488,7 +496,7 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
               onError={e => { e.currentTarget.style.display = 'none'; }}
             />
           ) : (
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
+            <div className="w-8 h-8 rounded-full bg-[var(--color-accent-muted)] flex items-center justify-center text-xs font-medium text-[color:var(--color-accent)]">
               {initials}
             </div>
           )}
@@ -509,7 +517,7 @@ function AthleteDetailPanel({ athlete, onClose, onEdit, onPRs, onDelete }: Athle
         <div className="flex items-center gap-1">
           <button
             onClick={onEdit}
-            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            className="p-1.5 text-[color:var(--color-accent)] hover:bg-[var(--color-accent-subtle)] rounded transition-colors"
             title="Edit"
           >
             <Edit2 size={13} />
@@ -615,7 +623,13 @@ export function Athletes() {
   };
 
   const handleDelete = async (athlete: Athlete) => {
-    if (!window.confirm(`Delete ${athlete.name}? This will also remove all their PRs and week plans.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete ${athlete.name}?`,
+      message: 'This will also remove all their PRs and week plans.',
+      confirmLabel: 'Delete athlete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await deleteAthlete(athlete.id);
       if (selectedAthleteId === athlete.id) setSelectedAthleteId(null);
@@ -673,7 +687,7 @@ export function Athletes() {
             placeholder="Search athletes…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
           />
           {searchQuery && (
             <button
@@ -719,15 +733,27 @@ export function Athletes() {
 
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-2 text-gray-400 text-sm">
-              <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+              <Spinner size={16} />
               Loading…
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <User size={28} className="text-gray-300" />
-              <p className="text-sm text-gray-400">
-                {searchQuery ? `No athletes match "${searchQuery}"` : 'No athletes yet. Click "Add athlete" to get started.'}
-              </p>
+              <User size={28} className="text-[color:var(--color-text-tertiary)]" />
+              {searchQuery ? (
+                <p className="text-sm text-[color:var(--color-text-secondary)]">
+                  No athletes match &ldquo;{searchQuery}&rdquo;
+                </p>
+              ) : (
+                <EmptyState
+                  title="No athletes yet"
+                  message="Add your first athlete to start planning their week."
+                  action={
+                    <Button variant="primary" onClick={openCreate} icon={<Plus size={14} />}>
+                      Add athlete
+                    </Button>
+                  }
+                />
+              )}
             </div>
           ) : (
             filtered.map((athlete, idx) => (
@@ -792,7 +818,7 @@ function SharedChip({ athleteId }: { athleteId: string }) {
   const label = access === 'viewer' ? 'View only' : 'Shared';
   return (
     <span
-      className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
+      className="text-[10px] font-medium bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] px-1.5 py-px rounded flex-shrink-0"
       title={hostName ? `${label} · host: ${hostName}` : label}
     >
       {hostName ? `${label} · ${hostName}` : label}

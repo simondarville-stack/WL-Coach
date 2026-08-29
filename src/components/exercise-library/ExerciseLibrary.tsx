@@ -26,6 +26,7 @@ import { ExerciseListPanel } from './ExerciseListPanel';
 import { ExerciseCategoryNav } from './ExerciseCategoryNav';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import type { Exercise } from '../../lib/database.types';
+import { confirmDialog } from '../ui';
 
 export function ExerciseLibrary() {
   const { selectedAthlete } = useAthleteStore();
@@ -203,13 +204,15 @@ export function ExerciseLibrary() {
         .filter(c => c.role === 'editor')
         .map(c => ({ id: c.libraryId, name: c.name }));
     },
-    onMoveToLibrary: (exerciseId: string, libraryId: string, libraryName: string) => {
+    onMoveToLibrary: async (exerciseId: string, libraryId: string, libraryName: string) => {
       const ex = exercises.find(e => e.id === exerciseId);
       if (!ex) return;
-      if (!window.confirm(
-        `Move "${ex.name}" into the "${libraryName}" catalogue?\n\n` +
-        'The exercise keeps its id (all history follows it) and becomes visible to every member of the catalogue.',
-      )) return;
+      const ok = await confirmDialog({
+        title: `Move "${ex.name}" into the "${libraryName}" catalogue?`,
+        message: 'The exercise keeps its id (all history follows it) and becomes visible to every member of the catalogue.',
+        confirmLabel: 'Move exercise',
+      });
+      if (!ok) return;
       void (async () => {
         await updateExercise(exerciseId, { library_id: libraryId } as Partial<Exercise>);
         setExercises(exercises.map(e => (e.id === exerciseId ? { ...e, library_id: libraryId } as Exercise : e)));

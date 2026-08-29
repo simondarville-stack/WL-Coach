@@ -117,7 +117,7 @@ export function AthleteCardPicker() {
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.name}</h3>
             <button
               onClick={() => setSelectedGroup(group)}
-              className="ml-auto text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+              className="ml-auto text-[11px] text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] font-medium"
             >
               Select entire group
             </button>
@@ -153,17 +153,17 @@ function AthleteCard({ athlete, onSelect }: { athlete: Athlete; onSelect: (a: At
   return (
     <button
       onClick={() => onSelect(athlete)}
-      className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/40 transition-all cursor-pointer group"
+      className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-gray-200 bg-white hover:border-[color:var(--color-accent-border)] hover:bg-blue-50/40 transition-all cursor-pointer group"
     >
       {athlete.photo_url ? (
         <img
           src={athlete.photo_url}
           alt={athlete.name}
-          className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 group-hover:ring-blue-200 transition-all"
+          className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 group-hover:ring-[color:var(--color-accent-border)] transition-all"
           onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
         />
       ) : (
-        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center ring-2 ring-gray-100 group-hover:ring-blue-200 transition-all">
+        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center ring-2 ring-gray-100 group-hover:ring-[color:var(--color-accent-border)] transition-all">
           <User size={20} className="text-gray-400" />
         </div>
       )}

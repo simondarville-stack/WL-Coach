@@ -34,10 +34,10 @@ export function AthleteLayout() {
   const keyboardOpen = useKeyboardOpen();
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-20">
+    <div className="min-h-screen bg-[var(--color-bg-page)] text-white pb-20">
       <Outlet />
       <nav
-        className={`fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800${
+        className={`fixed bottom-0 left-0 right-0 bg-[var(--color-bg-primary)] border-t border-[color:var(--color-border-tertiary)]${
           keyboardOpen ? ' hidden' : ''
         }`}
         aria-label="Athlete navigation"
@@ -49,10 +49,10 @@ export function AthleteLayout() {
               to={tab.to}
               className={({ isActive }) =>
                 // px-2, not px-4: five tabs have to fit a 320 px phone.
-                `relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded text-[10px] uppercase tracking-wide font-semibold transition-colors ${
+                `relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded text-[length:var(--text-caption)] uppercase tracking-wide font-semibold transition-colors ${
                   isActive
-                    ? 'text-blue-400'
-                    : 'text-gray-500 hover:text-gray-300'
+                    ? 'text-[color:var(--color-accent)]'
+                    : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
                 }`
               }
             >
@@ -61,7 +61,7 @@ export function AthleteLayout() {
               {'badge' in tab && tab.badge === 'coach' && unread > 0 && (
                 <span
                   aria-label={`${unread} unread message${unread === 1 ? '' : 's'}`}
-                  className="absolute top-0.5 right-0 min-w-[16px] h-4 px-1 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center"
+                  className="absolute top-0.5 right-0 min-w-[16px] h-4 px-1 rounded-full bg-[var(--color-accent)] text-white text-[length:var(--text-micro)] font-bold flex items-center justify-center"
                 >
                   {unread > 9 ? '9+' : unread}
                 </span>

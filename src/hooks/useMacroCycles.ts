@@ -63,7 +63,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacrocycles(data || []);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load macrocycles'));
+      setError(errMsg(err, 'Couldn’t load macrocycles. Check your connection and try again.'));
     }
   };
 
@@ -117,7 +117,7 @@ export function useMacroCycles() {
 
       return macrocycle;
     } catch (err) {
-      setError(errMsg(err, 'Failed to create macrocycle'));
+      setError(errMsg(err, 'Couldn’t create macrocycle. Nothing was created.'));
       throw err;
     } finally {
       setLoading(false);
@@ -131,7 +131,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacrocycles(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
     } catch (err) {
-      setError(errMsg(err, 'Failed to update macrocycle'));
+      setError(errMsg(err, 'Couldn’t update macrocycle. Nothing was changed.'));
       throw err;
     } finally {
       setLoading(false);
@@ -147,7 +147,7 @@ export function useMacroCycles() {
       const { error } = await supabase.from('macrocycles').update({ table_layout: layout }).eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(errMsg(err, 'Failed to save table layout'));
+      setError(errMsg(err, 'Couldn’t save table layout. Your changes are still on screen.'));
     }
   };
 
@@ -160,7 +160,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacrocycles(prev => prev.filter(m => m.id !== id));
     } catch (err) {
-      setError(errMsg(err, 'Failed to delete macrocycle'));
+      setError(errMsg(err, 'Couldn’t delete macrocycle. Nothing was deleted.'));
       throw err;
     } finally {
       setLoading(false);
@@ -178,7 +178,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setMacroWeeks(data || []);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load weeks'));
+      setError(errMsg(err, 'Couldn’t load weeks. Check your connection and try again.'));
     } finally {
       setLoading(false);
     }
@@ -193,7 +193,7 @@ export function useMacroCycles() {
       if (error) throw error;
     } catch (err) {
       if (original) setMacroWeeks(prev => prev.map(w => w.id === id ? original : w));
-      setError(errMsg(err, 'Failed to update week'));
+      setError(errMsg(err, 'Couldn’t update week. Nothing was changed.'));
       throw err;
     }
   };
@@ -296,7 +296,7 @@ export function useMacroCycles() {
         ]);
       }
     } catch (err) {
-      setError(errMsg(err, 'Failed to swap weeks'));
+      setError(errMsg(err, 'Couldn’t swap weeks. The order is unchanged.'));
       throw err;
     }
   };
@@ -311,7 +311,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setTrackedExercises((data ?? []) as unknown as MacroTrackedExerciseWithExercise[]);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load tracked exercises'));
+      setError(errMsg(err, 'Couldn’t load tracked exercises. Check your connection and try again.'));
     }
   };
 
@@ -351,7 +351,7 @@ export function useMacroCycles() {
         .insert({ macrocycle_id: macrocycleId, exercise_id: exerciseId, position: await nextPosition(), target_unit: targetUnit });
       if (retryError) throw retryError;
     } catch (err) {
-      setError(errMsg(err, 'Failed to add tracked exercise'));
+      setError(errMsg(err, 'Couldn’t add tracked exercise. Nothing was added.'));
       throw err;
     }
   };
@@ -388,7 +388,7 @@ export function useMacroCycles() {
         throw inner;
       }
     } catch (err) {
-      setError(errMsg(err, 'Failed to move tracked exercise'));
+      setError(errMsg(err, 'Couldn’t move tracked exercise. Nothing was moved.'));
       throw err;
     }
   };
@@ -398,7 +398,7 @@ export function useMacroCycles() {
       const { error } = await supabase.from('macro_tracked_exercises').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(errMsg(err, 'Failed to remove tracked exercise'));
+      setError(errMsg(err, 'Couldn’t remove tracked exercise. Nothing was deleted.'));
       throw err;
     }
   };
@@ -435,7 +435,7 @@ export function useMacroCycles() {
       if (error) throw error;
     } catch (err) {
       setTrackedExercises(prev);
-      setError(errMsg(err, 'Failed to reorder tracked exercises'));
+      setError(errMsg(err, 'Couldn’t reorder tracked exercises. The order is unchanged.'));
       throw err;
     }
   };
@@ -449,7 +449,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setTargets(data || []);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load targets'));
+      setError(errMsg(err, 'Couldn’t load targets. Check your connection and try again.'));
     }
   };
 
@@ -498,7 +498,7 @@ export function useMacroCycles() {
         return data;
       }
     } catch (err) {
-      setError(errMsg(err, 'Failed to update target'));
+      setError(errMsg(err, 'Couldn’t update target. Nothing was changed.'));
       throw err;
     }
   };
@@ -548,7 +548,7 @@ export function useMacroCycles() {
       });
       return returned;
     } catch (err) {
-      setError(errMsg(err, 'Failed to write targets'));
+      setError(errMsg(err, 'Couldn’t write targets. Nothing was written.'));
       throw err;
     }
   };
@@ -560,7 +560,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setTargets(prev => prev.filter(t => !ids.includes(t.id)));
     } catch (err) {
-      setError(errMsg(err, 'Failed to delete targets'));
+      setError(errMsg(err, 'Couldn’t delete targets. Nothing was deleted.'));
       throw err;
     }
   };
@@ -581,7 +581,7 @@ export function useMacroCycles() {
       }));
     } catch (err) {
       setMacroWeeks(prev => prev.map(w => originals.find(o => o.id === w.id) ?? w));
-      setError(errMsg(err, 'Failed to update weeks'));
+      setError(errMsg(err, 'Couldn’t update weeks. Nothing was changed.'));
       throw err;
     }
   };
@@ -598,7 +598,7 @@ export function useMacroCycles() {
       if (error) throw error;
     } catch (err) {
       if (original) setTrackedExercises(prev => prev.map(te => te.id === id ? original : te));
-      setError(errMsg(err, 'Failed to update reference'));
+      setError(errMsg(err, 'Couldn’t update reference. Nothing was changed.'));
       throw err;
     }
   };
@@ -625,7 +625,7 @@ export function useMacroCycles() {
       if (error) throw error;
     } catch (err) {
       if (original) setTrackedExercises(prev => prev.map(te => te.id === id ? original : te));
-      setError(errMsg(err, 'Failed to update unit'));
+      setError(errMsg(err, 'Couldn’t update unit. Nothing was changed.'));
       throw err;
     }
   };
@@ -780,7 +780,7 @@ export function useMacroCycles() {
         const o = originals.find(x => x.id === w.id);
         return o ? { ...w, week_start: o.week_start } : w;
       }));
-      setError(errMsg(error, 'Failed to shift weeks'));
+      setError(errMsg(error, 'Couldn’t shift weeks. The order is unchanged.'));
       throw error;
     }
   };
@@ -805,7 +805,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(data || []);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load phases'));
+      setError(errMsg(err, 'Couldn’t load phases. Check your connection and try again.'));
     }
   };
 
@@ -833,7 +833,7 @@ export function useMacroCycles() {
       setPhases(prev => [...prev, data].sort((a, b) => a.position - b.position));
       return data;
     } catch (err) {
-      setError(errMsg(err, 'Failed to create phase'));
+      setError(errMsg(err, 'Couldn’t create phase. Nothing was created.'));
       throw err;
     }
   };
@@ -844,7 +844,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
     } catch (err) {
-      setError(errMsg(err, 'Failed to update phase'));
+      setError(errMsg(err, 'Couldn’t update phase. Nothing was changed.'));
       throw err;
     }
   };
@@ -855,7 +855,7 @@ export function useMacroCycles() {
       if (error) throw error;
       setPhases(prev => prev.filter(p => p.id !== id));
     } catch (err) {
-      setError(errMsg(err, 'Failed to delete phase'));
+      setError(errMsg(err, 'Couldn’t delete phase. Nothing was deleted.'));
       throw err;
     }
   };
@@ -903,7 +903,7 @@ export function useMacroCycles() {
       }));
       setCompetitions(comps);
     } catch (err) {
-      setError(errMsg(err, 'Failed to load competitions'));
+      setError(errMsg(err, 'Couldn’t load competitions. Check your connection and try again.'));
     }
   };
 

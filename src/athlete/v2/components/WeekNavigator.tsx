@@ -51,23 +51,23 @@ export function WeekNavigator({ weekStart, onChange, onPrint }: WeekNavigatorPro
   const isThisWeek = weekStart === thisWeekStart;
 
   return (
-    <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-2 py-1.5">
+    <div className="flex items-center justify-between bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl px-2 py-1.5">
       <button
         onClick={() => onChange(addDays(weekStart, -7))}
-        className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-800"
+        className="tap p-1.5 rounded-md text-[color:var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-bg-secondary)]"
         aria-label="Previous week"
       >
         <ChevronLeft size={16} />
       </button>
       <div className="flex-1 text-center">
-        <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+        <div className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
           {isThisWeek ? 'This week' : 'Week of'}
         </div>
         <div className="text-xs font-semibold text-white">{formatWeekRange(weekStart)}</div>
       </div>
       <button
         onClick={() => onChange(addDays(weekStart, 7))}
-        className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-800"
+        className="tap p-1.5 rounded-md text-[color:var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-bg-secondary)]"
         aria-label="Next week"
       >
         <ChevronRight size={16} />
@@ -75,7 +75,7 @@ export function WeekNavigator({ weekStart, onChange, onPrint }: WeekNavigatorPro
       {!isThisWeek && (
         <button
           onClick={() => onChange(thisWeekStart)}
-          className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-800"
+          className="tap ml-1 p-1.5 rounded-md text-[color:var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-bg-secondary)]"
           aria-label="This week"
           title="Jump to this week"
         >
@@ -85,7 +85,7 @@ export function WeekNavigator({ weekStart, onChange, onPrint }: WeekNavigatorPro
       {onPrint && (
         <button
           onClick={onPrint}
-          className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-800"
+          className="tap ml-1 p-1.5 rounded-md text-[color:var(--color-text-secondary)] hover:text-white hover:bg-[var(--color-bg-secondary)]"
           aria-label="Print programme"
           title="Print this week's programme"
         >

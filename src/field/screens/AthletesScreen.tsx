@@ -45,14 +45,14 @@ export function AthletesScreen() {
       <h1 className="text-lg font-bold text-white px-1 mb-3">Athletes</h1>
       {athletes === null ? (
         <div className="flex justify-center py-16">
-          <Loader2 size={24} className="animate-spin text-gray-600" />
+          <Loader2 size={24} className="animate-spin text-[color:var(--color-text-tertiary)]" />
         </div>
       ) : (
         <>
           {groups.length > 0 && (
             <>
-              <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1 mb-1">Groups</p>
-              <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-3">
+              <p className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] px-1 mb-1">Groups</p>
+              <div className="bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl overflow-hidden mb-3">
                 {groups.map((g, i) => (
                   <button
                     key={g.id}
@@ -62,20 +62,20 @@ export function AthletesScreen() {
                     }`}
                   >
                     <span className="text-sm text-white flex items-center gap-2 min-w-0">
-                      <Users size={13} className="text-gray-500 shrink-0" />
+                      <Users size={13} className="text-[color:var(--color-text-secondary)] shrink-0" />
                       <span className="truncate">{g.name}</span>
                     </span>
-                    <ChevronRight size={14} className="text-gray-600 shrink-0" />
+                    <ChevronRight size={14} className="text-[color:var(--color-text-tertiary)] shrink-0" />
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] uppercase tracking-wide text-gray-600 px-1 mb-1">Athletes</p>
+              <p className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] px-1 mb-1">Athletes</p>
             </>
           )}
           {athletes.length === 0 ? (
-            <p className="text-sm text-gray-500 px-1">No active athletes in this environment.</p>
+            <p className="text-sm text-[color:var(--color-text-secondary)] px-1">No active athletes in this environment.</p>
           ) : (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-4">
+            <div className="bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl overflow-hidden mb-4">
               {athletes.map((a, i) => (
                 <button
                   key={a.id}
@@ -87,10 +87,10 @@ export function AthletesScreen() {
                   <span className="text-sm text-white flex items-center gap-1.5 min-w-0">
                     <span className="truncate">{a.name}</span>
                     {hostNames[a.id] && (
-                      <span className="text-[10px] text-gray-600 shrink-0">· {hostNames[a.id]}</span>
+                      <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-tertiary)] shrink-0">· {hostNames[a.id]}</span>
                     )}
                   </span>
-                  <ChevronRight size={14} className="text-gray-600 shrink-0" />
+                  <ChevronRight size={14} className="text-[color:var(--color-text-tertiary)] shrink-0" />
                 </button>
               ))}
             </div>

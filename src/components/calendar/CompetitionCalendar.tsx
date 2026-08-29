@@ -9,6 +9,8 @@ import { EventDetailModal } from './EventDetailModal';
 import { EventAttemptsModal } from '../EventAttemptsModal';
 import { EventOverviewModal } from '../EventOverviewModal';
 import { exportAllEventsToICal } from '../../lib/icalExport';
+import { confirmDialog } from '../ui';
+import { Spinner } from '../ui';
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   competition: 'Competition',
@@ -114,7 +116,12 @@ export function CompetitionCalendar() {
   }
 
   async function handleDelete(event: EventWithAthletes) {
-    if (!confirm(`Delete "${event.name}"?`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${event.name}"?`,
+      confirmLabel: 'Delete event',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await deleteEvent(event.id);
     setDetailEvent(null);
     fetchEvents();
@@ -175,14 +182,14 @@ export function CompetitionCalendar() {
           <div className="flex rounded-lg border border-gray-300 overflow-hidden">
             <button
               onClick={() => setViewMode('month')}
-              className={`px-3 py-2 text-sm transition-colors ${viewMode === 'month' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`px-3 py-2 text-sm transition-colors ${viewMode === 'month' ? 'bg-[var(--color-accent)] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
               title="Month view"
             >
               <CalendarDays size={15} />
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-2 text-sm border-l border-gray-300 transition-colors ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`px-3 py-2 text-sm border-l border-gray-300 transition-colors ${viewMode === 'list' ? 'bg-[var(--color-accent)] text-white' : 'text-gray-600 hover:bg-gray-50'}`}
               title="List view"
             >
               <LayoutList size={15} />
@@ -190,7 +197,7 @@ export function CompetitionCalendar() {
           </div>
           <button
             onClick={openCreate}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors"
           >
             <Plus size={16} />
             Add Event
@@ -200,7 +207,7 @@ export function CompetitionCalendar() {
 
       {loading ? (
         <div className="flex items-center justify-center py-16 gap-2 text-gray-400 text-sm">
-          <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+          <Spinner size={16} />
           Loading...
         </div>
       ) : viewMode === 'month' ? (
@@ -239,7 +246,7 @@ export function CompetitionCalendar() {
                   {day !== null && (
                     <>
                       <div className={`w-6 h-6 flex items-center justify-center text-xs font-medium rounded-full mb-1 ${
-                        isToday ? 'bg-blue-600 text-white' : 'text-gray-700'
+                        isToday ? 'bg-[var(--color-accent)] text-white' : 'text-gray-700'
                       }`}>
                         {day}
                       </div>

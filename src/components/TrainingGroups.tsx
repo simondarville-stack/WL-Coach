@@ -6,6 +6,8 @@ import { useAthletes } from '../hooks/useAthletes';
 import { useCoachStore } from '../store/coachStore';
 import { ShareGroupModal } from './ShareGroupModal';
 import { Button } from './ui';
+import { confirmDialog, promptDialog, EmptyState } from './ui';
+import { Spinner } from './ui';
 
 /**
  * Access-code field shared by the create/edit group modals. A non-empty code
@@ -26,7 +28,7 @@ function GroupAccessCodeField({ value, onChange }: { value: string; onChange: (v
         onChange={(e) => onChange(e.target.value)}
         placeholder="e.g. squad24 — leave blank for no code"
         autoComplete="off"
-        className="w-full px-3 py-2 font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full px-3 py-2 font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
       />
       <p className="mt-1 text-xs text-gray-400">
         Athletes opening this group's link must type the code first. Changing it
@@ -99,7 +101,13 @@ export function TrainingGroups() {
   };
 
   const handleDeleteGroup = async (groupId: string) => {
-    if (!confirm('Delete this training group? This will also delete all associated group plans.')) return;
+    const ok = await confirmDialog({
+      title: 'Delete this training group?',
+      message: 'This will also delete all associated group plans.',
+      confirmLabel: 'Delete group',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await deleteGroup(groupId);
       if (selectedGroup?.id === groupId) setSelectedGroup(null);
@@ -119,7 +127,13 @@ export function TrainingGroups() {
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm('Remove this athlete from the group? Their historical data will be preserved.')) return;
+    const ok = await confirmDialog({
+      title: 'Remove this athlete from the group?',
+      message: 'Their historical data will be preserved.',
+      confirmLabel: 'Remove athlete',
+      tone: 'danger',
+    });
+    if (!ok) return;
     if (!selectedGroup) return;
     try {
       await removeMember(memberId, selectedGroup.id);
@@ -146,9 +160,13 @@ export function TrainingGroups() {
       setLinkCopied(true);
       window.setTimeout(() => setLinkCopied(false), 2000);
     } catch {
-      // Clipboard API needs a secure context / permission; fall back to a
-      // prompt the coach can copy from manually.
-      window.prompt('Copy this athlete link:', url);
+      // Clipboard API needs a secure context / permission; show the link in a
+      // pre-selected field the coach can copy from manually.
+      void promptDialog({
+        title: 'Copy this athlete link',
+        confirmLabel: 'Done',
+        input: { initialValue: url, readOnly: true, selectOnOpen: true },
+      });
     }
   };
 
@@ -181,13 +199,21 @@ export function TrainingGroups() {
             <h2 className="text-sm font-medium text-gray-700 uppercase tracking-wide mb-4">Groups</h2>
             {loading ? (
               <div className="flex items-center justify-center py-8 gap-2 text-gray-400 text-sm">
-                <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+                <Spinner size={16} />
                 Loading...
               </div>
             ) : groups.length === 0 ? (
-              <div className="text-gray-500 text-center py-8">
-                <Users className="mx-auto mb-2" size={32} />
-                <p>No groups yet</p>
+              <div className="text-center py-8">
+                <Users className="mx-auto mb-2 text-[color:var(--color-text-tertiary)]" size={32} />
+                <EmptyState
+                  title="No training groups yet"
+                  message="A group lets you write one week and share it with every athlete in it."
+                  action={
+                    <Button variant="primary" onClick={() => setShowCreateModal(true)} icon={<Plus size={14} />}>
+                      Create group
+                    </Button>
+                  }
+                />
               </div>
             ) : (
               <div className="space-y-2">
@@ -213,7 +239,7 @@ export function TrainingGroups() {
                           )}
                           {activeCoachId && group.owner_id !== activeCoachId && (
                             <span
-                              className="text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-px rounded flex-shrink-0"
+                              className="text-[10px] font-medium bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] px-1.5 py-px rounded flex-shrink-0"
                               title={groupAccess[group.id] === 'viewer' ? 'View only' : 'Shared with you'}
                             >
                               {groupAccess[group.id] === 'viewer' ? 'View only' : 'Shared'}
@@ -347,7 +373,7 @@ export function TrainingGroups() {
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="e.g., National Team Squad, Beginners Group"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     autoFocus
                   />
                 </div>
@@ -357,7 +383,7 @@ export function TrainingGroups() {
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     placeholder="Group purpose or notes..."
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)] min-h-[80px]"
                   />
                 </div>
                 <GroupAccessCodeField value={formAccessCode} onChange={setFormAccessCode} />
@@ -394,7 +420,7 @@ export function TrainingGroups() {
                     type="text"
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     autoFocus
                   />
                 </div>
@@ -403,7 +429,7 @@ export function TrainingGroups() {
                   <textarea
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)] min-h-[80px]"
                   />
                 </div>
                 <GroupAccessCodeField value={formAccessCode} onChange={setFormAccessCode} />
@@ -443,7 +469,7 @@ export function TrainingGroups() {
                     <div
                       key={athlete.id}
                       onClick={() => handleAddMember(athlete.id)}
-                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
+                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-[var(--color-accent-subtle)] hover:border-[color:var(--color-accent-border)] cursor-pointer transition-colors"
                     >
                       {athlete.photo_url ? (
                         <img src={athlete.photo_url} alt={athlete.name} className="w-10 h-10 rounded-full object-cover" />

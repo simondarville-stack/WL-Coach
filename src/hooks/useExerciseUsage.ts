@@ -67,7 +67,7 @@ export function useExerciseUsage(weeks: number | null) {
       }
       setUsage(map);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load usage');
+      setError(e instanceof Error ? e.message : 'Couldn’t load usage. Check your connection and try again.');
       setUsage(new Map());
     } finally {
       setLoading(false);

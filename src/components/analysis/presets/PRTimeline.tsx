@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchPRTimeline } from '../../../hooks/useAnalysis';
+import { Spinner } from '../../ui';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -13,7 +14,7 @@ export function PRTimeline({ athleteId, startDate, endDate }: Props) {
       .finally(() => setLoading(false));
   }, [athleteId, startDate, endDate]);
 
-  if (loading) return <div className="h-32 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
+  if (loading) return <div className="h-32 flex items-center justify-center"><Spinner size={20} /></div>;
   if (!prs.length) return (
     <div className="h-32 flex items-center justify-center text-gray-400 text-sm">
       No personal records found. PRs are tracked from training log entries.

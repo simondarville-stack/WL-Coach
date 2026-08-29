@@ -25,6 +25,7 @@ import { useExercises } from '../../hooks/useExercises';
 import { useSettings } from '../../hooks/useSettings';
 import { ExerciseSearch } from '../planner/ExerciseSearch';
 import { PrescriptionGrid } from '../planner/PrescriptionGrid';
+import { confirmDialog } from '../ui';
 import type {
   Exercise,
   ProgramTemplateDayWithExercises,
@@ -89,7 +90,7 @@ export function TemplateEditor() {
         setLoading(false);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load template');
+        setError(err instanceof Error ? err.message : 'Couldn’t load template. Check your connection and try again.');
         setLoading(false);
       }
     })();
@@ -137,7 +138,13 @@ export function TemplateEditor() {
 
   const handleDeleteDay = async (dayId: string) => {
     if (!template) return;
-    if (!window.confirm('Delete this template day? All its exercises will be removed.')) return;
+    const ok = await confirmDialog({
+      title: 'Delete this template day?',
+      message: 'All its exercises will be removed.',
+      confirmLabel: 'Delete day',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await wrapSave(async () => {
       await deleteTemplateDay(dayId);
       setTemplate(t => t ? { ...t, days: t.days.filter(d => d.id !== dayId) } : t);

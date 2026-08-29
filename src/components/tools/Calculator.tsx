@@ -54,9 +54,9 @@ const BUTTONS: { label: string; value: string; style: BtnStyle }[] = [
 
 const buttonStyles: Record<BtnStyle, string> = {
   number:   'bg-white hover:bg-gray-50 text-gray-800 border border-gray-200',
-  operator: 'bg-gray-50 hover:bg-gray-100 text-blue-600 font-medium border border-gray-200',
+  operator: 'bg-gray-50 hover:bg-gray-100 text-[color:var(--color-accent)] font-medium border border-gray-200',
   action:   'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200',
-  equals:   'bg-blue-600 hover:bg-blue-700 text-white font-medium',
+  equals:   'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-medium',
 };
 
 interface CalculatorProps {

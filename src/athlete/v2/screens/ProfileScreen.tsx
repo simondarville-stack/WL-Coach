@@ -69,16 +69,16 @@ export function ProfileScreen() {
     <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
       {/* Identity */}
       <div className="flex items-center gap-3">
-        <div className="w-14 h-14 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
+        <div className="w-14 h-14 rounded-full bg-[var(--color-bg-secondary)] flex items-center justify-center flex-shrink-0 overflow-hidden">
           {athlete.photo_url ? (
             <img src={athlete.photo_url} alt="" className="w-full h-full object-cover" />
           ) : (
-            <UserIcon size={24} className="text-gray-500" />
+            <UserIcon size={24} className="text-[color:var(--color-text-secondary)]" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-white truncate">{athlete.name}</h1>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-[color:var(--color-text-secondary)]">
             {athlete.weight_class && <span>{athlete.weight_class}</span>}
             {athlete.club && <span>· {athlete.club}</span>}
           </div>
@@ -88,7 +88,7 @@ export function ProfileScreen() {
         {!locked && (
           <button
             onClick={signOut}
-            className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-3 py-2 rounded-md border border-gray-800 hover:border-gray-600"
+            className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-[color:var(--color-text-secondary)] hover:text-white px-3 py-2 rounded-md border border-[color:var(--color-border-tertiary)] hover:border-[color:var(--color-border-primary)]"
           >
             <LogOut size={12} />
             Switch
@@ -97,7 +97,7 @@ export function ProfileScreen() {
       </div>
 
       {loading && (
-        <div className="flex items-center justify-center py-12 text-gray-500">
+        <div className="flex items-center justify-center py-12 text-[color:var(--color-text-secondary)]">
           <Loader2 size={18} className="animate-spin mr-2" />
           <span className="text-sm">Loading profile…</span>
         </div>
@@ -113,19 +113,19 @@ export function ProfileScreen() {
       {!loading && !error && (
         <>
           {/* Bodyweight chart */}
-          <section className="rounded-xl bg-gray-900 border border-gray-800 p-3">
+          <section className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
             <div className="flex items-baseline justify-between mb-2">
-              <h2 className="text-[11px] uppercase tracking-wide font-semibold text-gray-500">
+              <h2 className="text-[11px] uppercase tracking-wide font-semibold text-[color:var(--color-text-secondary)]">
                 Bodyweight
               </h2>
               {bwLatest != null && (
                 <span className="text-sm font-bold text-white">
-                  {bwLatest.toFixed(1)} <span className="text-xs text-gray-500 font-normal">kg</span>
+                  {bwLatest.toFixed(1)} <span className="text-xs text-[color:var(--color-text-secondary)] font-normal">kg</span>
                 </span>
               )}
             </div>
             {bw.length === 0 ? (
-              <p className="text-xs text-gray-500 italic py-6 text-center">
+              <p className="text-xs text-[color:var(--color-text-secondary)] italic py-6 text-center">
                 No bodyweight entries yet. Log one on Today.
               </p>
             ) : (
@@ -169,7 +169,7 @@ export function ProfileScreen() {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex justify-between text-[10px] text-gray-500 mt-1 px-2">
+                <div className="flex justify-between text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-1 px-2">
                   <span>min {bwMin.toFixed(1)}</span>
                   <span>max {bwMax.toFixed(1)}</span>
                   <span>{bw.length} entries</span>
@@ -184,20 +184,20 @@ export function ProfileScreen() {
           <button
             type="button"
             onClick={() => navigate('/athlete/prs')}
-            className="w-full rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 hover:bg-gray-900/80 transition-colors text-left flex items-center gap-3 px-3 py-3"
+            className="w-full rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] hover:border-[color:var(--color-border-secondary)] hover:bg-gray-900/80 transition-colors text-left flex items-center gap-3 px-3 py-3"
           >
             <div className="w-9 h-9 rounded-full bg-blue-950 border border-blue-900 flex items-center justify-center flex-shrink-0">
-              <Trophy size={16} className="text-blue-400" />
+              <Trophy size={16} className="text-[color:var(--color-accent)]" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-white">Personal records</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">
+              <div className="text-[11px] text-[color:var(--color-text-secondary)] mt-0.5">
                 {prs.length === 0
                   ? 'No PRs yet — tap to log one'
                   : `${prs.length} exercise${prs.length === 1 ? '' : 's'} with a PR`}
               </div>
             </div>
-            <ChevronRight size={16} className="text-gray-500 flex-shrink-0" />
+            <ChevronRight size={16} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
           </button>
         </>
       )}

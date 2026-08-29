@@ -35,7 +35,7 @@ export function TemplatePreviewDialog({ templateId, onClose }: TemplatePreviewDi
         setLoading(false);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load template');
+        setError(err instanceof Error ? err.message : 'Couldn’t load template. Check your connection and try again.');
         setLoading(false);
       }
     })();

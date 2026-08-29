@@ -119,7 +119,7 @@ export function TimeInput({
 
   const showError = error || invalid;
   const layout = className
-    ?? 'w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+    ?? 'w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]';
 
   return (
     <input

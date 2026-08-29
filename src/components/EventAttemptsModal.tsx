@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Video, Trash2, Plus, Upload } from 'lucide-react';
 import type { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { useEvents } from '../hooks/useEvents';
+import { alertDialog, confirmDialog } from './ui';
 
 interface EventAttemptsModalProps {
   eventId: string;
@@ -77,7 +78,10 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       onSave();
       onClose();
     } catch (error) {
-      alert('Failed to save attempts. Please try again.');
+      void alertDialog({
+        title: "Couldn't save the attempts",
+        message: 'Your entries are still on screen. Check the connection and save again.',
+      });
     }
   }
 
@@ -97,7 +101,10 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setShowVideoForm(false);
       loadData();
     } catch (error) {
-      alert('Failed to upload video. Please try again.');
+      void alertDialog({
+        title: "Couldn't upload the video",
+        message: 'Nothing was saved. Check the connection and start the upload again.',
+      });
     } finally {
       setUploading(false);
     }
@@ -124,7 +131,12 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
   }
 
   async function handleDeleteVideo(videoId: string, videoUrl: string) {
-    if (!confirm('Delete this video?')) return;
+    const ok = await confirmDialog({
+      title: 'Delete this video?',
+      confirmLabel: 'Delete video',
+      tone: 'danger',
+    });
+    if (!ok) return;
 
     try {
       await deleteEventVideo(videoId, videoUrl);
@@ -159,7 +171,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               updateAttempt(field, inputVal);
             }
           }}
-          className="w-24 px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-24 px-3 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           placeholder="kg"
         />
         {isActual && (
@@ -210,7 +222,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               onClick={() => setActiveTab('planned')}
               className={`px-4 py-2 font-medium border-b-2 ${
                 activeTab === 'planned'
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -220,7 +232,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               onClick={() => setActiveTab('actual')}
               className={`px-4 py-2 font-medium border-b-2 ${
                 activeTab === 'actual'
-                  ? 'border-blue-600 text-blue-600'
+                  ? 'border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -277,7 +289,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                   onChange={(e) =>
                     setAttempts(attempts ? { ...attempts, competition_notes: e.target.value } : null)
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                   rows={4}
                   placeholder="Notes about the competition performance..."
                 />
@@ -290,7 +302,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
               <h3 className="text-sm font-medium text-gray-900">Videos</h3>
               <button
                 onClick={() => setShowVideoForm(!showVideoForm)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="flex items-center gap-2 px-3 py-1.5 text-sm bg-[var(--color-accent)] text-white rounded-md hover:bg-[var(--color-accent-hover)]"
               >
                 <Plus className="w-4 h-4" />
                 Add Video
@@ -307,7 +319,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                       onChange={(e) =>
                         setVideoForm({ ...videoForm, lift_type: e.target.value as 'snatch' | 'clean_jerk' })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     >
                       <option value="snatch">Snatch</option>
                       <option value="clean_jerk">Clean & Jerk</option>
@@ -318,7 +330,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                     <select
                       value={videoForm.attempt_number}
                       onChange={(e) => setVideoForm({ ...videoForm, attempt_number: parseInt(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     >
                       <option value={1}>1st</option>
                       <option value={2}>2nd</option>
@@ -335,7 +347,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                     }}
                     className={`px-4 py-2 text-sm font-medium border-b-2 ${
                       uploadMethod === 'url'
-                        ? 'border-blue-600 text-blue-600'
+                        ? 'border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
                         : 'border-transparent text-gray-600 hover:text-gray-900'
                     }`}
                   >
@@ -348,7 +360,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                     }}
                     className={`px-4 py-2 text-sm font-medium border-b-2 ${
                       uploadMethod === 'file'
-                        ? 'border-blue-600 text-blue-600'
+                        ? 'border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
                         : 'border-transparent text-gray-600 hover:text-gray-900'
                     }`}
                   >
@@ -363,7 +375,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                       type="url"
                       value={videoForm.video_url}
                       onChange={(e) => setVideoForm({ ...videoForm, video_url: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                       placeholder="https://youtube.com/..."
                     />
                   </div>
@@ -404,7 +416,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                     type="text"
                     value={videoForm.description}
                     onChange={(e) => setVideoForm({ ...videoForm, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     placeholder="e.g., Good technique, slight miss forward"
                   />
                 </div>
@@ -412,7 +424,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                   <button
                     onClick={handleAddVideo}
                     disabled={uploading || (uploadMethod === 'url' ? !videoForm.video_url.trim() : !selectedFile)}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-md hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {uploading ? 'Uploading...' : uploadMethod === 'file' ? 'Upload Video' : 'Add Video'}
                   </button>
@@ -451,7 +463,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                         href={video.video_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:text-blue-700 truncate block mt-1"
+                        className="text-xs text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] truncate block mt-1"
                       >
                         {isUploadedFile ? 'View uploaded video' : video.video_url}
                       </a>
@@ -481,7 +493,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
           </button>
           <button
             onClick={handleSave}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700"
+            className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white font-medium rounded-lg hover:bg-[var(--color-accent-hover)]"
           >
             Save
           </button>

@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchWeeklyAggregates, fetchLiftRatios, type WeeklyAggregate } from '../../hooks/useAnalysis';
 import { generateInsights } from '../../lib/analysisInsights';
+import { Spinner } from '../ui';
 
 interface Props {
   athleteId: string;
@@ -63,7 +64,7 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
     load();
   }, [athleteId, startDate, endDate]);
 
-  if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
+  if (loading) return <div className="h-64 flex items-center justify-center"><Spinner size={20} /></div>;
   if (!aggregates.length) return (
     <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
       No training data found for this period. Try selecting a longer date range.
@@ -140,7 +141,7 @@ export function PlannedVsPerformed({ athleteId, startDate, endDate }: Props) {
       {insights.length > 0 && (
         <div className="space-y-2">
           {insights.map((insight, i) => (
-            <div key={i} className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 text-[13px] text-blue-700">
+            <div key={i} className="bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)] rounded-lg px-4 py-2.5 text-[13px] text-[color:var(--color-accent)]">
               {insight}
             </div>
           ))}

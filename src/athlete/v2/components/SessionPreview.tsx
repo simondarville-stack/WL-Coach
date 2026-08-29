@@ -84,25 +84,25 @@ export function SessionPreview({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl bg-gray-900 border border-gray-800 px-4 py-3">
+      <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] px-4 py-3">
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <div>
             <div className="flex items-baseline gap-2 flex-wrap">
               <h2 className="text-base font-bold text-white">{slotLabel}</h2>
               {weekdayLabel && (
-                <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+                <span className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
                   {weekdayLabel}
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-500 mt-0.5">{prettyDate}</p>
+            <p className="text-[11px] text-[color:var(--color-text-secondary)] mt-0.5">{prettyDate}</p>
             {isBonus && (
-              <p className="text-[10px] text-amber-300 italic mt-1">Extra training day</p>
+              <p className="text-[length:var(--text-caption)] text-amber-300 italic mt-1">Extra training day</p>
             )}
           </div>
           {status === 'completed' && <DoneChip variant="dark" />}
           {status === 'skipped' && (
-            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+            <span className="inline-flex items-center gap-1 text-[length:var(--text-caption)] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
               <Ban size={11} />
               Not done
             </span>
@@ -111,7 +111,7 @@ export function SessionPreview({
 
         {status === 'skipped' && session?.skipped_reason?.trim() && (
           <p className="text-[11px] text-red-300/90 mt-2 pt-2 border-t border-gray-800/60 whitespace-pre-wrap">
-            <span className="text-red-400/80 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">
+            <span className="text-red-400/80 not-italic uppercase text-[length:var(--text-micro)] font-semibold tracking-wide mr-1.5">
               Reason
             </span>
             {session.skipped_reason}
@@ -119,31 +119,31 @@ export function SessionPreview({
         )}
 
         {session && (
-          <div className="flex items-center gap-3 text-[11px] text-gray-400 flex-wrap mt-2 pt-2 border-t border-gray-800/60">
+          <div className="flex items-center gap-3 text-[11px] text-[color:var(--color-text-secondary)] flex-wrap mt-2 pt-2 border-t border-gray-800/60">
             {session.bodyweight_kg != null && (
-              <span><span className="text-gray-500">BW</span> {session.bodyweight_kg.toFixed(1)} kg</span>
+              <span><span className="text-[color:var(--color-text-secondary)]">BW</span> {session.bodyweight_kg.toFixed(1)} kg</span>
             )}
             {session.raw_total != null && (
               <span title="RAW readiness (Eleiko): sum of 4 pillars rated 1–3, range 4–12">
-                <span className="text-gray-500">RAW</span> {session.raw_total}/12
+                <span className="text-[color:var(--color-text-secondary)]">RAW</span> {session.raw_total}/12
               </span>
             )}
             {session.duration_minutes != null && (
-              <span><span className="text-gray-500">⏱</span> {session.duration_minutes}m</span>
+              <span><span className="text-[color:var(--color-text-secondary)]">⏱</span> {session.duration_minutes}m</span>
             )}
           </div>
         )}
 
         {session?.session_notes?.trim() && (
-          <p className="text-[11px] text-gray-300 italic mt-2 pt-2 border-t border-gray-800/60 whitespace-pre-wrap">
+          <p className="text-[11px] text-[color:var(--color-text-primary)] italic mt-2 pt-2 border-t border-gray-800/60 whitespace-pre-wrap">
             {session.session_notes}
           </p>
         )}
       </div>
 
       {planned.length === 0 && offPlan.length === 0 ? (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-          <p className="text-sm text-gray-300 font-semibold">
+        <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-6 text-center">
+          <p className="text-sm text-[color:var(--color-text-primary)] font-semibold">
             {isBonus
               ? 'Nothing logged yet'
               : viewerRole === 'coach'
@@ -151,7 +151,7 @@ export function SessionPreview({
               : 'No exercises in this slot'}
           </p>
           {viewerRole === 'athlete' && (
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-[color:var(--color-text-secondary)] mt-1">
               {isBonus
                 ? 'Tap "Start logging" to add what you did.'
                 : 'Pick another day or check with your coach.'}
@@ -159,7 +159,7 @@ export function SessionPreview({
           )}
         </div>
       ) : (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+        <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] overflow-hidden">
           <ul className="divide-y divide-gray-800/60">
             {planned.map(p => (
               <PreviewExerciseRow
@@ -174,7 +174,7 @@ export function SessionPreview({
             ))}
             {offPlan.length > 0 && (
               <li>
-                <div className="px-3 py-1.5 bg-amber-950/40 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                <div className="px-3 py-1.5 bg-amber-950/40 text-[length:var(--text-caption)] font-semibold uppercase tracking-wide text-amber-300">
                   {viewerRole === 'coach' ? 'Added by athlete' : 'Added by you'}
                 </div>
                 <ul className="divide-y divide-gray-800/60">
@@ -206,13 +206,13 @@ export function SessionPreview({
             title="Tap to reply"
           >
             <div className="flex items-center gap-1.5 mb-1">
-              <MessageSquare size={11} className="text-blue-400 flex-shrink-0" />
-              <span className="text-[10px] text-blue-300 font-semibold uppercase tracking-wide">
+              <MessageSquare size={11} className="text-[color:var(--color-accent)] flex-shrink-0" />
+              <span className="text-[length:var(--text-caption)] text-[color:var(--color-accent)] font-semibold uppercase tracking-wide">
                 Coach left {coachMessages.length} message{coachMessages.length > 1 ? 's' : ''}
               </span>
-              <span className="text-[9px] text-blue-400 ml-auto">Tap to reply</span>
+              <span className="text-[length:var(--text-micro)] text-[color:var(--color-accent)] ml-auto">Tap to reply</span>
             </div>
-            <p className="text-xs text-blue-200 italic whitespace-pre-wrap leading-snug line-clamp-2">
+            <p className="text-xs text-[color:var(--color-accent)] italic whitespace-pre-wrap leading-snug line-clamp-2">
               {latest.message}
             </p>
           </button>
@@ -222,7 +222,7 @@ export function SessionPreview({
       {!readOnly && (
         <button
           onClick={onStart}
-          className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
+          className="w-full inline-flex items-center justify-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-semibold text-sm py-3 rounded-xl transition-colors"
         >
           <PlayCircle size={18} />
           {status === 'completed'
@@ -306,14 +306,14 @@ function PreviewExerciseRow({
           {/* Legacy variation_note fallback — the folded note
               (exercise.notes) renders in its own block below. */}
           {!planned.exercise.notes?.trim() && planned.exercise.variation_note && (
-            <span className="text-[11px] text-gray-400 italic">
+            <span className="text-[11px] text-[color:var(--color-text-secondary)] italic">
               {planned.exercise.variation_note}
             </span>
           )}
           {/* Redundant with the member-dot list below; keep only as a fallback
               when there are no members to list. */}
           {planned.exercise.is_combo && planned.comboMembers.length === 0 && (
-            <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
+            <span className="text-[length:var(--text-micro)] bg-blue-900/50 text-[color:var(--color-accent)] font-medium px-1.5 py-0.5 rounded">
               Combo
             </span>
           )}
@@ -323,8 +323,8 @@ function PreviewExerciseRow({
         {planned.exercise.is_combo && planned.comboMembers.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {planned.comboMembers.map((m, idx) => (
-              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
-                {idx > 0 && <span className="text-gray-600">+</span>}
+              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[length:var(--text-caption)] text-[color:var(--color-text-primary)]">
+                {idx > 0 && <span className="text-[color:var(--color-text-secondary)]">+</span>}
                 <span
                   className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: m.exercise?.color ?? '#6b7280' }}
@@ -340,7 +340,7 @@ function PreviewExerciseRow({
             read the note (which often qualifies the variation) — so it must
             come before the numbers, not after. */}
         {!athleteHidden.includes('note') && planned.exercise.notes?.trim() && (
-          <p className="text-[11px] text-gray-400 italic whitespace-pre-wrap leading-snug">
+          <p className="text-[11px] text-[color:var(--color-text-secondary)] italic whitespace-pre-wrap leading-snug">
             {planned.exercise.notes}
           </p>
         )}
@@ -349,7 +349,7 @@ function PreviewExerciseRow({
             the athlete trains and logs freely for this exercise. */}
         {!athleteHidden.includes('prescription') && (
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
+            <span className="text-[length:var(--text-micro)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold w-7 flex-shrink-0">
               Plan
             </span>
             <StackedNotation
@@ -360,17 +360,17 @@ function PreviewExerciseRow({
               isCombo={planned.exercise.is_combo}
             />
             {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.totalTime != null && (
-              <span className="text-[11px] text-gray-400 font-medium">
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] font-medium">
                 ⏱ {formatSeconds(planned.exercise.metadata.features.totalTime)}
               </span>
             )}
             {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.restTime != null && (
-              <span className="text-[11px] text-gray-400 font-medium">
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] font-medium">
                 ⏸ rest {formatSeconds(planned.exercise.metadata.features.restTime)}
               </span>
             )}
             {!athleteHidden.includes('durations') && planned.exercise.metadata?.features?.tempo != null && (
-              <span className="text-[11px] text-gray-400 font-medium" title="Tempo: eccentric · pause · concentric · pause">
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] font-medium" title="Tempo: eccentric · pause · concentric · pause">
                 ⧖ {planned.exercise.metadata.features.tempo}
               </span>
             )}
@@ -379,7 +379,7 @@ function PreviewExerciseRow({
 
         {(showLogged ?? !readOnly) && (
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
+            <span className="text-[length:var(--text-micro)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold w-7 flex-shrink-0">
               Did
             </span>
             {logged ? (
@@ -395,7 +395,7 @@ function PreviewExerciseRow({
                     show. */}
                 {delta.state !== 'pending' && plannedReps > 0 && !athleteHidden.includes('prescription') && !topSetOnly && (
                   <span
-                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                    className={`text-[length:var(--text-caption)] font-semibold px-1.5 py-0.5 rounded ${
                       delta.state === 'matched'
                         ? 'bg-emerald-900/40 text-emerald-300'
                         : delta.state === 'amber'
@@ -408,14 +408,14 @@ function PreviewExerciseRow({
                 )}
               </>
             ) : (
-              <span className="text-[11px] text-gray-500 italic">Not logged</span>
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] italic">Not logged</span>
             )}
           </div>
         )}
 
         {logged?.log.performed_notes?.trim() && (
-          <p className="text-[11px] text-gray-300 italic whitespace-pre-wrap leading-snug">
-            <span className="text-gray-500 not-italic uppercase text-[9px] font-semibold tracking-wide mr-1.5">
+          <p className="text-[11px] text-[color:var(--color-text-primary)] italic whitespace-pre-wrap leading-snug">
+            <span className="text-[color:var(--color-text-secondary)] not-italic uppercase text-[length:var(--text-micro)] font-semibold tracking-wide mr-1.5">
               {viewerRole === 'coach' ? 'Athlete' : 'You'}
             </span>
             {logged.log.performed_notes}
@@ -486,7 +486,7 @@ function PreviewOffPlanRow({
         <div className="flex items-baseline gap-2 flex-wrap">
           <h3 className="text-sm font-bold text-white">{name}</h3>
           {combo && (
-            <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
+            <span className="text-[length:var(--text-micro)] bg-blue-900/50 text-[color:var(--color-accent)] font-medium px-1.5 py-0.5 rounded">
               Combo
             </span>
           )}
@@ -494,8 +494,8 @@ function PreviewOffPlanRow({
         {combo && combo.members.length > 0 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {combo.members.map((m, idx) => (
-              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
-                {idx > 0 && <span className="text-gray-600">+</span>}
+              <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[length:var(--text-caption)] text-[color:var(--color-text-primary)]">
+                {idx > 0 && <span className="text-[color:var(--color-text-secondary)]">+</span>}
                 <span
                   className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: m.color ?? '#6b7280' }}
@@ -507,22 +507,22 @@ function PreviewOffPlanRow({
           </div>
         )}
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-[9px] uppercase tracking-wide text-gray-500 font-semibold w-7 flex-shrink-0">
+          <span className="text-[length:var(--text-micro)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold w-7 flex-shrink-0">
             Did
           </span>
           {logged.sets.length === 0 ? (
-            <span className="text-[11px] text-gray-500 italic">No sets yet</span>
+            <span className="text-[11px] text-[color:var(--color-text-secondary)] italic">No sets yet</span>
           ) : (
             <LoggedStackedNotation sets={logged.sets} />
           )}
           {completedSets.length > 0 && (
-            <span className="text-[10px] text-gray-500">
+            <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">
               {completedSets.length}/{logged.sets.length} done
             </span>
           )}
         </div>
         {logged.log.performed_notes?.trim() && (
-          <p className="text-[11px] text-gray-300 italic whitespace-pre-wrap leading-snug">
+          <p className="text-[11px] text-[color:var(--color-text-primary)] italic whitespace-pre-wrap leading-snug">
             {logged.log.performed_notes}
           </p>
         )}

@@ -13,14 +13,26 @@
   /* -- Typography: font families -- */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-stacked: var(--font-sans);
+  /* The typeface of Stacked Load Notation, in both its read-only display
+   * (StackedNotation) and its editable grid cells (.pgrid-*). It resolved to
+   * --font-sans while StackedNotation named --font-mono directly, so the same
+   * load rendered in two faces and changed width when a cell lost focus. */
+  --font-stacked: var(--font-mono);
 
-  /* -- Typography: size scale (5 sizes only) -- */
+  /* -- Typography: size scale (7 sizes) --
+   *
+   * Was "5 sizes only", but the app had drifted to 716 arbitrary text-[Npx]
+   * values across 12 sizes. The two heaviest (11px, 10px) were pointing at
+   * genuine gaps: a step below caption, and a step for the notation — the
+   * signature visual, which had been rendering at the *smallest* size in the
+   * scale while page titles got 22px. Both are named here instead. */
   --text-page-title: 22px;
   --text-section: 16px;
   --text-body: 14px;
+  --text-notation: 13px; /* Stacked Load Notation on primary surfaces */
   --text-label: 13px;
   --text-caption: 11px;
+  --text-micro: 10px;    /* badges, counts, dense-grid notation — no prose */
 
   /* -- Typography: line-heights -- */
   --leading-page-title: 1.2;
@@ -392,7 +404,7 @@ samp {
   display: block;
   width: 100%;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--text-notation);
   font-family: var(--font-stacked);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
@@ -472,7 +484,7 @@ samp {
   display: block;
   width: 100%;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--text-notation);
   font-family: var(--font-stacked);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
@@ -503,7 +515,7 @@ samp {
   padding: 0 4px;
   white-space: nowrap;
   pointer-events: none;
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-family: var(--font-stacked);
   font-variant-numeric: tabular-nums;
   color: var(--color-accent);
@@ -516,7 +528,7 @@ samp {
 .pgrid-wrap.pgrid-compact { gap: 4px; }
 .pgrid-compact .pgrid-btn,
 .pgrid-compact .pgrid-editing {
-  font-size: 10px;
+  font-size: var(--text-micro);
   height: 1rem;
   min-height: 1rem;
   line-height: 1rem;

@@ -12,14 +12,14 @@ import { Info } from 'lucide-react';
 export function WeekBriefCard({ brief }: { brief: string | null | undefined }) {
   if (!brief?.trim()) return null;
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 px-4 py-3">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] px-4 py-3">
       <div className="flex items-center gap-1.5 mb-1">
-        <Info size={11} className="text-gray-500 flex-shrink-0" />
-        <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+        <Info size={11} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
+        <span className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
           Week brief
         </span>
       </div>
-      <p className="text-xs text-gray-300 whitespace-pre-wrap leading-snug">{brief}</p>
+      <p className="text-xs text-[color:var(--color-text-primary)] whitespace-pre-wrap leading-snug">{brief}</p>
     </div>
   );
 }

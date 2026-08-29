@@ -363,7 +363,7 @@ export function MacroAnnualWheel({
       {/* Create button */}
       <button
         onClick={onCreateCycle}
-        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)]"
       >
         <Plus size={14} />
         New macrocycle

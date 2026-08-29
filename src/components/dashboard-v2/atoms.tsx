@@ -26,7 +26,7 @@ export function lastTrainLabel(days: number | null): string {
 export function Avatar({
   name, size = 28, onClick, title,
 }: { name: string; size?: number; onClick?: () => void; title?: string }) {
-  const base = "inline-flex items-center justify-center rounded-full bg-blue-100 text-blue-700 font-medium flex-shrink-0";
+  const base = "inline-flex items-center justify-center rounded-full bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] font-medium flex-shrink-0";
   const style = {
     width: size, height: size,
     fontSize: size <= 22 ? 10 : 11,
@@ -38,7 +38,7 @@ export function Avatar({
         type="button"
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         title={title || `Open ${name}`}
-        className={`${base} cursor-pointer transition-shadow hover:ring-2 hover:ring-blue-200 border-none p-0`}
+        className={`${base} cursor-pointer transition-shadow hover:ring-2 hover:ring-[color:var(--color-accent-border)] border-none p-0`}
         style={style}
       >
         {content}
@@ -377,7 +377,7 @@ export function EventTag({
   };
   const inner = (
     <>
-      <span className="text-[9.5px] font-medium uppercase tracking-wider">{c.tag}</span>
+      <span className="text-[length:var(--text-micro)] font-medium uppercase tracking-wider">{c.tag}</span>
       <span className="overflow-hidden text-ellipsis">{name}</span>
       <span className="opacity-60 tabular-nums">· {daysOut}d</span>
     </>

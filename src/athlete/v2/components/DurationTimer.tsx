@@ -142,7 +142,7 @@ export function DurationTimer({ seconds, icon, label, storageKey }: DurationTime
             ? 'text-white bg-white/10'
             : paused != null
             ? 'text-amber-300 bg-amber-500/10'
-            : 'text-gray-500 active:bg-white/10')
+            : 'text-[color:var(--color-text-secondary)] active:bg-white/10')
         }
       >
         {idle
@@ -157,7 +157,7 @@ export function DurationTimer({ seconds, icon, label, storageKey }: DurationTime
           onClick={e => { e.stopPropagation(); reset(); }}
           title="Reset timer"
           aria-label="Reset timer"
-          className="text-[11px] text-gray-500 leading-none px-1 active:text-white"
+          className="tap-y text-[11px] text-[color:var(--color-text-secondary)] leading-none px-1 active:text-white"
         >
           ✕
         </button>

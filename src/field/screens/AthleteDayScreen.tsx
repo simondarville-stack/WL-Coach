@@ -117,12 +117,12 @@ export function AthleteDayScreen() {
     ?? (weekday != null ? addDaysToISO(weekStart, weekday) : toLocalISO(new Date()));
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[var(--color-bg-page)] text-white">
       <div className="max-w-2xl mx-auto px-3 pt-4 pb-8">
         <div className="flex items-center gap-2 mb-4">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 -ml-2 text-gray-400 hover:text-white"
+            className="p-2 -ml-2 text-[color:var(--color-text-secondary)] hover:text-white"
             aria-label="Back"
           >
             <ArrowLeft size={18} />
@@ -131,7 +131,7 @@ export function AthleteDayScreen() {
           {athleteId && (
             <button
               onClick={() => setMessageOpen(true)}
-              className="p-2 -mr-2 text-gray-400 hover:text-white"
+              className="p-2 -mr-2 text-[color:var(--color-text-secondary)] hover:text-white"
               aria-label={`Message ${athleteName || 'athlete'}`}
               title="Message athlete"
             >
@@ -144,7 +144,7 @@ export function AthleteDayScreen() {
           <p className="text-sm text-red-400">{error}</p>
         ) : !dayData ? (
           <div className="flex justify-center py-16">
-            <Loader2 size={24} className="animate-spin text-gray-600" />
+            <Loader2 size={24} className="animate-spin text-[color:var(--color-text-tertiary)]" />
           </div>
         ) : (
           <SessionPreview

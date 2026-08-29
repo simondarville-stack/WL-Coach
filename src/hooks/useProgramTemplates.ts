@@ -25,20 +25,20 @@ export function useProgramTemplates() {
   }, []);
 
   const fetchTemplates = useCallback(async (): Promise<ProgramTemplateSummary[]> => {
-    const result = await wrap(svc.fetchTemplates, 'Failed to load templates');
+    const result = await wrap(svc.fetchTemplates, 'Couldn’t load templates. Check your connection and try again.');
     if (result) setTemplates(result);
     return result ?? [];
   }, [wrap]);
 
   const fetchTemplateFull = useCallback(
     async (id: string): Promise<ProgramTemplateFull | null> =>
-      wrap(() => svc.fetchTemplateFull(id), 'Failed to load template'),
+      wrap(() => svc.fetchTemplateFull(id), 'Couldn’t load template. Check your connection and try again.'),
     [wrap],
   );
 
   const createTemplate = useCallback(
     async (input: { name: string; description?: string | null; tags?: string[] }): Promise<ProgramTemplate | null> => {
-      const result = await wrap(() => svc.createTemplate(input), 'Failed to create template');
+      const result = await wrap(() => svc.createTemplate(input), 'Couldn’t create template. Nothing was created.');
       if (result) await fetchTemplates();
       return result;
     },
@@ -47,7 +47,7 @@ export function useProgramTemplates() {
 
   const updateTemplate = useCallback(
     async (id: string, patch: { name?: string; description?: string | null; tags?: string[] }): Promise<boolean> => {
-      const result = await wrap(() => svc.updateTemplate(id, patch).then(() => true), 'Failed to update template');
+      const result = await wrap(() => svc.updateTemplate(id, patch).then(() => true), 'Couldn’t update template. Nothing was changed.');
       if (result) await fetchTemplates();
       return result === true;
     },
@@ -56,7 +56,7 @@ export function useProgramTemplates() {
 
   const deleteTemplate = useCallback(
     async (id: string): Promise<boolean> => {
-      const result = await wrap(() => svc.deleteTemplate(id).then(() => true), 'Failed to delete template');
+      const result = await wrap(() => svc.deleteTemplate(id).then(() => true), 'Couldn’t delete template. Nothing was deleted.');
       if (result) await fetchTemplates();
       return result === true;
     },
@@ -65,7 +65,7 @@ export function useProgramTemplates() {
 
   const duplicateTemplate = useCallback(
     async (id: string, newName?: string): Promise<ProgramTemplate | null> => {
-      const result = await wrap(() => svc.duplicateTemplate(id, newName), 'Failed to duplicate template');
+      const result = await wrap(() => svc.duplicateTemplate(id, newName), 'Couldn’t duplicate template. Nothing was copied.');
       if (result) await fetchTemplates();
       return result;
     },
@@ -81,7 +81,7 @@ export function useProgramTemplates() {
     ): Promise<ProgramTemplate | null> => {
       const result = await wrap(
         () => svc.createTemplateFromDay(weekPlanId, dayIndex, name, opts),
-        'Failed to save template from day',
+        'Couldn’t save template from day. Your changes are still on screen.',
       );
       if (result) await fetchTemplates();
       return result;
@@ -102,7 +102,7 @@ export function useProgramTemplates() {
     ): Promise<ProgramTemplate | null> => {
       const result = await wrap(
         () => svc.createTemplateFromWeek(weekPlanId, name, opts),
-        'Failed to save template from week',
+        'Couldn’t save template from week. Your changes are still on screen.',
       );
       if (result) await fetchTemplates();
       return result;
@@ -119,7 +119,7 @@ export function useProgramTemplates() {
     ): Promise<boolean> => {
       const result = await wrap(
         () => svc.applyTemplateDayToPlanDay(templateDayId, weekPlanId, targetDayIndex, opts).then(() => true),
-        'Failed to apply template day',
+        'Couldn’t apply template day. Nothing was applied.',
       );
       return result === true;
     },
@@ -135,7 +135,7 @@ export function useProgramTemplates() {
     ): Promise<boolean> => {
       const result = await wrap(
         () => svc.applyTemplateToPlan(templateId, weekPlanId, mapping, opts).then(() => true),
-        'Failed to apply template',
+        'Couldn’t apply template. Nothing was applied.',
       );
       return result === true;
     },

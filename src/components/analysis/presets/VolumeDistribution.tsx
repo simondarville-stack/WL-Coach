@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fetchWeeklyAggregates, type WeeklyAggregate } from '../../../hooks/useAnalysis';
+import { Spinner } from '../../ui';
 
 interface Props { athleteId: string; startDate: string; endDate: string; }
 
@@ -26,7 +27,7 @@ export function VolumeDistribution({ athleteId, startDate, endDate }: Props) {
       .finally(() => setLoading(false));
   }, [athleteId, startDate, endDate]);
 
-  if (loading) return <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>;
+  if (loading) return <div className="h-64 flex items-center justify-center"><Spinner size={20} /></div>;
 
   const chartData = aggregates.map(agg => {
     const byCat: Record<string, number> = {};

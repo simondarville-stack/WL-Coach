@@ -225,12 +225,12 @@ export function ExerciseLogCard({
           metadata={planned.exercise.metadata as Record<string, unknown> | undefined}
           theme="dark"
         />
-        <div className="rounded-xl bg-gray-900 border border-gray-800 px-3 py-2">
+        <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] px-3 py-2">
           <AutoGrowTextarea
             {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
           />
         </div>
       </div>
@@ -275,7 +275,7 @@ export function ExerciseLogCard({
     rows.every(r => r.plannedLoadValue != null);
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] overflow-hidden">
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-full flex items-start gap-3 px-3 py-3 hover:bg-gray-800/50 transition-colors text-left"
@@ -294,7 +294,7 @@ export function ExerciseLogCard({
             </h3>
             {performedExercise && performedExercise.id !== planned.exerciseDef?.id && (
               <span
-                className="text-[9px] bg-purple-900/50 text-purple-200 font-medium px-1.5 py-0.5 rounded"
+                className="text-[length:var(--text-micro)] bg-purple-900/50 text-purple-200 font-medium px-1.5 py-0.5 rounded"
                 title={`Substituted for: ${plannedName}`}
               >
                 ⇄ for {plannedName}
@@ -302,12 +302,12 @@ export function ExerciseLogCard({
             )}
             {allCompleted && <DoneChip variant="dark" iconOnly size={14} />}
             {globalSaving && (
-              <span className="text-[9px] text-blue-400 italic">saving…</span>
+              <span className="text-[length:var(--text-micro)] text-[color:var(--color-accent)] italic">saving…</span>
             )}
             {/* The member-dot list below already signals a combo; only show the
                 chip as a fallback when there are no members to list. */}
             {planned.exercise.is_combo && planned.comboMembers.length === 0 && (
-              <span className="text-[9px] bg-blue-900/50 text-blue-300 font-medium px-1.5 py-0.5 rounded">
+              <span className="text-[length:var(--text-micro)] bg-blue-900/50 text-[color:var(--color-accent)] font-medium px-1.5 py-0.5 rounded">
                 Combo
               </span>
             )}
@@ -317,7 +317,7 @@ export function ExerciseLogCard({
                   e.stopPropagation();
                   onRequestSubstitute();
                 }}
-                className="w-9 h-9 flex items-center justify-center -m-1 text-gray-500 hover:text-purple-300"
+                className="w-9 h-9 flex items-center justify-center -m-1 text-[color:var(--color-text-secondary)] hover:text-purple-300"
                 title="Substitute this exercise"
                 aria-label="Substitute exercise"
               >
@@ -328,8 +328,8 @@ export function ExerciseLogCard({
           {planned.exercise.is_combo && planned.comboMembers.length > 0 && (
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               {planned.comboMembers.map((m, idx) => (
-                <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
-                  {idx > 0 && <span className="text-gray-600">+</span>}
+                <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[length:var(--text-caption)] text-[color:var(--color-text-primary)]">
+                  {idx > 0 && <span className="text-[color:var(--color-text-secondary)]">+</span>}
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: m.exercise?.color ?? '#6b7280' }}
@@ -343,7 +343,7 @@ export function ExerciseLogCard({
           {/* Note above the prescription — athletes start on the numbers
               then read the note (often the variation) later, so it leads. */}
           {!hideNote && plannedNote(planned.exercise) && (
-            <p className="text-[10px] text-gray-500 italic mt-1 whitespace-pre-wrap leading-snug">
+            <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] italic mt-1 whitespace-pre-wrap leading-snug">
               {plannedNote(planned.exercise)}
             </p>
           )}
@@ -375,13 +375,13 @@ export function ExerciseLogCard({
               />
             )}
             {!hideDurations && planned.exercise.metadata?.features?.tempo != null && (
-              <span className="text-[11px] text-gray-500 font-medium" title="Tempo: eccentric · pause · concentric · pause">
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] font-medium" title="Tempo: eccentric · pause · concentric · pause">
                 ⧖ {planned.exercise.metadata.features.tempo}
               </span>
             )}
           </div>
         </div>
-        <div className="text-[10px] text-gray-500 flex-shrink-0 mt-0.5">
+        <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] flex-shrink-0 mt-0.5">
           {completedCount}/{rows.length || '—'}
           {expanded ? (
             <ChevronDown size={14} className="inline-block ml-1" />
@@ -394,7 +394,7 @@ export function ExerciseLogCard({
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           {rows.length === 0 ? (
-            <div className="text-xs text-gray-500 italic py-3 text-center">
+            <div className="text-xs text-[color:var(--color-text-secondary)] italic py-3 text-center">
               No set lines defined for this exercise
             </div>
           ) : (
@@ -405,7 +405,7 @@ export function ExerciseLogCard({
                     <button
                       onClick={handleLogAsPrescribed}
                       disabled={savingPrescribed || allCompleted || globalSaving}
-                      className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold py-2 rounded-md transition-colors"
+                      className="flex-1 text-xs bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold py-2 rounded-md transition-colors"
                     >
                       {savingPrescribed || globalSaving ? 'Saving…' : allCompleted ? 'All sets complete' : 'Log as prescribed'}
                     </button>
@@ -413,7 +413,7 @@ export function ExerciseLogCard({
                   {!allCompleted && loggedSets.length > 0 && (
                     <button
                       onClick={onMarkComplete}
-                      className={`text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-3 rounded-md transition-colors ${canLogAsPrescribed ? '' : 'flex-1'}`}
+                      className={`text-xs bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[color:var(--color-text-primary)] py-2 px-3 rounded-md transition-colors ${canLogAsPrescribed ? '' : 'flex-1'}`}
                       title="Mark this exercise complete"
                     >
                       Mark complete
@@ -540,7 +540,7 @@ export function ExerciseLogCard({
               {!readOnly && (
               <button
                 onClick={() => setExtraRows(n => n + 1)}
-                className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
+                className="tap-y w-full inline-flex items-center justify-center gap-1 text-[11px] text-[color:var(--color-text-secondary)] hover:text-white py-1.5 border border-dashed border-[color:var(--color-border-secondary)] hover:border-[color:var(--color-border-primary)] rounded"
               >
                 <Plus size={12} />
                 Add set
@@ -563,7 +563,7 @@ export function ExerciseLogCard({
                 {...notes.bind}
                 placeholder="Notes on this exercise…"
                 rows={2}
-                className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
               />
             </div>
           )}

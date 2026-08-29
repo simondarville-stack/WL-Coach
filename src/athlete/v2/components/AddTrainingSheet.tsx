@@ -114,17 +114,17 @@ export function AddTrainingSheet({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center">
-      <div className="w-full sm:max-w-md bg-gray-900 border border-gray-800 rounded-t-2xl sm:rounded-2xl max-h-[88vh] flex flex-col">
+      <div className="w-full sm:max-w-md bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-t-2xl sm:rounded-2xl max-h-[88vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[color:var(--color-border-tertiary)]">
           <span className="text-sm font-semibold text-white">Add training</span>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-white" aria-label="Close">
+          <button onClick={onClose} className="tap p-1 text-[color:var(--color-text-secondary)] hover:text-white" aria-label="Close">
             <X size={16} />
           </button>
         </div>
 
         {/* Mode selector */}
-        <div className="grid grid-cols-4 gap-1.5 p-2.5 border-b border-gray-800">
+        <div className="grid grid-cols-4 gap-1.5 p-2.5 border-b border-[color:var(--color-border-tertiary)]">
           {MODES.map(m => {
             const Icon = m.icon;
             const active = mode === m.key;
@@ -132,10 +132,10 @@ export function AddTrainingSheet({
               <button
                 key={m.key}
                 onClick={() => { setMode(m.key); setQuery(''); setError(null); }}
-                className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[10px] transition-colors ${
+                className={`flex flex-col items-center gap-1 py-2 rounded-lg border text-[length:var(--text-caption)] transition-colors ${
                   active
-                    ? 'bg-blue-600/20 border-blue-600 text-blue-200'
-                    : 'bg-gray-800/40 border-gray-800 text-gray-400 hover:text-gray-200 hover:border-gray-700'
+                    ? 'bg-blue-600/20 border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
+                    : 'bg-gray-800/40 border-[color:var(--color-border-tertiary)] text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] hover:border-[color:var(--color-border-secondary)]'
                 }`}
               >
                 <Icon size={16} />
@@ -154,30 +154,30 @@ export function AddTrainingSheet({
         {/* Body */}
         {searching && (
           <>
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800">
-              <Search size={14} className="text-gray-500 flex-shrink-0" />
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[color:var(--color-border-tertiary)]">
+              <Search size={14} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder={mode === 'combo' ? 'Search to add a movement…' : 'Search name or code…'}
-                className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+                className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none"
               />
             </div>
 
             {mode === 'combo' && members.length > 0 && (
-              <div className="px-3 py-2 border-b border-gray-800 flex flex-wrap gap-1.5">
+              <div className="px-3 py-2 border-b border-[color:var(--color-border-tertiary)] flex flex-wrap gap-1.5">
                 {members.map((m, idx) => (
                   <span
                     key={m.id + idx}
-                    className="inline-flex items-center gap-1.5 bg-gray-800 border border-gray-700 rounded-full pl-2 pr-1 py-0.5 text-[11px] text-gray-200"
+                    className="inline-flex items-center gap-1.5 bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded-full pl-2 pr-1 py-0.5 text-[11px] text-[color:var(--color-text-primary)]"
                   >
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.color ?? '#6b7280' }} aria-hidden />
                     <span className="truncate max-w-[120px]">{m.name}</span>
                     <button
                       onClick={() => removeMember(idx)}
-                      className="w-4 h-4 flex items-center justify-center text-gray-500 hover:text-red-400"
+                      className="tap-hit w-4 h-4 flex items-center justify-center text-[color:var(--color-text-secondary)] hover:text-red-400"
                       aria-label={`Remove ${m.name}`}
                     >
                       <X size={11} />
@@ -189,9 +189,9 @@ export function AddTrainingSheet({
 
             <ul className="flex-1 overflow-y-auto divide-y divide-gray-800/60">
               {loading && results.length === 0 ? (
-                <li className="px-3 py-6 text-center text-xs text-gray-500">Searching…</li>
+                <li className="px-3 py-6 text-center text-xs text-[color:var(--color-text-secondary)]">Searching…</li>
               ) : results.length === 0 ? (
-                <li className="px-3 py-6 text-center text-xs text-gray-500 italic">No matches</li>
+                <li className="px-3 py-6 text-center text-xs text-[color:var(--color-text-secondary)] italic">No matches</li>
               ) : (
                 results.map(row => (
                   <li key={row.id}>
@@ -202,11 +202,11 @@ export function AddTrainingSheet({
                     >
                       <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: row.color ?? '#6b7280' }} aria-hidden />
                       <span className="flex-1 min-w-0">
-                        <span className="block text-sm text-gray-100 truncate">{row.name}</span>
-                        {row.category && <span className="block text-[10px] text-gray-500 truncate">{row.category}</span>}
+                        <span className="block text-sm text-[color:var(--color-text-primary)] truncate">{row.name}</span>
+                        {row.category && <span className="block text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] truncate">{row.category}</span>}
                       </span>
-                      {row.exercise_code && <span className="text-[10px] text-gray-500 flex-shrink-0">{row.exercise_code}</span>}
-                      {mode === 'combo' && <Plus size={13} className="text-gray-500 flex-shrink-0" />}
+                      {row.exercise_code && <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] flex-shrink-0">{row.exercise_code}</span>}
+                      {mode === 'combo' && <Plus size={13} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />}
                     </button>
                   </li>
                 ))
@@ -214,18 +214,18 @@ export function AddTrainingSheet({
             </ul>
 
             {mode === 'combo' && (
-              <div className="border-t border-gray-800 p-3 space-y-2">
+              <div className="border-t border-[color:var(--color-border-tertiary)] p-3 space-y-2">
                 <input
                   type="text"
                   value={comboName}
                   onChange={e => setComboName(e.target.value)}
                   placeholder={autoComboName || 'Combination name (optional)'}
-                  className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-2 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-2 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
                 />
                 <button
                   onClick={() => void run(() => onAddCombo({ members, name: comboName.trim() || null }))}
                   disabled={busy || members.length < 2}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
                 >
                   <Check size={15} />
                   {members.length < 2 ? 'Pick at least 2 movements' : `Create combination (${members.length})`}
@@ -237,19 +237,19 @@ export function AddTrainingSheet({
 
         {mode === 'note' && (
           <div className="p-3 space-y-2">
-            <p className="text-[11px] text-gray-500">A free-text line for the day — a reminder, how you felt, anything.</p>
+            <p className="text-[11px] text-[color:var(--color-text-secondary)]">A free-text line for the day — a reminder, how you felt, anything.</p>
             <textarea
               value={noteText}
               onChange={e => setNoteText(e.target.value)}
               placeholder="Write a note…"
               rows={3}
               autoFocus
-              className="w-full text-sm bg-gray-800 border border-gray-700 rounded px-2 py-2 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+              className="w-full text-sm bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-2 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)] resize-none"
             />
             <button
               onClick={() => void run(() => onAddNote(noteText.trim()))}
               disabled={busy || noteText.trim() === ''}
-              className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              className="w-full inline-flex items-center justify-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
             >
               <Check size={15} />
               Add note
@@ -259,13 +259,13 @@ export function AddTrainingSheet({
 
         {mode === 'gpp' && (
           <div className="p-3 space-y-2">
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-[color:var(--color-text-secondary)]">
               A circuit / accessory block — a small table of exercises with reps, sets and load. You'll fill in the rows after adding it.
             </p>
             <button
               onClick={() => void run(() => onAddGpp())}
               disabled={busy}
-              className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
+              className="w-full inline-flex items-center justify-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold text-sm py-2.5 rounded-lg transition-colors"
             >
               <Plus size={15} />
               Add GPP block

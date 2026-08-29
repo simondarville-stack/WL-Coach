@@ -27,7 +27,7 @@ import {
 } from '../../lib/prilepin';
 
 const VERDICT_STYLES: Record<Verdict, { bg: string; text: string; label: string }> = {
-  optimal: { bg: 'bg-blue-50 border-blue-200',    text: 'text-blue-700',  label: 'Optimal dose' },
+  optimal: { bg: 'bg-[var(--color-accent-subtle)] border-[color:var(--color-accent-border)]',    text: 'text-[color:var(--color-accent)]',  label: 'Optimal dose' },
   inRange: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', label: 'Within range' },
   under:   { bg: 'bg-amber-50 border-amber-200',  text: 'text-amber-700', label: 'Under range' },
   over:    { bg: 'bg-red-50 border-red-200',      text: 'text-red-700',   label: 'Over range' },
@@ -107,7 +107,7 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
             value={oneRMText}
             onChange={e => setOneRMText(e.target.value)}
             placeholder="—"
-            className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+            className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
           />
           <span className="text-xs text-gray-400">kg</span>
         </div>
@@ -121,7 +121,7 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
             value={pctText}
             onChange={e => setPctText(e.target.value)}
             placeholder="—"
-            className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+            className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
           />
           <span className="text-xs text-gray-400">%</span>
         </div>
@@ -145,7 +145,7 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
             value={repsText}
             onChange={e => setRepsText(e.target.value)}
             placeholder="reps"
-            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
           />
           <span className="text-gray-400">×</span>
           <input
@@ -155,7 +155,7 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
             value={setsText}
             onChange={e => setSetsText(e.target.value)}
             placeholder="sets"
-            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+            className="w-16 font-mono text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
           />
           {nl != null && (
             <span className="text-xs text-gray-500 ml-1">
@@ -201,7 +201,7 @@ export function PrilepinTable({ onClose, positionClass = 'bottom-4 right-4' }: P
             {ZONES.map((z, idx) => {
               const isActive = activeZone?.key === z.key;
               const altRow = idx % 2 === 1 && !isActive ? 'bg-gray-50/50' : '';
-              const activeRow = isActive ? 'bg-blue-50 border-l-[3px] border-blue-500' : '';
+              const activeRow = isActive ? 'bg-[var(--color-accent-subtle)] border-l-[3px] border-[color:var(--color-accent)]' : '';
               const textCls = isActive ? 'font-medium text-gray-900' : 'text-gray-700';
               return (
                 <tr key={z.key} className={`${activeRow} ${altRow}`}>

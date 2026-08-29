@@ -4,6 +4,7 @@ import { Button } from '../ui';
 import { DateInput } from '../ui/DateInput';
 import { isoAddDays, isoMonday } from '../../lib/dateUtils';
 import type { MacroTemplateRow } from '../../lib/macroTemplate';
+import { confirmDialog } from '../ui';
 
 interface CompetitionRow {
   name: string;
@@ -103,7 +104,7 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(msg || 'Failed to create macrocycle.');
+      setError(msg || 'Couldn’t create macrocycle. Nothing was created.');
     } finally {
       setSubmitting(false);
     }
@@ -138,8 +139,14 @@ export function MacroCreateModal({ loading, templates = [], onDeleteTemplate, on
                 </select>
                 {template && onDeleteTemplate && (
                   <button
-                    onClick={() => {
-                      if (!confirm(`Delete template "${template.name}"? This cannot be undone.`)) return;
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: `Delete template "${template.name}"?`,
+                        message: 'This cannot be undone.',
+                        confirmLabel: 'Delete template',
+                        tone: 'danger',
+                      });
+                      if (!ok) return;
                       void onDeleteTemplate(template.id);
                       setTemplateId('');
                     }}

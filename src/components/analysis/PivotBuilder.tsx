@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { fetchWeeklyAggregates, type WeeklyAggregate } from '../../hooks/useAnalysis';
 import { useExerciseStore } from '../../store/exerciseStore';
+import { Spinner } from '../ui';
 
 interface Props {
   athleteId: string;
@@ -219,8 +220,8 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
                 onClick={() => { setCategoryFilter(f); setExerciseFilter('all'); }}
                 className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
                   categoryFilter === f && exerciseFilter === 'all'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                    ? 'bg-[var(--color-accent)] text-white border-[color:var(--color-accent)]'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-[color:var(--color-accent-border)]'
                 }`}
               >
                 {f}
@@ -265,7 +266,7 @@ export function PivotBuilder({ athleteId, startDate, endDate }: Props) {
 
       {/* Chart */}
       {loading ? (
-        <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>
+        <div className="h-64 flex items-center justify-center"><Spinner size={20} /></div>
       ) : chartData.length === 0 ? (
         <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
           No training data found for this period. Try selecting a longer date range.

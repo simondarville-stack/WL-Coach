@@ -94,7 +94,7 @@ export function DayConfigModal({
             </p>
             <button
               onClick={onAddDay}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+              className="px-4 py-2 bg-[var(--color-accent)] text-white rounded hover:bg-[var(--color-accent-hover)] transition-colors font-medium"
             >
               + Add Unit
             </button>
@@ -136,7 +136,7 @@ export function DayConfigModal({
                         type="checkbox"
                         checked={activeDays.includes(dayIndex)}
                         onChange={() => onToggleDay(dayIndex)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 flex-shrink-0"
+                        className="w-4 h-4 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)] flex-shrink-0"
                       />
 
                       {/* Label */}
@@ -145,7 +145,7 @@ export function DayConfigModal({
                         value={editingDayLabels[dayIndex] || ''}
                         onChange={e => onLabelChange(dayIndex, e.target.value)}
                         placeholder={`Unit ${dayDisplayOrder.indexOf(dayIndex) + 1}`}
-                        className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                       />
 
                       {/* Weekday dropdown */}
@@ -163,7 +163,7 @@ export function DayConfigModal({
                             onScheduleChange(dayIndex, { weekday: wd, time: entry?.time ?? null });
                           }
                         }}
-                        className="text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white flex-shrink-0"
+                        className="text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] bg-white flex-shrink-0"
                         style={{ minWidth: 110 }}
                       >
                         <option value="">Unassigned</option>
@@ -184,7 +184,7 @@ export function DayConfigModal({
                           }}
                           invalid={needsTime}
                           aria-label="Session time"
-                          className={`text-sm border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-shrink-0 ${
+                          className={`text-sm border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] flex-shrink-0 ${
                             needsTime ? 'ring-1 ring-red-300' : ''
                           }`}
                           style={{ width: 110 }}
@@ -216,7 +216,7 @@ export function DayConfigModal({
                             onClick={() => onScheduleChange(dayIndex, { weekday: entry!.weekday, time: t })}
                             className={`text-[11px] px-1.5 py-0.5 rounded border transition-colors ${
                               entry?.time === t
-                                ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                ? 'bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] border-[color:var(--color-accent-border)]'
                                 : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
                             }`}
                           >
@@ -258,7 +258,7 @@ export function DayConfigModal({
           <button
             onClick={onSave}
             disabled={!!saveError}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Save Changes
           </button>

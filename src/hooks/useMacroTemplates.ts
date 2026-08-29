@@ -23,7 +23,7 @@ export function useMacroTemplates() {
       setTemplates(rows);
       return rows;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load templates');
+      setError(err instanceof Error ? err.message : 'Couldn’t load templates. Check your connection and try again.');
       return [];
     }
   };

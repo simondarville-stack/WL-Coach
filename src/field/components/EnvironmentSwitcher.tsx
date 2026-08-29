@@ -27,7 +27,7 @@ export function EnvironmentSwitcher() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-0.5 text-xs text-gray-500 hover:text-gray-300"
+        className="inline-flex items-center gap-0.5 text-xs text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]"
         aria-label={`Environment: ${activeCoach.name}. Tap to switch`}
       >
         <span className="truncate max-w-[140px]">{activeCoach.name}</span>
@@ -41,8 +41,8 @@ export function EnvironmentSwitcher() {
           onClose={() => setOpen(false)}
           ariaLabel="Switch environment"
         >
-          <div className="bg-gray-900 border-t border-gray-800 rounded-t-2xl max-w-2xl w-full mx-auto pb-6">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">
+          <div className="bg-[var(--color-bg-primary)] border-t border-[color:var(--color-border-tertiary)] rounded-t-2xl max-w-2xl w-full mx-auto pb-6">
+            <p className="text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] px-4 pt-4 pb-2">
               Environment
             </p>
             {coaches.map(c => (
@@ -51,10 +51,10 @@ export function EnvironmentSwitcher() {
                 onClick={() => pick(c)}
                 className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-gray-800/50"
               >
-                <span className={`text-sm ${c.id === activeCoach.id ? 'text-white font-medium' : 'text-gray-300'}`}>
+                <span className={`text-sm ${c.id === activeCoach.id ? 'text-white font-medium' : 'text-[color:var(--color-text-primary)]'}`}>
                   {c.name}
                 </span>
-                {c.id === activeCoach.id && <Check size={15} className="text-blue-400" />}
+                {c.id === activeCoach.id && <Check size={15} className="text-[color:var(--color-accent)]" />}
               </button>
             ))}
           </div>

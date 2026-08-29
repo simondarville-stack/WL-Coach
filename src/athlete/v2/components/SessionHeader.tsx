@@ -104,20 +104,20 @@ export function SessionHeader({
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-bold text-white truncate">{slotLabel}</div>
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500 mt-0.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-[color:var(--color-text-secondary)] mt-0.5">
             <Calendar size={11} />
             <span>{prettyDate}</span>
           </div>
           {performedOnDate != null && onPatchPerformedOn != null && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-              <span className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold">
+              <span className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] font-semibold">
                 Performed on
               </span>
               <input
                 type="date"
                 value={performedOnDate}
                 onChange={e => onPatchPerformedOn(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500"
+                className="bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-1.5 py-0.5 text-xs text-[color:var(--color-text-primary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
                 title={sessionExists ? 'Stored date' : 'Defaults to today; saved when you log anything'}
               />
               {performedAtTime != null && onPatchPerformedAt != null && (
@@ -125,7 +125,7 @@ export function SessionHeader({
                   type="time"
                   value={performedAtTime}
                   onChange={e => onPatchPerformedAt(e.target.value)}
-                  className="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-xs text-gray-300 focus:outline-none focus:border-blue-500 tabular-nums"
+                  className="bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-1.5 py-0.5 text-xs text-[color:var(--color-text-primary)] focus:outline-none focus:border-[color:var(--color-accent-hover)] tabular-nums"
                   title={sessionExists ? 'Stored time' : 'Defaults to now; saved when you log anything'}
                 />
               )}
@@ -135,12 +135,12 @@ export function SessionHeader({
         <div className="flex items-center gap-2 flex-shrink-0">
           {status === 'completed' && <DoneChip variant="dark" />}
           {status === 'skipped' && (
-            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
+            <span className="inline-flex items-center gap-1 text-[length:var(--text-caption)] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300">
               <Ban size={11} />
               Not done
             </span>
           )}
-          {saving && <span className="text-[10px] text-gray-500">Saving…</span>}
+          {saving && <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">Saving…</span>}
         </div>
       </div>
 
@@ -165,15 +165,15 @@ export function SessionHeader({
         />
       ))}
 
-      <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
-        <label className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
+      <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
+        <label className="block text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold mb-2">
           Session notes
         </label>
         <AutoGrowTextarea
           {...notes.bind}
           placeholder="How did it feel? Anything to flag to the coach?"
           rows={2}
-          className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+          className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
         />
       </div>
     </div>

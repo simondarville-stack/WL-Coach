@@ -109,7 +109,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
                           <h3 className="font-medium text-gray-900">{athlete.name}</h3>
                         </div>
                         {total !== null && (
-                          <div className="text-lg font-medium text-blue-600">Total: {total} kg</div>
+                          <div className="text-lg font-medium text-[color:var(--color-accent)]">Total: {total} kg</div>
                         )}
                       </div>
                     </div>
@@ -284,7 +284,7 @@ export function EventOverviewModal({ event, onClose }: EventOverviewModalProps) 
         <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
           <button
             onClick={onClose}
-            className="w-full px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700"
+            className="w-full px-4 py-2 bg-[var(--color-accent)] text-white font-medium rounded-lg hover:bg-[var(--color-accent-hover)]"
           >
             Close
           </button>

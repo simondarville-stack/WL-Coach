@@ -711,7 +711,7 @@ function OtherMetricsTable({
                       v == null
                         ? 'bg-gray-50 text-gray-300 text-center'
                         : row.numeric
-                        ? 'bg-blue-50 text-blue-900 tabular-nums text-center'
+                        ? 'bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)] tabular-nums text-center'
                         // Text metrics wrap instead of a lossy 14-char slice;
                         // the table scrolls-x and the cell caps its width.
                         : 'bg-amber-50 text-amber-900 text-left text-[10px] whitespace-normal break-words align-top max-w-[160px]'

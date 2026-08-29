@@ -65,7 +65,7 @@ export function useExercises() {
       if (error) throw error;
       storeSetExercises(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load exercises');
+      setError(err instanceof Error ? err.message : 'Couldn’t load exercises. Check your connection and try again.');
     }
   };
 
@@ -76,7 +76,7 @@ export function useExercises() {
       setError(null);
       await storeFetchCategories();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load categories');
+      setError(err instanceof Error ? err.message : 'Couldn’t load categories. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -99,7 +99,7 @@ export function useExercises() {
       if (error) throw error;
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save exercise');
+      setError(err instanceof Error ? err.message : 'Couldn’t save exercise. Your changes are still on screen.');
       throw err;
     }
   };
@@ -111,7 +111,7 @@ export function useExercises() {
       if (error) throw error;
       return data?.length ?? 0;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import exercises');
+      setError(err instanceof Error ? err.message : 'Couldn’t import exercises. Nothing was imported.');
       throw err;
     }
   };
@@ -130,7 +130,7 @@ export function useExercises() {
       const { error } = await supabase.from('exercises').update(exerciseData).eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save exercise');
+      setError(err instanceof Error ? err.message : 'Couldn’t save exercise. Your changes are still on screen.');
       throw err;
     }
   };
@@ -149,7 +149,7 @@ export function useExercises() {
       if (error) throw error;
       return { archived: false };
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete exercise');
+      setError(err instanceof Error ? err.message : 'Couldn’t delete exercise. Nothing was deleted.');
       throw err;
     }
   };
@@ -183,7 +183,7 @@ export function useExercises() {
       }
       return { archived: allowed.length, skipped: ids.length - allowed.length };
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to archive exercises');
+      setError(err instanceof Error ? err.message : 'Couldn’t archive exercises. Nothing was archived.');
       throw err;
     }
   };
@@ -193,7 +193,7 @@ export function useExercises() {
       const { error } = await supabase.from('exercises').update({ is_archived: false }).eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to restore exercise');
+      setError(err instanceof Error ? err.message : 'Couldn’t restore exercise. Nothing was restored.');
       throw err;
     }
   };
@@ -215,7 +215,7 @@ export function useExercises() {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reorder exercises');
+      setError(err instanceof Error ? err.message : 'Couldn’t reorder exercises. The order is unchanged.');
       throw err;
     }
   };
@@ -297,7 +297,7 @@ export function useExercises() {
       const { error } = await supabase.from('categories').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete category');
+      setError(err instanceof Error ? err.message : 'Couldn’t delete category. Nothing was deleted.');
       throw err;
     }
   };
@@ -316,7 +316,7 @@ export function useExercises() {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reorder categories');
+      setError(err instanceof Error ? err.message : 'Couldn’t reorder categories. The order is unchanged.');
       throw err;
     }
   };
@@ -338,7 +338,7 @@ export function useExercises() {
         .eq('id', swapId);
       if (e2) throw e2;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reorder categories');
+      setError(err instanceof Error ? err.message : 'Couldn’t reorder categories. The order is unchanged.');
       throw err;
     }
   };

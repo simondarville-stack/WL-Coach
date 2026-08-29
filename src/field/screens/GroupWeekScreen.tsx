@@ -77,22 +77,22 @@ export function GroupWeekScreen() {
   }, [groupId, weekStart]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[var(--color-bg-page)] text-white">
       <div className="max-w-2xl mx-auto px-3 pt-4 pb-8">
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 -ml-2 text-gray-400 hover:text-white"
+            className="p-2 -ml-2 text-[color:var(--color-text-secondary)] hover:text-white"
             aria-label="Back"
           >
             <ArrowLeft size={18} />
           </button>
-          <Users size={15} className="text-gray-500 shrink-0" />
+          <Users size={15} className="text-[color:var(--color-text-secondary)] shrink-0" />
           <h1 className="text-base font-bold truncate flex-1">{groupName || 'Group'}</h1>
           {groupId && (
             <button
               onClick={() => navigate(`/coach/g/${groupId}/macro`)}
-              className="p-2 -mr-2 text-gray-400 hover:text-white"
+              className="p-2 -mr-2 text-[color:var(--color-text-secondary)] hover:text-white"
               aria-label="Macro cycle"
               title="Macro cycle"
             >
@@ -109,10 +109,10 @@ export function GroupWeekScreen() {
           <p className="text-sm text-red-400">{error}</p>
         ) : loading ? (
           <div className="flex justify-center py-16">
-            <Loader2 size={24} className="animate-spin text-gray-600" />
+            <Loader2 size={24} className="animate-spin text-[color:var(--color-text-tertiary)]" />
           </div>
         ) : !overview || overview.days.length === 0 ? (
-          <p className="text-sm text-gray-500">No group plan for this week.</p>
+          <p className="text-sm text-[color:var(--color-text-secondary)]">No group plan for this week.</p>
         ) : (
           <div className="flex flex-col gap-4">
             {overview.days.map((d, i) => (

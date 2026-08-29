@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { ErrorLogEntry, ErrorBreadcrumb } from '../../lib/database.types';
+import { alertDialog, promptDialog } from '../ui';
 
 const SOURCE_LABELS: Record<ErrorLogEntry['source'], string> = {
   react: 'React',
@@ -93,15 +94,23 @@ export function ErrorLogViewer() {
   };
 
   const resolve = async (id: string) => {
+    const note = await promptDialog({
+      title: 'Mark this error resolved',
+      input: { label: 'Resolution note (optional)', placeholder: 'What fixed it?' },
+      confirmLabel: 'Mark resolved',
+    });
+    if (note === null) return;
     setBusyResolve(id);
-    const note = window.prompt('Resolution note (optional)') ?? null;
     const { error } = await supabase
       .from('error_logs')
       .update({ resolved_at: new Date().toISOString(), resolved_note: note })
       .eq('id', id);
     setBusyResolve(null);
     if (error) {
-      window.alert(`Failed to mark resolved: ${error.message}`);
+      void alertDialog({
+        title: "Couldn't mark this resolved",
+        message: `The entry is unchanged. ${error.message}`,
+      });
       return;
     }
     void load();
@@ -156,7 +165,7 @@ export function ErrorLogViewer() {
               onClick={() => setFilters((f) => ({ ...f, role: r }))}
               className={`px-2 py-0.5 text-xs rounded border transition-colors capitalize ${
                 filters.role === r
-                  ? 'bg-blue-100 text-blue-800 border-transparent'
+                  ? 'bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] border-transparent'
                   : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -325,7 +334,7 @@ function Breadcrumbs({ crumbs }: { crumbs: ErrorBreadcrumb[] }) {
           className="text-xs font-mono text-gray-800 flex gap-2 items-baseline bg-white border border-gray-200 rounded px-2 py-1"
         >
           <span className="text-gray-400 flex-shrink-0">{formatTime(c.ts)}</span>
-          <span className="text-blue-700 uppercase text-[10px] tracking-wide flex-shrink-0">{c.category}</span>
+          <span className="text-[color:var(--color-accent)] uppercase text-[10px] tracking-wide flex-shrink-0">{c.category}</span>
           <span className="text-gray-800 break-all">{c.message}</span>
           {c.data && Object.keys(c.data).length > 0 && (
             <span className="text-gray-500 truncate">{JSON.stringify(c.data)}</span>

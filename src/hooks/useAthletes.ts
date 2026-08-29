@@ -27,7 +27,7 @@ export function useAthletes() {
       setError(null);
       await storeFetchAthletes(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load athletes');
+      setError(err instanceof Error ? err.message : 'Couldn’t load athletes. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -43,7 +43,7 @@ export function useAthletes() {
       const result = await fetchAccessibleAthletes(getOwnerId(), { activeOnly: true });
       setAthletesWithAccess(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load athletes');
+      setError(err instanceof Error ? err.message : 'Couldn’t load athletes. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -54,7 +54,7 @@ export function useAthletes() {
       const result = await fetchAccessibleAthletes(getOwnerId());
       setAthletesWithAccess(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load athletes');
+      setError(err instanceof Error ? err.message : 'Couldn’t load athletes. Check your connection and try again.');
     }
   };
 
@@ -71,7 +71,7 @@ export function useAthletes() {
       }
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save athlete');
+      setError(err instanceof Error ? err.message : 'Couldn’t save athlete. Your changes are still on screen.');
       throw err;
     }
   };
@@ -89,7 +89,7 @@ export function useAthletes() {
       const { error } = await supabase.from('athletes').update(athleteData).eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save athlete');
+      setError(err instanceof Error ? err.message : 'Couldn’t save athlete. Your changes are still on screen.');
       throw err;
     }
   };
@@ -104,7 +104,7 @@ export function useAthletes() {
       const { error } = await supabase.from('athletes').delete().eq('id', id);
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete athlete');
+      setError(err instanceof Error ? err.message : 'Couldn’t delete athlete. Nothing was deleted.');
       throw err;
     }
   };

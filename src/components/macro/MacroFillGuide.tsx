@@ -53,7 +53,7 @@ interface MacroFillGuideProps {
 }
 
 const inputCls =
-  'no-spin border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400';
+  'no-spin border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]';
 const labelCls = 'w-[86px] flex-shrink-0 text-[11px] text-[color:var(--color-text-secondary)]';
 
 export function MacroFillGuide({
@@ -686,11 +686,11 @@ export function MacroFillGuide({
           <button
             onClick={handleApply}
             disabled={plan.cellCount === 0 || applying}
-            className="px-3 py-1 rounded text-white text-[11.5px] font-medium bg-[var(--color-accent)] disabled:opacity-40"
+            className="px-3 py-1 rounded text-white text-[length:var(--text-caption)] font-medium bg-[var(--color-accent)] disabled:opacity-40"
           >
             {applying ? 'Applying…' : `Apply → table (${plan.cellCount})`}
           </button>
-          <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 text-[11.5px] text-gray-600 hover:bg-gray-50">
+          <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 text-[length:var(--text-caption)] text-gray-600 hover:bg-gray-50">
             Cancel
           </button>
           {plan.cellCount === 0 && (

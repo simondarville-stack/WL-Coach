@@ -26,4 +26,6 @@ export { EmptyState, ErrorState } from './States';
 
 // Existing primitives (don't remove)
 export { Spinner } from './Spinner';
+export { ConfirmHost, confirmDialog, alertDialog, promptDialog } from './ConfirmDialog';
+export type { ConfirmRequest } from './ConfirmDialog';
 export { MetricStrip } from './MetricStrip';

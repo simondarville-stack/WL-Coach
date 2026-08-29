@@ -69,7 +69,7 @@ export function PrunePanel({
     let alive = true;
     fetchExerciseLastUsed(candidates.map(c => c.id))
       .then(m => { if (alive) setLastUsed(m); })
-      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Failed to load usage dates'); });
+      .catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Couldn’t load usage dates. Check your connection and try again.'); });
     return () => { alive = false; };
   }, [candidates]);
 

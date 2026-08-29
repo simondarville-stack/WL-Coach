@@ -234,7 +234,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
         type="checkbox"
         checked={checked}
         onChange={e => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        className="h-3.5 w-3.5 rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
       />
       <span>{label}</span>
     </label>
@@ -252,7 +252,7 @@ function SegmentedControl<T extends string | number>({
           <button
             key={String(opt.value)}
             onClick={() => onChange(opt.value)}
-            className={`flex-1 px-2 py-1 text-[11px] transition-colors ${value === opt.value ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+            className={`flex-1 px-2 py-1 text-[11px] transition-colors ${value === opt.value ? 'bg-[var(--color-accent)] text-white' : 'text-gray-700 hover:bg-gray-50'}`}
           >
             {opt.label}
           </button>

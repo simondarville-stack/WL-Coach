@@ -126,7 +126,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
         setModels(m);
         setAnalyses(a);
       })
-      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load Ratio Analysis data'));
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : 'Couldn’t load Ratio Analysis data. Check your connection and try again.'));
     return () => {
       cancelled = true;
     };
@@ -505,7 +505,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       await updateSollIstModelMeta(id, { name });
       await refreshModels();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to rename the model');
+      setError(e instanceof Error ? e.message : 'Couldn’t rename the model. The name is unchanged.');
     } finally { setBusy(false); }
   };
 
@@ -515,7 +515,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       await duplicateSollIstModel(model);
       await refreshModels();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to duplicate the model');
+      setError(e instanceof Error ? e.message : 'Couldn’t duplicate the model. Nothing was copied.');
     } finally { setBusy(false); }
   };
 
@@ -528,7 +528,7 @@ export function SollIstView({ athletes, initialAthleteId }: SollIstViewProps) {
       // the coach does not lose what is on screen.
       setSheet((sh) => (sh.modelRef === model.id ? { ...sh, modelRef: null } : sh));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete the model');
+      setError(e instanceof Error ? e.message : 'Couldn’t delete the model. Nothing was deleted.');
     } finally { setBusy(false); }
   };
 

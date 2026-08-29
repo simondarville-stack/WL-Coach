@@ -30,6 +30,7 @@ import {
 } from '../../../lib/trainingLogService';
 import { getOwnerId } from '../../../lib/ownerContext';
 import { METRIC_TRACKING_DEFAULTS } from '../../../lib/trainingLogModel';
+import { confirmDialog } from '../../ui';
 
 /** Supabase errors are plain objects, not Error instances, so the usual
  *  `e instanceof Error` branch falls through to String(e) = "[object
@@ -246,7 +247,13 @@ export function WeekMetricsSettings({
   };
 
   const handleArchive = async (def: AthleteMetricDefinition) => {
-    if (!window.confirm(`Archive "${def.label}"? Past data is preserved; the metric just won't appear for new weeks.`)) return;
+    const ok = await confirmDialog({
+      title: `Archive "${def.label}"?`,
+      message: "Past data is preserved; the metric just won't appear for new weeks.",
+      confirmLabel: 'Archive metric',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await archiveMetricDefinition(def.id);

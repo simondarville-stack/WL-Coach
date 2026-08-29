@@ -112,14 +112,14 @@ export function GroupViewerScreen() {
   if (!group) return null;
 
   return (
-    <div className="min-h-screen bg-gray-950">
-      <header className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center flex-shrink-0">
-          <Users size={16} className="text-gray-400" />
+    <div className="min-h-screen bg-[var(--color-bg-page)]">
+      <header className="sticky top-0 z-10 bg-gray-950/95 backdrop-blur border-b border-[color:var(--color-border-tertiary)] px-4 py-3 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-full bg-[var(--color-bg-secondary)] flex items-center justify-center flex-shrink-0">
+          <Users size={16} className="text-[color:var(--color-text-secondary)]" />
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-white truncate">{group.name}</h1>
-          <p className="text-[10px] text-gray-500">Group plan · view only</p>
+          <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">Group plan · view only</p>
         </div>
         {/* In a share-link (locked) session there is no path back to the
             picker — a group member must not be able to browse into other
@@ -128,7 +128,7 @@ export function GroupViewerScreen() {
         {!locked && (
           <button
             onClick={signOut}
-            className="text-[11px] text-gray-400 hover:text-white flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-gray-800"
+            className="tap-y text-[11px] text-[color:var(--color-text-secondary)] hover:text-white flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-[var(--color-bg-secondary)]"
             title="Switch profile"
           >
             <LogOut size={12} />
@@ -152,18 +152,18 @@ export function GroupViewerScreen() {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-8 text-gray-500">
+          <div className="flex items-center justify-center py-8 text-[color:var(--color-text-secondary)]">
             <Loader2 size={18} className="animate-spin mr-2" />
             <span className="text-sm">Loading week…</span>
           </div>
         ) : !weekPlan ? (
-          <div className="rounded-xl bg-gray-900 border border-gray-800 px-4 py-8 text-center">
-            <p className="text-sm text-gray-400">No plan for this week.</p>
-            <p className="text-[11px] text-gray-600 mt-1">Try navigating to another week.</p>
+          <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] px-4 py-8 text-center">
+            <p className="text-sm text-[color:var(--color-text-secondary)]">No plan for this week.</p>
+            <p className="text-[11px] text-[color:var(--color-text-tertiary)] mt-1">Try navigating to another week.</p>
           </div>
         ) : days.length === 0 ? (
-          <div className="rounded-xl bg-gray-900 border border-gray-800 px-4 py-8 text-center">
-            <p className="text-sm text-gray-400">No active training units this week.</p>
+          <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] px-4 py-8 text-center">
+            <p className="text-sm text-[color:var(--color-text-secondary)]">No active training units this week.</p>
           </div>
         ) : (
           days.map(day => (

@@ -53,10 +53,10 @@ export function NotDoneSheet({ open, defaultReason = '', onClose, onConfirm }: N
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center">
-      <div className="w-full sm:max-w-sm bg-gray-900 border border-gray-800 rounded-t-2xl sm:rounded-2xl">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800">
+      <div className="w-full sm:max-w-sm bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-t-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-[color:var(--color-border-tertiary)]">
           <h3 className="text-sm font-bold text-white">Mark session as not done</h3>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-white" aria-label="Close">
+          <button onClick={onClose} className="tap p-1 text-[color:var(--color-text-secondary)] hover:text-white" aria-label="Close">
             <X size={16} />
           </button>
         </div>
@@ -66,10 +66,10 @@ export function NotDoneSheet({ open, defaultReason = '', onClose, onConfirm }: N
               <button
                 key={p}
                 onClick={() => setReason(p)}
-                className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                className={`tap-y text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
                   reason.trim() === p
                     ? 'bg-red-900/50 border-red-700 text-red-200'
-                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
+                    : 'bg-[var(--color-bg-secondary)] border-[color:var(--color-border-secondary)] text-[color:var(--color-text-primary)] hover:border-[color:var(--color-border-primary)]'
                 }`}
               >
                 {p}
@@ -77,7 +77,7 @@ export function NotDoneSheet({ open, defaultReason = '', onClose, onConfirm }: N
             ))}
           </div>
           <label className="block">
-            <span className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-1.5">
+            <span className="block text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold mb-1.5">
               Reason
             </span>
             <input
@@ -92,27 +92,27 @@ export function NotDoneSheet({ open, defaultReason = '', onClose, onConfirm }: N
                 }
               }}
               placeholder="e.g. Sick, injured, travelling…"
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-2.5 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500"
+              className="w-full bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded-md px-2.5 py-2 text-sm text-white placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-red-500"
             />
           </label>
-          <p className="text-[10px] text-gray-500 leading-snug">
+          <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] leading-snug">
             Your coach will see this. The planned session stays in your log so you
             can still come back and log it.
           </p>
           {error && <p className="text-[11px] text-red-300 break-all">{error}</p>}
         </div>
-        <div className="flex items-center justify-end gap-2 px-3 py-2.5 border-t border-gray-800">
+        <div className="flex items-center justify-end gap-2 px-3 py-2.5 border-t border-[color:var(--color-border-tertiary)]">
           <button
             onClick={onClose}
             disabled={submitting}
-            className="text-[11px] text-gray-400 hover:text-white px-3 py-1.5 rounded"
+            className="tap-y text-[11px] text-[color:var(--color-text-secondary)] hover:text-white px-3 py-1.5 rounded"
           >
             Cancel
           </button>
           <button
             onClick={submit}
             disabled={submitting || reason.trim() === ''}
-            className="inline-flex items-center gap-1 text-xs font-semibold bg-red-600 hover:bg-red-500 disabled:bg-gray-700 text-white px-3 py-1.5 rounded"
+            className="tap-y inline-flex items-center gap-1 text-xs font-semibold bg-red-600 hover:bg-red-500 disabled:bg-[var(--color-bg-tertiary)] text-white px-3 py-1.5 rounded"
           >
             <Ban size={12} />
             {submitting ? 'Saving…' : 'Mark not done'}
