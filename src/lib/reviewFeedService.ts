@@ -72,6 +72,9 @@ export interface ThreadMessage {
   coachName: string | null;
   message: string;
   createdAt: string;
+  /** Coach messages only: the athlete has read it. One-way receipt — this
+   *  feed is coach-facing; the athlete app never shows coach read state. */
+  seenByAthlete: boolean;
 }
 
 export interface ReviewThreadItem {
@@ -497,6 +500,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
         : null,
     message: m.message,
     createdAt: m.created_at,
+    seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
   });
   const contextByThread = new Map<string, TrainingLogMessage[]>();
   for (const m of [...sessionThreadMsgs, ...generalThreadMsgs]) {
@@ -828,6 +832,7 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
           coachName: m.sender_type === 'coach' ? 'Coach' : null,
           message: m.message,
           createdAt: m.created_at,
+          seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
         })),
         newCount: messages.filter(m => m.sender_type === 'athlete').length,
       });

@@ -1305,6 +1305,9 @@ function MessageBubble({ message, senderLabel }: { message: TrainingLogMessage; 
           }}
         >
           {formatTimeStamp(message.created_at)}
+          {/* One-way receipt: the coach sees when the athlete has read a
+              coach message. The athlete app never shows coach read state. */}
+          {fromCoach && message.athlete_read_at != null && ' · Seen'}
         </div>
       </div>
     </div>

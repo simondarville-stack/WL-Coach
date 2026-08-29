@@ -299,6 +299,7 @@ export function ThreadCard({ item, athlete, seen, onReply }: ThreadCardProps) {
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
+                  {m.seenByAthlete && ' · Seen'}
                 </div>
               </div>
             ),

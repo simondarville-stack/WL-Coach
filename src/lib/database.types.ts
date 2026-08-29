@@ -779,7 +779,10 @@ export interface TrainingLogMessage {
   sender_coach_id: string | null;
   message: string;
   /** Timestamp when the coach last read this message. Null = unread by coach.
-   *  Set by the service when the coach views the session. See UF-10 / A5. */
+   *  Set by the service when the coach views the session. See UF-10 / A5.
+   *  POLICY: read state is one-way surveillance — this field is NEVER shown
+   *  in athlete-facing UI. The coach sees athlete_read_at ("Seen") on their
+   *  own messages; the athlete never learns whether the coach has read. */
   coach_read_at: string | null;
   /** Timestamp when the athlete last read this message. Null = unread by athlete.
    *  Set by the service when the athlete views the session. See UF-10 / A5. */

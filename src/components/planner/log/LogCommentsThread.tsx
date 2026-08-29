@@ -65,6 +65,11 @@ export function LogCommentsThread({ messages, compact, onPost }: LogCommentsThre
                   {SENDER_LABEL[m.sender_type] ?? m.sender_type}
                 </span>
                 <span className="text-[9px] text-gray-400">{formatTimestamp(m.created_at)}</span>
+                {/* One-way receipt (coach-only surface): athlete read state
+                    is visible here; coach read state is never shown to athletes. */}
+                {m.sender_type === 'coach' && m.athlete_read_at != null && (
+                  <span className="text-[9px] text-gray-400">· Seen</span>
+                )}
               </div>
               <p
                 className={`${textSize} text-gray-800 whitespace-pre-wrap leading-snug`}
