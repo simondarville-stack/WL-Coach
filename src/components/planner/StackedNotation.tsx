@@ -42,9 +42,13 @@ const mono: React.CSSProperties = {
   lineHeight: 1.25,
 };
 
+// Dimmed state for a skipped / failed set. Secondary, not tertiary: tertiary
+// is #8B8A83, which is 3.46:1 on the white card the review feed draws these on
+// — under the 4.5:1 floor, and these are logged numbers, not chrome. Secondary
+// still reads as visibly dimmer than a completed set while staying legible.
 const monoLight: React.CSSProperties = {
   ...mono,
-  color: 'var(--color-text-tertiary)',
+  color: 'var(--color-text-secondary)',
 };
 
 const setMultiplier: React.CSSProperties = {
@@ -258,7 +262,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
       <span
         style={{
           fontSize: 'var(--text-notation)',
-          color: anyCompleted ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+          color: anyCompleted ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
           fontStyle: 'italic',
         }}
       >
@@ -295,7 +299,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
               <span style={repsStyle}>{repsDisplay}</span>
             </div>
             {s.rpe != null && (
-              <span style={{ ...setMultiplier, fontSize: 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>
+              <span style={{ ...setMultiplier, fontSize: 'var(--text-micro)', color: 'var(--color-text-secondary)' }}>
                 @{s.rpe}
               </span>
             )}

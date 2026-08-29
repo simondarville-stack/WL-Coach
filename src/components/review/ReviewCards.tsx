@@ -298,7 +298,7 @@ const STATUS_GLYPH: Record<string, { glyph: string; cls: string }> = {
   completed: { glyph: '✓', cls: 'text-emerald-600' },
   skipped: { glyph: '✗', cls: 'text-red-500' },
   in_progress: { glyph: '●', cls: 'text-amber-500' },
-  pending: { glyph: '○', cls: 'text-gray-400' },
+  pending: { glyph: '○', cls: 'text-[color:var(--color-text-tertiary)]' },
 };
 
 interface SessionCardProps {
@@ -445,9 +445,13 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
  * Unticked rows render dimmed.
  */
 function GppStack({ gpp }: { gpp: GppSection }) {
+  // Tracks the same tokens as StackedNotation. This block is hand-laid rather
+  // than reusing the component, so it has to be kept in step by hand — when
+  // the notation moved to --text-notation this stayed on --text-caption and
+  // rendered 2px smaller than the rows around it.
   const mono: React.CSSProperties = {
-    fontFamily: 'var(--font-mono)',
-    fontSize: 'var(--text-caption)',
+    fontFamily: 'var(--font-stacked)',
+    fontSize: 'var(--text-notation)',
     color: 'var(--color-text-primary)',
     fontWeight: 500,
     lineHeight: 1.25,
@@ -458,11 +462,16 @@ function GppStack({ gpp }: { gpp: GppSection }) {
         <div className="text-[11px] text-gray-500 italic whitespace-pre-wrap">{gpp.description}</div>
       )}
       {gpp.rows.map((r, i) => (
-        <div key={i} className={`flex items-center gap-2 ${r.done ? '' : 'opacity-45'}`}>
-          <span className={`text-[11px] ${r.done ? 'text-emerald-600' : 'text-gray-400'}`}>
+        <div key={i} className="flex items-center gap-2">
+          <span className={`text-[11px] ${r.done ? 'text-emerald-600' : 'text-[color:var(--color-text-tertiary)]'}`}>
             {r.done ? '✓' : '○'}
           </span>
-          <span className="text-[12px] text-gray-700 flex-1 min-w-0 truncate">{r.exercise}</span>
+          <span
+            className="text-[length:var(--text-label)] flex-1 min-w-0 truncate"
+            style={{ color: r.done ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}
+          >
+            {r.exercise}
+          </span>
           <div className="flex items-start gap-1 shrink-0">
             <div className="flex flex-col items-center min-w-[2rem]">
               <span style={mono}>{r.load.trim() !== '' ? r.load : 'BW'}</span>
