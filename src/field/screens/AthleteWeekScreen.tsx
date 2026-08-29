@@ -129,6 +129,10 @@ export function AthleteWeekScreen() {
                   onStart={() => {}}
                   isBonus={d.isBonus}
                   readOnly
+                  // Without this, readOnly defaults the "Did" rows off and the
+                  // coach sees only the plan — reviewing a week is exactly the
+                  // moment the logged work matters.
+                  showLogged
                   viewerRole="coach"
                 />
               );
