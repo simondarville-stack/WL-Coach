@@ -206,9 +206,9 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         ? 'bg-emerald-950/40 border border-emerald-900/50'
         : isSkipped
         ? 'bg-red-950/40 border border-red-900/50'
-        : 'bg-gray-900/50 border border-gray-800'
+        : 'bg-gray-900/50 border border-[color:var(--color-border-tertiary)]'
     }`}>
-      <span className="flex-shrink-0 w-5 text-center text-[10px] font-semibold text-gray-500">
+      <span className="flex-shrink-0 w-5 text-center text-[length:var(--text-caption)] font-semibold text-[color:var(--color-text-secondary)]">
         {input.setNumber}
       </span>
 
@@ -220,7 +220,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
             className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
               isDone
                 ? 'bg-emerald-500 border-emerald-400 text-white'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-emerald-300'
+                : 'bg-[var(--color-bg-secondary)] border-[color:var(--color-border-secondary)] text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-emerald-300'
             }`}
             title="Did this set"
             aria-pressed={isDone}
@@ -233,7 +233,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
             className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors border ${
               isSkipped
                 ? 'bg-red-500 border-red-400 text-white'
-                : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-red-300'
+                : 'bg-[var(--color-bg-secondary)] border-[color:var(--color-border-secondary)] text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-red-300'
             }`}
             title="Didn't do this set"
             aria-pressed={isSkipped}
@@ -246,7 +246,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
       {input.freeTextMode ? (
         <div className="flex-1 min-w-0">
           {input.freeTextPlanned !== undefined ? (
-            <div className={`text-sm italic px-2 py-1.5 break-words ${isSkipped ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+            <div className={`text-sm italic px-2 py-1.5 break-words ${isSkipped ? 'text-[color:var(--color-text-secondary)] line-through' : 'text-[color:var(--color-text-primary)]'}`}>
               {input.freeTextPlanned || '—'}
             </div>
           ) : (
@@ -263,7 +263,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
               }}
               placeholder="What did you do?"
               disabled={busy || isSkipped || readOnly}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-blue-500 placeholder:text-gray-600 disabled:opacity-50"
+              className="w-full bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-[color:var(--color-accent-hover)] placeholder:text-[color:var(--color-text-tertiary)] disabled:opacity-50"
             />
           )}
         </div>
@@ -297,7 +297,7 @@ export function SetEntryRow({ input, logged, onSave, onDelete, readOnly = false 
         <button
           onClick={() => void onDelete()}
           disabled={busy}
-          className="w-9 h-9 flex items-center justify-center text-gray-500 hover:text-red-400 flex-shrink-0"
+          className="w-9 h-9 flex items-center justify-center text-[color:var(--color-text-secondary)] hover:text-red-400 flex-shrink-0"
           title="Delete this set"
           aria-label="Delete set"
         >
@@ -320,7 +320,7 @@ function NumericCell({
   inputMode?: 'decimal' | 'text';
 }) {
   return (
-    <div className="flex items-baseline gap-1 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 focus-within:border-blue-500">
+    <div className="flex items-baseline gap-1 bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 focus-within:border-[color:var(--color-accent-hover)]">
       <input
         type="text"
         inputMode={inputMode}
@@ -335,9 +335,9 @@ function NumericCell({
         }}
         placeholder={placeholder}
         disabled={disabled}
-        className="flex-1 min-w-0 bg-transparent text-white text-sm font-medium focus:outline-none disabled:opacity-50 placeholder:text-gray-600"
+        className="flex-1 min-w-0 bg-transparent text-white text-sm font-medium focus:outline-none disabled:opacity-50 placeholder:text-[color:var(--color-text-tertiary)]"
       />
-      {unit && <span className="text-[10px] text-gray-500 flex-shrink-0">{unit}</span>}
+      {unit && <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] flex-shrink-0">{unit}</span>}
     </div>
   );
 }

@@ -22,14 +22,15 @@ import { PRDetailScreen } from './screens/PRDetailScreen';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { setActorResolver } from '../../lib/errorLogger';
 import { useRouteBreadcrumbs } from '../../hooks/useRouteBreadcrumbs';
+import { Spinner } from '../../components/ui';
 
 function ShareLinkError({ message }: { message: string }) {
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center px-6 text-center">
-      <Dumbbell size={32} className="text-gray-700 mb-4" />
+    <div className="min-h-screen bg-[var(--color-bg-page)] flex flex-col items-center justify-center px-6 text-center">
+      <Dumbbell size={32} className="text-[color:var(--color-text-tertiary)] mb-4" />
       <h1 className="text-base font-bold text-white">Group link unavailable</h1>
-      <p className="text-sm text-gray-500 mt-2 max-w-xs">{message}</p>
-      <p className="text-[11px] text-gray-600 mt-4 max-w-xs">
+      <p className="text-sm text-[color:var(--color-text-secondary)] mt-2 max-w-xs">{message}</p>
+      <p className="text-[11px] text-[color:var(--color-text-tertiary)] mt-4 max-w-xs">
         Ask your coach for an up-to-date link.
       </p>
     </div>
@@ -49,8 +50,8 @@ function AthleteRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[var(--color-bg-page)] flex items-center justify-center">
+        <Spinner size={40} />
       </div>
     );
   }

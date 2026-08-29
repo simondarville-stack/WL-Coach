@@ -32,7 +32,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
 
       onCreated(coach);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create environment');
+      setError(err instanceof Error ? err.message : 'Couldn’t create environment. Nothing was created.');
     } finally {
       setSaving(false);
     }
@@ -56,7 +56,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="Coach name"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
             />
           </div>
           <div>
@@ -66,7 +66,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
               value={clubName}
               onChange={e => setClubName(e.target.value)}
               placeholder="Club name (optional)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
             />
           </div>
           <div>
@@ -76,7 +76,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="Email (optional)"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
             />
           </div>
 
@@ -99,7 +99,7 @@ export function CoachProfileModal({ onClose, onCreated }: CoachProfileModalProps
           <button
             onClick={handleCreate}
             disabled={saving}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 text-sm bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
             {saving ? 'Creating…' : 'Create environment'}
           </button>

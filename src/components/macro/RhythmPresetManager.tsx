@@ -22,7 +22,7 @@ interface RhythmPresetManagerProps {
 }
 
 const inputCls =
-  'border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400';
+  'border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]';
 
 /** Mini wave preview: solid = load %, dotted = reps %, sampled over 8 steps. */
 function RhythmSparkline({ preset, weekTypes }: { preset: RhythmPreset; weekTypes: WeekTypeConfig[] }) {
@@ -303,11 +303,11 @@ export function RhythmPresetManager({ presets, weekTypes, onSave, onClose }: Rhy
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1 rounded text-white text-[11.5px] font-medium bg-[var(--color-accent)] disabled:opacity-40"
+              className="px-3 py-1 rounded text-white text-[length:var(--text-caption)] font-medium bg-[var(--color-accent)] disabled:opacity-40"
             >
               {saving ? 'Saving…' : 'Save presets'}
             </button>
-            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 text-[11.5px] text-gray-600 hover:bg-gray-50">
+            <button onClick={onClose} className="px-3 py-1 rounded border border-gray-300 text-[length:var(--text-caption)] text-gray-600 hover:bg-gray-50">
               Cancel
             </button>
           </div>

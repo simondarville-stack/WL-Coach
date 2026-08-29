@@ -167,13 +167,13 @@ export function FieldConversationScreen() {
   const unit = inUnit ? view.unit : null;
 
   return (
-    <div data-theme="dark" className="min-h-screen bg-gray-950 text-white flex flex-col">
+    <div data-theme="dark" className="min-h-screen bg-[var(--color-bg-page)] text-white flex flex-col">
       <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col" style={{ height: '100dvh' }}>
         {/* Header */}
-        <header className="px-3 pt-3 pb-2 border-b border-gray-800 flex items-center gap-2 shrink-0">
+        <header className="px-3 pt-3 pb-2 border-b border-[color:var(--color-border-tertiary)] flex items-center gap-2 shrink-0">
           <button
             onClick={() => (inUnit ? setView({ kind: 'general' }) : navigate('/coach/inbox'))}
-            className="p-1.5 rounded hover:bg-gray-800 text-gray-400"
+            className="tap p-1.5 rounded hover:bg-[var(--color-bg-secondary)] text-[color:var(--color-text-secondary)]"
             aria-label={inUnit ? 'Back to general thread' : 'Back to inbox'}
           >
             <ArrowLeft size={16} />
@@ -183,7 +183,7 @@ export function FieldConversationScreen() {
             <div className="text-[13px] font-semibold text-white truncate">
               {athlete?.name ?? 'Athlete'}
             </div>
-            <div className="text-[10px] text-gray-500 mt-0.5 truncate">
+            <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-0.5 truncate">
               {unit
                 ? `${unit.label} · ${formatWeekdayDateShort(unit.date)}`
                 : 'General thread'}
@@ -194,7 +194,7 @@ export function FieldConversationScreen() {
               onClick={() =>
                 navigate(`/coach/a/${athleteId}/d/${unit.dayIndex}?w=${unit.weekStart}`)
               }
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-gray-800 hover:bg-gray-700 text-blue-300 shrink-0"
+              className="tap-y inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-caption)] font-medium rounded bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[color:var(--color-accent)] shrink-0"
               title="Open this training unit"
             >
               <ExternalLink size={11} />
@@ -261,27 +261,27 @@ function UnitThreadsPanel({
   const totalUnread = threads.reduce((s, t) => s + t.unreadCount, 0);
   if (threads.length === 0) return null;
   return (
-    <div className="border-b border-gray-800 bg-gray-900/40 shrink-0">
+    <div className="border-b border-[color:var(--color-border-tertiary)] bg-gray-900/40 shrink-0">
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-gray-900/80"
         aria-expanded={open}
       >
         {open
-          ? <ChevronDown size={14} className="text-gray-500" />
-          : <ChevronRight size={14} className="text-gray-500" />}
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+          ? <ChevronDown size={14} className="text-[color:var(--color-text-secondary)]" />
+          : <ChevronRight size={14} className="text-[color:var(--color-text-secondary)]" />}
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-primary)]">
           Unit discussions
         </span>
-        <span className="text-[10px] text-gray-500">({threads.length})</span>
+        <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">({threads.length})</span>
         {totalUnread > 0 && (
-          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white">
+          <span className="ml-auto text-[length:var(--text-micro)] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white">
             {totalUnread}
           </span>
         )}
       </button>
       {open && (
-        <div className="border-t border-gray-800">
+        <div className="border-t border-[color:var(--color-border-tertiary)]">
           {threads.map(t => {
             const ref = t.sessionId ? slotRefs.get(t.sessionId) : null;
             const label = ref
@@ -291,24 +291,24 @@ function UnitThreadsPanel({
               <button
                 key={t.sessionId ?? 'unknown'}
                 onClick={() => onSelect(t)}
-                className={`w-full px-4 py-2 flex items-center gap-2 text-left text-[12px] hover:bg-gray-900 border-b border-gray-900 last:border-b-0 ${
+                className={`w-full px-4 py-2 flex items-center gap-2 text-left text-[12px] hover:bg-[var(--color-bg-primary)] border-b border-[color:var(--color-border-tertiary)] last:border-b-0 ${
                   t.unreadCount > 0 ? 'bg-blue-950/20' : ''
                 }`}
               >
-                <span className="text-blue-300 shrink-0">↳</span>
+                <span className="text-[color:var(--color-accent)] shrink-0">↳</span>
                 <span className="flex-1 min-w-0">
                   <span className="text-white font-medium">
                     {label}
                     {t.performedOn && (
-                      <span className="text-gray-500 font-normal"> · {formatDateShort(t.performedOn)}</span>
+                      <span className="text-[color:var(--color-text-secondary)] font-normal"> · {formatDateShort(t.performedOn)}</span>
                     )}
                   </span>
-                  <span className="text-gray-500 truncate ml-2 text-[11px]">
+                  <span className="text-[color:var(--color-text-secondary)] truncate ml-2 text-[11px]">
                     {t.lastMessageSender === 'coach' ? `You: ${t.lastMessage}` : t.lastMessage}
                   </span>
                 </span>
                 {t.unreadCount > 0 && (
-                  <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white shrink-0">
+                  <span className="ml-2 text-[length:var(--text-micro)] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white shrink-0">
                     {t.unreadCount}
                   </span>
                 )}

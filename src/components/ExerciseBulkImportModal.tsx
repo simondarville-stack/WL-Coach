@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import { resolveLibraryScope } from '../lib/libraryScope';
 import { buildParentIndex, wouldCreateCycle } from '../lib/exerciseHierarchy';
+import { Spinner } from './ui';
 
 interface ExerciseBulkImportModalProps {
   onClose: () => void;
@@ -462,7 +463,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
           )}
           <button
             onClick={onComplete}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="px-6 py-2 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors font-medium"
           >
             Done
           </button>
@@ -477,7 +478,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <FileSpreadsheet size={20} className="text-blue-600" />
+            <FileSpreadsheet size={20} className="text-[color:var(--color-accent)]" />
             <h2 className="text-lg font-semibold text-gray-900">Import Exercises from Excel</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -489,7 +490,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
           {/* Step 1: Download template */}
           <div className="border border-gray-200 rounded-lg p-4 space-y-3">
             <h3 className="font-medium text-gray-900 flex items-center gap-2">
-              <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs font-bold flex items-center justify-center">1</span>
+              <span className="w-6 h-6 bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] rounded-full text-xs font-bold flex items-center justify-center">1</span>
               Download the template
             </h3>
             <p className="text-sm text-gray-600">
@@ -515,7 +516,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
           {/* Step 2: Upload */}
           <div className="border border-gray-200 rounded-lg p-4 space-y-3">
             <h3 className="font-medium text-gray-900 flex items-center gap-2">
-              <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs font-bold flex items-center justify-center">2</span>
+              <span className="w-6 h-6 bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] rounded-full text-xs font-bold flex items-center justify-center">2</span>
               Upload your filled template
             </h3>
             <input
@@ -527,7 +528,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors text-sm font-medium"
             >
               <Upload size={16} />
               Choose Excel file
@@ -538,7 +539,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
           {hasParsed && (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
               <h3 className="font-medium text-gray-900 flex items-center gap-2">
-                <span className="w-6 h-6 bg-blue-100 text-blue-700 rounded-full text-xs font-bold flex items-center justify-center">3</span>
+                <span className="w-6 h-6 bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] rounded-full text-xs font-bold flex items-center justify-center">3</span>
                 Preview &amp; choose mode
               </h3>
 
@@ -572,7 +573,7 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
                   <label
                     className={`cursor-pointer rounded-lg border p-3 text-sm ${
                       importMode === 'merge'
-                        ? 'border-blue-500 bg-blue-50'
+                        ? 'border-[color:var(--color-accent)] bg-[var(--color-accent-subtle)]'
                         : 'border-gray-200 bg-white hover:bg-gray-50'
                     }`}
                   >
@@ -659,12 +660,12 @@ export function ExerciseBulkImportModal({ onClose, onComplete }: ExerciseBulkImp
               className={`flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                 importMode === 'swap'
                   ? 'bg-red-600 hover:bg-red-700'
-                  : 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)]'
               }`}
             >
               {importing ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Spinner size={16} />
                   Importing...
                 </>
               ) : (

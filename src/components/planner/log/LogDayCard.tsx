@@ -186,7 +186,7 @@ export function LogDayCard({
                 expanding each one. Blue while anything is unwatched. */}
             {dayVideoCount > 0 && (
               <span
-                className={unwatchedVideoCount > 0 ? 'text-blue-600 font-medium' : undefined}
+                className={unwatchedVideoCount > 0 ? 'text-[color:var(--color-accent)] font-medium' : undefined}
                 title={
                   unwatchedVideoCount > 0
                     ? `${dayVideoCount} video${dayVideoCount > 1 ? 's' : ''}, ${unwatchedVideoCount} not yet watched`

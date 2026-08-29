@@ -177,7 +177,7 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
       >
         <span className="text-sm font-medium text-gray-900">Calendar</span>
         {selectedAthlete && (
-          <span className="text-[9px] text-blue-500 font-medium truncate max-w-[120px]">
+          <span className="text-[9px] text-[color:var(--color-accent)] font-medium truncate max-w-[120px]">
             {selectedAthlete.name}
           </span>
         )}
@@ -197,7 +197,7 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
         </button>
         <button
           onClick={goToday}
-          className="text-[12px] font-semibold text-gray-800 hover:text-blue-600 transition-colors"
+          className="text-[12px] font-semibold text-gray-800 hover:text-[color:var(--color-accent-hover)] transition-colors"
           title="Go to today"
         >
           {MONTH_NAMES[month]} {year}
@@ -237,11 +237,11 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
             >
               {/* ISO week number */}
               <div className="flex flex-col items-center justify-center py-0.5">
-                <span className={`text-[8px] font-medium leading-tight ${macroWeek ? 'text-blue-400' : 'text-gray-300'}`}>
+                <span className={`text-[8px] font-medium leading-tight ${macroWeek ? 'text-[color:var(--color-accent)]' : 'text-gray-300'}`}>
                   {isoWeek ?? ''}
                 </span>
                 {weekTypeAbbr && (
-                  <span className="text-[6px] leading-none text-blue-300">{weekTypeAbbr}</span>
+                  <span className="text-[length:var(--text-micro)] leading-none text-[color:var(--color-accent)]">{weekTypeAbbr}</span>
                 )}
               </div>
 
@@ -258,7 +258,7 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
                     <div
                       className={`w-[18px] h-[18px] flex items-center justify-center rounded-full text-[9px] font-medium leading-none
                         ${isToday
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-[var(--color-accent)] text-white'
                           : isWeekend
                             ? 'text-gray-400'
                             : 'text-gray-700'}
@@ -290,10 +290,10 @@ export function CalendarTool({ onClose, positionClass = 'bottom-4 right-4' }: Ca
 
       {/* Macro cycle banner */}
       {macroCycle && (
-        <div className="px-3 py-1.5 border-t border-blue-100 bg-blue-50/40 text-[9px] text-blue-600 font-medium flex items-center gap-1.5 truncate">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
+        <div className="px-3 py-1.5 border-t border-[color:var(--color-accent-border)] bg-blue-50/40 text-[9px] text-[color:var(--color-accent)] font-medium flex items-center gap-1.5 truncate">
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] flex-shrink-0" />
           {macroCycle.name}
-          <span className="text-blue-300 font-normal ml-auto flex-shrink-0">
+          <span className="text-[color:var(--color-accent)] font-normal ml-auto flex-shrink-0">
             {macroCycle.weeks.length}w
           </span>
         </div>

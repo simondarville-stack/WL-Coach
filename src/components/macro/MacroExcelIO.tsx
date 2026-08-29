@@ -10,6 +10,7 @@ import { catalogueOrFilter } from '../../lib/libraryScope';
 import { PlanningPRPanel } from './PlanningPRPanel';
 import { splitExerciseHeader } from './macroExcelHeaders';
 import { Button } from '../ui';
+import { alertDialog, confirmDialog } from '../ui';
 
 interface MacroExcelIOProps {
   macroWeeks: MacroWeek[];
@@ -333,10 +334,10 @@ export function MacroExcelIO({
     // every load column would come out empty — say so instead of shipping a
     // silently gutted file.
     if (!athleteId) {
-      alert(
-        'A "Template (%)" export converts each planned kg to a percentage of the athlete\'s PR, ' +
-        'so it needs an individual athlete. Open an athlete\'s macrocycle, or use "Excel (with actuals)" for a group.',
-      );
+      void alertDialog({
+        title: 'Pick an athlete for a Template (%) export',
+        message: 'The export converts each planned kg to a percentage of that athlete\'s PR, so it needs an individual. Open an athlete\'s macrocycle, or use "Excel (with actuals)" for a group.',
+      });
       return;
     }
 
@@ -377,10 +378,14 @@ export function MacroExcelIO({
         missing.push(te.exercise.exercise_code || te.exercise.name);
       }
     }
-    if (missing.length > 0 && !confirm(
-      `No PR for: ${missing.join(', ')}.\n\n` +
-      'Their load columns will be left empty rather than exported as kilograms in a % column. Continue?',
-    )) return;
+    if (missing.length > 0) {
+      const ok = await confirmDialog({
+        title: `No PR for ${missing.length} exercise${missing.length === 1 ? '' : 's'}`,
+        message: `${missing.join(', ')} — their load columns will be left empty rather than exported as kilograms in a % column.`,
+        confirmLabel: 'Export anyway',
+      });
+      if (!ok) return;
+    }
 
     const wb = buildExportWorkbook(true, athletePRs);
     const filename = `${cycleNameForFile.replace(/[^a-z0-9_-]/gi, '_')}_template.xlsx`;
@@ -403,7 +408,10 @@ export function MacroExcelIO({
         // Check if it's a template file
         const isTemplate = wb.SheetNames.includes('Template Info');
         if (isTemplate) {
-          alert('This looks like a template file. Use "Import Template" button instead.');
+          void alertDialog({
+            title: 'This is a template file',
+            message: 'Use "Import Template" to bring it in.',
+          });
           return;
         }
 
@@ -531,7 +539,10 @@ export function MacroExcelIO({
         setImportDone(false);
         setShowImportModal(true);
       } catch (err) {
-        alert(`Failed to parse file: ${err instanceof Error ? err.message : String(err)}`);
+        void alertDialog({
+          title: "Couldn't read that file",
+          message: `Nothing was imported. ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     };
     reader.readAsBinaryString(file);
@@ -583,7 +594,10 @@ export function MacroExcelIO({
         const wb = XLSX.read(data, { type: 'binary' });
 
         if (!wb.SheetNames.includes('Template Info')) {
-          alert('This does not appear to be a template file. Use "Import Excel" for regular imports.');
+          void alertDialog({
+            title: 'This is not a template file',
+            message: 'Use "Import Excel" for a regular macrocycle export.',
+          });
           return;
         }
 
@@ -731,7 +745,10 @@ export function MacroExcelIO({
         setImportWeekRhythm(true);
         setShowTemplateModal(true);
       } catch (err) {
-        alert(`Failed to parse template: ${err instanceof Error ? err.message : String(err)}`);
+        void alertDialog({
+          title: "Couldn't read that template",
+          message: `Nothing was imported. ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
     };
     reader.readAsBinaryString(file);
@@ -831,7 +848,10 @@ export function MacroExcelIO({
         }
       });
       if (missingPRs.length > 0) {
-        alert(`Cannot import as kg: missing planning PRs for: ${missingPRs.join(', ')}. Please enter PRs or use "Import as %" instead.`);
+        void alertDialog({
+          title: 'Missing planning PRs',
+          message: `Importing as kg needs a PR for: ${missingPRs.join(', ')}. Enter those PRs, or use "Import as %" instead.`,
+        });
         return;
       }
     }
@@ -934,7 +954,10 @@ export function MacroExcelIO({
 
       setTemplateImportDone(true);
     } catch (err) {
-      alert(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      void alertDialog({
+        title: "The import didn't finish",
+        message: `Your macrocycle is unchanged. ${err instanceof Error ? err.message : String(err)}`,
+      });
     } finally {
       setTemplateImporting(false);
     }
@@ -996,7 +1019,10 @@ export function MacroExcelIO({
                 onClick={() => {
                   setExportOpen(false);
                   void handleExportTemplate().catch(err => {
-                    alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+                    void alertDialog({
+                      title: "The export didn't finish",
+                      message: `No file was written. ${err instanceof Error ? err.message : String(err)}`,
+                    });
                   });
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] text-left"

@@ -19,6 +19,7 @@ import { useExerciseLibraries } from '../../hooks/useExerciseLibraries';
 import type { MatchBy } from '../../lib/exerciseMatching';
 import { LibraryChip } from './LibraryChip';
 import { Button } from '../ui';
+import { confirmDialog } from '../ui';
 
 export interface DuplicatePair {
   personal: Exercise;
@@ -60,11 +61,11 @@ export function DuplicatesPanel({ pairs, personalLibraryId, onClose, onChanged }
         mapping,
         dryRun: true,
       });
-      const ok = window.confirm(
-        `Merge your "${pair.personal.name}" into the club exercise "${pair.club.name}" (${pair.clubLabel})?\n\n` +
-        `${preview.references_repointed} reference(s) — plans, logs, PRs — will repoint to the club exercise, ` +
-        'and your personal exercise will be archived (never deleted).',
-      );
+      const ok = await confirmDialog({
+        title: `Merge your "${pair.personal.name}" into "${pair.club.name}" (${pair.clubLabel})?`,
+        message: `${preview.references_repointed} reference(s) — plans, logs, PRs — will repoint to the club exercise, and your personal exercise will be archived (never deleted).`,
+        confirmLabel: 'Merge exercise',
+      });
       if (!ok) return;
       await libs.adoptLibrary({
         fromLibraryId: personalLibraryId,

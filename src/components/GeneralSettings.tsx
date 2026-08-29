@@ -10,6 +10,8 @@ import { DEFAULT_PHASE_TYPE_PRESETS } from '../lib/constants';
 import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS, STRUCTURAL_MACRO_COLUMNS } from './macro/MacroTableV2';
 import type { MacroTableColumnKey } from './macro/MacroTableV2';
 import { FlagSettingsSection } from './dashboard-v2/FlagSettingsSection';
+import { alertDialog } from './ui';
+import { Spinner } from './ui';
 
 const DEFAULT_WEEK_TYPES: WeekTypeConfig[] = [
   { name: 'High',   abbreviation: 'h', color: '#E24B4A' },
@@ -126,7 +128,10 @@ export function GeneralSettings() {
     if (!activeCoach) return;
     const isDefault = activeCoach.id === '00000000-0000-0000-0000-000000000001';
     if (isDefault) {
-      alert('Cannot delete the default environment.');
+      void alertDialog({
+        title: 'The default environment cannot be deleted',
+        message: 'Create another environment and switch to it first.',
+      });
       return;
     }
     try {
@@ -214,7 +219,7 @@ export function GeneralSettings() {
         ? err.message
         : (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string')
           ? (err as { message: string }).message
-          : 'Failed to save grid settings';
+          : 'Couldn’t save grid settings. Your changes are still on screen.';
       // PGRST204 / "Could not find the 'X' column" → migration hasn't run yet.
       if (msg.includes('percent_to_kg_round') || msg.includes('default_prescription_load')) {
         setGridSaveError(
@@ -327,7 +332,7 @@ export function GeneralSettings() {
   }
 
   if (loading) {
-    return <div className="p-6 flex items-center gap-2 text-gray-400 text-sm"><div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />Loading settings...</div>;
+    return <div className="p-6 flex items-center gap-2 text-gray-400 text-sm"><Spinner size={16} />Loading settings...</div>;
   }
 
   return (
@@ -351,7 +356,7 @@ export function GeneralSettings() {
             className={
               'px-3 py-1.5 text-sm font-medium -mb-px border-b-2 transition-colors ' +
               (tab === t.key
-                ? 'border-blue-600 text-blue-700'
+                ? 'border-[color:var(--color-accent)] text-[color:var(--color-accent)]'
                 : 'border-transparent text-gray-500 hover:text-gray-800')
             }
           >
@@ -373,7 +378,7 @@ export function GeneralSettings() {
                   type="text"
                   value={coachName}
                   onChange={e => setCoachName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                 />
               </div>
               <div>
@@ -382,7 +387,7 @@ export function GeneralSettings() {
                   type="text"
                   value={coachClub}
                   onChange={e => setCoachClub(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                 />
               </div>
               <div>
@@ -391,7 +396,7 @@ export function GeneralSettings() {
                   type="email"
                   value={coachEmail}
                   onChange={e => setCoachEmail(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                 />
               </div>
               <div>
@@ -428,7 +433,7 @@ export function GeneralSettings() {
                 <button
                   onClick={handleSaveCoachProfile}
                   disabled={savingCoach}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm rounded-lg hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                 >
                   {savingCoach ? 'Saving…' : 'Save profile'}
                 </button>
@@ -492,7 +497,7 @@ export function GeneralSettings() {
                     step="0.5"
                     value={gridLoadIncrement}
                     onChange={(e) => setGridLoadIncrement(Math.max(0.5, Math.min(50, parseFloat(e.target.value) || 5)))}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                   />
                   <span className="text-sm text-gray-600">kg</span>
                 </div>
@@ -511,7 +516,7 @@ export function GeneralSettings() {
                     step="0.5"
                     value={gridClickIncrement}
                     onChange={(e) => setGridClickIncrement(Math.max(0.5, Math.min(10, parseFloat(e.target.value) || 1)))}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                   />
                 </div>
               </div>
@@ -529,7 +534,7 @@ export function GeneralSettings() {
                     step="1"
                     value={defaultPrescriptionLoad}
                     onChange={(e) => setDefaultPrescriptionLoad(Math.max(0, Math.min(500, parseFloat(e.target.value) || 0)))}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                   />
                 </div>
               </div>
@@ -558,7 +563,7 @@ export function GeneralSettings() {
                       disabled={!pctToKgRoundEnabled}
                       value={pctToKgRoundIncrement}
                       onChange={(e) => setPctToKgRoundIncrement(Math.max(0.05, Math.min(50, parseFloat(e.target.value) || 0.5)))}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     />
                     <span className="text-sm text-gray-600">kg</span>
                   </div>
@@ -579,7 +584,7 @@ export function GeneralSettings() {
                 <button
                   onClick={updateGridSettings}
                   disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-md hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Save Grid Settings'}
                 </button>
@@ -624,11 +629,11 @@ export function GeneralSettings() {
                       await updateSettings(settings.id, { dialog_mode: value });
                     }}
                     className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
-                      active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                      active ? 'border-[color:var(--color-accent)] bg-[var(--color-accent-subtle)]' : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
                     {preview}
-                    <p className={`text-xs font-medium mt-2 ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                    <p className={`text-xs font-medium mt-2 ${active ? 'text-[color:var(--color-accent)]' : 'text-gray-700'}`}>{label}</p>
                   </button>
                 );
               })}
@@ -653,7 +658,7 @@ export function GeneralSettings() {
                           type="checkbox"
                           checked={visibleCardMetrics.includes(key)}
                           onChange={() => void toggleCardMetric(key)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
                         />
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-gray-700">{def.label}</span>
@@ -679,7 +684,7 @@ export function GeneralSettings() {
                           type="checkbox"
                           checked={visibleMetrics.includes(key)}
                           onChange={() => void toggleMetric(key)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
                         />
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-gray-700">{def.label}</span>
@@ -720,10 +725,10 @@ export function GeneralSettings() {
                       await updateSettings(settings.id, { timeline_metric: value });
                     }}
                     className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
-                      active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                      active ? 'border-[color:var(--color-accent)] bg-[var(--color-accent-subtle)]' : 'border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
-                    <p className={`text-xs font-medium ${active ? 'text-blue-700' : 'text-gray-700'}`}>{label}</p>
+                    <p className={`text-xs font-medium ${active ? 'text-[color:var(--color-accent)]' : 'text-gray-700'}`}>{label}</p>
                     <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>
                   </button>
                 );
@@ -787,7 +792,7 @@ export function GeneralSettings() {
                     onChange={e => void updateWeekType(idx, { name: e.target.value })}
                     onBlur={e => { if (e.target.value.trim()) void saveWeekTypes(weekTypes); }}
                     placeholder="Name…"
-                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                   />
                   <input
                     type="text"
@@ -796,7 +801,7 @@ export function GeneralSettings() {
                     onChange={e => void updateWeekType(idx, { abbreviation: e.target.value })}
                     onBlur={() => { if (!duplicateAbbr) void saveWeekTypes(weekTypes); }}
                     placeholder="h"
-                    className={`px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                    className={`px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] ${
                       duplicateAbbr && wt.abbreviation === duplicateAbbr ? 'border-red-400 bg-red-50' : 'border-gray-200'
                     }`}
                   />
@@ -829,7 +834,7 @@ export function GeneralSettings() {
 
             <button
               onClick={() => void addWeekType()}
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+              className="flex items-center gap-1.5 text-sm text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)]"
             >
               <Plus size={14} /> Add week type
             </button>
@@ -858,7 +863,7 @@ export function GeneralSettings() {
                     onChange={e => void updatePhasePreset(idx, { label: e.target.value })}
                     onBlur={() => { if (preset.label.trim()) void savePhaseTypePresets(phaseTypePresets); }}
                     placeholder="Preparatory…"
-                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)]"
                   />
                   <input
                     type="text"
@@ -866,7 +871,7 @@ export function GeneralSettings() {
                     onChange={e => void updatePhasePreset(idx, { value: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
                     onBlur={() => { if (preset.value.trim()) void savePhaseTypePresets(phaseTypePresets); }}
                     placeholder="preparatory"
-                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                    className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] font-mono"
                   />
                   <label
                     className="w-8 h-8 rounded border border-gray-200 overflow-hidden cursor-pointer flex-shrink-0"
@@ -894,7 +899,7 @@ export function GeneralSettings() {
 
             <button
               onClick={() => void addPhasePreset()}
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+              className="flex items-center gap-1.5 text-sm text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)]"
             >
               <Plus size={14} /> Add phase type
             </button>
@@ -913,7 +918,7 @@ export function GeneralSettings() {
                     type="checkbox"
                     checked={macroTableColumns.includes(col)}
                     onChange={() => void toggleMacroTableColumn(col)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
                   />
                   <span className="text-sm font-medium text-gray-700">{MACRO_TABLE_COLUMN_LABELS[col]}</span>
                 </label>
@@ -938,7 +943,7 @@ export function GeneralSettings() {
                 onClick={toggleRawScoring}
                 disabled={saving}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  settings?.raw_enabled ? 'bg-blue-600' : 'bg-gray-300'
+                  settings?.raw_enabled ? 'bg-[var(--color-accent)]' : 'bg-gray-300'
                 } ${saving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <span
@@ -951,9 +956,9 @@ export function GeneralSettings() {
 
             {settings?.raw_enabled && (
               <>
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <h3 className="text-sm font-medium text-blue-900 mb-2">About RAW Scoring</h3>
-                  <p className="text-sm text-blue-800">
+                <div className="mt-4 p-4 bg-[var(--color-accent-subtle)] rounded-lg border border-[color:var(--color-accent-border)]">
+                  <h3 className="text-sm font-medium text-[color:var(--color-accent)] mb-2">About RAW Scoring</h3>
+                  <p className="text-sm text-[color:var(--color-accent)]">
                     RAW scoring helps athletes assess their readiness before training across four pillars: Sleep, Physical condition, Mood, and Nutrition. Based on their scores, the system provides volume adjustment recommendations.
                   </p>
                 </div>
@@ -970,14 +975,14 @@ export function GeneralSettings() {
                       max="30"
                       value={rawAverageDays}
                       onChange={(e) => setRawAverageDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 7)))}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                     />
                     <span className="text-sm text-gray-600">days</span>
                     {rawAverageDays !== settings.raw_average_days && (
                       <button
                         onClick={updateRawAverageDays}
                         disabled={saving}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-md hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                       >
                         Save
                       </button>
@@ -1016,7 +1021,7 @@ export function GeneralSettings() {
                       value={holder?.id ?? ''}
                       disabled={isSaving}
                       onChange={e => handleSlotChange(slot, e.target.value || null)}
-                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                      className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] disabled:opacity-50"
                     >
                       <option value="">— None —</option>
                       {sortedExercises.map(ex => (
@@ -1052,14 +1057,14 @@ export function GeneralSettings() {
                   max="30"
                   value={bodyweightMaDays}
                   onChange={(e) => setBodyweightMaDays(Math.max(3, Math.min(30, parseInt(e.target.value) || 7)))}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                 />
                 <span className="text-sm text-gray-600">days</span>
                 {bodyweightMaDays !== (settings?.bodyweight_ma_days ?? 7) && (
                   <button
                     onClick={updateBodyweightMaDays}
                     disabled={saving}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-md hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                   >
                     Save
                   </button>
@@ -1091,14 +1096,14 @@ export function GeneralSettings() {
                   step="1"
                   value={fieldBoldPct}
                   onChange={(e) => setFieldBoldPct(Math.max(50, Math.min(100, parseFloat(e.target.value) || 90)))}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                 />
                 <span className="text-sm text-gray-600">%</span>
                 {fieldBoldPct !== (settings?.field_bold_intensity_pct ?? 90) && (
                   <button
                     onClick={updateFieldBoldPct}
                     disabled={saving}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                    className="px-4 py-2 bg-[var(--color-accent)] text-white text-sm font-medium rounded-md hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                   >
                     Save
                   </button>

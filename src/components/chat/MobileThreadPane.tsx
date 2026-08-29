@@ -158,7 +158,7 @@ export function MobileThreadPane({
           type="button"
           onClick={() => void send()}
           disabled={!draft.trim() || sending}
-          className="self-end h-9 px-3 inline-flex items-center gap-1 rounded-md bg-blue-600 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+          className="self-end h-9 px-3 inline-flex items-center gap-1 rounded-md bg-[var(--color-accent)] text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
           Send
@@ -181,8 +181,8 @@ function MessageBubble({
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[78%] px-3 py-2 rounded-lg text-[12.5px] leading-snug whitespace-pre-wrap break-words ${
-          isOwn ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-100 border border-gray-700'
+        className={`max-w-[78%] px-3 py-2 rounded-lg text-[length:var(--text-label)] leading-snug whitespace-pre-wrap break-words ${
+          isOwn ? 'bg-[var(--color-accent)] text-white' : 'bg-gray-800 text-gray-100 border border-gray-700'
         }`}
       >
         {senderLabel && (

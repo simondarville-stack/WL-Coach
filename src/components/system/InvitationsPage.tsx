@@ -91,7 +91,7 @@ export function InvitationsPage() {
       ].sort((a, b) => b.invitedAt.localeCompare(a.invitedAt));
       setInvites(merged);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load invitations');
+      setError(e instanceof Error ? e.message : 'Couldn’t load invitations. Check your connection and try again.');
     }
   }, [activeCoachId]);
 
@@ -120,7 +120,7 @@ export function InvitationsPage() {
       if (inv.kind === 'athlete' || inv.kind === 'group') await refreshAthletes(true);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to accept');
+      setError(e instanceof Error ? e.message : 'Couldn’t accept. Nothing was changed.');
     } finally {
       setBusy(null);
     }
@@ -135,7 +135,7 @@ export function InvitationsPage() {
       else await clubsHook.declineInvite(inv.id);
       setInvites(prev => (prev ? prev.filter(i => i.id !== inv.id) : prev));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to decline');
+      setError(e instanceof Error ? e.message : 'Couldn’t decline. Nothing was changed.');
     } finally {
       setBusy(null);
     }

@@ -491,7 +491,7 @@ export function usePlannerWeekOverview() {
 
       setWeeks(summaries);
     } catch (err) {
-      console.error('Failed to load week overview:', err);
+      console.error('Couldn’t load week overview:. Check your connection and try again.', err);
     } finally {
       setLoading(false);
     }

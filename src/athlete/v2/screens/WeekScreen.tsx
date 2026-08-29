@@ -188,11 +188,11 @@ export function WeekScreen() {
 
       {!loading && !error && overview && overview.days.length > 0 && (
         <div className="flex items-center justify-between px-1">
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[11px] text-[color:var(--color-text-secondary)]">
             {totals.done}/{totals.total} sessions done
           </p>
           {overview.planSource === 'group' && (
-            <p className="text-[10px] text-gray-500 italic">Group plan</p>
+            <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] italic">Group plan</p>
           )}
         </div>
       )}
@@ -200,7 +200,7 @@ export function WeekScreen() {
       {!loading && !error && <WeekBriefCard brief={overview?.weekBrief} />}
 
       {loading && (
-        <div className="flex items-center justify-center py-16 text-gray-500">
+        <div className="flex items-center justify-center py-16 text-[color:var(--color-text-secondary)]">
           <Loader2 size={18} className="animate-spin mr-2" />
           <span className="text-sm">Loading week…</span>
         </div>
@@ -214,9 +214,9 @@ export function WeekScreen() {
       )}
 
       {!loading && !error && overview && overview.days.length === 0 && (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-          <p className="text-sm text-gray-300 font-semibold">No plan for this week</p>
-          <p className="text-xs text-gray-500 mt-1">
+        <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-6 text-center">
+          <p className="text-sm text-[color:var(--color-text-primary)] font-semibold">No plan for this week</p>
+          <p className="text-xs text-[color:var(--color-text-secondary)] mt-1">
             Your coach hasn't written a plan yet. Try the previous or next week,
             or add an extra training day below.
           </p>
@@ -243,13 +243,13 @@ export function WeekScreen() {
               <li key={day.dayIndex} className="space-y-2">
                 <button
                   onClick={() => void toggleDay(day.dayIndex)}
-                  className={`w-full flex items-center gap-3 px-3 py-3 bg-gray-900 border rounded-xl transition-colors text-left ${
-                    isExpanded ? 'border-gray-600' : 'border-gray-800 hover:border-gray-600'
+                  className={`w-full flex items-center gap-3 px-3 py-3 bg-[var(--color-bg-primary)] border rounded-xl transition-colors text-left ${
+                    isExpanded ? 'border-[color:var(--color-border-primary)]' : 'border-[color:var(--color-border-tertiary)] hover:border-[color:var(--color-border-primary)]'
                   }`}
                   aria-expanded={isExpanded}
                 >
                   <div className="flex flex-col items-center flex-shrink-0 w-12">
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+                    <span className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
                       {weekdayLabel ?? '—'}
                     </span>
                     <span className="text-lg font-bold text-white leading-none mt-0.5">
@@ -260,48 +260,48 @@ export function WeekScreen() {
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="text-sm font-bold text-white truncate">{day.label}</div>
                       {unreadCount > 0 && (
-                        <span className="flex-shrink-0 text-[9px] bg-blue-600 text-white font-semibold px-1.5 py-0.5 rounded-full" title={`${unreadCount} unread coach message${unreadCount > 1 ? 's' : ''}`}>
+                        <span className="flex-shrink-0 text-[length:var(--text-micro)] bg-[var(--color-accent)] text-white font-semibold px-1.5 py-0.5 rounded-full" title={`${unreadCount} unread coach message${unreadCount > 1 ? 's' : ''}`}>
                           {unreadCount}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {day.status === 'completed' && (
-                        <span className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
+                        <span className="text-[length:var(--text-micro)] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300">
                           Done
                         </span>
                       )}
                       {day.status === 'skipped' && (
                         <span
-                          className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300"
+                          className="text-[length:var(--text-micro)] uppercase tracking-wide font-semibold px-2 py-0.5 rounded bg-red-900/50 text-red-300"
                           title={day.skippedReason ? `Not done: ${day.skippedReason}` : 'Not done'}
                         >
                           Not done
                         </span>
                       )}
-                      <span className="text-[10px] text-gray-500">
+                      <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">
                         {day.plannedCount > 0
                           ? `${day.plannedCount} exercise${day.plannedCount > 1 ? 's' : ''}`
                           : 'no plan'}
                       </span>
                       {performed && (
-                        <span className="text-[10px] text-gray-500">
+                        <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">
                           · logged {performed}
                         </span>
                       )}
                     </div>
                   </div>
                   {isExpanded ? (
-                    <ChevronDown size={16} className="text-gray-500 flex-shrink-0" />
+                    <ChevronDown size={16} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
                   ) : (
-                    <ChevronRight size={16} className="text-gray-600 flex-shrink-0" />
+                    <ChevronRight size={16} className="text-[color:var(--color-text-tertiary)] flex-shrink-0" />
                   )}
                 </button>
 
                 {isExpanded && (
-                  <div className="rounded-xl bg-gray-950 border border-gray-800 overflow-hidden">
+                  <div className="rounded-xl bg-[var(--color-bg-page)] border border-[color:var(--color-border-tertiary)] overflow-hidden">
                     {isLoadingDay && (
-                      <div className="flex items-center justify-center py-6 text-gray-500">
+                      <div className="flex items-center justify-center py-6 text-[color:var(--color-text-secondary)]">
                         <Loader2 size={14} className="animate-spin mr-2" />
                         <span className="text-xs">Loading…</span>
                       </div>
@@ -320,7 +320,7 @@ export function WeekScreen() {
                       />
                     )}
                     {!isLoadingDay && !dayData && (
-                      <p className="px-4 py-4 text-xs text-gray-500 italic">
+                      <p className="px-4 py-4 text-xs text-[color:var(--color-text-secondary)] italic">
                         Couldn't load this day.
                       </p>
                     )}
@@ -337,7 +337,7 @@ export function WeekScreen() {
           <button
             onClick={() => setShowBonusName(true)}
             disabled={bonusSaving || nextBonusDayIndex == null}
-            className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-white py-2.5 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl disabled:opacity-50 transition-colors"
+            className="w-full inline-flex items-center justify-center gap-1.5 text-xs text-[color:var(--color-text-secondary)] hover:text-white py-2.5 border border-dashed border-[color:var(--color-border-secondary)] hover:border-[color:var(--color-border-primary)] rounded-xl disabled:opacity-50 transition-colors"
             title="Log an extra training day this week"
           >
             <Plus size={13} />

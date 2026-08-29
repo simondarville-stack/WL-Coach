@@ -100,7 +100,7 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
                   onClick={() => setMetric(opt.id)}
                   className={`px-2.5 py-0.5 text-xs rounded-md border transition-colors ${
                     selected
-                      ? 'bg-blue-600 text-white border-blue-600'
+                      ? 'bg-[var(--color-accent)] text-white border-[color:var(--color-accent)]'
                       : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                   }`}
                 >
@@ -151,13 +151,13 @@ export function AthleteExpansion({ status, enrichment, onOpenPlanner }: Props) {
               planned
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block w-3.5 h-px bg-blue-600" />
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-600 -ml-2" />
+              <span className="inline-block w-3.5 h-px bg-[var(--color-accent)]" />
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] -ml-2" />
               actual
             </span>
             <button
               onClick={() => onOpenPlanner(status)}
-              className="ml-auto text-blue-600 hover:text-blue-700 bg-transparent border-none p-0 cursor-pointer text-xs"
+              className="ml-auto text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)] bg-transparent border-none p-0 cursor-pointer text-xs"
             >
               Open this athlete's planner →
             </button>

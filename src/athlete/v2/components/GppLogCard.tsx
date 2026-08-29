@@ -160,7 +160,7 @@ export function GppLogCard({
   const allDone = rows.length > 0 && rows.every(r => r.done);
 
   return (
-    <div className={`rounded-xl bg-gray-900 border ${allDone ? 'border-emerald-700/50' : 'border-gray-800'} overflow-hidden`}>
+    <div className={`rounded-xl bg-[var(--color-bg-primary)] border ${allDone ? 'border-emerald-700/50' : 'border-[color:var(--color-border-tertiary)]'} overflow-hidden`}>
       <div className="flex items-start gap-2 px-3 py-3">
         <div className="w-1 self-stretch rounded-full flex-shrink-0 bg-emerald-500" aria-hidden />
         <div className="flex-1 min-w-0">
@@ -170,23 +170,23 @@ export function GppLogCard({
                 value={authoredTitle}
                 onChange={e => changeTitle(e.target.value)}
                 placeholder="Block name (e.g. Core circuit)"
-                className="text-sm font-bold text-white bg-transparent border-b border-gray-700 focus:border-emerald-500 focus:outline-none min-w-0 flex-1 placeholder-gray-600 pb-0.5"
+                className="text-sm font-bold text-white bg-transparent border-b border-[color:var(--color-border-secondary)] focus:border-emerald-500 focus:outline-none min-w-0 flex-1 placeholder:text-[color:var(--color-text-tertiary)] pb-0.5"
               />
             ) : (
               <h3 className="text-sm font-bold text-white break-words min-w-0">{title}</h3>
             )}
-            <span className="text-[9px] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
+            <span className="text-[length:var(--text-micro)] bg-emerald-900/50 text-emerald-200 font-medium px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0">
               GPP
             </span>
             {authored && (
-              <span className="text-[9px] bg-amber-900/40 text-amber-300 font-medium px-1.5 py-0.5 rounded flex-shrink-0">
+              <span className="text-[length:var(--text-micro)] bg-amber-900/40 text-amber-300 font-medium px-1.5 py-0.5 rounded flex-shrink-0">
                 Added by you
               </span>
             )}
             {allDone && <Check size={14} className="text-emerald-400 flex-shrink-0" />}
           </div>
           {!authored && description && (
-            <p className="text-[11px] text-gray-300 italic mt-0.5 whitespace-pre-wrap leading-snug">
+            <p className="text-[11px] text-[color:var(--color-text-primary)] italic mt-0.5 whitespace-pre-wrap leading-snug">
               {description}
             </p>
           )}
@@ -194,7 +194,7 @@ export function GppLogCard({
         {authored && onDelete && (
           <button
             onClick={() => void onDelete()}
-            className="p-1 text-gray-500 hover:text-red-400 flex-shrink-0"
+            className="tap p-1 text-[color:var(--color-text-secondary)] hover:text-red-400 flex-shrink-0"
             title="Remove this block"
             aria-label="Remove GPP block"
           >
@@ -205,7 +205,7 @@ export function GppLogCard({
 
       <div className="px-3 pb-3 space-y-2">
         {rows.length === 0 ? (
-          <p className="text-[11px] text-gray-500 italic text-center py-3">
+          <p className="text-[11px] text-[color:var(--color-text-secondary)] italic text-center py-3">
             {authored
               ? 'No exercises yet — add your first row below.'
               : "No rows yet — your coach hasn't filled this in."}
@@ -214,7 +214,7 @@ export function GppLogCard({
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[11px]">
               <thead>
-                <tr className="text-[9px] uppercase tracking-wide text-gray-500">
+                <tr className="text-[length:var(--text-micro)] uppercase tracking-wide text-[color:var(--color-text-secondary)]">
                   <th className="text-center px-1 py-1 w-8">Done</th>
                   <th className="text-left px-1 py-1">Exercise</th>
                   <th className="text-center px-1 py-1 w-12">Reps</th>
@@ -225,14 +225,14 @@ export function GppLogCard({
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} className={`border-t border-gray-800 ${row.done ? 'bg-emerald-950/30' : ''}`}>
+                  <tr key={i} className={`border-t border-[color:var(--color-border-tertiary)] ${row.done ? 'bg-emerald-950/30' : ''}`}>
                     <td className="px-1 py-1 text-center">
                       <button
                         onClick={() => updateRow(i, { done: !row.done })}
                         className={`w-9 h-9 rounded-md flex items-center justify-center border transition-colors ${
                           row.done
                             ? 'bg-emerald-500 border-emerald-400 text-white'
-                            : 'bg-gray-800 border-gray-700 text-gray-500 hover:bg-gray-700 hover:text-emerald-300'
+                            : 'bg-[var(--color-bg-secondary)] border-[color:var(--color-border-secondary)] text-[color:var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] hover:text-emerald-300'
                         }`}
                         title={row.done ? 'Mark not done' : 'Mark done'}
                         aria-pressed={row.done}
@@ -250,7 +250,7 @@ export function GppLogCard({
                       <input
                         value={row.reps}
                         onChange={e => updateRow(i, { reps: e.target.value })}
-                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
+                        className="w-full bg-gray-800/40 border border-[color:var(--color-border-secondary)] rounded px-1 py-1.5 text-[color:var(--color-text-primary)] focus:outline-none focus:bg-[var(--color-bg-secondary)] focus:border-[color:var(--color-border-primary)] text-center tabular-nums text-[12px]"
                       />
                     </td>
                     <td className="px-1 py-1">
@@ -261,14 +261,14 @@ export function GppLogCard({
                         value={row.load}
                         onChange={e => updateRow(i, { load: e.target.value })}
                         placeholder="—"
-                        className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 placeholder-gray-600 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center text-[12px]"
+                        className="w-full bg-gray-800/40 border border-[color:var(--color-border-secondary)] rounded px-1 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:bg-[var(--color-bg-secondary)] focus:border-[color:var(--color-border-primary)] text-center text-[12px]"
                       />
                     </td>
                     {authored && (
                       <td className="px-1 py-1 text-center">
                         <button
                           onClick={() => deleteRow(i)}
-                          className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-red-400"
+                          className="w-8 h-8 flex items-center justify-center text-[color:var(--color-text-secondary)] hover:text-red-400"
                           title="Remove row"
                           aria-label="Remove row"
                         >
@@ -286,7 +286,7 @@ export function GppLogCard({
         {authored && (
           <button
             onClick={addRow}
-            className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
+            className="tap-y w-full inline-flex items-center justify-center gap-1 text-[11px] text-[color:var(--color-text-secondary)] hover:text-white py-1.5 border border-dashed border-[color:var(--color-border-secondary)] hover:border-[color:var(--color-border-primary)] rounded"
           >
             <Plus size={12} />
             Add row
@@ -298,7 +298,7 @@ export function GppLogCard({
             value={authoredDescription}
             onChange={e => changeDescription(e.target.value)}
             placeholder="Optional note for this block…"
-            className="w-full text-[11px] bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500"
+            className="w-full text-[11px] bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-emerald-500"
           />
         )}
 
@@ -307,7 +307,7 @@ export function GppLogCard({
             {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
           />
         </div>
       </div>
@@ -346,7 +346,7 @@ function AutoGrowExerciseInput({
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder="Exercise"
-      className="w-full bg-transparent text-gray-100 focus:outline-none focus:bg-gray-800 focus:rounded focus:px-1 text-[12px] leading-snug placeholder-gray-600"
+      className="w-full bg-transparent text-[color:var(--color-text-primary)] focus:outline-none focus:bg-[var(--color-bg-secondary)] focus:rounded focus:px-1 text-[12px] leading-snug placeholder:text-[color:var(--color-text-tertiary)]"
       style={{ resize: 'none', overflow: 'hidden' }}
     />
   );
@@ -405,7 +405,7 @@ function SetsInput({
       value={draft}
       onChange={e => handleChange(e.target.value)}
       onBlur={handleBlur}
-      className="w-full bg-gray-800/40 border border-gray-700 rounded px-1 py-1.5 text-gray-100 focus:outline-none focus:bg-gray-800 focus:border-gray-500 text-center tabular-nums text-[12px]"
+      className="w-full bg-gray-800/40 border border-[color:var(--color-border-secondary)] rounded px-1 py-1.5 text-[color:var(--color-text-primary)] focus:outline-none focus:bg-[var(--color-bg-secondary)] focus:border-[color:var(--color-border-primary)] text-center tabular-nums text-[12px]"
     />
   );
 }

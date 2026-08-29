@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode, type FormEvent } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Lock } from 'lucide-react';
-import { Button, Input } from './components/ui';
+import { Button, ConfirmHost, Input, Spinner } from './components/ui';
 import { SelectEnvironmentPage } from './components/SelectEnvironmentPage';
 import { CoachProfileModal } from './components/CoachProfileModal';
 import { useCoachStore } from './store/coachStore';
 import { useCoachProfiles } from './hooks/useCoachProfiles';
 import { AthleteSelector } from './components/AthleteSelector';
 import { Sidebar } from './components/Sidebar';
+import { MobileSignpost } from './components/MobileSignpost';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Route-level code splitting: every module surface is its own chunk, loaded
@@ -43,7 +44,7 @@ const ReviewScroller = lazy(() => import('./components/review/ReviewScroller').t
 function RouteFallback() {
   return (
     <div className="min-h-full flex items-center justify-center py-24">
-      <div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-6 h-6" />
+      <Spinner size={24} />
     </div>
   );
 }
@@ -145,6 +146,17 @@ function CoachGate({ children }: { children: ReactNode }) {
 }
 
 function AppRouter() {
+  return (
+    <>
+      {/* One host for every surface — confirmDialog()/alertDialog() resolve
+          against it from anywhere in the tree. */}
+      <ConfirmHost />
+      <AppRoutes />
+    </>
+  );
+}
+
+function AppRoutes() {
   const location = useLocation();
   if (location.pathname === '/athlete' || location.pathname.startsWith('/athlete/')) {
     return (
@@ -258,7 +270,7 @@ function CoachApp() {
   if (!coachesLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-bg-page)' }}>
-        <div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-6 h-6" />
+        <Spinner size={24} />
       </div>
     );
   }
@@ -297,6 +309,7 @@ function CoachApp() {
       />
 
       <div className="flex-1 flex flex-col min-w-0">
+        <MobileSignpost />
         <header className="flex items-center justify-between px-4 flex-shrink-0 min-h-[49px]" style={{ backgroundColor: 'var(--color-bg-primary)', borderBottom: '0.5px solid var(--color-border-primary)' }}>
           <PageTitle />
           <AthleteSelector />

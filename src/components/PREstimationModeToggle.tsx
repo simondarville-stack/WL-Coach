@@ -24,8 +24,8 @@ export function PREstimationModeToggle({ mode, onChange, oneRMUnavailable, theme
   const baseBtn =
     'px-2.5 py-1 text-[11px] font-medium rounded transition-colors border';
   const selectedCls = isDark
-    ? 'bg-blue-600 text-white border-blue-500'
-    : 'bg-blue-100 text-blue-800 border-blue-200';
+    ? 'bg-[var(--color-accent)] text-white border-[color:var(--color-accent)]'
+    : 'bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] border-[color:var(--color-accent-border)]';
   const idleCls = isDark
     ? 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'
     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50';

@@ -157,7 +157,7 @@ export function CoachThreadScreen() {
 
   if (!athlete || !athleteId || !ownerId) {
     return (
-      <div className="px-4 py-6 text-sm text-gray-400">
+      <div className="px-4 py-6 text-sm text-[color:var(--color-text-secondary)]">
         Pick an athlete from the profile picker to access the coach thread.
       </div>
     );
@@ -249,49 +249,49 @@ function SubThreadsPanel({
   if (sessions.length === 0) return null;
 
   return (
-    <div className="border-b border-gray-800 bg-gray-900/40">
+    <div className="border-b border-[color:var(--color-border-tertiary)] bg-gray-900/40">
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-gray-900/80"
         aria-expanded={open}
       >
         {open
-          ? <ChevronDown size={14} className="text-gray-500" />
-          : <ChevronRight size={14} className="text-gray-500" />}
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-300">
+          ? <ChevronDown size={14} className="text-[color:var(--color-text-secondary)]" />
+          : <ChevronRight size={14} className="text-[color:var(--color-text-secondary)]" />}
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-text-primary)]">
           Session discussions
         </span>
-        <span className="text-[10px] text-gray-500">({sessions.length})</span>
+        <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">({sessions.length})</span>
         {totalUnread > 0 && (
-          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white">
+          <span className="ml-auto text-[length:var(--text-micro)] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white">
             {totalUnread}
           </span>
         )}
       </button>
       {open && (
-        <div className="border-t border-gray-800">
+        <div className="border-t border-[color:var(--color-border-tertiary)]">
           {sessions.map(t => (
             <button
               key={t.sessionId ?? 'unknown'}
               onClick={() => onSelect(t)}
-              className={`w-full px-4 py-2 flex items-center gap-2 text-left text-[12px] hover:bg-gray-900 border-b border-gray-900 last:border-b-0 ${
+              className={`w-full px-4 py-2 flex items-center gap-2 text-left text-[12px] hover:bg-[var(--color-bg-primary)] border-b border-[color:var(--color-border-tertiary)] last:border-b-0 ${
                 t.unreadCount > 0 ? 'bg-blue-950/20' : ''
               }`}
             >
-              <span className="text-blue-300 flex-shrink-0">↳</span>
+              <span className="text-[color:var(--color-accent)] flex-shrink-0">↳</span>
               <span className="flex-1 min-w-0">
                 <span className="text-white font-medium">
                   {unitLabelFor(t) ?? 'Session'}
                   {t.performedOn && (
-                    <span className="text-gray-500 font-normal"> · {formatSessionDate(t.performedOn)}</span>
+                    <span className="text-[color:var(--color-text-secondary)] font-normal"> · {formatSessionDate(t.performedOn)}</span>
                   )}
                 </span>
-                <span className="text-gray-500 truncate ml-2 text-[11px]">
+                <span className="text-[color:var(--color-text-secondary)] truncate ml-2 text-[11px]">
                   {t.lastMessageSender === 'athlete' ? `You: ${t.lastMessage}` : t.lastMessage}
                 </span>
               </span>
               {t.unreadCount > 0 && (
-                <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white flex-shrink-0">
+                <span className="ml-2 text-[length:var(--text-micro)] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white flex-shrink-0">
                   {t.unreadCount}
                 </span>
               )}
@@ -368,11 +368,11 @@ function ChatView({
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 80px)' }}>
-      <header className="px-3 pt-3 pb-2 border-b border-gray-800 flex items-center gap-2">
+      <header className="px-3 pt-3 pb-2 border-b border-[color:var(--color-border-tertiary)] flex items-center gap-2">
         {onBack && (
           <button
             onClick={onBack}
-            className="p-1.5 rounded hover:bg-gray-800 text-gray-400"
+            className="tap p-1.5 rounded hover:bg-[var(--color-bg-secondary)] text-[color:var(--color-text-secondary)]"
             aria-label="Back to general thread"
           >
             <ArrowLeft size={16} />
@@ -382,14 +382,14 @@ function ChatView({
           <div className="text-[13px] font-semibold text-white truncate">
             {thread.kind === 'session' ? `${unitLabel ?? 'Session'} · ${dateLabel ?? ''}` : 'Coach'}
           </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">
+          <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-0.5">
             {thread.kind === 'session' ? 'Unit discussion' : 'General thread with your coach'}
           </div>
         </div>
         {jumpToSession && (
           <button
             onClick={jumpToSession}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-gray-800 hover:bg-gray-700 text-blue-300"
+            className="tap-y inline-flex items-center gap-1 px-2 py-1 text-[length:var(--text-caption)] font-medium rounded bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-tertiary)] text-[color:var(--color-accent)]"
             title="Open this session in Today"
           >
             <ExternalLink size={11} />

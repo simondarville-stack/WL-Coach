@@ -379,7 +379,7 @@ function WindowSelector({ value, onChange }: { value: WindowKey; onChange: (k: W
             onClick={() => onChange(w.key)}
             className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
               selected
-                ? 'bg-blue-600 text-white border-blue-600'
+                ? 'bg-[var(--color-accent)] text-white border-[color:var(--color-accent)]'
                 : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
@@ -440,7 +440,7 @@ function Stat({
 }) {
   const toneClass = {
     gray: 'text-gray-900',
-    blue: 'text-blue-600',
+    blue: 'text-[color:var(--color-accent)]',
     teal: 'text-teal-600',
     red: 'text-red-600',
     green: 'text-green-600',

@@ -709,16 +709,16 @@ export function MacroTableV2({
               </th>
             )}
             {showCol('k') && (
-              <th className="bg-blue-50/60 border-l border-[color:var(--color-border-tertiary)] text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
+              <th className="bg-blue-50/60 border-l border-[color:var(--color-border-tertiary)] text-[8px] text-[color:var(--color-accent)] font-normal text-center px-1" style={{ minWidth: 44 }}>Σreps</th>
             )}
             {showCol('tonnage') && (
-              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
+              <th className="bg-blue-50/60 text-[8px] text-[color:var(--color-accent)] font-normal text-center px-1" style={{ minWidth: 52 }}>Ton</th>
             )}
             {showCol('avg') && (
-              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
+              <th className="bg-blue-50/60 text-[8px] text-[color:var(--color-accent)] font-normal text-center px-1" style={{ minWidth: 40 }}>Avg</th>
             )}
             {showCol('kvalue') && (
-              <th className="bg-blue-50/60 text-[8px] text-blue-400 font-normal text-center px-1" style={{ minWidth: 40 }}>K</th>
+              <th className="bg-blue-50/60 text-[8px] text-[color:var(--color-accent)] font-normal text-center px-1" style={{ minWidth: 40 }}>K</th>
             )}
             {displayed.map((te, idx) => {
               const st = colState(te.id);

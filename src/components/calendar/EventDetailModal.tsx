@@ -93,7 +93,7 @@ export function EventDetailModal({ event, onClose, onEdit, onDelete, onAthleteCl
                 href={event.external_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline truncate"
+                className="text-[color:var(--color-accent)] hover:underline truncate"
               >
                 {event.external_url}
               </a>
@@ -122,7 +122,7 @@ export function EventDetailModal({ event, onClose, onEdit, onDelete, onAthleteCl
                   <button
                     key={a.id}
                     onClick={() => onAthleteClick(a)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)] hover:bg-[var(--color-accent-muted)] transition-colors"
                   >
                     <Trophy size={11} />
                     {a.name}
@@ -150,7 +150,7 @@ export function EventDetailModal({ event, onClose, onEdit, onDelete, onAthleteCl
             </button>
             <button
               onClick={onEdit}
-              className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-3 py-1.5 text-sm text-white bg-[var(--color-accent)] rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors"
             >
               Edit
             </button>

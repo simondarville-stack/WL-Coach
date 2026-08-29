@@ -176,7 +176,7 @@ export function CoachDashboardV2({
         <button
           onClick={() => navigate('/settings#dashboard-flags')}
           title="Configure which attention flags surface on the dashboard"
-          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600"
+          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-[color:var(--color-accent-hover)]"
         >
           <Sliders size={13} />
           Configure flags

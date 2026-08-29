@@ -118,7 +118,7 @@ export function PlanningPRPanel({
                       onChange={e => handleChange(ex.id, e.target.value)}
                       onBlur={() => handleBlur(ex.id)}
                       placeholder="Enter PR"
-                      className={`w-20 text-right px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                      className={`w-20 text-right px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] ${
                         isMissing ? 'border-red-300 bg-red-50' : 'border-gray-300'
                       }`}
                     />

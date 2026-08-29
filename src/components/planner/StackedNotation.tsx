@@ -32,8 +32,11 @@ interface StackedNotationProps {
 }
 
 const mono: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: 'var(--text-caption)',
+  // --font-stacked is the notation's typeface token; it resolves to the mono
+  // face and is shared with the editable .pgrid-* cells so a load doesn't
+  // change face between reading and editing it.
+  fontFamily: 'var(--font-stacked)',
+  fontSize: 'var(--text-notation)',
   color: 'var(--color-text-primary)',
   fontWeight: 500,
   lineHeight: 1.25,
@@ -45,7 +48,7 @@ const monoLight: React.CSSProperties = {
 };
 
 const setMultiplier: React.CSSProperties = {
-  fontSize: 'var(--text-caption)',
+  fontSize: 'var(--text-caption)', // one step below the load/reps it annotates
   color: 'var(--color-text-secondary)',
   fontWeight: 500,
   alignSelf: 'center',
@@ -59,7 +62,7 @@ const ruleStyle: React.CSSProperties = {
 };
 
 const empty: React.CSSProperties = {
-  fontSize: 'var(--text-caption)',
+  fontSize: 'var(--text-notation)',
   color: 'var(--color-text-primary)',
   fontWeight: 500,
   whiteSpace: 'pre-wrap',
@@ -140,7 +143,7 @@ export const StackedNotation = memo(function StackedNotation({ raw, unit, isComb
       return (
         <span
           style={{
-            fontSize: 'var(--text-caption)',
+            fontSize: 'var(--text-notation)',
             color: 'var(--color-text-primary)',
             fontWeight: 500,
             whiteSpace: 'pre-wrap',
@@ -239,7 +242,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
       return (
         <span
           style={{
-            fontSize: 'var(--text-caption)',
+            fontSize: 'var(--text-notation)',
             color: 'var(--color-text-primary)',
             fontStyle: 'italic',
             whiteSpace: 'pre-wrap',
@@ -254,7 +257,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
     return (
       <span
         style={{
-          fontSize: 'var(--text-caption)',
+          fontSize: 'var(--text-notation)',
           color: anyCompleted ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
           fontStyle: 'italic',
         }}
@@ -292,7 +295,7 @@ export function LoggedStackedNotation({ sets, includeIncomplete = true }: Logged
               <span style={repsStyle}>{repsDisplay}</span>
             </div>
             {s.rpe != null && (
-              <span style={{ ...setMultiplier, fontSize: 9, color: 'var(--color-text-tertiary)' }}>
+              <span style={{ ...setMultiplier, fontSize: 'var(--text-micro)', color: 'var(--color-text-tertiary)' }}>
                 @{s.rpe}
               </span>
             )}

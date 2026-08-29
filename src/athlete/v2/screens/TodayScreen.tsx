@@ -73,6 +73,7 @@ import { DayChipRow } from '../components/DayChipRow';
 import { WeekBriefCard } from '../components/WeekBriefCard';
 import { ConfirmModal } from '../../../components/log/ConfirmModal';
 import { UndoToast } from '../../../components/log/UndoToast';
+import { confirmDialog } from '../../../components/ui';
 
 function todayISO(): string {
   return toISO(new Date());
@@ -393,7 +394,7 @@ export function TodayScreen() {
       // request aborted) do not invalidate local state, so skip the reload
       // to avoid a second failure spinning the loading indicator. (E-21)
       const isTransient =
-        msg.includes('Failed to fetch') ||
+        msg.includes('Couldn’t fetch. Check your connection and try again.') ||
         msg.includes('NetworkError') ||
         msg.includes('network') ||
         msg.includes('AbortError');
@@ -587,15 +588,12 @@ export function TodayScreen() {
       let raised = false;
       if (stale.length > 0) {
         const list = stale.map(x => `${x.repCount}RM (${x.currentKg} kg)`).join(', ');
-        raised = window.confirm(
-          `This ${repCount}RM of ${valueKg} kg is higher than your current ${list}.
-
-` +
-          `Raise ${stale.length === 1 ? 'it' : 'them'} to ${valueKg} kg as well?
-
-` +
-          'Your older entries stay in the history either way.',
-        );
+        raised = await confirmDialog({
+          title: `Raise your ${list} to ${valueKg} kg too?`,
+          message: `This ${repCount}RM of ${valueKg} kg is higher than ${stale.length === 1 ? 'it' : 'them'}. Your older entries stay in the history either way.`,
+          confirmLabel: stale.length === 1 ? 'Raise it' : 'Raise them',
+          cancelLabel: 'Leave as they are',
+        });
         if (raised) {
           await raiseLowerReps({
             athleteId: athlete.id,
@@ -1216,14 +1214,14 @@ export function TodayScreen() {
       <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
 
         {loadingWeek ? (
-          <div className="flex items-center justify-center py-8 text-gray-500">
+          <div className="flex items-center justify-center py-8 text-[color:var(--color-text-secondary)]">
             <Loader2 size={18} className="animate-spin mr-2" />
             <span className="text-sm">Loading week…</span>
           </div>
         ) : overview && overview.days.length === 0 ? (
-          <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-            <p className="text-sm text-gray-300 font-semibold">No plan for this week</p>
-            <p className="text-xs text-gray-500 mt-1">
+          <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-6 text-center">
+            <p className="text-sm text-[color:var(--color-text-primary)] font-semibold">No plan for this week</p>
+            <p className="text-xs text-[color:var(--color-text-secondary)] mt-1">
               Your coach hasn't written a plan yet. Try the previous or next week.
             </p>
           </div>
@@ -1236,7 +1234,7 @@ export function TodayScreen() {
               disabled={saving}
             />
             {overview.planSource === 'group' && (
-              <p className="text-[10px] text-gray-500 italic px-1">Showing your group's plan.</p>
+              <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] italic px-1">Showing your group's plan.</p>
             )}
             <WeekBriefCard brief={overview.weekBrief} />
           </>
@@ -1257,14 +1255,14 @@ export function TodayScreen() {
          *  The badge keeps the cards mounted and just signals work in
          *  flight. */}
         {loadingDay && data && data.dayIndex === dayIndex && (
-          <div className="flex items-center justify-center text-[10px] text-gray-500">
+          <div className="flex items-center justify-center text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">
             <Loader2 size={11} className="animate-spin mr-1" />
             Refreshing…
           </div>
         )}
 
         {(!data || data.dayIndex !== dayIndex) && loadingDay ? (
-          <div className="flex items-center justify-center py-12 text-gray-500">
+          <div className="flex items-center justify-center py-12 text-[color:var(--color-text-secondary)]">
             <Loader2 size={18} className="animate-spin mr-2" />
             <span className="text-sm">Loading session…</span>
           </div>
@@ -1287,7 +1285,7 @@ export function TodayScreen() {
             <div className="flex justify-end">
               <button
                 onClick={() => setMode('preview')}
-                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-white px-2 py-2 rounded-md border border-gray-800 hover:border-gray-600"
+                className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] text-[color:var(--color-text-secondary)] hover:text-white px-2 py-2 rounded-md border border-[color:var(--color-border-tertiary)] hover:border-[color:var(--color-border-primary)]"
                 title="Back to preview"
               >
                 <Eye size={12} />
@@ -1322,9 +1320,9 @@ export function TodayScreen() {
 
             <div className="space-y-2">
               {data.planned.length === 0 && offPlanLogged.length === 0 ? (
-                <div className="rounded-xl bg-gray-900 border border-gray-800 p-6 text-center">
-                  <p className="text-sm text-gray-400">No exercises yet.</p>
-                  <p className="text-xs text-gray-500 mt-1">Tap "Add training" to log what you did.</p>
+                <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-6 text-center">
+                  <p className="text-sm text-[color:var(--color-text-secondary)]">No exercises yet.</p>
+                  <p className="text-xs text-[color:var(--color-text-secondary)] mt-1">Tap "Add training" to log what you did.</p>
                 </div>
               ) : (
                 data.planned.map(p => {
@@ -1403,7 +1401,7 @@ export function TodayScreen() {
 
               <button
                 onClick={() => setShowPicker(true)}
-                className="w-full inline-flex items-center justify-center gap-2 text-xs text-gray-400 hover:text-white py-2.5 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl"
+                className="w-full inline-flex items-center justify-center gap-2 text-xs text-[color:var(--color-text-secondary)] hover:text-white py-2.5 border border-dashed border-[color:var(--color-border-secondary)] hover:border-[color:var(--color-border-primary)] rounded-xl"
               >
                 <Plus size={14} />
                 Add training
@@ -1425,7 +1423,7 @@ export function TodayScreen() {
                   <button
                     onClick={() => void handleReopenSession()}
                     disabled={saving}
-                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-gray-300 hover:text-white py-2 mt-2 rounded-lg border border-gray-700 hover:border-gray-500 disabled:opacity-50 transition-colors"
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-[color:var(--color-text-primary)] hover:text-white py-2 mt-2 rounded-lg border border-[color:var(--color-border-secondary)] hover:border-[color:var(--color-border-primary)] disabled:opacity-50 transition-colors"
                   >
                     <RotateCcw size={12} />
                     Reopen &amp; log it
@@ -1441,7 +1439,7 @@ export function TodayScreen() {
                     <button
                       onClick={handleFinishSession}
                       disabled={saving}
-                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white font-semibold text-sm py-3 rounded-xl transition-colors"
+                      className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-[var(--color-bg-tertiary)] text-white font-semibold text-sm py-3 rounded-xl transition-colors"
                     >
                       <CheckCircle size={16} />
                       Finish session
@@ -1450,7 +1448,7 @@ export function TodayScreen() {
                   <button
                     onClick={() => setShowNotDone(true)}
                     disabled={saving}
-                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-gray-400 hover:text-red-300 py-2 rounded-xl border border-gray-800 hover:border-red-900/60 disabled:opacity-50 transition-colors"
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-[11px] text-[color:var(--color-text-secondary)] hover:text-red-300 py-2 rounded-xl border border-[color:var(--color-border-tertiary)] hover:border-red-900/60 disabled:opacity-50 transition-colors"
                   >
                     <Ban size={12} />
                     Couldn't train? Mark not done
@@ -1459,8 +1457,8 @@ export function TodayScreen() {
               )}
 
               {data.log?.session && (
-                <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 mt-2">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
+                <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3 mt-2">
+                  <div className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold mb-2">
                     Session messages
                   </div>
                   <AthleteCommentsThread

@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { fetchWeeklyAggregates, fetchIntensityZones, type WeeklyAggregate, type IntensityZone } from '../../hooks/useAnalysis';
 import { useExerciseStore } from '../../store/exerciseStore';
+import { Spinner } from '../ui';
 
 interface Props {
   athleteId: string;
@@ -123,7 +124,7 @@ export function IntensityZones({ athleteId, startDate, endDate }: Props) {
           Select a specific exercise to see intensity zone distribution.
         </div>
       ) : loading ? (
-        <div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full border-2 border-gray-200 border-t-blue-500 w-5 h-5" /></div>
+        <div className="h-64 flex items-center justify-center"><Spinner size={20} /></div>
       ) : (
         <>
           {/* Summary zone cards */}

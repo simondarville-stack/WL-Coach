@@ -55,7 +55,7 @@ export function ReviewStatusPanel() {
         <span className="flex-1" />
         <button
           onClick={() => navigate('/review')}
-          className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700"
+          className="inline-flex items-center gap-1.5 text-xs text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)]"
         >
           <PlaySquare size={13} />
           {outstanding > 0 ? `Review ${outstanding}` : 'Open review feed'}

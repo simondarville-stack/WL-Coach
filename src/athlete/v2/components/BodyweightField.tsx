@@ -29,8 +29,8 @@ export function BodyweightField({ value, onChange, disabled }: BodyweightFieldPr
   };
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
-      <label className="block text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
+      <label className="block text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold mb-2">
         Bodyweight
       </label>
       <div className="flex items-baseline gap-2">
@@ -48,9 +48,9 @@ export function BodyweightField({ value, onChange, disabled }: BodyweightFieldPr
           }}
           disabled={disabled}
           placeholder="—"
-          className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white text-lg font-semibold focus:outline-none focus:border-blue-500 disabled:opacity-50"
+          className="flex-1 bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded-md px-3 py-2 text-white text-lg font-semibold focus:outline-none focus:border-[color:var(--color-accent-hover)] disabled:opacity-50"
         />
-        <span className="text-xs text-gray-500">kg</span>
+        <span className="text-xs text-[color:var(--color-text-secondary)]">kg</span>
       </div>
     </div>
   );

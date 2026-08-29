@@ -156,14 +156,14 @@ const GroupRow = memo(function GroupRow({
           <button
             onClick={(e) => { e.stopPropagation(); onTogglePin(groupStatus.group.id); }}
             title={pinned ? 'Unpin' : 'Pin to top'}
-            className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'}`}
+            className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-[color:var(--color-accent)]' : 'text-gray-300 hover:text-gray-500'}`}
           >
             <Star size={13} className={pinned ? 'fill-current' : ''} />
           </button>
         </td>
         <td className="py-3 px-4">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-700 inline-flex items-center justify-center flex-shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)] inline-flex items-center justify-center flex-shrink-0">
               <UsersRound size={14} />
             </div>
             <div className="flex flex-col min-w-0">
@@ -272,7 +272,7 @@ function GroupExpansion({
         <span className="flex-1" />
         <button
           onClick={() => onOpenGroupPlanner(groupStatus)}
-          className="px-3 py-1 text-xs rounded-md border border-blue-200 bg-white text-blue-600 hover:bg-blue-50"
+          className="px-3 py-1 text-xs rounded-md border border-[color:var(--color-accent-border)] bg-white text-[color:var(--color-accent)] hover:bg-[var(--color-accent-subtle)]"
         >
           Open group plan →
         </button>

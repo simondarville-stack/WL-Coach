@@ -103,7 +103,7 @@ export function SaveAsTemplateModal({
       });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template');
+      setError(err instanceof Error ? err.message : 'Couldn’t save template. Your changes are still on screen.');
       setSaving(false);
     }
   };

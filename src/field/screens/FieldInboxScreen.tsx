@@ -131,13 +131,13 @@ export function FieldInboxScreen() {
         <div>
           <h1 className="text-lg font-bold text-white">Inbox</h1>
           {/* div, not p: the switcher renders a bottom-sheet (block content) */}
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-[color:var(--color-text-secondary)]">
             <EnvironmentSwitcher />
           </div>
         </div>
         <button
           onClick={() => void load()}
-          className="p-2 text-gray-500 hover:text-gray-300"
+          className="p-2 text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]"
           aria-label="Refresh"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -148,12 +148,12 @@ export function FieldInboxScreen() {
 
       {loading && threads.length === 0 ? (
         <div className="flex justify-center py-16">
-          <Loader2 size={24} className="animate-spin text-gray-600" />
+          <Loader2 size={24} className="animate-spin text-[color:var(--color-text-tertiary)]" />
         </div>
       ) : (
         <div className="pb-4">
           {active.length === 0 && (
-            <p className="text-sm text-gray-500 px-1 mb-3">
+            <p className="text-sm text-[color:var(--color-text-secondary)] px-1 mb-3">
               No conversations yet. Start one below.
             </p>
           )}
@@ -163,7 +163,7 @@ export function FieldInboxScreen() {
               <button
                 key={s.athleteId}
                 onClick={() => navigate(`/coach/inbox/${s.athleteId}`)}
-                className="w-full bg-gray-900 border border-gray-800 rounded-xl px-3 py-2.5 flex items-center gap-3 text-left active:bg-gray-800/60"
+                className="w-full bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-xl px-3 py-2.5 flex items-center gap-3 text-left active:bg-gray-800/60"
               >
                 <InitialsAvatar name={s.athleteName} photoUrl={s.athletePhotoUrl} />
                 <span className="flex-1 min-w-0">
@@ -172,25 +172,25 @@ export function FieldInboxScreen() {
                       {s.athleteName}
                     </span>
                     {s.lastActivityAt && (
-                      <span className="text-[10px] text-gray-500 shrink-0">
+                      <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] shrink-0">
                         {formatActivity(s.lastActivityAt)}
                       </span>
                     )}
                   </span>
                   <span className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[11px] text-gray-400 truncate flex-1">
+                    <span className="text-[11px] text-[color:var(--color-text-secondary)] truncate flex-1">
                       {s.preview || 'No messages yet'}
                     </span>
                     {s.unitThreadCount > 0 && (
                       <span
-                        className="text-[9px] text-gray-500 shrink-0"
+                        className="text-[length:var(--text-micro)] text-[color:var(--color-text-secondary)] shrink-0"
                         title={`${s.unitThreadCount} unit ${s.unitThreadCount === 1 ? 'thread' : 'threads'}`}
                       >
                         ↳{s.unitThreadCount}
                       </span>
                     )}
                     {s.totalUnread > 0 && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500 text-white shrink-0">
+                      <span className="text-[length:var(--text-caption)] font-bold px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white shrink-0">
                         {s.totalUnread}
                       </span>
                     )}
@@ -204,13 +204,13 @@ export function FieldInboxScreen() {
             <div className="mt-4">
               <button
                 onClick={() => setShowOthers(v => !v)}
-                className="w-full px-1 py-1.5 flex items-center gap-1.5 text-left"
+                className="tap-y w-full px-1 py-1.5 flex items-center gap-1.5 text-left"
                 aria-expanded={showOthers}
               >
                 {showOthers
-                  ? <ChevronDown size={13} className="text-gray-600" />
-                  : <ChevronRight size={13} className="text-gray-600" />}
-                <span className="text-[10px] uppercase tracking-wide text-gray-600 font-semibold flex items-center gap-1.5">
+                  ? <ChevronDown size={13} className="text-[color:var(--color-text-tertiary)]" />
+                  : <ChevronRight size={13} className="text-[color:var(--color-text-tertiary)]" />}
+                <span className="text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] font-semibold flex items-center gap-1.5">
                   <Edit3 size={11} />
                   Start a conversation ({other.length})
                 </span>
@@ -224,7 +224,7 @@ export function FieldInboxScreen() {
                       className="w-full bg-gray-900/60 border border-gray-800/70 rounded-lg px-3 py-2 flex items-center gap-3 text-left active:bg-gray-800/60"
                     >
                       <InitialsAvatar name={a.name} photoUrl={a.photo_url} size={26} />
-                      <span className="text-[13px] text-gray-300 truncate">{a.name}</span>
+                      <span className="text-[13px] text-[color:var(--color-text-primary)] truncate">{a.name}</span>
                     </button>
                   ))}
                 </div>
@@ -266,7 +266,7 @@ export function InitialsAvatar({
   return (
     <span
       style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }}
-      className="rounded-full bg-gray-800 text-gray-400 font-medium inline-flex items-center justify-center shrink-0"
+      className="rounded-full bg-[var(--color-bg-secondary)] text-[color:var(--color-text-secondary)] font-medium inline-flex items-center justify-center shrink-0"
     >
       {initials || '?'}
     </span>

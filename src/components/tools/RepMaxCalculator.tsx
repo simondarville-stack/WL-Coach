@@ -58,7 +58,7 @@ function getConfidence(inputReps: number, targetReps: number): Confidence {
 }
 
 const barConfig: Record<Confidence, { color: string; width: string }> = {
-  exact:    { color: 'bg-blue-500',  width: 'w-full' },
+  exact:    { color: 'bg-[var(--color-accent)]',  width: 'w-full' },
   high:     { color: 'bg-teal-500',  width: 'w-[90%]' },
   good:     { color: 'bg-teal-400',  width: 'w-[70%]' },
   moderate: { color: 'bg-amber-400', width: 'w-[45%]' },
@@ -74,7 +74,7 @@ const textConfig: Record<Confidence, string> = {
 };
 
 const rowBgConfig: Record<Confidence, string> = {
-  exact:    'bg-blue-50 border-l-[3px] border-blue-500',
+  exact:    'bg-[var(--color-accent-subtle)] border-l-[3px] border-[color:var(--color-accent)]',
   high:     '',
   good:     '',
   moderate: '',
@@ -186,7 +186,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
               value={weight}
               onChange={e => setWeight(e.target.value)}
               placeholder="0"
-              className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+              className="w-full font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
             />
             <span className="text-xs text-gray-400">kg</span>
           </div>
@@ -200,7 +200,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
               value={reps}
               onChange={e => setReps(e.target.value)}
               placeholder="1"
-              className="w-16 font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+              className="w-16 font-mono text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[color:var(--color-accent-hover)] text-right"
             />
           </div>
         </div>
@@ -236,7 +236,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
                       <td className={`py-[3px] text-right font-mono ${txt}`}>
                         {rowWeight} kg
                         {isInput && (
-                          <span className="ml-1.5 text-[10px] text-blue-500 font-medium not-italic">
+                          <span className="ml-1.5 text-[10px] text-[color:var(--color-accent)] font-medium not-italic">
                             input
                           </span>
                         )}
@@ -265,7 +265,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
                     <th
                       key={rep}
                       className={`text-right font-medium pb-1 px-1 w-[40px] ${
-                        rep === r ? 'text-blue-500' : 'text-gray-400'
+                        rep === r ? 'text-[color:var(--color-accent)]' : 'text-gray-400'
                       }`}
                     >
                       {rep}RM
@@ -285,7 +285,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
                           key={rep}
                           className={`py-[3px] px-1 text-right font-mono ${
                             isInputCol
-                              ? 'text-blue-600 font-medium bg-blue-50/60'
+                              ? 'text-[color:var(--color-accent)] font-medium bg-blue-50/60'
                               : 'text-gray-700'
                           }`}
                         >
@@ -297,7 +297,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
                 ))}
                 {/* Average row */}
                 <tr className="border-t border-gray-100 bg-blue-50/60">
-                  <td className="pt-1.5 pb-1 pr-2 font-medium text-blue-700 whitespace-nowrap">Avg</td>
+                  <td className="pt-1.5 pb-1 pr-2 font-medium text-[color:var(--color-accent)] whitespace-nowrap">Avg</td>
                   {avgWeights.map((val, i) => {
                     const rep = i + 1;
                     const isInputCol = rep === r;
@@ -305,7 +305,7 @@ export function RepMaxCalculator({ onClose, positionClass = 'bottom-4 right-4' }
                       <td
                         key={rep}
                         className={`pt-1.5 pb-1 px-1 text-right font-mono font-medium ${
-                          isInputCol ? 'text-blue-700' : 'text-blue-600'
+                          isInputCol ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-accent)]'
                         }`}
                       >
                         {Math.round(val)}

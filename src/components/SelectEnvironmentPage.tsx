@@ -16,7 +16,7 @@ function initials(name: string): string {
 }
 
 const CARD_COLORS = [
-  'bg-blue-500', 'bg-sky-500', 'bg-emerald-500', 'bg-teal-500',
+  'bg-[var(--color-accent)]', 'bg-sky-500', 'bg-emerald-500', 'bg-teal-500',
   'bg-orange-500', 'bg-amber-500', 'bg-cyan-500', 'bg-slate-500',
 ];
 
@@ -33,7 +33,7 @@ export function SelectEnvironmentPage({ coaches, onNewEnvironment }: Props) {
       {/* Logo */}
       <div className="flex flex-col items-center gap-1 mb-10">
         <div className="flex items-center gap-2.5">
-          <Dumbbell className="text-blue-600" size={28} />
+          <Dumbbell className="text-[color:var(--color-accent)]" size={28} />
           <span className="text-2xl font-semibold text-gray-900">EMOS</span>
         </div>
         <span className="text-xs text-gray-400">Erfolg Muss Organisiert Sein</span>
@@ -53,7 +53,7 @@ export function SelectEnvironmentPage({ coaches, onNewEnvironment }: Props) {
                 key={coach.id}
                 onClick={() => handleSelect(coach)}
                 className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-5 py-4
-                           hover:border-blue-300 hover:shadow-sm transition-all text-left group"
+                           hover:border-[color:var(--color-accent-border)] hover:shadow-sm transition-all text-left group"
               >
                 {/* Avatar */}
                 {coach.photo_url ? (
@@ -70,7 +70,7 @@ export function SelectEnvironmentPage({ coaches, onNewEnvironment }: Props) {
 
                 {/* Text */}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-gray-900 text-sm group-hover:text-blue-600 transition-colors">
+                  <div className="font-medium text-gray-900 text-sm group-hover:text-[color:var(--color-accent-hover)] transition-colors">
                     {coach.name}
                   </div>
                   {coach.club_name && (
@@ -94,7 +94,7 @@ export function SelectEnvironmentPage({ coaches, onNewEnvironment }: Props) {
         <button
           onClick={onNewEnvironment}
           className="w-full flex items-center justify-center gap-2 border border-dashed border-gray-300
-                     rounded-xl px-5 py-3.5 text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300
+                     rounded-xl px-5 py-3.5 text-sm text-gray-500 hover:text-[color:var(--color-accent-hover)] hover:border-[color:var(--color-accent-border)]
                      hover:bg-blue-50/50 transition-all"
         >
           <Plus size={16} />

@@ -40,6 +40,7 @@ import {
 } from '../../lib/trainingLogService';
 import { emitInboxChanged } from '../../lib/inboxEvents';
 import { EndCard, QUICK_REACTIONS, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
+import { Spinner } from '../ui';
 
 /** How long a card must stay in view before it counts as reviewed. */
 const SEEN_DWELL_MS = 700;
@@ -91,7 +92,7 @@ export function ReviewScroller() {
       });
       setItems(feed);
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : 'Failed to load the review feed.');
+      setLoadError(e instanceof Error ? e.message : 'Couldn’t load the review feed. Check your connection and try again.');
     }
   }, [ownerId, athletes, lookbackDays]);
 
@@ -374,7 +375,7 @@ export function ReviewScroller() {
         <div className="max-w-md mx-auto h-full">
           {items == null && !loadError && (
             <div className="h-full flex items-center justify-center">
-              <div className="animate-spin rounded-full border-2 border-white/20 border-t-white/70 w-6 h-6" />
+              <Spinner size={24} />
             </div>
           )}
           {loadError && (

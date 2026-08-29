@@ -22,7 +22,7 @@ import { useCoachProfiles } from '../../hooks/useCoachProfiles';
 import { useClubs, type ClubMemberWithCoach } from '../../hooks/useClubs';
 import { useExerciseLibraries } from '../../hooks/useExerciseLibraries';
 import { resolveLibraryScope, invalidateLibraryScope } from '../../lib/libraryScope';
-import { Button } from '../ui';
+import { Button, confirmDialog } from '../ui';
 import type {
   Club, ClubMember, ClubRole, CoachProfile, ExerciseLibrary, LibraryRole,
 } from '../../lib/database.types';
@@ -92,7 +92,7 @@ export function ClubAdminPage() {
         prev && list.some(c => c.club.id === prev) ? prev : list[0]?.club.id ?? null,
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load clubs');
+      setError(e instanceof Error ? e.message : 'Couldn’t load clubs. Check your connection and try again.');
     }
   }, [activeCoachId]);
 
@@ -125,7 +125,7 @@ export function ClubAdminPage() {
       setExerciseCounts(Object.fromEntries(counts));
       setAttachable(attachableList);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load club');
+      setError(e instanceof Error ? e.message : 'Couldn’t load club. Check your connection and try again.');
     }
   }, [selectedClubId, activeCoachId]);
 
@@ -140,7 +140,7 @@ export function ClubAdminPage() {
       invalidateExerciseCache();
       await Promise.all([loadClubs(), loadClubDetail()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Operation failed');
+      setError(e instanceof Error ? e.message : 'That didn’t go through. Nothing was changed.');
     } finally {
       setBusy(false);
     }
@@ -165,10 +165,11 @@ export function ClubAdminPage() {
         setError('Your personal library is empty — nothing to move');
         return;
       }
-      const ok = window.confirm(
-        `Move ${counts.exercises} exercises and ${counts.categories} categories from your personal library into "${catalogue.name}"?\n\n` +
-        'Exercise ids are preserved, so all planned and logged history follows them.',
-      );
+      const ok = await confirmDialog({
+        title: `Move ${counts.exercises} exercises and ${counts.categories} categories into "${catalogue.name}"?`,
+        message: 'They leave your personal library. Exercise ids are preserved, so all planned and logged history follows them.',
+        confirmLabel: 'Move catalogue',
+      });
       if (!ok) return;
       const personalId = scope.personalLibraryId;
       void run(async () => {
@@ -176,7 +177,7 @@ export function ClubAdminPage() {
         invalidateLibraryScope();
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to prepare seeding');
+      setError(e instanceof Error ? e.message : 'Couldn’t prepare seeding. Nothing was changed.');
     }
   };
 
@@ -265,10 +266,14 @@ export function ClubAdminPage() {
             </span>
             <span style={{ flex: 1 }} />
             <button
-              onClick={() => {
-                if (window.confirm(`Leave "${selected.club.name}"? Your catalogue access stays until an admin revokes it.`)) {
-                  void run(() => clubs.revokeMembership(selected.membership.id));
-                }
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: `Leave "${selected.club.name}"?`,
+                  message: 'Your catalogue access stays until an admin revokes it.',
+                  confirmLabel: 'Leave club',
+                  tone: 'danger',
+                });
+                if (ok) void run(() => clubs.revokeMembership(selected.membership.id));
               }}
               disabled={busy}
               className="inline-flex items-center gap-1"
@@ -367,10 +372,14 @@ export function ClubAdminPage() {
                         )}
                         {isAdmin && (
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Detach "${cat.name}" from the club? Existing access stays; the catalogue just stops being club-managed.`)) {
-                                void run(() => clubs.detachLibrary(cat.id));
-                              }
+                            onClick={async () => {
+                              const ok = await confirmDialog({
+                                title: `Detach "${cat.name}" from the club?`,
+                                message: 'Existing access stays; the catalogue just stops being club-managed.',
+                                confirmLabel: 'Detach catalogue',
+                                tone: 'danger',
+                              });
+                              if (ok) void run(() => clubs.detachLibrary(cat.id));
                             }}
                             disabled={busy}
                             title="Detach from club"
@@ -445,10 +454,14 @@ export function ClubAdminPage() {
                       <td style={{ ...td, textAlign: 'right' }}>
                         {isAdmin && !isSelf && (
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Remove ${m.coach?.name ?? 'this coach'} from "${selected.club.name}"? Their catalogue access stays until revoked in the matrix.`)) {
-                                void run(() => clubs.revokeMembership(m.id));
-                              }
+                            onClick={async () => {
+                              const ok = await confirmDialog({
+                                title: `Remove ${m.coach?.name ?? 'this coach'} from "${selected.club.name}"?`,
+                                message: 'Their catalogue access stays until revoked in the matrix.',
+                                confirmLabel: 'Remove coach',
+                                tone: 'danger',
+                              });
+                              if (ok) void run(() => clubs.revokeMembership(m.id));
                             }}
                             disabled={busy}
                             style={{ fontSize: 'var(--text-caption)', color: 'var(--color-danger-text, #b91c1c)', border: 'none', background: 'none', cursor: 'pointer' }}

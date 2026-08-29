@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { DefaultUnit, Exercise, PlannedExercise } from '../../lib/database.types';
+import { alertDialog, confirmDialog } from '../ui';
 import {
   getPrescriptionDraftsForWeek,
   clearPrescriptionDraft,
@@ -89,18 +90,21 @@ export function UnsavedDraftsBanner({
     setRestoring(false);
     await onReload();
     if (failed > 0) {
-      alert(
-        `${failed} change${failed === 1 ? '' : 's'} could not be restored — you may still be offline. ` +
-          'They remain saved on this device, so you can try again once the connection is back.',
-      );
+      void alertDialog({
+        title: `${failed} change${failed === 1 ? '' : 's'} could not be restored`,
+        message: 'You may still be offline. They remain saved on this device, so you can try again once the connection is back.',
+      });
     }
   };
 
-  const handleDiscard = () => {
+  const handleDiscard = async () => {
     if (!weekPlanId) return;
-    const ok = confirm(
-      'Discard all locally saved changes for this week? This removes the unsaved edits stored on this device and cannot be undone.',
-    );
+    const ok = await confirmDialog({
+      title: 'Discard all locally saved changes for this week?',
+      message: 'This removes the unsaved edits stored on this device and cannot be undone.',
+      confirmLabel: 'Discard changes',
+      tone: 'danger',
+    });
     if (!ok) return;
     clearPrescriptionDraftsForWeek(weekPlanId);
     setDrafts([]);

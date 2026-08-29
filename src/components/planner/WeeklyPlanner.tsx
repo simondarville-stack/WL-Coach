@@ -58,6 +58,7 @@ import { UndoToast } from '../log/UndoToast';
 import { ThrowAwayHint, useThrowAwayZone } from './ThrowAwayZone';
 import type { ThrowPayload } from './dragPayload';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
+import { alertDialog } from '../ui';
 
 export interface MacroContext {
   macroId: string;
@@ -798,7 +799,7 @@ export function WeeklyPlanner() {
       await applyTemplateDayToPlanDay(templateDayId, currentWeekPlan.id, dayIndex, { replace: isReplace, source: plannedSource });
       await handleRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply template day');
+      setError(err instanceof Error ? err.message : 'Couldn’t apply template day. Nothing was applied.');
     }
   };
 
@@ -818,7 +819,7 @@ export function WeeklyPlanner() {
       await applyTemplateDayToPlanDay(template.days[0].id, currentWeekPlan.id, dayIndex, { replace: isReplace, source: plannedSource });
       await handleRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply template');
+      setError(err instanceof Error ? err.message : 'Couldn’t apply template. Nothing was applied.');
     }
   };
 
@@ -1463,7 +1464,13 @@ export function WeeklyPlanner() {
   };
 
   const handleCopyWeek = async () => {
-    if (!currentWeekPlan) { alert('No week data to copy'); return; }
+    if (!currentWeekPlan) {
+      void alertDialog({
+        title: 'Nothing to copy',
+        message: 'This week has no plan yet. Add a training day first.',
+      });
+      return;
+    }
     // Park the whole week on the dock clipboard — one parent holding all of its
     // training days (labels included), draggable as a week or per-day. Every
     // content type round-trips via buildExerciseSnapshot (regular, combo, and
@@ -1611,7 +1618,7 @@ export function WeeklyPlanner() {
       // actually synced.
       await handleRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sync group plan to athletes');
+      setError(err instanceof Error ? err.message : 'Couldn’t sync group plan to athletes. Nothing was synced.');
     } finally {
       setIsSyncing(false);
     }

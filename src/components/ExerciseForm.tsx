@@ -171,7 +171,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           placeholder="e.g., Snatch, Back Squat"
           required
         />
@@ -186,7 +186,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="exerciseCode"
           value={exerciseCode}
           onChange={(e) => setExerciseCode(e.target.value.toUpperCase())}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           placeholder="e.g., SN, CJ, BS"
           maxLength={10}
         />
@@ -204,7 +204,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="link"
           value={link}
           onChange={(e) => setLink(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           placeholder="https://youtube.com/watch?v=..."
         />
         <p className="mt-1 text-xs text-gray-500">
@@ -231,7 +231,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
                 if (parent && parent.library_id !== next) setParentId(null);
               }
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           >
             {libraryOptions.map(o => (
               <option key={o.id} value={o.id}>{o.label}</option>
@@ -251,7 +251,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           required
         >
           {categories.filter(cat => !isProtectedCategory(cat.name)).map((cat) => (
@@ -295,7 +295,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
                 // a hang-snatch naturally takes its % off the snatch PR.
                 if (v && !prReferenceId) setPrReferenceId(v);
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
             >
               <option value="">— None (top-level) —</option>
               {candidates.map(e => (
@@ -317,7 +317,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
             type="checkbox"
             checked={isCompetitionLift}
             onChange={(e) => setIsCompetitionLift(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="w-4 h-4 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
           />
           <span className="text-sm font-medium text-gray-700">Competition Lift</span>
         </label>
@@ -326,7 +326,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
             type="checkbox"
             checked={countsTowardsTotals}
             onChange={(e) => setCountsTowardsTotals(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="w-4 h-4 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
           />
           <span className="text-sm font-medium text-gray-700">Counts Towards Totals</span>
         </label>
@@ -338,7 +338,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
             type="checkbox"
             checked={showPlannerSummary}
             onChange={(e) => setShowPlannerSummary(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="w-4 h-4 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
           />
           <span className="text-sm font-medium text-gray-700">Individual Exercise Summary in the planner</span>
         </label>
@@ -353,7 +353,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
             type="checkbox"
             checked={trackPr}
             onChange={(e) => setTrackPr(e.target.checked)}
-            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            className="w-4 h-4 text-[color:var(--color-accent)] border-gray-300 rounded focus:ring-[color:var(--color-accent-hover)]"
           />
           <span className="text-sm font-medium text-gray-700">Track PR</span>
         </label>
@@ -380,7 +380,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
                 id="prReference"
                 value={prReferenceId ?? ''}
                 onChange={(e) => setPrReferenceId(e.target.value || null)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
               >
                 <option value="">— None (use own PR) —</option>
                 {eligible.map(e => (
@@ -405,7 +405,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="defaultUnit"
           value={defaultUnit}
           onChange={(e) => setDefaultUnit(e.target.value as DefaultUnit)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
           required
         >
           {DEFAULT_UNITS.map((unit) => (
@@ -454,7 +454,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
           id="notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)] min-h-[100px]"
           placeholder="Additional notes about this exercise..."
         />
       </div>
@@ -469,7 +469,7 @@ export function ExerciseForm({ editingExercise, onSave, onCancelEdit, allExercis
         <button
           type="submit"
           disabled={isSubmitting || !name.trim()}
-          className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 bg-[var(--color-accent)] text-white px-4 py-2 rounded-md hover:bg-[var(--color-accent-hover)] disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
         >
           {isSubmitting ? 'Saving...' : editingExercise ? 'Update Exercise' : 'Add Exercise'}
         </button>

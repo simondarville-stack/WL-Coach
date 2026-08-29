@@ -233,7 +233,7 @@ export function GppBlockEditor({
               </span>
               <button
                 onClick={addRow}
-                className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 hover:text-blue-700"
+                className="inline-flex items-center gap-0.5 text-[11px] text-[color:var(--color-accent)] hover:text-[color:var(--color-accent-hover)]"
               >
                 <Plus size={11} />
                 Add row
@@ -326,7 +326,7 @@ export function GppBlockEditor({
           </span>
           <button
             onClick={handleClose}
-            className="text-sm bg-blue-600 hover:bg-blue-500 text-white font-semibold px-3 py-1.5 rounded"
+            className="text-sm bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] text-white font-semibold px-3 py-1.5 rounded"
           >
             Done
           </button>
@@ -451,7 +451,7 @@ function ExerciseAutocomplete({
                 onChange(s.name);
                 setFocused(false);
               }}
-              className="w-full text-left px-2 py-1 text-[12px] hover:bg-blue-50 flex items-center gap-1.5"
+              className="w-full text-left px-2 py-1 text-[12px] hover:bg-[var(--color-accent-subtle)] flex items-center gap-1.5"
             >
               <span
                 className="w-1.5 h-1.5 rounded-full flex-shrink-0"

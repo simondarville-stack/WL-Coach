@@ -27,6 +27,7 @@ import { FieldMacroScreen } from './screens/FieldMacroScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { FieldInboxScreen } from './screens/FieldInboxScreen';
 import { FieldConversationScreen } from './screens/FieldConversationScreen';
+import { Spinner } from '../components/ui';
 
 const TABS = [
   { to: '/coach', icon: ListChecks, label: 'Upcoming', end: true },
@@ -39,10 +40,10 @@ function FieldLayout() {
   // Same unread-thread badge as the desktop sidebar (60 s cadence).
   const unread = useInboxUnreadCount();
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-20">
+    <div className="min-h-screen bg-[var(--color-bg-page)] text-white pb-20">
       <Outlet />
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800"
+        className="fixed bottom-0 left-0 right-0 bg-[var(--color-bg-primary)] border-t border-[color:var(--color-border-tertiary)]"
         aria-label="Field navigation"
       >
         <div className="max-w-2xl mx-auto px-2 py-1.5 flex justify-around">
@@ -52,8 +53,8 @@ function FieldLayout() {
               to={tab.to}
               end={tab.end}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-4 py-1.5 rounded text-[10px] uppercase tracking-wide font-semibold transition-colors ${
-                  isActive ? 'text-blue-400' : 'text-gray-500 hover:text-gray-300'
+                `flex flex-col items-center gap-0.5 px-4 py-1.5 rounded text-[length:var(--text-caption)] uppercase tracking-wide font-semibold transition-colors ${
+                  isActive ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
                 }`
               }
             >
@@ -61,7 +62,7 @@ function FieldLayout() {
                 <tab.icon size={20} strokeWidth={1.8} />
                 {tab.label === 'Inbox' && unread > 0 && (
                   <span
-                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center"
+                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--color-accent)] text-white text-[length:var(--text-micro)] font-bold flex items-center justify-center"
                     aria-label={`${unread} unread ${unread === 1 ? 'thread' : 'threads'}`}
                   >
                     {unread > 9 ? '9+' : unread}
@@ -119,8 +120,8 @@ function FieldRoutes() {
 
   if (!coachesLoaded) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-gray-700 border-t-blue-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-[var(--color-bg-page)] flex items-center justify-center">
+        <Spinner size={40} />
       </div>
     );
   }

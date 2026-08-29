@@ -115,7 +115,7 @@ export function AdoptLibraryWizard({ targetLibrary, isEditor, onClose, onComplet
         return { source: s, match, matchBy, codeConflict, action, targetId: match?.id ?? null };
       }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load libraries');
+      setError(e instanceof Error ? e.message : 'Couldn’t load libraries. Check your connection and try again.');
     }
   }, [activeCoachId, targetLibrary.id, isEditor]);
 

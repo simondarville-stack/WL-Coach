@@ -112,7 +112,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
                 required
                 value={formData.name}
                 onChange={e => set('name', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                 placeholder="e.g., National Championships"
                 autoFocus
               />
@@ -122,7 +122,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
               <select
                 value={formData.event_type}
                 onChange={e => set('event_type', e.target.value as EventType)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
               >
                 {EVENT_TYPES.map(t => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -135,7 +135,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
                 type="text"
                 value={formData.location}
                 onChange={e => set('location', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
                 placeholder="City, Venue..."
               />
             </div>
@@ -173,7 +173,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
                 type="checkbox"
                 checked={formData.is_all_day}
                 onChange={e => set('is_all_day', e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
               />
               <span className="text-sm font-medium text-gray-700">All day event</span>
             </label>
@@ -222,7 +222,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
               value={formData.description}
               onChange={e => set('description', e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
               placeholder="Brief description..."
             />
           </div>
@@ -234,7 +234,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
               value={formData.notes}
               onChange={e => set('notes', e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
               placeholder="Internal notes, weigh-in times, logistics..."
             />
           </div>
@@ -246,7 +246,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
               type="url"
               value={formData.external_url}
               onChange={e => set('external_url', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)]"
               placeholder="https://..."
             />
           </div>
@@ -262,7 +262,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
                       type="checkbox"
                       checked={formData.athlete_ids.includes(athlete.id)}
                       onChange={() => toggleAthlete(athlete.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 text-[color:var(--color-accent)] focus:ring-[color:var(--color-accent-hover)]"
                     />
                     <span className="text-sm text-gray-700">{athlete.name}</span>
                   </label>
@@ -282,7 +282,7 @@ export function EventFormModal({ editing, athletes, initialType, initialAthleteI
             <button
               type="submit"
               disabled={saving || !canSubmit}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 bg-[var(--color-accent)] text-white font-medium rounded-lg hover:bg-[var(--color-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Saving...' : (editing ? 'Update Event' : 'Create Event')}
             </button>

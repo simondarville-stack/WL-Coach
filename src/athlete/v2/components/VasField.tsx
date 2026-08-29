@@ -39,12 +39,12 @@ export function VasField({ value, onChange }: VasFieldProps) {
   };
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
       <div className="flex items-baseline justify-between mb-2">
-        <label className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">
+        <label className="text-[11px] uppercase tracking-wide text-[color:var(--color-text-secondary)] font-semibold">
           VAS pain
         </label>
-        <span className="text-[10px] text-gray-500">0 none · 10 worst</span>
+        <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">0 none · 10 worst</span>
       </div>
       <div className="flex items-center gap-3">
         <input
@@ -60,14 +60,14 @@ export function VasField({ value, onChange }: VasFieldProps) {
           className="flex-1"
         />
         <span className={`text-lg font-bold tabular-nums w-7 text-center ${
-          local == null ? 'text-gray-600' : local <= 3 ? 'text-emerald-300' : local <= 6 ? 'text-amber-300' : 'text-red-300'
+          local == null ? 'text-[color:var(--color-text-tertiary)]' : local <= 3 ? 'text-emerald-300' : local <= 6 ? 'text-amber-300' : 'text-red-300'
         }`}>
           {local ?? '–'}
         </span>
         {local != null && (
           <button
             onClick={() => commit(null)}
-            className="text-[10px] text-gray-500 hover:text-gray-300 px-1.5 py-0.5"
+            className="tap-y text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)] px-1.5 py-0.5"
             title="Clear"
           >
             clear

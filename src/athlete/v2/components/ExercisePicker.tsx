@@ -61,20 +61,20 @@ export function ExercisePicker({ open, onClose, onPick }: ExercisePickerProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center">
-      <div className="w-full sm:max-w-md bg-gray-900 border border-gray-800 rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800">
-          <Search size={14} className="text-gray-500 flex-shrink-0" />
+      <div className="w-full sm:max-w-md bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[color:var(--color-border-tertiary)]">
+          <Search size={14} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search exercises…"
-            className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+            className="flex-1 bg-transparent text-sm text-white placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none"
           />
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-white"
+            className="tap p-1 text-[color:var(--color-text-secondary)] hover:text-white"
             aria-label="Close"
           >
             <X size={16} />
@@ -89,9 +89,9 @@ export function ExercisePicker({ open, onClose, onPick }: ExercisePickerProps) {
 
         <ul className="flex-1 overflow-y-auto divide-y divide-gray-800/60">
           {loading && results.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-gray-500">Searching…</li>
+            <li className="px-3 py-6 text-center text-xs text-[color:var(--color-text-secondary)]">Searching…</li>
           ) : results.length === 0 ? (
-            <li className="px-3 py-6 text-center text-xs text-gray-500 italic">
+            <li className="px-3 py-6 text-center text-xs text-[color:var(--color-text-secondary)] italic">
               No matches
             </li>
           ) : (
@@ -108,13 +108,13 @@ export function ExercisePicker({ open, onClose, onPick }: ExercisePickerProps) {
                     aria-hidden
                   />
                   <span className="flex-1 min-w-0">
-                    <span className="block text-sm text-gray-100 truncate">{row.name}</span>
+                    <span className="block text-sm text-[color:var(--color-text-primary)] truncate">{row.name}</span>
                     {row.category && (
-                      <span className="block text-[10px] text-gray-500 truncate">{row.category}</span>
+                      <span className="block text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] truncate">{row.category}</span>
                     )}
                   </span>
                   {picking === row.id && (
-                    <span className="text-[10px] text-gray-400">Adding…</span>
+                    <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)]">Adding…</span>
                   )}
                 </button>
               </li>

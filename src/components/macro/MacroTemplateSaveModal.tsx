@@ -57,7 +57,7 @@ export function MacroTemplateSaveModal({
       await onSave(name.trim(), mode, macroWeeks.length, payload);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template');
+      setError(err instanceof Error ? err.message : 'Couldn’t save template. Your changes are still on screen.');
     } finally {
       setSaving(false);
     }

@@ -52,6 +52,8 @@ import type { TimelineMarker } from '../../lib/macroTimelineData';
 import { StandardPage, AdaptiveDialog } from '../ui';
 import { MacroExerciseDetail } from './MacroExerciseDetail';
 import type { MacroContext } from '../planner/WeeklyPlanner';
+import { alertDialog, confirmDialog } from '../ui';
+import { Spinner } from '../ui';
 
 
 /**
@@ -1065,11 +1067,10 @@ export function MacroCycles() {
     // way: 85 % landing in a kilogram column reads as 85 kg, and rescaling it
     // by a kilogram ratio on top of that is meaningless twice over.
     if (sourceUnit !== targetUnit) {
-      alert(
-        `${sourceName} is in ${unitLabel(sourceUnit)} and ${targetName} is in ${unitLabel(targetUnit)}.\n\n` +
-        `Copying would move the numbers without their meaning. Put both columns in the same unit first — ` +
-        `the ${unitLabel(sourceUnit)} → ${unitLabel(targetUnit)} chip converts a column properly, against a reference you approve.`,
-      );
+      void alertDialog({
+        title: `${sourceName} and ${targetName} use different units`,
+        message: `${sourceName} is in ${unitLabel(sourceUnit)} and ${targetName} is in ${unitLabel(targetUnit)}, so copying would move the numbers without their meaning. Put both columns in the same unit first — the ${unitLabel(sourceUnit)} → ${unitLabel(targetUnit)} chip converts a column properly, against a reference you approve.`,
+      });
       return;
     }
 
@@ -1095,14 +1096,25 @@ export function MacroCycles() {
 
 This OVERWRITES ${filled} week${filled === 1 ? '' : 's'} already prescribed on ${targetName}.`
       : '';
-    if (!confirm(`Copy ${sourceName}'s prescription onto ${targetName}?
-${how}.${warn}`)) return;
+    const ok = await confirmDialog({
+      title: `Copy ${sourceName}'s prescription onto ${targetName}?`,
+      message: `${how}.${warn}`,
+      confirmLabel: 'Copy prescription',
+      tone: warn ? 'danger' : 'default',
+    });
+    if (!ok) return;
 
     await bulkUpsertTargets(rows);
   };
 
   const handleRemoveExercise = async (trackedExId: string) => {
-    if (!confirm('Remove this exercise from tracking? Targets will be deleted.')) return;
+    const ok = await confirmDialog({
+      title: 'Remove this exercise from tracking?',
+      message: 'Its targets will be deleted.',
+      confirmLabel: 'Remove exercise',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await removeTrackedExercise(trackedExId);
     await fetchTrackedExercises(selectedCycle!.id);
   };
@@ -1178,7 +1190,10 @@ ${how}.${warn}`)) return;
     // An event with no athletes attaches to nobody and never surfaces on the
     // timeline/table (markers are fetched via event_athletes). Require ≥1.
     if (data.athlete_ids.length === 0) {
-      alert('Add at least one athlete so this event shows on the timeline.');
+      void alertDialog({
+        title: 'Add at least one athlete',
+        message: 'An event with no athletes never appears on the timeline.',
+      });
       return;
     }
     await createEvent({
@@ -1217,7 +1232,13 @@ ${how}.${warn}`)) return;
 
   const handleDeleteCycle = async () => {
     if (!selectedCycle) return;
-    if (!confirm(`Delete "${selectedCycle.name}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${selectedCycle.name}"?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete macro cycle',
+      tone: 'danger',
+    });
+    if (!ok) return;
     await deleteMacrocycle(selectedCycle.id);
     setSelectedCycle(null);
     navigate('/macrocycles');
@@ -1407,7 +1428,7 @@ ${how}.${warn}`)) return;
       {/* Main content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
-          <div className="w-4 h-4 border-2 border-gray-200 border-t-blue-500 rounded-full animate-spin" />
+          <Spinner size={16} />
           Loading…
         </div>
       ) : (

@@ -209,7 +209,7 @@ export function LogExerciseRow({
               {isOffPlan ? (
                 <span className="text-[9px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.5 rounded ml-1">Added by athlete</span>
               ) : hasAthleteData && (
-                <span className="text-[9px] text-blue-600 font-medium ml-1">athlete version</span>
+                <span className="text-[9px] text-[color:var(--color-accent)] font-medium ml-1">athlete version</span>
               )}
             </div>
             <div className="flex items-center gap-1">
@@ -271,7 +271,7 @@ export function LogExerciseRow({
                         {loadChanged ? (
                           <span className="flex flex-col gap-0 leading-tight">
                             <span className="text-gray-400 line-through text-[9px]">{plannedRow.load || '—'}</span>
-                            <span className="text-blue-700 font-medium">{row.load || '—'}</span>
+                            <span className="text-[color:var(--color-accent)] font-medium">{row.load || '—'}</span>
                           </span>
                         ) : (
                           row.load || '—'
@@ -329,7 +329,7 @@ export function LogExerciseRow({
               <span className="text-[10px] text-gray-500 italic">{variationNote}</span>
             )}
             {(planned?.is_combo || offPlanCombo) && (
-              <span className="text-[9px] bg-blue-50 text-blue-700 font-medium px-1.5 py-0.5 rounded">
+              <span className="text-[9px] bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)] font-medium px-1.5 py-0.5 rounded">
                 Combo
               </span>
             )}
@@ -338,7 +338,7 @@ export function LogExerciseRow({
             {videos.length > 0 && (
               <span
                 className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${
-                  videos.some(v => v.coach_reviewed_at === null) ? 'text-blue-600' : 'text-gray-400'
+                  videos.some(v => v.coach_reviewed_at === null) ? 'text-[color:var(--color-accent)]' : 'text-gray-400'
                 }`}
                 title={
                   videos.some(v => v.coach_reviewed_at === null)
@@ -351,7 +351,7 @@ export function LogExerciseRow({
               </span>
             )}
             {exerciseMessages.length > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-600 font-medium" title={`${exerciseMessages.length} comment${exerciseMessages.length > 1 ? 's' : ''}`}>
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-[color:var(--color-accent)] font-medium" title={`${exerciseMessages.length} comment${exerciseMessages.length > 1 ? 's' : ''}`}>
                 <MessageSquare size={9} />
                 {exerciseMessages.length}
               </span>

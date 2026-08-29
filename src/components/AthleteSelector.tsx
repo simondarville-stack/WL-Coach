@@ -36,10 +36,10 @@ export function AthleteSelector() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors min-w-[180px]"
+        className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-[color:var(--color-accent-hover)] transition-colors min-w-[180px]"
       >
         {selectedGroup ? (
-          <Users size={16} className="text-blue-600 flex-shrink-0" />
+          <Users size={16} className="text-[color:var(--color-accent)] flex-shrink-0" />
         ) : selectedAthlete?.photo_url ? (
           <img
             src={selectedAthlete.photo_url}
@@ -54,7 +54,7 @@ export function AthleteSelector() {
           {displayText}
         </span>
         {selectedGroup && (
-          <span className="text-[11px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium flex-shrink-0">Group</span>
+          <span className="text-[11px] px-1.5 py-0.5 bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] rounded font-medium flex-shrink-0">Group</span>
         )}
         <ChevronDown size={14} className={`text-gray-500 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -91,12 +91,12 @@ export function AthleteSelector() {
                   className={[
                     'w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-colors text-left',
                     selectedGroup?.id === group.id
-                      ? 'bg-blue-50 border border-blue-200'
+                      ? 'bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)]'
                       : 'hover:bg-gray-50 border border-transparent',
                   ].join(' ')}
                 >
-                  <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <Users size={14} className="text-blue-600" />
+                  <div className="w-7 h-7 rounded-full bg-[var(--color-accent-muted)] flex items-center justify-center flex-shrink-0">
+                    <Users size={14} className="text-[color:var(--color-accent)]" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 truncate">{group.name}</p>
@@ -121,7 +121,7 @@ export function AthleteSelector() {
                   className={[
                     'w-full flex items-center gap-2.5 px-2 py-2 rounded-md transition-colors text-left',
                     selectedAthlete?.id === athlete.id
-                      ? 'bg-blue-50 border border-blue-200'
+                      ? 'bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)]'
                       : 'hover:bg-gray-50 border border-transparent',
                   ].join(' ')}
                 >

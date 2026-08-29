@@ -90,7 +90,7 @@ function UpcomingRow({
       <div className="flex items-baseline gap-2 flex-wrap">
         <button
           onClick={() => onOpenEvent(ev.eventData)}
-          className="bg-transparent border-none p-0 cursor-pointer text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
+          className="bg-transparent border-none p-0 cursor-pointer text-sm font-medium text-gray-900 hover:text-[color:var(--color-accent-hover)] text-left"
         >
           {ev.note}
         </button>
@@ -120,7 +120,7 @@ function UpcomingRow({
                 disabled={!isClickable}
                 className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
                   isClickable
-                    ? 'border-gray-200 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 cursor-pointer'
+                    ? 'border-gray-200 bg-gray-50 hover:bg-[var(--color-accent-subtle)] hover:border-[color:var(--color-accent-border)] cursor-pointer'
                     : 'border-gray-100 bg-gray-50 cursor-default'
                 }`}
               >

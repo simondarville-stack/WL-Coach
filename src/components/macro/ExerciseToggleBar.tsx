@@ -84,7 +84,7 @@ export function ExerciseToggleBar({
             key={te.id}
             className={`inline-flex items-center pr-2.5 pl-1.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
               isVisible
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                ? 'bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)] border-[color:var(--color-accent-border)]'
                 : 'bg-gray-50 text-gray-400 border-gray-200'
             }`}
           >
@@ -94,7 +94,7 @@ export function ExerciseToggleBar({
               disabled={!onOpenDetail}
               title={onOpenDetail ? `${te.exercise.name} — PRs & load history` : undefined}
               aria-label={onOpenDetail ? `Open PRs and history for ${te.exercise.name}` : undefined}
-              className={`p-1 -m-0.5 mr-0.5 rounded-full leading-none ${onOpenDetail ? 'cursor-pointer hover:ring-2 hover:ring-blue-200' : 'cursor-default'}`}
+              className={`p-1 -m-0.5 mr-0.5 rounded-full leading-none ${onOpenDetail ? 'cursor-pointer hover:ring-2 hover:ring-[color:var(--color-accent-border)]' : 'cursor-default'}`}
             >
               <span
                 className="block w-1.5 h-1.5 rounded-full"

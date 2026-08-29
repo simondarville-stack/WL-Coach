@@ -18,8 +18,8 @@ interface AthleteCommentsThreadProps {
 }
 
 const SENDER_CLASS: Record<string, string> = {
-  athlete: 'bg-gray-800 text-gray-200',
-  coach: 'bg-blue-900/60 text-blue-200',
+  athlete: 'bg-[var(--color-bg-secondary)] text-[color:var(--color-text-primary)]',
+  coach: 'bg-blue-900/60 text-[color:var(--color-accent)]',
 };
 
 const SENDER_LABEL: Record<string, string> = {
@@ -52,7 +52,7 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
   return (
     <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
       {messages.length === 0 ? (
-        <p className={`${textSize} text-gray-500 italic flex items-center gap-1.5`}>
+        <p className={`${textSize} text-[color:var(--color-text-secondary)] italic flex items-center gap-1.5`}>
           <MessageSquare size={11} /> No messages yet.
         </p>
       ) : (
@@ -61,15 +61,15 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
             <li key={m.id} className="flex flex-col gap-0.5">
               <div className="flex items-baseline gap-2">
                 <span
-                  className={`text-[9px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded ${
+                  className={`text-[length:var(--text-micro)] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded ${
                     SENDER_CLASS[m.sender_type] ?? SENDER_CLASS.athlete
                   }`}
                 >
                   {SENDER_LABEL[m.sender_type] ?? m.sender_type}
                 </span>
-                <span className="text-[9px] text-gray-500">{formatTimestamp(m.created_at)}</span>
+                <span className="text-[length:var(--text-micro)] text-[color:var(--color-text-secondary)]">{formatTimestamp(m.created_at)}</span>
               </div>
-              <p className={`${textSize} text-gray-200 whitespace-pre-wrap leading-snug`}>
+              <p className={`${textSize} text-[color:var(--color-text-primary)] whitespace-pre-wrap leading-snug`}>
                 {m.message}
               </p>
             </li>
@@ -93,19 +93,19 @@ export function AthleteCommentsThread({ messages, onPost, compact }: AthleteComm
           placeholder="Message your coach…"
           rows={compact ? 1 : 2}
           style={{ maxHeight: '9rem' }}
-          className={`flex-1 ${textSize} bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500`}
+          className={`flex-1 ${textSize} bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]`}
           disabled={posting}
         />
         <button
           onClick={submit}
           disabled={posting || draft.trim() === ''}
-          className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded bg-blue-600 text-white hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed"
+          className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-tertiary)] disabled:cursor-not-allowed"
           title="Send"
         >
           <Send size={12} />
         </button>
       </div>
-      {error && <p className="text-[10px] text-red-300 break-all">{error}</p>}
+      {error && <p className="text-[length:var(--text-caption)] text-red-300 break-all">{error}</p>}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import type { CoachPreset, DefaultUnit } from '../../lib/database.types';
 import type { CoachPresetInput } from '../../hooks/useCoachPresets';
 import type { ExerciseFeatures } from '../../lib/exerciseFeatures';
 import { formatSeconds, parseTimeInput, timeEditValue, parseTempoInput } from '../../lib/exerciseFeatures';
+import { confirmDialog } from '../ui';
 
 interface PresetManagerProps {
   onClose: () => void;
@@ -238,7 +239,15 @@ export function PresetManager({
                       style={{ width: 26, height: 22, padding: 0, border: '1px solid var(--color-border-primary)', borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer' }}
                     />
                     <button
-                      onClick={() => { if (window.confirm(`Delete preset #${p.name}? Rows it was applied to keep their prescription.`)) void deletePreset(p.id); }}
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: `Delete preset #${p.name}?`,
+                          message: 'Rows it was applied to keep their prescription.',
+                          confirmLabel: 'Delete preset',
+                          tone: 'danger',
+                        });
+                        if (ok) void deletePreset(p.id);
+                      }}
                       title="Delete preset"
                       style={{ marginLeft: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: 2 }}
                       onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-danger-text)'; }}

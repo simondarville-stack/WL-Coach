@@ -114,7 +114,7 @@ export function PrintWeek({
         <div className="bg-white rounded-lg shadow-xl p-8 max-w-md">
           <h2 className="text-xl font-bold text-gray-900 mb-4">No Week Plan</h2>
           <p className="text-gray-600 mb-6">No training plan found for this week.</p>
-          <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Close</button>
+          <button onClick={onClose} className="px-4 py-2 bg-[var(--color-accent)] text-white rounded-lg hover:bg-[var(--color-accent-hover)]">Close</button>
         </div>
       </div>
     );

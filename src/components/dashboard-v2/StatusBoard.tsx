@@ -259,7 +259,7 @@ const AthleteRowV2 = memo(function AthleteRowV2({
   const borderL = tone === 'danger' ? 'border-l-2 border-l-red-300'
     : tone === 'warn'   ? 'border-l-2 border-l-amber-300'
     : 'border-l-2 border-l-transparent';
-  const pulseBg = pulse ? 'bg-blue-50' : '';
+  const pulseBg = pulse ? 'bg-[var(--color-accent-subtle)]' : '';
   const expandedBg = expanded && !pulse ? 'bg-gray-50' : '';
 
   const lastDays = status.lastTrainingDate
@@ -278,7 +278,7 @@ const AthleteRowV2 = memo(function AthleteRowV2({
           <button
             onClick={(e) => { e.stopPropagation(); onTogglePin(a.id); }}
             title={pinned ? 'Unpin' : 'Pin to top'}
-            className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'}`}
+            className={`p-0 bg-transparent border-none cursor-pointer ${pinned ? 'text-[color:var(--color-accent)]' : 'text-gray-300 hover:text-gray-500'}`}
           >
             <Star size={13} className={pinned ? 'fill-current' : ''} />
           </button>

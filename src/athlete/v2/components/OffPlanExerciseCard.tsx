@@ -108,7 +108,7 @@ export function OffPlanExerciseCard({
     sortedSets.length > 0 ? Math.max(...sortedSets.map(s => s.set_number)) + 1 : 1;
 
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+    <div className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] overflow-hidden">
       <div className="flex items-start gap-3 px-3 py-3">
         <div
           className="w-1 self-stretch rounded-full flex-shrink-0 mt-0.5"
@@ -118,15 +118,15 @@ export function OffPlanExerciseCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold text-white truncate">{name}</h3>
-            <span className="text-[9px] bg-amber-900/40 text-amber-300 font-medium px-1.5 py-0.5 rounded">
+            <span className="text-[length:var(--text-micro)] bg-amber-900/40 text-amber-300 font-medium px-1.5 py-0.5 rounded">
               Added by you
             </span>
           </div>
           {combo && combo.members.length > 0 ? (
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               {combo.members.map((m, idx) => (
-                <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[10px] text-gray-300">
-                  {idx > 0 && <span className="text-gray-600">+</span>}
+                <span key={m.exerciseId + idx} className="inline-flex items-center gap-1 text-[length:var(--text-caption)] text-[color:var(--color-text-primary)]">
+                  {idx > 0 && <span className="text-[color:var(--color-text-secondary)]">+</span>}
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: m.color ?? '#6b7280' }}
@@ -137,13 +137,13 @@ export function OffPlanExerciseCard({
               ))}
             </div>
           ) : (
-            <p className="text-[10px] text-gray-500 mt-0.5">No plan · log what you did</p>
+            <p className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-0.5">No plan · log what you did</p>
           )}
         </div>
         {onDelete && (
           <button
             onClick={() => void onDelete()}
-            className="p-1 text-gray-500 hover:text-red-400 flex-shrink-0"
+            className="tap p-1 text-[color:var(--color-text-secondary)] hover:text-red-400 flex-shrink-0"
             title="Remove this exercise"
             aria-label="Remove exercise"
           >
@@ -187,7 +187,7 @@ export function OffPlanExerciseCard({
         ))}
         <button
           onClick={() => setPendingBlanks(n => n + 1)}
-          className="w-full inline-flex items-center justify-center gap-1 text-[11px] text-gray-400 hover:text-white py-1.5 border border-dashed border-gray-700 rounded"
+          className="tap-y w-full inline-flex items-center justify-center gap-1 text-[11px] text-[color:var(--color-text-secondary)] hover:text-white py-1.5 border border-dashed border-[color:var(--color-border-secondary)] rounded"
         >
           <Plus size={12} />
           Add set
@@ -205,7 +205,7 @@ export function OffPlanExerciseCard({
             {...notes.bind}
             placeholder="Notes on this exercise…"
             rows={2}
-            className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            className="w-full text-xs bg-[var(--color-bg-secondary)] border border-[color:var(--color-border-secondary)] rounded px-2 py-1.5 text-[color:var(--color-text-primary)] placeholder:text-[color:var(--color-text-tertiary)] focus:outline-none focus:border-[color:var(--color-accent-hover)]"
           />
         </div>
       </div>

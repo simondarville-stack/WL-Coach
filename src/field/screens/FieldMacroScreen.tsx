@@ -84,28 +84,28 @@ export function FieldMacroScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[var(--color-bg-page)] text-white">
       <div className="max-w-2xl mx-auto px-3 pt-4 pb-8">
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={() => navigate(-1)}
-            className="p-2 -ml-2 text-gray-400 hover:text-white"
+            className="p-2 -ml-2 text-[color:var(--color-text-secondary)] hover:text-white"
             aria-label="Back"
           >
             <ArrowLeft size={18} />
           </button>
           <h1 className="text-base font-bold truncate flex-1">{subjectName || 'Macro'}</h1>
-          {groupId && <Users size={15} className="text-gray-500 flex-shrink-0" aria-label="Group" />}
+          {groupId && <Users size={15} className="text-[color:var(--color-text-secondary)] flex-shrink-0" aria-label="Group" />}
         </div>
 
         {error ? (
           <p className="text-sm text-red-400">{error}</p>
         ) : macros === null ? (
           <div className="flex justify-center py-16">
-            <Loader2 size={24} className="animate-spin text-gray-600" />
+            <Loader2 size={24} className="animate-spin text-[color:var(--color-text-tertiary)]" />
           </div>
         ) : macros.length === 0 ? (
-          <p className="text-sm text-gray-500 py-10 text-center">
+          <p className="text-sm text-[color:var(--color-text-secondary)] py-10 text-center">
             No macro cycle for this {groupId ? 'group' : 'athlete'}.
           </p>
         ) : (
@@ -154,46 +154,46 @@ function MacroBlock({ macro, thisMonday, isCollapsed, onToggle, onOpenWeek }: {
   const hasPhases = macro.phases.length > 0;
 
   return (
-    <section className="rounded-xl border border-gray-800 bg-gray-900/40 overflow-hidden">
+    <section className="rounded-xl border border-[color:var(--color-border-tertiary)] bg-gray-900/40 overflow-hidden">
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-900/60"
         aria-expanded={!isCollapsed}
       >
         {isCollapsed
-          ? <ChevronRight size={14} className="text-gray-500 flex-shrink-0" />
-          : <ChevronDown size={14} className="text-gray-500 flex-shrink-0" />}
+          ? <ChevronRight size={14} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />
+          : <ChevronDown size={14} className="text-[color:var(--color-text-secondary)] flex-shrink-0" />}
         <span className="text-sm font-semibold text-white truncate">{macro.name}</span>
         {macro.isGroupMacro && (
-          <Users size={11} className="text-gray-500 flex-shrink-0" aria-label="Group macro" />
+          <Users size={11} className="text-[color:var(--color-text-secondary)] flex-shrink-0" aria-label="Group macro" />
         )}
-        <span className="text-[10px] text-gray-500 ml-auto flex-shrink-0">
+        <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] ml-auto flex-shrink-0">
           {formatDateShort(macro.startDate)}–{formatDateShort(macro.endDate)} · {macro.weeks.length} wk
         </span>
       </button>
 
       {!isCollapsed && (
-        <div className="border-t border-gray-800">
+        <div className="border-t border-[color:var(--color-border-tertiary)]">
           {rows.map(({ phase, weeks }, i) => (
             <div key={phase?.id ?? `free-${i}`}>
               {hasPhases && (
                 <div
-                  className="px-3 py-1.5 bg-gray-900/70 border-b border-gray-800"
+                  className="px-3 py-1.5 bg-gray-900/70 border-b border-[color:var(--color-border-tertiary)]"
                   // Phase colour is data, kept as the coach authored it.
                   style={{ borderLeft: `3px solid ${phase?.color || 'transparent'}` }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-wide font-semibold text-gray-400">
+                    <span className="text-[length:var(--text-caption)] uppercase tracking-wide font-semibold text-[color:var(--color-text-secondary)]">
                       {phase?.name ?? 'Between phases'}
                     </span>
-                    <span className="text-[10px] text-gray-600">
+                    <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-tertiary)]">
                       {weeks.length} week{weeks.length === 1 ? '' : 's'}
                     </span>
                   </div>
                   {/* The coach's phase note — written on the desktop macro page
                       and, until now, rendered nowhere. */}
                   {phase?.notes?.trim() && (
-                    <p className="text-[11px] text-gray-400 mt-0.5 whitespace-pre-wrap leading-snug">
+                    <p className="text-[11px] text-[color:var(--color-text-secondary)] mt-0.5 whitespace-pre-wrap leading-snug">
                       {phase.notes}
                     </p>
                   )}
@@ -213,7 +213,7 @@ function MacroBlock({ macro, thisMonday, isCollapsed, onToggle, onOpenWeek }: {
             </div>
           ))}
           {macro.weeks.length === 0 && (
-            <p className="px-3 py-4 text-xs text-gray-600">No weeks in this cycle yet.</p>
+            <p className="px-3 py-4 text-xs text-[color:var(--color-text-tertiary)]">No weeks in this cycle yet.</p>
           )}
         </div>
       )}
@@ -242,21 +242,21 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
           className="flex gap-2.5 px-3 py-2 text-left flex-1 min-w-0 hover:bg-gray-800/40 active:bg-gray-800/60 transition-colors"
         >
           <div className="w-9 flex-shrink-0 pt-0.5">
-            <div className={`text-xs font-semibold ${isCurrent ? 'text-blue-300' : 'text-gray-300'}`}>
+            <div className={`text-xs font-semibold ${isCurrent ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-primary)]'}`}>
               W{week.weekNumber}
             </div>
-            {isCurrent && <div className="text-[9px] text-blue-400 leading-tight">now</div>}
+            {isCurrent && <div className="text-[length:var(--text-micro)] text-[color:var(--color-accent)] leading-tight">now</div>}
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               {/* European day-first range (CLAUDE.md) */}
-              <span className="text-[11px] text-gray-400 tabular-nums">
+              <span className="text-[11px] text-[color:var(--color-text-secondary)] tabular-nums">
                 {formatDateShort(week.weekStart)}–{formatDateShort(week.weekEnd)}
               </span>
               {week.weekTypeName && (
                 <span
-                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                  className="text-[length:var(--text-caption)] font-semibold px-1.5 py-0.5 rounded"
                   style={{
                     backgroundColor: `${week.weekTypeColor ?? '#6b7280'}22`,
                     color: week.weekTypeColor ?? '#9ca3af',
@@ -266,13 +266,13 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
                 </span>
               )}
               {prescribed.length > 0 && (
-                <span className="text-[10px] text-gray-600">{prescribed.length} ex</span>
+                <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-tertiary)]">{prescribed.length} ex</span>
               )}
             </div>
 
             {/* Week-level targets — only what the coach actually set. */}
             {(week.totalRepsTarget != null || week.tonnageTarget != null || week.avgIntensityTarget != null) && (
-              <div className="flex gap-3 mt-0.5 text-[10px] text-gray-500 tabular-nums">
+              <div className="flex gap-3 mt-0.5 text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] tabular-nums">
                 {week.totalRepsTarget != null && <span>Σr {week.totalRepsTarget}</span>}
                 {week.tonnageTarget != null && <span>t {fmt(week.tonnageTarget)}</span>}
                 {week.avgIntensityTarget != null && <span>avg {fmt(week.avgIntensityTarget)}%</span>}
@@ -288,7 +288,7 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
                     <span key={ev.id} className="inline-flex items-center gap-1 text-[11px]" style={{ color }}>
                       <Icon size={11} className="flex-shrink-0" />
                       <span className={ev.primary ? 'font-semibold' : ''}>{ev.title}</span>
-                      <span className="text-gray-600">
+                      <span className="text-[color:var(--color-text-tertiary)]">
                         {formatDateShort(ev.date)}{ev.endDate ? `–${formatDateShort(ev.endDate)}` : ''}
                       </span>
                     </span>
@@ -298,21 +298,21 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
             )}
 
             {week.notes.trim() && (
-              <p className="text-[11px] text-gray-400 mt-1 whitespace-pre-wrap leading-snug">
+              <p className="text-[11px] text-[color:var(--color-text-secondary)] mt-1 whitespace-pre-wrap leading-snug">
                 {week.notes}
               </p>
             )}
           </div>
           {isOpen
-            ? <ChevronDown size={13} className="text-gray-600 flex-shrink-0 self-center" aria-hidden />
-            : <ChevronRight size={13} className="text-gray-600 flex-shrink-0 self-center" aria-hidden />}
+            ? <ChevronDown size={13} className="text-[color:var(--color-text-tertiary)] flex-shrink-0 self-center" aria-hidden />
+            : <ChevronRight size={13} className="text-[color:var(--color-text-tertiary)] flex-shrink-0 self-center" aria-hidden />}
         </button>
         <button
           type="button"
           onClick={onOpenWeek}
           aria-label={`Open the plan for the week of ${formatDateShort(week.weekStart)}`}
           title="Open this week's plan"
-          className="px-3 text-[10px] uppercase tracking-wide text-gray-600 hover:text-blue-300 border-l border-gray-800/70"
+          className="px-3 text-[length:var(--text-caption)] uppercase tracking-wide text-[color:var(--color-text-tertiary)] hover:text-[color:var(--color-accent-hover)] border-l border-gray-800/70"
         >
           plan
         </button>
@@ -320,11 +320,11 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
 
       {isOpen && (
         prescribed.length === 0 ? (
-          <p className="px-3 pb-2 text-[11px] text-gray-600 italic">No targets set for this week.</p>
+          <p className="px-3 pb-2 text-[11px] text-[color:var(--color-text-tertiary)] italic">No targets set for this week.</p>
         ) : (
           <table className="w-full text-[11px] mb-1">
             <thead>
-              <tr className="text-[9px] uppercase tracking-wide text-gray-600">
+              <tr className="text-[length:var(--text-micro)] uppercase tracking-wide text-[color:var(--color-text-tertiary)]">
                 <th className="text-left font-medium px-3 py-1">Exercise</th>
                 <th className="text-right font-medium px-1 py-1">Top set</th>
                 <th className="text-right font-medium px-1 py-1">Avg</th>
@@ -338,21 +338,21 @@ function WeekRow({ week, exercises, isCurrent, isOpen, onToggle, onOpenWeek }: {
                 return (
                   <tr key={ex.trackedExerciseId} className="border-t border-gray-800/50 align-top">
                     <td className="px-3 py-1">
-                      {ex.code && <span className="font-mono text-gray-300 mr-1.5">{ex.code}</span>}
-                      <span className="text-gray-400">{ex.name}</span>
+                      {ex.code && <span className="font-mono text-[color:var(--color-text-primary)] mr-1.5">{ex.code}</span>}
+                      <span className="text-[color:var(--color-text-secondary)]">{ex.name}</span>
                       {t.note?.trim() && (
-                        <div className="text-[10px] text-gray-500 italic leading-snug">✎ {t.note}</div>
+                        <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] italic leading-snug">✎ {t.note}</div>
                       )}
                     </td>
                     <td className="px-1 py-1">
                       <div className="flex justify-end">
                         {raw
                           ? <StackedNotation raw={raw} unit="absolute_kg" />
-                          : <span className="text-gray-600">—</span>}
+                          : <span className="text-[color:var(--color-text-tertiary)]">—</span>}
                       </div>
                     </td>
-                    <td className="px-1 py-1 text-right tabular-nums text-gray-400">{fmt(t.avg)}</td>
-                    <td className="px-3 py-1 text-right tabular-nums text-gray-300">{t.reps ?? '—'}</td>
+                    <td className="px-1 py-1 text-right tabular-nums text-[color:var(--color-text-secondary)]">{fmt(t.avg)}</td>
+                    <td className="px-3 py-1 text-right tabular-nums text-[color:var(--color-text-primary)]">{t.reps ?? '—'}</td>
                   </tr>
                 );
               })}

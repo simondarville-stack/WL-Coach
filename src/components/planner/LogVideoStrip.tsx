@@ -12,6 +12,7 @@ import { FolderPlus, Trash2, Video } from 'lucide-react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
 import { VideoLightbox } from './VideoLightbox';
+import { Spinner } from '../ui';
 
 interface LogVideoStripProps {
   videos: TrainingLogVideo[];
@@ -130,7 +131,7 @@ export function LogVideoStrip({
                 title={captionFor(v)}
                 aria-label={`Play ${captionFor(v)}`}
                 className={`relative block w-[68px] h-[46px] rounded overflow-hidden border ${t.tile} ${
-                  unreviewed ? 'ring-1 ring-blue-500' : ''
+                  unreviewed ? 'ring-1 ring-[color:var(--color-accent)]' : ''
                 }`}
               >
                 {/* The #t=0.1 media fragment makes the browser paint the frame
@@ -200,7 +201,7 @@ export function LogVideoStrip({
               className={`w-[68px] h-[46px] rounded border border-dashed inline-flex flex-col items-center justify-center gap-0.5 text-[9px] ${t.addTile} disabled:opacity-50`}
             >
               {busySource === 'film' ? (
-                <span className="w-3.5 h-3.5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                <Spinner size={14} />
               ) : (
                 <>
                   <Video size={13} strokeWidth={1.8} />
@@ -218,7 +219,7 @@ export function LogVideoStrip({
             >
               {busySource === 'attach' ? (
                 <>
-                  <span className="w-3.5 h-3.5 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin" />
+                  <Spinner size={14} />
                   {progress && <span>{progress.done + 1}/{progress.total}</span>}
                 </>
               ) : (

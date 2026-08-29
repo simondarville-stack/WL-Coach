@@ -18,6 +18,7 @@ import { useExerciseLibraries, type LibraryMemberWithCoach } from '../../hooks/u
 import { resolveLibraryScope, invalidateLibraryScope, type CoachLibraryScope } from '../../lib/libraryScope';
 import { Button } from '../ui';
 import type { CoachProfile, ExerciseLibrary, ExerciseLibraryMember, LibraryRole } from '../../lib/database.types';
+import { confirmDialog } from '../ui';
 
 interface CatalogueSharingModalProps {
   onClose: () => void;
@@ -68,7 +69,7 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
       myClubs.forEach((c, i) => { map[c.library.id] = memberLists[i]; });
       setMembersByLibrary(map);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load catalogues');
+      setError(e instanceof Error ? e.message : 'Couldn’t load catalogues. Check your connection and try again.');
     }
   }, [coachId]);
 
@@ -82,7 +83,7 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
       await load();
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Operation failed');
+      setError(e instanceof Error ? e.message : 'That didn’t go through. Nothing was changed.');
     } finally {
       setBusy(false);
     }
@@ -106,15 +107,15 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
         setError('Your personal library is empty — nothing to move');
         return;
       }
-      const ok = window.confirm(
-        `Move ${counts.exercises} exercises and ${counts.categories} categories from your personal library into "${club.library.name}"?\n\n` +
-        'Exercise ids are preserved, so all planned and logged history follows them. ' +
-        'Every member of the catalogue will see (and editors can change) these exercises.',
-      );
+      const ok = await confirmDialog({
+        title: `Move ${counts.exercises} exercises and ${counts.categories} categories into "${club.library.name}"?`,
+        message: 'Exercise ids are preserved, so all planned and logged history follows them. Every member of the catalogue will see (and editors can change) these exercises.',
+        confirmLabel: 'Move catalogue',
+      });
       if (!ok) return;
       void run(() => libs.seedFromLibrary(personalId, club.library.id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to prepare seeding');
+      setError(e instanceof Error ? e.message : 'Couldn’t prepare seeding. Nothing was changed.');
     }
   };
 
@@ -240,10 +241,14 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
                     </button>
                   )}
                   <button
-                    onClick={() => {
-                      if (window.confirm(`Leave "${club.library.name}"? Your own athletes' plans keep referencing its exercises, but you will no longer see the catalogue.`)) {
-                        void run(() => libs.revokeAccess(club.membership.id));
-                      }
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: `Leave "${club.library.name}"?`,
+                        message: "Your own athletes' plans keep referencing its exercises, but you will no longer see the catalogue.",
+                        confirmLabel: 'Leave catalogue',
+                        tone: 'danger',
+                      });
+                      if (ok) void run(() => libs.revokeAccess(club.membership.id));
                     }}
                     disabled={busy}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white"
@@ -278,10 +283,13 @@ export function CatalogueSharingModal({ onClose, onChanged }: CatalogueSharingMo
                             <option value="viewer">Viewer</option>
                           </select>
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Remove ${m.coach?.name ?? 'this coach'} from "${club.library.name}"?`)) {
-                                void run(() => libs.revokeAccess(m.id));
-                              }
+                            onClick={async () => {
+                              const ok = await confirmDialog({
+                                title: `Remove ${m.coach?.name ?? 'this coach'} from "${club.library.name}"?`,
+                                confirmLabel: 'Remove coach',
+                                tone: 'danger',
+                              });
+                              if (ok) void run(() => libs.revokeAccess(m.id));
                             }}
                             disabled={busy}
                             style={{ fontSize: 'var(--text-caption)', color: 'var(--color-danger-text, #b91c1c)', border: 'none', background: 'none', cursor: 'pointer' }}

@@ -131,9 +131,9 @@ export function QuickAnalyses({ athleteId, startDate, endDate }: Props) {
           <button
             key={preset.id}
             onClick={() => setActivePreset(preset.id)}
-            className="bg-white border border-gray-200 rounded-lg p-3 text-left hover:border-blue-300 hover:shadow-sm transition-all duration-150"
+            className="bg-white border border-gray-200 rounded-lg p-3 text-left hover:border-[color:var(--color-accent-border)] hover:shadow-sm transition-all duration-150"
           >
-            <Icon size={18} className="text-blue-500 mb-2" />
+            <Icon size={18} className="text-[color:var(--color-accent)] mb-2" />
             <div className="text-[13px] font-medium text-gray-800 mb-1">{preset.title}</div>
             <div className="text-[11px] text-gray-500 leading-snug">{preset.description}</div>
           </button>

@@ -43,7 +43,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
         setCoaches(allCoaches);
         setCollaborators(existing);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load coaches');
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Couldn’t load coaches. Check your connection and try again.');
       }
     })();
     return () => { cancelled = true; };
@@ -79,7 +79,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
       setCollaborators(prev => [row, ...prev.filter(c => c.coach_id !== coachId)]);
       setPickerOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send invite');
+      setError(e instanceof Error ? e.message : 'Couldn’t send invite. Nothing was sent.');
     } finally {
       setBusy(false);
     }
@@ -95,7 +95,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
       );
       await refreshAthletes(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to revoke access');
+      setError(e instanceof Error ? e.message : 'Couldn’t revoke access. Access is unchanged.');
     } finally {
       setBusy(false);
     }
@@ -138,7 +138,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
             </h3>
             <div className="border border-gray-200 rounded overflow-hidden">
               <div className="px-3 py-2 bg-gray-50 flex items-center gap-2 text-xs text-gray-700 border-b border-gray-200">
-                <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-medium">
+                <span className="w-5 h-5 rounded-full bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] flex items-center justify-center text-[10px] font-medium">
                   {coachName(hostId).split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()}
                 </span>
                 <span className="font-medium">{coachName(hostId)}</span>
@@ -169,7 +169,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
               <h3 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                 Invite a coach
               </h3>
-              <div className="flex items-start gap-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded text-[11px] text-blue-900">
+              <div className="flex items-start gap-2 mb-2 p-2 bg-[var(--color-accent-subtle)] border border-[color:var(--color-accent-border)] rounded text-[11px] text-[color:var(--color-accent)]">
                 <input
                   type="checkbox"
                   checked
@@ -193,7 +193,7 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
                       onClick={() => setRole(r)}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         role === r
-                          ? 'bg-blue-100 text-blue-800 border-blue-200'
+                          ? 'bg-[var(--color-accent-muted)] text-[color:var(--color-accent)] border-[color:var(--color-accent-border)]'
                           : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                       }`}
                     >
@@ -221,13 +221,13 @@ export function ShareAthleteModal({ athlete, onClose }: Props) {
                       key={c.id}
                       disabled={busy}
                       onClick={() => submitInvite(c.id)}
-                      className="w-full px-3 py-1.5 text-left text-xs hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center justify-between disabled:opacity-50"
+                      className="w-full px-3 py-1.5 text-left text-xs hover:bg-[var(--color-accent-subtle)] border-b border-gray-100 last:border-b-0 flex items-center justify-between disabled:opacity-50"
                     >
                       <span>
                         <span className="font-medium text-gray-900">{c.name}</span>
                         {c.email && <span className="text-gray-500 ml-1.5">{c.email}</span>}
                       </span>
-                      <span className="text-[10px] text-blue-600">Invite</span>
+                      <span className="text-[10px] text-[color:var(--color-accent)]">Invite</span>
                     </button>
                   ))}
                 </div>

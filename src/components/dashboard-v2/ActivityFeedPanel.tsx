@@ -16,7 +16,7 @@ const TYPE_META: Record<ActivityEvent['type'], { label: string; tone: Tone; icon
 const TONE_CLS: Record<Tone, string> = {
   success: 'text-green-600',
   danger:  'text-red-600',
-  accent:  'text-blue-600',
+  accent:  'text-[color:var(--color-accent)]',
 };
 
 function relTimeFromDate(d: Date): string {
@@ -100,7 +100,7 @@ export function ActivityFeedPanel({ events, statuses, onJumpToAthlete, onOpenLog
                   {relTimeFromDate(ev.timestamp)}
                 </span>
                 {clickable && (
-                  <span className="text-[11px] text-blue-600">open →</span>
+                  <span className="text-[11px] text-[color:var(--color-accent)]">open →</span>
                 )}
               </div>
             </button>

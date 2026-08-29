@@ -27,7 +27,7 @@ const SENDER_LABEL: Record<string, string> = {
 
 const SENDER_CLASS: Record<string, string> = {
   athlete: 'bg-gray-100 text-gray-700',
-  coach: 'bg-blue-50 text-blue-800',
+  coach: 'bg-[var(--color-accent-subtle)] text-[color:var(--color-accent)]',
 };
 
 export function LogCommentsThread({ messages, compact, onPost }: LogCommentsThreadProps) {

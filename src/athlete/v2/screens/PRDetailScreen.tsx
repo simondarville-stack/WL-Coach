@@ -123,7 +123,7 @@ export function PRDetailScreen() {
 
   if (!athlete) {
     return (
-      <div className="px-4 py-6 text-sm text-gray-400">
+      <div className="px-4 py-6 text-sm text-[color:var(--color-text-secondary)]">
         Pick an athlete from the profile picker.
       </div>
     );
@@ -131,10 +131,10 @@ export function PRDetailScreen() {
 
   return (
     <div className="flex flex-col" style={{ minHeight: 'calc(100vh - 80px)' }}>
-      <header className="sticky top-0 z-10 bg-gray-950 px-4 pt-4 pb-3 border-b border-gray-900 flex items-center gap-2">
+      <header className="sticky top-0 z-10 bg-[var(--color-bg-page)] px-4 pt-4 pb-3 border-b border-[color:var(--color-border-tertiary)] flex items-center gap-2">
         <button
           onClick={() => navigate('/athlete/prs')}
-          className="text-xs text-gray-400 hover:text-white -ml-1 p-1"
+          className="tap text-xs text-[color:var(--color-text-secondary)] hover:text-white -ml-1 p-1"
           aria-label="Back"
         >
           ←
@@ -144,14 +144,14 @@ export function PRDetailScreen() {
             {exercise?.name ?? 'Loading…'}
           </h1>
           {exercise && (
-            <p className="text-[11px] text-gray-500">{exercise.category || 'Other'}</p>
+            <p className="text-[11px] text-[color:var(--color-text-secondary)]">{exercise.category || 'Other'}</p>
           )}
         </div>
       </header>
 
       <div className="flex-1 px-4 py-4 pb-24 space-y-4">
         {loading && !row && (
-          <div className="flex items-center justify-center py-12 text-gray-500 text-sm gap-2">
+          <div className="flex items-center justify-center py-12 text-[color:var(--color-text-secondary)] text-sm gap-2">
             <Loader2 size={14} className="animate-spin" />
             Loading…
           </div>
@@ -166,35 +166,35 @@ export function PRDetailScreen() {
 
         {row && exercise && (
           <>
-            <section className="rounded-xl bg-gray-900 border border-gray-800 p-4 text-center">
+            <section className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-4 text-center">
               {row.implied1RM != null ? (
                 <>
                   <div className="text-4xl font-bold text-white tabular-nums leading-none">
                     {Math.round(row.implied1RM)}
                   </div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mt-1">
+                  <div className="text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold mt-1">
                     kg · implied 1RM
                   </div>
-                  <div className="text-[10px] text-gray-500 mt-2">
+                  <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-2">
                     based on best of {row.cells.filter(c => c.current != null).length} rep counts
                   </div>
                 </>
               ) : (
                 <div className="py-3">
-                  <div className="text-sm text-gray-500 italic">
+                  <div className="text-sm text-[color:var(--color-text-secondary)] italic">
                     No PRs recorded yet. Tap a row below to log one.
                   </div>
                 </div>
               )}
             </section>
 
-            <section className="rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
-              <div className="px-3 py-2 border-b border-gray-800">
-                <h2 className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            <section className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] overflow-hidden">
+              <div className="px-3 py-2 border-b border-[color:var(--color-border-tertiary)]">
+                <h2 className="text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold">
                   By rep count
                 </h2>
               </div>
-              <ul className="divide-y divide-gray-800">
+              <ul className="divide-y divide-[color:var(--color-border-tertiary)]">
                 {row.cells.map(cell => {
                   const isReal = cell.current != null;
                   const onClick = () => {
@@ -218,32 +218,32 @@ export function PRDetailScreen() {
                         onClick={onClick}
                         className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-800/40 transition-colors"
                       >
-                        <span className="text-xs text-gray-400 tabular-nums w-7 text-right flex-shrink-0">
+                        <span className="text-xs text-[color:var(--color-text-secondary)] tabular-nums w-7 text-right flex-shrink-0">
                           {cell.repCount}
-                          <span className="text-[10px] text-gray-600 ml-0.5">RM</span>
+                          <span className="text-[length:var(--text-caption)] text-[color:var(--color-text-tertiary)] ml-0.5">RM</span>
                         </span>
                         <div className="flex-1 min-w-0">
                           {isReal ? (
                             <>
                               <div className="text-sm font-bold text-white tabular-nums">
                                 {cell.current!.value_kg.toFixed(1)}{' '}
-                                <span className="text-xs text-gray-500 font-normal">kg</span>
+                                <span className="text-xs text-[color:var(--color-text-secondary)] font-normal">kg</span>
                               </div>
-                              <div className="text-[10px] text-gray-500 mt-0.5">
+                              <div className="text-[length:var(--text-caption)] text-[color:var(--color-text-secondary)] mt-0.5">
                                 {formatRowDate(cell.current!.achieved_date)}
                               </div>
                             </>
                           ) : cell.phantom != null ? (
-                            <div className="text-sm text-gray-600 italic tabular-nums">
+                            <div className="text-sm text-[color:var(--color-text-tertiary)] italic tabular-nums">
                               (est. {Math.round(cell.phantom)} kg)
                             </div>
                           ) : (
-                            <div className="text-sm text-gray-700 italic">—</div>
+                            <div className="text-sm text-[color:var(--color-text-tertiary)] italic">—</div>
                           )}
                         </div>
                         <span
-                          className={`text-[10px] flex-shrink-0 ${
-                            isReal ? 'text-blue-400' : 'text-gray-600'
+                          className={`text-[length:var(--text-caption)] flex-shrink-0 ${
+                            isReal ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-tertiary)]'
                           }`}
                         >
                           {isReal ? 'edit' : 'add'} →
@@ -256,8 +256,8 @@ export function PRDetailScreen() {
             </section>
 
             {chartData.length >= 2 && (
-              <section className="rounded-xl bg-gray-900 border border-gray-800 p-3">
-                <h2 className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-2">
+              <section className="rounded-xl bg-[var(--color-bg-primary)] border border-[color:var(--color-border-tertiary)] p-3">
+                <h2 className="text-[length:var(--text-caption)] uppercase tracking-wider text-[color:var(--color-text-secondary)] font-semibold mb-2">
                   e1RM progression
                 </h2>
                 <div className="h-32">
@@ -313,7 +313,7 @@ export function PRDetailScreen() {
             type="button"
             onClick={() => setForm({ open: true, mode: 'add' })}
             disabled={!exercise}
-            className="w-full inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-semibold text-sm py-3 rounded-xl shadow-lg shadow-black/40 transition-colors"
+            className="w-full inline-flex items-center justify-center gap-2 bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] disabled:bg-[var(--color-bg-secondary)] disabled:text-[color:var(--color-text-secondary)] text-white font-semibold text-sm py-3 rounded-xl shadow-lg shadow-black/40 transition-colors"
           >
             <Plus size={16} />
             Log a PR
