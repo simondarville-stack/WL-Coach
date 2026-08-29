@@ -36,6 +36,78 @@ const STATUS_RANK: Record<GroupDayAthleteStatus['status'], number> = {
   not_started: 4,
 };
 
+/** One member's status dot for one slot of the group week miniature. */
+export interface GroupWeekRosterDot {
+  athleteId: string;
+  name: string;
+  status: GroupDayAthleteStatus['status'];
+}
+
+/**
+ * Week-level roster in one round trip: every member's session status per
+ * day_index, no exercise counts — feeds the dots-only miniature on the
+ * group week screen. Members are returned in a fixed A–Z order so the
+ * dot in position N is the same athlete on every day.
+ */
+export async function fetchGroupWeekRoster(
+  groupId: string,
+  weekStart: string,
+): Promise<Map<number, GroupWeekRosterDot[]>> {
+  const { data: memberRows, error: mErr } = await supabase
+    .from('group_members')
+    .select('athlete_id')
+    .eq('group_id', groupId)
+    .is('left_at', null);
+  if (mErr) throw mErr;
+  const athleteIds = ((memberRows ?? []) as { athlete_id: string }[]).map(m => m.athlete_id);
+  if (athleteIds.length === 0) return new Map();
+
+  const [athletesRes, sessionsRes] = await Promise.all([
+    supabase.from('athletes').select('id, name, is_active').in('id', athleteIds),
+    supabase
+      .from('training_log_sessions')
+      .select('athlete_id, day_index, status')
+      .in('athlete_id', athleteIds)
+      .eq('week_start', weekStart),
+  ]);
+  if (athletesRes.error) throw athletesRes.error;
+  if (sessionsRes.error) throw sessionsRes.error;
+  const members = ((athletesRes.data ?? []) as {
+    id: string; name: string; is_active: boolean;
+  }[])
+    .filter(a => a.is_active)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const sessions = (sessionsRes.data ?? []) as {
+    athlete_id: string; day_index: number; status: string;
+  }[];
+  const statusByDayAthlete = new Map<string, string>();
+  for (const s of sessions) statusByDayAthlete.set(`${s.day_index}|${s.athlete_id}`, s.status);
+
+  const byDay = new Map<number, GroupWeekRosterDot[]>();
+  const dayIndexes = [...new Set(sessions.map(s => s.day_index))];
+  for (const day of dayIndexes) {
+    byDay.set(
+      day,
+      members.map(m => ({
+        athleteId: m.id,
+        name: m.name,
+        status:
+          (statusByDayAthlete.get(`${day}|${m.id}`) as GroupDayAthleteStatus['status']) ??
+          'not_started',
+      })),
+    );
+  }
+  // Days with no sessions at all still get a full not-started row, so the
+  // miniature renders consistently for every planned slot. The caller asks
+  // per dayIndex; build lazily via getter semantics is overkill — return a
+  // helper default instead.
+  byDay.set(
+    -1,
+    members.map(m => ({ athleteId: m.id, name: m.name, status: 'not_started' as const })),
+  );
+  return byDay;
+}
+
 export async function fetchGroupDayRoster(
   groupId: string,
   weekStart: string,
