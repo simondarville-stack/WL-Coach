@@ -56,6 +56,11 @@ export function ReviewScroller() {
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
 
   const [lookbackDays, setLookbackDays] = useState<number>(REVIEW_SESSION_LOOKBACK_DAYS);
+  /** Scope the feed to one athlete (deep link ?athlete=<id> from the
+   *  athlete screens / dashboard panel). Null = everyone. */
+  const [athleteFilter, setAthleteFilter] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('athlete'),
+  );
   const [items, setItems] = useState<ReviewFeedItem[] | null>(null);
   /** Example video/question cards ("Show examples") — non-persisting: they
    *  never mark anything and their composers don't hit the database. */
@@ -93,16 +98,19 @@ export function ReviewScroller() {
     setSeen(new Set());
     setLoadError(null);
     try {
+      const scoped = athleteFilter
+        ? athletes.filter(a => a.id === athleteFilter)
+        : athletes;
       const feed = await fetchReviewFeed({
         ownerId,
-        athleteIds: athletes.map(a => a.id),
+        athleteIds: scoped.map(a => a.id),
         lookbackDays,
       });
       setItems(feed);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load the review feed.');
     }
-  }, [ownerId, athletes, lookbackDays]);
+  }, [ownerId, athletes, lookbackDays, athleteFilter]);
 
   useEffect(() => {
     void load();
@@ -339,6 +347,17 @@ export function ReviewScroller() {
             <span className="hidden md:inline text-white/30"> · ↑↓ navigate · 1–4 react</span>
           </span>
           <span className="flex items-center gap-1.5">
+            {athleteFilter && (
+              <button
+                type="button"
+                onClick={() => setAthleteFilter(null)}
+                title="Showing one athlete — tap to show everyone"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white"
+              >
+                {athleteById.get(athleteFilter)?.name ?? 'Athlete'}
+                <span aria-hidden>×</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void toggleExamples()}
