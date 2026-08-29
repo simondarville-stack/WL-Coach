@@ -736,6 +736,20 @@ export interface TrainingLogVideo {
   created_at: string;
 }
 
+/** Per-coach review record for the Review feed (migration
+ *  add_review_feed_seen). One row = this coach has reviewed this item;
+ *  other coaches keep their own rows, so a shared athlete's material is
+ *  reviewed by everyone independently. */
+export interface ReviewFeedSeen {
+  id: string;
+  /** The reviewing coach (coach_profiles.id). */
+  owner_id: string;
+  item_type: 'video' | 'thread' | 'session';
+  /** Video id / session id / latest athlete message id of a thread. */
+  item_key: string;
+  seen_at: string;
+}
+
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
@@ -1315,6 +1329,12 @@ export interface Database {
         Row: TrainingLogMessage & Record<string, unknown>;
         Insert: Partial<Omit<TrainingLogMessage, 'id' | 'created_at' | 'coach_read_at' | 'athlete_read_at'>> & Record<string, unknown>;
         Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      review_feed_seen: {
+        Row: ReviewFeedSeen & Record<string, unknown>;
+        Insert: Partial<Omit<ReviewFeedSeen, 'id' | 'seen_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ReviewFeedSeen, 'id'>> & Record<string, unknown>;
         Relationships: [];
       };
       events: {

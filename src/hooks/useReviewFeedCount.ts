@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchReviewFeedCounts } from '../lib/reviewFeedService';
 import { onInboxChanged } from '../lib/inboxEvents';
+import { getOwnerId } from '../lib/ownerContext';
 import { useAthleteStore } from '../store/athleteStore';
 
 /**
@@ -21,7 +22,7 @@ export function useReviewFeedCount(): number {
 
   const load = useCallback(async () => {
     try {
-      const counts = await fetchReviewFeedCounts(athleteIdsRef.current);
+      const counts = await fetchReviewFeedCounts(getOwnerId(), athleteIdsRef.current);
       setCount(counts.total);
     } catch {
       // Silent: a transient query failure shouldn't take down the sidebar.

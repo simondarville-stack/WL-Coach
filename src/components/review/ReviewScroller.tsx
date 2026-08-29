@@ -7,16 +7,18 @@
  * are ordered oldest-first, so reaching the bottom means the coach is
  * fully caught up.
  *
- * "Done" semantics (aligned with the user's choices):
- *   - Every card auto-clears once it has been in view for a moment; the
- *     existing markers (video coach_reviewed_at, message coach_read_at,
- *     session coach_reviewed_at) are stamped so the Inbox badge and the
- *     log-mode "new footage" rings stay consistent with this feed.
- *   - Comments/quick reactions post into the athlete-visible thread.
+ * "Done" semantics:
+ *   - Every card auto-clears once it has been in view for a moment —
+ *     recorded PER COACH in review_feed_seen, so coaches sharing an
+ *     athlete each review the full feed; the legacy global markers are
+ *     still stamped for the surfaces that read them (inbox badge,
+ *     log-mode "new footage" rings).
+ *   - Comments/quick reactions post into the athlete-visible thread,
+ *     labelled with the sending coach so co-coaches see whose they are.
  *
- * Prototype status: session cards use a fixed lookback window and default
- * the StackedNotation unit to kg. // COACH-CONFIG candidate (lookback,
- * quick reactions).
+ * Mounted on desktop at /review and inside the coach mobile app at
+ * /coach/review. The right-edge segmented rail is the queue itself: one
+ * segment per card — filled = reviewed, bright = where you are.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -27,6 +29,7 @@ import {
   DEMO_KEY_PREFIX,
   fetchExampleCards,
   fetchReviewFeed,
+  markReviewItemSeen,
   markSessionReviewed,
   REVIEW_SESSION_LOOKBACK_DAYS,
   type ReviewFeedItem,
@@ -78,6 +81,12 @@ export function ReviewScroller() {
   const activeKeyRef = useRef<string | null>(null);
   activeKeyRef.current = activeKey;
 
+  // Self-sufficient athlete loading: the desktop shell fills the store on
+  // boot, but the mobile coach app mounts this screen directly. Idempotent.
+  useEffect(() => {
+    void useAthleteStore.getState().fetchAthletes();
+  }, []);
+
   // ── Load (snapshot — reviewing a card does not reshuffle the feed) ───────
   const load = useCallback(async () => {
     setItems(null);
@@ -111,6 +120,10 @@ export function ReviewScroller() {
       });
       // Fire-and-forget: an optimistic UI over idempotent markers.
       const persist = async () => {
+        // The per-coach record is what the feed itself reads.
+        await markReviewItemSeen(ownerId, item.kind, item.seenKey);
+        // Legacy global markers for the other surfaces (inbox badge,
+        // log-mode rings). These are shared across coaches by design.
         if (item.kind === 'video') {
           await markLogVideoReviewed(item.video.id);
         } else if (item.kind === 'thread') {
@@ -358,19 +371,47 @@ export function ReviewScroller() {
             </button>
           </span>
         </div>
-        <div className="mt-1.5 h-0.5 rounded bg-white/10 overflow-hidden">
-          <div
-            className="h-full bg-[var(--color-accent)] transition-all duration-300"
-            style={{ width: total > 0 ? `${(seenCount / total) * 100}%` : '0%' }}
-          />
-        </div>
       </div>
 
-      {/* Snap scroller */}
-      <div
-        ref={scrollerRef}
-        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory"
-      >
+      {/* Snap scroller + queue rail */}
+      <div className="relative flex-1 min-h-0">
+        {/* The queue itself, drawn on the edge: one segment per card,
+            emerald = reviewed, bright = the card in view. Falls back to a
+            continuous bar when the queue is too long to read as segments. */}
+        {items != null && total > 0 && (
+          <div
+            aria-hidden
+            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-[3px] pointer-events-none"
+            style={{ maxHeight: '70%' }}
+          >
+            {total <= 48 ? (
+              items.map(i => (
+                <div
+                  key={i.key}
+                  className={`w-[3px] rounded-full transition-colors duration-300 ${
+                    seen.has(i.key)
+                      ? 'bg-emerald-500/80'
+                      : activeKey === i.key
+                        ? 'bg-white'
+                        : 'bg-white/20'
+                  }`}
+                  style={{ height: `${Math.max(6, Math.min(22, 320 / total))}px` }}
+                />
+              ))
+            ) : (
+              <div className="w-[3px] h-40 rounded-full bg-white/15 overflow-hidden">
+                <div
+                  className="w-full bg-emerald-500/80 transition-all duration-300"
+                  style={{ height: `${(seenCount / total) * 100}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        <div
+          ref={scrollerRef}
+          className="h-full overflow-y-auto snap-y snap-mandatory"
+        >
         <div className="max-w-md mx-auto h-full">
           {items == null && !loadError && (
             <div className="h-full flex items-center justify-center">
@@ -434,6 +475,7 @@ export function ReviewScroller() {
               />
             </section>
           )}
+        </div>
         </div>
       </div>
     </div>

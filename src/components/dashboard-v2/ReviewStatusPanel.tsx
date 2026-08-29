@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, PlaySquare } from 'lucide-react';
 import { useAthleteStore } from '../../store/athleteStore';
 import { onInboxChanged } from '../../lib/inboxEvents';
+import { getOwnerId } from '../../lib/ownerContext';
 import {
   fetchReviewStatusByAthlete,
   REVIEW_SESSION_LOOKBACK_DAYS,
@@ -22,7 +23,7 @@ export function ReviewStatusPanel() {
 
   const load = useCallback(async () => {
     try {
-      setRows(await fetchReviewStatusByAthlete(athletes.map(a => a.id)));
+      setRows(await fetchReviewStatusByAthlete(getOwnerId(), athletes.map(a => a.id)));
     } catch {
       setRows([]); // a transient failure shouldn't take down the dashboard
     }
