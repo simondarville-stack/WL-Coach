@@ -750,6 +750,17 @@ export interface ReviewFeedSeen {
   seen_at: string;
 }
 
+/** Per-coach inbox read watermark (migration add_coach_thread_reads).
+ *  A thread is unread for a coach when it holds an athlete message newer
+ *  than their last_read_at. thread_key = session id or 'general:<athleteId>'. */
+export interface CoachThreadRead {
+  id: string;
+  /** The reading coach (coach_profiles.id). */
+  owner_id: string;
+  thread_key: string;
+  last_read_at: string;
+}
+
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
@@ -1335,6 +1346,12 @@ export interface Database {
         Row: ReviewFeedSeen & Record<string, unknown>;
         Insert: Partial<Omit<ReviewFeedSeen, 'id' | 'seen_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ReviewFeedSeen, 'id'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      coach_thread_reads: {
+        Row: CoachThreadRead & Record<string, unknown>;
+        Insert: Partial<Omit<CoachThreadRead, 'id'>> & Record<string, unknown>;
+        Update: Partial<Omit<CoachThreadRead, 'id'>> & Record<string, unknown>;
         Relationships: [];
       };
       events: {
