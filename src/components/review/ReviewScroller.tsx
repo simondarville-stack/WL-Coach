@@ -66,6 +66,10 @@ export function ReviewScroller() {
    *  never mark anything and their composers don't hit the database. */
   const [demoItems, setDemoItems] = useState<ReviewFeedItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Already-reviewed items rendered past the end card, newest first.
+   *  null = not loaded yet (fetched lazily when the coach reaches the end). */
+  const [historyItems, setHistoryItems] = useState<ReviewFeedItem[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [seen, setSeen] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   /** Quick reactions sent via the keyboard, per card key — the cards render
@@ -83,8 +87,22 @@ export function ReviewScroller() {
   );
   const itemsRef = useRef<ReviewFeedItem[] | null>(null);
   itemsRef.current = displayItems;
+  const historyRef = useRef<ReviewFeedItem[] | null>(null);
+  historyRef.current = historyItems;
+  const historyKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    historyKeysRef.current = new Set((historyItems ?? []).map(i => i.key));
+  }, [historyItems]);
   const activeKeyRef = useRef<string | null>(null);
   activeKeyRef.current = activeKey;
+
+  /** Key → item across queue, demo AND history cards. */
+  const findItemByKey = useCallback((key: string): ReviewFeedItem | undefined => {
+    return (
+      itemsRef.current?.find(i => i.key === key) ??
+      historyRef.current?.find(i => i.key === key)
+    );
+  }, []);
 
   // Self-sufficient athlete loading: the desktop shell fills the store on
   // boot, but the mobile coach app mounts this screen directly. Idempotent.
@@ -95,6 +113,7 @@ export function ReviewScroller() {
   // ── Load (snapshot — reviewing a card does not reshuffle the feed) ───────
   const load = useCallback(async () => {
     setItems(null);
+    setHistoryItems(null);
     setSeen(new Set());
     setLoadError(null);
     try {
@@ -116,10 +135,47 @@ export function ReviewScroller() {
     void load();
   }, [load]);
 
+  // ── History (keep scrolling past "all caught up") ────────────────────────
+  const loadHistory = useCallback(async () => {
+    if (historyRef.current != null) return;
+    setHistoryLoading(prev => {
+      if (prev) return prev;
+      void (async () => {
+        try {
+          const scoped = athleteFilter
+            ? athletes.filter(a => a.id === athleteFilter)
+            : athletes;
+          setHistoryItems(
+            await fetchReviewFeed({
+              ownerId,
+              athleteIds: scoped.map(a => a.id),
+              lookbackDays,
+              mode: 'history',
+            }),
+          );
+        } catch {
+          setHistoryItems([]); // quiet — the queue is the primary content
+        } finally {
+          setHistoryLoading(false);
+        }
+      })();
+      return true;
+    });
+  }, [ownerId, athletes, athleteFilter, lookbackDays]);
+
+  // Fetch lazily the moment the coach reaches the end card, so the queue
+  // load itself stays fast.
+  useEffect(() => {
+    if (activeKey === 'end' && items != null) void loadHistory();
+  }, [activeKey, items, loadHistory]);
+
   // ── Seen marking ─────────────────────────────────────────────────────────
   const markSeen = useCallback(
     (item: ReviewFeedItem) => {
       if (item.key.startsWith(DEMO_KEY_PREFIX)) return;
+      // History cards are already reviewed — nothing to mark, and dwelling
+      // on them must not touch state.
+      if (historyKeysRef.current.has(item.key)) return;
       setSeen(prev => {
         if (prev.has(item.key)) return prev;
         const next = new Set(prev);
@@ -170,7 +226,7 @@ export function ReviewScroller() {
             if (!timers.has(key)) {
               const t = window.setTimeout(() => {
                 timers.delete(key);
-                const item = itemsRef.current?.find(i => i.key === key);
+                const item = findItemByKey(key);
                 if (item) markSeen(item);
               }, SEEN_DWELL_MS);
               timers.set(key, t);
@@ -192,7 +248,7 @@ export function ReviewScroller() {
       for (const t of timers.values()) window.clearTimeout(t);
       timers.clear();
     };
-  }, [displayItems, markSeen]);
+  }, [displayItems, historyItems, markSeen, findItemByKey]);
 
   const registerCard = useCallback((key: string) => {
     return (el: HTMLElement | null) => {
@@ -304,7 +360,11 @@ export function ReviewScroller() {
       }
       const feed = itemsRef.current;
       if (!feed) return;
-      const keys = [...feed.map(i => i.key), 'end'];
+      const keys = [
+        ...feed.map(i => i.key),
+        'end',
+        ...(historyRef.current ?? []).map(i => i.key),
+      ];
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -319,7 +379,7 @@ export function ReviewScroller() {
       }
 
       if (e.key >= '1' && e.key <= String(QUICK_REACTIONS.length)) {
-        const item = feed.find(i => i.key === activeKeyRef.current);
+        const item = activeKeyRef.current ? findItemByKey(activeKeyRef.current) : undefined;
         if (!item || item.kind === 'thread') return;
         e.preventDefault();
         void quickReact(item, QUICK_REACTIONS[Number(e.key) - 1]);
@@ -327,11 +387,61 @@ export function ReviewScroller() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [quickReact]);
+  }, [quickReact, findItemByKey]);
 
   // ── Render ───────────────────────────────────────────────────────────────
   const total = items?.length ?? 0;
   const seenCount = items ? items.filter(i => seen.has(i.key)).length : 0;
+
+  /** One full-height snap section. History cards render as already-seen and
+   *  carry a corner tag; their composers still post for real. */
+  const renderCard = (item: ReviewFeedItem, tag: 'demo' | 'history' | null) => (
+    <section
+      key={item.key}
+      ref={registerCard(item.key)}
+      className="relative h-full snap-start snap-always"
+    >
+      {tag === 'demo' && (
+        <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-amber-400/90 text-black px-1.5 py-0.5 rounded pointer-events-none">
+          Example
+        </div>
+      )}
+      {tag === 'history' && (
+        <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-white/10 text-white/60 px-1.5 py-0.5 rounded pointer-events-none">
+          History
+        </div>
+      )}
+      {item.kind === 'video' && (
+        <VideoCard
+          item={item}
+          athlete={athleteById.get(item.athleteId)}
+          seen={tag === 'history' || seen.has(item.key)}
+          active={activeKey === item.key}
+          onComment={text =>
+            commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
+          }
+          externalSent={keyboardSent[item.key]}
+        />
+      )}
+      {item.kind === 'thread' && (
+        <ThreadCard
+          item={item}
+          athlete={athleteById.get(item.athleteId)}
+          seen={tag === 'history' || seen.has(item.key)}
+          onReply={text => replyToThread(item, text)}
+        />
+      )}
+      {item.kind === 'session' && (
+        <SessionCard
+          item={item}
+          athlete={athleteById.get(item.athleteId)}
+          seen={tag === 'history' || seen.has(item.key)}
+          onComment={text => commentOnSession(item, item.session.id, text)}
+          externalSent={keyboardSent[item.key]}
+        />
+      )}
+    </section>
+  );
 
   return (
     <div className="h-full bg-neutral-950 flex flex-col">
@@ -430,6 +540,17 @@ export function ReviewScroller() {
         <div
           ref={scrollerRef}
           className="h-full overflow-y-auto snap-y snap-mandatory"
+          // Fallback trigger for the lazy history load: nearing the bottom
+          // counts as reaching the end card.
+          onScroll={e => {
+            const el = e.currentTarget;
+            if (
+              itemsRef.current != null &&
+              el.scrollTop + el.clientHeight >= el.scrollHeight - el.clientHeight
+            ) {
+              void loadHistory();
+            }
+          }}
         >
         <div className="max-w-md mx-auto h-full">
           {items == null && !loadError && (
@@ -442,58 +563,30 @@ export function ReviewScroller() {
               {loadError}
             </div>
           )}
-          {displayItems?.map(item => (
-            <section
-              key={item.key}
-              ref={registerCard(item.key)}
-              className="relative h-full snap-start snap-always"
-            >
-              {item.key.startsWith(DEMO_KEY_PREFIX) && (
-                <div className="absolute top-11 right-3 z-10 text-[10px] uppercase tracking-wider font-medium bg-amber-400/90 text-black px-1.5 py-0.5 rounded pointer-events-none">
-                  Example
-                </div>
-              )}
-              {item.kind === 'video' && (
-                <VideoCard
-                  item={item}
-                  athlete={athleteById.get(item.athleteId)}
-                  seen={seen.has(item.key)}
-                  active={activeKey === item.key}
-                  onComment={text =>
-                    commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
-                  }
-                  externalSent={keyboardSent[item.key]}
-                />
-              )}
-              {item.kind === 'thread' && (
-                <ThreadCard
-                  item={item}
-                  athlete={athleteById.get(item.athleteId)}
-                  seen={seen.has(item.key)}
-                  onReply={text => replyToThread(item, text)}
-                />
-              )}
-              {item.kind === 'session' && (
-                <SessionCard
-                  item={item}
-                  athlete={athleteById.get(item.athleteId)}
-                  seen={seen.has(item.key)}
-                  onComment={text => commentOnSession(item, item.session.id, text)}
-                  externalSent={keyboardSent[item.key]}
-                />
-              )}
-            </section>
-          ))}
+          {displayItems?.map(item =>
+            renderCard(item, item.key.startsWith(DEMO_KEY_PREFIX) ? 'demo' : null),
+          )}
           {items != null && !loadError && (
             <section ref={registerCard('end')} className="h-full snap-start snap-always">
               <EndCard
                 total={total}
+                historyStatus={
+                  historyItems == null
+                    ? historyLoading
+                      ? 'loading'
+                      : 'idle'
+                    : historyItems.length > 0
+                      ? 'ready'
+                      : 'empty'
+                }
+                historyCount={historyItems?.length ?? 0}
                 onBackToTop={() =>
                   scrollerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
                 }
               />
             </section>
           )}
+          {historyItems?.map(item => renderCard(item, 'history'))}
         </div>
         </div>
       </div>

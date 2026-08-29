@@ -166,6 +166,10 @@ export interface FetchReviewFeedArgs {
   athleteIds: string[];
   /** The window all three sources look back over. */
   lookbackDays: number;
+  /** 'queue' (default): what THIS coach has not reviewed, oldest first.
+   *  'history': what they HAVE reviewed, newest first — the feed's
+   *  keep-scrolling-past-"all caught up" mode. */
+  mode?: 'queue' | 'history';
 }
 
 interface SessionStub {
@@ -192,7 +196,7 @@ async function fetchSeenKeySet(ownerId: string, sinceIso: string): Promise<Set<s
 }
 
 export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
-  const { ownerId, athleteIds, lookbackDays } = args;
+  const { ownerId, athleteIds, lookbackDays, mode = 'queue' } = args;
   if (athleteIds.length === 0) return [];
   const sinceDate = lookbackSinceDate(lookbackDays);
   const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
@@ -235,10 +239,12 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     fetchSeenKeySet(ownerId, sinceIso),
   ]);
 
-  // Per-coach filtering: drop what THIS coach has reviewed. Another coach's
-  // review never removes an item here — that is the whole point.
-  const videoRows = videoRowsAll.filter(v => !seen.has(`video:${v.id}`));
-  const sessionRows = sessionRowsAll.filter(s => !seen.has(`session:${s.id}`));
+  // Per-coach filtering: the queue drops what THIS coach has reviewed
+  // (another coach's review never removes an item — that is the whole
+  // point); history inverts the filter to show exactly those items.
+  const keep = (isSeen: boolean) => (mode === 'history' ? isSeen : !isSeen);
+  const videoRows = videoRowsAll.filter(v => keep(seen.has(`video:${v.id}`)));
+  const sessionRows = sessionRowsAll.filter(s => keep(seen.has(`session:${s.id}`)));
 
   // ── Secondary lookups ────────────────────────────────────────────────────
 
@@ -425,8 +431,8 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     c.latestId = m.id; // messageRows are ordered ascending
     c.newCount += 1;
   }
-  const threadCandidates = [...candidateByThread.values()].filter(
-    c => !seen.has(`thread:${c.latestId}`),
+  const threadCandidates = [...candidateByThread.values()].filter(c =>
+    keep(seen.has(`thread:${c.latestId}`)),
   );
 
   // Thread context (both parties, every coach) for the surviving threads,
@@ -592,7 +598,13 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     });
   }
 
-  items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  // Queue reads oldest→newest so the bottom means caught up; history reads
+  // newest→oldest — diving back in time from the "all caught up" card.
+  items.sort((a, b) =>
+    mode === 'history'
+      ? b.timestamp.localeCompare(a.timestamp)
+      : a.timestamp.localeCompare(b.timestamp),
+  );
   return items;
 }
 

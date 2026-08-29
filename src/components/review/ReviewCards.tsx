@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronUp,
   ClipboardList,
   MessageCircle,
@@ -524,9 +525,15 @@ function GppStack({ gpp }: { gpp: GppSection }) {
 
 export function EndCard({
   total,
+  historyStatus,
+  historyCount,
   onBackToTop,
 }: {
   total: number;
+  /** Lazy history load behind this card: idle (not reached yet), loading,
+   *  ready (cards below), or empty (nothing reviewed in the window). */
+  historyStatus: 'idle' | 'loading' | 'ready' | 'empty';
+  historyCount: number;
   onBackToTop: () => void;
 }) {
   return (
@@ -539,6 +546,21 @@ export function EndCard({
         {total === 0
           ? 'Nothing new from your athletes right now.'
           : `You have reviewed all ${total} new item${total === 1 ? '' : 's'}.`}
+      </div>
+      <div className="text-sm text-white/50 flex flex-col items-center gap-1">
+        {historyStatus === 'loading' || historyStatus === 'idle' ? (
+          <span>Loading history…</span>
+        ) : historyStatus === 'ready' ? (
+          <>
+            <span>
+              Keep scrolling for history — {historyCount} reviewed item
+              {historyCount === 1 ? '' : 's'}, newest first.
+            </span>
+            <ChevronDown size={16} className="text-white/40 animate-bounce" />
+          </>
+        ) : (
+          <span>No reviewed items in this window yet.</span>
+        )}
       </div>
       {total > 0 && (
         <button
