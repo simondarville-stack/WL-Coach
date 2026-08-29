@@ -33,3 +33,8 @@ vite.config.ts.timestamp-*.mjs
 # Netlify CLI local state — machine-specific (absolute publish paths).
 .netlify/
 .wrangler/
+
+# Machine-local symlink created by `npx skills add` into .agents/skills/.
+# The skill itself is committed under .agents/skills/; this link is an
+# absolute path, so it is not portable.
+/.claude/skills/frontend-design
