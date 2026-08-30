@@ -473,8 +473,11 @@ export function SessionCard({
       kindIcon={<ClipboardList size={16} />}
       composer={{ placeholder: 'Comment on this session…', onSend: onComment, reactions, externalSent }}
     >
-      {/* Light panel so StackedNotation's token colours render as designed. */}
-      <div className="h-full rounded-2xl bg-white overflow-y-auto">
+      {/* Light panel so StackedNotation's token colours render as designed.
+          data-theme="light" re-scopes the CSS tokens to their light values —
+          without it, the dark coach app's token set leaks in and the
+          notation renders near-white on the white card (unreadable). */}
+      <div data-theme="light" className="h-full rounded-2xl bg-white overflow-y-auto">
         <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
           {headerBits.length > 0 && (
