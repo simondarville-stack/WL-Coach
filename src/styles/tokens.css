@@ -7,9 +7,15 @@
  *
  * Tokens are exposed as CSS custom properties on :root for light
  * mode, and overridden on [data-theme="dark"] for dark mode.
+ *
+ * [data-theme="light"] shares the :root block so a subtree inside a
+ * dark-themed app can re-scope back to light values — e.g. the white
+ * session panel in the Review feed, which draws token-coloured
+ * StackedNotation on a white card inside the dark coach mobile app.
  * ============================================================ */
 
-:root {
+:root,
+[data-theme="light"] {
   /* -- Typography: font families -- */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
