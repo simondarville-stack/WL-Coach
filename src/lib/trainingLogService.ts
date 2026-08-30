@@ -7,6 +7,7 @@
 import { supabase } from './supabase';
 import { rankExercises } from './exerciseRanker';
 import { emitInboxChanged } from './inboxEvents';
+import { getOwnerId } from './ownerContext';
 import type {
   TrainingLogSession,
   TrainingLogExercise,
@@ -1418,7 +1419,53 @@ export async function markMessagesRead(
   }
   const { error } = await q;
   if (error) throw error;
+  // The coach inbox is per coach: advance the ACTIVE coach's watermark so
+  // only their own badge clears (the global stamp above stays for read
+  // receipts / log-mode indicators, shared across coaches by design).
+  if (role === 'coach') {
+    await markCoachThreadRead(getOwnerId(), coachThreadKey(sessionId, null));
+  }
   emitInboxChanged();
+}
+
+// ─── Per-coach thread read state (coach_thread_reads) ─────────────────────
+//
+// The coach inbox (badge, thread lists, field inbox) is per coach: a thread
+// is unread for coach X when it holds an athlete message newer than X's
+// watermark. One coach reading never clears another coach's badge. The
+// global coach_read_at column keeps being stamped for the surfaces that
+// still read it (athlete-side read receipts, log-mode unread indicators).
+
+/** Canonical thread key: the session id, or `general:<athleteId>`. */
+export function coachThreadKey(sessionId: string | null, athleteId: string | null): string {
+  return sessionId ?? `general:${athleteId}`;
+}
+
+/** thread_key → last_read_at for one coach. */
+async function fetchCoachThreadWatermarks(coachId: string): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('coach_thread_reads')
+    .select('thread_key, last_read_at')
+    .eq('owner_id', coachId);
+  if (error) throw error;
+  return new Map(
+    ((data ?? []) as { thread_key: string; last_read_at: string }[]).map(r => [
+      r.thread_key,
+      r.last_read_at,
+    ]),
+  );
+}
+
+/** Advance this coach's watermark for one thread to now (upsert). Does not
+ *  emit on the read-state channel — callers do, once. */
+async function markCoachThreadRead(coachId: string, threadKey: string): Promise<void> {
+  const { error } = await supabase
+    .from('coach_thread_reads')
+    .upsert(
+      { owner_id: coachId, thread_key: threadKey, last_read_at: new Date().toISOString() },
+      { onConflict: 'owner_id,thread_key' },
+    );
+  if (error) throw error;
 }
 
 // ─── Coach inbox ──────────────────────────────────────────────────────────
@@ -1447,7 +1494,9 @@ export interface InboxThread {
   /** created_at of the most recent message (athlete or coach), so the
    *  sort matches what a chat app would show. */
   lastActivityAt: string;
-  /** Athlete messages where coach_read_at IS NULL. */
+  /** Athlete messages newer than the viewing coach's read watermark
+   *  (coach_thread_reads) — per coach, so a co-coach reading a shared
+   *  athlete's thread does not clear it for you. */
   unreadCount: number;
   /** Total athlete-sent messages on this thread (used to disambiguate
    *  empty threads from threads that were already read). */
@@ -1468,8 +1517,9 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   //    unbounded — re-downloaded on every focus and after every send. At
   //    the cap, only threads whose entire traffic is older than the 2000
   //    most recent messages fall off the list.
-  //    The coach-sent query (2) is independent — run both together.
-  const [amRes, cmRes] = await Promise.all([
+  //    The coach-sent query (2) and the read watermarks are independent —
+  //    run all three together.
+  const [amRes, cmRes, watermarks] = await Promise.all([
     supabase
       .from('training_log_messages')
       .select('id, session_id, message, created_at, coach_read_at')
@@ -1488,6 +1538,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
       .not('session_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(2000),
+    fetchCoachThreadWatermarks(ownerId),
   ]);
   if (amRes.error) throw amRes.error;
   const rows = (amRes.data ?? []) as {
@@ -1516,7 +1567,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   if (sessionIds.length === 0) {
     // No session threads at all — general threads may still exist
     // (e.g. the coach wrote first and the athlete hasn't replied).
-    return (await fetchGeneralThreadsForCoach(ownerId)).sort(compareInboxThreads);
+    return (await fetchGeneralThreadsForCoach(ownerId, watermarks)).sort(compareInboxThreads);
   }
 
   // 3. Session → athlete map. The DB column is `date`; we expose it as
@@ -1583,7 +1634,8 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
       threads.set(r.session_id, t);
     }
     t.athleteMessageCount += 1;
-    if (r.coach_read_at == null) t.unreadCount += 1;
+    // ISO strings compare lexicographically; no watermark ('') = all unread.
+    if (r.created_at > (watermarks.get(r.session_id) ?? '')) t.unreadCount += 1;
   }
 
   // Coach-only session threads: the coach attached a discussion to a
@@ -1613,7 +1665,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   // 4. General (no-session) threads — one per athlete that has any
   //    general messages. Keyed separately so the coach sees them next
   //    to the session threads.
-  const generalThreads = await fetchGeneralThreadsForCoach(ownerId);
+  const generalThreads = await fetchGeneralThreadsForCoach(ownerId, watermarks);
 
   // Sort: unread first, then by lastActivity desc.
   return [...Array.from(threads.values()), ...generalThreads].sort(compareInboxThreads);
@@ -1630,7 +1682,11 @@ function compareInboxThreads(a: InboxThread, b: InboxThread): number {
 /** Aggregate every general (session_id IS NULL) message owned by this
  *  coach into one InboxThread per athlete. Same shape as a session
  *  thread but with kind='general' and sessionId/performedOn null. */
-async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread[]> {
+async function fetchGeneralThreadsForCoach(
+  ownerId: string,
+  watermarks?: Map<string, string>,
+): Promise<InboxThread[]> {
+  const wm = watermarks ?? (await fetchCoachThreadWatermarks(ownerId));
   const { data, error } = await supabase
     .from('training_log_messages')
     .select('athlete_id, sender_type, message, created_at, coach_read_at')
@@ -1692,7 +1748,7 @@ async function fetchGeneralThreadsForCoach(ownerId: string): Promise<InboxThread
     }
     if (r.sender_type === 'athlete') {
       t.athleteMessageCount += 1;
-      if (r.coach_read_at == null) t.unreadCount += 1;
+      if (r.created_at > (wm.get(coachThreadKey(null, r.athlete_id)) ?? '')) t.unreadCount += 1;
     }
   }
   return Array.from(byAthlete.values());
@@ -1712,23 +1768,34 @@ export interface InboxUnreadSummary {
 /** One query behind both the badge and the desktop notification, so the two
  *  can never disagree about what is unread. */
 export async function fetchInboxUnreadSummary(ownerId: string): Promise<InboxUnreadSummary> {
-  const { data, error } = await supabase
-    .from('training_log_messages')
-    .select('session_id, athlete_id')
-    .eq('owner_id', ownerId)
-    .eq('sender_type', 'athlete')
-    .is('coach_read_at', null);
-  if (error) throw error;
-  const rows = (data ?? []) as { session_id: string | null; athlete_id: string | null }[];
-  // A "thread key" is the session id for session-bound messages, or
-  // "general:<athleteId>" for general messages — both flavours feed
-  // the same badge.
+  // Per-coach unread: an athlete message is unread when it is newer than
+  // THIS coach's thread watermark, so a co-coach reading a shared thread
+  // never clears your badge. Same 2000-newest cap as the thread list.
+  const [msgRes, watermarks] = await Promise.all([
+    supabase
+      .from('training_log_messages')
+      .select('session_id, athlete_id, created_at')
+      .eq('owner_id', ownerId)
+      .eq('sender_type', 'athlete')
+      .order('created_at', { ascending: false })
+      .limit(2000),
+    fetchCoachThreadWatermarks(ownerId),
+  ]);
+  if (msgRes.error) throw msgRes.error;
+  const rows = (msgRes.data ?? []) as {
+    session_id: string | null;
+    athlete_id: string | null;
+    created_at: string;
+  }[];
   const keys = new Set<string>();
   const athletes = new Set<string>();
   for (const r of rows) {
-    if (r.session_id) keys.add(r.session_id);
-    else if (r.athlete_id) keys.add(`general:${r.athlete_id}`);
-    if (r.athlete_id) athletes.add(r.athlete_id);
+    const key = r.session_id ?? (r.athlete_id ? `general:${r.athlete_id}` : null);
+    if (!key) continue;
+    if (r.created_at > (watermarks.get(key) ?? '')) {
+      keys.add(key);
+      if (r.athlete_id) athletes.add(r.athlete_id);
+    }
   }
   return { threads: keys.size, athleteIds: Array.from(athletes) };
 }
@@ -1808,6 +1875,11 @@ export async function markGeneralThreadRead(
     .eq('sender_type', otherSender)
     .is(column, null);
   if (error) throw error;
+  // Per-coach inbox: watermark for the ACTIVE coach (not the ownerId
+  // param, which scopes the messages and may be the athlete's host env).
+  if (role === 'coach') {
+    await markCoachThreadRead(getOwnerId(), coachThreadKey(null, athleteId));
+  }
   emitInboxChanged();
 }
 

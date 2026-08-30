@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronUp,
   ClipboardList,
   MessageCircle,
@@ -269,23 +270,41 @@ export function ThreadCard({ item, athlete, seen, onReply }: ThreadCardProps) {
     >
       <div className="h-full rounded-2xl bg-white/[0.06] border border-white/10 p-3 overflow-y-auto">
         <div className="text-[11px] uppercase tracking-wide text-white/40 mb-2">
-          {item.messages.length === 1 ? 'New message' : `${item.messages.length} new messages`}
+          {item.newCount === 1 ? 'New message' : `${item.newCount} new messages`}
         </div>
         <div className="space-y-2">
-          {item.messages.map(m => (
-            <div key={m.id} className="max-w-[90%]">
-              <div className="bg-white text-gray-900 text-sm rounded-2xl rounded-tl-sm px-3 py-2 whitespace-pre-wrap">
-                {m.message}
+          {/* Both sides of the conversation, every coach included — a
+              co-coach's reply shows up here, not just your own. */}
+          {item.messages.map(m =>
+            m.senderType === 'athlete' ? (
+              <div key={m.id} className="max-w-[90%]">
+                <div className="bg-white text-gray-900 text-sm rounded-2xl rounded-tl-sm px-3 py-2 whitespace-pre-wrap">
+                  {m.message}
+                </div>
+                <div className="text-[10px] text-white/40 mt-0.5 px-1">
+                  {formatDateShort(m.createdAt)}{' '}
+                  {new Date(m.createdAt).toLocaleTimeString('de-DE', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </div>
               </div>
-              <div className="text-[10px] text-white/40 mt-0.5 px-1">
-                {formatDateShort(m.created_at)}{' '}
-                {new Date(m.created_at).toLocaleTimeString('de-DE', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+            ) : (
+              <div key={m.id} className="max-w-[90%] ml-auto flex flex-col items-end">
+                <div className="bg-[var(--color-accent)] text-white text-sm rounded-2xl rounded-tr-sm px-3 py-2 whitespace-pre-wrap">
+                  {m.message}
+                </div>
+                <div className="text-[10px] text-white/40 mt-0.5 px-1">
+                  {m.coachName ?? 'Coach'} · {formatDateShort(m.createdAt)}{' '}
+                  {new Date(m.createdAt).toLocaleTimeString('de-DE', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                  {m.seenByAthlete && ' · Seen'}
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
       </div>
     </CardFrame>
@@ -433,6 +452,26 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
             <span className="text-gray-400">Athlete notes:</span> {s.session_notes}
           </div>
         )}
+        {/* Feedback already given — by ANY coach, so co-coaches on a shared
+            athlete see each other's reactions before adding their own. */}
+        {item.coachComments.length > 0 && (
+          <div className="px-3.5 py-2 border-t border-gray-100 space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide text-gray-400">Coach comments</div>
+            {item.coachComments.map(c => (
+              <div key={c.id} className="flex items-start gap-1.5 text-xs">
+                <span className="shrink-0 w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[9px] font-semibold flex items-center justify-center mt-px">
+                  {(c.coachName ?? 'C').charAt(0).toUpperCase()}
+                </span>
+                <span className="text-gray-700 whitespace-pre-wrap min-w-0">
+                  <span className="text-gray-400">{c.coachName ?? 'Coach'}:</span> {c.message}
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-gray-400 tabular-nums">
+                  {formatDateShort(c.createdAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </CardFrame>
   );
@@ -495,9 +534,18 @@ function GppStack({ gpp }: { gpp: GppSection }) {
 
 export function EndCard({
   total,
+  historyStatus,
+  historyCount,
+  historyComplete,
   onBackToTop,
 }: {
   total: number;
+  /** Lazy history load behind this card: idle (not reached yet), loading,
+   *  ready (cards below), or empty (nothing reviewed in the window). */
+  historyStatus: 'idle' | 'loading' | 'ready' | 'empty';
+  historyCount: number;
+  /** No deeper pages left — history below is everything there is. */
+  historyComplete: boolean;
   onBackToTop: () => void;
 }) {
   return (
@@ -510,6 +558,22 @@ export function EndCard({
         {total === 0
           ? 'Nothing new from your athletes right now.'
           : `You have reviewed all ${total} new item${total === 1 ? '' : 's'}.`}
+      </div>
+      <div className="text-sm text-white/50 flex flex-col items-center gap-1">
+        {historyStatus === 'loading' || historyStatus === 'idle' ? (
+          <span>Loading history…</span>
+        ) : historyStatus === 'ready' ? (
+          <>
+            <span>
+              Keep scrolling for history — {historyCount}
+              {historyComplete ? '' : '+'} reviewed item
+              {historyCount === 1 ? '' : 's'}, newest first.
+            </span>
+            <ChevronDown size={16} className="text-white/40 animate-bounce" />
+          </>
+        ) : (
+          <span>No reviewed items in this window yet.</span>
+        )}
       </div>
       {total > 0 && (
         <button

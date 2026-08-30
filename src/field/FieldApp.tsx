@@ -10,10 +10,11 @@
  */
 import { useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { Calculator, ListChecks, Mail, Users } from 'lucide-react';
+import { Calculator, ListChecks, Mail, PlaySquare, Users } from 'lucide-react';
 import { useCoachStore } from '../store/coachStore';
 import { useCoachProfiles } from '../hooks/useCoachProfiles';
 import { useInboxUnreadCount } from '../hooks/useInboxUnreadCount';
+import { useReviewFeedCount } from '../hooks/useReviewFeedCount';
 import { SelectEnvironmentPage } from '../components/SelectEnvironmentPage';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { setActorResolver } from '../lib/errorLogger';
@@ -28,10 +29,12 @@ import { ToolsScreen } from './screens/ToolsScreen';
 import { FieldInboxScreen } from './screens/FieldInboxScreen';
 import { FieldConversationScreen } from './screens/FieldConversationScreen';
 import { Spinner } from '../components/ui';
+import { FieldReviewScreen } from './screens/FieldReviewScreen';
 
 const TABS = [
   { to: '/coach', icon: ListChecks, label: 'Upcoming', end: true },
   { to: '/coach/athletes', icon: Users, label: 'Athletes', end: false },
+  { to: '/coach/review', icon: PlaySquare, label: 'Review', end: false },
   { to: '/coach/inbox', icon: Mail, label: 'Inbox', end: false },
   { to: '/coach/tools', icon: Calculator, label: 'Tools', end: false },
 ] as const;
@@ -39,6 +42,8 @@ const TABS = [
 function FieldLayout() {
   // Same unread-thread badge as the desktop sidebar (60 s cadence).
   const unread = useInboxUnreadCount();
+  // Per-coach review queue count — a co-coach's reviewing never clears it.
+  const reviewCount = useReviewFeedCount();
   return (
     <div className="min-h-screen bg-[var(--color-bg-page)] text-white pb-20">
       <Outlet />
@@ -66,6 +71,14 @@ function FieldLayout() {
                     aria-label={`${unread} unread ${unread === 1 ? 'thread' : 'threads'}`}
                   >
                     {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+                {tab.label === 'Review' && reviewCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center"
+                    aria-label={`${reviewCount} to review`}
+                  >
+                    {reviewCount > 9 ? '9+' : reviewCount}
                   </span>
                 )}
               </span>
@@ -140,6 +153,7 @@ function FieldRoutes() {
       <Route element={<FieldLayout />}>
         <Route path="/coach" element={<UpcomingScreen />} />
         <Route path="/coach/athletes" element={<AthletesScreen />} />
+        <Route path="/coach/review" element={<FieldReviewScreen />} />
         <Route path="/coach/inbox" element={<FieldInboxScreen />} />
         <Route path="/coach/tools" element={<ToolsScreen />} />
       </Route>

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, PlaySquare } from 'lucide-react';
 import { useAthleteStore } from '../../store/athleteStore';
 import { onInboxChanged } from '../../lib/inboxEvents';
+import { getOwnerId } from '../../lib/ownerContext';
 import {
   fetchReviewStatusByAthlete,
   REVIEW_SESSION_LOOKBACK_DAYS,
@@ -22,7 +23,7 @@ export function ReviewStatusPanel() {
 
   const load = useCallback(async () => {
     try {
-      setRows(await fetchReviewStatusByAthlete(athletes.map(a => a.id)));
+      setRows(await fetchReviewStatusByAthlete(getOwnerId(), athletes.map(a => a.id)));
     } catch {
       setRows([]); // a transient failure shouldn't take down the dashboard
     }
@@ -76,7 +77,13 @@ export function ReviewStatusPanel() {
           const open = r.completed - r.reviewed;
           const pct = r.completed === 0 ? 0 : (r.reviewed / r.completed) * 100;
           return (
-            <div key={r.athleteId} className="px-4 py-2 border-b border-gray-50 flex items-center gap-2.5">
+            <button
+              key={r.athleteId}
+              type="button"
+              onClick={() => navigate(`/review?athlete=${r.athleteId}`)}
+              title={`Open the review feed scoped to ${name}`}
+              className="w-full px-4 py-2 border-b border-gray-50 flex items-center gap-2.5 text-left hover:bg-gray-50"
+            >
               <Avatar name={name} size={20} />
               <span className="text-xs text-gray-700 truncate w-32 shrink-0">{name}</span>
               <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
@@ -95,7 +102,7 @@ export function ReviewStatusPanel() {
                   {open} new
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

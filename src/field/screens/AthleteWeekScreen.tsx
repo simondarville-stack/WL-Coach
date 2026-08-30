@@ -6,8 +6,10 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, MessageSquare, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Loader2, MessageSquare, PlaySquare, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { fetchReviewFeedCounts } from '../../lib/reviewFeedService';
+import { getOwnerId } from '../../lib/ownerContext';
 import {
   fetchAthleteDay,
   fetchWeekOverview,
@@ -36,6 +38,18 @@ export function AthleteWeekScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
+  const [reviewCount, setReviewCount] = useState(0);
+
+  // Unreviewed feed items for THIS athlete — bridges browsing an athlete
+  // to reviewing their new material (deep link into /coach/review).
+  useEffect(() => {
+    if (!athleteId) return;
+    let alive = true;
+    fetchReviewFeedCounts(getOwnerId(), [athleteId])
+      .then(c => { if (alive) setReviewCount(c.total); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [athleteId]);
 
   useEffect(() => {
     if (!athleteId) return;
@@ -76,6 +90,16 @@ export function AthleteWeekScreen() {
             <ArrowLeft size={18} />
           </button>
           <h1 className="text-base font-bold truncate flex-1">{athleteName || 'Athlete'}</h1>
+          {athleteId && reviewCount > 0 && (
+            <button
+              onClick={() => navigate(`/coach/review?athlete=${athleteId}`)}
+              className="flex items-center gap-1 px-2 py-1 rounded-full bg-blue-600/20 text-blue-300 text-[11px] font-semibold"
+              title={`${reviewCount} unreviewed item${reviewCount === 1 ? '' : 's'} from ${athleteName || 'this athlete'}`}
+            >
+              <PlaySquare size={12} />
+              Review {reviewCount}
+            </button>
+          )}
           {athleteId && (
             <button
               onClick={() => navigate(`/coach/a/${athleteId}/macro`)}
@@ -129,6 +153,10 @@ export function AthleteWeekScreen() {
                   onStart={() => {}}
                   isBonus={d.isBonus}
                   readOnly
+                  // Without this, readOnly defaults the "Did" rows off and the
+                  // coach sees only the plan — reviewing a week is exactly the
+                  // moment the logged work matters.
+                  showLogged
                   viewerRole="coach"
                 />
               );

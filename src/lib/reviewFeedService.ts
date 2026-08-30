@@ -1,16 +1,23 @@
 /**
  * reviewFeedService — data layer for the coach Review feed (reel scroller).
  *
- * The feed is a snapshot of "everything new since the coach last caught up":
- *   1. Athlete-uploaded videos not yet reviewed   (training_log_videos.coach_reviewed_at IS NULL)
- *   2. Athlete messages/questions not yet read    (training_log_messages.coach_read_at IS NULL)
- *   3. Completed sessions not yet reviewed        (training_log_sessions.coach_reviewed_at IS NULL,
- *                                                  within a lookback window)
+ * The feed is a snapshot of "everything new since I caught up", per coach:
+ *   1. Athlete-uploaded videos in the lookback window
+ *   2. Athlete messages/questions in the window (grouped per thread)
+ *   3. Completed sessions in the window
+ * minus what THIS coach has already seen (`review_feed_seen`). Seen state
+ * is per coach on purpose: coaches sharing an athlete each get the full
+ * feed — one coach reviewing never hides an item from the other, and the
+ * cards surface every coach's comments/reactions so they see each other's
+ * work.
  *
- * Items are sorted oldest-first so scrolling to the bottom means
- * "fully caught up". Marking items seen reuses the existing read/review
- * markers so the rest of the app (Inbox badge, log-mode "new footage"
- * rings) stays consistent with the feed for free.
+ * A thread's seen key is its latest athlete message id, so a newer
+ * question makes the thread reappear for every coach.
+ *
+ * Items are sorted oldest-first so scrolling to the bottom means "fully
+ * caught up". Marking seen ALSO stamps the legacy global markers
+ * (coach_reviewed_at / coach_read_at) so the surfaces that read those
+ * (log-mode "new footage" rings, inbox badge) stay consistent.
  */
 import { supabase } from './supabase';
 import { emitInboxChanged } from './inboxEvents';
@@ -41,8 +48,10 @@ function lookbackSinceDate(lookbackDays: number): string {
 
 export interface ReviewVideoItem {
   kind: 'video';
-  /** Stable identity for seen-tracking, e.g. `video:<id>`. */
+  /** Stable identity for React keys / in-feed tracking, e.g. `video:<id>`. */
   key: string;
+  /** review_feed_seen item_key (the video id). */
+  seenKey: string;
   /** ISO timestamp used for feed ordering (oldest first). */
   timestamp: string;
   athleteId: string;
@@ -53,16 +62,45 @@ export interface ReviewVideoItem {
   video: TrainingLogVideo;
 }
 
+/** One message rendered on a thread card — athlete question or any
+ *  coach's reply, so co-coaches see each other's answers. */
+export interface ThreadMessage {
+  id: string;
+  senderType: 'athlete' | 'coach';
+  /** Resolved coach name for coach messages; null for athlete messages
+   *  (and for legacy coach rows without sender_coach_id). */
+  coachName: string | null;
+  message: string;
+  createdAt: string;
+  /** Coach messages only: the athlete has read it. One-way receipt — this
+   *  feed is coach-facing; the athlete app never shows coach read state. */
+  seenByAthlete: boolean;
+}
+
 export interface ReviewThreadItem {
   kind: 'thread';
   key: string;
+  /** review_feed_seen item_key — the latest athlete message id, so a
+   *  newer question makes the thread reappear for every coach. */
+  seenKey: string;
   timestamp: string;
   athleteId: string;
   /** Null for the general (no-session) athlete↔coach thread. */
   sessionId: string | null;
   sessionDate: string | null;
-  /** Unread athlete messages in this thread, oldest first. */
-  messages: TrainingLogMessage[];
+  /** Recent thread context, oldest first — both parties, all coaches. */
+  messages: ThreadMessage[];
+  /** Athlete messages inside the window behind this card. */
+  newCount: number;
+}
+
+/** A coach comment shown on a session card — from any coach with access,
+ *  so shared-athlete coaches see each other's feedback. */
+export interface CoachComment {
+  id: string;
+  coachName: string | null;
+  message: string;
+  createdAt: string;
 }
 
 export interface SessionReviewExercise {
@@ -106,12 +144,16 @@ export interface SessionMetricChip {
 export interface ReviewSessionItem {
   kind: 'session';
   key: string;
+  /** review_feed_seen item_key (the session id). */
+  seenKey: string;
   timestamp: string;
   athleteId: string;
   session: TrainingLogSession;
   /** Metrics activated for this athlete/week (RAW, BW, VAS, customs). */
   metrics: SessionMetricChip[];
   exercises: SessionReviewExercise[];
+  /** Existing coach comments on this session (every coach), oldest first. */
+  coachComments: CoachComment[];
 }
 
 export type ReviewFeedItem = ReviewVideoItem | ReviewThreadItem | ReviewSessionItem;
@@ -122,8 +164,44 @@ export interface FetchReviewFeedArgs {
   ownerId: string;
   /** Athletes visible to this coach — scopes every query. */
   athleteIds: string[];
-  /** Session cards only look this far back; videos and questions never age out. */
+  /** The window all three sources look back over. Ignored when an explicit
+   *  windowFromIso is given (history paging). */
   lookbackDays: number;
+  /** 'queue' (default): what THIS coach has not reviewed, oldest first.
+   *  'history': what they HAVE reviewed, newest first — the feed's
+   *  keep-scrolling-past-"all caught up" mode. */
+  mode?: 'queue' | 'history';
+  /** Explicit window start, overriding lookbackDays. History paging walks
+   *  backwards in fixed chunks with these. */
+  windowFromIso?: string;
+  /** Exclusive window end. Omit for "up to now". */
+  windowToIso?: string;
+}
+
+/** How far back one history page reaches, in days. Deeper scrollback pages
+ *  in these chunks rather than fetching everything at once. */
+export const REVIEW_HISTORY_PAGE_DAYS = 30;
+
+/**
+ * The window for one history page. Page 0 is the current lookback window
+ * (up to now); each later page reaches another REVIEW_HISTORY_PAGE_DAYS
+ * further back and ends exactly where the previous one started, so pages
+ * tile the timeline without gaps or overlap.
+ */
+export function historyPageWindow(
+  lookbackDays: number,
+  pageIndex: number,
+  nowMs: number = Date.now(),
+): { windowFromIso: string; windowToIso?: string } {
+  const fromDays = lookbackDays + pageIndex * REVIEW_HISTORY_PAGE_DAYS;
+  const toDays =
+    pageIndex === 0 ? 0 : lookbackDays + (pageIndex - 1) * REVIEW_HISTORY_PAGE_DAYS;
+  return {
+    windowFromIso: new Date(nowMs - fromDays * 86_400_000).toISOString(),
+    ...(toDays === 0
+      ? {}
+      : { windowToIso: new Date(nowMs - toDays * 86_400_000).toISOString() }),
+  };
 }
 
 interface SessionStub {
@@ -132,48 +210,81 @@ interface SessionStub {
   athlete_id: string;
 }
 
-export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
-  const { athleteIds, lookbackDays } = args;
-  if (athleteIds.length === 0) return [];
-  const sinceDate = lookbackSinceDate(lookbackDays);
+/** Keys this coach has already reviewed, as `${item_type}:${item_key}`.
+ *  seen_at >= since is a safe bound: an item can't be seen before it exists,
+ *  so rows older than the window can only belong to out-of-window items. */
+async function fetchSeenKeySet(ownerId: string, sinceIso: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('review_feed_seen')
+    .select('item_type, item_key')
+    .eq('owner_id', ownerId)
+    .gte('seen_at', sinceIso);
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const r of (data ?? []) as { item_type: string; item_key: string }[]) {
+    set.add(`${r.item_type}:${r.item_key}`);
+  }
+  return set;
+}
 
-  // The three sources are independent — fetch them concurrently.
-  const [videoRows, messageRows, sessionRows] = await Promise.all([
+export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<ReviewFeedItem[]> {
+  const { ownerId, athleteIds, lookbackDays, mode = 'queue' } = args;
+  if (athleteIds.length === 0) return [];
+  // An item cannot be seen before it exists, so bounding the seen lookup by
+  // the window start is safe for every page — including deep history pages.
+  const sinceIso =
+    args.windowFromIso ?? new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
+  const sinceDate = sinceIso.slice(0, 10);
+  const untilIso = args.windowToIso ?? null;
+  const untilDate = untilIso?.slice(0, 10) ?? null;
+
+  // The three sources + this coach's seen set are independent — concurrent.
+  const [videoRowsAll, messageRows, sessionRowsAll, seen] = await Promise.all([
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_videos')
         .select('*')
-        .is('coach_reviewed_at', null)
         .eq('uploaded_by', 'athlete')
         .in('athlete_id', athleteIds)
-        .order('created_at', { ascending: true });
+        .gte('created_at', sinceIso);
+      if (untilIso) q = q.lt('created_at', untilIso);
+      const { data, error } = await q.order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogVideo[];
     })(),
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_messages')
         .select('*')
         .eq('sender_type', 'athlete')
-        .is('coach_read_at', null)
         .in('athlete_id', athleteIds)
-        .order('created_at', { ascending: true });
+        .gte('created_at', sinceIso);
+      if (untilIso) q = q.lt('created_at', untilIso);
+      const { data, error } = await q.order('created_at', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogMessage[];
     })(),
     (async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('training_log_sessions')
         .select('*')
         .eq('status', 'completed')
-        .is('coach_reviewed_at', null)
         .in('athlete_id', athleteIds)
-        .gte('date', sinceDate)
-        .order('date', { ascending: true });
+        .gte('date', sinceDate);
+      if (untilDate) q = q.lt('date', untilDate);
+      const { data, error } = await q.order('date', { ascending: true });
       if (error) throw error;
       return (data ?? []) as TrainingLogSession[];
     })(),
+    fetchSeenKeySet(ownerId, sinceIso),
   ]);
+
+  // Per-coach filtering: the queue drops what THIS coach has reviewed
+  // (another coach's review never removes an item — that is the whole
+  // point); history inverts the filter to show exactly those items.
+  const keep = (isSeen: boolean) => (mode === 'history' ? isSeen : !isSeen);
+  const videoRows = videoRowsAll.filter(v => keep(seen.has(`video:${v.id}`)));
+  const sessionRows = sessionRowsAll.filter(s => keep(seen.has(`session:${s.id}`)));
 
   // ── Secondary lookups ────────────────────────────────────────────────────
 
@@ -329,6 +440,134 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     for (const row of rows) exerciseNameById.set(row.id, row.name);
   }
 
+  // ── Threads: candidates, per-coach filtering, context ────────────────────
+
+  // Group the window's athlete messages per thread; the latest message id is
+  // the seen key, so a thread reappears the moment the athlete writes again.
+  interface ThreadCandidate {
+    threadKey: string;
+    athleteId: string;
+    sessionId: string | null;
+    latestId: string;
+    firstAt: string;
+    newCount: number;
+  }
+  const candidateByThread = new Map<string, ThreadCandidate>();
+  for (const m of messageRows) {
+    if (!m.athlete_id) continue;
+    const threadKey = m.session_id ? `session:${m.session_id}` : `general:${m.athlete_id}`;
+    let c = candidateByThread.get(threadKey);
+    if (!c) {
+      c = {
+        threadKey,
+        athleteId: m.athlete_id,
+        sessionId: m.session_id,
+        latestId: m.id,
+        firstAt: m.created_at,
+        newCount: 0,
+      };
+      candidateByThread.set(threadKey, c);
+    }
+    c.latestId = m.id; // messageRows are ordered ascending
+    c.newCount += 1;
+  }
+  const threadCandidates = [...candidateByThread.values()].filter(c =>
+    keep(seen.has(`thread:${c.latestId}`)),
+  );
+
+  // Thread context (both parties, every coach) for the surviving threads,
+  // and existing coach comments for the surviving session cards.
+  const contextSessionIds = threadCandidates
+    .map(c => c.sessionId)
+    .filter((id): id is string => id != null);
+  const contextGeneralAthleteIds = threadCandidates
+    .filter(c => c.sessionId == null)
+    .map(c => c.athleteId);
+  const [sessionThreadMsgs, generalThreadMsgs, sessionCoachMsgs] = await Promise.all([
+    contextSessionIds.length === 0
+      ? Promise.resolve([] as TrainingLogMessage[])
+      : (async () => {
+          const { data, error } = await supabase
+            .from('training_log_messages')
+            .select('*')
+            .in('session_id', contextSessionIds)
+            .order('created_at', { ascending: true });
+          if (error) throw error;
+          return (data ?? []) as TrainingLogMessage[];
+        })(),
+    contextGeneralAthleteIds.length === 0
+      ? Promise.resolve([] as TrainingLogMessage[])
+      : (async () => {
+          const { data, error } = await supabase
+            .from('training_log_messages')
+            .select('*')
+            .is('session_id', null)
+            .in('athlete_id', contextGeneralAthleteIds)
+            .order('created_at', { ascending: true });
+          if (error) throw error;
+          return (data ?? []) as TrainingLogMessage[];
+        })(),
+    sessionRows.length === 0
+      ? Promise.resolve([] as TrainingLogMessage[])
+      : (async () => {
+          const { data, error } = await supabase
+            .from('training_log_messages')
+            .select('*')
+            .eq('sender_type', 'coach')
+            .in('session_id', sessionRows.map(s => s.id))
+            .order('created_at', { ascending: true });
+          if (error) throw error;
+          return (data ?? []) as TrainingLogMessage[];
+        })(),
+  ]);
+
+  // Names for every coach appearing in threads or comments.
+  const coachIds = new Set<string>();
+  for (const m of [...sessionThreadMsgs, ...generalThreadMsgs, ...sessionCoachMsgs]) {
+    if (m.sender_coach_id) coachIds.add(m.sender_coach_id);
+  }
+  const coachNameById = new Map<string, string>();
+  if (coachIds.size > 0) {
+    const { data, error } = await supabase
+      .from('coach_profiles')
+      .select('id, name')
+      .in('id', [...coachIds]);
+    if (error) throw error;
+    for (const row of (data ?? []) as { id: string; name: string }[]) {
+      coachNameById.set(row.id, row.name);
+    }
+  }
+  const toThreadMessage = (m: TrainingLogMessage): ThreadMessage => ({
+    id: m.id,
+    senderType: m.sender_type,
+    coachName:
+      m.sender_type === 'coach'
+        ? (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach'
+        : null,
+    message: m.message,
+    createdAt: m.created_at,
+    seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
+  });
+  const contextByThread = new Map<string, TrainingLogMessage[]>();
+  for (const m of [...sessionThreadMsgs, ...generalThreadMsgs]) {
+    const threadKey = m.session_id ? `session:${m.session_id}` : `general:${m.athlete_id}`;
+    const list = contextByThread.get(threadKey) ?? [];
+    list.push(m);
+    contextByThread.set(threadKey, list);
+  }
+  const coachCommentsBySession = new Map<string, CoachComment[]>();
+  for (const m of sessionCoachMsgs) {
+    if (!m.session_id) continue;
+    const list = coachCommentsBySession.get(m.session_id) ?? [];
+    list.push({
+      id: m.id,
+      coachName: (m.sender_coach_id && coachNameById.get(m.sender_coach_id)) || 'Coach',
+      message: m.message,
+      createdAt: m.created_at,
+    });
+    coachCommentsBySession.set(m.session_id, list);
+  }
+
   // ── Assemble ─────────────────────────────────────────────────────────────
 
   const items: ReviewFeedItem[] = [];
@@ -339,6 +578,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     items.push({
       kind: 'video',
       key: `video:${v.id}`,
+      seenKey: v.id,
       timestamp: v.created_at,
       athleteId: v.athlete_id,
       sessionId: le?.session_id ?? null,
@@ -349,27 +589,21 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     });
   }
 
-  // Group unread messages into one card per thread (session, or general per athlete).
-  const threads = new Map<string, ReviewThreadItem>();
-  for (const m of messageRows) {
-    if (!m.athlete_id) continue;
-    const key = m.session_id ? `thread:${m.session_id}` : `thread:general:${m.athlete_id}`;
-    let t = threads.get(key);
-    if (!t) {
-      t = {
-        kind: 'thread',
-        key,
-        timestamp: m.created_at,
-        athleteId: m.athlete_id,
-        sessionId: m.session_id,
-        sessionDate: m.session_id ? sessionStubById.get(m.session_id)?.date ?? null : null,
-        messages: [],
-      };
-      threads.set(key, t);
-    }
-    t.messages.push(m);
+  const THREAD_CONTEXT_LIMIT = 8;
+  for (const c of threadCandidates) {
+    const context = (contextByThread.get(c.threadKey) ?? []).slice(-THREAD_CONTEXT_LIMIT);
+    items.push({
+      kind: 'thread',
+      key: `thread:${c.threadKey}`,
+      seenKey: c.latestId,
+      timestamp: c.firstAt,
+      athleteId: c.athleteId,
+      sessionId: c.sessionId,
+      sessionDate: c.sessionId ? sessionStubById.get(c.sessionId)?.date ?? null : null,
+      messages: context.map(toThreadMessage),
+      newCount: c.newCount,
+    });
   }
-  items.push(...threads.values());
 
   const exsBySession = new Map<string, TrainingLogExercise[]>();
   for (const ex of sessionExs) {
@@ -381,6 +615,7 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
     items.push({
       kind: 'session',
       key: `session:${s.id}`,
+      seenKey: s.id,
       timestamp: s.completed_at ?? `${s.date}T23:59:59Z`,
       athleteId: s.athlete_id,
       session: s,
@@ -399,10 +634,17 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
           sets: setsByLogEx.get(ex.id) ?? [],
         }),
       ),
+      coachComments: coachCommentsBySession.get(s.id) ?? [],
     });
   }
 
-  items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  // Queue reads oldest→newest so the bottom means caught up; history reads
+  // newest→oldest — diving back in time from the "all caught up" card.
+  items.sort((a, b) =>
+    mode === 'history'
+      ? b.timestamp.localeCompare(a.timestamp)
+      : a.timestamp.localeCompare(b.timestamp),
+  );
   return items;
 }
 
@@ -631,11 +873,20 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
       items.push({
         kind: 'thread',
         key: `${DEMO_KEY_PREFIX}thread`,
+        seenKey: `${DEMO_KEY_PREFIX}thread`,
         timestamp: latest.created_at,
         athleteId: latest.athlete_id,
         sessionId: latest.session_id,
         sessionDate,
-        messages,
+        messages: messages.map(m => ({
+          id: m.id,
+          senderType: m.sender_type,
+          coachName: m.sender_type === 'coach' ? 'Coach' : null,
+          message: m.message,
+          createdAt: m.created_at,
+          seenByAthlete: m.sender_type === 'coach' && m.athlete_read_at != null,
+        })),
+        newCount: messages.filter(m => m.sender_type === 'athlete').length,
       });
     }
   }
@@ -644,6 +895,7 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
   items.push({
     kind: 'video',
     key: `${DEMO_KEY_PREFIX}video`,
+    seenKey: `${DEMO_KEY_PREFIX}video`,
     timestamp: now,
     athleteId: threadAthleteId ?? athleteIds[0] ?? '',
     sessionId: null,
@@ -669,6 +921,28 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
 
 // ─── Seen markers ──────────────────────────────────────────────────────────
 
+export type ReviewItemType = 'video' | 'thread' | 'session';
+
+/**
+ * Record that THIS coach has reviewed one feed item. Per-coach on purpose:
+ * it never hides the item from other coaches. Idempotent (unique on
+ * owner/type/key, duplicates ignored).
+ */
+export async function markReviewItemSeen(
+  ownerId: string,
+  itemType: ReviewItemType,
+  itemKey: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('review_feed_seen')
+    .upsert(
+      { owner_id: ownerId, item_type: itemType, item_key: itemKey },
+      { onConflict: 'owner_id,item_type,item_key', ignoreDuplicates: true },
+    );
+  if (error) throw error;
+  emitInboxChanged();
+}
+
 /** Stamp a completed session as reviewed by the coach (idempotent). */
 export async function markSessionReviewed(sessionId: string): Promise<void> {
   const { error } = await supabase
@@ -693,57 +967,64 @@ export interface ReviewFeedCounts {
 }
 
 /**
- * Cheap card count for the sidebar badge — same filters as fetchReviewFeed
- * but head-only counts (plus one thin select to count distinct message
- * threads), no joins.
+ * Cheap card count for the badges — same window + per-coach seen filtering
+ * as fetchReviewFeed, over thin id-only selects.
  */
 export async function fetchReviewFeedCounts(
+  ownerId: string,
   athleteIds: string[],
   lookbackDays: number = REVIEW_SESSION_LOOKBACK_DAYS,
 ): Promise<ReviewFeedCounts> {
   if (athleteIds.length === 0) return { videos: 0, threads: 0, sessions: 0, total: 0 };
   const sinceDate = lookbackSinceDate(lookbackDays);
+  const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
 
-  const [videos, threadRows, sessions] = await Promise.all([
+  const [videoIds, threadRows, sessionIds, seen] = await Promise.all([
     (async () => {
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('training_log_videos')
-        .select('id', { count: 'exact', head: true })
-        .is('coach_reviewed_at', null)
+        .select('id')
         .eq('uploaded_by', 'athlete')
-        .in('athlete_id', athleteIds);
+        .in('athlete_id', athleteIds)
+        .gte('created_at', sinceIso);
       if (error) throw error;
-      return count ?? 0;
+      return ((data ?? []) as { id: string }[]).map(r => r.id);
     })(),
     (async () => {
       const { data, error } = await supabase
         .from('training_log_messages')
-        .select('session_id, athlete_id')
+        .select('id, session_id, athlete_id, created_at')
         .eq('sender_type', 'athlete')
-        .is('coach_read_at', null)
-        .in('athlete_id', athleteIds);
+        .in('athlete_id', athleteIds)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as { session_id: string | null; athlete_id: string | null }[];
+      return (data ?? []) as { id: string; session_id: string | null; athlete_id: string | null }[];
     })(),
     (async () => {
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('training_log_sessions')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('status', 'completed')
-        .is('coach_reviewed_at', null)
         .in('athlete_id', athleteIds)
         .gte('date', sinceDate);
       if (error) throw error;
-      return count ?? 0;
+      return ((data ?? []) as { id: string }[]).map(r => r.id);
     })(),
+    fetchSeenKeySet(ownerId, sinceIso),
   ]);
 
-  const threadKeys = new Set<string>();
+  // Threads count by their latest athlete message id — same rule as the feed.
+  const latestByThread = new Map<string, string>();
   for (const r of threadRows) {
-    if (r.session_id) threadKeys.add(r.session_id);
-    else if (r.athlete_id) threadKeys.add(`general:${r.athlete_id}`);
+    if (!r.athlete_id) continue;
+    const key = r.session_id ? `session:${r.session_id}` : `general:${r.athlete_id}`;
+    latestByThread.set(key, r.id); // ascending order → last write wins
   }
-  const threads = threadKeys.size;
+
+  const videos = videoIds.filter(id => !seen.has(`video:${id}`)).length;
+  const sessions = sessionIds.filter(id => !seen.has(`session:${id}`)).length;
+  const threads = [...latestByThread.values()].filter(id => !seen.has(`thread:${id}`)).length;
   return { videos, threads, sessions, total: videos + threads + sessions };
 }
 
@@ -758,23 +1039,30 @@ export interface AthleteReviewStatus {
 }
 
 /**
- * Reviewed-vs-completed per athlete over the lookback window. One thin
- * query, aggregated client-side; athletes with no completed sessions in
- * the window are omitted.
+ * Reviewed-vs-completed per athlete over the lookback window, from THIS
+ * coach's perspective (review_feed_seen) — a co-coach's reviews do not
+ * count as yours. Athletes with no completed sessions are omitted.
  */
 export async function fetchReviewStatusByAthlete(
+  ownerId: string,
   athleteIds: string[],
   lookbackDays: number = REVIEW_SESSION_LOOKBACK_DAYS,
 ): Promise<AthleteReviewStatus[]> {
   if (athleteIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from('training_log_sessions')
-    .select('athlete_id, coach_reviewed_at')
-    .eq('status', 'completed')
-    .in('athlete_id', athleteIds)
-    .gte('date', lookbackSinceDate(lookbackDays));
-  if (error) throw error;
-  const rows = (data ?? []) as { athlete_id: string; coach_reviewed_at: string | null }[];
+  const sinceIso = new Date(Date.now() - lookbackDays * 86_400_000).toISOString();
+  const [rows, seen] = await Promise.all([
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_log_sessions')
+        .select('id, athlete_id')
+        .eq('status', 'completed')
+        .in('athlete_id', athleteIds)
+        .gte('date', lookbackSinceDate(lookbackDays));
+      if (error) throw error;
+      return (data ?? []) as { id: string; athlete_id: string }[];
+    })(),
+    fetchSeenKeySet(ownerId, sinceIso),
+  ]);
 
   const byAthlete = new Map<string, AthleteReviewStatus>();
   for (const r of rows) {
@@ -784,7 +1072,7 @@ export async function fetchReviewStatusByAthlete(
       byAthlete.set(r.athlete_id, s);
     }
     s.completed += 1;
-    if (r.coach_reviewed_at != null) s.reviewed += 1;
+    if (seen.has(`session:${r.id}`)) s.reviewed += 1;
   }
   // Most outstanding work first; fully-reviewed athletes sink to the bottom.
   return [...byAthlete.values()].sort(

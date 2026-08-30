@@ -736,6 +736,31 @@ export interface TrainingLogVideo {
   created_at: string;
 }
 
+/** Per-coach review record for the Review feed (migration
+ *  add_review_feed_seen). One row = this coach has reviewed this item;
+ *  other coaches keep their own rows, so a shared athlete's material is
+ *  reviewed by everyone independently. */
+export interface ReviewFeedSeen {
+  id: string;
+  /** The reviewing coach (coach_profiles.id). */
+  owner_id: string;
+  item_type: 'video' | 'thread' | 'session';
+  /** Video id / session id / latest athlete message id of a thread. */
+  item_key: string;
+  seen_at: string;
+}
+
+/** Per-coach inbox read watermark (migration add_coach_thread_reads).
+ *  A thread is unread for a coach when it holds an athlete message newer
+ *  than their last_read_at. thread_key = session id or 'general:<athleteId>'. */
+export interface CoachThreadRead {
+  id: string;
+  /** The reading coach (coach_profiles.id). */
+  owner_id: string;
+  thread_key: string;
+  last_read_at: string;
+}
+
 export interface TrainingLogMessage {
   id: string;
   owner_id: string | null;
@@ -754,7 +779,10 @@ export interface TrainingLogMessage {
   sender_coach_id: string | null;
   message: string;
   /** Timestamp when the coach last read this message. Null = unread by coach.
-   *  Set by the service when the coach views the session. See UF-10 / A5. */
+   *  Set by the service when the coach views the session. See UF-10 / A5.
+   *  POLICY: read state is one-way surveillance — this field is NEVER shown
+   *  in athlete-facing UI. The coach sees athlete_read_at ("Seen") on their
+   *  own messages; the athlete never learns whether the coach has read. */
   coach_read_at: string | null;
   /** Timestamp when the athlete last read this message. Null = unread by athlete.
    *  Set by the service when the athlete views the session. See UF-10 / A5. */
@@ -1315,6 +1343,18 @@ export interface Database {
         Row: TrainingLogMessage & Record<string, unknown>;
         Insert: Partial<Omit<TrainingLogMessage, 'id' | 'created_at' | 'coach_read_at' | 'athlete_read_at'>> & Record<string, unknown>;
         Update: Partial<Omit<TrainingLogMessage, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      review_feed_seen: {
+        Row: ReviewFeedSeen & Record<string, unknown>;
+        Insert: Partial<Omit<ReviewFeedSeen, 'id' | 'seen_at'>> & Record<string, unknown>;
+        Update: Partial<Omit<ReviewFeedSeen, 'id'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      coach_thread_reads: {
+        Row: CoachThreadRead & Record<string, unknown>;
+        Insert: Partial<Omit<CoachThreadRead, 'id'>> & Record<string, unknown>;
+        Update: Partial<Omit<CoachThreadRead, 'id'>> & Record<string, unknown>;
         Relationships: [];
       };
       events: {

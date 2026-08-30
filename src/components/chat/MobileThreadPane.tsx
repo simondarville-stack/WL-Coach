@@ -110,6 +110,14 @@ export function MobileThreadPane({
                 message={m}
                 isOwn={m.sender_type === chat.role}
                 senderLabel={senderLabelFor(m, coachNames)}
+                // Read receipts are one-way by design: the coach sees when
+                // the athlete has read a coach message; the athlete NEVER
+                // sees coach read state. This role gate is the policy.
+                showSeen={
+                  chat.role === 'coach' &&
+                  m.sender_type === 'coach' &&
+                  m.athlete_read_at != null
+                }
               />
             </Fragment>
           ))
@@ -172,11 +180,15 @@ function MessageBubble({
   message,
   isOwn,
   senderLabel,
+  showSeen = false,
 }: {
   message: TrainingLogMessage;
   /** True when the viewer sent this message — right-aligned, accent bubble. */
   isOwn: boolean;
   senderLabel: string | null;
+  /** Append a "Seen" receipt to the stamp line. Caller-gated to coach
+   *  viewers only — athletes must never see coach read state. */
+  showSeen?: boolean;
 }) {
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
@@ -191,7 +203,10 @@ function MessageBubble({
           </div>
         )}
         {message.message}
-        <div className="text-[9px] mt-1 opacity-60 text-right">{formatStamp(message.created_at)}</div>
+        <div className="text-[9px] mt-1 opacity-60 text-right">
+          {formatStamp(message.created_at)}
+          {showSeen && ' · Seen'}
+        </div>
       </div>
     </div>
   );
