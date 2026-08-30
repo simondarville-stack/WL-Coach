@@ -186,13 +186,27 @@ export function ScrubPlayer({
   // frame then only updates when the finger lets go. So: one seek in flight
   // at a time; each 'seeked' (frame painted) immediately issues the newest
   // pending target. Frames paint as fast as the decoder allows mid-drag.
-  const seekState = useRef<{ inFlight: boolean; pending: number | null }>({
-    inFlight: false,
-    pending: null,
-  });
+  const seekState = useRef<{
+    inFlight: boolean;
+    pending: number | null;
+    /** Time the in-flight seek was aimed at — lets 'seeked' tell our seek
+     *  apart from an alien one (a loop wrap racing a pause/scrub). */
+    target: number | null;
+    /** When the in-flight seek was issued — watchdog for a browser that
+     *  swallows a 'seeked' (same-position seeks on some engines). */
+    issuedAt: number;
+  }>({ inFlight: false, pending: null, target: null, issuedAt: 0 });
   /** Frame the last scrub seek targeted — dedupes finger jitter. Cleared
    *  whenever playback moves the clip without us. */
   const lastFrame = useRef<number | null>(null);
+
+  const issueSeek = (el: HTMLVideoElement, t: number) => {
+    const s = seekState.current;
+    s.inFlight = true;
+    s.target = t;
+    s.issuedAt = performance.now();
+    el.currentTime = t;
+  };
 
   const seekTo = (t: number) => {
     const el = videoRef.current;
@@ -207,12 +221,15 @@ export function ScrubPlayer({
     const clamped = Math.min((frame + 0.5) / SCRUB_FPS, Math.max(0, dur - 0.001));
     // The readout follows the finger, even while the paint lags a frame.
     setTime(clamped);
-    if (seekState.current.inFlight) {
-      seekState.current.pending = clamped;
+    const s = seekState.current;
+    // Watchdog: a chain stuck on a swallowed 'seeked' would queue forever —
+    // after 300 ms without completion, seize the element and seek directly.
+    if (s.inFlight && performance.now() - s.issuedAt < 300) {
+      s.pending = clamped;
       return;
     }
-    seekState.current.inFlight = true;
-    el.currentTime = clamped;
+    s.pending = null;
+    issueSeek(el, clamped);
   };
 
   const onSeeked = () => {
@@ -222,10 +239,18 @@ export function ScrubPlayer({
     if (s.pending != null) {
       const next = s.pending;
       s.pending = null;
-      el.currentTime = next; // stay in flight — chain straight to the newest target
-    } else {
-      s.inFlight = false;
+      issueSeek(el, next); // chain straight to the newest target
+      return;
     }
+    if (s.inFlight && s.target != null && Math.abs(el.currentTime - s.target) > 0.02) {
+      // An alien seek completed — a loop wrap that was already queued when
+      // the coach paused to scrub lands the clip on frame 0 / the pre-pause
+      // frame. Re-issue our target so the flash corrects immediately.
+      issueSeek(el, s.target);
+      return;
+    }
+    s.inFlight = false;
+    s.target = null;
   };
 
   /** The two tracked finger positions as distance + midpoint. */
@@ -302,6 +327,12 @@ export function ScrubPlayer({
       d.scrubbed = true;
       setScrubbing(true);
       el.pause();
+      // Rebase on the frame actually on screen NOW: between pointerdown and
+      // the scrub engaging, a playing clip has advanced (or loop-wrapped) —
+      // scrubbing from the stale pointerdown time reads as a jump.
+      d.x = e.clientX;
+      d.t0 = el.currentTime;
+      return;
     }
     seekTo(d.t0 + dx / SCRUB_PX_PER_SECOND);
   };
@@ -392,7 +423,12 @@ export function ScrubPlayer({
         }}
         onPlay={() => {
           setPaused(false);
-          lastFrame.current = null; // playback moves the clip — the cache is stale
+          // Playback moves the clip — the frame cache and any queued scrub
+          // target are stale. Without this, a leftover pending seek fires on
+          // the next 'seeked' (e.g. a loop wrap) and yanks the playing clip
+          // back to an old scrub position.
+          lastFrame.current = null;
+          seekState.current = { inFlight: false, pending: null, target: null, issuedAt: 0 };
         }}
         onPause={() => setPaused(true)}
         onSeeked={onSeeked}
