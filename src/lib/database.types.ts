@@ -568,6 +568,11 @@ export interface GeneralSettings {
   /** Which target metrics the macro review table expands on the active
    *  (selected) week. Null falls back to all three. */
   timeline_week_detail: Array<'reps' | 'max' | 'avg'> | null;
+  /** Coach-defined quick-reaction chips on Review cards. NULL =
+   *  DEFAULT_QUICK_REACTIONS; an empty array means "no chips". */
+  review_quick_reactions: string[] | null;
+  /** Show the 1–5 technique rating control on Review cards. */
+  review_technique_rating_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

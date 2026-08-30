@@ -60,6 +60,10 @@ export interface ReviewVideoItem {
   sessionDate: string | null;
   exerciseName: string;
   video: TrainingLogVideo;
+  /** Log exercise the clip hangs off — the technique rating writes here. */
+  logExerciseId: string;
+  /** Current 1–5 technique rating on that log exercise. */
+  techniqueRating: number | null;
 }
 
 /** One message rendered on a thread card — athlete question or any
@@ -131,6 +135,8 @@ export interface SessionReviewExercise {
   noteText: string | null;
   /** Athlete added this outside the plan. */
   offPlan: boolean;
+  /** Coach's 1–5 technique rating for this exercise (null = unrated). */
+  techniqueRating: number | null;
 }
 
 /** One display-ready metric chip on a session card. Value is formatted
@@ -290,16 +296,16 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
 
   // Videos hang off log exercises; resolve exercise name + session.
   const videoLogExIds = [...new Set(videoRows.map(v => v.log_exercise_id))];
-  const videoLogExs: Pick<TrainingLogExercise, 'id' | 'session_id' | 'exercise_id'>[] =
+  const videoLogExs: Pick<TrainingLogExercise, 'id' | 'session_id' | 'exercise_id' | 'technique_rating'>[] =
     videoLogExIds.length === 0
       ? []
       : await (async () => {
           const { data, error } = await supabase
             .from('training_log_exercises')
-            .select('id, session_id, exercise_id')
+            .select('id, session_id, exercise_id, technique_rating')
             .in('id', videoLogExIds);
           if (error) throw error;
-          return (data ?? []) as Pick<TrainingLogExercise, 'id' | 'session_id' | 'exercise_id'>[];
+          return (data ?? []) as Pick<TrainingLogExercise, 'id' | 'session_id' | 'exercise_id' | 'technique_rating'>[];
         })();
   const logExById = new Map(videoLogExs.map(le => [le.id, le]));
 
@@ -586,6 +592,8 @@ export async function fetchReviewFeed(args: FetchReviewFeedArgs): Promise<Review
       exerciseName:
         (le?.exercise_id && exerciseNameById.get(le.exercise_id)) || 'Exercise',
       video: v,
+      logExerciseId: v.log_exercise_id,
+      techniqueRating: le?.technique_rating ?? null,
     });
   }
 
@@ -750,6 +758,7 @@ function buildSessionReviewExercise(
     gpp,
     noteText: ex.metadata?.text ?? null,
     offPlan: ex.planned_exercise_id == null,
+    techniqueRating: ex.technique_rating,
   };
 }
 
@@ -914,6 +923,8 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
       owner_id: null,
       created_at: now,
     },
+    logExerciseId: 'demo',
+    techniqueRating: null,
   });
 
   return items;
