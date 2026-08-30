@@ -10,6 +10,7 @@
  *     examines in detail is about one second of real life — the pull,
  *     turnover and catch spread across the whole screen width
  *   - after a scrub the clip stays paused on the parked frame; tap resumes
+ *   - slow motion: a speed chip cycles 1× → ½× → ¼×
  *   - desktop: Space toggles, ←/→ step one frame (~1/30 s)
  *
  * Vertical gestures pass through (touch-action: pan-y), so the review reel
@@ -27,6 +28,14 @@ const SCRUB_PX_PER_SECOND = 200;
 const FRAME_STEP_S = 1 / 30;
 /** Finger travel below this is a tap, not a scrub. */
 const TAP_SLOP_PX = 8;
+
+/** Slow-motion cycle: tap the speed chip to step through. ½× and ¼× are the
+ *  useful review speeds — slower than ¼× and stepping frames beats playing. */
+const PLAYBACK_RATES = [1, 0.5, 0.25] as const;
+
+function rateLabel(rate: number): string {
+  return rate === 1 ? '1×' : rate === 0.5 ? '½×' : '¼×';
+}
 
 interface ScrubPlayerProps {
   src: string;
@@ -60,7 +69,15 @@ export function ScrubPlayer({
   const [duration, setDuration] = useState(0);
   const [time, setTime] = useState(0);
   const [scrubbing, setScrubbing] = useState(false);
+  const [rate, setRate] = useState<number>(1);
   const drag = useRef<{ x: number; t0: number; scrubbed: boolean } | null>(null);
+
+  // Slow motion. Applied on change AND on metadata load — some browsers
+  // reset playbackRate when the source (re)loads.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el) el.playbackRate = rate;
+  }, [rate]);
 
   // Reel mode: follow the active card. Runs on transitions only, so a manual
   // pause while the card stays active is respected.
@@ -188,7 +205,10 @@ export function ScrubPlayer({
         loop={loop}
         muted={muted}
         preload={preload}
-        onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
+        onLoadedMetadata={e => {
+          setDuration(e.currentTarget.duration || 0);
+          e.currentTarget.playbackRate = rate;
+        }}
         onPlay={() => setPaused(false)}
         onPause={() => setPaused(true)}
         onTimeUpdate={e => {
@@ -221,6 +241,26 @@ export function ScrubPlayer({
           <Play size={11} className="ml-0.5" />
         </div>
       )}
+
+      {/* Slow motion: cycles 1× → ½× → ¼×. Lit while slowed so the state is
+          visible at a glance. */}
+      <button
+        type="button"
+        onPointerDown={e => e.stopPropagation()}
+        onClick={() =>
+          setRate(prev => {
+            const idx = PLAYBACK_RATES.indexOf(prev as (typeof PLAYBACK_RATES)[number]);
+            return PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
+          })
+        }
+        title="Playback speed"
+        aria-label={`Playback speed ${rateLabel(rate)} — tap to change`}
+        className={`absolute bottom-2.5 right-10 h-6 min-w-6 px-1 rounded-full text-[10px] font-semibold tabular-nums flex items-center justify-center ${
+          rate === 1 ? 'bg-black/55 text-white' : 'bg-[var(--color-accent)] text-white'
+        }`}
+      >
+        {rateLabel(rate)}
+      </button>
 
       <button
         type="button"
