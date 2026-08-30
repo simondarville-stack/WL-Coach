@@ -28,6 +28,7 @@ import type {
 } from '../../lib/reviewFeedService';
 import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
 import { formatDateShort } from '../../lib/dateUtils';
+import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
 // COACH-CONFIG candidate: reaction presets should eventually be coach-defined.
 export const QUICK_REACTIONS = ['👍', '💪 Strong work', '🔥 Great session', '👀 Noted — more later'];
@@ -228,15 +229,28 @@ export function VideoCard({ item, athlete, seen, active, onComment, externalSent
       }}
     >
       <div className="relative h-full rounded-2xl overflow-hidden bg-black">
-        <video
-          ref={ref}
-          src={item.video.video_url}
-          className="w-full h-full object-contain"
-          controls
-          loop
-          playsInline
-          preload="metadata"
-        />
+        {isStreamPlaybackUrl(item.video.video_url) ? (
+          // Cloudflare Stream clip: the embed player streams adaptive HLS on
+          // gym wifi. Autoplay-muted only while the card is in view, mirroring
+          // the reel behaviour of the <video> branch.
+          <iframe
+            src={`${item.video.video_url}?muted=true&preload=metadata${active ? '&autoplay=true' : ''}`}
+            title={item.exerciseName}
+            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen; autoplay"
+            allowFullScreen
+            className="w-full h-full border-0"
+          />
+        ) : (
+          <video
+            ref={ref}
+            src={item.video.video_url}
+            className="w-full h-full object-contain"
+            controls
+            loop
+            playsInline
+            preload="metadata"
+          />
+        )}
         {item.video.description && (
           <div className="absolute bottom-12 left-2 right-2 text-xs text-white bg-black/50 rounded-lg px-2.5 py-1.5 pointer-events-none">
             {item.video.description}

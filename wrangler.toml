@@ -1,15 +1,19 @@
-# Cloudflare Workers (static assets) deploy configuration for EMOS.
+# Cloudflare Workers deploy configuration for EMOS.
 #
-# EMOS is a pure client-side SPA: Vite builds `dist/`, and Supabase is called
-# directly from the browser. There is no server code, so this is an
-# assets-only Worker — no `main`, and deliberately no `binding` (the ASSETS
-# binding is only valid alongside a Worker script).
+# EMOS is a client-side SPA: Vite builds `dist/`, and Supabase is called
+# directly from the browser. The Worker script below exists ONLY for /api/*
+# (run_worker_first) — every other request is served straight from assets and
+# never executes worker code, so the app cannot be taken down by an /api bug.
+#
+# Current /api surface: Cloudflare Stream upload brokering (worker/index.ts).
+# It stays inert (503) until the Stream secrets are set — see the worker's
+# header comment for the three variables.
 #
 # Chosen over Cloudflare Pages: Workers static assets is the platform
 # Cloudflare actively develops, supports the same `_headers` / `_redirects`
-# files, and leaves a door open for R2-backed video or an /api/* route later
-# (add `main` + `assets.run_worker_first = ["/api/*"]` at that point).
+# files, and allows exactly this kind of /api/* addition without moving hosts.
 name = "emos"
+main = "worker/index.ts"
 compatibility_date = "2026-08-28"
 
 # Versioned preview URLs (<version-id>-emos.<subdomain>.workers.dev) are
@@ -28,6 +32,9 @@ preview_urls = false
 
 [assets]
 directory = "./dist"
+
+# Only /api/* executes the worker script; assets win everywhere else.
+run_worker_first = ["/api/*"]
 
 # Client-side routing: serve index.html (200, not 404) for navigation requests
 # that don't match a built asset, so hard refreshes and deep links such as

@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
+import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
 interface VideoLightboxProps {
   src: string;
@@ -47,13 +48,25 @@ export function VideoLightbox({ src, caption, onClose }: VideoLightboxProps) {
           {caption}
         </div>
       )}
-      <video
-        src={src}
-        controls
-        playsInline
-        preload="metadata"
-        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: 'default' }}
-      />
+      {isStreamPlaybackUrl(src) ? (
+        // Cloudflare Stream clip: the embed player carries adaptive HLS on
+        // every browser; a bare <video> can't play the manifest off Safari.
+        <iframe
+          src={`${src}?preload=metadata`}
+          title={caption ?? 'Video'}
+          allow="accelerometer; encrypted-media; picture-in-picture; fullscreen"
+          allowFullScreen
+          style={{ width: 'min(92vw, 960px)', aspectRatio: '16 / 9', border: 'none', maxHeight: '100%' }}
+        />
+      ) : (
+        <video
+          src={src}
+          controls
+          playsInline
+          preload="metadata"
+          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: 'default' }}
+        />
+      )}
     </AdaptiveDialog>
   );
 }

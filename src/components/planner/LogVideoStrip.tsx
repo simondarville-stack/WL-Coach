@@ -11,6 +11,8 @@ import { useRef, useState } from 'react';
 import { FolderPlus, Trash2, Video } from 'lucide-react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
+import { LOG_VIDEO_MAX_SECONDS } from '../../lib/trainingLogService';
+import { isStreamPlaybackUrl, streamThumbnailUrl } from '../../lib/streamUploads';
 import { VideoLightbox } from './VideoLightbox';
 import { Spinner } from '../ui';
 
@@ -134,17 +136,26 @@ export function LogVideoStrip({
                   unreviewed ? 'ring-1 ring-[color:var(--color-accent)]' : ''
                 }`}
               >
-                {/* The #t=0.1 media fragment makes the browser paint the frame
-                    at 0.1 s as a poster, so the strip shows the actual lift
-                    without us generating and storing thumbnails. */}
-                <video
-                  src={`${v.video_url}#t=0.1`}
-                  preload="metadata"
-                  muted
-                  playsInline
-                  tabIndex={-1}
-                  className="w-full h-full object-cover pointer-events-none"
-                />
+                {isStreamPlaybackUrl(v.video_url) ? (
+                  // Stream clips have real server-side thumbnails.
+                  <img
+                    src={streamThumbnailUrl(v.video_url)}
+                    alt=""
+                    className="w-full h-full object-cover pointer-events-none"
+                  />
+                ) : (
+                  /* The #t=0.1 media fragment makes the browser paint the frame
+                     at 0.1 s as a poster, so the strip shows the actual lift
+                     without us generating and storing thumbnails. */
+                  <video
+                    src={`${v.video_url}#t=0.1`}
+                    preload="metadata"
+                    muted
+                    playsInline
+                    tabIndex={-1}
+                    className="w-full h-full object-cover pointer-events-none"
+                  />
+                )}
                 <span className="absolute inset-0 flex items-center justify-center bg-black/25">
                   <span className="w-0 h-0 border-y-[6px] border-y-transparent border-l-[10px] border-l-white ml-0.5" />
                 </span>
@@ -233,6 +244,11 @@ export function LogVideoStrip({
         )}
       </div>
 
+      {/* State the limit up front rather than reporting it after a failed
+          upload — saves the athlete a trim-and-retry round trip. */}
+      {onAdd && !error && (
+        <p className={`mt-1 text-[10px] ${t.label}`}>Clips up to {LOG_VIDEO_MAX_SECONDS} s.</p>
+      )}
       {error && <p className={`mt-1 text-[10px] ${t.error}`}>{error}</p>}
 
       {playing && (

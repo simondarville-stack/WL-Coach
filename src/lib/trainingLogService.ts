@@ -8,6 +8,12 @@ import { supabase } from './supabase';
 import { rankExercises } from './exerciseRanker';
 import { emitInboxChanged } from './inboxEvents';
 import { getOwnerId } from './ownerContext';
+import {
+  deleteStreamVideo,
+  streamEligible,
+  streamUidFromUrl,
+  uploadToStream,
+} from './streamUploads';
 import type {
   TrainingLogSession,
   TrainingLogExercise,
@@ -1019,6 +1025,41 @@ export async function uploadLogVideo(params: {
     );
   }
 
+  // Optional Cloudflare Stream path (see streamUploads.ts): adaptive playback
+  // instead of a raw MP4. Any Stream-side failure falls back to the storage
+  // path below, so enabling Stream can never lose a clip; a failure of OUR
+  // row insert after a successful Stream upload still throws (and frees the
+  // Stream copy) rather than silently uploading twice.
+  if (streamEligible(file)) {
+    let stream: Awaited<ReturnType<typeof uploadToStream>> | null = null;
+    try {
+      stream = await uploadToStream(file);
+    } catch {
+      stream = null; // not configured / offline — storage path takes over
+    }
+    if (stream) {
+      const { data, error } = await supabase
+        .from('training_log_videos')
+        .insert({
+          log_exercise_id: logExerciseId,
+          athlete_id: athleteId,
+          set_number: params.setNumber ?? null,
+          video_url: stream.playbackUrl,
+          storage_path: `stream:${stream.uid}`,
+          description: params.description ?? null,
+          uploaded_by: params.uploadedBy ?? 'athlete',
+          owner_id: params.ownerId ?? null,
+        })
+        .select()
+        .single();
+      if (error) {
+        await deleteStreamVideo(stream.uid);
+        throw error;
+      }
+      return data as TrainingLogVideo;
+    }
+  }
+
   // `name` can be absent or extension-less for a clip handed over straight
   // from a camera capture, so fall back rather than writing a path ending in
   // a stray dot.
@@ -1060,11 +1101,18 @@ export async function uploadLogVideo(params: {
 /** Delete a clip and its stored object. The object goes first so a failure
  *  leaves the row pointing at something that still plays. */
 export async function deleteLogVideo(video: TrainingLogVideo): Promise<void> {
-  // storage_path is null only for rows predating the column; fall back to the
-  // URL-splitting the event-videos path uses.
-  const path = video.storage_path ?? extractStoragePath(video.video_url);
-  if (path) {
-    await supabase.storage.from(LOG_VIDEO_BUCKET).remove([path]);
+  // Stream-hosted clips (storage_path 'stream:<uid>') free the Stream copy
+  // via the worker; everything else lives in the Supabase bucket.
+  if (video.storage_path?.startsWith('stream:')) {
+    const uid = video.storage_path.slice('stream:'.length) || streamUidFromUrl(video.video_url);
+    if (uid) await deleteStreamVideo(uid);
+  } else {
+    // storage_path is null only for rows predating the column; fall back to
+    // the URL-splitting the event-videos path uses.
+    const path = video.storage_path ?? extractStoragePath(video.video_url);
+    if (path) {
+      await supabase.storage.from(LOG_VIDEO_BUCKET).remove([path]);
+    }
   }
   const { error } = await supabase.from('training_log_videos').delete().eq('id', video.id);
   if (error) throw error;
