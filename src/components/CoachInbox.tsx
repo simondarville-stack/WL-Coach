@@ -38,7 +38,9 @@ import {
   fetchInboxThreads,
   fetchSessionRowForSlot,
   fetchSessionSlotRefs,
+  fetchSessionVideos,
   fetchWeekOverview,
+  markLogVideoReviewed,
   type InboxThread,
   type SessionSlotRef,
   type WeekOverview,
@@ -56,7 +58,8 @@ import {
   toLocalISO,
 } from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
-import { onInboxChanged } from '../lib/inboxEvents';
+import { emitInboxChanged, onInboxChanged } from '../lib/inboxEvents';
+import { LogVideoStrip } from './planner/LogVideoStrip';
 import {
   isNotifyEnabled,
   notifyPermission,
@@ -67,7 +70,7 @@ import {
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import { AdaptiveDialog } from './ui/AdaptiveDialog';
-import type { TrainingLogMessage } from '../lib/database.types';
+import type { TrainingLogMessage, TrainingLogVideo } from '../lib/database.types';
 
 /** A unit-thread target from the attach flow. sessionId stays null
  *  until the first message creates the log session row. */
@@ -998,6 +1001,31 @@ function ChatPane({
     onMessagesChanged,
   });
 
+  // Clips attached to this session's logged exercises — shown above the
+  // thread so a unit's footage and its discussion live in one place.
+  const videoSessionId = thread.kind === 'session' ? thread.sessionId ?? unit?.sessionId ?? null : null;
+  const [sessionVideos, setSessionVideos] = useState<TrainingLogVideo[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setSessionVideos([]);
+    if (!videoSessionId) return;
+    fetchSessionVideos(videoSessionId)
+      .then(v => { if (alive) setSessionVideos(v); })
+      .catch(() => undefined); // footage is an extra here — the thread still works
+    return () => { alive = false; };
+  }, [videoSessionId]);
+
+  const onOpenSessionVideo = (v: TrainingLogVideo) => {
+    if (v.coach_reviewed_at != null) return;
+    // Optimistic ring-clear; the marker also feeds the sidebar badges.
+    setSessionVideos(prev =>
+      prev.map(x => (x.id === v.id ? { ...x, coach_reviewed_at: new Date().toISOString() } : x)),
+    );
+    markLogVideoReviewed(v.id)
+      .then(() => emitInboxChanged())
+      .catch(() => undefined);
+  };
+
   // Land the coach ON the first unread message rather than at the bottom of a
   // long thread. Keyed on the id, so it fires once per thread — scrolling on
   // every render would fight the coach's own scrolling.
@@ -1101,6 +1129,34 @@ function ChatPane({
           onSelect={onSelectSubThread}
           unitLabelFor={unitLabelFor}
         />
+      )}
+
+      {sessionVideos.length > 0 && (
+        <div
+          style={{
+            padding: '8px 20px 4px',
+            borderBottom: '0.5px solid var(--color-border-tertiary)',
+            background: 'var(--color-bg-primary)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--color-text-tertiary)',
+            }}
+          >
+            Session videos ({sessionVideos.length})
+          </div>
+          <LogVideoStrip
+            videos={sessionVideos}
+            theme="light"
+            highlightUnreviewed
+            onOpen={onOpenSessionVideo}
+          />
+        </div>
       )}
 
       <div

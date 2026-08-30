@@ -991,6 +991,22 @@ export async function fetchVideosForLogExercises(
 }
 
 /**
+ * All clips attached to one session's logged exercises, oldest first.
+ * Videos hang off log exercises (no session_id on the row), so this is a
+ * two-step join. The inbox session threads show these so a unit's footage
+ * and its discussion live in one place.
+ */
+export async function fetchSessionVideos(sessionId: string): Promise<TrainingLogVideo[]> {
+  const { data, error } = await supabase
+    .from('training_log_exercises')
+    .select('id')
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  const ids = ((data ?? []) as Array<{ id: string }>).map(r => r.id);
+  return fetchVideosForLogExercises(ids);
+}
+
+/**
  * Upload one clip and attach it to a logged exercise.
  *
  * Storage write first, row second: an orphaned object costs bytes, whereas an
