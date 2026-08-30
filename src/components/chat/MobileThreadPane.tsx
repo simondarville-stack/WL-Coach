@@ -16,12 +16,14 @@
  * It calls useThreadChat itself — the surface passes the hook config plus the
  * presentation props, and holds no thread state of its own.
  */
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { Loader2, MessageCircle, Paperclip, Send } from 'lucide-react';
 import { useThreadChat, type UseThreadChatArgs } from '../../hooks/useThreadChat';
 import { AutoGrowTextarea } from '../ui';
 import { formatTime24, formatDateTimeShort } from '../../lib/dateUtils';
-import type { TrainingLogMessage } from '../../lib/database.types';
+import type { TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
+import type { SessionVideoItem } from '../../lib/trainingLogService';
+import { VideoMessageBubble } from './VideoMessageBubble';
 
 export interface MobileThreadPaneProps {
   /** Thread state/logic config — passed straight to useThreadChat. */
@@ -39,6 +41,11 @@ export interface MobileThreadPaneProps {
   attachLabel?: string;
   /** Add iOS safe-area bottom padding to the composer (field app). */
   safeArea?: boolean;
+  /** Session clips interleaved into the timeline as video bubbles (unit
+   *  threads on coach surfaces). Omit for text-only threads. */
+  videos?: SessionVideoItem[];
+  /** Fired when a clip is opened — coach surfaces stamp coach_reviewed_at. */
+  onOpenVideo?: (video: TrainingLogVideo) => void;
 }
 
 export function MobileThreadPane({
@@ -49,10 +56,30 @@ export function MobileThreadPane({
   onAttach = null,
   attachLabel = 'Attach a training unit',
   safeArea = false,
+  videos = [],
+  onOpenVideo,
 }: MobileThreadPaneProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const firstUnreadRef = useRef<HTMLDivElement | null>(null);
   const { messages, coachNames, loading, sending, error, draft, setDraft, send, firstUnreadId } = useThreadChat(chat);
+
+  // The thread timeline: messages and clips merged by timestamp. ISO
+  // timestamps from PostgREST share the +00:00 offset, so a string compare
+  // orders them correctly.
+  const rows = useMemo(() => {
+    type Row =
+      | { key: string; at: string; kind: 'message'; message: TrainingLogMessage }
+      | { key: string; at: string; kind: 'video'; item: SessionVideoItem };
+    const merged: Row[] = [
+      ...messages.map(m => ({
+        key: `m:${m.id}`, at: m.created_at, kind: 'message' as const, message: m,
+      })),
+      ...videos.map(v => ({
+        key: `v:${v.video.id}`, at: v.video.created_at, kind: 'video' as const, item: v,
+      })),
+    ];
+    return merged.sort((a, b) => a.at.localeCompare(b.at));
+  }, [messages, videos]);
 
   // Open on the first unread message when there is one; otherwise at the
   // bottom, as before. Jumping to the bottom past a block of unread messages is
@@ -71,7 +98,7 @@ export function MobileThreadPane({
     }
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, loading, firstUnreadId]);
+  }, [rows.length, loading, firstUnreadId]);
 
   return (
     <>
@@ -81,7 +108,7 @@ export function MobileThreadPane({
             <Loader2 size={14} className="animate-spin" />
             Loading…
           </div>
-        ) : messages.length === 0 ? (
+        ) : rows.length === 0 ? (
           // Suppress the "say hi" invitation when the load itself failed —
           // the error strip below carries the real state. Without this guard
           // a failed load reads as a successful empty thread AND an error.
@@ -93,11 +120,23 @@ export function MobileThreadPane({
             </div>
           )
         ) : (
-          messages.map(m => (
-            <Fragment key={m.id}>
+          rows.map(row =>
+            row.kind === 'video' ? (
+              <VideoMessageBubble
+                key={row.key}
+                item={row.item}
+                isOwn={row.item.video.uploaded_by === chat.role}
+                theme="dark"
+                // The unwatched ring is coach-facing state — never shown to
+                // the athlete, same one-way policy as read receipts.
+                unreviewed={chat.role === 'coach' && row.item.video.coach_reviewed_at == null}
+                onOpen={onOpenVideo}
+              />
+            ) : (
+            <Fragment key={row.key}>
               {/* Where the reader left off. Same marker the coach inbox draws,
                   from the same frozen boundary in useThreadChat. */}
-              {m.id === firstUnreadId && (
+              {row.message.id === firstUnreadId && (
                 <div ref={firstUnreadRef} className="flex items-center gap-2 py-0.5">
                   <span className="flex-1 h-px bg-blue-500/40" />
                   <span className="text-[9px] font-semibold uppercase tracking-wider text-blue-400">
@@ -107,20 +146,21 @@ export function MobileThreadPane({
                 </div>
               )}
               <MessageBubble
-                message={m}
-                isOwn={m.sender_type === chat.role}
-                senderLabel={senderLabelFor(m, coachNames)}
+                message={row.message}
+                isOwn={row.message.sender_type === chat.role}
+                senderLabel={senderLabelFor(row.message, coachNames)}
                 // Read receipts are one-way by design: the coach sees when
                 // the athlete has read a coach message; the athlete NEVER
                 // sees coach read state. This role gate is the policy.
                 showSeen={
                   chat.role === 'coach' &&
-                  m.sender_type === 'coach' &&
-                  m.athlete_read_at != null
+                  row.message.sender_type === 'coach' &&
+                  row.message.athlete_read_at != null
                 }
               />
             </Fragment>
-          ))
+            ),
+          )
         )}
       </div>
 

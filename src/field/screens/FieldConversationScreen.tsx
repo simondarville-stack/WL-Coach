@@ -36,9 +36,9 @@ import {
   defaultSlotLabel,
   type InboxThread,
   type SessionSlotRef,
+  type SessionVideoItem,
 } from '../../lib/trainingLogService';
 import { emitInboxChanged } from '../../lib/inboxEvents';
-import { LogVideoStrip } from '../../components/planner/LogVideoStrip';
 import { type ThreadChatUnit } from '../../hooks/useThreadChat';
 import { MobileThreadPane } from '../../components/chat/MobileThreadPane';
 import {
@@ -165,11 +165,11 @@ export function FieldConversationScreen() {
     setView({ kind: 'unit', unit: { ...picked, sessionId } });
   };
 
-  // Clips attached to the open unit's session — shown above the thread so
-  // the unit's footage and its discussion live in one place. sessionId is
-  // null for a not-yet-logged unit (attach flow): no session, no clips.
+  // Clips attached to the open unit's session — interleaved with the thread's
+  // messages by timestamp (MobileThreadPane merges them). sessionId is null
+  // for a not-yet-logged unit (attach flow): no session, no clips.
   const videoSessionId = view.kind === 'unit' ? view.unit.sessionId : null;
-  const [sessionVideos, setSessionVideos] = useState<TrainingLogVideo[]>([]);
+  const [sessionVideos, setSessionVideos] = useState<SessionVideoItem[]>([]);
   useEffect(() => {
     let alive = true;
     setSessionVideos([]);
@@ -183,7 +183,11 @@ export function FieldConversationScreen() {
   const onOpenSessionVideo = (v: TrainingLogVideo) => {
     if (v.coach_reviewed_at != null) return;
     setSessionVideos(prev =>
-      prev.map(x => (x.id === v.id ? { ...x, coach_reviewed_at: new Date().toISOString() } : x)),
+      prev.map(x =>
+        x.video.id === v.id
+          ? { ...x, video: { ...x.video, coach_reviewed_at: new Date().toISOString() } }
+          : x,
+      ),
     );
     markLogVideoReviewed(v.id)
       .then(() => emitInboxChanged())
@@ -244,20 +248,6 @@ export function FieldConversationScreen() {
 
         {error && <p className="text-[11px] text-red-400 px-4 py-1">{error}</p>}
 
-        {inUnit && sessionVideos.length > 0 && (
-          <div className="px-3 py-2 border-b border-[color:var(--color-border-tertiary)] shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--color-text-secondary)]">
-              Session videos ({sessionVideos.length})
-            </div>
-            <LogVideoStrip
-              videos={sessionVideos}
-              theme="dark"
-              highlightUnreviewed
-              onOpen={onOpenSessionVideo}
-            />
-          </div>
-        )}
-
         <ThreadChat
           key={inUnit ? `unit:${unit!.weekStart}:${unit!.dayIndex}` : 'general'}
           athleteId={athleteId}
@@ -273,6 +263,8 @@ export function FieldConversationScreen() {
           }
           onMessagesChanged={loadThreads}
           onAttach={!inUnit ? () => setPickerOpen(true) : null}
+          videos={inUnit ? sessionVideos : []}
+          onOpenVideo={onOpenSessionVideo}
         />
       </div>
 
@@ -376,6 +368,8 @@ function ThreadChat({
   unreadHint,
   onMessagesChanged,
   onAttach,
+  videos,
+  onOpenVideo,
 }: {
   athleteId: string;
   /** The athlete's host environment — sessions created by the attach
@@ -389,6 +383,9 @@ function ThreadChat({
   unreadHint: number;
   onMessagesChanged: () => Promise<void>;
   onAttach: (() => void) | null;
+  /** The unit's session clips, interleaved into the thread by timestamp. */
+  videos: SessionVideoItem[];
+  onOpenVideo: (video: TrainingLogVideo) => void;
 }) {
   return (
     <MobileThreadPane
@@ -414,6 +411,8 @@ function ThreadChat({
       onAttach={onAttach}
       attachLabel="Attach a training unit"
       safeArea
+      videos={videos}
+      onOpenVideo={onOpenVideo}
     />
   );
 }

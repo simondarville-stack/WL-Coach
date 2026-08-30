@@ -990,20 +990,46 @@ export async function fetchVideosForLogExercises(
   return (data ?? []) as TrainingLogVideo[];
 }
 
+/** One session clip with its exercise resolved — what the inbox threads
+ *  render as a video bubble. */
+export interface SessionVideoItem {
+  video: TrainingLogVideo;
+  /** Catalogue name of the exercise the clip hangs off. Null when the
+   *  exercise was deleted or the row is an off-plan note. */
+  exerciseName: string | null;
+}
+
 /**
- * All clips attached to one session's logged exercises, oldest first.
- * Videos hang off log exercises (no session_id on the row), so this is a
- * two-step join. The inbox session threads show these so a unit's footage
- * and its discussion live in one place.
+ * All clips attached to one session's logged exercises, oldest first, with
+ * exercise names resolved. Videos hang off log exercises (no session_id on
+ * the row), so this is a two-step join. The inbox session threads interleave
+ * these with the messages so a unit's footage and its discussion read as one
+ * conversation.
  */
-export async function fetchSessionVideos(sessionId: string): Promise<TrainingLogVideo[]> {
+export async function fetchSessionVideos(sessionId: string): Promise<SessionVideoItem[]> {
   const { data, error } = await supabase
     .from('training_log_exercises')
-    .select('id')
+    .select('id, exercise_id')
     .eq('session_id', sessionId);
   if (error) throw error;
-  const ids = ((data ?? []) as Array<{ id: string }>).map(r => r.id);
-  return fetchVideosForLogExercises(ids);
+  const exRows = (data ?? []) as Array<{ id: string; exercise_id: string | null }>;
+  const videos = await fetchVideosForLogExercises(exRows.map(r => r.id));
+  if (videos.length === 0) return [];
+
+  const exerciseIds = [
+    ...new Set(exRows.map(r => r.exercise_id).filter((x): x is string => x != null)),
+  ];
+  const nameById = new Map<string, string>();
+  if (exerciseIds.length > 0) {
+    // Name lookup is cosmetic — a failure still renders the clips.
+    const { data: exs } = await supabase.from('exercises').select('id, name').in('id', exerciseIds);
+    for (const e of (exs ?? []) as Array<{ id: string; name: string }>) nameById.set(e.id, e.name);
+  }
+  const exerciseIdByLogEx = new Map(exRows.map(r => [r.id, r.exercise_id]));
+  return videos.map(v => {
+    const exerciseId = exerciseIdByLogEx.get(v.log_exercise_id) ?? null;
+    return { video: v, exerciseName: exerciseId ? nameById.get(exerciseId) ?? null : null };
+  });
 }
 
 /**
