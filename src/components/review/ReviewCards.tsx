@@ -9,7 +9,7 @@
  * Every card carries a ComposeBar: quick-reaction chips + a comment box that
  * posts into the existing athlete-visible message thread.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -27,6 +27,7 @@ import type {
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
 import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
+import { ScrubPlayer } from '../planner/ScrubPlayer';
 import { VideoThumb } from '../planner/VideoThumb';
 import { formatDateShort } from '../../lib/dateUtils';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
@@ -293,26 +294,12 @@ export function VideoCard({
   onRateTechnique,
   externalSent,
 }: VideoCardProps) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-
   // Mount the player the first time the card comes near the viewport and
   // keep it mounted after — scrolling back must not restart a buffered clip.
   const [playerMounted, setPlayerMounted] = useState(near);
   useEffect(() => {
     if (near) setPlayerMounted(true);
   }, [near]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (active) {
-      // Muted autoplay, reel-style; the native controls allow unmuting.
-      el.muted = true;
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
-  }, [active, playerMounted]);
 
   const context = [
     item.exerciseName,
@@ -362,14 +349,15 @@ export function VideoCard({
             className="w-full h-full border-0"
           />
         ) : (
-          <video
-            ref={ref}
+          // Scrub player, reel-wired: autoplays muted while the card is in
+          // view; tap pauses, sideways drag walks frames. Only the active
+          // card buffers ahead — neighbours stop at metadata.
+          <ScrubPlayer
             src={item.video.video_url}
-            className="w-full h-full object-contain"
-            controls
+            active={active}
             loop
-            playsInline
-            preload="metadata"
+            layout="fill"
+            preload={active ? 'auto' : 'metadata'}
           />
         )}
         {item.video.description && (
