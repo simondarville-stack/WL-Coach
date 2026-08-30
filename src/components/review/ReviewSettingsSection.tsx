@@ -222,9 +222,8 @@ export function ReviewSettingsSection({
           <div>
             <h2 className="text-lg font-medium text-gray-900 mb-1">Technique rating</h2>
             <p className="text-sm text-gray-600">
-              Rate technique 1–5 straight from Review cards — on each video clip and on every
-              exercise of a session card. Ratings are stored on the logged exercise and shown in
-              Log mode.
+              Rate technique 1–5 straight from Review — on each video clip. Ratings are
+              stored on the logged exercise and shown in Log mode.
             </p>
           </div>
           <Toggle

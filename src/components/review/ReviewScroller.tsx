@@ -531,11 +531,6 @@ export function ReviewScroller() {
           seen={tag === 'history' || seen.has(item.key)}
           onComment={text => commentOnSession(item, item.session.id, text)}
           reactions={quickReactions}
-          onRateTechnique={
-            techniqueEnabled
-              ? (logExerciseId, rating) => rateTechnique(item, logExerciseId, rating)
-              : null
-          }
           externalSent={keyboardSent[item.key]}
         />
       )}

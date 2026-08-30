@@ -444,9 +444,6 @@ interface SessionCardProps {
   onComment: (text: string) => Promise<void>;
   /** The coach's quick-reaction chips. */
   reactions?: string[];
-  /** Per-exercise technique rating; null hides the controls (feature
-   *  toggled off in Settings → Review). */
-  onRateTechnique?: ((logExerciseId: string, rating: number | null) => Promise<void>) | null;
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
 }
@@ -457,7 +454,6 @@ export function SessionCard({
   seen,
   onComment,
   reactions,
-  onRateTechnique,
   externalSent,
 }: SessionCardProps) {
   const s = item.session;
@@ -571,18 +567,6 @@ export function SessionCard({
                   )}
                   {ex.performedNotes.trim() !== '' && (
                     <div className="text-[11px] text-gray-500 mt-0.5">{ex.performedNotes}</div>
-                  )}
-                  {/* Technique rating per exercise — not on note sentinel rows,
-                      there is no lift to rate. */}
-                  {onRateTechnique && ex.noteText == null && (
-                    <div className="mt-1">
-                      <TechniqueRating
-                        value={ex.techniqueRating}
-                        onRate={rating => onRateTechnique(ex.id, rating)}
-                        theme="light"
-                        label={false}
-                      />
-                    </div>
                   )}
                 </div>
               </div>
