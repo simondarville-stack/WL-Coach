@@ -58,7 +58,10 @@ function FieldLayout() {
               to={tab.to}
               end={tab.end}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-0.5 px-4 py-1.5 rounded text-[length:var(--text-caption)] uppercase tracking-wide font-semibold transition-colors ${
+                // flex-1 + min-w-0, not fixed px-4: five tabs must divide
+                // whatever width the phone has instead of dictating their own
+                // (px-4 made the bar wider than a 375px screen).
+                `flex-1 min-w-0 flex flex-col items-center gap-0.5 px-1 py-1.5 rounded text-[length:var(--text-caption)] uppercase tracking-wide font-semibold transition-colors ${
                   isActive ? 'text-[color:var(--color-accent)]' : 'text-[color:var(--color-text-secondary)] hover:text-[color:var(--color-text-primary)]'
                 }`
               }
@@ -75,14 +78,14 @@ function FieldLayout() {
                 )}
                 {tab.label === 'Review' && reviewCount > 0 && (
                   <span
-                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center"
+                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--color-accent)] text-white text-[length:var(--text-micro)] font-bold flex items-center justify-center"
                     aria-label={`${reviewCount} to review`}
                   >
                     {reviewCount > 9 ? '9+' : reviewCount}
                   </span>
                 )}
               </span>
-              {tab.label}
+              <span className="max-w-full truncate">{tab.label}</span>
             </NavLink>
           ))}
         </div>

@@ -933,8 +933,41 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
 export const LOG_VIDEO_BUCKET = 'log-videos';
 
 /** Mirrors the bucket's own file_size_limit so the UI can reject an oversized
- *  file before spending the upload rather than after. */
-export const LOG_VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+ *  file before spending the upload rather than after. The real product cap is
+ *  duration (below); 400 MB is headroom for a 60 s clip off a 4K60 camera. */
+export const LOG_VIDEO_MAX_BYTES = 400 * 1024 * 1024;
+
+/** Longest clip an athlete may attach. Duration, not bytes, is what a coach
+ *  actually reviews — one lift plus setup fits comfortably in a minute.
+ *  COACH-CONFIG candidate. */
+export const LOG_VIDEO_MAX_SECONDS = 60;
+
+/**
+ * Read a video file's duration from its metadata, without uploading or
+ * decoding frames. Resolves null when the browser cannot read it (exotic
+ * container, iOS quirks) — callers should treat null as "unknown, allow"
+ * rather than blocking a legitimate clip on a probe failure.
+ */
+export function readVideoDurationSeconds(file: File): Promise<number | null> {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    const finish = (value: number | null) => {
+      URL.revokeObjectURL(url);
+      probe.removeAttribute('src');
+      resolve(value);
+    };
+    probe.onloadedmetadata = () => {
+      const d = probe.duration;
+      finish(Number.isFinite(d) ? d : null);
+    };
+    probe.onerror = () => finish(null);
+    // A probe that hangs (no metadata event) must not wedge the upload flow.
+    window.setTimeout(() => finish(null), 5_000);
+    probe.src = url;
+  });
+}
 
 /** Clips for a set of log exercises, oldest first. Returns [] for an empty
  *  input rather than issuing a pointless `in ()` query. */
@@ -973,6 +1006,16 @@ export async function uploadLogVideo(params: {
   if (file.size > LOG_VIDEO_MAX_BYTES) {
     throw new Error(
       `Video is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is ${LOG_VIDEO_MAX_BYTES / 1024 / 1024} MB.`,
+    );
+  }
+
+  // Duration is the product cap; bytes above are just bucket headroom.
+  // A null probe (unreadable metadata) allows the upload — better to accept
+  // a legitimate clip than to block on a browser quirk.
+  const duration = await readVideoDurationSeconds(file);
+  if (duration != null && duration > LOG_VIDEO_MAX_SECONDS + 1) {
+    throw new Error(
+      `Video is ${Math.round(duration)} s long — the limit is ${LOG_VIDEO_MAX_SECONDS} s. Trim it to the lift and try again.`,
     );
   }
 
