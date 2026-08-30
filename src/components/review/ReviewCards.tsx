@@ -462,9 +462,6 @@ interface SessionCardProps {
   onComment: (text: string) => Promise<void>;
   /** The coach's quick-reaction chips. */
   reactions?: string[];
-  /** Per-exercise technique rating; null hides the controls (feature
-   *  toggled off in Settings → Review). */
-  onRateTechnique?: ((logExerciseId: string, rating: number | null) => Promise<void>) | null;
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
 }
@@ -475,7 +472,6 @@ export function SessionCard({
   seen,
   onComment,
   reactions,
-  onRateTechnique,
   externalSent,
 }: SessionCardProps) {
   const s = item.session;
@@ -491,8 +487,11 @@ export function SessionCard({
       kindIcon={<ClipboardList size={16} />}
       composer={{ placeholder: 'Comment on this session…', onSend: onComment, reactions, externalSent }}
     >
-      {/* Light panel so StackedNotation's token colours render as designed. */}
-      <div className="h-full rounded-2xl bg-white overflow-y-auto">
+      {/* Light panel so StackedNotation's token colours render as designed.
+          data-theme="light" re-scopes the CSS tokens to their light values —
+          without it, the dark coach app's token set leaks in and the
+          notation renders near-white on the white card (unreadable). */}
+      <div data-theme="light" className="h-full rounded-2xl bg-white overflow-y-auto">
         <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
           {headerBits.length > 0 && (
@@ -586,18 +585,6 @@ export function SessionCard({
                   )}
                   {ex.performedNotes.trim() !== '' && (
                     <div className="text-[11px] text-gray-500 mt-0.5">{ex.performedNotes}</div>
-                  )}
-                  {/* Technique rating per exercise — not on note sentinel rows,
-                      there is no lift to rate. */}
-                  {onRateTechnique && ex.noteText == null && (
-                    <div className="mt-1">
-                      <TechniqueRating
-                        value={ex.techniqueRating}
-                        onRate={rating => onRateTechnique(ex.id, rating)}
-                        theme="light"
-                        label={false}
-                      />
-                    </div>
                   )}
                 </div>
               </div>
