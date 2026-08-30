@@ -11,6 +11,7 @@ import { getOwnerId } from './ownerContext';
 import {
   deleteStreamVideo,
   streamEligible,
+  streamThumbnailUrl,
   streamUidFromUrl,
   uploadToStream,
 } from './streamUploads';
@@ -975,6 +976,69 @@ export function readVideoDurationSeconds(file: File): Promise<number | null> {
   });
 }
 
+/** Longest edge of the poster JPEG captured at upload. Big enough for the
+ *  chat-bubble tile on a retina phone, small enough to stay ~20-40 KB. */
+const POSTER_MAX_EDGE = 480;
+
+/**
+ * Capture one frame of the clip as a small JPEG, client-side, before upload.
+ * This is what makes every later tile an <img> instead of a <video> that
+ * pulls byte ranges of the full MP4 just to paint a poster. Best-effort:
+ * resolves null on any failure or after a timeout, and the upload proceeds
+ * without a thumbnail (tiles fall back to the lazy <video> poster).
+ */
+export function captureVideoPoster(file: File): Promise<Blob | null> {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    let settled = false;
+    const finish = (value: Blob | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      video.removeAttribute('src');
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(null), 8_000);
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      finish(null);
+    };
+    // Seek off frame zero (often black) once the first frame is decodable;
+    // draw when the seek lands.
+    video.onloadeddata = () => {
+      try {
+        video.currentTime = 0.1;
+      } catch {
+        window.clearTimeout(timer);
+        finish(null);
+      }
+    };
+    video.onseeked = () => {
+      window.clearTimeout(timer);
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return finish(null);
+      const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return finish(null);
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(b => finish(b), 'image/jpeg', 0.72);
+      } catch {
+        finish(null);
+      }
+    };
+    video.src = url;
+  });
+}
+
 /** Clips for a set of log exercises, oldest first. Returns [] for an empty
  *  input rather than issuing a pointless `in ()` query. */
 export async function fetchVideosForLogExercises(
@@ -1088,6 +1152,9 @@ export async function uploadLogVideo(params: {
           set_number: params.setNumber ?? null,
           video_url: stream.playbackUrl,
           storage_path: `stream:${stream.uid}`,
+          // Stream renders real server-side thumbnails; store the URL so
+          // every tile takes the <img> path without branching.
+          thumbnail_url: streamThumbnailUrl(stream.playbackUrl),
           description: params.description ?? null,
           uploaded_by: params.uploadedBy ?? 'athlete',
           owner_id: params.ownerId ?? null,
@@ -1109,14 +1176,35 @@ export async function uploadLogVideo(params: {
   const ext = (rawExt || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '');
   const storagePath = `${athleteId}/${logExerciseId}/${Date.now()}.${ext}`;
 
+  // Objects are timestamp-named and never rewritten, so let them cache hard —
+  // a coach replaying a clip should not re-download it.
   const { error: uploadError } = await supabase.storage
     .from(LOG_VIDEO_BUCKET)
-    .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+    .upload(storagePath, file, { cacheControl: '31536000', upsert: false });
   if (uploadError) throw uploadError;
 
   const { data: publicUrlData } = supabase.storage
     .from(LOG_VIDEO_BUCKET)
     .getPublicUrl(storagePath);
+
+  // Poster JPEG next to the clip (<path>.jpg — deleteLogVideo relies on that
+  // convention). Best-effort: a failed capture or upload just means tiles
+  // fall back to the lazy <video> poster for this clip.
+  let thumbnailUrl: string | null = null;
+  const poster = await captureVideoPoster(file);
+  if (poster) {
+    const posterPath = `${storagePath}.jpg`;
+    const { error: posterError } = await supabase.storage
+      .from(LOG_VIDEO_BUCKET)
+      .upload(posterPath, poster, {
+        cacheControl: '31536000',
+        upsert: false,
+        contentType: 'image/jpeg',
+      });
+    if (!posterError) {
+      thumbnailUrl = supabase.storage.from(LOG_VIDEO_BUCKET).getPublicUrl(posterPath).data.publicUrl;
+    }
+  }
 
   const { data, error } = await supabase
     .from('training_log_videos')
@@ -1126,6 +1214,7 @@ export async function uploadLogVideo(params: {
       set_number: params.setNumber ?? null,
       video_url: publicUrlData.publicUrl,
       storage_path: storagePath,
+      thumbnail_url: thumbnailUrl,
       description: params.description ?? null,
       uploaded_by: params.uploadedBy ?? 'athlete',
       owner_id: params.ownerId ?? null,
@@ -1134,7 +1223,7 @@ export async function uploadLogVideo(params: {
     .single();
 
   if (error) {
-    await supabase.storage.from(LOG_VIDEO_BUCKET).remove([storagePath]);
+    await supabase.storage.from(LOG_VIDEO_BUCKET).remove([storagePath, `${storagePath}.jpg`]);
     throw error;
   }
   return data as TrainingLogVideo;
@@ -1153,7 +1242,9 @@ export async function deleteLogVideo(video: TrainingLogVideo): Promise<void> {
     // the URL-splitting the event-videos path uses.
     const path = video.storage_path ?? extractStoragePath(video.video_url);
     if (path) {
-      await supabase.storage.from(LOG_VIDEO_BUCKET).remove([path]);
+      // The poster lives at <path>.jpg (see uploadLogVideo); removing a
+      // missing object is a no-op, so pre-thumbnail rows are unaffected.
+      await supabase.storage.from(LOG_VIDEO_BUCKET).remove([path, `${path}.jpg`]);
     }
   }
   const { error } = await supabase.from('training_log_videos').delete().eq('id', video.id);

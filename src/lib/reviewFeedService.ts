@@ -917,6 +917,7 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
       set_number: 3,
       video_url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
       storage_path: null,
+      thumbnail_url: null,
       description: 'Example clip — a real card plays the video the athlete attached to a set.',
       uploaded_by: 'athlete',
       coach_reviewed_at: null,
