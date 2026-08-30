@@ -112,13 +112,42 @@ export function ScrubPlayer({
     else el.pause();
   };
 
+  // Seek chaining. Setting currentTime on every pointermove while the
+  // previous seek is still decoding makes browsers coalesce them all — the
+  // frame then only updates when the finger lets go. So: one seek in flight
+  // at a time; each 'seeked' (frame painted) immediately issues the newest
+  // pending target. Frames paint as fast as the decoder allows mid-drag.
+  const seekState = useRef<{ inFlight: boolean; pending: number | null }>({
+    inFlight: false,
+    pending: null,
+  });
+
   const seekTo = (t: number) => {
     const el = videoRef.current;
     if (!el) return;
     const dur = Number.isFinite(el.duration) ? el.duration : 0;
     const clamped = Math.min(Math.max(0, t), Math.max(0, dur - 0.001));
-    el.currentTime = clamped;
+    // The readout follows the finger, even while the paint lags a frame.
     setTime(clamped);
+    if (seekState.current.inFlight) {
+      seekState.current.pending = clamped;
+      return;
+    }
+    seekState.current.inFlight = true;
+    el.currentTime = clamped;
+  };
+
+  const onSeeked = () => {
+    const el = videoRef.current;
+    const s = seekState.current;
+    if (!el) return;
+    if (s.pending != null) {
+      const next = s.pending;
+      s.pending = null;
+      el.currentTime = next; // stay in flight — chain straight to the newest target
+    } else {
+      s.inFlight = false;
+    }
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -211,9 +240,12 @@ export function ScrubPlayer({
         }}
         onPlay={() => setPaused(false)}
         onPause={() => setPaused(true)}
+        onSeeked={onSeeked}
         onTimeUpdate={e => {
-          // Keeps the bar honest on seeks/loops even without the rAF tick.
-          if (e.currentTarget.paused) setTime(e.currentTarget.currentTime);
+          // Keeps the bar honest on seeks/loops even without the rAF tick —
+          // but not mid-scrub, where the readout follows the finger and the
+          // painted frame lags a seek behind.
+          if (e.currentTarget.paused && !scrubbing) setTime(e.currentTarget.currentTime);
         }}
         className="pointer-events-none"
         style={videoStyle}
