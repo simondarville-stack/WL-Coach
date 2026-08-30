@@ -733,6 +733,9 @@ export interface TrainingLogVideo {
   /** Object key inside the `log-videos` bucket. Null only for rows written
    *  before the column existed; deletes fall back to parsing the URL. */
   storage_path: string | null;
+  /** Poster JPEG captured at upload (or the Stream thumbnail). Null on rows
+   *  predating the column — tiles fall back to a lazy <video> poster. */
+  thumbnail_url: string | null;
   description: string | null;
   uploaded_by: 'athlete' | 'coach';
   /** Stamped the first time a coach opens the clip — drives "new footage". */

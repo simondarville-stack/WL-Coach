@@ -480,6 +480,19 @@ export function ReviewScroller() {
   const total = items?.length ?? 0;
   const seenCount = items ? items.filter(i => seen.has(i.key)).length : 0;
 
+  // Scroll-position index over every rendered card (queue + end + history),
+  // so video cards know whether they are the active card or its neighbour —
+  // only those mount a real player; the rest render a cheap poster.
+  const cardIndexByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    let i = 0;
+    for (const it of displayItems ?? []) map.set(it.key, i++);
+    map.set('end', i++);
+    for (const it of historyItems) map.set(it.key, i++);
+    return map;
+  }, [displayItems, historyItems]);
+  const activeCardIdx = (activeKey ? cardIndexByKey.get(activeKey) : undefined) ?? 0;
+
   /** One full-height snap section. History cards render as already-seen and
    *  carry a corner tag; their composers still post for real. */
   const renderCard = (item: ReviewFeedItem, tag: 'demo' | 'history' | null) => (
@@ -504,6 +517,7 @@ export function ReviewScroller() {
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
           active={activeKey === item.key}
+          near={Math.abs((cardIndexByKey.get(item.key) ?? 0) - activeCardIdx) <= 1}
           onComment={text =>
             commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
           }

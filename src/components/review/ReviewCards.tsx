@@ -27,6 +27,7 @@ import type {
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
 import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
+import { VideoThumb } from '../planner/VideoThumb';
 import { formatDateShort } from '../../lib/dateUtils';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
@@ -267,6 +268,10 @@ interface VideoCardProps {
   seen: boolean;
   /** Card is the one currently in view — drives autoplay. */
   active: boolean;
+  /** Card is the active one or its direct neighbour — the only cards that
+   *  mount a real player. Everything further away renders a cheap poster,
+   *  so a 20-clip queue doesn't fire 20 video downloads on load. */
+  near: boolean;
   onComment: (text: string) => Promise<void>;
   /** The coach's quick-reaction chips. */
   reactions?: string[];
@@ -282,12 +287,20 @@ export function VideoCard({
   athlete,
   seen,
   active,
+  near,
   onComment,
   reactions,
   onRateTechnique,
   externalSent,
 }: VideoCardProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
+
+  // Mount the player the first time the card comes near the viewport and
+  // keep it mounted after — scrolling back must not restart a buffered clip.
+  const [playerMounted, setPlayerMounted] = useState(near);
+  useEffect(() => {
+    if (near) setPlayerMounted(true);
+  }, [near]);
 
   useEffect(() => {
     const el = ref.current;
@@ -299,7 +312,7 @@ export function VideoCard({
     } else {
       el.pause();
     }
-  }, [active]);
+  }, [active, playerMounted]);
 
   const context = [
     item.exerciseName,
@@ -332,7 +345,12 @@ export function VideoCard({
       }
     >
       <div className="relative h-full rounded-2xl overflow-hidden bg-black">
-        {isStreamPlaybackUrl(item.video.video_url) ? (
+        {!playerMounted ? (
+          // Far-offscreen card: poster only (stored JPEG when the clip has
+          // one; the lazy fallback never triggers here because the card is
+          // not near the viewport).
+          <VideoThumb video={item.video} />
+        ) : isStreamPlaybackUrl(item.video.video_url) ? (
           // Cloudflare Stream clip: the embed player streams adaptive HLS on
           // gym wifi. Autoplay-muted only while the card is in view, mirroring
           // the reel behaviour of the <video> branch.

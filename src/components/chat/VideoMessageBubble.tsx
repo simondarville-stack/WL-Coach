@@ -12,8 +12,8 @@ import { useState } from 'react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import type { SessionVideoItem } from '../../lib/trainingLogService';
 import { formatDateTimeShort, formatTime24 } from '../../lib/dateUtils';
-import { isStreamPlaybackUrl, streamThumbnailUrl } from '../../lib/streamUploads';
 import { VideoLightbox } from '../planner/VideoLightbox';
+import { VideoThumb } from '../planner/VideoThumb';
 
 const THEMES = {
   dark: {
@@ -90,25 +90,9 @@ export function VideoMessageBubble({
             unreviewed ? 'ring-1 ring-[color:var(--color-accent)]' : ''
           }`}
         >
-          {isStreamPlaybackUrl(v.video_url) ? (
-            <img
-              src={streamThumbnailUrl(v.video_url)}
-              alt=""
-              className="w-full h-full object-cover pointer-events-none"
-            />
-          ) : (
-            /* #t=0.1 paints the frame at 0.1 s as a poster — the bubble shows
-               the actual lift without stored thumbnails (same trick as
-               LogVideoStrip). */
-            <video
-              src={`${v.video_url}#t=0.1`}
-              preload="metadata"
-              muted
-              playsInline
-              tabIndex={-1}
-              className="w-full h-full object-cover pointer-events-none"
-            />
-          )}
+          {/* Stored/Stream JPEG when available; otherwise a lazy <video>
+              poster that only loads near the viewport. */}
+          <VideoThumb video={v} />
           <span className="absolute inset-0 flex items-center justify-center bg-black/25">
             <span className="w-0 h-0 border-y-[8px] border-y-transparent border-l-[13px] border-l-white ml-1" />
           </span>
