@@ -13,6 +13,10 @@ import {
 import { parsePrescription } from '../../lib/prescriptionParser';
 import { formatKg as fmtKg } from '../../lib/loadRepsFormat';
 import {
+  comboIdentity, fetchComboPlannedRows, fetchPlannedRowsForExercise,
+  type ComboPlannedRow,
+} from '../../lib/comboHistory';
+import {
   StackedNotation, LoggedStackedNotation, type LoggedSetLike,
 } from './StackedNotation';
 import {
@@ -83,19 +87,34 @@ interface ExerciseHistoryChartProps {
   /** Reports the Monday-anchored week range currently in the chart window, so
    *  the history tables beside the chart can show exactly the sessions it is
    *  showing. Fires on zoom, pan and Show-all. */
-  onVisibleRangeChange?: (range: { from: string; to: string }) => void;
+  /** Publishes the window the COACH has zoomed / panned to, so the tables
+   *  beside the chart can follow it. Called with null while the chart is still
+   *  showing its own default framing — see setViewportByUser. */
+  onVisibleRangeChange?: (range: { from: string; to: string } | null) => void;
+  /** For a combo row: its members IN ORDER. A combo's exercise_id is only its
+   *  first member, so plotting by exercise_id alone drew the standalone lift's
+   *  sessions into the complex's own history. See lib/comboHistory. */
+  comboMemberIds?: string[] | null;
 }
 
 /** How far back we FETCH. The coach can pan across all of it. */
 // COACH-CONFIG candidate — three years of history.
 const FETCH_BACK_WEEKS = 156;
-/** How many weeks are VISIBLE on first render. */
-// COACH-CONFIG candidate — the old fixed window, now just the default zoom.
-const DEFAULT_VISIBLE_WEEKS = 16;
+/** Default framing: four weeks of run-up behind the week being planned and one
+ *  week ahead of it — six weeks inclusive. Tight on purpose: this is the
+ *  run-in to the week the coach is writing, not a season overview. Panning or
+ *  zooming from here is one gesture, and does scope the tables beside it. */
+// COACH-CONFIG candidate — a coach may well want a different default run-up.
+const DEFAULT_WEEKS_BACK = 4;
+const DEFAULT_WEEKS_FORWARD = 1;
+const DEFAULT_VISIBLE_WEEKS = DEFAULT_WEEKS_BACK + 1 + DEFAULT_WEEKS_FORWARD;
 /** Guard against an absurd span if a plan exists far outside the fetch window. */
 const MAX_POINTS = 400;
-/** Device-local: a coach who prefers a 30-week look keeps it across exercises. */
-const SPAN_PREF_KEY = 'emos.exerciseHistory.spanWeeks';
+/** Device-local: a coach who prefers a 30-week look keeps it across exercises.
+ *  Key is versioned — the v1 key holds spans saved against the old 16-week
+ *  default, and a stale 16 would silently override the new framing for anyone
+ *  who had ever touched the zoom. */
+const SPAN_PREF_KEY = 'emos.exerciseHistory.spanWeeks.v2';
 
 function readSpanPref(): number | null {
   try {
@@ -164,7 +183,7 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
   );
 }
 
-export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart, onVisibleRangeChange }: ExerciseHistoryChartProps) {
+export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, currentWeekStart, onVisibleRangeChange, comboMemberIds = null }: ExerciseHistoryChartProps) {
   const [data, setData]     = useState<ChartPoint[]>([]);
   /** The dense Monday grid the x-axis is indexed on; the viewport counts WEEKS,
    *  not points, so zoom still reads "16 wk" however many sessions that is. */
@@ -173,6 +192,14 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   const [view, setView]     = useState<'max' | 'avg'>('max');
   /** Inclusive index window into `data`. null until the first data arrives. */
   const [viewport, setViewport] = useState<Viewport | null>(null);
+  /** Has the coach moved the chart themselves? The tables beside it are scoped
+   *  to the window, and scoping them to the chart's OWN opening framing made
+   *  rows the coach was already reading vanish a beat after the panel opened —
+   *  the chart loads slower than the tables, so they rendered in full and then
+   *  collapsed. A default framing is the chart's business, not a filter the
+   *  coach asked for; only a deliberate zoom / pan scopes the tables. */
+  const [userScoped, setUserScoped] = useState(false);
+  const setViewportByUser: typeof setViewport = v => { setUserScoped(true); setViewport(v); };
   const wrapRef = useRef<HTMLDivElement>(null);
   const panRef = useRef<{ pointerId: number; startX: number; startVp: Viewport; moved: boolean } | null>(null);
   const cleanupPanRef = useRef<(() => void) | null>(null);
@@ -181,7 +208,13 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   // planner didn't pass one, e.g. legacy call sites).
   const anchorWeek = isoMonday(currentWeekStart ?? new Date().toISOString().slice(0, 10));
 
-  useEffect(() => { void loadData(); }, [exerciseId, athleteId, macroContext?.macroId, anchorWeek]);
+  // A different exercise starts unscoped again — the previous exercise's
+  // zoom is not a window the coach chose for this one.
+  useEffect(() => {
+    setUserScoped(false);
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId, athleteId, macroContext?.macroId, anchorWeek, comboIdentity(comboMemberIds ?? [])]);
 
   async function loadData() {
     setLoading(true);
@@ -217,20 +250,25 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
       const planBySession = new Map<string, Acc>();
       const planDetailBySession = new Map<string, PlanDetail[]>();
+      /** Hoisted: the performed fetch below needs the complex rows this
+       *  exercise belongs to, since a logged combo is only reachable through
+       *  planned_exercise_id. */
+      let planRowsForLogs: ComboPlannedRow[] = [];
       /** session key → { weekStart, dayIndex } so we can place it later. */
       const sessionMeta = new Map<string, { weekStart: string; dayIndex: number }>();
 
       if (weekPlans?.length) {
         const wpIds = weekPlans.map(w => w.id);
 
-        const { data: planRows } = await supabase
-          .from('planned_exercises')
-          .select('weekplan_id, day_index, prescription_raw, unit, is_combo, summary_highest_load, summary_avg_load, summary_total_reps')
-          .eq('exercise_id', exerciseId)
-          .in('weekplan_id', wpIds)
-          .order('day_index');
+        // A complex matches only itself; a single exercise also picks up the
+        // complexes it appears in. Same rule as the two history tables beside
+        // the chart, so they cannot disagree.
+        const planRows = comboMemberIds?.length
+          ? await fetchComboPlannedRows(wpIds, comboMemberIds)
+          : await fetchPlannedRowsForExercise(wpIds, exerciseId);
+        planRowsForLogs = planRows;
 
-        for (const row of planRows ?? []) {
+        for (const row of (planRows ?? [])) {
           const shape = shapeById.get(row.weekplan_id);
           if (!shape) continue;
           const ws = shape.week_start;
@@ -260,14 +298,47 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
         }
       }
 
-      const { data: logRows } = await supabase
-        .from('training_log_exercises')
-        .select('id, performed_raw, session:training_log_sessions!inner(date, day_index, athlete_id, status)')
-        .eq('exercise_id', exerciseId)
-        .eq('session.athlete_id', athleteId)
-        .eq('session.status', 'completed')
-        .gte('session.date', lookBack)
-        .lte('session.date', lookAhead);
+      // Performed side, same identity rule. A logged combo is reached through
+      // planned_exercise_id — the only exact link from a log back to the
+      // complex it was performed for.
+      type ChartLogRow = { id: string; performed_raw: string | null; session: unknown };
+      let logRows: ChartLogRow[] = [];
+      const comboIds = planRowsForLogs.filter(r => r.is_combo).map(r => r.id);
+      if (comboMemberIds?.length) {
+        if (comboIds.length > 0) {
+          const { data } = await supabase
+            .from('training_log_exercises')
+            .select('id, performed_raw, session:training_log_sessions!inner(date, day_index, athlete_id, status)')
+            .in('planned_exercise_id', comboIds)
+            .eq('session.athlete_id', athleteId)
+            .eq('session.status', 'completed')
+            .gte('session.date', lookBack)
+            .lte('session.date', lookAhead);
+          logRows = (data ?? []) as ChartLogRow[];
+        }
+      } else {
+        const { data: own } = await supabase
+          .from('training_log_exercises')
+          .select('id, performed_raw, planned:planned_exercises(is_combo), session:training_log_sessions!inner(date, day_index, athlete_id, status)')
+          .eq('exercise_id', exerciseId)
+          .eq('session.athlete_id', athleteId)
+          .eq('session.status', 'completed')
+          .gte('session.date', lookBack)
+          .lte('session.date', lookAhead);
+        logRows = ((own ?? []) as unknown as (ChartLogRow & { planned: { is_combo: boolean } | null })[])
+          .filter(r => !r.planned?.is_combo);
+        if (comboIds.length > 0) {
+          const { data: inCombos } = await supabase
+            .from('training_log_exercises')
+            .select('id, performed_raw, session:training_log_sessions!inner(date, day_index, athlete_id, status)')
+            .in('planned_exercise_id', comboIds)
+            .eq('session.athlete_id', athleteId)
+            .eq('session.status', 'completed')
+            .gte('session.date', lookBack)
+            .lte('session.date', lookAhead);
+          logRows = [...logRows, ...((inCombos ?? []) as ChartLogRow[])];
+        }
+      }
 
       // v2 training log writes per-set data into training_log_sets and
       // leaves performed_raw empty, so we fetch both and prefer the set
@@ -495,14 +566,17 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
     }
   }
 
-  // Frame the window on the week being planned: it sits ~80 % across, with the
-  // recent past behind it — the same look the old fixed 16-week window had.
-  // The viewport counts WEEKS (indices into `weeks`), not points, so "16 wk"
-  // still means sixteen weeks however many sessions fall inside them.
+  // Frame the window on the week being planned: DEFAULT_WEEKS_FORWARD ahead of
+  // it and the rest of the span behind, so the week being written sits near the
+  // right edge with its run-up in view. The viewport counts WEEKS (indices into
+  // `weeks`), not points, so "6 wk" means six weeks however many sessions fall
+  // inside them.
   useEffect(() => {
     if (weeks.length === 0) { setViewport(null); return; }
     const anchorIdx = weeks.findIndex(ws => ws >= anchorWeek);
-    const endAt = anchorIdx < 0 ? weeks.length - 1 : Math.min(weeks.length - 1, anchorIdx + 3);
+    const endAt = anchorIdx < 0
+      ? weeks.length - 1
+      : Math.min(weeks.length - 1, anchorIdx + DEFAULT_WEEKS_FORWARD);
     setViewport(fitViewport(weeks.length, readSpanPref() ?? DEFAULT_VISIBLE_WEEKS, endAt));
   }, [weeks, anchorWeek]);
 
@@ -514,11 +588,12 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   // it. Reported from `weeks` (the dense Monday grid), not from the points, so
   // the range still means something when the window holds no session at all.
   useEffect(() => {
-    if (!onVisibleRangeChange || weeks.length === 0) return;
+    if (!onVisibleRangeChange) return;
+    if (!userScoped || weeks.length === 0) { onVisibleRangeChange(null); return; }
     const from = weeks[Math.max(0, Math.min(vp.start, weeks.length - 1))];
     const to = weeks[Math.max(0, Math.min(vp.end, weeks.length - 1))];
     if (from && to) onVisibleRangeChange({ from, to });
-  }, [vp.start, vp.end, weeks, onVisibleRangeChange]);
+  }, [vp.start, vp.end, weeks, userScoped, onVisibleRangeChange]);
 
   /** Points inside the window, with one week of margin either side so the
    *  lines run to the edges instead of stopping short of them. */
@@ -533,14 +608,14 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
   );
 
   const applyZoom = (factor: number, anchorFraction = 0.5) => {
-    setViewport(v => {
+    setViewportByUser(v => {
       const next = zoomViewport(v ?? fullViewport(weeks.length), weeks.length, factor, anchorFraction);
       writeSpanPref(spanOf(next));
       return next;
     });
   };
   const applyPan = (deltaIndices: number) =>
-    setViewport(v => panViewport(v ?? fullViewport(weeks.length), weeks.length, deltaIndices));
+    setViewportByUser(v => panViewport(v ?? fullViewport(weeks.length), weeks.length, deltaIndices));
 
   // Wheel must be a NATIVE listener with { passive: false }. React registers
   // wheel passively at the root, so preventDefault() inside a JSX onWheel is a
@@ -558,7 +633,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       const f = Math.min(1, Math.max(0, (e.clientX - r.left - PLOT_L) / Math.max(1, r.width - PLOT_L - PLOT_R)));
       if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         const dir = (e.deltaX || e.deltaY) > 0 ? 1 : -1;
-        setViewport(v => {
+        setViewportByUser(v => {
           const cur = v ?? fullViewport(weeks.length);
           return panViewport(cur, weeks.length, dir * Math.max(1, Math.round(spanOf(cur) / 6)));
         });
@@ -586,7 +661,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       st.moved = true;
       const w = wrapRef.current?.getBoundingClientRect().width ?? 300;
       const pxPerIdx = Math.max(1, (w - 40) / Math.max(1, spanOf(st.startVp) - 1));
-      setViewport(panViewport(st.startVp, weeks.length, -Math.round(dx / pxPerIdx)));
+      setViewportByUser(panViewport(st.startVp, weeks.length, -Math.round(dx / pxPerIdx)));
     };
     const up = () => {
       panRef.current = null;
@@ -678,7 +753,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
             { key: 'out',   Icon: ZoomOut,      title: 'Zoom out',    onClick: () => applyZoom(1.4), disabled: isFull(vp, weeks.length) },
             { key: 'in',    Icon: ZoomIn,       title: 'Zoom in',     onClick: () => applyZoom(0.7), disabled: spanOf(vp) <= MIN_SPAN },
             { key: 'right', Icon: ChevronRight, title: 'Pan forward', onClick: () => applyPan(Math.max(1, Math.round(spanOf(vp) / 3))), disabled: vp.end >= weeks.length - 1 },
-            { key: 'all',   Icon: Maximize2,    title: 'Show all',    onClick: () => { setViewport(fullViewport(weeks.length)); writeSpanPref(weeks.length); }, disabled: isFull(vp, weeks.length) },
+            { key: 'all',   Icon: Maximize2,    title: 'Show all',    onClick: () => { setViewportByUser(fullViewport(weeks.length)); writeSpanPref(weeks.length); }, disabled: isFull(vp, weeks.length) },
           ] as const).map(({ key, Icon, title, onClick, disabled }) => (
             <button
               key={key}
@@ -730,7 +805,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           else if (e.key === 'ArrowRight') { e.preventDefault(); applyPan(1); }
           else if (e.key === '+' || e.key === '=') { e.preventDefault(); applyZoom(0.7); }
           else if (e.key === '-') { e.preventDefault(); applyZoom(1.4); }
-          else if (e.key === '0') { e.preventDefault(); setViewport(fullViewport(weeks.length)); }
+          else if (e.key === '0') { e.preventDefault(); setViewportByUser(fullViewport(weeks.length)); }
         }}
         style={{
           position: 'relative', outline: 'none',

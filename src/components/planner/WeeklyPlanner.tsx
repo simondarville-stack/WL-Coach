@@ -170,7 +170,6 @@ export function WeeklyPlanner() {
     saveExerciseFeatures,
     saveAthleteVisibility,
     setWeekAthleteHidden,
-    fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
     swapPlannedExercise,
@@ -2010,7 +2009,6 @@ export function WeeklyPlanner() {
                     saveNotes={saveNotes}
                     swapPlannedExercise={swapPlannedExercise}
                     updateComboExercise={updateComboExercise}
-                    fetchOtherDayPrescriptions={fetchOtherDayPrescriptions}
                     presets={presets}
                     onApplyPreset={p => {
                       // Same semantics as the day-card apply: template replaces

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { formatKg } from '../../lib/loadRepsFormat';
 import { isoMonday } from '../../lib/dateUtils';
 import { LoggedStackedNotation, StackedNotation, type LoggedSetLike } from './StackedNotation';
+import { comboIdentity, fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 
 interface ActualRow {
   /** The real date the session happened — a log is an event, not a week. */
@@ -16,6 +17,9 @@ interface ActualRow {
   /** v1 fallback: the free-text summary the athlete typed, when there are no
    *  per-set rows to draw. */
   performedRaw: string | null;
+  /** Set when these sets were performed inside a complex the viewed exercise
+   *  is a member of, so the coach sees the context. */
+  comboLabel: string | null;
   totalSets: number | null;
   totalReps: number | null;
   highestLoad: number | null;
@@ -35,6 +39,10 @@ interface ExerciseActualsHistoryProps {
   /** Restrict rows to the chart's visible window (inclusive, Monday-anchored).
    *  Omitted → show everything fetched. */
   range?: { from: string; to: string } | null;
+  /** For a combo row: its members IN ORDER — see ExercisePrescriptionHistory.
+   *  Logged combos are matched through planned_exercise_id, the only exact
+   *  link back from a log to the complex it was performed for. */
+  comboMemberIds?: string[] | null;
 }
 
 function formatShort(date: string): string {
@@ -64,6 +72,7 @@ export function ExerciseActualsHistory({
   limit = 6,
   fetchWeeks = 156,
   range = null,
+  comboMemberIds = null,
 }: ExerciseActualsHistoryProps) {
   const [rows, setRows] = useState<ActualRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,13 +87,66 @@ export function ExerciseActualsHistory({
         from.setUTCDate(from.getUTCDate() - fetchWeeks * 7);
         const lookBack = from.toISOString().slice(0, 10);
 
-        const { data: logRows } = await supabase
-          .from('training_log_exercises')
-          .select('id, performed_raw, session:training_log_sessions!inner(date, athlete_id, status)')
-          .eq('exercise_id', exerciseId)
-          .eq('session.athlete_id', athleteId)
-          .eq('session.status', 'completed')
-          .gte('session.date', lookBack);
+        // A logged combo carries exercise_id = its FIRST member, exactly like
+        // the planned row, so exercise_id alone can neither isolate a complex
+        // nor find the complexes a given lift was trained inside.
+        // planned_exercise_id can: resolve the planned rows first, then take
+        // the logs that point at them.
+        const { data: weekPlans } = await supabase
+          .from('week_plans')
+          .select('id')
+          .eq('athlete_id', athleteId)
+          .gte('week_start', lookBack);
+        const wpIds = (weekPlans ?? []).map(w => w.id);
+        const plannedRows = comboMemberIds?.length
+          ? await fetchComboPlannedRows(wpIds, comboMemberIds)
+          : await fetchPlannedRowsForExercise(wpIds, exerciseId);
+        const comboRowIds = plannedRows.filter(r => r.is_combo).map(r => r.id);
+        const comboLabelById = new Map(
+          plannedRows.filter(r => r.is_combo).map(r => [r.id, r.combo_notation]),
+        );
+
+        type LogRow = {
+          id: string;
+          performed_raw: string | null;
+          planned_exercise_id: string | null;
+          session: unknown;
+        };
+        let logRows: LogRow[] = [];
+        if (comboMemberIds?.length) {
+          if (comboRowIds.length === 0) {
+            if (!cancelled) setRows([]);
+            return;
+          }
+          const { data } = await supabase
+            .from('training_log_exercises')
+            .select('id, performed_raw, planned_exercise_id, session:training_log_sessions!inner(date, athlete_id, status)')
+            .in('planned_exercise_id', comboRowIds)
+            .eq('session.athlete_id', athleteId)
+            .eq('session.status', 'completed')
+            .gte('session.date', lookBack);
+          logRows = (data ?? []) as LogRow[];
+        } else {
+          const { data: own } = await supabase
+            .from('training_log_exercises')
+            .select('id, performed_raw, planned_exercise_id, planned:planned_exercises(is_combo), session:training_log_sessions!inner(date, athlete_id, status)')
+            .eq('exercise_id', exerciseId)
+            .eq('session.athlete_id', athleteId)
+            .eq('session.status', 'completed')
+            .gte('session.date', lookBack);
+          logRows = ((own ?? []) as unknown as (LogRow & { planned: { is_combo: boolean } | null })[])
+            .filter(r => !r.planned?.is_combo);
+          if (comboRowIds.length > 0) {
+            const { data: inCombos } = await supabase
+              .from('training_log_exercises')
+              .select('id, performed_raw, planned_exercise_id, session:training_log_sessions!inner(date, athlete_id, status)')
+              .in('planned_exercise_id', comboRowIds)
+              .eq('session.athlete_id', athleteId)
+              .eq('session.status', 'completed')
+              .gte('session.date', lookBack);
+            logRows = [...logRows, ...((inCombos ?? []) as LogRow[])];
+          }
+        }
 
         const ids = (logRows ?? []).map(r => r.id);
         // The display columns LoggedStackedNotation reads, plus the grouping
@@ -149,6 +211,9 @@ export function ExerciseActualsHistory({
             weekStart: isoMonday(session.date),
             sets,
             performedRaw,
+            comboLabel: comboMemberIds?.length
+              ? null
+              : (r.planned_exercise_id ? comboLabelById.get(r.planned_exercise_id) ?? null : null),
             totalSets,
             totalReps,
             highestLoad,
@@ -166,7 +231,10 @@ export function ExerciseActualsHistory({
     }
     void load();
     return () => { cancelled = true; };
-  }, [exerciseId, athleteId, weekStart, fetchWeeks]);
+    // See ExercisePrescriptionHistory: depend on the identity string, not the
+    // array reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId, athleteId, weekStart, fetchWeeks, comboIdentity(comboMemberIds ?? [])]);
 
   if (loading) {
     return (
@@ -237,6 +305,18 @@ export function ExerciseActualsHistory({
                     shown — the inline `load×reps` string is storage, not a
                     display form (DISPLAY_CONVENTIONS §1). */}
                 <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                  {r.comboLabel && (
+                    <span
+                      title={'Performed inside the complex: ' + r.comboLabel}
+                      style={{
+                        display: 'block', fontSize: 9, letterSpacing: '0.03em',
+                        color: 'var(--color-text-tertiary)', marginBottom: 1,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {r.comboLabel}
+                    </span>
+                  )}
                   {r.sets.length > 0
                     ? <LoggedStackedNotation sets={r.sets} includeIncomplete={false} />
                     : <StackedNotation raw={r.performedRaw} unit={null} />}

@@ -24,6 +24,7 @@ import { ExerciseHistoryChart } from './ExerciseHistoryChart';
 import { ExercisePrescriptionHistory } from './ExercisePrescriptionHistory';
 import { ExerciseActualsHistory } from './ExerciseActualsHistory';
 import { ExerciseSearch } from './ExerciseSearch';
+import { fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 import { ComboCreatorModal } from './ComboCreatorModal';
 
 interface OtherDay {
@@ -32,6 +33,8 @@ interface OtherDay {
   /** Needed to render the row as Stacked Load Notation (% vs kg, combo tuples). */
   unit: string | null;
   isCombo: boolean;
+  /** The complex this row is, when the viewed lift was trained inside one. */
+  comboLabel: string | null;
   totalSets: number | null;
   totalReps: number | null;
 }
@@ -75,9 +78,6 @@ interface ExerciseDetailProps {
     plannedExerciseId: string,
     data: { exercises: { exercise: Exercise; position: number }[]; unit: DefaultUnit; comboName: string; color: string },
   ) => Promise<void>;
-  fetchOtherDayPrescriptions: (
-    weekplanId: string, exerciseId: string, excludeId: string,
-  ) => Promise<OtherDay[]>;
   /** Coach's # prescription presets — typing "#name" in a grid cell applies one. */
   presets?: import('../../lib/database.types').CoachPreset[];
   onApplyPreset?: (preset: import('../../lib/database.types').CoachPreset) => void;
@@ -106,7 +106,6 @@ export function ExerciseDetail({
   saveMediaDescription,
   swapPlannedExercise,
   updateComboExercise,
-  fetchOtherDayPrescriptions,
   settings,
   presets,
   onApplyPreset,
@@ -117,7 +116,34 @@ export function ExerciseDetail({
     ? (comboMembers[plannedExercise.id] ?? []).slice().sort((a, b) => a.position - b.position)
     : [];
 
-  const hasMacro = !!macroContext && !isCombo && !sentinel && !!plannedExercise;
+  /**
+   * Which lift the history sections below are about.
+   *
+   * null = the complex itself (the default); otherwise one member's exercise
+   * id. One control drives the prescription history, the actuals, "other days"
+   * and the macro block together, so the coach never has to reconcile four
+   * sections that are each looking at something different.
+   */
+  const [comboView, setComboView] = useState<string | null>(null);
+  useEffect(() => { setComboView(null); }, [plannedExercise?.id]);
+
+  /** Member lifts, de-duplicated — "Frivend + Frivend + PushPress" needs two
+   *  buttons, not three. Order is the complex's own order. */
+  const memberChoices = (() => {
+    const seen = new Set<string>();
+    return members.filter(m => (seen.has(m.exerciseId) ? false : (seen.add(m.exerciseId), true)));
+  })();
+
+  /** The exercise the sections resolve against. */
+  const viewExerciseId = comboView ?? plannedExercise?.exercise_id ?? '';
+  /** Non-null only while looking at the complex AS the complex; a member view
+   *  is an ordinary single-exercise view (which does include the complexes
+   *  that lift appears in — see lib/comboHistory). */
+  const viewComboMemberIds = isCombo && !comboView ? members.map(m => m.exerciseId) : null;
+
+  // A complex is not itself trackable in a macro yet, so the macro block shows
+  // for a plain row, or for a combo once the coach picks a member lift.
+  const hasMacro = !!macroContext && !sentinel && !!plannedExercise && (!isCombo || comboView !== null);
 
   const [textMode, setTextMode] = useState(false);
   const [textValue, setTextValue] = useState(plannedExercise?.prescription_raw ?? '');
@@ -187,15 +213,14 @@ export function ExerciseDetail({
 
   useEffect(() => {
     if (hasMacro && plannedExercise) void loadSollTarget();
-    if (!isCombo && !sentinel && plannedExercise) void loadOtherDays();
-    if (isCombo && members.length > 0 && plannedExercise) void loadComboOtherDays();
+    if (!sentinel && plannedExercise) void loadOtherDays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [macroContext?.macroId, plannedExercise?.id]);
+  }, [macroContext?.macroId, plannedExercise?.id, comboView]);
 
   async function loadSollTarget() {
     if (!macroContext || !plannedExercise) return;
     const { data: te } = await supabase.from('macro_tracked_exercises').select('id, target_unit')
-      .eq('macrocycle_id', macroContext.macroId).eq('exercise_id', plannedExercise.exercise_id).maybeSingle();
+      .eq('macrocycle_id', macroContext.macroId).eq('exercise_id', viewExerciseId).maybeSingle();
     if (!te) { setSollTarget(null); setTrackedExId(null); return; }
     setTrackedExId(te.id);
     const { data: mw } = await supabase.from('macro_weeks').select('id')
@@ -216,43 +241,30 @@ export function ExerciseDetail({
     } : null);
   }
 
+  /**
+   * "Other days this week", resolved through the same combo rules as the
+   * history tables above it — so the complex matches only itself, and a member
+   * lift also finds the complexes it is trained inside. Both cases go through
+   * lib/comboHistory rather than the exercise_id-only hook query, which could
+   * not tell three different complexes apart.
+   */
   async function loadOtherDays() {
     if (!plannedExercise) return;
-    const data = await fetchOtherDayPrescriptions(weekPlanId, plannedExercise.exercise_id, plannedExercise.id);
+    const rows = viewComboMemberIds
+      ? await fetchComboPlannedRows([weekPlanId], viewComboMemberIds)
+      : await fetchPlannedRowsForExercise([weekPlanId], viewExerciseId);
+    const data: OtherDay[] = rows
+      .filter(r => r.id !== plannedExercise.id)
+      .map(r => ({
+        dayIndex: r.day_index,
+        prescriptionRaw: r.prescription_raw,
+        unit: r.unit,
+        isCombo: r.is_combo,
+        comboLabel: r.is_combo && !viewComboMemberIds ? r.combo_notation : null,
+        totalSets: r.summary_total_sets,
+        totalReps: r.summary_total_reps,
+      }));
     setOtherDays(data);
-  }
-
-  async function loadComboOtherDays() {
-    if (!plannedExercise || members.length === 0) return;
-    const currentMemberIds = members.map(m => m.exerciseId).sort().join(',');
-    const { data: otherCombos } = await supabase
-      .from('planned_exercises').select('id, day_index, prescription_raw, unit, summary_total_sets, summary_total_reps')
-      .eq('weekplan_id', weekPlanId).eq('is_combo', true).neq('id', plannedExercise.id);
-    if (!otherCombos?.length) { setOtherDays([]); return; }
-    // Batch-fetch all combo members in one query (fixes N+1)
-    const comboIds = otherCombos.map(c => c.id);
-    const { data: allMembers } = await supabase
-      .from('planned_exercise_combo_members')
-      .select('planned_exercise_id, exercise_id')
-      .in('planned_exercise_id', comboIds);
-    const memberMap = new Map<string, string[]>();
-    for (const m of allMembers || []) {
-      const list = memberMap.get(m.planned_exercise_id) || [];
-      list.push(m.exercise_id);
-      memberMap.set(m.planned_exercise_id, list);
-    }
-    const matching: OtherDay[] = [];
-    for (const combo of otherCombos) {
-      const theirIds = (memberMap.get(combo.id) || []).sort().join(',');
-      if (theirIds === currentMemberIds) {
-        matching.push({
-          dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw,
-          unit: combo.unit, isCombo: true,
-          totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps,
-        });
-      }
-    }
-    setOtherDays(matching);
   }
 
   async function applyText() {
@@ -726,12 +738,46 @@ export function ExerciseDetail({
         {/* Prescription */}
         {plannedExercise && !sentinel && (
           <div>
+            {/* One control for the whole panel. The complex is the default
+                view; picking a member lift re-points the chart, both history
+                tables, "other days" and the macro block at that lift. */}
+            {isCombo && memberChoices.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                {[{ id: null as string | null, label: plannedExercise.combo_notation?.trim() || 'Complex' },
+                  ...memberChoices.map(m => ({ id: m.exerciseId, label: m.exercise.name }))].map(choice => {
+                  const active = comboView === choice.id;
+                  return (
+                    <button
+                      key={choice.id ?? '__combo__'}
+                      type="button"
+                      onClick={() => setComboView(choice.id)}
+                      title={choice.id === null
+                        ? 'This complex exactly as prescribed'
+                        : `${choice.label} on its own, and every complex it is trained inside`}
+                      style={{
+                        fontSize: 10, padding: '3px 8px', cursor: 'pointer',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--color-border-secondary)',
+                        borderColor: active ? 'var(--color-accent)' : 'var(--color-border-secondary)',
+                        background: active ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+                        color: active ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                        fontWeight: active ? 600 : 500,
+                        maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {choice.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <ExerciseHistoryChart
-              exerciseId={plannedExercise.exercise_id}
+              exerciseId={viewExerciseId}
               athleteId={athleteId}
               macroContext={macroContext}
               currentWeekStart={weekStart}
               onVisibleRangeChange={setChartRange}
+              comboMemberIds={viewComboMemberIds}
             />
             {/* Written beside performed, both scoped to the chart's window:
                 zoom or pan the chart and these follow it. */}
@@ -739,18 +785,20 @@ export function ExerciseDetail({
               <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                   <ExercisePrescriptionHistory
-                    exerciseId={plannedExercise.exercise_id}
+                    exerciseId={viewExerciseId}
                     athleteId={athleteId}
                     weekStart={weekStart}
                     range={chartRange}
+                    comboMemberIds={viewComboMemberIds}
                   />
                 </div>
                 <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                   <ExerciseActualsHistory
-                    exerciseId={plannedExercise.exercise_id}
+                    exerciseId={viewExerciseId}
                     athleteId={athleteId}
                     weekStart={weekStart}
                     range={chartRange}
+                    comboMemberIds={viewComboMemberIds}
                   />
                 </div>
               </div>
@@ -856,6 +904,18 @@ export function ExerciseDetail({
                         {/* Stacked Load Notation, like every other read-only
                             prescription (DISPLAY_CONVENTIONS §1). */}
                         <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                          {d.comboLabel && (
+                            <span
+                              title={'Trained inside the complex: ' + d.comboLabel}
+                              style={{
+                                display: 'block', fontSize: 9, letterSpacing: '0.03em',
+                                color: 'var(--color-text-tertiary)', marginBottom: 1,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {d.comboLabel}
+                            </span>
+                          )}
                           {d.prescriptionRaw
                             ? <StackedNotation raw={d.prescriptionRaw} unit={d.unit} isCombo={d.isCombo} />
                             : <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>not yet planned</span>}
@@ -928,7 +988,7 @@ export function ExerciseDetail({
               </div>
             </div>}
             {trackedExId !== null && (
-              <SollIstChart exerciseId={plannedExercise!.exercise_id} athleteId={athleteId} macroContext={macroContext!} />
+              <SollIstChart exerciseId={viewExerciseId} athleteId={athleteId} macroContext={macroContext!} />
             )}
           </div>
         )}

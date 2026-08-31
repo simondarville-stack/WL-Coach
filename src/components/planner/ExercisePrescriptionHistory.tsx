@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { StackedNotation } from './StackedNotation';
+import { comboIdentity, fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 
 interface HistoryRow {
   weekStart: string;
@@ -10,6 +11,9 @@ interface HistoryRow {
    *  rendered without them — % vs kg, and combo tuple reps. */
   unit: string | null;
   isCombo: boolean;
+  /** Set when this row is a complex the viewed exercise appears in, so the
+   *  coach can see the context the lift was trained in. */
+  comboLabel: string | null;
   totalSets: number | null;
   totalReps: number | null;
   highestLoad: number | null;
@@ -30,6 +34,12 @@ interface ExercisePrescriptionHistoryProps {
   /** Restrict rows to the chart's visible window (inclusive, Monday-anchored).
    *  Omitted → show everything fetched. */
   range?: { from: string; to: string } | null;
+  /** Set ONLY when showing a complex as itself: its members IN ORDER. A
+   *  combo's exercise_id is only its first member, so without this the history
+   *  would mix this complex with the standalone lift and with every other
+   *  complex starting on it. When null the view is a single exercise, whose
+   *  history includes the complexes it appears in. */
+  comboMemberIds?: string[] | null;
 }
 
 // European date: DD.MM (year omitted to stay compact; shown on hover via title).
@@ -55,6 +65,7 @@ export function ExercisePrescriptionHistory({
   limit = 6,
   fetchWeeks = 156,
   range = null,
+  comboMemberIds = null,
 }: ExercisePrescriptionHistoryProps) {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,11 +94,13 @@ export function ExercisePrescriptionHistory({
         }
 
         const wpStartById = new Map(weekPlans.map(w => [w.id, w.week_start]));
-        const { data: planRows } = await supabase
-          .from('planned_exercises')
-          .select('weekplan_id, prescription_raw, unit, is_combo, summary_total_sets, summary_total_reps, summary_highest_load')
-          .eq('exercise_id', exerciseId)
-          .in('weekplan_id', weekPlans.map(w => w.id));
+        const wpIds = weekPlans.map(w => w.id);
+
+        // A complex matches only itself (same members, same order); a single
+        // exercise also picks up the complexes it appears in. See comboHistory.
+        const planRows = comboMemberIds?.length
+          ? await fetchComboPlannedRows(wpIds, comboMemberIds)
+          : await fetchPlannedRowsForExercise(wpIds, exerciseId);
 
         const collected: HistoryRow[] = (planRows ?? [])
           .map(r => {
@@ -100,6 +113,9 @@ export function ExercisePrescriptionHistory({
               prescription: r.prescription_raw,
               unit: r.unit,
               isCombo: r.is_combo === true,
+              // Only label a complex when it is NOT the thing being viewed —
+              // on a complex's own history every row would carry it.
+              comboLabel: r.is_combo && !comboMemberIds?.length ? r.combo_notation : null,
               totalSets: r.summary_total_sets,
               totalReps: r.summary_total_reps,
               highestLoad: r.summary_highest_load,
@@ -121,7 +137,10 @@ export function ExercisePrescriptionHistory({
     }
     void load();
     return () => { cancelled = true; };
-  }, [exerciseId, athleteId, weekStart, fetchWeeks]);
+    // comboMemberIds is an array: depend on its identity string, not the array
+    // reference, which is rebuilt on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId, athleteId, weekStart, fetchWeeks, comboIdentity(comboMemberIds ?? [])]);
 
   if (loading) {
     return (
@@ -195,6 +214,18 @@ export function ExercisePrescriptionHistory({
               {/* Stacked Load Notation, not the raw `load×reps×sets` string —
                   the inline form is input/storage only (DISPLAY_CONVENTIONS §1). */}
               <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                {r.comboLabel && (
+                  <span
+                    title={`Trained inside the complex "${r.comboLabel}"`}
+                    style={{
+                      display: 'block', fontSize: 9, letterSpacing: '0.03em',
+                      color: 'var(--color-text-tertiary)', marginBottom: 1,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {r.comboLabel}
+                  </span>
+                )}
                 {r.prescription ? (
                   <StackedNotation raw={r.prescription} unit={r.unit} isCombo={r.isCombo} />
                 ) : (
