@@ -358,7 +358,17 @@ export function WeekOverview({
       const name = visibleDays.find(d => d.index === slotIndex)?.name ?? `Day ${slotIndex}`;
       if (expanded.has(slotIndex)) {
         return (
-          <div key={slotIndex} onDoubleClick={() => toggleExpanded(slotIndex)}>
+          <div
+            key={slotIndex}
+            onDoubleClick={e => {
+              // The prescription grid's ± cells are clicked in rapid bursts,
+              // which the browser also reports as dblclick — only a
+              // double-click on passive chrome may collapse the unit.
+              const target = e.target as HTMLElement;
+              if (target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return;
+              toggleExpanded(slotIndex);
+            }}
+          >
             {renderCard(slotIndex, name)}
           </div>
         );
