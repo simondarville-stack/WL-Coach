@@ -29,7 +29,7 @@ const CoachDashboardV2 = lazy(() => import('./components/dashboard-v2/CoachDashb
 const CompetitionCalendar = lazy(() => import('./components/calendar/CompetitionCalendar').then(m => ({ default: m.CompetitionCalendar })));
 const TrainingGroups = lazy(() => import('./components/TrainingGroups').then(m => ({ default: m.TrainingGroups })));
 const RepMaxCalculator = lazy(() => import('./components/tools/RepMaxCalculator').then(m => ({ default: m.RepMaxCalculator })));
-const Calculator = lazy(() => import('./components/tools/Calculator').then(m => ({ default: m.Calculator })));
+const PKsCalculator = lazy(() => import('./components/tools/PKsCalculator').then(m => ({ default: m.PKsCalculator })));
 const CalendarTool = lazy(() => import('./components/tools/CalendarTool').then(m => ({ default: m.CalendarTool })));
 const PrilepinTable = lazy(() => import('./components/tools/PrilepinTable').then(m => ({ default: m.PrilepinTable })));
 const PRPage = lazy(() => import('./components/PRPage').then(m => ({ default: m.PRPage })));
@@ -380,7 +380,7 @@ function CoachApp() {
         />
       )}
       {showCalculator && (
-        <Calculator
+        <PKsCalculator
           onClose={() => setShowCalculator(false)}
           positionClass={
             showCalendarTool && showRepMaxCalc ? 'bottom-4 right-[740px]'
@@ -395,15 +395,15 @@ function CoachApp() {
           onClose={() => setShowPrilepin(false)}
           // Stacks left of any other open tool. Each slot is the cumulative
           // width-plus-gap of the panels already occupying space to its
-          // right (Calendar 320, xRM 380, Calculator 280; 4px gap each).
+          // right (Calendar 320, xRM 380, PKs 320; 4px gap each).
           positionClass={
-            showCalendarTool && showRepMaxCalc && showCalculator ? 'bottom-4 right-[1008px]'
+            showCalendarTool && showRepMaxCalc && showCalculator ? 'bottom-4 right-[1048px]'
             : showCalendarTool && showRepMaxCalc ? 'bottom-4 right-[724px]'
-            : showCalendarTool && showCalculator ? 'bottom-4 right-[624px]'
-            : showRepMaxCalc && showCalculator ? 'bottom-4 right-[684px]'
+            : showCalendarTool && showCalculator ? 'bottom-4 right-[664px]'
+            : showRepMaxCalc && showCalculator ? 'bottom-4 right-[724px]'
             : showCalendarTool ? 'bottom-4 right-[340px]'
             : showRepMaxCalc ? 'bottom-4 right-[400px]'
-            : showCalculator ? 'bottom-4 right-[300px]'
+            : showCalculator ? 'bottom-4 right-[340px]'
             : 'bottom-4 right-4'
           }
         />

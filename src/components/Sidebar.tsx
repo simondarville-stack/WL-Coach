@@ -326,7 +326,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         </button>
         <button
           onClick={() => onOpenCalculator?.()}
-          title={collapsed ? 'Calculator' : undefined}
+          title={collapsed ? 'PKs Calculator' : undefined}
           className={`w-full flex items-center gap-2 text-[13px] rounded-lg mx-1 ${
             collapsed ? 'justify-center' : 'py-1.5 px-3'
           }`}
@@ -334,7 +334,7 @@ export function Sidebar({ onNewCoach, onOpenCalc, onOpenCalculator, onOpenCalend
         >
           <Hash size={16} className="flex-shrink-0" />
           {!collapsed && (
-            <span className="whitespace-nowrap overflow-hidden">Calculator</span>
+            <span className="whitespace-nowrap overflow-hidden">PKs Calculator</span>
           )}
         </button>
         <button
