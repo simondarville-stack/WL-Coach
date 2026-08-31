@@ -264,6 +264,11 @@ export interface WeekPlan {
    *  the column existed or only ever edited by the host. Lets the planner
    *  show "Updated by Coach X" when last_edited_by_coach_id ≠ owner_id. */
   last_edited_by_coach_id: string | null;
+  /** GROUP plans only: when this plan was last synced to its athletes and by
+   *  whom (see GroupSyncModal). Optional because rows read before the
+   *  20260831 migration is applied don't carry the columns at all. */
+  last_synced_at?: string | null;
+  last_synced_by_coach_id?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -26,6 +26,7 @@ import { MetricStrip } from '../ui/MetricStrip';
 import { MARK_DAY, MARK_DAY_REORDER, MARK_EXERCISE, MARK_PRESET } from './dragPayload';
 import { routeCardDrop } from './cardDropRouting';
 import { plannedRowLabel } from '../../lib/plannedRowLabel';
+import { requestRevertToGroup } from './revertToGroup';
 
 interface DayCardProps {
   dayIndex: number;
@@ -151,6 +152,12 @@ export function DayCard({
   /** When non-null, opens the GPP editor for that planned_exercise. */
   const [editingGpp, setEditingGpp] = useState<PlannedExercise | null>(null);
   const deleteHeld = useDeleteHeld();
+
+  /** Clickable "I" badge: revert one coach-edited row to the group version.
+   *  The confirm flow and edge cases live in requestRevertToGroup. */
+  function revertRowToGroupVersion(ex: PlannedExercise & { exercise: Exercise }) {
+    void requestRevertToGroup(ex.id, plannedRowLabel(ex, { exerciseName: ex.exercise?.name }), onRefresh);
+  }
 
   function handleGridSave(ex: PlannedExercise, raw: string, unitOverride?: string) {
     // savePrescription writes to the DB and patches the in-memory row, so the
@@ -735,7 +742,7 @@ export function DayCard({
                           <p style={{ fontSize: 11, color: dangerText ?? 'var(--color-text-secondary)', fontStyle: 'italic', lineHeight: 1.375, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', margin: 0, flex: 1, minWidth: 0 }}>
                             {ex.notes || 'Free text…'}
                           </p>
-                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                         </div>
                       ) : sentinel === 'video' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -745,7 +752,7 @@ export function DayCard({
                             const thumb = getYouTubeThumbnail(ex.notes);
                             return thumb ? <img src={thumb} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} /> : null;
                           })()}
-                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                         </div>
                       ) : sentinel === 'image' ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -754,7 +761,7 @@ export function DayCard({
                           {ex.notes && (
                             <img src={ex.notes} alt="" style={{ width: 56, height: 36, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} onError={e => { e.currentTarget.style.display = 'none'; }} />
                           )}
-                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                          <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                         </div>
                       ) : sentinel === 'gpp' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
@@ -768,7 +775,7 @@ export function DayCard({
                                 ? `${ex.metadata.gpp.rows.length} row${ex.metadata.gpp.rows.length === 1 ? '' : 's'}`
                                 : 'click to edit'}
                             </span>
-                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                           </div>
                           {ex.metadata?.gpp?.rows?.length ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 1, paddingLeft: 17 }}>
@@ -817,7 +824,7 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {plannedRowLabel(ex, { memberNames: members.map(m => m.exercise.name) })}
                             </span>
-                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                           </div>
                           {plannedNote(ex) && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>
@@ -855,7 +862,7 @@ export function DayCard({
                             <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                               {plannedRowLabel(ex, { exerciseName: ex.exercise.name })}
                             </span>
-                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                            <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} onRevert={() => revertRowToGroupVersion(ex)} />
                           </div>
                           {plannedNote(ex) && (
                             <p style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)', fontStyle: 'italic', lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', margin: 0 }}>{plannedNote(ex)}</p>

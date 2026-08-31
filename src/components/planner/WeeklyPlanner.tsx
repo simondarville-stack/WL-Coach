@@ -12,13 +12,13 @@ import { useTrainingGroups } from '../../hooks/useTrainingGroups';
 import { useCoachStore } from '../../store/coachStore';
 import { useExerciseStore } from '../../store/exerciseStore';
 import { defaultUnitLabel } from '../../lib/constants';
-import { formatDateRange } from '../../lib/dateUtils';
+import { formatDateRange, formatDateShort } from '../../lib/dateUtils';
 import { getMondayOfWeekISO as getMondayOfWeek } from '../../lib/weekUtils';
 import { resolveMacroWeek } from '../../lib/plannerMacro';
 import { DEFAULT_VISIBLE_METRICS, type MetricKey } from '../../lib/metrics';
 import { parsePrescription, formatPrescription, parseComboPrescription, formatComboPrescription } from '../../lib/prescriptionParser';
 import type { PlanSelection } from '../../hooks/useWeekPlans';
-import type { DefaultUnit, PlannedExercise, Exercise } from '../../lib/database.types';
+import type { DefaultUnit, PlannedExercise, Exercise, WeekPlan } from '../../lib/database.types';
 import { WeekOverview } from './WeekOverview';
 import { DayEditor } from './DayEditor';
 import { ExerciseDetail } from './ExerciseDetail';
@@ -1789,6 +1789,7 @@ export function WeeklyPlanner() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-accent-hover)' }}>Group plan:</span>
                   <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>{planSelection.group.name}</span>
+                  <GroupSyncStamp weekPlan={currentWeekPlan} activeCoachId={activeCoachId} />
                 </div>
                 <button
                   onClick={() => setShowSyncModal(true)}
@@ -2301,7 +2302,50 @@ function formatRelativeShort(iso: string): string {
   if (diff < 60_000) return 'just now';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return new Date(iso).toLocaleDateString();
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+  // European day-first, not the browser-locale toLocaleDateString.
+  return `on ${formatDateShort(iso)}`;
+}
+
+/**
+ * "Last synced 2h ago by Coach A" inside the group-plan banner — the context
+ * a co-coach needs before syncing over a colleague's run. Resolves the coach
+ * name from coach_profiles ("you" for the active coach). Renders nothing on
+ * rows read before the 20260831 migration (the columns are absent from the
+ * row object, distinguishable from a genuine never-synced null).
+ */
+function GroupSyncStamp({ weekPlan, activeCoachId }: { weekPlan: WeekPlan | null; activeCoachId: string | null }) {
+  const syncedAt = weekPlan?.last_synced_at ?? null;
+  const syncedBy = weekPlan?.last_synced_by_coach_id ?? null;
+  const [coachName, setCoachName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!syncedBy || syncedBy === activeCoachId) { setCoachName(null); return; }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('coach_profiles')
+        .select('name')
+        .eq('id', syncedBy)
+        .maybeSingle();
+      if (!cancelled) setCoachName((data?.name as string | undefined) ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [syncedBy, activeCoachId]);
+
+  if (!weekPlan || !('last_synced_at' in weekPlan)) return null;
+  if (!syncedAt) {
+    return (
+      <span style={{ fontSize: 11, color: 'var(--color-accent)', opacity: 0.75 }}>· not synced yet</span>
+    );
+  }
+  const by = syncedBy === activeCoachId ? 'you' : coachName;
+  return (
+    <span style={{ fontSize: 11, color: 'var(--color-accent)' }}>
+      · last synced {formatRelativeShort(syncedAt)}
+      {by && <> by <span style={{ fontWeight: 600 }}>{by}</span></>}
+    </span>
+  );
 }
 
 /**

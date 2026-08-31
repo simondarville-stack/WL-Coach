@@ -355,6 +355,7 @@ export async function executeGroupSync(
     done += 1;
     onProgress?.(done, targets.length);
   }
+  if (targets.length > 0) await stampGroupPlanSynced(groupPlanId);
   return results;
 }
 
@@ -371,6 +372,31 @@ export async function syncGroupPlanToAllAthletes(
   const members = await fetchMembers(groupId, groupData.hostOwnerId);
   for (const member of members) {
     await syncOneAthlete(groupPlanId, weekStart, groupData, member, 'update');
+  }
+  if (members.length > 0) await stampGroupPlanSynced(groupPlanId);
+}
+
+/**
+ * Record who synced this group plan, and when, on the GROUP plan row — the
+ * banner shows it as "Last synced 2h ago by Coach A" so a co-coach sees the
+ * plan has already gone out before syncing over a colleague's run.
+ *
+ * Non-fatal by design: the stamp is context, not data, and it must not fail
+ * the sync on a database where the 20260831 last-synced migration hasn't
+ * been applied yet.
+ */
+async function stampGroupPlanSynced(groupPlanId: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('week_plans')
+      .update({
+        last_synced_at: new Date().toISOString(),
+        last_synced_by_coach_id: getOwnerId(),
+      })
+      .eq('id', groupPlanId);
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[groupSync] could not stamp last_synced_at on the group plan', err);
   }
 }
 
@@ -543,27 +569,7 @@ async function syncOneAthlete(
     // variation_note carries the coach's per-row tweak text.
     const { data: insertedExs, error: insError } = await supabase
       .from('planned_exercises')
-      .insert(exsToCopy.map(ex => ({
-        weekplan_id: athletePlanId,
-        exercise_id: ex.exercise_id,
-        day_index: ex.day_index,
-        position: ex.position,
-        unit: ex.unit,
-        prescription_raw: ex.prescription_raw,
-        notes: ex.notes,
-        variation_note: ex.variation_note ?? null,
-        display_name: ex.display_name ?? null,
-        summary_total_sets: ex.summary_total_sets,
-        summary_total_reps: ex.summary_total_reps,
-        summary_highest_load: ex.summary_highest_load,
-        summary_avg_load: ex.summary_avg_load,
-        is_combo: ex.is_combo,
-        combo_notation: ex.combo_notation,
-        combo_color: ex.combo_color,
-        // NOT NULL with default '{}'::jsonb — coerce a missing source to {}.
-        metadata: (ex.metadata ?? {}) as PlannedExerciseMetadata,
-        source: 'group' as const,
-      })))
+      .insert(exsToCopy.map(ex => exerciseInsertPayload(ex, athletePlanId)))
       .select('id');
     if (insError) throw insError;
 
@@ -574,19 +580,7 @@ async function syncOneAthlete(
     (insertedExs || []).forEach((newEx, idx) => {
       const srcEx = exsToCopy[idx];
       for (const l of setLinesByExId.get(srcEx.id) || []) {
-        allSetLines.push({
-          planned_exercise_id: newEx.id,
-          sets: l.sets,
-          sets_max: l.sets_max ?? null,
-          reps: l.reps,
-          reps_max: l.reps_max ?? null,
-          reps_text: l.reps_text ?? null,
-          load_value: l.load_value,
-          load_max: l.load_max ?? null,
-          load_cmp: l.load_cmp ?? null,
-          position: l.position,
-          notes: l.notes ?? null,
-        });
+        allSetLines.push(setLineInsertPayload(l, newEx.id));
       }
       if (srcEx.is_combo) {
         for (const m of comboMembersByExId.get(srcEx.id) || []) {
@@ -628,4 +622,167 @@ async function syncOneAthlete(
     keptLogged: groupExercises.filter(ex => loggedKeys.has(slotKey(ex.exercise_id, ex.day_index))).length,
     removed: staleRemoved,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Copy payloads — shared by the bulk sync and the single-row revert so the
+// two paths can never drift on which columns a group copy carries.
+// ---------------------------------------------------------------------------
+
+/** The copyable columns of a group planned_exercise, as an insert payload. */
+function exerciseInsertPayload(ex: GroupExerciseRow, weekplanId: string) {
+  return {
+    weekplan_id: weekplanId,
+    exercise_id: ex.exercise_id,
+    day_index: ex.day_index,
+    position: ex.position,
+    unit: ex.unit,
+    prescription_raw: ex.prescription_raw,
+    notes: ex.notes,
+    variation_note: ex.variation_note ?? null,
+    display_name: ex.display_name ?? null,
+    summary_total_sets: ex.summary_total_sets,
+    summary_total_reps: ex.summary_total_reps,
+    summary_highest_load: ex.summary_highest_load,
+    summary_avg_load: ex.summary_avg_load,
+    is_combo: ex.is_combo,
+    combo_notation: ex.combo_notation,
+    combo_color: ex.combo_color,
+    // planned_exercises.metadata is NOT NULL with default '{}'::jsonb —
+    // coerce a missing source to {} rather than violating the constraint.
+    metadata: (ex.metadata ?? {}) as PlannedExerciseMetadata,
+    source: 'group' as const,
+  };
+}
+
+/** Full-shape set-line copy: ranges, soft-load comparator and notes included. */
+function setLineInsertPayload(l: PlannedSetLine, plannedExerciseId: string) {
+  return {
+    planned_exercise_id: plannedExerciseId,
+    sets: l.sets,
+    sets_max: l.sets_max ?? null,
+    reps: l.reps,
+    reps_max: l.reps_max ?? null,
+    reps_text: l.reps_text ?? null,
+    load_value: l.load_value,
+    load_max: l.load_max ?? null,
+    load_cmp: l.load_cmp ?? null,
+    position: l.position,
+    notes: l.notes ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Revert one row to the group version
+// ---------------------------------------------------------------------------
+
+export type RevertResult =
+  /** Replaced with a fresh copy of the group plan's current row. */
+  | 'reverted'
+  /** Slot no longer in the group plan; removed on explicit request. */
+  | 'removed'
+  /** The athlete has logged against it — protected, nothing changed. */
+  | 'logged'
+  /** Slot no longer in the group plan; caller should confirm removal. */
+  | 'not-in-group'
+  /** The plan isn't linked to a group plan — nothing to revert to. */
+  | 'no-group-plan';
+
+/**
+ * Drop one individual override and take the group plan's current version of
+ * the same slot — the single-row counterpart of an 'overwrite' sync.
+ *
+ * The copy lands at the athlete's OWN position (revert the content, keep the
+ * layout) with source='group', so the next sync treats it as a group row
+ * again. Same protection rule as the sync: a logged row is a record, never
+ * replaced. When the group plan no longer trains this slot, the honest revert
+ * is removal — returned as 'not-in-group' first so the caller can confirm,
+ * then executed with `removeIfMissing`.
+ */
+export async function revertRowToGroup(
+  plannedExerciseId: string,
+  opts: { removeIfMissing?: boolean } = {},
+): Promise<RevertResult> {
+  const { data: row, error: rowErr } = await supabase
+    .from('planned_exercises')
+    .select('id, weekplan_id, exercise_id, day_index, position')
+    .eq('id', plannedExerciseId)
+    .single();
+  if (rowErr) throw rowErr;
+
+  const { data: plan, error: planErr } = await supabase
+    .from('week_plans')
+    .select('source_group_plan_id')
+    .eq('id', row.weekplan_id)
+    .single();
+  if (planErr) throw planErr;
+  const groupPlanId = plan?.source_group_plan_id;
+  if (!groupPlanId) return 'no-group-plan';
+
+  const { data: logRefs, error: logErr } = await supabase
+    .from('training_log_exercises')
+    .select('id')
+    .eq('planned_exercise_id', plannedExerciseId)
+    .limit(1);
+  if (logErr) throw logErr;
+  if ((logRefs || []).length > 0) return 'logged';
+
+  const { data: groupRows, error: gErr } = await supabase
+    .from('planned_exercises')
+    .select('*')
+    .eq('weekplan_id', groupPlanId)
+    .eq('exercise_id', row.exercise_id)
+    .eq('day_index', row.day_index)
+    .order('position')
+    .limit(1);
+  if (gErr) throw gErr;
+  const groupEx = ((groupRows || []) as unknown as GroupExerciseRow[])[0];
+
+  if (!groupEx) {
+    if (!opts.removeIfMissing) return 'not-in-group';
+    await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExerciseId);
+    const { error: delErr } = await supabase.from('planned_exercises').delete().eq('id', plannedExerciseId);
+    if (delErr) throw delErr;
+    await normalizePositions(row.weekplan_id);
+    return 'removed';
+  }
+
+  const { data: setLines } = await supabase
+    .from('planned_set_lines')
+    .select('*')
+    .eq('planned_exercise_id', groupEx.id)
+    .order('position');
+  const { data: comboMembers } = groupEx.is_combo
+    ? await supabase
+        .from('planned_exercise_combo_members')
+        .select('exercise_id, position')
+        .eq('planned_exercise_id', groupEx.id)
+    : { data: [] };
+
+  await supabase.from('planned_set_lines').delete().eq('planned_exercise_id', plannedExerciseId);
+  const { error: delErr } = await supabase.from('planned_exercises').delete().eq('id', plannedExerciseId);
+  if (delErr) throw delErr;
+
+  const { data: inserted, error: insErr } = await supabase
+    .from('planned_exercises')
+    .insert([{ ...exerciseInsertPayload(groupEx, row.weekplan_id), position: row.position }])
+    .select('id')
+    .single();
+  if (insErr) throw insErr;
+
+  const lines = ((setLines || []) as unknown as PlannedSetLine[]).map(l => setLineInsertPayload(l, inserted.id));
+  if (lines.length > 0) {
+    const { error } = await supabase.from('planned_set_lines').insert(lines);
+    if (error) throw error;
+  }
+  const members = (comboMembers || []) as { exercise_id: string; position: number }[];
+  if (members.length > 0) {
+    const { error } = await supabase.from('planned_exercise_combo_members').insert(
+      members.map(m => ({ planned_exercise_id: inserted.id, exercise_id: m.exercise_id, position: m.position })),
+    );
+    if (error) throw error;
+  }
+
+  await normalizePositions(row.weekplan_id);
+  return 'reverted';
 }
