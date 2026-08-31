@@ -11,12 +11,10 @@ import {
   MIN_SPAN, type Viewport,
 } from '../../lib/chartViewport';
 import { parsePrescription } from '../../lib/prescriptionParser';
+import { formatKg as fmtKg } from '../../lib/loadRepsFormat';
 import {
-  formatKg as fmtKg,
-  formatLoadReps,
-  groupLoadReps,
-  joinLoadRepsDetails as joinDetails,
-} from '../../lib/loadRepsFormat';
+  StackedNotation, LoggedStackedNotation, type LoggedSetLike,
+} from './StackedNotation';
 import {
   placeUnit, placeLoggedDate, orderedUnits, parseClockMinutes,
   type DaySchedule,
@@ -45,11 +43,28 @@ interface ChartPoint {
   perf_avg: number | null;
   soll_max:  number | null;
   soll_avg: number | null;
-  /** Stacked prescription behind the point: "80×3, 85×2×3" (load × reps × sets).
-   *  Null when the session has nothing planned / logged for this exercise. */
-  plan_detail: string | null;
-  perf_detail: string | null;
+  /** What was written for this session — one entry per planned row, kept as
+   *  the raw prescription plus the two values the notation needs. Structured
+   *  rather than pre-joined into "80×3, 85×2×3": that string is the storage
+   *  form, and flattening through it dropped ranges, %, soft-load signs,
+   *  free-text loads and combo tuples before they ever reached the tooltip. */
+  plan_detail: PlanDetail[];
+  /** What was lifted. v2 sessions carry their set rows; a v1 row has only the
+   *  summary string the old client wrote. Empty when nothing was logged. */
+  perf_detail: PerfDetail[];
 }
+
+/** One planned row behind a point — the three props StackedNotation takes. */
+interface PlanDetail {
+  raw: string;
+  unit: string | null;
+  isCombo: boolean;
+}
+
+/** One logged exercise behind a point. */
+type PerfDetail =
+  | { kind: 'sets'; sets: LoggedSetLike[] }
+  | { kind: 'raw'; raw: string };
 
 /** Running totals while a session's sets are folded together. */
 interface Acc { max: number; totalLoad: number; totalReps: number }
@@ -109,10 +124,14 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
       <span style={{ color, fontWeight: 500 }}>{value}</span>
     </div>
   );
-  const detail = (label: string, text: string) => (
+  // Stacked Load Notation, like every other read-only prescription surface
+  // (DISPLAY_CONVENTIONS section 1). Several rows can sit behind one point —
+  // an exercise written twice in the same unit — so each gets its own stack
+  // instead of being joined into one run-on line.
+  const detail = (label: string, body: React.ReactNode) => (
     <div style={{ marginTop: 3 }}>
       <span style={{ color: 'var(--color-text-tertiary)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-      <div style={{ color: 'var(--color-text-primary)', fontSize: 11 }}>{text}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 1 }}>{body}</div>
     </div>
   );
 
@@ -131,10 +150,16 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
       {point.soll_max != null && row('Target max', `${fmtKg(point.soll_max)} kg`, '#fb923c')}
       {point.plan_max != null && row('Planned max', `${fmtKg(point.plan_max)} kg`, '#94a3b8')}
       {point.plan_avg != null && row('Planned avg', `${fmtKg(point.plan_avg)} kg`, '#94a3b8')}
-      {point.plan_detail && detail('Planned', point.plan_detail)}
+      {point.plan_detail.length > 0 && detail('Planned', point.plan_detail.map((d, i) => (
+        <StackedNotation key={i} raw={d.raw} unit={d.unit} isCombo={d.isCombo} />
+      )))}
       {point.perf_max != null && row('Performed max', `${fmtKg(point.perf_max)} kg`, '#3b82f6')}
       {point.perf_avg != null && row('Performed avg', `${fmtKg(point.perf_avg)} kg`, '#3b82f6')}
-      {point.perf_detail && detail('Performed', point.perf_detail)}
+      {point.perf_detail.length > 0 && detail('Performed', point.perf_detail.map((d, i) => (
+        d.kind === 'sets'
+          ? <LoggedStackedNotation key={i} sets={d.sets} includeIncomplete={false} />
+          : <StackedNotation key={i} raw={d.raw} unit={null} />
+      )))}
     </div>
   );
 }
@@ -191,7 +216,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       );
 
       const planBySession = new Map<string, Acc>();
-      const planDetailBySession = new Map<string, string | null>();
+      const planDetailBySession = new Map<string, PlanDetail[]>();
       /** session key → { weekStart, dayIndex } so we can place it later. */
       const sessionMeta = new Map<string, { weekStart: string; dayIndex: number }>();
 
@@ -200,7 +225,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
 
         const { data: planRows } = await supabase
           .from('planned_exercises')
-          .select('weekplan_id, day_index, prescription_raw, summary_highest_load, summary_avg_load, summary_total_reps')
+          .select('weekplan_id, day_index, prescription_raw, unit, is_combo, summary_highest_load, summary_avg_load, summary_total_reps')
           .eq('exercise_id', exerciseId)
           .in('weekplan_id', wpIds)
           .order('day_index');
@@ -222,14 +247,16 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
             totalLoad: prev.totalLoad + avg * reps,
             totalReps: prev.totalReps + reps,
           });
-          // parsePrescription is the canonical grammar (lib/prescriptionParser);
-          // re-formatting through it normalises "80x5x3" / "80 × 5 × 3" alike.
-          const detail = formatLoadReps(
-            parsePrescription(row.prescription_raw ?? '')
-              .filter(l => l.load > 0)
-              .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
-          );
-          planDetailBySession.set(key, joinDetails(planDetailBySession.get(key) ?? null, detail));
+          // The raw string travels intact — StackedNotation owns the parsing,
+          // and it uses the same canonical parser (lib/prescriptionParser) that
+          // normalises "80x5x3" / "80 × 5 × 3" alike, so deferring loses nothing.
+          const raw = row.prescription_raw?.trim();
+          if (raw) {
+            planDetailBySession.set(key, [
+              ...(planDetailBySession.get(key) ?? []),
+              { raw, unit: row.unit, isCombo: row.is_combo === true },
+            ]);
+          }
         }
       }
 
@@ -246,17 +273,16 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       // leaves performed_raw empty, so we fetch both and prefer the set
       // rows when they exist. v1 rows still parse the summary string.
       const logExIds = (logRows ?? []).map(r => r.id);
-      type SetRow = {
-        log_exercise_id: string;
-        performed_load: number | null;
-        performed_reps: number | null;
-        status: 'pending' | 'completed' | 'skipped' | 'failed';
-      };
+      // The display columns LoggedStackedNotation reads, plus the grouping key
+      // and the two numbers the max / tonnage accumulators below need.
+      type SetRow = LoggedSetLike & { log_exercise_id: string };
       let setRows: SetRow[] = [];
       if (logExIds.length > 0) {
         const { data: lsRows } = await supabase
           .from('training_log_sets')
-          .select('log_exercise_id, performed_load, performed_reps, status')
+          .select('id, log_exercise_id, performed_load, performed_reps, performed_text, rpe, status, notes')
+          // So a session's columns read in the order the athlete lifted them.
+          .order('set_number', { ascending: true })
           .in('log_exercise_id', logExIds);
         setRows = (lsRows ?? []) as SetRow[];
       }
@@ -269,7 +295,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
       }
 
       const perfBySession = new Map<string, Acc>();
-      const perfDetailBySession = new Map<string, string | null>();
+      const perfDetailBySession = new Map<string, PerfDetail[]>();
       /** session key → the real date it happened, which beats any placement rule. */
       const loggedDateBySession = new Map<string, string>();
       for (const row of logRows ?? []) {
@@ -295,14 +321,12 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
               totalReps: prev.totalReps + reps,
             });
           }
-          // One row per set → collapse consecutive equal (load, reps) pairs.
-          perfDetailBySession.set(key, joinDetails(
-            perfDetailBySession.get(key) ?? null,
-            formatLoadReps(groupLoadReps(setsForRow.map(s => ({
-              load: s.performed_load ?? 0,
-              reps: s.performed_reps ?? 0,
-            })))),
-          ));
+          // The set rows themselves go to the tooltip — one notation column
+          // per set, RPE included, instead of a collapsed summary string.
+          perfDetailBySession.set(key, [
+            ...(perfDetailBySession.get(key) ?? []),
+            { kind: 'sets', sets: setsForRow },
+          ]);
         } else if (row.performed_raw) {
           // v1 fallback: parse the summary string the old client wrote.
           const lines = parsePrescription(row.performed_raw);
@@ -315,13 +339,10 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
               totalReps: prev.totalReps + line.reps * line.sets,
             });
           }
-          perfDetailBySession.set(key, joinDetails(
-            perfDetailBySession.get(key) ?? null,
-            formatLoadReps(
-              lines.filter(l => l.load > 0)
-                .map(l => ({ load: l.load, reps: l.reps, sets: Math.max(1, l.sets) })),
-            ),
-          ));
+          perfDetailBySession.set(key, [
+            ...(perfDetailBySession.get(key) ?? []),
+            { kind: 'raw', raw: row.performed_raw },
+          ]);
         }
       }
 
@@ -437,8 +458,8 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           perf_avg: perf && perf.totalReps > 0 ? Math.round(perf.totalLoad / perf.totalReps) : null,
           soll_max: null,
           soll_avg: null,
-          plan_detail: planDetailBySession.get(key) ?? null,
-          perf_detail: perfDetailBySession.get(key) ?? null,
+          plan_detail: planDetailBySession.get(key) ?? [],
+          perf_detail: perfDetailBySession.get(key) ?? [],
         });
       }
 
@@ -457,7 +478,7 @@ export function ExerciseHistoryChart({ exerciseId, athleteId, macroContext, curr
           when: null,
           plan_max: null, plan_avg: null, perf_max: null, perf_avg: null,
           soll_max: soll.max, soll_avg: soll.avg,
-          plan_detail: null, perf_detail: null,
+          plan_detail: [], perf_detail: [],
         });
       }
 
