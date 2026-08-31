@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
-import { resolveFormulaCell, expandFormulas } from '../../lib/formulaEval';
+import { resolveFormulaCell } from '../../lib/formulaEval';
 import {
   parsePrescription, formatPrescription,
   parseFreeTextPrescription, formatFreeTextPrescription,
   parseComboPrescription, formatComboPrescription,
   detectIntendedUnit, splitLoadCmp, LOAD_CMP_GLYPH,
+  parseNotationLine, looksLikeNotationLine, splitQuotedLiteral,
 } from '../../lib/prescriptionParser';
 import type { ParsedSetLine, LoadCmp } from '../../lib/prescriptionParser';
 import { useDeleteHeld } from '../../hooks/useDeleteHeld';
+import { getUnitLabel } from '../../lib/constants';
 import { AutoGrowTextarea } from '../ui';
 import type { CoachPreset } from '../../lib/database.types';
 import { StackedNotation } from './StackedNotation';
@@ -61,14 +63,23 @@ interface PrescriptionGridProps {
    *  committing the text as a value. */
   presets?: CoachPreset[];
   onApplyPreset?: (preset: CoachPreset) => void;
-  /** Overrides the Alt+click gesture. Set it where the surface already owns
-   *  a text editor for the same prescription — ExerciseDetail flips its own
-   *  "Text mode" panel — so a coach never faces two raw-notation inputs. */
-  onRequestTextMode?: () => void;
 }
 
 let colIdCounter = 0;
 function nextId() { return `col-${++colIdCounter}`; }
+
+/**
+ * The units Alt+click cycles through, in order. Deliberately the same three
+ * MacroTableV2 already cycles, and the same three the coach can pick in the
+ * exercise detail: `free_text` renders prose instead of a grid, so cycling
+ * into it would remove the very cell the gesture lives on, and `rpe` / `other`
+ * are storage-only — no picker offers them, so landing a row on one by
+ * accident would strand it.
+ */
+const UNIT_CYCLE = ['absolute_kg', 'percentage', 'free_text_reps'] as const;
+
+/** A load text that is really just a number, and so survives a unit change. */
+const NUMERIC_TEXT = /^\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?$/;
 
 /** "3-5" → {min:3, max:5}, "5" → {min:5, max:null}; invalid → null (edit discarded). */
 function parseBoundedIntRange(s: string, floor: number): { min: number; max: number | null } | null {
@@ -138,7 +149,6 @@ export function PrescriptionGrid({
   compact = false,
   presets,
   onApplyPreset,
-  onRequestTextMode,
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
@@ -150,10 +160,21 @@ export function PrescriptionGrid({
   /** Highlighted row of the "#" preset dropdown while editing a cell. */
   const [presetIndex, setPresetIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  /** The whole prescription as a raw line, opened by Alt+click. null = grid. */
-  const [textEditing, setTextEditing] = useState<string | null>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
-  const textEditingOpen = textEditing !== null;
+  /** Transient one-liner under the grid: what the unit cycle just did, or why
+   *  it refused. The gesture has no visible control of its own, so without
+   *  this a refusal is indistinguishable from a dead click. */
+  const [note, setNote] = useState<string | null>(null);
+  const noteTimer = useRef<number | null>(null);
+
+  function showNote(message: string) {
+    setNote(message);
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+    noteTimer.current = window.setTimeout(() => setNote(null), 2600);
+  }
+
+  useEffect(() => () => {
+    if (noteTimer.current !== null) window.clearTimeout(noteTimer.current);
+  }, []);
 
   // Every raw this grid has emitted. The parent echoes saves back into
   // `prescriptionRaw` (to keep summaries live); under rapid clicks an older or
@@ -194,12 +215,6 @@ export function PrescriptionGrid({
     }
   }, [editing?.colId, editing?.field]);
 
-  useEffect(() => {
-    if (!textEditingOpen) return;
-    textInputRef.current?.focus();
-    textInputRef.current?.select();
-  }, [textEditingOpen]);
-
   /** Live "= 40" bubble above the cell being edited, so a coach sees what the
    *  formula resolves to before committing it. '!' means it doesn't evaluate
    *  (yet) — the edit will be discarded rather than written as 0. */
@@ -208,15 +223,6 @@ export function PrescriptionGrid({
     const r = resolveFormulaCell(editing.value, editing.field === 'load' ? 'decimal' : 'integer');
     return r.error ? '!' : r.text;
   }, [editing]);
-
-  /** Live Stacked-Notation echo of the raw line being typed, so the coach can
-   *  see how it parses (and which unit it implies) before committing it. */
-  const textPreview = useMemo(() => {
-    if (textEditing == null) return null;
-    const resolved = expandFormulas(textEditing).trim();
-    if (!resolved) return null;
-    return { raw: resolved, unit: detectIntendedUnit(resolved) ?? unit };
-  }, [textEditing, unit]);
 
   /** Presets matching a "#…" cell edit — drives the in-cell dropdown. A bare
    *  "#" lists everything; further characters filter by name prefix. */
@@ -317,26 +323,41 @@ export function PrescriptionGrid({
     );
   }
 
-  const save = useCallback((cols: GridColumn[]) => {
-    let raw: string;
+  /**
+   * The single place that decides which of the three formatters a set of
+   * columns goes through. Taking the unit as an argument rather than reading
+   * the prop is what lets a unit change and a value edit share one code path —
+   * previously the unit-switch branch had its own copy that quietly dropped
+   * `setsMax` and `loadCmp`, so a `×2-4` or a `≥` was lost on every switch.
+   */
+  const formatFor = useCallback((cols: GridColumn[], targetUnit: string | null): string => {
+    const asText = targetUnit === 'free_text_reps';
     if (isCombo) {
-      raw = formatComboPrescription(
+      return formatComboPrescription(
         cols.map(col => ({
           sets: col.sets, setsMax: col.setsMax, repsText: col.repsText, totalReps: col.reps,
           load: col.load, loadMax: col.loadMax ?? null, loadCmp: col.loadCmp,
           ...(col.multiplier != null ? { multiplier: col.multiplier } : {}),
-          ...(isFreeTextReps ? { loadText: col.loadText } : {}),
+          ...(asText ? { loadText: col.loadText } : {}),
         })),
-        unit,
+        targetUnit,
       );
-    } else if (isFreeTextReps) {
-      raw = formatFreeTextPrescription(cols.map(col => ({ loadText: col.loadText, reps: col.reps, sets: col.sets })));
-    } else {
-      raw = formatPrescription(columnsToSetLines(cols), unit);
     }
+    if (asText) {
+      return formatFreeTextPrescription(cols.map(col => ({
+        loadText: col.loadText || (col.loadMax != null ? `${col.load}-${col.loadMax}` : String(col.load)),
+        reps: col.reps,
+        sets: col.sets,
+      })));
+    }
+    return formatPrescription(columnsToSetLines(cols), targetUnit);
+  }, [isCombo]);
+
+  const save = useCallback((cols: GridColumn[]) => {
+    const raw = formatFor(cols, unit);
     sentRawsRef.current.add(raw);
     onSave(raw);
-  }, [isCombo, isFreeTextReps, unit, onSave]);
+  }, [formatFor, unit, onSave]);
 
   // save() must stay OUTSIDE the setColumns updater: updaters run during the
   // render phase, and save() sets parent state (React's "cannot update a
@@ -353,10 +374,72 @@ export function PrescriptionGrid({
     save(next);
   }
 
+  /**
+   * Alt+click a load cell to cycle the row's unit; Alt+right-click to go back.
+   * The load is the only cell it answers to, because the unit is a statement
+   * about the load and nothing else.
+   *
+   * Returns true when it consumed the event, so every load-cell handler can
+   * call it first and bail. A refusal still returns true — the gesture was
+   * understood and declined, which is not the same as not being a gesture.
+   */
+  function cycleUnit(e: React.MouseEvent): boolean {
+    if (!e.altKey || (e.button !== 0 && e.button !== 2)) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return true;
+
+    const at = UNIT_CYCLE.indexOf(unit as typeof UNIT_CYCLE[number]);
+    if (at === -1) {
+      // rpe / other / free_text: reachable in storage, offered by no picker.
+      // Cycling would be the only way in and no way back, so it is refused.
+      showNote(`${getUnitLabel(unit)} is not one of the cycled units`);
+      return true;
+    }
+    const step = e.button === 2 ? -1 : 1;
+    const next = UNIT_CYCLE[(at + step + UNIT_CYCLE.length) % UNIT_CYCLE.length];
+
+    // Refuse the transitions that cannot be undone by cycling back. A coach
+    // mid-plan has no undo, and the write replaces the stored set lines, so a
+    // lossy cycle is permanent the moment it lands.
+    if (unit === 'free_text_reps' && columns.some(c => c.loadText.trim() && !NUMERIC_TEXT.test(c.loadText.trim()))) {
+      showNote('Text loads would be lost — retype them as numbers first');
+      return true;
+    }
+    // free_text_reps stores only `loadText × reps × sets`. Everything else a
+    // column can carry — an interval top, a soft-load sign, a rep or set range
+    // — has nowhere to go, and parseToColumns hard-nulls them on the way back,
+    // so cycling out again does NOT restore them. Refuse rather than shed them.
+    if (next === 'free_text_reps'
+        && columns.some(c => c.repsMax != null || c.setsMax != null || c.loadMax != null || c.loadCmp != null)) {
+      showNote('Free text has no ranges or signs — they would be lost');
+      return true;
+    }
+
+    const raw = formatFor(columns, next);
+    const back = parseToColumns(raw, isCombo, next);
+    if (back.length !== columns.length) {
+      showNote(`${getUnitLabel(next)} cannot hold this prescription`);
+      return true;
+    }
+
+    // Any half-typed cell is abandoned: its blur would commit against the
+    // unit this cycle just replaced, quietly undoing the change.
+    setEditing(null);
+    sentRawsRef.current.add(raw);
+    // Keep the column ids so the cells do not remount under the cursor.
+    setColumns(back.map((c, i) => (columns[i] ? { ...c, id: columns[i].id } : c)));
+    onSave(raw, next);
+    showNote(getUnitLabel(next));
+    return true;
+  }
+
   function handleCellClick(e: React.MouseEvent, colId: string, field: 'load' | 'reps' | 'sets') {
     e.preventDefault();
     if (disabled) return;
+    // Del-held stays the outermost mode: an armed delete is never hijacked.
     if (deleteHeld) { removeColumn(colId); return; }
+    if (field === 'load' && cycleUnit(e)) return;
     const col = columns.find(c => c.id === colId);
     if (!col) return;
 
@@ -440,6 +523,98 @@ export function PrescriptionGrid({
       return;
     }
 
+    // A double-quoted value is a label, never notation — the escape hatch for
+    // a load that contains the separator itself ("30x2" as a name, not as
+    // thirty for two). Checked before the formula and before unit detection:
+    // ignore the quotes and `"80x5"` is all digits, so both would claim it.
+    // The percentage cell pre-populates "80%" and selects only the number, so
+    // a coach who types a literal over it ends up with `"Heavy"%`. That is not
+    // meaningful notation and the sticky suffix is the only way to produce it,
+    // so it is dropped rather than turned into a refusal.
+    const unstuck = typed.startsWith('"') && typed.endsWith('%') ? typed.slice(0, -1).trim() : typed;
+    const literal = splitQuotedLiteral(unstuck);
+    if (literal !== null) {
+      setEditing(null);
+      // Reps and sets have no textual form; writing one would store NaN.
+      if (editing.field !== 'load') return;
+      const text = literal.replace(/"/g, '').trim();
+      if (text === '') return;
+      if (isFreeTextReps) {
+        updateColumn(editing.colId, { loadText: text, load: parseFloat(text) || 0, loadMax: null, loadCmp: null });
+        return;
+      }
+      // A text load exists only under free_text_reps, so a literal in a
+      // numeric row IS a unit change — carried in the same single write, or
+      // the row would store the label as a load of 0.
+      const switched: GridColumn[] = columns.map(c => c.id === editing.colId
+        ? { ...c, loadText: text, load: parseFloat(text) || 0, loadMax: null, loadCmp: null }
+        : { ...c, loadText: c.loadText || (c.loadMax != null ? `${c.load}-${c.loadMax}` : String(c.load)), loadMax: null });
+      const literalRaw = formatFor(switched, 'free_text_reps');
+      sentRawsRef.current.add(literalRaw);
+      setColumns(switched);
+      onSave(literalRaw, 'free_text_reps');
+      return;
+    }
+
+    // Checked BEFORE the single-cell formula branch, which resolves the whole
+    // value as one expression and discards it on failure — "=160*0.5x3" is not
+    // one expression, so that branch would throw the line away. Each segment
+    // resolves its own formula inside parseNotationLine instead.
+    // A comma or a multiplier means the coach typed a whole prescription into
+    // one cell. Expand it into columns, spliced in place of the one being
+    // edited — so editing column 3 of 5 rewrites column 3, not the row.
+    // Load cell only: a reps cell legitimately holds "3-5" and combo tuples,
+    // where an "x" would be a typo rather than a request for more columns.
+    const notationSegments = editing.field === 'load' && looksLikeNotationLine(typed)
+      ? parseNotationLine(typed, { isCombo })
+      : null;
+    // A comma is an unambiguous multi-segment attempt, so a line that fails to
+    // parse is refused rather than stored as prose. Without one, the value is
+    // far more likely an ordinary text load whose spelling happens to contain
+    // an "x" — "Max", "Box squat", "Complex" — so it falls through to the
+    // single-value paths that have always handled those.
+    if (editing.field === 'load' && !notationSegments && looksLikeNotationLine(typed) && typed.includes(',')) {
+      setEditing(null);
+      showNote('Could not read that line');
+      return;
+    }
+    if (notationSegments) {
+      const segments = notationSegments;
+      setEditing(null);
+
+      const idx = columns.findIndex(c => c.id === editing.colId);
+      const expanded: GridColumn[] = segments.map(seg => ({
+        id: nextId(),
+        load: seg.load,
+        loadMax: seg.loadMax,
+        loadText: seg.loadText,
+        // A sign typed on a segment applies to that segment; the rest inherit
+        // the edited column's, so one typed ≥ never silently signs the line.
+        loadCmp: seg.isText ? null : (seg.loadCmp ?? col.loadCmp),
+        reps: seg.reps,
+        repsMax: seg.repsMax,
+        repsText: seg.repsText,
+        sets: seg.sets,
+        setsMax: seg.setsMax,
+        multiplier: seg.multiplier ?? col.multiplier,
+      }));
+      const spliced = idx === -1
+        ? expanded
+        : [...columns.slice(0, idx), ...expanded, ...columns.slice(idx + 1)];
+
+      // A text segment can only live under free_text_reps, whatever the rest
+      // of the line looks like.
+      const detected = segments.some(seg => seg.isText) ? 'free_text_reps' : detectIntendedUnit(typed);
+      const effective = detected ?? unit;
+      const expandedRaw = formatFor(spliced, effective);
+      sentRawsRef.current.add(expandedRaw);
+      setColumns(spliced);
+      // One write carries both the raw and the unit — two would race inside
+      // the per-exercise write chain and the loser would win the database.
+      onSave(expandedRaw, detected && detected !== unit ? detected : undefined);
+      return;
+    }
+
     // Excel-style "=": resolve the arithmetic BEFORE anything else reads the
     // cell, so every downstream branch (unit detection, interval parsing, the
     // combo tuple test) sees a plain number and needs no formula awareness.
@@ -453,6 +628,7 @@ export function PrescriptionGrid({
     );
     if (resolved.error) { setEditing(null); return; }
     const value = resolved.text;
+
 
     // Auto-switch unit when the coach signals one via the load cell.
     // "80%" → percentage, "Heavy" → free_text_reps, "80x5" → absolute_kg.
@@ -494,23 +670,7 @@ export function PrescriptionGrid({
           return c;
         });
 
-        const isFreeTextRepsDetected = detected === 'free_text_reps';
-        const raw = isCombo
-          ? formatComboPrescription(
-              switchedCols.map(col => ({
-                sets: col.sets,
-                repsText: col.repsText,
-                totalReps: col.reps,
-                load: col.load,
-                loadMax: col.loadMax ?? null,
-                ...(col.multiplier != null ? { multiplier: col.multiplier } : {}),
-                ...(isFreeTextRepsDetected ? { loadText: col.loadText } : {}),
-              })),
-              detected,
-            )
-          : isFreeTextRepsDetected
-          ? formatFreeTextPrescription(switchedCols.map(c => ({ loadText: c.loadText, reps: c.reps, sets: c.sets })))
-          : formatPrescription(columnsToSetLines(switchedCols), detected);
+        const raw = formatFor(switchedCols, detected);
 
         sentRawsRef.current.add(raw);
         setColumns(switchedCols);
@@ -576,47 +736,6 @@ export function PrescriptionGrid({
   }
 
   function cancelEdit() { setEditing(null); }
-
-  /** Commits the Alt+click raw line. Mirrors ExerciseDetail's text mode:
-   *  "=" formulas expand first, so unit detection and every parser below it
-   *  see plain numbers. An empty line clears the prescription. */
-  function commitTextEdit() {
-    const typed = textEditing;
-    setTextEditing(null);
-    if (typed == null) return;
-    const resolved = expandFormulas(typed).trim();
-    if (resolved === (prescriptionRaw ?? '').trim()) return;
-    const detected = detectIntendedUnit(resolved);
-    // Parse locally as well as saving: sentRawsRef suppresses the parent's
-    // echo, so the grid has to rebuild its own columns from the typed line.
-    sentRawsRef.current.add(resolved);
-    setColumns(parseToColumns(resolved, isCombo, detected ?? unit));
-    onSave(resolved, detected && detected !== unit ? detected : undefined);
-  }
-
-  /** Alt+click drops the whole prescription to a raw line — the wide
-   *  counterpart to Ctrl+click's "type this one value". Captured on the
-   *  wrapper so every cell, sign glyph and the "+" button share the gesture:
-   *  an empty prescription has nothing but "+" to aim at.
-   *
-   *  Deliberately a click, not a held-Alt mode like Del: Firefox focuses its
-   *  menu bar when Alt is pressed and released on its own. Linux window
-   *  managers that claim Alt+click for window-move will swallow it — the
-   *  Text mode button in ExerciseDetail stays the gesture-free path. */
-  function isAltGesture(e: React.MouseEvent) {
-    if (!e.altKey || e.button !== 0 || disabled || deleteHeld) return false;
-    const t = e.target as HTMLElement | null;
-    return !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'));
-  }
-
-  function openTextEditing(e: React.MouseEvent) {
-    if (!isAltGesture(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (onRequestTextMode) { onRequestTextMode(); return; }
-    setEditing(null);
-    setTextEditing(prescriptionRaw ?? '');
-  }
 
   function handleKeyDown(e: React.KeyboardEvent, colId: string) {
     if (editing) return;
@@ -714,7 +833,7 @@ export function PrescriptionGrid({
               onContextMenu={e => e.preventDefault()}
               tabIndex={-1}
               disabled={disabled}
-              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type · Alt+click: type the line"
+              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type"
               className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
               style={{ minWidth: '1rem', padding: '0 2px' }}
             >
@@ -791,6 +910,10 @@ export function PrescriptionGrid({
           e.preventDefault();
           if (disabled) return;
           if (isDeleting) { updateColumn(col.id, { loadCmp: null }); return; }
+          // The glyph sits inside the load cell, so it answers to the unit
+          // cycle too — a gesture that works on some pixels of a cell and not
+          // others reads as a bug.
+          if (cycleUnit(e)) return;
           const order: LoadCmp[] = ['>=', '~', '<='];
           const delta = e.button === 2 ? -1 : 1;
           const idx = (order.indexOf(col.loadCmp as LoadCmp) + delta + order.length) % order.length;
@@ -801,7 +924,7 @@ export function PrescriptionGrid({
         disabled={disabled}
         title={isDeleting
           ? 'Click to remove the sign'
-          : 'Soft load — ≥ work up to · ≈ around · ≤ stay below · click cycles · hold Del + click removes'}
+          : 'Soft load — ≥ work up to · ≈ around · ≤ stay below · click cycles · Alt+click: unit · hold Del + click removes'}
         className="pgrid-btn"
         style={{
           minWidth: '0.8rem', padding: '0 1px', fontWeight: 700,
@@ -812,6 +935,12 @@ export function PrescriptionGrid({
       </button>
     );
   }
+
+  /** What a load cell tells you on hover. The unit cycle has no visible
+   *  control, so the tooltip is where it is advertised. */
+  const loadCellTitle = deleteHeld
+    ? 'Click to delete column'
+    : `Click ±1 · Right-click −1 · Ctrl+click: type a value or a whole line (30,40,50) · Alt+click: unit (now ${getUnitLabel(unit)})`;
 
   function renderLoadCell(col: GridColumn) {
     const isEditingThis = editing?.colId === col.id && editing.field === 'load';
@@ -835,6 +964,7 @@ export function PrescriptionGrid({
         if (e.button !== 0 && e.button !== 2) return;
         e.preventDefault();
         if (isDeleting) { removeColumn(col.id); return; }
+        if (cycleUnit(e)) return;
         if (e.ctrlKey || e.metaKey) {
           const base = `${col.load}-${col.loadMax}`;
           setEditing({ colId: col.id, field: 'load', value: unit === 'percentage' ? `${base}%` : base });
@@ -851,7 +981,9 @@ export function PrescriptionGrid({
         }
       };
       const boxTitle = (which: string) =>
-        isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: type the line`;
+        isDeleting
+          ? 'Click to delete column'
+          : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: unit (now ${getUnitLabel(unit)})`;
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
           {renderCmpButton(col)}
@@ -889,7 +1021,7 @@ export function PrescriptionGrid({
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
-          title={isDeleting ? 'Click to delete column' : undefined}
+          title={loadCellTitle}
           className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
         >
           <span>{loadDisplay}</span>
@@ -904,7 +1036,7 @@ export function PrescriptionGrid({
           onContextMenu={e => e.preventDefault()}
           tabIndex={-1}
           disabled={disabled}
-          title={isDeleting ? 'Click to delete column' : undefined}
+          title={loadCellTitle}
           className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
         >
           <span>{loadDisplay}</span>
@@ -944,7 +1076,7 @@ export function PrescriptionGrid({
       }
     };
     const boxTitle = (which: string) =>
-      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: type the line`;
+      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
     const setsCls = field === 'sets' ? ' pgrid-btn-sets' : '';
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
@@ -1008,47 +1140,11 @@ export function PrescriptionGrid({
     );
   }
 
-  // Alt+click's raw line replaces the grid in place — same footprint, so the
-  // day-card column doesn't jump while a coach types.
-  if (textEditing !== null) {
-    return (
-      <div
-        className={`pgrid-wrap${compact ? ' pgrid-compact' : ''}`}
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2, width: '100%', minWidth: 0 }}
-      >
-        <input
-          ref={textInputRef}
-          value={textEditing}
-          onChange={e => setTextEditing(e.target.value)}
-          onBlur={commitTextEdit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitTextEdit(); }
-            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); setTextEditing(null); }
-          }}
-          placeholder={isCombo ? '80×2+1, 90×2+1×3' : '80x5, 85x3x2'}
-          title={'The whole prescription as text — Enter saves, Esc cancels.\nStart a value with = to calculate it: "=160*0.5x3" stores 80x3.'}
-          className="pgrid-textline"
-        />
-        {textPreview && (
-          <span style={{ display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-            <StackedNotation raw={textPreview.raw} unit={textPreview.unit} isCombo={isCombo} />
-          </span>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div
       className={`pgrid-wrap${compact ? ' pgrid-compact' : ''}`}
       style={{ display: 'flex', alignItems: 'flex-start', gap: compact ? 4 : 6, flexWrap: 'wrap' }}
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
-      onMouseDownCapture={openTextEditing}
-      // mousedown's stopPropagation doesn't cancel the click that follows, and
-      // the "+" button fires on click — swallow the Alt one so the gesture
-      // can't add a column on its way into text mode.
-      onClickCapture={e => { if (isAltGesture(e)) { e.preventDefault(); e.stopPropagation(); } }}
-      title={disabled || deleteHeld ? undefined : 'Click ±1 · Right-click −1 · Ctrl+click: type a value · Alt+click: type the whole line'}
     >
       {columns.map(col => {
         const isDeleting = deleteHeld;
@@ -1087,11 +1183,13 @@ export function PrescriptionGrid({
           onClick={handleAddColumn}
           className="pgrid-add-btn"
           style={compact ? { width: 18, height: 26 } : { width: 24, height: 36 }}
-          title="Add column · Alt+click: type the whole line"
+          title="Add column"
         >
           <Plus size={compact ? 10 : 12} />
         </button>
       )}
+
+      {note && <span className="pgrid-note">{note}</span>}
     </div>
   );
 }

@@ -818,14 +818,6 @@ export function ExerciseDetail({
                 }}
                 presets={presets}
                 onApplyPreset={onApplyPreset}
-                // Alt+click inside the grid means the same thing as the
-                // "Text mode" button above it — the panel already owns a
-                // raw-notation editor, so route the gesture there instead
-                // of opening a second one inside the grid.
-                onRequestTextMode={() => {
-                  setTextValue(plannedExercise.prescription_raw ?? '');
-                  setTextMode(true);
-                }}
               />
             )}
           </div>

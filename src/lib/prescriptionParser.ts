@@ -1,3 +1,5 @@
+import { expandFormulas } from './formulaEval';
+
 /**
  * Load comparator — an "exercise feature" that softens a prescribed load:
  * '>=' work up to at least, '~' around, '<=' stay at or below. Typed as
@@ -23,6 +25,64 @@ export function splitLoadCmp(raw: string): { cmp: LoadCmp | null; rest: string }
   if (s.startsWith('≈')) return { cmp: '~', rest: s.slice(1) };
   if (s.startsWith('~')) return { cmp: '~', rest: s.slice(1) };
   return { cmp: null, rest: raw };
+}
+
+/**
+ * Double quotes escape the notation grammar. Text wrapped in them is a
+ * literal load label and is never read as `load×reps×sets` — that is the
+ * only way to prescribe a load that contains the separator itself ("30x2"
+ * as a name, not as thirty for two). The quotes live in the stored
+ * prescription_raw, because the free-text format is `loadText × reps × sets`
+ * and re-parsing splits on the × — an unquoted "30x2" would come back as
+ * load 30, reps 2 on the next read.
+ *
+ * Returns the inner text, or null when `raw` is not a quoted literal.
+ */
+export function splitQuotedLiteral(raw: string): string | null {
+  const t = raw.trim();
+  if (t.length < 2 || !t.startsWith('"') || !t.endsWith('"')) return null;
+  return t.slice(1, -1);
+}
+
+/** Characters that would be re-read as grammar if a load text were stored bare. */
+const NEEDS_QUOTING = /[",xX×*\n\r\t]/;
+
+/**
+ * Wrap a free-text load in quotes when storing it bare would not survive the
+ * round trip (it holds a separator, a quote, or edge whitespace). Plain words
+ * like "Heavy" are left alone so existing prescriptions do not churn.
+ */
+export function quoteLoadText(text: string): string {
+  const bare = text.replace(/"/g, '');
+  if (bare === '' || NEEDS_QUOTING.test(bare) || bare !== bare.trim()) {
+    return `"${bare}"`;
+  }
+  return bare;
+}
+
+/**
+ * Split on the commas that separate segments, ignoring any inside a quoted
+ * literal — `"a,b" × 5` is one segment, not two.
+ */
+export function splitPrescriptionSegments(raw: string): string[] {
+  // An UNMATCHED quote is not a literal — it is an inch mark, and "2\" deficit"
+  // is ordinary weightlifting prose that predates the quoting rule. Treating it
+  // as an opening quote would make every following comma stop separating, so a
+  // stored prescription would lose its later columns the moment it was read.
+  // Only balanced quotes get the quote-aware split.
+  const quoteCount = (raw.match(/"/g) ?? []).length;
+  if (quoteCount % 2 !== 0) return raw.split(',').map(x => x.trim()).filter(Boolean);
+
+  const out: string[] = [];
+  let buf = '';
+  let inQuote = false;
+  for (const ch of raw) {
+    if (ch === '"') { inQuote = !inQuote; buf += ch; continue; }
+    if (ch === ',' && !inQuote) { out.push(buf); buf = ''; continue; }
+    buf += ch;
+  }
+  out.push(buf);
+  return out.map(x => x.trim()).filter(Boolean);
 }
 
 /** "3-5" → {min: 3, max: 5}; "5" → {min: 5, max: null}; garbage → null. */
@@ -70,6 +130,10 @@ export interface FreeTextSetLine {
  */
 export function detectIntendedUnit(input: string): 'percentage' | 'free_text_reps' | 'absolute_kg' | null {
   if (!input) return null;
+  // A quoted literal is text by definition, whatever it contains. Checked
+  // first: `"80x5"` is all digits once the quotes are ignored, so the numeric
+  // test below would otherwise claim it for kilograms.
+  if (splitQuotedLiteral(input) !== null) return 'free_text_reps';
   const stripped = input.replace(/[xX×*]/g, '');
   if (/[a-zA-Z]/.test(stripped)) return 'free_text_reps';
   if (input.includes('%')) return 'percentage';
@@ -159,6 +223,227 @@ function parseSegment(segment: string): ParsedSetLine | null {
 }
 
 /**
+ * One validated segment of a notation line typed into a single grid cell.
+ * Carries both the numeric and the textual form of load and reps because
+ * GridColumn keeps both and the three formatters each read a different one.
+ */
+export interface NotationSegment {
+  load: number;
+  loadMax: number | null;
+  loadCmp: LoadCmp | null;
+  loadText: string;
+  reps: number;
+  repsMax: number | null;
+  repsText: string;
+  sets: number;
+  setsMax: number | null;
+  multiplier: number | null;
+  /** The load is a label, not a number — the row has to be free_text_reps. */
+  isText: boolean;
+}
+
+/** A load number: "80", "82.5", or an interval "80-90". No leniency. */
+const NOTATION_LOAD = /^\d+(?:\.\d+)?$/;
+/** A rep or set count, optionally a range: "3" or "3-5". */
+const NOTATION_COUNT = /^(\d+)(?:-(\d+))?$/;
+/** A combo rep tuple: "2+1", "1+1+1". */
+const COMBO_TUPLE = /^\d+(?:\+\d+)*$/;
+/** A combo tuple wrapped in rounds: "3(2+1)". */
+const COMBO_ROUNDS = /^(\d+)\((\d+(?:\+\d+)*)\)$/;
+
+function parseNotationLoad(token: string): { load: number; loadMax: number | null } | null {
+  const dash = token.indexOf('-', 1);
+  if (dash !== -1) {
+    const lo = token.slice(0, dash);
+    const hi = token.slice(dash + 1);
+    if (!NOTATION_LOAD.test(lo) || !NOTATION_LOAD.test(hi)) return null;
+    const min = parseFloat(lo);
+    const max = parseFloat(hi);
+    if (max < min) return null;
+    return { load: min, loadMax: max };
+  }
+  if (!NOTATION_LOAD.test(token)) return null;
+  return { load: parseFloat(token), loadMax: null };
+}
+
+function parseNotationCount(token: string, floor: number): { min: number; max: number | null } | null {
+  const m = token.match(NOTATION_COUNT);
+  if (!m) return null;
+  const min = parseInt(m[1], 10);
+  const max = m[2] != null ? parseInt(m[2], 10) : null;
+  if (min < floor) return null;
+  if (max != null && max < min) return null;
+  return { min, max };
+}
+
+function parseNotationSegment(segment: string, isCombo: boolean): NotationSegment | null {
+  const { cmp, rest } = splitLoadCmp(segment);
+  const trimmed = rest.trim();
+  if (!trimmed) return null;
+
+  let loadToken: string;
+  let tail: string;
+  let quoted = false;
+
+  if (trimmed.startsWith('"')) {
+    const close = trimmed.indexOf('"', 1);
+    if (close === -1) return null;
+    loadToken = trimmed.slice(1, close);
+    tail = trimmed.slice(close + 1);
+    quoted = true;
+  } else {
+    // "=" resolves per segment, so every segment of a line can carry its own
+    // arithmetic. splitLoadCmp has already taken any ">=" / "<=" off the
+    // front, which is what stops expandFormulas eating the "=" out of it.
+    const expanded = expandFormulas(trimmed);
+    const normalised = expanded.replace(/%/g, '').replace(/[*×X]/g, 'x');
+    const firstX = normalised.indexOf('x');
+    loadToken = (firstX === -1 ? normalised : normalised.slice(0, firstX)).trim();
+    tail = firstX === -1 ? '' : normalised.slice(firstX);
+  }
+
+  if (loadToken === '') return null;
+
+  // The tail is separator-led ("x3", "×5×3") or absent. Anything else — a
+  // stray word from a text load that got split at its own "x" — is refused
+  // rather than guessed at. Whitespace is closed up only AROUND the
+  // separator: any that survives means two segments were run together
+  // ("30x2 40x3"), which the storage parser would silently merge into a
+  // single 30×240×3 column.
+  const t = tail.replace(/[*×X]/g, 'x').replace(/\s*x\s*/gi, 'x').trim();
+  if (/\s/.test(t)) return null;
+  let parts: string[];
+  if (t === '') parts = [];
+  else if (t.startsWith('x')) parts = t.slice(1).split('x');
+  else return null;
+  if (parts.length > 2) return null;
+
+  const numeric = quoted ? null : parseNotationLoad(loadToken);
+  const isText = numeric === null;
+  if (isText && loadToken.includes('"')) return null;
+  // An unquoted load that starts with a digit but did not parse is a botched
+  // number ("80—90" with an em dash), not a label. Storing it as text would
+  // re-unit the whole row and cost every other column its ranges and signs,
+  // so the edit is discarded instead. Quote it to mean it literally.
+  if (!quoted && isText && /^\d/.test(loadToken)) return null;
+  // An unresolved "=" means the arithmetic did not evaluate. Storing it as a
+  // label would flip the row to free text and keep the broken formula as the
+  // load, so the line is discarded and the caller can fall back.
+  if (!quoted && isText && loadToken.includes('=')) return null;
+  // A bare label cannot carry spaces without quotes — "30 40" in a line is a
+  // run-together pair, not a name.
+  if (!quoted && /\s/.test(loadToken)) return null;
+
+  // reps: a bare load means one rep, which is what makes "30,40,50" a ramp.
+  let reps = 1;
+  let repsMax: number | null = null;
+  let repsText = '1';
+  let multiplier: number | null = null;
+
+  if (parts.length >= 1) {
+    const token = parts[0];
+    const rounds = isCombo ? token.match(COMBO_ROUNDS) : null;
+    const tuple = isCombo ? (rounds ? rounds[2] : (COMBO_TUPLE.test(token) ? token : null)) : null;
+    if (tuple) {
+      multiplier = rounds ? parseInt(rounds[1], 10) : null;
+      repsText = tuple;
+      reps = tuple.split('+').reduce((sum, n) => sum + (parseInt(n, 10) || 0), 0);
+      if (reps < 1) return null;
+    } else {
+      const parsed = parseNotationCount(token, 1);
+      if (!parsed) return null;
+      reps = parsed.min;
+      repsMax = parsed.max;
+      repsText = repsMax != null ? `${reps}-${repsMax}` : String(reps);
+    }
+  } else if (isCombo) {
+    // A combo column with no tuple typed is meaningless; require one.
+    return null;
+  }
+
+  let sets = 1;
+  let setsMax: number | null = null;
+  if (parts.length === 2) {
+    const parsed = parseNotationCount(parts[1], 1);
+    if (!parsed) return null;
+    sets = parsed.min;
+    setsMax = parsed.max;
+  }
+
+  const load = numeric ? numeric.load : (parseFloat(loadToken) || 0);
+  const loadMax = numeric ? numeric.loadMax : null;
+  const loadText = numeric
+    ? (numeric.loadMax != null ? `${numeric.load}-${numeric.loadMax}` : String(numeric.load))
+    : loadToken;
+
+  return {
+    load,
+    loadMax,
+    // A soft-load sign on a label has nothing to compare, so it is dropped.
+    loadCmp: isText ? null : cmp,
+    loadText,
+    reps,
+    repsMax,
+    repsText,
+    sets,
+    setsMax,
+    multiplier,
+    isText,
+  };
+}
+
+/**
+ * Parse a whole notation line typed into ONE grid cell, so a coach can write
+ * a prescription instead of clicking it up.
+ *
+ *   "30,40,50"           → three columns, one rep each
+ *   "30x2, 40x2x2, 50"   → 30×2, 40×2×2, 50×1
+ *   "\"Heavy\" x3"           → a text load, three reps
+ *
+ * Deliberately NOT parsePrescription: that one requires every segment to
+ * carry an "x" (a bare "50" parses to nothing) and drops segments it cannot
+ * read without saying so, which would silently shorten a coach's line. This
+ * parser is total — one bad segment returns null for the whole line, so the
+ * caller can discard the edit rather than commit half of it.
+ */
+export function parseNotationLine(
+  raw: string,
+  opts: { isCombo?: boolean } = {},
+): NotationSegment[] | null {
+  if (!raw || !raw.trim()) return null;
+  // A single-line <input> flattens a pasted block to spaces and the storage
+  // parser deletes all whitespace, so "30x2 40x3" would merge into one
+  // 30×240×3 column. Refuse anything carrying a break rather than guess.
+  if (/[\n\r\t]/.test(raw)) return null;
+
+  const out: NotationSegment[] = [];
+  for (const segment of splitPrescriptionSegments(raw)) {
+    const parsed = parseNotationSegment(segment, opts.isCombo ?? false);
+    if (!parsed) return null;
+    out.push(parsed);
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Does this look like a notation LINE rather than a single value? The comma
+ * and the multiplier are the only signals — an interval ("80-90") and a
+ * range ("3-5") must keep their existing single-cell meanings.
+ */
+export function looksLikeNotationLine(value: string): boolean {
+  const t = value.trim();
+  if (!t) return false;
+  const literal = splitQuotedLiteral(t);
+  if (literal !== null) return false;
+  // "82,5" is a German decimal, not two columns. One digit after the comma is
+  // the tell: OWL loads step in halves, so a decimal is "x,5" — while a real
+  // two-step ramp ("30,40") names two plausible loads. Ambiguous by nature;
+  // this is the reading that does not silently invent a 5 kg column.
+  if (/^\d+,\d$/.test(splitLoadCmp(t).rest.trim())) return false;
+  return /,/.test(t) || /[xX×*]/.test(t.replace(/^\s*=[^,xX×]*/, ''));
+}
+
+/**
  * Formats set lines back into a prescription string
  * Display rule: If sets = 1, omit the sets part
  * Format: load×reps×sets (e.g., 20×4×3) or load×reps (e.g., 20×4 when sets=1)
@@ -227,7 +512,7 @@ export function parseFreeTextPrescription(raw: string): FreeTextSetLine[] {
   }
 
   const result: FreeTextSetLine[] = [];
-  const segments = raw.split(',').map(s => s.trim()).filter(s => s);
+  const segments = splitPrescriptionSegments(raw);
 
   for (const segment of segments) {
     const parsed = parseFreeTextSegment(segment);
@@ -240,6 +525,22 @@ export function parseFreeTextPrescription(raw: string): FreeTextSetLine[] {
 }
 
 function parseFreeTextSegment(segment: string): FreeTextSetLine | null {
+  // A quoted load is opaque — it may contain the × separator itself — so it
+  // is lifted out before the split that would otherwise cut it in half.
+  const trimmed = segment.trim();
+  if (trimmed.startsWith('"') && trimmed.indexOf('"', 1) !== -1) {
+    const close = trimmed.indexOf('"', 1);
+    const loadText = trimmed.slice(1, close);
+    const rest = trimmed.slice(close + 1).trim();
+    if (rest === '') return { loadText, reps: 1, sets: 1 };
+    const m = rest.match(/^[x×]\s*(\d+)(?:\s*[x×]\s*(\d+))?$/i);
+    if (!m) return null;
+    const reps = parseInt(m[1], 10);
+    const sets = m[2] != null ? parseInt(m[2], 10) : 1;
+    if (isNaN(reps) || reps < 0 || sets <= 0) return null;
+    return { loadText, reps, sets };
+  }
+
   const xPattern = /\s*[x×]\s*/gi;
   const parts = segment.split(xPattern);
 
@@ -305,11 +606,24 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     // Split on 'x' but preserve the '+' inside reps
     // Format: [cmp]load x repsText [x sets]
     const { cmp: loadCmp, rest: unsigned } = splitLoadCmp(normalized);
-    const firstX = unsigned.indexOf('x');
+
+    // A quoted load is opaque — it may hold the × separator itself — so it is
+    // lifted out of the ORIGINAL segment (before whitespace was stripped)
+    // rather than searched for an "x" that belongs to its own spelling.
+    const rawUnsigned = splitLoadCmp(segment.replace(/×/g, 'x').replace(/–/g, '-')).rest.trim();
+    let quotedLoad: string | null = null;
+    let unsignedBody = unsigned;
+    if (rawUnsigned.startsWith('"') && rawUnsigned.indexOf('"', 1) !== -1) {
+      const close = rawUnsigned.indexOf('"', 1);
+      quotedLoad = rawUnsigned.slice(1, close);
+      unsignedBody = 'q' + rawUnsigned.slice(close + 1).replace(/\s+/g, '').replace(/%/g, '');
+    }
+
+    const firstX = unsignedBody.indexOf('x');
     if (firstX === -1) continue;
 
-    const loadStr = unsigned.slice(0, firstX);
-    const rest = unsigned.slice(firstX + 1);
+    const loadStr = quotedLoad !== null ? quotedLoad : unsignedBody.slice(0, firstX);
+    const rest = unsignedBody.slice(firstX + 1);
 
     // Interval detection in load: contains "-" not at position 0
     const dashIdx = loadStr.indexOf('-', 1);
@@ -330,6 +644,7 @@ export function parseComboPrescription(raw: string): ParsedComboSetLine[] {
     }
 
     // Allow free-text loads (e.g. "Heavy") — store as loadText with load=0
+    if (quotedLoad !== null) { load = parseFloat(quotedLoad) || 0; loadMax = null; loadIsNumeric = false; }
     if (!loadIsNumeric && !loadStr) continue;
 
     // Check if there's a trailing 'x sets' (last segment after 'x' that is a
@@ -398,7 +713,9 @@ export function formatComboPrescription(lines: ParsedComboSetLine[], unit: strin
       const cmpPrefix = !l.loadText && l.loadCmp ? LOAD_CMP_GLYPH[l.loadCmp] : '';
       let loadPart: string;
       if (l.loadText) {
-        loadPart = l.loadText;
+        // Same rule as the free-text formatter: quote only when storing it
+        // bare would not survive the next read.
+        loadPart = quoteLoadText(l.loadText);
       } else if (l.loadMax !== null && l.loadMax !== undefined) {
         loadPart = `${cmpPrefix}${l.load}-${l.loadMax}${sym}`;
       } else {
@@ -423,10 +740,11 @@ export function formatFreeTextPrescription(lines: FreeTextSetLine[]): string {
 
   return lines
     .map(line => {
+      const loadStr = quoteLoadText(line.loadText);
       if (line.sets === 1) {
-        return `${line.loadText} × ${line.reps}`;
+        return `${loadStr} × ${line.reps}`;
       } else {
-        return `${line.loadText} × ${line.reps} × ${line.sets}`;
+        return `${loadStr} × ${line.reps} × ${line.sets}`;
       }
     })
     .join(', ');

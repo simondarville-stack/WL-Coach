@@ -508,31 +508,19 @@ samp {
   line-height: 1.25rem;
   box-sizing: border-box;
 }
-/* Alt+click's raw-notation line: the whole prescription as text, in place of
-   the grid. Full width and left-aligned, unlike .pgrid-editing, which is a
-   single centred cell. Same face and height as the cells it replaces so the
-   row keeps its footprint while a coach types. */
-.pgrid-textline {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-  font-size: var(--text-notation);
-  font-family: var(--font-stacked);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  background: var(--color-accent-muted);
-  border: none;
-  outline: 1px solid var(--color-accent);
-  outline-offset: -1px;
-  border-radius: var(--radius-sm);
+/* What the Alt+click unit cycle just did, or why it refused. Transient
+   (~2.6s) and inline at the end of the grid, so it cannot be clipped by a
+   day card's overflow the way an absolutely positioned bubble would be. */
+.pgrid-note {
+  align-self: center;
   padding: 0 4px;
-  margin: 0;
-  height: 1.25rem;
-  min-height: 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-micro);
+  font-family: var(--font-stacked);
   line-height: 1.25rem;
-  box-sizing: border-box;
+  white-space: nowrap;
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
 }
 /* Excel-style "=" formula: live result above the cell being edited.
    Absolutely positioned inside .pgrid-col so it costs no layout, and
@@ -559,7 +547,6 @@ samp {
 /* Compact variant — used inside week-overview day cards */
 .pgrid-wrap.pgrid-compact { gap: 4px; }
 .pgrid-compact .pgrid-btn,
-.pgrid-compact .pgrid-textline,
 .pgrid-compact .pgrid-editing {
   font-size: var(--text-micro);
   height: 1rem;

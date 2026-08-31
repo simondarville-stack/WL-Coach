@@ -55,6 +55,26 @@ them explicitly; comma-separated segments are allowed (`80×3, 85×2×3`); combo
 carry `+`-tuple reps (`80×1+2×3`). Soft-load signs `≥ ≈ ≤`, and rep/set/load
 ranges, are part of the grammar and `StackedNotation` renders all of them.
 
+**Double quotes escape the grammar.** Text wrapped in `"` is a literal load
+label and is never read as notation — the only way to prescribe a load that
+contains the separator itself (`"30x2"` as a name, not as thirty for two).
+The quotes are part of the **stored** `prescription_raw`, not just the input:
+the free-text form is `loadText × reps × sets` and re-parsing splits on the
+`×`, so an unquoted `30x2` would come back as load 30, reps 2 on the next
+read. `quoteLoadText` adds them on write only when the text would not
+otherwise survive (it holds a separator, a comma, a quote, or edge
+whitespace), so a plain `Heavy` stays bare and existing prescriptions do not
+churn. A quoted load implies `unit = free_text_reps`; there is no per-set-line
+text column, so a numeric-unit row would store the label as a load of `0`.
+
+**One cell can take a whole line.** Typing a comma- or `×`-carrying line into
+a single load cell expands it into columns (`parseNotationLine`), spliced in
+place of the cell's own column. It is a *separate*, total parser: a bare
+segment means one rep (`30,40,50` is a three-step ramp) and one unreadable
+segment discards the whole line, where `parsePrescription` — the storage
+parser — requires an `×` per segment and silently drops what it cannot read.
+Do not merge the two.
+
 **When `sets = 1`, never render the sets indicator.** Not `×1`, not a blank
 column that reserves the space.
 
