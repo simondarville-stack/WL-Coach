@@ -104,6 +104,14 @@ describe('mergeGroupStructureIntoAthlete', () => {
     const twice = mergeGroupStructureIntoAthlete(group, structure(once));
     expect(twice).toEqual(once);
   });
+
+  it('athleteWins flips label precedence but still fills gaps (append-mode sync)', () => {
+    const group = structure({ active_days: [1, 2], day_labels: { '1': 'Group A', '2': 'Group B' } });
+    const athlete = structure({ active_days: [1], day_labels: { '1': 'My name' } });
+    const merged = mergeGroupStructureIntoAthlete(group, athlete, { athleteWins: true });
+    expect(merged.day_labels).toEqual({ '1': 'My name', '2': 'Group B' });
+    expect(merged.active_days).toEqual([1, 2]);
+  });
 });
 
 describe('seedStructureFromGroup', () => {

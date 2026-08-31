@@ -64,6 +64,9 @@ export function pickForDays<T>(
  * - `day_labels` / `day_schedule` — the group's value wins, but only for days
  *   the group itself trains, and only when the group actually has one. Days
  *   outside `group.active_days` keep whatever the athlete has.
+ *   With `opts.athleteWins` (append-mode sync: "never replace anything the
+ *   athlete already has") the precedence flips: the group's label/schedule
+ *   only fills days the athlete hasn't named/scheduled yet.
  * - `day_display_order` — new days are appended to the athlete's own order.
  *   The group's ordering is NOT adopted wholesale; re-sorting an athlete's
  *   week is not what "sync the plan" asks for. A null order stays null (the
@@ -74,6 +77,7 @@ export function pickForDays<T>(
 export function mergeGroupStructureIntoAthlete(
   group: WeekStructure,
   athlete: WeekStructure,
+  opts: { athleteWins?: boolean } = {},
 ): MergedStructure {
   const groupActive = group.active_days ?? [];
   const athleteActive = athlete.active_days ?? [];
@@ -81,11 +85,12 @@ export function mergeGroupStructureIntoAthlete(
   const newDays = groupActive.filter(d => !athleteActive.includes(d));
   const active_days = [...athleteActive, ...newDays].sort((a, b) => a - b);
 
-  const day_labels = { ...(athlete.day_labels ?? {}), ...pickForDays(group.day_labels, groupActive) };
-  const day_schedule = {
-    ...(athlete.day_schedule ?? {}),
-    ...pickForDays(group.day_schedule, groupActive),
-  };
+  const day_labels = opts.athleteWins
+    ? { ...pickForDays(group.day_labels, groupActive), ...(athlete.day_labels ?? {}) }
+    : { ...(athlete.day_labels ?? {}), ...pickForDays(group.day_labels, groupActive) };
+  const day_schedule = opts.athleteWins
+    ? { ...pickForDays(group.day_schedule, groupActive), ...(athlete.day_schedule ?? {}) }
+    : { ...(athlete.day_schedule ?? {}), ...pickForDays(group.day_schedule, groupActive) };
 
   // Only extend an order the athlete already has. Leaving it null keeps the
   // "no explicit order" state, which every reader handles; inventing one here
