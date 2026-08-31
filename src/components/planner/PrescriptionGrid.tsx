@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Plus } from 'lucide-react';
-import { resolveFormulaCell } from '../../lib/formulaEval';
+import { resolveFormulaCell, expandFormulas } from '../../lib/formulaEval';
 import {
   parsePrescription, formatPrescription,
   parseFreeTextPrescription, formatFreeTextPrescription,
@@ -61,6 +61,10 @@ interface PrescriptionGridProps {
    *  committing the text as a value. */
   presets?: CoachPreset[];
   onApplyPreset?: (preset: CoachPreset) => void;
+  /** Overrides the Alt+click gesture. Set it where the surface already owns
+   *  a text editor for the same prescription — ExerciseDetail flips its own
+   *  "Text mode" panel — so a coach never faces two raw-notation inputs. */
+  onRequestTextMode?: () => void;
 }
 
 let colIdCounter = 0;
@@ -134,6 +138,7 @@ export function PrescriptionGrid({
   compact = false,
   presets,
   onApplyPreset,
+  onRequestTextMode,
 }: PrescriptionGridProps) {
   const isFreeTextReps = unit === 'free_text_reps';
   const isFreeText = unit === 'free_text';
@@ -145,6 +150,10 @@ export function PrescriptionGrid({
   /** Highlighted row of the "#" preset dropdown while editing a cell. */
   const [presetIndex, setPresetIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  /** The whole prescription as a raw line, opened by Alt+click. null = grid. */
+  const [textEditing, setTextEditing] = useState<string | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const textEditingOpen = textEditing !== null;
 
   // Every raw this grid has emitted. The parent echoes saves back into
   // `prescriptionRaw` (to keep summaries live); under rapid clicks an older or
@@ -185,6 +194,12 @@ export function PrescriptionGrid({
     }
   }, [editing?.colId, editing?.field]);
 
+  useEffect(() => {
+    if (!textEditingOpen) return;
+    textInputRef.current?.focus();
+    textInputRef.current?.select();
+  }, [textEditingOpen]);
+
   /** Live "= 40" bubble above the cell being edited, so a coach sees what the
    *  formula resolves to before committing it. '!' means it doesn't evaluate
    *  (yet) — the edit will be discarded rather than written as 0. */
@@ -193,6 +208,15 @@ export function PrescriptionGrid({
     const r = resolveFormulaCell(editing.value, editing.field === 'load' ? 'decimal' : 'integer');
     return r.error ? '!' : r.text;
   }, [editing]);
+
+  /** Live Stacked-Notation echo of the raw line being typed, so the coach can
+   *  see how it parses (and which unit it implies) before committing it. */
+  const textPreview = useMemo(() => {
+    if (textEditing == null) return null;
+    const resolved = expandFormulas(textEditing).trim();
+    if (!resolved) return null;
+    return { raw: resolved, unit: detectIntendedUnit(resolved) ?? unit };
+  }, [textEditing, unit]);
 
   /** Presets matching a "#…" cell edit — drives the in-cell dropdown. A bare
    *  "#" lists everything; further characters filter by name prefix. */
@@ -553,6 +577,47 @@ export function PrescriptionGrid({
 
   function cancelEdit() { setEditing(null); }
 
+  /** Commits the Alt+click raw line. Mirrors ExerciseDetail's text mode:
+   *  "=" formulas expand first, so unit detection and every parser below it
+   *  see plain numbers. An empty line clears the prescription. */
+  function commitTextEdit() {
+    const typed = textEditing;
+    setTextEditing(null);
+    if (typed == null) return;
+    const resolved = expandFormulas(typed).trim();
+    if (resolved === (prescriptionRaw ?? '').trim()) return;
+    const detected = detectIntendedUnit(resolved);
+    // Parse locally as well as saving: sentRawsRef suppresses the parent's
+    // echo, so the grid has to rebuild its own columns from the typed line.
+    sentRawsRef.current.add(resolved);
+    setColumns(parseToColumns(resolved, isCombo, detected ?? unit));
+    onSave(resolved, detected && detected !== unit ? detected : undefined);
+  }
+
+  /** Alt+click drops the whole prescription to a raw line — the wide
+   *  counterpart to Ctrl+click's "type this one value". Captured on the
+   *  wrapper so every cell, sign glyph and the "+" button share the gesture:
+   *  an empty prescription has nothing but "+" to aim at.
+   *
+   *  Deliberately a click, not a held-Alt mode like Del: Firefox focuses its
+   *  menu bar when Alt is pressed and released on its own. Linux window
+   *  managers that claim Alt+click for window-move will swallow it — the
+   *  Text mode button in ExerciseDetail stays the gesture-free path. */
+  function isAltGesture(e: React.MouseEvent) {
+    if (!e.altKey || e.button !== 0 || disabled || deleteHeld) return false;
+    const t = e.target as HTMLElement | null;
+    return !(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'));
+  }
+
+  function openTextEditing(e: React.MouseEvent) {
+    if (!isAltGesture(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (onRequestTextMode) { onRequestTextMode(); return; }
+    setEditing(null);
+    setTextEditing(prescriptionRaw ?? '');
+  }
+
   function handleKeyDown(e: React.KeyboardEvent, colId: string) {
     if (editing) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && focusedColId === colId) {
@@ -649,7 +714,7 @@ export function PrescriptionGrid({
               onContextMenu={e => e.preventDefault()}
               tabIndex={-1}
               disabled={disabled}
-              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type"
+              title="Rounds of the combo · Left/right-click: ±1 · Ctrl+click: type · Alt+click: type the line"
               className={`pgrid-btn${isDeleting ? ' pgrid-btn-del' : ''}`}
               style={{ minWidth: '1rem', padding: '0 2px' }}
             >
@@ -786,7 +851,7 @@ export function PrescriptionGrid({
         }
       };
       const boxTitle = (which: string) =>
-        isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
+        isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: type the line`;
       return (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
           {renderCmpButton(col)}
@@ -879,7 +944,7 @@ export function PrescriptionGrid({
       }
     };
     const boxTitle = (which: string) =>
-      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit`;
+      isDeleting ? 'Click to delete column' : `Adjust ${which} · Right-click: −1 · Ctrl+click: edit · Alt+click: type the line`;
     const setsCls = field === 'sets' ? ' pgrid-btn-sets' : '';
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minHeight: '1.25rem' }}>
@@ -943,11 +1008,47 @@ export function PrescriptionGrid({
     );
   }
 
+  // Alt+click's raw line replaces the grid in place — same footprint, so the
+  // day-card column doesn't jump while a coach types.
+  if (textEditing !== null) {
+    return (
+      <div
+        className={`pgrid-wrap${compact ? ' pgrid-compact' : ''}`}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2, width: '100%', minWidth: 0 }}
+      >
+        <input
+          ref={textInputRef}
+          value={textEditing}
+          onChange={e => setTextEditing(e.target.value)}
+          onBlur={commitTextEdit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); commitTextEdit(); }
+            if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); setTextEditing(null); }
+          }}
+          placeholder={isCombo ? '80×2+1, 90×2+1×3' : '80x5, 85x3x2'}
+          title={'The whole prescription as text — Enter saves, Esc cancels.\nStart a value with = to calculate it: "=160*0.5x3" stores 80x3.'}
+          className="pgrid-textline"
+        />
+        {textPreview && (
+          <span style={{ display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+            <StackedNotation raw={textPreview.raw} unit={textPreview.unit} isCombo={isCombo} />
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className={`pgrid-wrap${compact ? ' pgrid-compact' : ''}`}
       style={{ display: 'flex', alignItems: 'flex-start', gap: compact ? 4 : 6, flexWrap: 'wrap' }}
       onKeyDown={e => { if (focusedColId) handleKeyDown(e, focusedColId); }}
+      onMouseDownCapture={openTextEditing}
+      // mousedown's stopPropagation doesn't cancel the click that follows, and
+      // the "+" button fires on click — swallow the Alt one so the gesture
+      // can't add a column on its way into text mode.
+      onClickCapture={e => { if (isAltGesture(e)) { e.preventDefault(); e.stopPropagation(); } }}
+      title={disabled || deleteHeld ? undefined : 'Click ±1 · Right-click −1 · Ctrl+click: type a value · Alt+click: type the whole line'}
     >
       {columns.map(col => {
         const isDeleting = deleteHeld;
@@ -986,7 +1087,7 @@ export function PrescriptionGrid({
           onClick={handleAddColumn}
           className="pgrid-add-btn"
           style={compact ? { width: 18, height: 26 } : { width: 24, height: 36 }}
-          title="Add column"
+          title="Add column · Alt+click: type the whole line"
         >
           <Plus size={compact ? 10 : 12} />
         </button>
