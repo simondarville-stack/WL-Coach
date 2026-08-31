@@ -6,12 +6,25 @@
  * read-only) and the coach mobile app (dark, read-only). Keeping one
  * component means the tile, the player and the set labelling can't drift
  * between the athlete's view of a clip and the coach's.
+ *
+ * Picking a file does not upload it straight away: on a browser that can
+ * re-encode (see `clipEditingSupported`) the clip goes through `ClipEditor`
+ * first, so the athlete sends the lift rather than the four minutes around it.
+ * A clip that is too long or too big to upload at all opens the editor by
+ * itself and cannot skip it — that is the only way such a clip gets sent.
  */
 import { useRef, useState } from 'react';
-import { FolderPlus, Trash2, Video } from 'lucide-react';
+import { FolderPlus, Scissors, Trash2, Video } from 'lucide-react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
-import { LOG_VIDEO_MAX_SECONDS } from '../../lib/trainingLogService';
+import {
+  LOG_VIDEO_MAX_BYTES,
+  LOG_VIDEO_MAX_SECONDS,
+  VideoTooLargeError,
+} from '../../lib/logVideoLimits';
+import { readVideoDurationSeconds } from '../../lib/trainingLogService';
+import { clipEditingSupported, type ClipResolution } from '../../lib/videoClipEdit';
+import { ClipEditor } from './ClipEditor';
 import { VideoLightbox } from './VideoLightbox';
 import { VideoThumb } from './VideoThumb';
 import { Spinner } from '../ui';
@@ -70,10 +83,113 @@ export function LogVideoStrip({
   /** Sequential upload position, so a multi-file attach shows "2/5". */
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The clip currently open in the editor. `resolve` is the suspended upload
+   * loop: it receives the file to upload, or null when the athlete backs out.
+   */
+  const [editing, setEditing] = useState<{
+    file: File;
+    reason: string | null;
+    mustEdit: boolean;
+    defaultMaxEdge: ClipResolution;
+    resolve: (file: File | null) => void;
+  } | null>(null);
+  /** A clip whose upload failed on size — offered back with a Trim & shrink
+   *  button, because the fix is one edit away and re-picking the file is not. */
+  const [oversized, setOversized] = useState<File | null>(null);
   const filmRef = useRef<HTMLInputElement | null>(null);
   const attachRef = useRef<HTMLInputElement | null>(null);
 
   if (videos.length === 0 && !onAdd) return null;
+
+  /** Bridge from the two hidden file inputs into the upload loop. */
+  const handleFiles = async (
+    fileList: FileList | null,
+    source: 'film' | 'attach',
+  ) => {
+    const ref = source === 'film' ? filmRef : attachRef;
+    const files = Array.from(fileList ?? []);
+    try {
+      await uploadAll(files, source);
+    } finally {
+      // Clearing lets the same file be picked again after a failure — without
+      // this the input's change event never refires for an identical pick.
+      if (ref.current) ref.current.value = '';
+    }
+  };
+
+  /** Open the editor and suspend until the athlete commits or backs out. */
+  const runEditor = (
+    file: File,
+    reason: string | null,
+    mustEdit: boolean,
+    defaultMaxEdge: ClipResolution = null,
+  ) =>
+    new Promise<File | null>(resolve => {
+      setEditing({
+        file,
+        reason,
+        mustEdit,
+        defaultMaxEdge,
+        resolve: result => {
+          setEditing(null);
+          resolve(result);
+        },
+      });
+    });
+
+  /**
+   * Decide whether this clip goes through the editor, and why.
+   *
+   * Over the duration or byte cap is non-negotiable — the upload would fail,
+   * so the editor opens with the reason stated and no way past it. Otherwise a
+   * single pick gets the editor as an offer (one tap of "Upload original"
+   * skips it), while a multi-file attach goes straight up: an athlete
+   * attaching five clips at once has already decided what they want.
+   */
+  const prepare = async (
+    file: File,
+    forceEdit: boolean,
+    offerEdit: boolean,
+  ): Promise<File | null> => {
+    if (!clipEditingSupported()) return file;
+
+    if (forceEdit) {
+      // Reached from "Trim & shrink" after storage refused the clip. The byte
+      // caps below already passed, so the refusal came from the project's own
+      // upload limit — which no constant here can mirror. 720p is the setting
+      // most likely to clear it in one go.
+      return runEditor(
+        file,
+        'That clip was refused as too large. Trim it to the lift, or drop the size, and send again.',
+        true,
+        1280,
+      );
+    }
+
+    if (file.size > LOG_VIDEO_MAX_BYTES) {
+      return runEditor(
+        file,
+        `Clip is ${Math.round(file.size / 1024 / 1024)} MB — the limit is ` +
+          `${LOG_VIDEO_MAX_BYTES / 1024 / 1024} MB. Trim it, or drop the size, to send it.`,
+        true,
+        // Open on a 1080p ceiling: re-encoding alone usually clears the limit,
+        // so the athlete can just hit send without deciding anything.
+        1920,
+      );
+    }
+    const duration = await readVideoDurationSeconds(file);
+    if (duration != null && duration > LOG_VIDEO_MAX_SECONDS + 1) {
+      return runEditor(
+        file,
+        `Clip is ${Math.round(duration)} s long — the limit is ${LOG_VIDEO_MAX_SECONDS} s. ` +
+          'Drag the handles onto the lift.',
+        true,
+      );
+    }
+    if (offerEdit) return runEditor(file, null, false);
+    return file;
+  };
 
   /**
    * Upload the picked files one at a time.
@@ -82,36 +198,41 @@ export function LogVideoStrip({
    * burst of several clips tends to starve them all, and doing one at a time
    * means a failure names the file that failed and leaves the rest attached.
    */
-  const handleFiles = async (
-    fileList: FileList | null,
-    source: 'film' | 'attach',
-  ) => {
-    const ref = source === 'film' ? filmRef : attachRef;
-    const files = Array.from(fileList ?? []);
+  const uploadAll = async (files: File[], source: 'film' | 'attach', forceEdit = false) => {
     if (files.length === 0 || !onAdd) return;
     setError(null);
-    setBusySource(source);
+    setOversized(null);
     const failures: string[] = [];
+    let skipped = 0;
     try {
       for (let i = 0; i < files.length; i++) {
         setProgress(files.length > 1 ? { done: i, total: files.length } : null);
+        // The editor runs outside the busy state: it *is* the athlete's turn,
+        // and a spinner over a tile they are dragging handles on reads as a hang.
+        const prepared = await prepare(files[i], forceEdit, files.length === 1);
+        if (!prepared) {
+          skipped += 1;
+          continue;
+        }
+        setBusySource(source);
         try {
-          await onAdd(files[i]);
+          await onAdd(prepared);
         } catch (e) {
+          if (e instanceof VideoTooLargeError && clipEditingSupported()) setOversized(prepared);
           failures.push(`${files[i].name}: ${e instanceof Error ? e.message : 'upload failed'}`);
+        } finally {
+          setBusySource(null);
         }
       }
     } finally {
       setBusySource(null);
       setProgress(null);
-      // Clearing lets the same file be picked again after a failure — without
-      // this the input's change event never refires for an identical pick.
-      if (ref.current) ref.current.value = '';
     }
-    if (failures.length === files.length) {
-      setError(files.length === 1 ? failures[0] : `None of the ${files.length} clips uploaded. ${failures[0]}`);
+    const attempted = files.length - skipped;
+    if (attempted > 0 && failures.length === attempted) {
+      setError(attempted === 1 ? failures[0] : `None of the ${attempted} clips uploaded. ${failures[0]}`);
     } else if (failures.length > 0) {
-      setError(`${failures.length} of ${files.length} failed — ${failures.join('; ')}`);
+      setError(`${failures.length} of ${attempted} failed — ${failures.join('; ')}`);
     }
   };
 
@@ -230,9 +351,38 @@ export function LogVideoStrip({
       {/* State the limit up front rather than reporting it after a failed
           upload — saves the athlete a trim-and-retry round trip. */}
       {onAdd && !error && (
-        <p className={`mt-1 text-[10px] ${t.label}`}>Clips up to {LOG_VIDEO_MAX_SECONDS} s.</p>
+        <p className={`mt-1 text-[10px] ${t.label}`}>
+          {clipEditingSupported()
+            ? `Clips up to ${LOG_VIDEO_MAX_SECONDS} s — trim and crop before sending.`
+            : `Clips up to ${LOG_VIDEO_MAX_SECONDS} s.`}
+        </p>
       )}
-      {error && <p className={`mt-1 text-[10px] ${t.error}`}>{error}</p>}
+      {error && (
+        <p className={`mt-1 text-[10px] ${t.error}`}>
+          {error}
+          {oversized && (
+            <button
+              type="button"
+              onClick={() => { void uploadAll([oversized], 'attach', true); }}
+              className="ml-1.5 underline underline-offset-2 inline-flex items-center gap-0.5"
+            >
+              <Scissors size={9} />
+              Trim &amp; shrink
+            </button>
+          )}
+        </p>
+      )}
+
+      {editing && (
+        <ClipEditor
+          file={editing.file}
+          reason={editing.reason}
+          mustEdit={editing.mustEdit}
+          defaultMaxEdge={editing.defaultMaxEdge}
+          onCancel={() => editing.resolve(null)}
+          onDone={f => editing.resolve(f)}
+        />
+      )}
 
       {playing && (
         <VideoLightbox

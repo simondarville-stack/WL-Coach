@@ -5,6 +5,12 @@
  * Components MUST NOT call supabase directly.
  */
 import { supabase } from './supabase';
+import {
+  LOG_VIDEO_MAX_BYTES,
+  LOG_VIDEO_MAX_SECONDS,
+  VideoTooLargeError,
+  VideoTooLongError,
+} from './logVideoLimits';
 import { rankExercises } from './exerciseRanker';
 import { emitInboxChanged } from './inboxEvents';
 import { getOwnerId } from './ownerContext';
@@ -934,20 +940,38 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
 
 // ─── Videos ───────────────────────────────────────────────────────────────
 
+// The caps and their errors live in their own module (see logVideoLimits.ts);
+// re-exported here because every existing caller reaches for them through the
+// service.
+export {
+  LOG_VIDEO_MAX_BYTES,
+  LOG_VIDEO_MAX_SECONDS,
+  VideoTooLargeError,
+  VideoTooLongError,
+} from './logVideoLimits';
+
 /** Bucket holding athlete-recorded training clips. Public, like the two
  *  buckets that came before it — athletes have no authenticated identity to
  *  scope a signed URL to until the auth phase lands. */
 export const LOG_VIDEO_BUCKET = 'log-videos';
 
-/** Mirrors the bucket's own file_size_limit so the UI can reject an oversized
- *  file before spending the upload rather than after. The real product cap is
- *  duration (below); 400 MB is headroom for a 60 s clip off a 4K60 camera. */
-export const LOG_VIDEO_MAX_BYTES = 400 * 1024 * 1024;
-
-/** Longest clip an athlete may attach. Duration, not bytes, is what a coach
- *  actually reviews — one lift plus setup fits comfortably in a minute.
- *  COACH-CONFIG candidate. */
-export const LOG_VIDEO_MAX_SECONDS = 60;
+/**
+ * Recognise storage's own size rejection.
+ *
+ * Belt and braces behind LOG_VIDEO_MAX_BYTES: the *project's* global upload
+ * limit can be lower than the bucket's, and it is set in the Supabase
+ * dashboard where no migration can mirror it. Rather than let that surface as
+ * "The object exceeded the maximum allowed size" on an athlete's phone, map it
+ * onto the same error the client-side guard raises.
+ */
+function isStorageSizeRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const status = (error as { statusCode?: string | number } | null)?.statusCode;
+  return (
+    /maximum allowed size|payload too large|entity too large/i.test(message) ||
+    String(status ?? '') === '413'
+  );
+}
 
 /**
  * Read a video file's duration from its metadata, without uploading or
@@ -1116,9 +1140,7 @@ export async function uploadLogVideo(params: {
   const { file, logExerciseId, athleteId } = params;
 
   if (file.size > LOG_VIDEO_MAX_BYTES) {
-    throw new Error(
-      `Video is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is ${LOG_VIDEO_MAX_BYTES / 1024 / 1024} MB.`,
-    );
+    throw new VideoTooLargeError(file.size);
   }
 
   // Duration is the product cap; bytes above are just bucket headroom.
@@ -1126,9 +1148,7 @@ export async function uploadLogVideo(params: {
   // a legitimate clip than to block on a browser quirk.
   const duration = await readVideoDurationSeconds(file);
   if (duration != null && duration > LOG_VIDEO_MAX_SECONDS + 1) {
-    throw new Error(
-      `Video is ${Math.round(duration)} s long — the limit is ${LOG_VIDEO_MAX_SECONDS} s. Trim it to the lift and try again.`,
-    );
+    throw new VideoTooLongError(duration);
   }
 
   // Optional Cloudflare Stream path (see streamUploads.ts): adaptive playback
@@ -1181,7 +1201,10 @@ export async function uploadLogVideo(params: {
   const { error: uploadError } = await supabase.storage
     .from(LOG_VIDEO_BUCKET)
     .upload(storagePath, file, { cacheControl: '31536000', upsert: false });
-  if (uploadError) throw uploadError;
+  if (uploadError) {
+    if (isStorageSizeRejection(uploadError)) throw new VideoTooLargeError(file.size);
+    throw uploadError;
+  }
 
   const { data: publicUrlData } = supabase.storage
     .from(LOG_VIDEO_BUCKET)
