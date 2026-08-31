@@ -140,6 +140,11 @@ describe('applyFeatureOverrides', () => {
       total_sets: 8, total_reps: 30, highest_load: 85, avg_load: 64,
     });
   });
+  it('overrides the highest load', () => {
+    expect(applyFeatureOverrides(base, { highestLoad: 90 })).toEqual({
+      total_sets: 5, total_reps: 20, highest_load: 90, avg_load: null,
+    });
+  });
   it('passes through when no features are set', () => {
     expect(applyFeatureOverrides(base, undefined)).toEqual(base);
     expect(applyFeatureOverrides(base, {})).toEqual(base);

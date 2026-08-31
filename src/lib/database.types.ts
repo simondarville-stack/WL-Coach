@@ -314,6 +314,8 @@ export interface ExerciseFeatures {
   totalReps?: number;
   /** Coach override for summary_total_sets. Coach/analysis-only. */
   totalSets?: number;
+  /** Coach override for summary_highest_load. Coach/analysis-only. */
+  highestLoad?: number;
   /** Coach override for summary_avg_load. Coach/analysis-only. */
   avgLoad?: number;
 }

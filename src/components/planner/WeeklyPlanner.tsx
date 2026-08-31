@@ -168,7 +168,7 @@ export function WeeklyPlanner() {
     saveMediaDescription,
     saveExerciseFeatures,
     saveAthleteVisibility,
-    setWeekPrescriptionsHidden,
+    setWeekAthleteHidden,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     createComboExercise,
@@ -181,11 +181,19 @@ export function WeeklyPlanner() {
   } = useWeekPlans();
 
   /** True when every prescribed exercise of the loaded week hides its
-   *  prescription from the athlete — drives the week-level eye toggle. */
+   *  prescription from the athlete — drives the week-level eye menu. */
   const weekPrescriptionsHidden = useMemo(() => {
     const prescribed = Object.values(plannedExercises).flat().filter(ex => ex.prescription_raw?.trim());
     return prescribed.length > 0 &&
       prescribed.every(ex => (ex.metadata?.athleteHidden ?? []).includes('prescription'));
+  }, [plannedExercises]);
+
+  /** True when every prescribed exercise of the loaded week shows the
+   *  athlete only its top set — the eye menu's "Only show top set". */
+  const weekTopSetOnly = useMemo(() => {
+    const prescribed = Object.values(plannedExercises).flat().filter(ex => ex.prescription_raw?.trim());
+    return prescribed.length > 0 &&
+      prescribed.every(ex => (ex.metadata?.athleteHidden ?? []).includes('belowTopSet'));
   }, [plannedExercises]);
 
   // Origin to stamp on every row this surface creates. On an individual plan
@@ -1762,7 +1770,11 @@ export function WeeklyPlanner() {
                 onDeleteAll={currentWeekPlan ? () => setShowDeleteAllConfirm(true) : undefined}
                 weekPrescriptionsHidden={weekPrescriptionsHidden}
                 onToggleWeekPrescriptionsHidden={currentWeekPlan
-                  ? () => { void setWeekPrescriptionsHidden(!weekPrescriptionsHidden).catch(() => { void handleRefresh(); }); }
+                  ? () => { void setWeekAthleteHidden('prescription', !weekPrescriptionsHidden).catch(() => { void handleRefresh(); }); }
+                  : undefined}
+                weekTopSetOnly={weekTopSetOnly}
+                onToggleWeekTopSetOnly={currentWeekPlan
+                  ? () => { void setWeekAthleteHidden('belowTopSet', !weekTopSetOnly).catch(() => { void handleRefresh(); }); }
                   : undefined}
               />
 

@@ -34,6 +34,7 @@ export const FEATURE_REGISTRY: FeatureDefinition[] = [
   { key: 'tempo', icon: '⧖', label: 'Tempo (TUT)', coachOnly: false },
   { key: 'totalReps', icon: 'Σ', label: 'Total reps — overwrites summation', coachOnly: true },
   { key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation', coachOnly: true },
+  { key: 'highestLoad', icon: 'Hi', label: 'Highest load — overwrites', coachOnly: true },
   { key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites', coachOnly: true },
 ];
 
@@ -51,6 +52,7 @@ export function applyFeatureOverrides(
     ...summary,
     total_reps: features.totalReps ?? summary.total_reps,
     total_sets: features.totalSets ?? summary.total_sets,
+    highest_load: features.highestLoad ?? summary.highest_load,
     avg_load: features.avgLoad ?? summary.avg_load,
   };
 }

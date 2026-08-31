@@ -3,9 +3,9 @@
  *
  *  - AnalysisColumn — the compact per-exercise analysis block on the right of
  *    each row (R / S / Hi / Ø from the cached summary_*), plus the "+" feature
- *    menu in the row's upper-right corner. Derived values are grey and
- *    passive; the Σ / Ø override features turn their value accent-coloured
- *    and editable in place.
+ *    menu in the row's upper-right corner. Derived values are grey; their
+ *    override features turn the value accent-coloured and editable in place.
+ *    Ctrl+click on a grey value adds its override and opens the edit directly.
  *  - FeatureChips — the athlete-visible duration chips under the
  *    prescription (⏱ total time, ⏸ rest between sets).
  *
@@ -38,6 +38,8 @@ function GestureValue({
   onCommit,
   onRemove,
   editOnClick = false,
+  initialEditing,
+  onEditClosed,
 }: {
   display: string;
   editValue: string;
@@ -47,9 +49,13 @@ function GestureValue({
   onCommit: (text: string) => void;
   onRemove: () => void;
   editOnClick?: boolean;
+  /** Mount straight into the edit input with this seed text (Ctrl+click on
+   *  a passive summary value adds the override and opens the edit at once). */
+  initialEditing?: string;
+  onEditClosed?: () => void;
 }) {
   const deleteHeld = useDeleteHeld();
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(initialEditing ?? null);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editing != null && inputRef.current) {
@@ -58,6 +64,12 @@ function GestureValue({
     }
   }, [editing != null]);
 
+  const closeEdit = (commitText?: string) => {
+    if (commitText != null) onCommit(commitText);
+    setEditing(null);
+    onEditClosed?.();
+  };
+
   if (editing != null) {
     return (
       <input
@@ -65,10 +77,10 @@ function GestureValue({
         value={editing}
         size={3}
         onChange={e => setEditing(e.target.value)}
-        onBlur={() => { onCommit(editing.trim()); setEditing(null); }}
+        onBlur={() => closeEdit(editing.trim())}
         onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onCommit(editing.trim()); setEditing(null); }
-          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+          if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); closeEdit(editing.trim()); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeEdit(); }
         }}
         onClick={e => e.stopPropagation()}
         style={{
@@ -158,6 +170,9 @@ export function AnalysisColumn({
   showSummary = true,
 }: AnalysisColumnProps) {
   const [openMenu, setOpenMenu] = useState<CornerMenu | null>(null);
+  // Ctrl+click on a passive summary value adds its override and should land
+  // straight in the edit input once the override renders.
+  const [autoEdit, setAutoEdit] = useState<'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad' | null>(null);
   const features: ExerciseFeatures = ex.metadata?.features ?? {};
   const isPct = ex.unit === 'percentage';
   const unitSuffix = isPct ? '%' : '';
@@ -172,10 +187,10 @@ export function AnalysisColumn({
 
   // Numeric-feature patcher for the summary overrides and durations; tempo
   // (a string) goes through onSaveFeatures directly.
-  const patchFeatures = (patch: Partial<Record<'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'avgLoad', number | undefined>>) => {
+  const patchFeatures = (patch: Partial<Record<'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad', number | undefined>>) => {
     const next: ExerciseFeatures = { ...features };
     for (const [k, v] of Object.entries(patch)) {
-      const key = k as 'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'avgLoad';
+      const key = k as 'totalTime' | 'restTime' | 'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad';
       if (v == null) delete next[key];
       else next[key] = v;
     }
@@ -204,46 +219,54 @@ export function AnalysisColumn({
       key: 'totalSets', icon: 'S', label: 'Total sets — overwrites summation',
       onAdd: () => patchFeatures({ totalSets: ex.summary_total_sets ?? 0 }),
     }] : []),
+    ...(features.highestLoad == null ? [{
+      key: 'highestLoad', icon: 'Hi', label: 'Highest load — overwrites',
+      onAdd: () => patchFeatures({ highestLoad: ex.summary_highest_load ?? 0 }),
+    }] : []),
     ...(features.avgLoad == null ? [{
       key: 'avgLoad', icon: 'Ø', label: 'Avg load — overwrites',
       onAdd: () => patchFeatures({ avgLoad: ex.summary_avg_load ?? ex.summary_highest_load ?? 0 }),
     }] : []),
   ];
 
-  const rows: Array<{ label: string; value: string; override?: { key: 'totalReps' | 'totalSets' | 'avgLoad'; current: number; step: number; title: string; parse: (t: string) => number | null } }> = [
+  const parseCount = (t: string) => { const n = parseInt(t, 10); return isNaN(n) || n < 0 ? null : n; };
+  const parseLoad = (t: string) => { const n = parseFloat(t.replace('%', '').replace(',', '.')); return isNaN(n) || n < 0 ? null : n; };
+
+  // Every summary row is overridable: `active` is the override value when the
+  // feature is on, `seed` is what Ctrl+click on the passive value starts from.
+  const rows: Array<{
+    label: string; value: string;
+    key: 'totalReps' | 'totalSets' | 'highestLoad' | 'avgLoad';
+    active: number | null; seed: number; step: number; title: string;
+    parse: (t: string) => number | null;
+  }> = [
     {
-      label: 'R',
+      label: 'R', key: 'totalReps',
       value: fmtNum(ex.summary_total_reps),
-      ...(features.totalReps != null ? {
-        override: {
-          key: 'totalReps' as const, current: features.totalReps, step: 1,
-          title: 'Total reps override — overwrites the summation',
-          parse: (t: string) => { const n = parseInt(t, 10); return isNaN(n) || n < 0 ? null : n; },
-        },
-      } : {}),
+      active: features.totalReps ?? null, seed: ex.summary_total_reps ?? 0, step: 1,
+      title: 'Total reps override — overwrites the summation',
+      parse: parseCount,
     },
     {
-      label: 'S',
+      label: 'S', key: 'totalSets',
       value: fmtNum(ex.summary_total_sets),
-      ...(features.totalSets != null ? {
-        override: {
-          key: 'totalSets' as const, current: features.totalSets, step: 1,
-          title: 'Total sets override — overwrites the summation',
-          parse: (t: string) => { const n = parseInt(t, 10); return isNaN(n) || n < 0 ? null : n; },
-        },
-      } : {}),
+      active: features.totalSets ?? null, seed: ex.summary_total_sets ?? 0, step: 1,
+      title: 'Total sets override — overwrites the summation',
+      parse: parseCount,
     },
-    { label: 'Hi', value: ex.summary_highest_load != null ? fmtNum(ex.summary_highest_load) + unitSuffix : '—' },
     {
-      label: 'Ø',
+      label: 'Hi', key: 'highestLoad',
+      value: ex.summary_highest_load != null ? fmtNum(ex.summary_highest_load) + unitSuffix : '—',
+      active: features.highestLoad ?? null, seed: ex.summary_highest_load ?? 0, step: 1,
+      title: 'Highest load override — overwrites',
+      parse: parseLoad,
+    },
+    {
+      label: 'Ø', key: 'avgLoad',
       value: ex.summary_avg_load != null ? fmtNum(ex.summary_avg_load) + unitSuffix : '—',
-      ...(features.avgLoad != null ? {
-        override: {
-          key: 'avgLoad' as const, current: features.avgLoad, step: 1,
-          title: 'Avg load override — overwrites',
-          parse: (t: string) => { const n = parseFloat(t.replace('%', '').replace(',', '.')); return isNaN(n) || n < 0 ? null : n; },
-        },
-      } : {}),
+      active: features.avgLoad ?? null, seed: ex.summary_avg_load ?? ex.summary_highest_load ?? 0, step: 1,
+      title: 'Avg load override — overwrites',
+      parse: parseLoad,
     },
   ];
 
@@ -366,18 +389,32 @@ export function AnalysisColumn({
       {showSummary && rows.map(row => (
         <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 3 }}>
           <span style={{ fontSize: 9, color: 'var(--color-text-tertiary)' }}>{row.label}</span>
-          {row.override ? (
+          {row.active != null ? (
             <GestureValue
               display={row.value}
-              editValue={String(row.override.current)}
-              title={row.override.title}
+              editValue={String(row.active)}
+              title={row.title}
               accent
-              onStep={d => patchFeatures({ [row.override!.key]: Math.max(0, row.override!.current + d * row.override!.step) })}
-              onCommit={t => { const n = row.override!.parse(t); if (n != null) patchFeatures({ [row.override!.key]: n }); }}
-              onRemove={() => patchFeatures({ [row.override!.key]: undefined })}
+              initialEditing={autoEdit === row.key ? String(row.active) : undefined}
+              onEditClosed={() => setAutoEdit(a => (a === row.key ? null : a))}
+              onStep={d => patchFeatures({ [row.key]: Math.max(0, row.active! + d * row.step) })}
+              onCommit={t => { const n = row.parse(t); if (n != null) patchFeatures({ [row.key]: n }); }}
+              onRemove={() => { setAutoEdit(a => (a === row.key ? null : a)); patchFeatures({ [row.key]: undefined }); }}
             />
           ) : (
-            <span style={{ fontSize: 10, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}>{row.value}</span>
+            <span
+              title={`${row.title} · Ctrl+click to overwrite`}
+              onMouseDown={e => {
+                if (e.button !== 0 || !(e.ctrlKey || e.metaKey)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setAutoEdit(row.key);
+                patchFeatures({ [row.key]: row.seed });
+              }}
+              style={{ fontSize: 10, color: 'var(--color-text-secondary)', lineHeight: 1.4 }}
+            >
+              {row.value}
+            </span>
           )}
         </div>
       ))}

@@ -207,6 +207,10 @@ export interface PlannerControlPanelProps {
    *  week hides its prescription from the athlete (taper/test week). */
   weekPrescriptionsHidden?: boolean;
   onToggleWeekPrescriptionsHidden?: () => void;
+  /** Week-level athlete visibility: true = every prescribed exercise this
+   *  week shows the athlete only its top set. */
+  weekTopSetOnly?: boolean;
+  onToggleWeekTopSetOnly?: () => void;
   onToggleLoadDistribution: () => void;
   onResolvePercentages?: (direction: 'percent-to-kg' | 'kg-to-percent') => void;
   onNavigateToWeek?: (weekStart: string) => void;
@@ -237,6 +241,8 @@ export function PlannerControlPanel({
   onDeleteAll,
   weekPrescriptionsHidden = false,
   onToggleWeekPrescriptionsHidden,
+  weekTopSetOnly = false,
+  onToggleWeekTopSetOnly,
   onToggleLoadDistribution,
   onResolvePercentages,
   weekTypes = [],
@@ -249,6 +255,8 @@ export function PlannerControlPanel({
   const [showAthleteProfile, setShowAthleteProfile] = useState(false);
   const [convertMenuOpen, setConvertMenuOpen] = useState(false);
   const convertMenuRef = useRef<HTMLDivElement>(null);
+  const [eyeMenuOpen, setEyeMenuOpen] = useState(false);
+  const eyeMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!convertMenuOpen) return;
@@ -260,6 +268,17 @@ export function PlannerControlPanel({
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [convertMenuOpen]);
+
+  useEffect(() => {
+    if (!eyeMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (eyeMenuRef.current && !eyeMenuRef.current.contains(e.target as Node)) {
+        setEyeMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [eyeMenuOpen]);
 
   useEffect(() => { setLocalDesc(weekDescription); }, [weekDescription]);
 
@@ -627,17 +646,90 @@ export function PlannerControlPanel({
             </div>
           )}
 
-          {onToggleWeekPrescriptionsHidden && (
-            <IconButton
-              title={weekPrescriptionsHidden
-                ? 'Prescriptions are hidden from athletes this week — click to show them again'
-                : "Hide all of this week's prescriptions from athletes (taper / test week)"}
-              onClick={onToggleWeekPrescriptionsHidden}
-            >
-              {weekPrescriptionsHidden
-                ? <EyeOff size={16} style={{ color: 'var(--color-accent)' }} />
-                : <Eye size={16} />}
-            </IconButton>
+          {(onToggleWeekPrescriptionsHidden || onToggleWeekTopSetOnly) && (
+            <div ref={eyeMenuRef} style={{ position: 'relative' }}>
+              <IconButton
+                title="Athlete visibility — what athletes see of this week's prescriptions"
+                onClick={() => setEyeMenuOpen(o => !o)}
+                highlight={eyeMenuOpen ? 'info' : undefined}
+              >
+                {weekPrescriptionsHidden || weekTopSetOnly
+                  ? <EyeOff size={16} style={{ color: 'var(--color-accent)' }} />
+                  : <Eye size={16} />}
+              </IconButton>
+              {eyeMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: 4,
+                    minWidth: 200,
+                    background: 'var(--color-bg-primary)',
+                    border: '0.5px solid var(--color-border-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    zIndex: 20,
+                    padding: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <div style={{ padding: '2px 10px 3px', fontSize: 9, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Athletes see this week
+                  </div>
+                  {([
+                    onToggleWeekPrescriptionsHidden && {
+                      key: 'prescriptions',
+                      label: 'Hide prescriptions',
+                      hint: 'No plan numbers at all (taper / test week)',
+                      active: weekPrescriptionsHidden,
+                      onToggle: onToggleWeekPrescriptionsHidden,
+                    },
+                    onToggleWeekTopSetOnly && {
+                      key: 'topSet',
+                      label: 'Only show top set',
+                      hint: 'Hides every set line below the top set',
+                      active: weekTopSetOnly,
+                      onToggle: onToggleWeekTopSetOnly,
+                    },
+                  ].filter(Boolean) as Array<{ key: string; label: string; hint: string; active: boolean; onToggle: () => void }>).map(item => (
+                    <button
+                      key={item.key}
+                      onClick={item.onToggle}
+                      title={item.active ? 'Active for every prescribed exercise this week — click to switch off' : 'Click to apply to every prescribed exercise this week'}
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        width: '100%',
+                        alignItems: 'flex-start',
+                        textAlign: 'left',
+                        border: 'none',
+                        background: 'transparent',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                        transition: 'background var(--transition-fast)',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-bg-secondary)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+                    >
+                      <span style={{ display: 'flex', marginTop: 1, color: item.active ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }}>
+                        {item.active ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: item.active ? 'var(--color-accent)' : 'var(--color-text-primary)' }}>
+                          {item.label}
+                        </span>
+                        <span style={{ fontSize: 'var(--text-caption)', color: 'var(--color-text-tertiary)' }}>
+                          {item.hint}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {onDeleteAll && (
             <IconButton title="Delete the whole week's prescription (logged exercises are kept)" onClick={onDeleteAll} danger>

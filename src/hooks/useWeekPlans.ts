@@ -820,21 +820,25 @@ export function useWeekPlans() {
   };
 
   /**
-   * Hide (or unhide) the prescription from the athlete app for EVERY
-   * prescribed exercise in the loaded week — taper/test weeks. Flips only
-   * the 'prescription' key; each row's other eye settings are preserved.
+   * Flip one athlete-visibility key on EVERY prescribed exercise in the
+   * loaded week: 'prescription' hides the plan numbers entirely (taper/test
+   * weeks), 'belowTopSet' shows athletes only each exercise's top set. Only
+   * the given key flips; each row's other eye settings are preserved.
    */
-  const setWeekPrescriptionsHidden = async (hidden: boolean): Promise<void> => {
+  const setWeekAthleteHidden = async (
+    key: 'prescription' | 'belowTopSet',
+    hidden: boolean,
+  ): Promise<void> => {
     const targets = Object.values(plannedExercises).flat().filter(ex => {
       if (!ex.prescription_raw?.trim()) return false;
-      const has = (ex.metadata?.athleteHidden ?? []).includes('prescription');
+      const has = (ex.metadata?.athleteHidden ?? []).includes(key);
       return hidden ? !has : has;
     });
     await Promise.all(targets.map(ex => {
       const current = ex.metadata?.athleteHidden ?? [];
       const next = hidden
-        ? [...current, 'prescription' as const]
-        : current.filter(k => k !== 'prescription');
+        ? [...current, key]
+        : current.filter(k => k !== key);
       return saveAthleteVisibility(ex.id, next);
     }));
   };
@@ -1758,7 +1762,7 @@ export function useWeekPlans() {
     saveMediaDescription,
     saveExerciseFeatures,
     saveAthleteVisibility,
-    setWeekPrescriptionsHidden,
+    setWeekAthleteHidden,
     fetchOtherDayPrescriptions,
     addExerciseToDay,
     copyExerciseWithSetLines,
