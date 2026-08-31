@@ -23,7 +23,10 @@
  * The case keeps its own colours in dark mode on purpose — it is a
  * physical object in the UI, not chrome.
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback, useEffect, useLayoutEffect, useRef, useState,
+  type CSSProperties, type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { X } from 'lucide-react';
 import { useDraggable } from '../../hooks/useDraggable';
 
@@ -253,6 +256,42 @@ function formatValue(n: number, decimals: DecimalPos, rounding: RoundPos): strin
 }
 
 /* ------------------------------------------------------------------ *
+ * Persisted case settings — size and the two switch positions
+ * ------------------------------------------------------------------ */
+
+/** Design width of the case; every other dimension is drawn against it. */
+const BASE_W = 320;
+const MIN_SCALE = 0.75;
+const MAX_SCALE = 2.25;
+const STORE_KEY = 'emos.pksCalculator';
+
+interface Prefs {
+  scale: number;
+  decimals: DecimalPos;
+  rounding: RoundPos;
+}
+
+const DEFAULT_PREFS: Prefs = { scale: 1, decimals: 'F', rounding: '5/4' };
+
+function loadPrefs(): Prefs {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return DEFAULT_PREFS;
+    const p = JSON.parse(raw) as Partial<Prefs>;
+    return {
+      scale: typeof p.scale === 'number' && p.scale >= MIN_SCALE && p.scale <= MAX_SCALE
+        ? p.scale : DEFAULT_PREFS.scale,
+      decimals: DECIMAL_POSITIONS.includes(p.decimals as DecimalPos)
+        ? (p.decimals as DecimalPos) : DEFAULT_PREFS.decimals,
+      rounding: ROUND_POSITIONS.includes(p.rounding as RoundPos)
+        ? (p.rounding as RoundPos) : DEFAULT_PREFS.rounding,
+    };
+  } catch {
+    return DEFAULT_PREFS; // private mode / storage disabled
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Case
  * ------------------------------------------------------------------ */
 
@@ -361,10 +400,60 @@ interface PKsCalculatorProps {
 
 export function PKsCalculator({ onClose, positionClass = 'bottom-4 right-4' }: PKsCalculatorProps) {
   const [state, setState] = useState<CalcState>(INITIAL);
-  const [decimals, setDecimals] = useState<DecimalPos>('F');
-  const [rounding, setRounding] = useState<RoundPos>('5/4');
+  const [decimals, setDecimals] = useState<DecimalPos>(() => loadPrefs().decimals);
+  const [rounding, setRounding] = useState<RoundPos>(() => loadPrefs().rounding);
+  const [scale, setScale] = useState(() => loadPrefs().scale);
+  const [naturalH, setNaturalH] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
-  const { containerStyle, handleProps } = useDraggable(panelRef);
+  const caseRef = useRef<HTMLDivElement>(null);
+  const resizeOrigin = useRef<number | null>(null);
+  const { containerStyle, handleProps, pin } = useDraggable(panelRef);
+
+  // The case is drawn at its design size and scaled; the positioning box
+  // around it needs the scaled height so dragging and clamping stay honest.
+  useLayoutEffect(() => {
+    const el = caseRef.current;
+    if (!el) return;
+    const measure = () => setNaturalH(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ scale, decimals, rounding }));
+    } catch { /* private mode / storage disabled */ }
+  }, [scale, decimals, rounding]);
+
+  /* Resize grip — the case grows from its top-left corner, so pin the panel
+   * first and then read the scale straight off the pointer's distance. */
+  const startResize = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    pin();
+    resizeOrigin.current = rect.left;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [pin]);
+
+  const moveResize = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    const originX = resizeOrigin.current;
+    if (originX === null) return;
+    const next = (e.clientX - originX) / BASE_W;
+    setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, next)));
+  }, []);
+
+  const endResize = useCallback((e: ReactPointerEvent<HTMLElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    resizeOrigin.current = null;
+  }, []);
 
   const press = useCallback((key: KeyId) => {
     if (key === 'OFF') { onClose(); return; }
@@ -406,14 +495,25 @@ export function PKsCalculator({ onClose, positionClass = 'bottom-4 right-4' }: P
   return (
     <div
       ref={panelRef}
-      className={`fixed z-50 w-[320px] rounded-[12px] overflow-hidden flex flex-col ${positionClass}`}
+      className={`fixed z-50 ${positionClass}`}
       style={{
         ...containerStyle,
-        background: `linear-gradient(180deg, ${SHELL.top} 0%, ${SHELL.body} 42%, ${SHELL.deep} 100%)`,
-        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.18), 0 0 0 1px ${SHELL.edge}, 0 18px 40px -12px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3)`,
+        width: BASE_W * scale,
+        height: naturalH ? naturalH * scale : undefined,
       }}
       role="dialog"
       aria-label="PKs Calculator"
+    >
+    <div
+      ref={caseRef}
+      className="relative rounded-[12px] overflow-hidden flex flex-col"
+      style={{
+        width: BASE_W,
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+        background: `linear-gradient(180deg, ${SHELL.top} 0%, ${SHELL.body} 42%, ${SHELL.deep} 100%)`,
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.18), 0 0 0 1px ${SHELL.edge}, 0 18px 40px -12px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3)`,
+      }}
     >
       {/* Upper case — solar strip, nameplate, display, sliders. Also the drag handle. */}
       <div {...handleProps} className="relative px-3 pt-2.5 pb-2">
@@ -506,8 +606,25 @@ export function PKsCalculator({ onClose, positionClass = 'bottom-4 right-4' }: P
 
         {/* Slider bank: rounding at the left, decimal places at the right */}
         <div className="flex items-end justify-between mt-2">
-          <Slider positions={ROUND_POSITIONS} value={rounding} onChange={setRounding} label="Rounding" width={46} />
-          <Slider positions={DECIMAL_POSITIONS} value={decimals} onChange={setDecimals} label="Decimal places" width={148} />
+          <Slider
+            positions={ROUND_POSITIONS}
+            value={rounding}
+            onChange={setRounding}
+            label="Rounding"
+            width={46}
+            inactive={decimals === 'F'}
+            hint={decimals === 'F'
+              ? 'set a fixed decimal place to apply it'
+              : 'up / half up / truncate'}
+          />
+          <Slider
+            positions={DECIMAL_POSITIONS}
+            value={decimals}
+            onChange={setDecimals}
+            label="Decimal places"
+            width={148}
+            hint="A = 2 places, F = floating"
+          />
         </div>
       </div>
 
@@ -547,6 +664,7 @@ export function PKsCalculator({ onClose, positionClass = 'bottom-4 right-4' }: P
           style={{
             fontSize: 7,
             letterSpacing: '0.2em',
+            marginRight: 11,
             color: 'rgba(255,255,255,0.14)',
             textShadow: '0 1px 0 rgba(0,0,0,0.2)',
           }}
@@ -554,6 +672,27 @@ export function PKsCalculator({ onClose, positionClass = 'bottom-4 right-4' }: P
           16.3.2024
         </span>
       </div>
+
+      {/* Resize grip — reads as a moulding detail on the corner of the case */}
+      <button
+        onPointerDown={startResize}
+        onPointerMove={moveResize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onDoubleClick={() => setScale(1)}
+        title="Drag to resize · double-click to reset"
+        aria-label="Resize calculator"
+        className="absolute bottom-[2px] right-[2px] w-[12px] h-[12px]"
+        style={{ cursor: 'nwse-resize', touchAction: 'none' }}
+      >
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden>
+          <g stroke="rgba(255,255,255,0.20)" strokeWidth="1.1" strokeLinecap="round">
+            <line x1="10" y1="3.5" x2="3.5" y2="10" />
+            <line x1="10" y1="7" x2="7" y2="10" />
+          </g>
+        </svg>
+      </button>
+    </div>
     </div>
   );
 }
@@ -568,15 +707,63 @@ interface SliderProps<T extends string> {
   onChange: (v: T) => void;
   label: string;
   width: number;
+  /** Rendered faded when the setting currently has no effect. */
+  inactive?: boolean;
+  hint?: string;
 }
 
-function Slider<T extends string>({ positions, value, onChange, label, width }: SliderProps<T>) {
+function Slider<T extends string>({
+  positions, value, onChange, label, width, inactive, hint,
+}: SliderProps<T>) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const sliding = useRef(false);
   const index = Math.max(0, positions.indexOf(value));
   const slot = width / positions.length;
 
+  /* Read the position straight off the pointer. Measuring the live track
+   * rect rather than the design width keeps this correct while the whole
+   * case is scaled by the resize grip. */
+  const setFromPointer = useCallback((clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const ratio = (clientX - rect.left) / rect.width;
+    const i = Math.min(positions.length - 1, Math.max(0, Math.floor(ratio * positions.length)));
+    onChange(positions[i]);
+  }, [onChange, positions]);
+
+  const onDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    // Don't let the case's drag handle claim this gesture.
+    e.stopPropagation();
+    e.preventDefault();
+    sliding.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setFromPointer(e.clientX);
+  };
+
+  const onMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (sliding.current) setFromPointer(e.clientX);
+  };
+
+  const onUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    sliding.current = false;
+  };
+
+  const step = (delta: number) => {
+    const i = Math.min(positions.length - 1, Math.max(0, index + delta));
+    onChange(positions[i]);
+  };
+
+  const title = hint ? `${label}: ${value} — ${hint}` : `${label}: ${value}`;
+
   return (
-    <div style={{ width }} title={`${label}: ${value}`}>
-      <div className="flex" style={{ marginBottom: 1 }}>
+    <div style={{ width, opacity: inactive ? 0.45 : 1, transition: 'opacity 140ms ease' }} title={title}>
+      <div className="flex">
         {positions.map(p => (
           <button
             key={p}
@@ -586,6 +773,7 @@ function Slider<T extends string>({ positions, value, onChange, label, width }: 
             className="leading-none"
             style={{
               width: slot,
+              height: 10,
               fontSize: 6.5,
               color: p === value ? SHELL.ink : SHELL.inkDim,
               textShadow: '0 1px 0 rgba(0,0,0,0.28)',
@@ -596,9 +784,27 @@ function Slider<T extends string>({ positions, value, onChange, label, width }: 
         ))}
       </div>
       <div
+        ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuenow={index}
+        aria-valuemin={0}
+        aria-valuemax={positions.length - 1}
+        aria-valuetext={value}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onKeyDown={e => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); step(-1); }
+          if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); step(1); }
+        }}
         className="relative rounded-[2px]"
         style={{
-          height: 8,
+          height: 10,
+          cursor: 'ew-resize',
+          touchAction: 'none',
           background: 'linear-gradient(180deg, #4d4941 0%, #5d584d 100%)',
           boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.16)',
         }}
@@ -606,13 +812,13 @@ function Slider<T extends string>({ positions, value, onChange, label, width }: 
         <div
           className="absolute rounded-[1.5px] pointer-events-none"
           style={{
-            top: 1,
-            bottom: 1,
+            top: 1.5,
+            bottom: 1.5,
             left: index * slot + slot * 0.16,
             width: slot * 0.68,
             background: 'linear-gradient(180deg, #ddd8c8 0%, #b9b3a2 100%)',
             boxShadow: '0 1px 1px rgba(0,0,0,0.4)',
-            transition: 'left 120ms ease',
+            transition: sliding.current ? 'none' : 'left 120ms ease',
           }}
         />
       </div>

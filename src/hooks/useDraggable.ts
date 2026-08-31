@@ -36,6 +36,12 @@ interface UseDraggableResult {
     onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void;
     style: CSSProperties;
   };
+  /**
+   * Switch the panel to explicit left/top at its current on-screen rect
+   * without a drag. Call this before resizing a panel programmatically so
+   * it grows from a fixed corner instead of from its Tailwind anchor.
+   */
+  pin: () => void;
 }
 
 export function useDraggable(containerRef: RefObject<HTMLElement | null>): UseDraggableResult {
@@ -99,6 +105,13 @@ export function useDraggable(containerRef: RefObject<HTMLElement | null>): UseDr
     setDragging(false);
   }, []);
 
+  const pin = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPosition(clampToViewport(rect.left, rect.top));
+  }, [clampToViewport, containerRef]);
+
   // Re-clamp on window resize so a panel can't drift permanently off-screen.
   useEffect(() => {
     if (!position) return;
@@ -106,6 +119,19 @@ export function useDraggable(containerRef: RefObject<HTMLElement | null>): UseDr
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, [position, clampToViewport]);
+
+  // A pinned panel that grows (e.g. the user resizes it) must stay on screen
+  // too. Subscribed once per pin, not per pointer move.
+  const pinned = position !== null;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!pinned || !el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      setPosition(p => (p ? clampToViewport(p.left, p.top) : p));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pinned, clampToViewport, containerRef]);
 
   const containerStyle: CSSProperties = position
     ? { left: position.left, top: position.top, right: 'auto', bottom: 'auto' }
@@ -122,5 +148,5 @@ export function useDraggable(containerRef: RefObject<HTMLElement | null>): UseDr
     } as CSSProperties,
   };
 
-  return { containerStyle, handleProps };
+  return { containerStyle, handleProps, pin };
 }
