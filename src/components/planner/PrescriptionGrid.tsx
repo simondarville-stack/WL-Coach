@@ -314,20 +314,19 @@ export function PrescriptionGrid({
     onSave(raw);
   }, [isCombo, isFreeTextReps, unit, onSave]);
 
+  // save() must stay OUTSIDE the setColumns updater: updaters run during the
+  // render phase, and save() sets parent state (React's "cannot update a
+  // component while rendering a different component" warning).
   function updateColumn(id: string, patch: Partial<GridColumn>) {
-    setColumns(prev => {
-      const next = prev.map(c => c.id === id ? { ...c, ...patch } : c);
-      save(next);
-      return next;
-    });
+    const next = columns.map(c => c.id === id ? { ...c, ...patch } : c);
+    setColumns(next);
+    save(next);
   }
 
   function removeColumn(id: string) {
-    setColumns(prev => {
-      const next = prev.filter(c => c.id !== id);
-      save(next);
-      return next;
-    });
+    const next = columns.filter(c => c.id !== id);
+    setColumns(next);
+    save(next);
   }
 
   function handleCellClick(e: React.MouseEvent, colId: string, field: 'load' | 'reps' | 'sets') {
