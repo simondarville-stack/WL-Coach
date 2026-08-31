@@ -204,8 +204,19 @@ export const StackedNotation = memo(function StackedNotation({ raw, unit, isComb
   );
 });
 
+/**
+ * The subset of a logged set this visual actually reads. Callers that fetched
+ * only the display columns (the exercise panel's actuals table) can pass those
+ * rows straight in without over-selecting or casting; a full TrainingLogSet
+ * still satisfies it.
+ */
+export type LoggedSetLike = Pick<
+  TrainingLogSet,
+  'id' | 'performed_load' | 'performed_reps' | 'performed_text' | 'rpe' | 'status' | 'notes'
+>;
+
 interface LoggedStackedNotationProps {
-  sets: TrainingLogSet[];
+  sets: LoggedSetLike[];
   /** When true, also render skipped / failed sets in greyed style. */
   includeIncomplete?: boolean;
 }

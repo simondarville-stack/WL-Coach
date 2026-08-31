@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { StackedNotation } from './StackedNotation';
 
 interface HistoryRow {
   weekStart: string;
   prescription: string | null;
+  /** Carried alongside the raw string because Stacked Load Notation cannot be
+   *  rendered without them — % vs kg, and combo tuple reps. */
+  unit: string | null;
+  isCombo: boolean;
   totalSets: number | null;
   totalReps: number | null;
   highestLoad: number | null;
@@ -80,7 +85,7 @@ export function ExercisePrescriptionHistory({
         const wpStartById = new Map(weekPlans.map(w => [w.id, w.week_start]));
         const { data: planRows } = await supabase
           .from('planned_exercises')
-          .select('weekplan_id, prescription_raw, summary_total_sets, summary_total_reps, summary_highest_load')
+          .select('weekplan_id, prescription_raw, unit, is_combo, summary_total_sets, summary_total_reps, summary_highest_load')
           .eq('exercise_id', exerciseId)
           .in('weekplan_id', weekPlans.map(w => w.id));
 
@@ -93,6 +98,8 @@ export function ExercisePrescriptionHistory({
             return {
               weekStart: ws,
               prescription: r.prescription_raw,
+              unit: r.unit,
+              isCombo: r.is_combo === true,
               totalSets: r.summary_total_sets,
               totalReps: r.summary_total_reps,
               highestLoad: r.summary_highest_load,
@@ -177,6 +184,7 @@ export function ExercisePrescriptionHistory({
                 title={formatFull(r.weekStart)}
                 style={{
                   padding: '6px 8px 6px 0', width: 52, whiteSpace: 'nowrap',
+                  verticalAlign: 'top',
                   color: r.isCurrentWeek ? 'var(--color-accent)' : 'var(--color-text-secondary)',
                   fontWeight: r.isCurrentWeek ? 600 : 500,
                   fontVariantNumeric: 'tabular-nums',
@@ -184,11 +192,12 @@ export function ExercisePrescriptionHistory({
               >
                 {formatShort(r.weekStart)}
               </td>
-              <td style={{
-                padding: '6px 0', fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-primary)', wordBreak: 'break-word',
-              }}>
-                {r.prescription ?? (
+              {/* Stacked Load Notation, not the raw `load×reps×sets` string —
+                  the inline form is input/storage only (DISPLAY_CONVENTIONS §1). */}
+              <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                {r.prescription ? (
+                  <StackedNotation raw={r.prescription} unit={r.unit} isCombo={r.isCombo} />
+                ) : (
                   <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontFamily: 'var(--font-sans)' }}>
                     not planned
                   </span>
@@ -196,6 +205,7 @@ export function ExercisePrescriptionHistory({
               </td>
               <td style={{
                 padding: '6px 0 6px 8px', textAlign: 'right', whiteSpace: 'nowrap',
+                verticalAlign: 'top',
                 color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums',
               }}>
                 {/* Sets and reps were fetched and stored but never rendered.

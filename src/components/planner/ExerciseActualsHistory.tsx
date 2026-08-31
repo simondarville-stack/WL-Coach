@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { formatKg, formatLoadReps, groupLoadReps } from '../../lib/loadRepsFormat';
+import { formatKg } from '../../lib/loadRepsFormat';
 import { isoMonday } from '../../lib/dateUtils';
+import { LoggedStackedNotation, StackedNotation, type LoggedSetLike } from './StackedNotation';
 
 interface ActualRow {
   /** The real date the session happened — a log is an event, not a week. */
   date: string;
   /** Monday of that date, so the row can be filtered by the chart's week window. */
   weekStart: string;
-  /** "80×3, 85×2×3" built from the completed sets. */
-  performed: string | null;
+  /** The completed set rows themselves, rendered as Stacked Load Notation.
+   *  Empty for a v1 row that only has a summary string. */
+  sets: LoggedSetLike[];
+  /** v1 fallback: the free-text summary the athlete typed, when there are no
+   *  per-set rows to draw. */
+  performedRaw: string | null;
   totalSets: number | null;
   totalReps: number | null;
   highestLoad: number | null;
@@ -82,17 +87,18 @@ export function ExerciseActualsHistory({
           .gte('session.date', lookBack);
 
         const ids = (logRows ?? []).map(r => r.id);
-        type SetRow = {
-          log_exercise_id: string;
-          performed_load: number | null;
-          performed_reps: number | null;
-          status: string;
-        };
+        // The display columns LoggedStackedNotation reads, plus the grouping
+        // key — so the notation can be rendered from these rows directly
+        // instead of being flattened into a string first.
+        type SetRow = LoggedSetLike & { log_exercise_id: string };
         let loggedSets: SetRow[] = [];
         if (ids.length > 0) {
           const { data } = await supabase
             .from('training_log_sets')
-            .select('log_exercise_id, performed_load, performed_reps, status')
+            .select('id, log_exercise_id, performed_load, performed_reps, performed_text, rpe, status, notes')
+            // Ordered so each exercise's columns read left-to-right in the
+            // order the athlete actually lifted them.
+            .order('set_number', { ascending: true })
             .in('log_exercise_id', ids);
           loggedSets = (data ?? []) as SetRow[];
         }
@@ -114,20 +120,19 @@ export function ExerciseActualsHistory({
             .filter(s => (s.performed_load ?? 0) > 0 && (s.performed_reps ?? 0) > 0)
             .map(s => ({ load: s.performed_load as number, reps: s.performed_reps as number }));
 
-          let performed: string | null;
           let totalSets: number | null;
           let totalReps: number | null;
           let highestLoad: number | null;
+          let performedRaw: string | null = null;
 
           if (entries.length > 0) {
-            performed = formatLoadReps(groupLoadReps(entries));
             totalSets = entries.length;
             totalReps = entries.reduce((sum, e) => sum + e.reps, 0);
             highestLoad = Math.max(...entries.map(e => e.load));
           } else {
             // v1 row: the summary string is all there is. Reported as written
             // rather than re-derived, and its set/rep counts stay unknown.
-            performed = r.performed_raw?.trim() || null;
+            performedRaw = r.performed_raw?.trim() || null;
             totalSets = null;
             totalReps = null;
             highestLoad = null;
@@ -135,12 +140,15 @@ export function ExerciseActualsHistory({
 
           // A session with no completed set and no summary string recorded
           // nothing — showing it as a blank row would read as a failed lift.
-          if (!performed) continue;
+          // Completed sets without numbers (a prose/GPP completion) still
+          // count: LoggedStackedNotation renders those as the athlete's text.
+          if (sets.length === 0 && !performedRaw) continue;
 
           collected.push({
             date: session.date,
             weekStart: isoMonday(session.date),
-            performed,
+            sets,
+            performedRaw,
             totalSets,
             totalReps,
             highestLoad,
@@ -217,6 +225,7 @@ export function ExerciseActualsHistory({
                   title={formatFull(r.date)}
                   style={{
                     padding: '6px 8px 6px 0', width: 52, whiteSpace: 'nowrap',
+                    verticalAlign: 'top',
                     color: r.isCurrentWeek ? 'var(--color-accent)' : 'var(--color-text-secondary)',
                     fontWeight: r.isCurrentWeek ? 600 : 500,
                     fontVariantNumeric: 'tabular-nums',
@@ -224,14 +233,17 @@ export function ExerciseActualsHistory({
                 >
                   {formatShort(r.date)}
                 </td>
-                <td style={{
-                  padding: '6px 0', fontFamily: 'var(--font-mono)',
-                  color: 'var(--color-text-primary)', wordBreak: 'break-word',
-                }}>
-                  {r.performed}
+                {/* Stacked Load Notation, same as everywhere else a lift is
+                    shown — the inline `load×reps` string is storage, not a
+                    display form (DISPLAY_CONVENTIONS §1). */}
+                <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                  {r.sets.length > 0
+                    ? <LoggedStackedNotation sets={r.sets} includeIncomplete={false} />
+                    : <StackedNotation raw={r.performedRaw} unit={null} />}
                 </td>
                 <td style={{
                   padding: '6px 0 6px 8px', textAlign: 'right', whiteSpace: 'nowrap',
+                  verticalAlign: 'top',
                   color: 'var(--color-text-tertiary)', fontVariantNumeric: 'tabular-nums',
                 }}>
                   {expanded && (r.totalSets != null || r.totalReps != null) && (

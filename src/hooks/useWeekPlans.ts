@@ -870,10 +870,15 @@ export function useWeekPlans() {
     weekplanId: string,
     exerciseId: string,
     excludeId: string,
-  ): Promise<{ dayIndex: number; prescriptionRaw: string | null; totalSets: number | null; totalReps: number | null }[]> => {
+  ): Promise<{
+    dayIndex: number; prescriptionRaw: string | null; unit: string | null; isCombo: boolean;
+    totalSets: number | null; totalReps: number | null;
+  }[]> => {
     const { data, error } = await supabase
       .from('planned_exercises')
-      .select('day_index, prescription_raw, summary_total_sets, summary_total_reps')
+      // unit / is_combo travel with the raw string: the panel renders these as
+      // Stacked Load Notation, which cannot be drawn without them.
+      .select('day_index, prescription_raw, unit, is_combo, summary_total_sets, summary_total_reps')
       .eq('weekplan_id', weekplanId)
       .eq('exercise_id', exerciseId)
       .neq('id', excludeId);
@@ -881,6 +886,8 @@ export function useWeekPlans() {
     return (data || []).map(ex => ({
       dayIndex: ex.day_index,
       prescriptionRaw: ex.prescription_raw,
+      unit: ex.unit,
+      isCombo: ex.is_combo === true,
       totalSets: ex.summary_total_sets,
       totalReps: ex.summary_total_reps,
     }));

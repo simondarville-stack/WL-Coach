@@ -29,6 +29,9 @@ import { ComboCreatorModal } from './ComboCreatorModal';
 interface OtherDay {
   dayIndex: number;
   prescriptionRaw: string | null;
+  /** Needed to render the row as Stacked Load Notation (% vs kg, combo tuples). */
+  unit: string | null;
+  isCombo: boolean;
   totalSets: number | null;
   totalReps: number | null;
 }
@@ -223,7 +226,7 @@ export function ExerciseDetail({
     if (!plannedExercise || members.length === 0) return;
     const currentMemberIds = members.map(m => m.exerciseId).sort().join(',');
     const { data: otherCombos } = await supabase
-      .from('planned_exercises').select('id, day_index, prescription_raw, summary_total_sets, summary_total_reps')
+      .from('planned_exercises').select('id, day_index, prescription_raw, unit, summary_total_sets, summary_total_reps')
       .eq('weekplan_id', weekPlanId).eq('is_combo', true).neq('id', plannedExercise.id);
     if (!otherCombos?.length) { setOtherDays([]); return; }
     // Batch-fetch all combo members in one query (fixes N+1)
@@ -242,7 +245,11 @@ export function ExerciseDetail({
     for (const combo of otherCombos) {
       const theirIds = (memberMap.get(combo.id) || []).sort().join(',');
       if (theirIds === currentMemberIds) {
-        matching.push({ dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw, totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps });
+        matching.push({
+          dayIndex: combo.day_index, prescriptionRaw: combo.prescription_raw,
+          unit: combo.unit, isCombo: true,
+          totalSets: combo.summary_total_sets, totalReps: combo.summary_total_reps,
+        });
       }
     }
     setOtherDays(matching);
@@ -845,11 +852,15 @@ export function ExerciseDetail({
                     const label = dayLabels[d.dayIndex] || `Day ${d.dayIndex}`;
                     return (
                       <tr key={d.dayIndex} style={{ borderBottom: '1px solid var(--color-border-tertiary)' }}>
-                        <td style={{ padding: '6px 0', color: 'var(--color-text-secondary)', fontWeight: 500, width: 96 }}>{label}</td>
-                        <td style={{ padding: '6px 0', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-                          {d.prescriptionRaw ?? <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic', fontFamily: 'var(--font-sans)' }}>not yet planned</span>}
+                        <td style={{ padding: '6px 0', verticalAlign: 'top', color: 'var(--color-text-secondary)', fontWeight: 500, width: 96 }}>{label}</td>
+                        {/* Stacked Load Notation, like every other read-only
+                            prescription (DISPLAY_CONVENTIONS §1). */}
+                        <td style={{ padding: '6px 0', color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                          {d.prescriptionRaw
+                            ? <StackedNotation raw={d.prescriptionRaw} unit={d.unit} isCombo={d.isCombo} />
+                            : <span style={{ color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>not yet planned</span>}
                         </td>
-                        <td style={{ padding: '6px 0', color: 'var(--color-text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <td style={{ padding: '6px 0', verticalAlign: 'top', color: 'var(--color-text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {d.totalSets != null && d.totalReps != null ? `S${d.totalSets} R${d.totalReps}` : ''}
                         </td>
                       </tr>
