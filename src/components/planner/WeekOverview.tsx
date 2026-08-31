@@ -252,16 +252,17 @@ export function WeekOverview({
   const metricsForSlot = (slot: number) =>
     metricsBySlot.get(slot) ?? computeMetrics([], competitionTotal ?? null);
 
-  // How many day columns fit. Measured (not media-queried) because the grid's
-  // width depends on the sidebar and dock, not just the viewport. Callback ref
+  // The grid's measured width. Measured (not media-queried) because it depends
+  // on the sidebar and dock, not just the viewport; how many columns fit is
+  // derived at render time, where the cells' emptiness is known. Callback ref
   // so the observer attaches whenever the scheduled grid (re)mounts.
-  const [gridCols, setGridCols] = useState(7);
+  const [gridWidth, setGridWidth] = useState<number | null>(null);
   const gridRO = useRef<ResizeObserver | null>(null);
   const gridWrapRef = useCallback((el: HTMLDivElement | null) => {
     gridRO.current?.disconnect();
     gridRO.current = null;
     if (!el) return;
-    const update = () => setGridCols(columnsForWidth(el.clientWidth));
+    const update = () => setGridWidth(el.clientWidth);
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -354,6 +355,21 @@ export function WeekOverview({
       pm: cell.trainingSessions.filter(s => !isMorning(s.time)),
     }));
 
+    // Rest columns render at half the width of a training column (2fr vs 1fr),
+    // so the fit test weights them at half a floor too — a week with rest days
+    // stays on one row at widths where equal tracks would already have wrapped.
+    // Wrapped layouts keep equal tracks: one grid template serves both rows,
+    // so per-day weighting cannot survive the wrap.
+    const hasSessions = (b: { am: unknown[]; pm: unknown[] }) => b.am.length + b.pm.length > 0;
+    const fullDayCount = banded.filter(hasSessions).length;
+    const restDayCount = banded.length - fullDayCount;
+    const weekFitsOneRow = gridWidth === null || gridWidth >=
+      fullDayCount * COLUMN_FLOOR + restDayCount * (COLUMN_FLOOR / 2) + (banded.length - 1) * COLUMN_GAP;
+    const gridCols = weekFitsOneRow ? banded.length : columnsForWidth(gridWidth ?? 0);
+    const weekTemplate = weekFitsOneRow
+      ? banded.map(b => (hasSessions(b) ? 'minmax(0, 2fr)' : 'minmax(0, 1fr)')).join(' ')
+      : `repeat(${gridCols}, minmax(0, 1fr))`;
+
     const session = (slotIndex: number, time: string | null) => {
       const name = visibleDays.find(d => d.index === slotIndex)?.name ?? `Day ${slotIndex}`;
       if (expanded.has(slotIndex)) {
@@ -425,10 +441,10 @@ export function WeekOverview({
           }}
           style={{
             display: 'grid',
-            // Explicit equal tracks (auto-fit left a phantom 0px track and
-            // wrapped at arbitrary points like 5+2). columnsForWidth breaks
-            // the week deliberately: 7 across, else Mon–Thu over Fri–Sun.
-            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+            // Explicit tracks (auto-fit left a phantom 0px track and wrapped
+            // at arbitrary points like 5+2). One row: weighted tracks, rest
+            // days at half width. Wrapped: equal tracks, Mon–Thu over Fri–Sun.
+            gridTemplateColumns: weekTemplate,
             columnGap: COLUMN_GAP,
             rowGap: 10,
             alignItems: 'start',
@@ -488,8 +504,9 @@ export function WeekOverview({
             }}>
               Unscheduled
             </p>
-            {/* The same column track as the week, so an unscheduled unit is not
-                a third card size on the same screen. */}
+            {/* The same column count as the week (equal tracks — the weighted
+                week template keys on weekday emptiness, which has no meaning
+                here), so an unscheduled unit is not a third card size. */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,

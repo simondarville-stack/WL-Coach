@@ -15,6 +15,12 @@
       "port": 5199
     },
     {
+      "name": "dev-fixed-2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5233", "--strictPort"],
+      "port": 5233
+    },
+    {
       "name": "dev-mobile-review",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/SimonDarville-GodEne/WL-Coach-mobile-review", "--", "--port", "5322", "--strictPort"],
