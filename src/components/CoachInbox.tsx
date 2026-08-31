@@ -38,9 +38,12 @@ import {
   fetchInboxThreads,
   fetchSessionRowForSlot,
   fetchSessionSlotRefs,
+  fetchSessionVideos,
   fetchWeekOverview,
+  markLogVideoReviewed,
   type InboxThread,
   type SessionSlotRef,
+  type SessionVideoItem,
   type WeekOverview,
 } from '../lib/trainingLogService';
 import { useThreadChat, type ThreadChatUnit } from '../hooks/useThreadChat';
@@ -56,7 +59,8 @@ import {
   toLocalISO,
 } from '../lib/dateUtils';
 import { describeError } from '../lib/errorMessage';
-import { onInboxChanged } from '../lib/inboxEvents';
+import { emitInboxChanged, onInboxChanged } from '../lib/inboxEvents';
+import { VideoMessageBubble } from './chat/VideoMessageBubble';
 import {
   isNotifyEnabled,
   notifyPermission,
@@ -67,7 +71,7 @@ import {
 import { useAthleteStore } from '../store/athleteStore';
 import { useCoachStore } from '../store/coachStore';
 import { AdaptiveDialog } from './ui/AdaptiveDialog';
-import type { TrainingLogMessage } from '../lib/database.types';
+import type { TrainingLogMessage, TrainingLogVideo } from '../lib/database.types';
 
 /** A unit-thread target from the attach flow. sessionId stays null
  *  until the first message creates the log session row. */
@@ -998,6 +1002,54 @@ function ChatPane({
     onMessagesChanged,
   });
 
+  // Clips attached to this session's logged exercises — interleaved with the
+  // messages by timestamp so the unit's footage and its discussion read as
+  // one conversation.
+  const videoSessionId = thread.kind === 'session' ? thread.sessionId ?? unit?.sessionId ?? null : null;
+  const [sessionVideos, setSessionVideos] = useState<SessionVideoItem[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setSessionVideos([]);
+    if (!videoSessionId) return;
+    fetchSessionVideos(videoSessionId)
+      .then(v => { if (alive) setSessionVideos(v); })
+      .catch(() => undefined); // footage is an extra here — the thread still works
+    return () => { alive = false; };
+  }, [videoSessionId]);
+
+  const onOpenSessionVideo = (v: TrainingLogVideo) => {
+    if (v.coach_reviewed_at != null) return;
+    // Optimistic ring-clear; the marker also feeds the sidebar badges.
+    setSessionVideos(prev =>
+      prev.map(x =>
+        x.video.id === v.id
+          ? { ...x, video: { ...x.video, coach_reviewed_at: new Date().toISOString() } }
+          : x,
+      ),
+    );
+    markLogVideoReviewed(v.id)
+      .then(() => emitInboxChanged())
+      .catch(() => undefined);
+  };
+
+  // The thread timeline: messages and clips merged by timestamp. ISO
+  // timestamps from PostgREST share the +00:00 offset, so a string compare
+  // orders them correctly.
+  const threadRows = useMemo(() => {
+    type Row =
+      | { key: string; at: string; kind: 'message'; message: TrainingLogMessage }
+      | { key: string; at: string; kind: 'video'; item: SessionVideoItem };
+    const rows: Row[] = [
+      ...messages.map(m => ({
+        key: `m:${m.id}`, at: m.created_at, kind: 'message' as const, message: m,
+      })),
+      ...sessionVideos.map(v => ({
+        key: `v:${v.video.id}`, at: v.video.created_at, kind: 'video' as const, item: v,
+      })),
+    ];
+    return rows.sort((a, b) => a.at.localeCompare(b.at));
+  }, [messages, sessionVideos]);
+
   // Land the coach ON the first unread message rather than at the bottom of a
   // long thread. Keyed on the id, so it fires once per thread — scrolling on
   // every render would fight the coach's own scrolling.
@@ -1121,7 +1173,7 @@ function ChatPane({
           </div>
         ) : error ? (
           <div style={{ padding: 12, fontSize: 11, color: 'var(--color-danger-text)' }}>{error}</div>
-        ) : messages.length === 0 ? (
+        ) : threadRows.length === 0 ? (
           <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontStyle: 'italic', textAlign: 'center', padding: 24 }}>
             {thread.kind === 'general'
               ? 'No messages yet. Send the first one.'
@@ -1130,9 +1182,19 @@ function ChatPane({
                 : 'No messages on this unit yet.'}
           </div>
         ) : (
-          messages.map(m => (
-            <Fragment key={m.id}>
-              {m.id === firstUnreadId && (
+          threadRows.map(row =>
+            row.kind === 'video' ? (
+              <VideoMessageBubble
+                key={row.key}
+                item={row.item}
+                isOwn={row.item.video.uploaded_by === 'coach'}
+                theme="light"
+                unreviewed={row.item.video.coach_reviewed_at == null}
+                onOpen={onOpenSessionVideo}
+              />
+            ) : (
+            <Fragment key={row.key}>
+              {row.message.id === firstUnreadId && (
                 <div
                   ref={firstUnreadRef}
                   style={{
@@ -1152,11 +1214,12 @@ function ChatPane({
                 </div>
               )}
               <MessageBubble
-                message={m}
-                senderLabel={coachLabelFor(m, coachNames, activeCoachId, athleteName)}
+                message={row.message}
+                senderLabel={coachLabelFor(row.message, coachNames, activeCoachId, athleteName)}
               />
             </Fragment>
-          ))
+            ),
+          )
         )}
       </div>
 

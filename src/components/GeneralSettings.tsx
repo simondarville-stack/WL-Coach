@@ -10,6 +10,7 @@ import { DEFAULT_PHASE_TYPE_PRESETS } from '../lib/constants';
 import { DEFAULT_MACRO_TABLE_COLUMNS, MACRO_TABLE_COLUMN_LABELS, STRUCTURAL_MACRO_COLUMNS } from './macro/MacroTableV2';
 import type { MacroTableColumnKey } from './macro/MacroTableV2';
 import { FlagSettingsSection } from './dashboard-v2/FlagSettingsSection';
+import { ReviewSettingsSection } from './review/ReviewSettingsSection';
 import { alertDialog } from './ui';
 import { Spinner } from './ui';
 
@@ -36,6 +37,7 @@ const SETTINGS_TABS = [
   { key: 'macro', label: 'Macro cycles' },
   { key: 'analysis', label: 'Analysis' },
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'review', label: 'Review' },
   { key: 'athletes', label: 'Athletes' },
   { key: 'coach-app', label: 'Coach app' },
 ] as const;
@@ -999,6 +1001,10 @@ export function GeneralSettings() {
         <div className="space-y-6">
           <FlagSettingsSection />
         </div>
+      )}
+
+      {tab === 'review' && (
+        <ReviewSettingsSection settings={settings} saving={saving} updateSettings={updateSettings} />
       )}
 
       {tab === 'athletes' && (

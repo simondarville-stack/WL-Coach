@@ -9,7 +9,7 @@
  * Every card carries a ComposeBar: quick-reaction chips + a comment box that
  * posts into the existing athlete-visible message thread.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   CheckCircle2,
@@ -27,11 +27,13 @@ import type {
   ReviewVideoItem,
 } from '../../lib/reviewFeedService';
 import { LoggedStackedNotation, StackedNotation } from '../planner/StackedNotation';
+import { ScrubPlayer } from '../planner/ScrubPlayer';
+import { VideoThumb } from '../planner/VideoThumb';
 import { formatDateShort } from '../../lib/dateUtils';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
 
-// COACH-CONFIG candidate: reaction presets should eventually be coach-defined.
-export const QUICK_REACTIONS = ['👍', '💪 Strong work', '🔥 Great session', '👀 Noted — more later'];
+// Quick reactions are coach-defined (Settings → Review); the defaults live in
+// src/lib/reviewSettings.ts and ReviewScroller passes the resolved list down.
 
 // ─── Shared bits ───────────────────────────────────────────────────────────
 
@@ -73,6 +75,9 @@ function SeenDot({ seen }: { seen: boolean }) {
 interface ComposeBarProps {
   placeholder: string;
   onSend: (text: string) => Promise<void>;
+  /** The coach's quick-reaction chips (Settings → Review). Empty = no chip
+   *  row — a coach may deliberately run without reactions. */
+  reactions?: string[];
   /** Hide the emoji chips (e.g. on question cards a bare 👍 is a non-answer). */
   showReactions?: boolean;
   /** Sends made outside this bar (keyboard quick reactions) — shown in the
@@ -80,7 +85,7 @@ interface ComposeBarProps {
   externalSent?: string[];
 }
 
-function ComposeBar({ placeholder, onSend, showReactions = true, externalSent }: ComposeBarProps) {
+function ComposeBar({ placeholder, onSend, reactions = [], showReactions = true, externalSent }: ComposeBarProps) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string[]>([]);
@@ -110,9 +115,9 @@ function ComposeBar({ placeholder, onSend, showReactions = true, externalSent }:
           <span className="truncate">Sent: {s}</span>
         </div>
       ))}
-      {showReactions && (
+      {showReactions && reactions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {QUICK_REACTIONS.map(r => (
+          {reactions.map(r => (
             <button
               key={r}
               type="button"
@@ -159,10 +164,12 @@ interface CardFrameProps {
   kindIcon: React.ReactNode;
   children: React.ReactNode;
   composer: ComposeBarProps;
+  /** Rendered between the content and the composer (e.g. technique rating). */
+  accessory?: React.ReactNode;
 }
 
 /** Common frame: header row, content area, composer pinned at the bottom. */
-function CardFrame({ athlete, context, seen, kindIcon, children, composer }: CardFrameProps) {
+function CardFrame({ athlete, context, seen, kindIcon, children, composer, accessory }: CardFrameProps) {
   return (
     <div className="h-full flex flex-col px-3 py-3 gap-2">
       <div className="flex items-center justify-between gap-2 shrink-0">
@@ -173,9 +180,83 @@ function CardFrame({ athlete, context, seen, kindIcon, children, composer }: Car
         </div>
       </div>
       <div className="flex-1 min-h-0">{children}</div>
+      {accessory != null && <div className="shrink-0">{accessory}</div>}
       <div className="shrink-0">
         <ComposeBar {...composer} />
       </div>
+    </div>
+  );
+}
+
+// ─── Technique rating (1–5) ────────────────────────────────────────────────
+
+/**
+ * 1–5 technique rating, star-fill style: tap a number to rate, tap the
+ * current rating again to clear. Optimistic — the value flips immediately
+ * and rolls back if the write fails. Writes to
+ * training_log_exercises.technique_rating via the onRate the caller wires.
+ * Shown only when the coach has the feature enabled (Settings → Review).
+ */
+export function TechniqueRating({
+  value,
+  onRate,
+  theme,
+  label = true,
+}: {
+  value: number | null;
+  onRate: (rating: number | null) => Promise<void>;
+  theme: 'dark' | 'light';
+  /** Show the "Technique" caption (off in dense per-exercise rows). */
+  label?: boolean;
+}) {
+  const [current, setCurrent] = useState<number | null>(value);
+  const [busy, setBusy] = useState(false);
+
+  const rate = async (n: number) => {
+    if (busy) return;
+    const next = current === n ? null : n;
+    const prev = current;
+    setCurrent(next);
+    setBusy(true);
+    try {
+      await onRate(next);
+    } catch {
+      setCurrent(prev);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const active = 'bg-[var(--color-accent)] text-white';
+  const idle =
+    theme === 'dark'
+      ? 'bg-white/10 text-white/60 hover:bg-white/25'
+      : 'bg-gray-100 text-gray-400 hover:bg-gray-200';
+
+  return (
+    <div className="flex items-center gap-1">
+      {label && (
+        <span
+          className={`text-[10px] mr-0.5 ${theme === 'dark' ? 'text-white/50' : 'text-gray-400'}`}
+        >
+          Technique
+        </span>
+      )}
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          disabled={busy}
+          onClick={() => void rate(n)}
+          title={current === n ? 'Clear technique rating' : `Rate technique ${n}/5`}
+          aria-label={current === n ? 'Clear technique rating' : `Rate technique ${n} of 5`}
+          className={`w-5 h-5 rounded-full text-[10px] font-medium tabular-nums leading-none transition-colors disabled:opacity-60 ${
+            current != null && n <= current ? active : idle
+          }`}
+        >
+          {n}
+        </button>
+      ))}
     </div>
   );
 }
@@ -188,25 +269,37 @@ interface VideoCardProps {
   seen: boolean;
   /** Card is the one currently in view — drives autoplay. */
   active: boolean;
+  /** Card is the active one or its direct neighbour — the only cards that
+   *  mount a real player. Everything further away renders a cheap poster,
+   *  so a 20-clip queue doesn't fire 20 video downloads on load. */
+  near: boolean;
   onComment: (text: string) => Promise<void>;
+  /** The coach's quick-reaction chips. */
+  reactions?: string[];
+  /** Technique rating for the clip's exercise; null hides the control
+   *  (feature toggled off in Settings → Review). */
+  onRateTechnique?: ((rating: number | null) => Promise<void>) | null;
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
 }
 
-export function VideoCard({ item, athlete, seen, active, onComment, externalSent }: VideoCardProps) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-
+export function VideoCard({
+  item,
+  athlete,
+  seen,
+  active,
+  near,
+  onComment,
+  reactions,
+  onRateTechnique,
+  externalSent,
+}: VideoCardProps) {
+  // Mount the player the first time the card comes near the viewport and
+  // keep it mounted after — scrolling back must not restart a buffered clip.
+  const [playerMounted, setPlayerMounted] = useState(near);
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (active) {
-      // Muted autoplay, reel-style; the native controls allow unmuting.
-      el.muted = true;
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
-  }, [active]);
+    if (near) setPlayerMounted(true);
+  }, [near]);
 
   const context = [
     item.exerciseName,
@@ -225,11 +318,26 @@ export function VideoCard({ item, athlete, seen, active, onComment, externalSent
       composer={{
         placeholder: `Comment on ${item.exerciseName}…`,
         onSend: onComment,
+        reactions,
         externalSent,
       }}
+      accessory={
+        onRateTechnique ? (
+          <TechniqueRating
+            value={item.techniqueRating}
+            onRate={onRateTechnique}
+            theme="dark"
+          />
+        ) : null
+      }
     >
       <div className="relative h-full rounded-2xl overflow-hidden bg-black">
-        {isStreamPlaybackUrl(item.video.video_url) ? (
+        {!playerMounted ? (
+          // Far-offscreen card: poster only (stored JPEG when the clip has
+          // one; the lazy fallback never triggers here because the card is
+          // not near the viewport).
+          <VideoThumb video={item.video} />
+        ) : isStreamPlaybackUrl(item.video.video_url) ? (
           // Cloudflare Stream clip: the embed player streams adaptive HLS on
           // gym wifi. Autoplay-muted only while the card is in view, mirroring
           // the reel behaviour of the <video> branch.
@@ -241,14 +349,15 @@ export function VideoCard({ item, athlete, seen, active, onComment, externalSent
             className="w-full h-full border-0"
           />
         ) : (
-          <video
-            ref={ref}
+          // Scrub player, reel-wired: autoplays muted while the card is in
+          // view; tap pauses, sideways drag walks frames. Only the active
+          // card buffers ahead — neighbours stop at metadata.
+          <ScrubPlayer
             src={item.video.video_url}
-            className="w-full h-full object-contain"
-            controls
+            active={active}
             loop
-            playsInline
-            preload="metadata"
+            layout="fill"
+            preload={active ? 'auto' : 'metadata'}
           />
         )}
         {item.video.description && (
@@ -339,11 +448,20 @@ interface SessionCardProps {
   athlete: Athlete | undefined;
   seen: boolean;
   onComment: (text: string) => Promise<void>;
+  /** The coach's quick-reaction chips. */
+  reactions?: string[];
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
 }
 
-export function SessionCard({ item, athlete, seen, onComment, externalSent }: SessionCardProps) {
+export function SessionCard({
+  item,
+  athlete,
+  seen,
+  onComment,
+  reactions,
+  externalSent,
+}: SessionCardProps) {
   const s = item.session;
   const headerBits: string[] = [];
   if (s.session_rpe != null) headerBits.push(`RPE ${String(s.session_rpe).replace('.', ',')}`);
@@ -355,10 +473,13 @@ export function SessionCard({ item, athlete, seen, onComment, externalSent }: Se
       context={`Session ${formatDateShort(s.date)}${s.session_label ? ` · ${s.session_label}` : ''}`}
       seen={seen}
       kindIcon={<ClipboardList size={16} />}
-      composer={{ placeholder: 'Comment on this session…', onSend: onComment, externalSent }}
+      composer={{ placeholder: 'Comment on this session…', onSend: onComment, reactions, externalSent }}
     >
-      {/* Light panel so StackedNotation's token colours render as designed. */}
-      <div className="h-full rounded-2xl bg-white overflow-y-auto">
+      {/* Light panel so StackedNotation's token colours render as designed.
+          data-theme="light" re-scopes the CSS tokens to their light values —
+          without it, the dark coach app's token set leaks in and the
+          notation renders near-white on the white card (unreadable). */}
+      <div data-theme="light" className="h-full rounded-2xl bg-white overflow-y-auto">
         <div className="px-3.5 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div className="text-sm font-medium text-gray-900">Completed session</div>
           {headerBits.length > 0 && (

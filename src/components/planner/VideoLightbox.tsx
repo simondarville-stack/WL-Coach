@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { isStreamPlaybackUrl } from '../../lib/streamUploads';
+import { ScrubPlayer } from './ScrubPlayer';
 
 interface VideoLightboxProps {
   src: string;
@@ -13,8 +14,8 @@ interface VideoLightboxProps {
  *  bare/media dialog treatment, since the clip *is* the content rather than
  *  something layered over the app.
  *
- *  `controls` and no autoplay is deliberate — a coach reviewing technique
- *  scrubs frame by frame, and an autoplaying clip has already passed the
+ *  No autoplay is deliberate — a coach reviewing technique scrubs frame by
+ *  frame (see ScrubPlayer), and an autoplaying clip has already passed the
  *  moment they wanted by the time the overlay settles. */
 export function VideoLightbox({ src, caption, onClose }: VideoLightboxProps) {
   return (
@@ -59,13 +60,11 @@ export function VideoLightbox({ src, caption, onClose }: VideoLightboxProps) {
           style={{ width: 'min(92vw, 960px)', aspectRatio: '16 / 9', border: 'none', maxHeight: '100%' }}
         />
       ) : (
-        <video
-          src={src}
-          controls
-          playsInline
-          preload="metadata"
-          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', cursor: 'default' }}
-        />
+        // Scrub player instead of native controls: tap to play/pause, drag
+        // sideways to walk frames — the interaction a technique review
+        // actually needs. Starts paused on the first frame; preload="auto"
+        // so the scrub has buffered footage to land on.
+        <ScrubPlayer src={src} layout="natural" preload="auto" />
       )}
     </AdaptiveDialog>
   );

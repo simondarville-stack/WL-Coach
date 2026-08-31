@@ -18,6 +18,7 @@ import { ExerciseSearch } from './ExerciseSearch';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { GppBlockEditor } from './GppBlockEditor';
 import { SourceBadge } from './SourceBadge';
+import { requestRevertToGroup } from './revertToGroup';
 import { expandForCounting } from '../../lib/comboExpansion';
 import { ExerciseFormModal } from '../ExerciseFormModal';
 import { Button } from '../ui';
@@ -435,7 +436,11 @@ export function DayEditor({
                   )}
                   {/* One placement covers every row kind above — exercise,
                       combo, GPP and the text/video/image sentinels. */}
-                  <SourceBadge source={ex.source} isLinkedToGroupPlan={isLinkedToGroupPlan} />
+                  <SourceBadge
+                    source={ex.source}
+                    isLinkedToGroupPlan={isLinkedToGroupPlan}
+                    onRevert={() => void requestRevertToGroup(ex.id, plannedRowLabel(ex, { exerciseName: ex.exercise?.name }), onRefresh)}
+                  />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
                     {/* Stats render once a prescription exists; the macro chip
                         renders as soon as the exercise is tracked — the target

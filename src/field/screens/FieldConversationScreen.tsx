@@ -30,11 +30,15 @@ import {
   fetchInboxThreads,
   fetchSessionRowForSlot,
   fetchSessionSlotRefs,
+  fetchSessionVideos,
   fetchWeekOverview,
+  markLogVideoReviewed,
   defaultSlotLabel,
   type InboxThread,
   type SessionSlotRef,
+  type SessionVideoItem,
 } from '../../lib/trainingLogService';
+import { emitInboxChanged } from '../../lib/inboxEvents';
 import { type ThreadChatUnit } from '../../hooks/useThreadChat';
 import { MobileThreadPane } from '../../components/chat/MobileThreadPane';
 import {
@@ -43,7 +47,7 @@ import {
 } from '../../lib/dateUtils';
 import { UnitPickerSheet, type PickedUnit } from '../../athlete/v2/components/UnitPickerSheet';
 import { InitialsAvatar } from './FieldInboxScreen';
-import type { TrainingLogMessage } from '../../lib/database.types';
+import type { TrainingLogMessage, TrainingLogVideo } from '../../lib/database.types';
 
 /** A unit thread target. sessionId is null until the first message
  *  creates the session row (attach flow on a not-yet-logged unit). */
@@ -161,6 +165,35 @@ export function FieldConversationScreen() {
     setView({ kind: 'unit', unit: { ...picked, sessionId } });
   };
 
+  // Clips attached to the open unit's session — interleaved with the thread's
+  // messages by timestamp (MobileThreadPane merges them). sessionId is null
+  // for a not-yet-logged unit (attach flow): no session, no clips.
+  const videoSessionId = view.kind === 'unit' ? view.unit.sessionId : null;
+  const [sessionVideos, setSessionVideos] = useState<SessionVideoItem[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setSessionVideos([]);
+    if (!videoSessionId) return;
+    fetchSessionVideos(videoSessionId)
+      .then(v => { if (alive) setSessionVideos(v); })
+      .catch(() => undefined); // footage is an extra here — the thread still works
+    return () => { alive = false; };
+  }, [videoSessionId]);
+
+  const onOpenSessionVideo = (v: TrainingLogVideo) => {
+    if (v.coach_reviewed_at != null) return;
+    setSessionVideos(prev =>
+      prev.map(x =>
+        x.video.id === v.id
+          ? { ...x, video: { ...x.video, coach_reviewed_at: new Date().toISOString() } }
+          : x,
+      ),
+    );
+    markLogVideoReviewed(v.id)
+      .then(() => emitInboxChanged())
+      .catch(() => undefined);
+  };
+
   if (!athleteId) return null;
 
   const inUnit = view.kind === 'unit';
@@ -230,6 +263,8 @@ export function FieldConversationScreen() {
           }
           onMessagesChanged={loadThreads}
           onAttach={!inUnit ? () => setPickerOpen(true) : null}
+          videos={inUnit ? sessionVideos : []}
+          onOpenVideo={onOpenSessionVideo}
         />
       </div>
 
@@ -333,6 +368,8 @@ function ThreadChat({
   unreadHint,
   onMessagesChanged,
   onAttach,
+  videos,
+  onOpenVideo,
 }: {
   athleteId: string;
   /** The athlete's host environment — sessions created by the attach
@@ -346,6 +383,9 @@ function ThreadChat({
   unreadHint: number;
   onMessagesChanged: () => Promise<void>;
   onAttach: (() => void) | null;
+  /** The unit's session clips, interleaved into the thread by timestamp. */
+  videos: SessionVideoItem[];
+  onOpenVideo: (video: TrainingLogVideo) => void;
 }) {
   return (
     <MobileThreadPane
@@ -371,6 +411,8 @@ function ThreadChat({
       onAttach={onAttach}
       attachLabel="Attach a training unit"
       safeArea
+      videos={videos}
+      onOpenVideo={onOpenVideo}
     />
   );
 }

@@ -41,9 +41,12 @@ import {
   markMessagesRead,
   markGeneralThreadRead,
   sendGeneralMessage,
+  updateLogExercise,
 } from '../../lib/trainingLogService';
 import { emitInboxChanged } from '../../lib/inboxEvents';
-import { EndCard, QUICK_REACTIONS, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
+import { useSettings } from '../../hooks/useSettings';
+import { quickReactionsFrom, techniqueRatingEnabledFrom } from '../../lib/reviewSettings';
+import { EndCard, SessionCard, ThreadCard, VideoCard } from './ReviewCards';
 import { Spinner } from '../ui';
 
 /** How long a card must stay in view before it counts as reviewed. */
@@ -60,6 +63,19 @@ export function ReviewScroller() {
   const athletes = useAthleteStore(s => s.athletes);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
   const athleteById = useMemo(() => new Map(athletes.map(a => [a.id, a])), [athletes]);
+
+  // Coach review preferences (Settings → Review): quick-reaction chips and
+  // the technique-rating toggle. Self-loaded (cached) — the mobile coach app
+  // mounts this screen without the desktop shell having fetched anything.
+  const { settings, fetchSettingsSilent } = useSettings();
+  useEffect(() => {
+    void fetchSettingsSilent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+  }, []);
+  const quickReactions = useMemo(() => quickReactionsFrom(settings), [settings]);
+  const techniqueEnabled = techniqueRatingEnabledFrom(settings);
+  const quickReactionsRef = useRef(quickReactions);
+  quickReactionsRef.current = quickReactions;
 
   const [lookbackDays, setLookbackDays] = useState<number>(REVIEW_SESSION_LOOKBACK_DAYS);
   /** Scope the feed to one athlete (deep link ?athlete=<id> from the
@@ -359,6 +375,19 @@ export function ReviewScroller() {
     [athleteById, ownerId, activeCoachId, commentOnSession, markSeen],
   );
 
+  // ── Technique rating ─────────────────────────────────────────────────────
+  const rateTechnique = useCallback(
+    async (item: ReviewFeedItem, logExerciseId: string, rating: number | null) => {
+      if (item.key.startsWith(DEMO_KEY_PREFIX)) {
+        await new Promise(r => setTimeout(r, 250));
+        return;
+      }
+      await updateLogExercise(logExerciseId, { technique_rating: rating });
+      markSeen(item); // rating implies reviewed
+    },
+    [markSeen],
+  );
+
   // ── Example cards ("Show examples") ──────────────────────────────────────
   const toggleExamples = useCallback(async () => {
     if (demoItems != null) {
@@ -432,11 +461,15 @@ export function ReviewScroller() {
         return;
       }
 
-      if (e.key >= '1' && e.key <= String(QUICK_REACTIONS.length)) {
+      // Keys 1–9 fire the coach's own reactions (the list is capped at 9,
+      // so every configured reaction has a shortcut).
+      const n = Number(e.key);
+      const reactions = quickReactionsRef.current;
+      if (Number.isInteger(n) && n >= 1 && n <= reactions.length) {
         const item = activeKeyRef.current ? findItemByKey(activeKeyRef.current) : undefined;
         if (!item || item.kind === 'thread') return;
         e.preventDefault();
-        void quickReact(item, QUICK_REACTIONS[Number(e.key) - 1]);
+        void quickReact(item, reactions[n - 1]);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -446,6 +479,19 @@ export function ReviewScroller() {
   // ── Render ───────────────────────────────────────────────────────────────
   const total = items?.length ?? 0;
   const seenCount = items ? items.filter(i => seen.has(i.key)).length : 0;
+
+  // Scroll-position index over every rendered card (queue + end + history),
+  // so video cards know whether they are the active card or its neighbour —
+  // only those mount a real player; the rest render a cheap poster.
+  const cardIndexByKey = useMemo(() => {
+    const map = new Map<string, number>();
+    let i = 0;
+    for (const it of displayItems ?? []) map.set(it.key, i++);
+    map.set('end', i++);
+    for (const it of historyItems) map.set(it.key, i++);
+    return map;
+  }, [displayItems, historyItems]);
+  const activeCardIdx = (activeKey ? cardIndexByKey.get(activeKey) : undefined) ?? 0;
 
   /** One full-height snap section. History cards render as already-seen and
    *  carry a corner tag; their composers still post for real. */
@@ -471,8 +517,15 @@ export function ReviewScroller() {
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
           active={activeKey === item.key}
+          near={Math.abs((cardIndexByKey.get(item.key) ?? 0) - activeCardIdx) <= 1}
           onComment={text =>
             commentOnSession(item, item.sessionId, `📹 ${item.exerciseName}: ${text}`)
+          }
+          reactions={quickReactions}
+          onRateTechnique={
+            techniqueEnabled
+              ? rating => rateTechnique(item, item.logExerciseId, rating)
+              : null
           }
           externalSent={keyboardSent[item.key]}
         />
@@ -491,6 +544,7 @@ export function ReviewScroller() {
           athlete={athleteById.get(item.athleteId)}
           seen={tag === 'history' || seen.has(item.key)}
           onComment={text => commentOnSession(item, item.session.id, text)}
+          reactions={quickReactions}
           externalSent={keyboardSent[item.key]}
         />
       )}
@@ -508,7 +562,11 @@ export function ReviewScroller() {
               : total === 0
                 ? 'Nothing to review'
                 : `${seenCount} of ${total} reviewed`}
-            <span className="hidden md:inline text-white/30"> · ↑↓ navigate · 1–4 react</span>
+            <span className="hidden md:inline text-white/30">
+              {' '}· ↑↓ navigate
+              {quickReactions.length > 1 && ` · 1–${quickReactions.length} react`}
+              {quickReactions.length === 1 && ' · 1 react'}
+            </span>
           </span>
           <span className="flex items-center gap-1.5">
             {athleteFilter && (

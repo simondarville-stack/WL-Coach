@@ -264,6 +264,11 @@ export interface WeekPlan {
    *  the column existed or only ever edited by the host. Lets the planner
    *  show "Updated by Coach X" when last_edited_by_coach_id ≠ owner_id. */
   last_edited_by_coach_id: string | null;
+  /** GROUP plans only: when this plan was last synced to its athletes and by
+   *  whom (see GroupSyncModal). Optional because rows read before the
+   *  20260831 migration is applied don't carry the columns at all. */
+  last_synced_at?: string | null;
+  last_synced_by_coach_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -570,6 +575,11 @@ export interface GeneralSettings {
   /** Which target metrics the macro review table expands on the active
    *  (selected) week. Null falls back to all three. */
   timeline_week_detail: Array<'reps' | 'max' | 'avg'> | null;
+  /** Coach-defined quick-reaction chips on Review cards. NULL =
+   *  DEFAULT_QUICK_REACTIONS; an empty array means "no chips". */
+  review_quick_reactions: string[] | null;
+  /** Show the 1–5 technique rating control on Review cards. */
+  review_technique_rating_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -730,6 +740,9 @@ export interface TrainingLogVideo {
   /** Object key inside the `log-videos` bucket. Null only for rows written
    *  before the column existed; deletes fall back to parsing the URL. */
   storage_path: string | null;
+  /** Poster JPEG captured at upload (or the Stream thumbnail). Null on rows
+   *  predating the column — tiles fall back to a lazy <video> poster. */
+  thumbnail_url: string | null;
   description: string | null;
   uploaded_by: 'athlete' | 'coach';
   /** Stamped the first time a coach opens the clip — drives "new footage". */
