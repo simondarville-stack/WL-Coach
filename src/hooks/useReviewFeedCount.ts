@@ -13,6 +13,13 @@ import { useAthleteStore } from '../store/athleteStore';
  * read-state channel (which the review markers also emit on) so clearing
  * cards in the scroller updates the badge without a page change. No
  * desktop notification: sessions to review are routine, not urgent.
+ *
+ * The count is per-athlete, and `fetchReviewFeedCounts` returns a flat zero
+ * for an empty athlete list — so this hook loads the athlete store itself
+ * rather than assuming someone else already has. The desktop shell fills it on
+ * boot, but the coach mobile app only fills it when the Review *screen*
+ * mounts, which is far too late for a badge whose entire job is to be right
+ * BEFORE the tab is entered.
  */
 export function useReviewFeedCount(): number {
   const [count, setCount] = useState(0);
@@ -27,6 +34,12 @@ export function useReviewFeedCount(): number {
     } catch {
       // Silent: a transient query failure shouldn't take down the sidebar.
     }
+  }, []);
+
+  // Idempotent — the store no-ops once loaded, so the desktop shell, the
+  // review scroller and this badge can all ask without racing or refetching.
+  useEffect(() => {
+    void useAthleteStore.getState().fetchAthletes();
   }, []);
 
   useEffect(() => {
