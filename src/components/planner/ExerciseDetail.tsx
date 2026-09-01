@@ -26,6 +26,12 @@ import { ExerciseActualsHistory } from './ExerciseActualsHistory';
 import { ExerciseSearch } from './ExerciseSearch';
 import { fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 import { ComboCreatorModal } from './ComboCreatorModal';
+import { useClipEditor } from './useClipEditor';
+import {
+  isStorageSizeRejection,
+  PLANNER_MEDIA_MAX_BYTES,
+  VideoTooLargeError,
+} from '../../lib/videoLimits';
 
 interface OtherDay {
   dayIndex: number;
@@ -149,6 +155,18 @@ export function ExerciseDetail({
   const [textValue, setTextValue] = useState(plannedExercise?.prescription_raw ?? '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** Surfaced next to the upload button. Before this, a failed upload only
+   *  reached the console — the coach saw the button stop spinning and nothing
+   *  else. */
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  /** The clip storage refused, kept so "Trim & shrink" can reopen the editor
+   *  on it rather than making the coach find the file again. */
+  const [refusedClip, setRefusedClip] = useState<File | null>(null);
+  // No duration cap: a technique demo is legitimately longer than one lift.
+  const clipEditor = useClipEditor({
+    maxBytes: PLANNER_MEDIA_MAX_BYTES,
+    maxSeconds: null,
+  });
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
   // The week window the history chart is showing. Both history tables filter
   // to it, so the numbers under the chart are the ones plotted in it.
@@ -284,14 +302,37 @@ export function ExerciseDetail({
   }
 
   async function handleMediaUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !plannedExercise) return;
+    const picked = e.target.files?.[0];
+    // Let the same file be picked again after a failure — without this the
+    // input's change event never refires for an identical pick.
+    e.target.value = '';
+    if (!picked || !plannedExercise) return;
+    // Video only: the same picker handles the image sentinel, and there is
+    // nothing to trim in a JPEG.
+    // allowSplit is off for this bucket (one media file per planned exercise),
+    // so the editor always hands back exactly one.
+    const prepared = sentinel === 'video' ? await clipEditor.prepare(picked) : [picked];
+    if (!prepared) return;
+    await uploadMedia(prepared[0]);
+  }
+
+  async function uploadMedia(file: File) {
+    if (!plannedExercise) return;
     setUploading(true);
+    setUploadError(null);
+    setRefusedClip(null);
     try {
       const ext = file.name.split('.').pop() ?? (sentinel === 'video' ? 'mp4' : 'jpg');
       const path = `${plannedExercise.id}.${ext}`;
       const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
-      if (error) throw error;
+      if (error) {
+        // Past our own cap this is the project's global limit talking — the
+        // one ceiling no migration can mirror.
+        if (isStorageSizeRejection(error)) {
+          throw new VideoTooLargeError(file.size, PLANNER_MEDIA_MAX_BYTES);
+        }
+        throw error;
+      }
       const { data: urlData } = supabase.storage.from('planner-media').getPublicUrl(path);
       notesRef.current = urlData.publicUrl;
       setNotes(urlData.publicUrl);
@@ -299,8 +340,16 @@ export function ExerciseDetail({
       await onSaved();
       onClose();
     } catch (err) {
-      console.error('Upload failed:', err);
+      if (err instanceof VideoTooLargeError && clipEditor.supported) setRefusedClip(file);
+      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
     } finally { setUploading(false); }
+  }
+
+  /** Reopen the editor on a clip storage refused, then send the result. */
+  async function handleShrinkAndRetry() {
+    if (!refusedClip) return;
+    const shrunk = await clipEditor.prepareAfterRejection(refusedClip);
+    if (shrunk) await uploadMedia(shrunk[0]);
   }
 
   async function saveSettingsField(field: 'unit' | 'combo_notation' | 'display_name', value: string) {
@@ -642,6 +691,23 @@ export function ExerciseDetail({
               </button>
               <input ref={fileInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={e => void handleMediaUpload(e)} />
             </div>
+            {uploadError && (
+              <p style={{ margin: 0, fontSize: 11, color: 'var(--color-danger-text)' }}>
+                {uploadError}
+                {refusedClip && (
+                  <button
+                    onClick={() => void handleShrinkAndRetry()}
+                    style={{
+                      marginLeft: 6, background: 'none', border: 'none', padding: 0,
+                      font: 'inherit', color: 'inherit', textDecoration: 'underline',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Trim &amp; shrink
+                  </button>
+                )}
+              </p>
+            )}
             {notes && (() => {
               const thumb = getYouTubeThumbnail(notes);
               if (thumb) {
@@ -1034,6 +1100,9 @@ export function ExerciseDetail({
           }}
         />
       )}
+
+      {/* Trim/crop/shrink for a demo clip, before it goes to planner-media. */}
+      {clipEditor.editor}
     </div>
   );
 }

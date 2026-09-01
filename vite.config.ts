@@ -48,6 +48,19 @@ export default defineConfig({
     // keep the map, and a build of the same SHA reproduces the same offsets, so
     // mapping a production stack still works.
     sourcemap: 'hidden',
+    rollupOptions: {
+      output: {
+        // Name the clip-editor's encoder chunk. It is already split out (only
+        // `videoClipEdit.ts` imports it, and only via a dynamic import, so an
+        // athlete who never trims a clip never downloads it) — but Rollup
+        // names it after mediabunny's own `index.js`, which reads like the app
+        // entry in the network tab and in any future size audit.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/mediabunny/')) return 'mediabunny';
+          return undefined;
+        },
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['lucide-react'],

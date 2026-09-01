@@ -6,12 +6,23 @@
  * read-only) and the coach mobile app (dark, read-only). Keeping one
  * component means the tile, the player and the set labelling can't drift
  * between the athlete's view of a clip and the coach's.
+ *
+ * Picking a file does not upload it straight away: on a browser that can
+ * re-encode (see `clipEditingSupported`) every clip goes through `ClipEditor`
+ * first, so the athlete sends the lift rather than the four minutes around it.
+ * A clip that is too long or too big to upload at all cannot skip the editor —
+ * that is the only way such a clip gets sent.
  */
 import { useRef, useState } from 'react';
-import { FolderPlus, Trash2, Video } from 'lucide-react';
+import { FolderPlus, Scissors, Trash2, Video } from 'lucide-react';
 import type { TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
-import { LOG_VIDEO_MAX_SECONDS } from '../../lib/trainingLogService';
+import {
+  LOG_VIDEO_MAX_BYTES,
+  LOG_VIDEO_MAX_SECONDS,
+  VideoTooLargeError,
+} from '../../lib/videoLimits';
+import { useClipEditor } from './useClipEditor';
 import { VideoLightbox } from './VideoLightbox';
 import { VideoThumb } from './VideoThumb';
 import { Spinner } from '../ui';
@@ -70,10 +81,36 @@ export function LogVideoStrip({
   /** Sequential upload position, so a multi-file attach shows "2/5". */
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** A clip whose upload failed on size — offered back with a Trim & shrink
+   *  button, because the fix is one edit away and re-picking the file is not. */
+  const [oversized, setOversized] = useState<File | null>(null);
   const filmRef = useRef<HTMLInputElement | null>(null);
   const attachRef = useRef<HTMLInputElement | null>(null);
+  const clipEditor = useClipEditor({
+    maxBytes: LOG_VIDEO_MAX_BYTES,
+    maxSeconds: LOG_VIDEO_MAX_SECONDS,
+    // The strip attaches a list, so a recording holding a set of singles can
+    // come back as a clip per lift.
+    allowSplit: true,
+  });
 
   if (videos.length === 0 && !onAdd) return null;
+
+  /** Bridge from the two hidden file inputs into the upload loop. */
+  const handleFiles = async (
+    fileList: FileList | null,
+    source: 'film' | 'attach',
+  ) => {
+    const ref = source === 'film' ? filmRef : attachRef;
+    const files = Array.from(fileList ?? []);
+    try {
+      await uploadAll(files, source);
+    } finally {
+      // Clearing lets the same file be picked again after a failure — without
+      // this the input's change event never refires for an identical pick.
+      if (ref.current) ref.current.value = '';
+    }
+  };
 
   /**
    * Upload the picked files one at a time.
@@ -82,36 +119,44 @@ export function LogVideoStrip({
    * burst of several clips tends to starve them all, and doing one at a time
    * means a failure names the file that failed and leaves the rest attached.
    */
-  const handleFiles = async (
-    fileList: FileList | null,
-    source: 'film' | 'attach',
-  ) => {
-    const ref = source === 'film' ? filmRef : attachRef;
-    const files = Array.from(fileList ?? []);
+  const uploadAll = async (files: File[], source: 'film' | 'attach', afterRejection = false) => {
     if (files.length === 0 || !onAdd) return;
     setError(null);
-    setBusySource(source);
+    setOversized(null);
     const failures: string[] = [];
+    let skipped = 0;
     try {
       for (let i = 0; i < files.length; i++) {
         setProgress(files.length > 1 ? { done: i, total: files.length } : null);
+        // The editor runs outside the busy state: it *is* the athlete's turn,
+        // and a spinner over a tile they are dragging handles on reads as a hang.
+        const prepared = afterRejection
+          ? await clipEditor.prepareAfterRejection(files[i])
+          : await clipEditor.prepare(files[i]);
+        if (!prepared) {
+          skipped += 1;
+          continue;
+        }
+        setBusySource(source);
         try {
-          await onAdd(files[i]);
+          // One pick can yield several clips, when a set of singles was split.
+          for (const clip of prepared) await onAdd(clip);
         } catch (e) {
+          if (e instanceof VideoTooLargeError && clipEditor.supported) setOversized(prepared[0]);
           failures.push(`${files[i].name}: ${e instanceof Error ? e.message : 'upload failed'}`);
+        } finally {
+          setBusySource(null);
         }
       }
     } finally {
       setBusySource(null);
       setProgress(null);
-      // Clearing lets the same file be picked again after a failure — without
-      // this the input's change event never refires for an identical pick.
-      if (ref.current) ref.current.value = '';
     }
-    if (failures.length === files.length) {
-      setError(files.length === 1 ? failures[0] : `None of the ${files.length} clips uploaded. ${failures[0]}`);
+    const attempted = files.length - skipped;
+    if (attempted > 0 && failures.length === attempted) {
+      setError(attempted === 1 ? failures[0] : `None of the ${attempted} clips uploaded. ${failures[0]}`);
     } else if (failures.length > 0) {
-      setError(`${failures.length} of ${files.length} failed — ${failures.join('; ')}`);
+      setError(`${failures.length} of ${attempted} failed — ${failures.join('; ')}`);
     }
   };
 
@@ -230,9 +275,29 @@ export function LogVideoStrip({
       {/* State the limit up front rather than reporting it after a failed
           upload — saves the athlete a trim-and-retry round trip. */}
       {onAdd && !error && (
-        <p className={`mt-1 text-[10px] ${t.label}`}>Clips up to {LOG_VIDEO_MAX_SECONDS} s.</p>
+        <p className={`mt-1 text-[10px] ${t.label}`}>
+          {clipEditor.supported
+            ? `Clips up to ${LOG_VIDEO_MAX_SECONDS} s — trimmed to the lift before sending.`
+            : `Clips up to ${LOG_VIDEO_MAX_SECONDS} s.`}
+        </p>
       )}
-      {error && <p className={`mt-1 text-[10px] ${t.error}`}>{error}</p>}
+      {error && (
+        <p className={`mt-1 text-[10px] ${t.error}`}>
+          {error}
+          {oversized && (
+            <button
+              type="button"
+              onClick={() => { void uploadAll([oversized], 'attach', true); }}
+              className="ml-1.5 underline underline-offset-2 inline-flex items-center gap-0.5"
+            >
+              <Scissors size={9} />
+              Trim &amp; shrink
+            </button>
+          )}
+        </p>
+      )}
+
+      {clipEditor.editor}
 
       {playing && (
         <VideoLightbox

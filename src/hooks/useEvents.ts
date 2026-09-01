@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { getOwnerId } from '../lib/ownerContext';
 import type { Event, Athlete, EventAttempts, EventVideo } from '../lib/database.types';
+import {
+  EVENT_VIDEO_MAX_BYTES,
+  isStorageSizeRejection,
+  VideoTooLargeError,
+} from '../lib/videoLimits';
 
 export interface EventWithAthletes extends Event {
   athletes: Athlete[];
@@ -302,7 +307,14 @@ export function useEvents() {
       .from('event-videos')
       .upload(fileName, file, { cacheControl: '3600', upsert: false });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      // Give the caller a typed error it can offer to fix rather than
+      // storage's raw "The object exceeded the maximum allowed size".
+      if (isStorageSizeRejection(uploadError)) {
+        throw new VideoTooLargeError(file.size, EVENT_VIDEO_MAX_BYTES);
+      }
+      throw uploadError;
+    }
 
     const { data: publicUrlData } = supabase.storage
       .from('event-videos')
