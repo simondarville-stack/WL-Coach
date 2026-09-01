@@ -6,11 +6,13 @@
  */
 import { supabase } from './supabase';
 import {
+  isStorageSizeRejection,
   LOG_VIDEO_MAX_BYTES,
   LOG_VIDEO_MAX_SECONDS,
   VideoTooLargeError,
   VideoTooLongError,
-} from './logVideoLimits';
+} from './videoLimits';
+import { captureVideoPoster, readVideoDurationSeconds } from './videoProbe';
 import { rankExercises } from './exerciseRanker';
 import { emitInboxChanged } from './inboxEvents';
 import { getOwnerId } from './ownerContext';
@@ -940,128 +942,21 @@ export async function deleteLoggedSet(setId: string): Promise<void> {
 
 // ─── Videos ───────────────────────────────────────────────────────────────
 
-// The caps and their errors live in their own module (see logVideoLimits.ts);
-// re-exported here because every existing caller reaches for them through the
-// service.
+// The caps and their errors live in their own module (see videoLimits.ts), and
+// the file probes in videoProbe.ts — both re-exported here because every
+// existing caller reaches for them through the service.
 export {
   LOG_VIDEO_MAX_BYTES,
   LOG_VIDEO_MAX_SECONDS,
   VideoTooLargeError,
   VideoTooLongError,
-} from './logVideoLimits';
+} from './videoLimits';
+export { captureVideoPoster, readVideoDurationSeconds } from './videoProbe';
 
 /** Bucket holding athlete-recorded training clips. Public, like the two
  *  buckets that came before it — athletes have no authenticated identity to
  *  scope a signed URL to until the auth phase lands. */
 export const LOG_VIDEO_BUCKET = 'log-videos';
-
-/**
- * Recognise storage's own size rejection.
- *
- * Belt and braces behind LOG_VIDEO_MAX_BYTES: the *project's* global upload
- * limit can be lower than the bucket's, and it is set in the Supabase
- * dashboard where no migration can mirror it. Rather than let that surface as
- * "The object exceeded the maximum allowed size" on an athlete's phone, map it
- * onto the same error the client-side guard raises.
- */
-function isStorageSizeRejection(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  const status = (error as { statusCode?: string | number } | null)?.statusCode;
-  return (
-    /maximum allowed size|payload too large|entity too large/i.test(message) ||
-    String(status ?? '') === '413'
-  );
-}
-
-/**
- * Read a video file's duration from its metadata, without uploading or
- * decoding frames. Resolves null when the browser cannot read it (exotic
- * container, iOS quirks) — callers should treat null as "unknown, allow"
- * rather than blocking a legitimate clip on a probe failure.
- */
-export function readVideoDurationSeconds(file: File): Promise<number | null> {
-  return new Promise(resolve => {
-    const url = URL.createObjectURL(file);
-    const probe = document.createElement('video');
-    probe.preload = 'metadata';
-    const finish = (value: number | null) => {
-      URL.revokeObjectURL(url);
-      probe.removeAttribute('src');
-      resolve(value);
-    };
-    probe.onloadedmetadata = () => {
-      const d = probe.duration;
-      finish(Number.isFinite(d) ? d : null);
-    };
-    probe.onerror = () => finish(null);
-    // A probe that hangs (no metadata event) must not wedge the upload flow.
-    window.setTimeout(() => finish(null), 5_000);
-    probe.src = url;
-  });
-}
-
-/** Longest edge of the poster JPEG captured at upload. Big enough for the
- *  chat-bubble tile on a retina phone, small enough to stay ~20-40 KB. */
-const POSTER_MAX_EDGE = 480;
-
-/**
- * Capture one frame of the clip as a small JPEG, client-side, before upload.
- * This is what makes every later tile an <img> instead of a <video> that
- * pulls byte ranges of the full MP4 just to paint a poster. Best-effort:
- * resolves null on any failure or after a timeout, and the upload proceeds
- * without a thumbnail (tiles fall back to the lazy <video> poster).
- */
-export function captureVideoPoster(file: File): Promise<Blob | null> {
-  return new Promise(resolve => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    let settled = false;
-    const finish = (value: Blob | null) => {
-      if (settled) return;
-      settled = true;
-      URL.revokeObjectURL(url);
-      video.removeAttribute('src');
-      resolve(value);
-    };
-    const timer = window.setTimeout(() => finish(null), 8_000);
-    video.muted = true;
-    video.playsInline = true;
-    video.preload = 'auto';
-    video.onerror = () => {
-      window.clearTimeout(timer);
-      finish(null);
-    };
-    // Seek off frame zero (often black) once the first frame is decodable;
-    // draw when the seek lands.
-    video.onloadeddata = () => {
-      try {
-        video.currentTime = 0.1;
-      } catch {
-        window.clearTimeout(timer);
-        finish(null);
-      }
-    };
-    video.onseeked = () => {
-      window.clearTimeout(timer);
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (!w || !h) return finish(null);
-      const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(w * scale));
-      canvas.height = Math.max(1, Math.round(h * scale));
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return finish(null);
-      try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(b => finish(b), 'image/jpeg', 0.72);
-      } catch {
-        finish(null);
-      }
-    };
-    video.src = url;
-  });
-}
 
 /** Clips for a set of log exercises, oldest first. Returns [] for an empty
  *  input rather than issuing a pointless `in ()` query. */
@@ -1140,7 +1035,7 @@ export async function uploadLogVideo(params: {
   const { file, logExerciseId, athleteId } = params;
 
   if (file.size > LOG_VIDEO_MAX_BYTES) {
-    throw new VideoTooLargeError(file.size);
+    throw new VideoTooLargeError(file.size, LOG_VIDEO_MAX_BYTES);
   }
 
   // Duration is the product cap; bytes above are just bucket headroom.
@@ -1202,7 +1097,9 @@ export async function uploadLogVideo(params: {
     .from(LOG_VIDEO_BUCKET)
     .upload(storagePath, file, { cacheControl: '31536000', upsert: false });
   if (uploadError) {
-    if (isStorageSizeRejection(uploadError)) throw new VideoTooLargeError(file.size);
+    if (isStorageSizeRejection(uploadError)) {
+      throw new VideoTooLargeError(file.size, LOG_VIDEO_MAX_BYTES);
+    }
     throw uploadError;
   }
 

@@ -106,7 +106,9 @@ describe('ClipEditor', () => {
   });
 
   it('opens an over-length clip on a legal window rather than a doomed one', () => {
-    render(<ClipEditor file={clip()} mustEdit onCancel={() => {}} onDone={() => {}} />);
+    render(
+      <ClipEditor file={clip()} mustEdit maxSeconds={60} onCancel={() => {}} onDone={() => {}} />,
+    );
     loadMetadata({ duration: 180 });
 
     // 60 s cap: the selection is pre-trimmed, so the athlete slides it onto
@@ -122,6 +124,18 @@ describe('ClipEditor', () => {
     expect(screen.getByText(/cannot open the clip for editing/)).toBeInTheDocument();
     // The escape hatch survives: an unreadable clip is still uploadable as is.
     expect(screen.getByRole('button', { name: 'Upload original' })).toBeInTheDocument();
+  });
+
+  it('leaves the whole clip selected where the surface has no duration cap', () => {
+    // A coach's technique demo or a full competition attempt is legitimately
+    // longer than one lift, so those surfaces pass maxSeconds={null}.
+    render(<ClipEditor file={clip()} onCancel={() => {}} onDone={() => {}} />);
+    loadMetadata({ duration: 180 });
+
+    expect(screen.getByText(/0,0 s → 180,0 s/)).toBeInTheDocument();
+    // Nothing trimmed and nothing cropped, so the button says what it will
+    // actually do — upload the file as it stands, no re-encode.
+    expect(screen.getByRole('button', { name: 'Upload' })).toBeInTheDocument();
   });
 
   it('cancels without handing anything back', () => {

@@ -3,6 +3,8 @@ import { X, Video, Trash2, Plus, Upload } from 'lucide-react';
 import type { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { useEvents } from '../hooks/useEvents';
 import { alertDialog, confirmDialog } from './ui';
+import { useClipEditor } from './planner/useClipEditor';
+import { VideoTooLargeError } from '../lib/videoLimits';
 
 interface EventAttemptsModalProps {
   eventId: string;
@@ -28,6 +30,12 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     description: '',
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // No caps: event-videos declares no file_size_limit, so the ceiling is the
+  // project's global upload limit (see videoLimits.ts), and a competition
+  // attempt — walk-on, lift, down signal — is legitimately longer than the
+  // training-log cap. The editor is offered on pick, forced only after a
+  // refusal.
+  const clipEditor = useClipEditor({ maxBytes: null, maxSeconds: null });
 
   useEffect(() => {
     loadData();
@@ -85,12 +93,26 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     }
   }
 
-  async function handleFileUpload() {
-    if (!selectedFile) return;
+  /**
+   * Offer the clip editor the moment a file is picked, so the attempt that
+   * gets uploaded is the lift rather than the minute either side of it. The
+   * edited file replaces the pick, so the rest of the form is unchanged.
+   */
+  async function handlePickFile(picked: File | null) {
+    if (!picked) {
+      setSelectedFile(null);
+      return;
+    }
+    const prepared = await clipEditor.prepare(picked);
+    if (prepared) setSelectedFile(prepared);
+  }
+
+  async function handleFileUpload(file: File | null = selectedFile) {
+    if (!file) return;
 
     try {
       setUploading(true);
-      await uploadAndAddEventVideo(eventId, athlete.id, selectedFile, {
+      await uploadAndAddEventVideo(eventId, athlete.id, file, {
         lift_type: videoForm.lift_type,
         attempt_number: videoForm.attempt_number,
         description: videoForm.description,
@@ -101,9 +123,24 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setShowVideoForm(false);
       loadData();
     } catch (error) {
+      // A refused-as-too-large clip is recoverable here and nowhere else — the
+      // coach still has the file in hand, so offer the shrink rather than a
+      // generic "try again" that would fail identically.
+      if (error instanceof VideoTooLargeError && clipEditor.supported) {
+        const shrunk = await clipEditor.prepareAfterRejection(file);
+        setUploading(false);
+        if (shrunk) {
+          setSelectedFile(shrunk);
+          await handleFileUpload(shrunk);
+        }
+        return;
+      }
       void alertDialog({
         title: "Couldn't upload the video",
-        message: 'Nothing was saved. Check the connection and start the upload again.',
+        message:
+          error instanceof Error && error.message
+            ? `Nothing was saved. ${error.message}`
+            : 'Nothing was saved. Check the connection and start the upload again.',
       });
     } finally {
       setUploading(false);
@@ -124,7 +161,7 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
 
   async function handleAddVideo() {
     if (uploadMethod === 'file') {
-      await handleFileUpload();
+      await handleFileUpload(selectedFile);
     } else {
       await handleAddVideoUrl();
     }
@@ -391,7 +428,11 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                         <input
                           type="file"
                           accept="video/*"
-                          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                          onChange={(e) => {
+                            void handlePickFile(e.target.files?.[0] ?? null);
+                            // Let the same file be re-picked after a cancel.
+                            e.target.value = '';
+                          }}
                           className="hidden"
                         />
                       </label>
@@ -405,7 +446,8 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                      Supports MP4, MOV, AVI, and other video formats (max 100MB)
+                      Supports MP4, MOV, AVI, and other video formats.
+                      {clipEditor.supported && ' Trim and crop the attempt before uploading.'}
                     </p>
                   </div>
                 )}
@@ -499,6 +541,9 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
           </button>
         </div>
       </div>
+
+      {/* Trim/crop/shrink for an attempt clip, before it goes to event-videos. */}
+      {clipEditor.editor}
     </div>
   );
 }

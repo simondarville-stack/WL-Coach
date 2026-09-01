@@ -7,8 +7,8 @@
  *
  *   1. **Trim** — drag two handles to the lift itself. This is the one that
  *      matters: a coach wants the pull and the catch, not the 90 s of chalk
- *      and setup around it, and it is what keeps a clip inside
- *      `LOG_VIDEO_MAX_SECONDS`.
+ *      and setup around it, and where the caller sets `maxSeconds` it is what
+ *      keeps a clip inside that cap.
  *   2. **Crop** — drag a box onto the lifter. A phone filmed across a busy
  *      platform spends most of its pixels on other people.
  *   3. **Size** — a resolution ceiling. 4K of a barbell reviews no better than
@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crop, Scissors, X } from 'lucide-react';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { Spinner } from '../ui';
-import { LOG_VIDEO_MAX_SECONDS } from '../../lib/logVideoLimits';
+
 import {
   applyClipEdit,
   CLIP_RESOLUTIONS,
@@ -57,6 +57,12 @@ interface ClipEditorProps {
   /** Resolution ceiling to open on. The caller sets one when the clip is too
    *  large to send, so the editor starts on a setting that actually fixes it. */
   defaultMaxEdge?: ClipResolution;
+  /**
+   * Hard cap on the trimmed length, enforced by the handles themselves. Null
+   * for the surfaces that have no duration cap — a coach's technique demo or a
+   * whole competition attempt is legitimately longer than a single lift.
+   */
+  maxSeconds?: number | null;
   onCancel: () => void;
   /** Receives the edited file — or the original, if it was uploaded as is. */
   onDone: (file: File) => void;
@@ -77,6 +83,7 @@ export function ClipEditor({
   reason,
   mustEdit = false,
   defaultMaxEdge = null,
+  maxSeconds = null,
   onCancel,
   onDone,
 }: ClipEditorProps) {
@@ -125,7 +132,7 @@ export function ClipEditor({
     // Pre-trim an over-length clip to a legal window rather than opening on a
     // selection that cannot be uploaded — the athlete then only has to slide
     // it onto the lift, not fix it first.
-    setEdit(e => ({ ...e, start: 0, end: Math.min(d, LOG_VIDEO_MAX_SECONDS) }));
+    setEdit(e => ({ ...e, start: 0, end: maxSeconds == null ? d : Math.min(d, maxSeconds) }));
     setPlayhead(0);
   };
 
@@ -242,17 +249,17 @@ export function ClipEditor({
         const start = Math.max(0, Math.min(t, e.end - 0.2));
         // The window can never exceed the upload cap, so the handles
         // themselves enforce it and no upload can fail on length.
-        const end = Math.min(e.end, start + LOG_VIDEO_MAX_SECONDS);
+        const end = maxSeconds == null ? e.end : Math.min(e.end, start + maxSeconds);
         setEdit({ ...e, start, end });
         seek(start);
       } else {
         const end = Math.min(duration, Math.max(t, e.start + 0.2));
-        const start = Math.max(e.start, end - LOG_VIDEO_MAX_SECONDS);
+        const start = maxSeconds == null ? e.start : Math.max(e.start, end - maxSeconds);
         setEdit({ ...e, start, end });
         seek(end);
       }
     },
-    [box, duration, fractionRatio, playing, seek],
+    [box, duration, fractionRatio, maxSeconds, playing, seek],
   );
 
   useEffect(() => {
@@ -511,7 +518,11 @@ export function ClipEditor({
             </button>
             <span>
               {secs(edit.start)} → {secs(edit.end)} ·{' '}
-              <span className={selection > LOG_VIDEO_MAX_SECONDS ? 'text-red-400' : 'text-gray-200'}>
+              <span
+                className={
+                  maxSeconds != null && selection > maxSeconds ? 'text-red-400' : 'text-gray-200'
+                }
+              >
                 {secs(selection)}
               </span>
               {duration != null && <> of {secs(duration)}</>}
@@ -638,7 +649,7 @@ export function ClipEditor({
             disabled={
               busy ||
               duration == null ||
-              selection > LOG_VIDEO_MAX_SECONDS ||
+              (maxSeconds != null && selection > maxSeconds) ||
               (mustEdit && unchanged)
             }
             onClick={() => void handleApply()}
