@@ -34,6 +34,11 @@ vite.config.ts.timestamp-*.mjs
 .netlify/
 .wrangler/
 
+# Seeded design-canvas pages: ~2.5 MB each because the canvas editor is baked
+# into every published copy. The artboards (*.dc.html) and canvas.json beside
+# them are the real source — a canvas is regenerated from those.
+mockup/**/kinemos-analysis-viewer.html
+
 # Machine-local symlink created by `npx skills add` into .agents/skills/.
 # The skill itself is committed under .agents/skills/; this link is an
 # absolute path, so it is not portable.

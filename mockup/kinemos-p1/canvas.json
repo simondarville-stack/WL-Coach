@@ -1,0 +1,46 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Analysis viewer" },
+    { "file": "Calibration.dc.html", "x": 1580, "y": 0, "w": 1440, "h": 900, "title": "Calibrate" },
+    { "file": "Correction.dc.html", "x": 0, "y": 1080, "w": 1440, "h": 900, "title": "Track + correct" },
+    { "file": "Comparison.dc.html", "x": 1580, "y": 1080, "w": 1440, "h": 900, "title": "Compare two lifts" }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": -520,
+      "y": 0,
+      "w": 440,
+      "text": "KinEMOS P1 — the study room.\n\nFour states of one surface, drawn in EMOS's real tokens (IBM Plex, #185FA5, 4/8/12/16/24 spacing).\n\nEvery number is a plausible sample, not a measurement — rearrange freely, they carry no meaning yet."
+    },
+    {
+      "id": "q-layout",
+      "x": -520,
+      "y": 300,
+      "w": 440,
+      "text": "The open question on this board:\n\nNumbers live in the RIGHT rail, charts along the BOTTOM. The alternative is numbers under the video and the right rail given to reps/history.\n\nWhich do you look at more while judging a lift?"
+    },
+    {
+      "id": "q-correction",
+      "x": -520,
+      "y": 1080,
+      "w": 440,
+      "text": "The confidence strip under the video is my proposal, not something you asked for: it tells you WHICH frames to check instead of making you scrub all 218.\n\nWorth building, or noise?"
+    },
+    {
+      "id": "q-compare",
+      "x": 3140,
+      "y": 1080,
+      "w": 420,
+      "text": "Comparison hinges on the alignment anchor — first frame / bar off floor / start of second pull.\n\nI defaulted to second pull. If a coach's eye actually starts at the floor, that default is wrong."
+    },
+    {
+      "id": "q-calibration",
+      "x": 3140,
+      "y": 0,
+      "w": 420,
+      "text": "Calibration is drawn as step 1 of 3 (calibrate → track → phases).\n\nIf you'd rather it be a panel you can reopen any time instead of a gate at the start, say so — that changes the whole flow."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+    a { color: #185FA5; } a:hover { color: #0C447C; }
+    .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #FAFAF9; color: #1A1A18; overflow: hidden;">
+
+  <div style="height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #FFFFFF; border-bottom: 0.5px solid rgba(0,0,0,0.15);">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5F5E5A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      <span style="font-size: 16px; font-weight: 600; letter-spacing: -0.005em;">Vend fra hæng</span>
+      <span style="font-size: 13px; color: #5F5E5A;">Jon Herskind</span>
+      <span class="num" style="font-size: 13px; color: #8B8A83;">26/08</span>
+    </div>
+    <!-- The path through an analysis, so the coach knows where they are -->
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 4px; background: {{accent}}; color: #FFFFFF; font-size: 11px; font-weight: 600;">1 · CALIBRATE</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B8A83" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span style="height: 24px; padding: 0 9px; border-radius: 4px; background: #F4F4F2; color: #8B8A83; font-size: 11px; line-height: 24px;">2 · Track</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B8A83" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span style="height: 24px; padding: 0 9px; border-radius: 4px; background: #F4F4F2; color: #8B8A83; font-size: 11px; line-height: 24px;">3 · Phases</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- Stage: the plate, magnified, with the ellipse the coach adjusts -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; background: #E9E9E6; padding: 12px; box-sizing: border-box;">
+      <div style="flex-grow: 1; position: relative; background: #0F0F0E; border-radius: 6px; overflow: hidden;">
+        <svg viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+          <rect x="0" y="0" width="960" height="620" fill="#0F0F0E"/>
+          <rect x="0" y="520" width="960" height="100" fill="#1C1C1A"/>
+          <line x1="150" y1="330" x2="810" y2="330" stroke="#6E6E68" stroke-width="7" stroke-linecap="round"/>
+
+          <!-- The plate as the camera sees it: a circle foreshortened into an ellipse -->
+          <ellipse cx="330" cy="330" rx="93" ry="107" fill="#2A2A26" stroke="#8B8A83" stroke-width="4"/>
+          <ellipse cx="330" cy="330" rx="34" ry="39" fill="none" stroke="#6E6E68" stroke-width="3"/>
+
+          <!-- Fit overlay -->
+          <ellipse cx="330" cy="330" rx="93" ry="107" fill="none" stroke="{{accent}}" stroke-width="2.5" stroke-dasharray="7 5"/>
+          <g fill="#FFFFFF" stroke="{{accent}}" stroke-width="2">
+            <rect x="325" y="218" width="10" height="10" rx="2"/>
+            <rect x="325" y="432" width="10" height="10" rx="2"/>
+            <rect x="232" y="325" width="10" height="10" rx="2"/>
+            <rect x="418" y="325" width="10" height="10" rx="2"/>
+          </g>
+
+          <!-- Height: the true diameter, unforeshortened -->
+          <g stroke="#FFFFFF" stroke-width="1.5" opacity="0.85">
+            <line x1="474" y1="223" x2="474" y2="437"/>
+            <line x1="466" y1="223" x2="482" y2="223"/>
+            <line x1="466" y1="437" x2="482" y2="437"/>
+          </g>
+          <text x="490" y="325" fill="#FFFFFF" font-family="IBM Plex Mono, monospace" font-size="17">height 214 px = 450 mm</text>
+          <text x="490" y="348" fill="#8B8A83" font-family="IBM Plex Sans, sans-serif" font-size="14">true diameter — sets vertical scale</text>
+
+          <!-- Width: foreshortened by cos of the viewing angle -->
+          <g stroke="#D08B2C" stroke-width="1.5" opacity="0.95">
+            <line x1="237" y1="470" x2="423" y2="470"/>
+            <line x1="237" y1="462" x2="237" y2="478"/>
+            <line x1="423" y1="462" x2="423" y2="478"/>
+          </g>
+          <text x="237" y="500" fill="#D08B2C" font-family="IBM Plex Mono, monospace" font-size="17">width 186 px</text>
+          <text x="237" y="521" fill="#8B8A83" font-family="IBM Plex Sans, sans-serif" font-size="14">shorter by cos θ — gives the angle</text>
+        </svg>
+
+        <div style="position: absolute; left: 10px; top: 10px; padding: 5px 9px; border-radius: 4px; background: rgba(0,0,0,0.55); color: #FFFFFF; font-size: 11px;">
+          Drag the handles until the dashed ellipse sits on the plate rim
+        </div>
+      </div>
+    </div>
+
+    <!-- What the two measurements imply -->
+    <div style="width: 340px; flex-shrink: 0; display: flex; flex-direction: column; background: #FFFFFF; border-left: 0.5px solid rgba(0,0,0,0.08);">
+
+      <div style="padding: 14px 14px 10px;">
+        <div style="font-size: 16px; font-weight: 600; letter-spacing: -0.005em;">Calibrate the frame</div>
+        <div style="font-size: 13px; color: #5F5E5A; line-height: 1.55; margin-top: 4px;">
+          The plate is a circle in the plane the bar moves in. Its height gives the scale; how much narrower it looks gives the camera angle.
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">PLATE DIAMETER</div>
+        <div style="display: flex; gap: 4px;">
+          <span class="num" style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 4px; font-size: 13px; color: #FFFFFF; background: {{accent}}; font-weight: 600;">450</span>
+          <span class="num" style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 4px; font-size: 13px; color: #5F5E5A; background: #F4F4F2;">400</span>
+          <span class="num" style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 4px; font-size: 13px; color: #5F5E5A; background: #F4F4F2;">350</span>
+          <span style="flex-grow: 1; text-align: center; padding: 6px 0; border-radius: 4px; font-size: 13px; color: #5F5E5A; background: #F4F4F2;">Other</span>
+        </div>
+        <div style="font-size: 11px; color: #8B8A83; margin-top: 6px;">mm — IWF competition plate is 450</div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">MEASURED</div>
+        <sc-for list="{{measured}}" as="m" hint-placeholder-count="2">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 3px 0;">
+            <span style="font-size: 13px; color: #5F5E5A;">{{m.label}}</span>
+            <span class="num" style="font-size: 13px; font-weight: 600;">{{m.value}}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">DERIVED</div>
+        <sc-for list="{{derived}}" as="d" hint-placeholder-count="3">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 3px 0;">
+            <span style="font-size: 13px; color: #5F5E5A;">{{d.label}}</span>
+            <span class="num" style="font-size: 13px; font-weight: 600;">{{d.value}}</span>
+          </div>
+        </sc-for>
+        <!-- Track runs 0–45°, so the ±30° limit sits at 66,7% and 29° at 64,4%. -->
+        <div style="margin-top: 10px; height: 6px; border-radius: 3px; background: #F4F4F2; position: relative; overflow: hidden;">
+          <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(to right, #4F8A4A 0%, #4F8A4A 58%, #D08B2C 67%, #E24B4A 100%);"></div>
+          <div style="position: absolute; top: -3px; bottom: -3px; left: 64.4%; width: 2px; background: #1A1A18;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+          <span class="num" style="font-size: 10px; color: #8B8A83;">0°</span>
+          <span style="font-size: 10px; color: #4F8A4A;">29° — inside the ±30° the 2D model holds for</span>
+          <span class="num" style="font-size: 10px; color: #8B8A83;">45°</span>
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">LENS</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 0;">
+          <span style="font-size: 13px; color: #5F5E5A;">iPhone 14 Pro</span>
+          <span style="font-size: 11px; color: #633806;">no profile stored</span>
+        </div>
+        <button style="width: 100%; margin-top: 8px; height: 28px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; background: #FFFFFF; color: #1A1A18; font-size: 11px; font-family: inherit; cursor: pointer;">
+          Add a checkerboard profile for this device
+        </button>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <div style="padding: 12px 14px; border-top: 0.5px solid rgba(0,0,0,0.08); display: flex; gap: 8px;">
+        <button style="flex-grow: 1; height: 32px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; background: #FFFFFF; color: #1A1A18; font-size: 13px; font-family: inherit; cursor: pointer;">Skip</button>
+        <button style="flex-grow: 2; height: 32px; border: none; border-radius: 6px; background: {{accent}}; color: #FFFFFF; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;">Confirm and track</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "accent": {"editor": "color", "default": "#185FA5", "options": ["#185FA5", "#0C447C", "#4F8A4A", "#D08B2C"]},
+  "$preview": {"width": 1440, "height": 900}
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#185FA5',
+      measured: [
+        { label: 'Plate height', value: '214 px' },
+        { label: 'Plate width', value: '186 px' },
+      ],
+      derived: [
+        { label: 'Viewing angle θ', value: '29°' },
+        { label: 'Vertical scale', value: '2,10 mm/px' },
+        { label: 'Horizontal scale', value: '2,42 mm/px' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

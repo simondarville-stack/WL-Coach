@@ -1,0 +1,218 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+    a { color: #185FA5; } a:hover { color: #0C447C; }
+    .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #FAFAF9; color: #1A1A18; overflow: hidden;">
+
+  <div style="height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: #FFFFFF; border-bottom: 0.5px solid rgba(0,0,0,0.15);">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5F5E5A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      <span style="font-size: 16px; font-weight: 600; letter-spacing: -0.005em;">Vend fra hæng</span>
+      <span style="font-size: 13px; color: #5F5E5A;">Jon Herskind</span>
+      <span class="num" style="font-size: 13px; color: #8B8A83;">26/08</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span style="height: 24px; padding: 0 9px; border-radius: 4px; background: #EAF3DE; color: #27500A; font-size: 11px; line-height: 24px; font-weight: 500;">1 · Calibrated</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B8A83" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span style="height: 24px; padding: 0 9px; border-radius: 4px; background: {{accent}}; color: #FFFFFF; font-size: 11px; line-height: 24px; font-weight: 600;">2 · TRACK</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B8A83" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      <span style="height: 24px; padding: 0 9px; border-radius: 4px; background: #F4F4F2; color: #8B8A83; font-size: 11px; line-height: 24px;">3 · Phases</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; background: #E9E9E6; padding: 12px; box-sizing: border-box;">
+      <div style="flex-grow: 1; position: relative; background: #0F0F0E; border-radius: 6px; overflow: hidden;">
+        <svg viewBox="0 0 960 560" preserveAspectRatio="xMidYMid meet" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+          <rect x="0" y="0" width="960" height="560" fill="#0F0F0E"/>
+          <rect x="0" y="470" width="960" height="90" fill="#1C1C1A"/>
+          <g stroke="#3A3A36" stroke-width="2" fill="none" stroke-linecap="round">
+            <circle cx="470" cy="180" r="19"/>
+            <path d="M470 199 L470 286"/>
+            <path d="M470 286 L448 360 L444 462"/>
+            <path d="M470 286 L496 360 L502 462"/>
+          </g>
+          <line x1="330" y1="252" x2="612" y2="252" stroke="#6E6E68" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="352" cy="252" r="27" fill="none" stroke="#8B8A83" stroke-width="4"/>
+          <circle cx="590" cy="252" r="27" fill="none" stroke="#8B8A83" stroke-width="4"/>
+
+          <!-- Accepted track behind and ahead of the bad frame -->
+          <path d="M352 452 C 344 420, 336 392, 340 356 C 344 322, 356 292, 366 262"
+                fill="none" stroke="#185FA5" stroke-width="3" stroke-linecap="round" opacity="0.95"/>
+          <path d="M352 232 C 344 210, 340 190, 342 168"
+                fill="none" stroke="#185FA5" stroke-width="3" stroke-linecap="round" opacity="0.35" stroke-dasharray="6 5"/>
+          <g fill="#FFFFFF" opacity="0.9">
+            <circle cx="352" cy="452" r="3"/><circle cx="340" cy="404" r="3"/><circle cx="340" cy="356" r="3"/><circle cx="356" cy="292" r="3"/>
+          </g>
+
+          <!-- Where the tracker slid off, and where it belongs -->
+          <g>
+            <circle cx="412" cy="236" r="8" fill="none" stroke="#E24B4A" stroke-width="2.5"/>
+            <line x1="405" y1="229" x2="419" y2="243" stroke="#E24B4A" stroke-width="2"/>
+            <line x1="419" y1="229" x2="405" y2="243" stroke="#E24B4A" stroke-width="2"/>
+            <line x1="412" y1="236" x2="356" y2="250" stroke="#E24B4A" stroke-width="1.5" stroke-dasharray="4 4"/>
+          </g>
+          <g>
+            <circle cx="352" cy="252" r="11" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+            <circle cx="352" cy="252" r="3" fill="#FFFFFF"/>
+            <line x1="352" y1="234" x2="352" y2="244" stroke="#FFFFFF" stroke-width="1.5"/>
+            <line x1="352" y1="260" x2="352" y2="270" stroke="#FFFFFF" stroke-width="1.5"/>
+            <line x1="334" y1="252" x2="344" y2="252" stroke="#FFFFFF" stroke-width="1.5"/>
+            <line x1="360" y1="252" x2="370" y2="252" stroke="#FFFFFF" stroke-width="1.5"/>
+          </g>
+
+          <!-- Loupe: sub-pixel placement is the whole accuracy argument -->
+          <g>
+            <circle cx="740" cy="150" r="94" fill="#141412" stroke="#FFFFFF" stroke-width="2"/>
+            <clipPath id="loupe"><circle cx="740" cy="150" r="92"/></clipPath>
+            <g clip-path="url(#loupe)">
+              <rect x="646" y="58" width="188" height="184" fill="#1C1C1A"/>
+              <circle cx="700" cy="150" r="120" fill="none" stroke="#8B8A83" stroke-width="14"/>
+              <line x1="646" y1="150" x2="834" y2="150" stroke="#FFFFFF" stroke-width="1" opacity="0.35"/>
+              <line x1="740" y1="58" x2="740" y2="242" stroke="#FFFFFF" stroke-width="1" opacity="0.35"/>
+              <circle cx="740" cy="150" r="4" fill="#FFFFFF"/>
+            </g>
+            <text x="740" y="268" text-anchor="middle" fill="#8B8A83" font-family="IBM Plex Mono, monospace" font-size="15">8× · 352,4 / 251,8 px</text>
+          </g>
+        </svg>
+
+        <div style="position: absolute; left: 10px; top: 10px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 4px; background: rgba(226,75,74,0.92); color: #FFFFFF; font-size: 11px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg>
+          Frame 96 — the tracker jumped to the rack upright. Drop the point back on the bar end.
+        </div>
+        <div class="num" style="position: absolute; left: 10px; bottom: 10px; padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,0.55); color: #FFFFFF; font-size: 11px;">
+          frame 96 / 218 · 00:01,60
+        </div>
+      </div>
+
+      <!-- Per-frame confidence: tells the coach WHERE to look instead of making them scrub it all -->
+      <div style="height: 70px; flex-shrink: 0; box-sizing: border-box; padding-top: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+          <span style="font-size: 11px; color: #8B8A83;">TRACKER CONFIDENCE — per frame</span>
+          <!-- The threshold is stated, and each band named: the strip is otherwise
+               three colours with no key. -->
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #5F5E5A;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #185FA5;"></span>ok</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #5F5E5A;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #D08B2C;"></span>weak</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: #5F5E5A;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #E24B4A;"></span>below 0,40</span>
+            <span class="num" style="font-size: 11px; color: #8B8A83;">3 frames flagged</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: flex-end; gap: 1px; height: 26px;">
+          <sc-for list="{{confidence}}" as="c" hint-placeholder-count="60">
+            <div style="flex-grow: 1; height: {{c.h}}; background: {{c.color}}; border-radius: 1px;"></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="width: 340px; flex-shrink: 0; display: flex; flex-direction: column; background: #FFFFFF; border-left: 0.5px solid rgba(0,0,0,0.08);">
+
+      <div style="padding: 14px 14px 10px;">
+        <div style="font-size: 16px; font-weight: 600; letter-spacing: -0.005em;">Correct the track</div>
+        <div style="font-size: 13px; color: #5F5E5A; line-height: 1.55; margin-top: 4px;">
+          The tracker proposes; you decide. Drop a point where it belongs and the track re-runs from that frame in both directions.
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">THIS CORRECTION</div>
+        <sc-for list="{{correction}}" as="c" hint-placeholder-count="3">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 3px 0;">
+            <span style="font-size: 13px; color: #5F5E5A;">{{c.label}}</span>
+            <span class="num" style="font-size: 13px; font-weight: 600;">{{c.value}}</span>
+          </div>
+        </sc-for>
+        <div style="display: flex; gap: 6px; margin-top: 10px;">
+          <button style="flex-grow: 1; height: 30px; border: none; border-radius: 6px; background: {{accent}}; color: #FFFFFF; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer;">Re-track from here</button>
+          <button style="height: 30px; padding: 0 10px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; background: #FFFFFF; color: #1A1A18; font-size: 12px; font-family: inherit; cursor: pointer;">Undo</button>
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">TRACKER</div>
+        <div style="display: flex; gap: 4px; margin-bottom: 8px;">
+          <span style="flex-grow: 1; text-align: center; padding: 5px 0; border-radius: 4px; font-size: 12px; color: #FFFFFF; background: {{accent}}; font-weight: 600;">Plate</span>
+          <span style="flex-grow: 1; text-align: center; padding: 5px 0; border-radius: 4px; font-size: 12px; color: #5F5E5A; background: #F4F4F2;">Marker</span>
+          <span style="flex-grow: 1; text-align: center; padding: 5px 0; border-radius: 4px; font-size: 12px; color: #8B8A83; background: #F4F4F2;">Auto</span>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 0;">
+          <span style="font-size: 13px; color: #5F5E5A;">Smoothing</span>
+          <span class="num" style="font-size: 13px;">Butterworth 5 Hz</span>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 3px 0;">
+          <span style="font-size: 13px; color: #5F5E5A;">Show raw alongside</span>
+          <span style="width: 30px; height: 17px; border-radius: 9px; background: #E9E9E6; position: relative; display: inline-block;">
+            <span style="position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.2);"></span>
+          </span>
+        </div>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 0.5px solid rgba(0,0,0,0.08);">
+        <div style="font-size: 11px; color: #8B8A83; margin-bottom: 8px;">EFFECT ON THE GRADE</div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="height: 26px; padding: 0 9px; border-radius: 4px; background: #FAEEDA; color: #633806; font-size: 12px; font-weight: 600; line-height: 26px;">B</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B8A83" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <span style="height: 26px; padding: 0 9px; border-radius: 4px; background: #EAF3DE; color: #27500A; font-size: 12px; font-weight: 600; line-height: 26px;">A</span>
+          <span style="font-size: 11px; color: #5F5E5A; line-height: 1.4;">once the other two flagged frames are confirmed</span>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <div style="padding: 12px 14px; border-top: 0.5px solid rgba(0,0,0,0.08); display: flex; gap: 8px;">
+        <button style="flex-grow: 1; height: 32px; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 6px; background: #FFFFFF; color: #1A1A18; font-size: 13px; font-family: inherit; cursor: pointer;">Next flagged frame</button>
+        <button style="flex-grow: 1; height: 32px; border: none; border-radius: 6px; background: {{accent}}; color: #FFFFFF; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;">Accept track</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "accent": {"editor": "color", "default": "#185FA5", "options": ["#185FA5", "#0C447C", "#4F8A4A", "#D08B2C"]},
+  "$preview": {"width": 1440, "height": 900}
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    // A confidence trace that dips exactly where the sample correction is.
+    const bars = [];
+    for (let i = 0; i < 60; i++) {
+      let v = 0.72 + 0.2 * Math.sin(i / 3.1) * Math.cos(i / 7.3);
+      // Exactly three frames under the 0,40 threshold, matching the count and
+      // the "other two" copy in the panel.
+      if (i >= 24 && i <= 26) v = 0.16 + 0.06 * (i - 24);
+      const low = v < 0.4;
+      bars.push({
+        h: Math.round(v * 26) + 'px',
+        color: low ? '#E24B4A' : v < 0.6 ? '#D08B2C' : '#185FA5',
+      });
+    }
+    return {
+      accent: this.props.accent ?? '#185FA5',
+      confidence: bars,
+      correction: [
+        { label: 'Frame', value: '96' },
+        { label: 'Moved', value: '61,4 px' },
+        { label: 'Corrections so far', value: '3' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
