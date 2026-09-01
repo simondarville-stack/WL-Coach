@@ -45,6 +45,13 @@ export interface ClipEditorLimits {
    * other.
    */
   allowSplit?: boolean;
+  /**
+   * Trim-only edits are done as a keyframe-aligned lossless packet copy
+   * (see `applyClipEdit`), and the editor snaps the start handle to keyframes
+   * so the cut shown is the cut made. For surfaces feeding analysis, where
+   * re-encoded pixels would poison the measurement.
+   */
+  preferLossless?: boolean;
 }
 
 export interface ClipEditorGate {
@@ -156,6 +163,8 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
         allowSplit={limits.allowSplit ?? false}
         defaultMaxEdge={editing.defaultMaxEdge}
         maxSeconds={limits.maxSeconds}
+        maxBytes={limits.maxBytes}
+        preferLossless={limits.preferLossless ?? false}
         onCancel={() => editing.resolve(null)}
         onDone={files => editing.resolve(files)}
       />

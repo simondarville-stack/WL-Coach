@@ -136,6 +136,15 @@ export interface ApplyClipEditOptions {
   /** 1-based piece number, when one recording is split into a clip per lift.
    *  Only affects the output file's name. */
   part?: number;
+  /**
+   * For footage headed into analysis (KinEMOS): a trim-only edit is done as a
+   * keyframe-aligned packet copy — original pixels, fps and timestamps, cut
+   * snapped to the keyframe at or before the requested start — instead of the
+   * re-encode mediabunny's Conversion performs for any head-trim. Falls back
+   * to the normal path when the container defeats the copy. Ignored the
+   * moment the edit crops or resizes, which force a transcode anyway.
+   */
+  preferLossless?: boolean;
 }
 
 /** Keep the edited name recognisable next to the original in a camera roll
@@ -150,16 +159,32 @@ function editedFileName(name: string, part?: number): string {
 /**
  * Produce a new MP4 containing only `edit`'s time range and crop window.
  *
- * Trim alone is a packet copy where the container allows it (fast, lossless);
- * a crop forces a transcode. Either way the source `File` is untouched — the
- * caller decides whether to upload the result or fall back to the original.
+ * A trim-only edit is a packet copy ONLY when it starts at 0 (tail cut) —
+ * mediabunny's Conversion re-encodes for any head-trim, because its copy path
+ * requires the trim start at or before the first timestamp. `preferLossless`
+ * routes trim-only edits through `losslessTrim.ts` instead, which snaps the
+ * cut to a keyframe and copies packets verbatim. A crop or resize forces a
+ * transcode either way. The source `File` is untouched — the caller decides
+ * whether to upload the result or fall back to the original.
  */
 export async function applyClipEdit(
   file: File,
   edit: ClipEdit,
-  { onProgress, signal, part }: ApplyClipEditOptions = {},
+  { onProgress, signal, part, preferLossless }: ApplyClipEditOptions = {},
 ): Promise<File> {
   if (signal?.aborted) throw new ClipEditCanceledError();
+
+  if (preferLossless && edit.crop == null && edit.maxEdge == null) {
+    const { losslessTrimClip } = await import('./losslessTrim');
+    const copied = await losslessTrimClip(file, edit.start, edit.end);
+    if (signal?.aborted) throw new ClipEditCanceledError();
+    if (copied) {
+      onProgress?.(1);
+      return new File([copied.buffer], editedFileName(file.name, part), { type: 'video/mp4' });
+    }
+    // null = this container cannot be packet-copied; fall through to the
+    // re-encoding path below rather than failing the edit.
+  }
 
   const {
     ALL_FORMATS,

@@ -51,6 +51,19 @@ export async function importDirectVideo(
     captureVideoPoster(file),
   ]);
 
+  // A clip neither <video> nor WebCodecs can decode here would import as a
+  // dead library row — a tile that never plays and footage P2 cannot analyse.
+  // Refused before any byte is uploaded. Only when BOTH answers are a firm no:
+  // an inconclusive probe never blocks an import (HEVC that plays via
+  // hardware <video> but not WebCodecs passes, and P2 grades it later).
+  if (probe.decodable === false && probe.playable === false) {
+    const codec = probe.codec === 'hevc' ? 'HEVC (H.265)' : probe.codec ?? 'this clip’s codec';
+    throw new Error(
+      `${codec} cannot be played in this browser — the import would be unwatchable here. ` +
+        'Convert the clip to H.264/MP4 and try again.',
+    );
+  }
+
   const key = await uploadClip(file);
   const thumbKey = poster ? await uploadPoster(key, poster) : null;
 
@@ -66,8 +79,11 @@ export async function importDirectVideo(
       size_bytes: file.size,
       duration_s: probe.durationS,
       fps: probe.fps,
+      vfr: probe.vfr,
       width: probe.width,
       height: probe.height,
+      rotation: probe.rotation,
+      codec: probe.codec,
       device_make: probe.deviceMake,
       device_model: probe.deviceModel,
       trimmed: meta.trimmed ?? false,
