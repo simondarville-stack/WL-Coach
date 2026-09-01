@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  Film,
   MessageCircle,
   Send,
   Video,
@@ -281,6 +282,9 @@ interface VideoCardProps {
   onRateTechnique?: ((rating: number | null) => Promise<void>) | null;
   /** Keyboard quick reactions already sent for this card. */
   externalSent?: string[];
+  /** Send this clip to KinEMOS for closer study. Null hides the control.
+   *  Routing lives with the caller, which has the router context. */
+  onOpenInKinemos?: (() => void) | null;
 }
 
 export function VideoCard({
@@ -293,6 +297,7 @@ export function VideoCard({
   reactions,
   onRateTechnique,
   externalSent,
+  onOpenInKinemos,
 }: VideoCardProps) {
   // Mount the player the first time the card comes near the viewport and
   // keep it mounted after — scrolling back must not restart a buffered clip.
@@ -322,12 +327,31 @@ export function VideoCard({
         externalSent,
       }}
       accessory={
-        onRateTechnique ? (
-          <TechniqueRating
-            value={item.techniqueRating}
-            onRate={onRateTechnique}
-            theme="dark"
-          />
+        onRateTechnique || onOpenInKinemos ? (
+          <div className="flex items-center gap-2">
+            {onRateTechnique && (
+              <TechniqueRating
+                value={item.techniqueRating}
+                onRate={onRateTechnique}
+                theme="dark"
+              />
+            )}
+            {onOpenInKinemos && (
+              // The reel is for triage; this is the escape hatch to study one
+              // clip properly. P0 lands in the library filtered to this clip —
+              // P1 will point it at the analysis viewer instead.
+              <button
+                type="button"
+                onClick={onOpenInKinemos}
+                title="Open in KinEMOS"
+                aria-label="Open in KinEMOS"
+                className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] text-white/80 transition-colors hover:bg-white/20"
+              >
+                <Film size={12} />
+                KinEMOS
+              </button>
+            )}
+          </div>
         ) : null
       }
     >

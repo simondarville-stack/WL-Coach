@@ -21,6 +21,7 @@
  * segment per card — filled = reviewed, bright = where you are.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { getOwnerId } from '../../lib/ownerContext';
 import { useAthleteStore } from '../../store/athleteStore';
@@ -59,6 +60,7 @@ const MAX_HISTORY_PAGES = 12;
 const HISTORY_PREFETCH_MARGIN = 3;
 
 export function ReviewScroller() {
+  const navigate = useNavigate();
   const ownerId = getOwnerId();
   const athletes = useAthleteStore(s => s.athletes);
   const activeCoachId = useCoachStore(s => s.activeCoach?.id ?? null);
@@ -528,6 +530,9 @@ export function ReviewScroller() {
               : null
           }
           externalSent={keyboardSent[item.key]}
+          // The library keys log clips as `log:<video id>` — same shape the
+          // KinEMOS library builds, so the link lands on exactly this clip.
+          onOpenInKinemos={() => navigate(`/kinemos?clip=log:${item.video.id}`)}
         />
       )}
       {item.kind === 'thread' && (

@@ -1189,6 +1189,46 @@ export interface SollIstAnalysisDbRow {
   updated_at: string;
 }
 
+/**
+ * A video imported directly into KinEMOS (migration 20260901120000).
+ *
+ * Only direct imports live here — log clips and competition footage stay in
+ * their own tables and the library reads all three (src/kinemos/lib/
+ * videoLibrary.ts). Bytes live in R2 under `r2_key`; the row deliberately
+ * stores the key rather than a URL, so moving the serving origin cannot rot
+ * every stored link the way it did in the Netlify era.
+ */
+export interface KinemosVideo {
+  id: string;
+  owner_id: string | null;
+  /** Both nullable: unattached footage (seminar clips, other clubs' lifters)
+   *  is first-class in KinEMOS. */
+  athlete_id: string | null;
+  exercise_id: string | null;
+  r2_key: string;
+  /** Poster frame's key — same UUID, `.jpg`. Null when the capture failed. */
+  thumb_key: string | null;
+  original_name: string | null;
+  size_bytes: number | null;
+  /** Probed at import; null when the container could not be read. fps and the
+   *  dimensions are what later phases grade analysis accuracy against. */
+  duration_s: number | null;
+  fps: number | null;
+  width: number | null;
+  height: number | null;
+  /** From container metadata where the phone left it — seeds the model-lookup
+   *  calibration tier. Frequently absent. */
+  device_make: string | null;
+  device_model: string | null;
+  trimmed: boolean;
+  original_duration_s: number | null;
+  /** When the lift happened, as opposed to when it was imported. */
+  recorded_at: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -1508,6 +1548,14 @@ export interface Database {
         Row: ClubMember & Record<string, unknown>;
         Insert: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_videos: {
+        Row: KinemosVideo & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosVideo, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosVideo, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
         Relationships: [];
       };
     };

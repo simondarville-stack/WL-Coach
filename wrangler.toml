@@ -5,9 +5,9 @@
 # (run_worker_first) — every other request is served straight from assets and
 # never executes worker code, so the app cannot be taken down by an /api bug.
 #
-# Current /api surface: Cloudflare Stream upload brokering (worker/index.ts).
-# It stays inert (503) until the Stream secrets are set — see the worker's
-# header comment for the three variables.
+# Current /api surface (worker/index.ts): Cloudflare Stream upload brokering,
+# and KinEMOS video objects in R2. Both stay inert (503) until their
+# configuration exists — see the worker's header comment.
 #
 # Chosen over Cloudflare Pages: Workers static assets is the platform
 # Cloudflare actively develops, supports the same `_headers` / `_redirects`
@@ -29,6 +29,19 @@ compatibility_date = "2026-08-28"
 # against a branch before it reaches production), flip this to true AND put
 # them behind Cloudflare Access, so a preview is not world-readable.
 preview_urls = false
+
+# KinEMOS direct imports (docs/KINEMOS_DESIGN.md §4). Long-form footage that
+# the 200 MB Supabase video buckets refuse, served back with Range support so
+# the analysis viewer can seek. A native binding rather than the S3 API: no
+# access keys exist to leak, and no presigned URL can expire mid-upload.
+#
+# Create the bucket once before the first deploy:
+#   wrangler r2 bucket create emos-kinemos-videos
+# Until the binding resolves, /api/kinemos/* answers 503 and the import UI
+# reports storage as unconfigured — the rest of the app is unaffected.
+[[r2_buckets]]
+binding = "KINEMOS_VIDEOS"
+bucket_name = "emos-kinemos-videos"
 
 [assets]
 directory = "./dist"

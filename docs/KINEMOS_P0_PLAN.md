@@ -4,6 +4,18 @@
 P0 against the codebase as it actually is. Branch: `feature/kinemos-p0`,
 built in a dedicated `git worktree`. Ships as a MINOR bump.
 
+> **Status: SHIPPED in 0.78.0.** Two plan assumptions changed during the build
+> and are corrected in place below:
+>
+> 1. **The clip editor already existed.** 0.77.0 landed a shared
+>    trim/crop/shrink/split editor (`useClipEditor` + `ClipEditor`, with
+>    motion-suggested trim in `clipMotion.ts`) that every upload path passes
+>    through. W4 collapsed from "build a trimmer" to "call the existing gate
+>    with KinEMOS's limits", and mediabunny — already a dependency — replaced
+>    the proposed mp4box.js for both editing and metadata probing.
+> 2. **The `/api/*` worker already existed** for Cloudflare Stream brokering,
+>    so R2 was an addition to it rather than EMOS's first backend surface.
+
 **P0 promise:** an organised, trimmed, cheap video library — every lift video
 in EMOS findable in one dense table, direct import (with lossless trim) for
 everything else, storage that scales. Usable and valuable before any tracking
@@ -37,14 +49,18 @@ nothing. R2 is for new direct imports only.
    (scrubbing depends on it) and immutable cache headers. No S3 keys anywhere.
    Worker body-size limits (plan-dependent, ≥100 MB) sit far above the client
    cap.
-3. **Trim is lossless or not at all.** Trimming must never re-encode — the
-   analysis engine needs original pixels, fps and metadata. Use
-   keyframe-aligned stream copy (mp4box.js) → cut precision is the GOP
-   (~0.5–2 s), which is fine for removing chalk-ritual, and the output is
-   bit-identical video inside the cut. If the container defeats us
-   (odd .mov/.webm), offer full-file upload rather than a re-encoded trim.
-4. **Direct-import caps:** 3 min / 300 MB defaults (`// COACH-CONFIG
-   candidate`), deliberately looser than the 60 s log cap — competition floor
+3. **Reuse the shared clip editor, at Original resolution.** KinEMOS calls
+   `useClipEditor` with `maxSeconds: null` (long-form footage is the point)
+   and `allowSplit: true` (one recording of six attempts becomes six rows).
+   mediabunny already keeps a trim-only edit on a lossless packet-copy path;
+   a crop or a resize forces a transcode, which is why the resolution default
+   stays **Original** here. Spatial resolution *is* analysis accuracy — at a
+   45 cm plate across ~200 px one pixel is ~2 mm — so shrinking, right for a
+   review clip, is wrong for footage headed to measurement. The editor still
+   offers it; nothing nudges the coach there.
+4. **Direct-import caps:** 300 MB (`KINEMOS_IMPORT_MAX_BYTES`, mirrored
+   worker-side, `// COACH-CONFIG candidate`), deliberately looser than the
+   200 MB Supabase buckets, and no duration cap at all — competition floor
    footage and multi-rep sets are the direct-import use case.
 5. **No new feature flag.** `/kinemos` is a lazy chunk with a coach-side
    sidebar entry; the existing coach gate applies. Premium entitlement waits
@@ -86,27 +102,28 @@ unattached videos are first-class (design §5.2).
   thumbnail, playback URL, source deep-link. Paging via the existing
   `queryPaging` helper; filters: athlete, exercise, source, date range,
   unattached-only.
-- `uploadDirectVideo(file, meta)` — probe metadata client-side (duration,
-  fps, dimensions, phone make/model from QuickTime atoms via mp4box.js — the
-  same parse the trimmer needs, and the seed for the §6.1 model-lookup
-  calibration tier) → optional trim → `PUT` to R2 → insert row; delete R2
-  object on row-insert failure (mirrors the Stream path's cleanup contract).
-- `deleteDirectVideo` — row + R2 object (+ thumbnail), idempotent.
-- Thumbnail: capture poster JPEG client-side (reuse the
-  `captureVideoPoster` approach from `trainingLogService`) → R2 alongside the
-  clip (`<key>.jpg`).
+- `importDirectVideo(file, meta)` (`directImport.ts`) — probe → `PUT` to R2 →
+  poster → insert row; deletes the R2 objects on a failed row insert, the
+  cleanup contract the Stream path established.
+- `deleteDirectVideo` — row first, then bytes (a row outliving its bytes shows
+  a broken tile; bytes outliving their row are invisible).
+- `probeClip` (`kinemosProbe.ts`) — duration, fps, display dimensions, and
+  device make/model from container metadata, via mediabunny behind a dynamic
+  import. Every field optional, every failure silent.
+- Thumbnail: `captureVideoPoster` (already extracted to `videoProbe.ts` by the
+  0.77.0 work) → R2 beside the clip as `<uuid>.jpg`.
 
-**Dependency call-out:** `mp4box.js` (GPAC) for lossless trim + metadata
-probing — the established JS MP4 demuxer; verify licence status at install
-time before adding.
+**No new dependency.** mediabunny (MPL-2.0) arrived with the 0.77.0 clip
+editor and covers both editing and probing, so the proposed mp4box.js is not
+needed.
 
-### W4 — Trim-on-upload UI
+### W4 — Import control (reuses the shared clip editor)
 
-Import sheet: drop/pick file → inline player with in/out handles on a scrub
-bar, live "keeps X s / ~Y MB of Z MB" readout, one confirm. Trim runs
-client-side (W3's mp4box copy) before upload — bandwidth savings included.
-Frictionless is the requirement: two drags and a click, no modal maze.
-Untrimmed upload stays one click away.
+`ImportControl`: optional athlete + exercise attach (both may stay empty —
+unattached footage is first-class), then a file pick that hands off to
+`useClipEditor`. The editor supplies trimming, cropping, resolution and the
+motion-suggested lift window; KinEMOS only supplies the limits and consumes
+the resulting file list.
 
 ### W5 — Library UI + route
 
@@ -122,18 +139,33 @@ Untrimmed upload stays one click away.
 
 ### W6 — Cross-links from existing surfaces
 
-"Open in KinEMOS" action on Review Feed video cards and the planner
-`VideoLightbox` / `LogVideoStrip` — in P0 it deep-links to the library
-filtered to that clip (P1 retargets it at the analysis viewer). Cheap now,
-and it starts building the habit loop.
+"KinEMOS" chip on Review Feed video cards, beside the technique rating:
+navigates to `/kinemos?clip=log:<video id>`, and the library focuses that one
+row (a focused clip overrides the filter bar, so arriving from the reel can
+never land on an empty table). P1 retargets the same gesture at the analysis
+viewer. The planner `VideoLightbox` / `LogVideoStrip` entry points are still
+open.
 
 ### W7 — Verify & ship
 
-`npm run typecheck`, `npm run build` (chunk report: main bundle unchanged,
-KinEMOS in its own chunks), `wrangler dev` smoke of the three R2 routes
-(upload → Range GET → delete), library renders all three sources, trim
-round-trip produces playable bit-copied output. Merge to `main` with a MINOR
-bump.
+Done, and what was actually exercised:
+
+- `npm run typecheck` clean; 729 tests pass (48 files), including 16 new ones
+  covering key generation against the worker's validator and the library's
+  filter semantics.
+- `npm run build`: KinEMOS is its own 17 kB chunk, mediabunny stays a separate
+  567 kB chunk loaded only when the editor or probe runs.
+- Worker R2 routes exercised against `wrangler dev` with a local bucket:
+  PUT → 200, GET → 200, `Range: bytes=5-14` → 206 with a correct
+  `Content-Range`, suffix `bytes=-9` → 206, malformed key → 400, DELETE twice
+  → 200 both times, GET after delete → 404.
+- Full import round-trip in the running app with a real MP4: clip editor
+  opened at Original resolution → import → probe stored 2,96 s / 29,05 fps /
+  320×240 → clip and poster PUT to R2 → row rendered in the library →
+  playback served as **206 Partial Content** (the browser range-seeks, which
+  is what P1's scrubbing depends on) → delete removed the row and both
+  objects.
+- Review-feed chip navigates to the library focused on the intended clip.
 
 ## 4. Known edges (accepted in P0)
 
@@ -143,6 +175,19 @@ bump.
   deferred to P1: enable Stream MP4 downloads per-clip via API, or accept a
   quality-grade penalty on Stream-sourced analyses. Recorded here so P1
   scopes it, not discovers it.
+- **The R2 bucket must exist before the first deploy**
+  (`wrangler r2 bucket create emos-kinemos-videos`). Until it does, the
+  `/api/kinemos/*` routes answer 503 and import reports storage as
+  unconfigured; nothing else in the app is affected.
+- **Interim object access.** An R2 key is a v4 UUID and therefore the
+  capability — the same model as the public Supabase video buckets the app
+  already serves from. `owner_id` is on the row so the auth/RLS phase can put
+  a real check in front of the routes without moving an object.
+- **Two vestigial columns.** `training_log_videos.performed_load` and
+  `.performed_reps` exist in the database, appear in no migration, are read by
+  no code, and are empty on all 7 rows. The library derives load from
+  `training_log_sets` instead. Left in place per the deletion policy — worth a
+  decision, not a silent drop.
 - Inbox/chat video messages are not part of the P0 union — a later source if
   wanted.
 - No retention automation (design: keep until manual delete / space forces

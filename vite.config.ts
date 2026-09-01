@@ -62,6 +62,19 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    // `vite dev` serves assets only — the /api/* worker (worker/index.ts) is
+    // not in front of it, so KinEMOS video upload/playback would 404 in
+    // development. Run `npx wrangler dev` alongside `npm run dev` and this
+    // forwards /api to it; without it, KinEMOS import reports storage as
+    // unconfigured and the rest of the app is unaffected.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: true,
+      },
+    },
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

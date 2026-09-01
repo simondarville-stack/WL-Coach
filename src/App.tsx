@@ -39,6 +39,10 @@ const ErrorLogViewer = lazy(() => import('./components/system/ErrorLogViewer').t
 const InvitationsPage = lazy(() => import('./components/system/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
 const ClubAdminPage = lazy(() => import('./components/club/ClubAdminPage').then(m => ({ default: m.ClubAdminPage })));
 const ReviewScroller = lazy(() => import('./components/review/ReviewScroller').then(m => ({ default: m.ReviewScroller })));
+// KinEMOS (docs/KINEMOS_DESIGN.md). Lazy like every other route, and load-bearing
+// here: the analysis phases pull in WASM decoders and CV code, and none of it may
+// reach a coach who never opens the module.
+const KinemosLibrary = lazy(() => import('./kinemos/KinemosLibrary').then(m => ({ default: m.KinemosLibrary })));
 
 /** Route-chunk loading state — same minimal spinner the app boot uses. */
 function RouteFallback() {
@@ -339,6 +343,7 @@ function CoachApp() {
               <Route path="/prs" element={<PRPage />} />
               <Route path="/inbox" element={<CoachInbox />} />
               <Route path="/review" element={<ReviewScroller />} />
+              <Route path="/kinemos" element={<KinemosLibrary />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />
