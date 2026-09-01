@@ -8,7 +8,11 @@
  *   1. **Trim** — drag two handles to the lift itself. This is the one that
  *      matters: a coach wants the pull and the catch, not the 90 s of chalk
  *      and setup around it, and where the caller sets `maxSeconds` it is what
- *      keeps a clip inside that cap.
+ *      keeps a clip inside that cap. The editor tries to do this *for* the
+ *      athlete: `clipMotion` looks for the burst of movement that is the lift
+ *      and pre-sets the handles around it, so the common case is a glance and
+ *      a tap rather than two drags. The suggestion is always visible, always
+ *      draggable, and one tap of "Whole clip" undoes it.
  *   2. **Crop** — drag a box onto the lifter. A phone filmed across a busy
  *      platform spends most of its pixels on other people.
  *   3. **Size** — a resolution ceiling. 4K of a barbell reviews no better than
@@ -21,7 +25,7 @@
  * the caller decides what to upload.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop, Scissors, X } from 'lucide-react';
+import { Check, Crop, Scissors, Wand2, X } from 'lucide-react';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { Spinner } from '../ui';
 
@@ -35,6 +39,12 @@ import {
   type ClipEdit,
   type ClipResolution,
 } from '../../lib/videoClipEdit';
+import {
+  analyseClipMotion,
+  suggestTrimFromMotion,
+  type MotionSample,
+  type TrimSuggestion,
+} from '../../lib/clipMotion';
 import {
   clampCropToFrame,
   CROP_RATIOS,
@@ -116,6 +126,16 @@ export function ClipEditor({
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  /** Motion signal for the whole clip, once the analysis pass finishes. */
+  const [motion, setMotion] = useState<MotionSample[] | null>(null);
+  const [suggestion, setSuggestion] = useState<TrimSuggestion | null>(null);
+  /**
+   * Set the moment the athlete moves a handle. A suggestion that arrives after
+   * that is discarded rather than yanking the window out from under them —
+   * the analysis takes seconds on a long clip, and they may well have trimmed
+   * it by hand in the meantime.
+   */
+  const touchedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -210,6 +230,52 @@ export function ClipEditor({
     }
   };
 
+  // ── Find the lift ────────────────────────────────────────────────────────
+  // Runs independently of the <video> preview: the analysis decodes the file
+  // itself and needs no metadata from the element. A failure is silent — the
+  // editor is fully usable by hand, and an error banner about a *suggestion*
+  // would be noise.
+  useEffect(() => {
+    const controller = new AbortController();
+    analyseClipMotion(file, { signal: controller.signal })
+      .then(samples => {
+        if (!controller.signal.aborted) setMotion(samples);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMotion([]);
+      });
+    return () => controller.abort();
+  }, [file]);
+
+  useEffect(() => {
+    if (!motion || motion.length === 0 || duration == null) return;
+    if (touchedRef.current || suggestion) return;
+    const found = suggestTrimFromMotion(motion, { duration, maxSeconds });
+    if (!found) {
+      // No clear burst: leave the handles where they are and say nothing. A
+      // wrong suggestion costs more than a missing one.
+      setMotion([]);
+      return;
+    }
+    setSuggestion(found);
+    setEdit(e => ({ ...e, start: found.start, end: found.end }));
+    seek(found.start);
+  }, [motion, duration, maxSeconds, suggestion, seek]);
+
+  /** Back to the whole clip (or the longest legal window). Also marks the
+   *  handles touched, so the suggestion cannot reapply itself. */
+  const clearSuggestion = () => {
+    if (duration == null) return;
+    touchedRef.current = true;
+    setSuggestion(null);
+    setEdit(e => ({
+      ...e,
+      start: 0,
+      end: maxSeconds == null ? duration : Math.min(duration, maxSeconds),
+    }));
+    seek(0);
+  };
+
   // ── Pointer dragging (trim handles and crop box share one pipeline) ───────
   const applyDrag = useCallback(
     (clientX: number, clientY: number) => {
@@ -282,6 +348,12 @@ export function ClipEditor({
   const startDrag = (drag: Drag) => (ev: React.PointerEvent) => {
     ev.preventDefault();
     ev.stopPropagation();
+    // Grabbing a handle is the moment the athlete takes over, so record it
+    // here rather than once the drag has produced a new value — a grab that
+    // lands before the track has laid out still counts. Scrubbing the
+    // timeline deliberately does not: that is looking, not trimming, and a
+    // suggestion is still welcome afterwards.
+    if (drag.kind === 'trim-start' || drag.kind === 'trim-end') touchedRef.current = true;
     dragRef.current = drag;
     applyDrag(ev.clientX, ev.clientY);
   };
@@ -508,14 +580,37 @@ export function ClipEditor({
             ))}
           </div>
           <div className="flex items-center justify-between mt-1 text-[10px] text-gray-400">
-            <button
-              type="button"
-              onClick={togglePlay}
-              disabled={busy}
-              className="px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 hover:text-white disabled:opacity-50"
-            >
-              {playing ? 'Pause' : 'Play selection'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={busy}
+                className="px-2 py-0.5 rounded border border-gray-700 hover:border-gray-500 hover:text-white disabled:opacity-50"
+              >
+                {playing ? 'Pause' : 'Play selection'}
+              </button>
+              {/* The suggestion states itself and offers its own undo. Silent
+                  auto-trimming would be the worst of both: the athlete would
+                  not know why the handles moved, or how to get the rest back. */}
+              {suggestion ? (
+                <>
+                  <span className="inline-flex items-center gap-0.5 text-[color:var(--color-accent)]">
+                    <Wand2 size={10} />
+                    Lift found
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearSuggestion}
+                    disabled={busy}
+                    className="px-1.5 py-0.5 rounded border border-gray-700 hover:border-gray-500 hover:text-white disabled:opacity-50"
+                  >
+                    Whole clip
+                  </button>
+                </>
+              ) : (
+                motion === null && <span className="text-gray-500">Finding the lift…</span>
+              )}
+            </div>
             <span>
               {secs(edit.start)} → {secs(edit.end)} ·{' '}
               <span

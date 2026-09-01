@@ -4,7 +4,7 @@ import type { Athlete, EventAttempts, EventVideo } from '../lib/database.types';
 import { useEvents } from '../hooks/useEvents';
 import { alertDialog, confirmDialog } from './ui';
 import { useClipEditor } from './planner/useClipEditor';
-import { VideoTooLargeError } from '../lib/videoLimits';
+import { EVENT_VIDEO_MAX_BYTES, VideoTooLargeError } from '../lib/videoLimits';
 
 interface EventAttemptsModalProps {
   eventId: string;
@@ -30,12 +30,12 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
     description: '',
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  // No caps: event-videos declares no file_size_limit, so the ceiling is the
-  // project's global upload limit (see videoLimits.ts), and a competition
-  // attempt — walk-on, lift, down signal — is legitimately longer than the
-  // training-log cap. The editor is offered on pick, forced only after a
-  // refusal.
-  const clipEditor = useClipEditor({ maxBytes: null, maxSeconds: null });
+  // No duration cap: a competition attempt — walk-on, lift, down signal — is
+  // legitimately longer than the training-log cap.
+  const clipEditor = useClipEditor({
+    maxBytes: EVENT_VIDEO_MAX_BYTES,
+    maxSeconds: null,
+  });
 
   useEffect(() => {
     loadData();

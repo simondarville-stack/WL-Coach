@@ -27,7 +27,11 @@ import { ExerciseSearch } from './ExerciseSearch';
 import { fetchComboPlannedRows, fetchPlannedRowsForExercise } from '../../lib/comboHistory';
 import { ComboCreatorModal } from './ComboCreatorModal';
 import { useClipEditor } from './useClipEditor';
-import { isStorageSizeRejection, VideoTooLargeError } from '../../lib/videoLimits';
+import {
+  isStorageSizeRejection,
+  PLANNER_MEDIA_MAX_BYTES,
+  VideoTooLargeError,
+} from '../../lib/videoLimits';
 
 interface OtherDay {
   dayIndex: number;
@@ -158,11 +162,11 @@ export function ExerciseDetail({
   /** The clip storage refused, kept so "Trim & shrink" can reopen the editor
    *  on it rather than making the coach find the file again. */
   const [refusedClip, setRefusedClip] = useState<File | null>(null);
-  // No caps here: planner-media has no file_size_limit of its own, so the real
-  // ceiling is the project's global upload limit (see videoLimits.ts), and a
-  // technique demo is legitimately longer than a single lift. The editor is
-  // offered, never forced — until storage refuses the file.
-  const clipEditor = useClipEditor({ maxBytes: null, maxSeconds: null });
+  // No duration cap: a technique demo is legitimately longer than one lift.
+  const clipEditor = useClipEditor({
+    maxBytes: PLANNER_MEDIA_MAX_BYTES,
+    maxSeconds: null,
+  });
   const [unit, setUnit] = useState<string>(plannedExercise?.unit ?? 'absolute_kg');
   // The week window the history chart is showing. Both history tables filter
   // to it, so the numbers under the chart are the ones plotted in it.
@@ -320,9 +324,11 @@ export function ExerciseDetail({
       const path = `${plannedExercise.id}.${ext}`;
       const { error } = await supabase.storage.from('planner-media').upload(path, file, { upsert: true });
       if (error) {
-        // planner-media declares no size limit, so this is the project's
-        // global one talking — the only place the real ceiling shows up.
-        if (isStorageSizeRejection(error)) throw new VideoTooLargeError(file.size);
+        // Past our own cap this is the project's global limit talking — the
+        // one ceiling no migration can mirror.
+        if (isStorageSizeRejection(error)) {
+          throw new VideoTooLargeError(file.size, PLANNER_MEDIA_MAX_BYTES);
+        }
         throw error;
       }
       const { data: urlData } = supabase.storage.from('planner-media').getPublicUrl(path);

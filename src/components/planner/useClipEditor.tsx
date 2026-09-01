@@ -10,7 +10,7 @@
  *
  * Usage:
  *
- *   const clipEditor = useClipEditor({ maxBytes: null, maxSeconds: null });
+ *   const clipEditor = useClipEditor({ maxBytes: LIMIT, maxSeconds: 60 });
  *   const prepared = await clipEditor.prepare(file);
  *   if (!prepared) return;             // athlete backed out
  *   await upload(prepared);
@@ -36,20 +36,11 @@ export interface ClipEditorLimits {
   maxSeconds: number | null;
 }
 
-export interface PrepareOptions {
-  /**
-   * Show the editor even when the clip is already uploadable. True for a
-   * deliberate single pick — one tap of "Upload original" skips it. False for
-   * a multi-file attach, where the picker has already stated the intent.
-   */
-  offer?: boolean;
-}
-
 export interface ClipEditorGate {
   /** Whether this browser can re-encode at all. */
   supported: boolean;
   /** Resolves to the file to upload, or null if the athlete backed out. */
-  prepare: (file: File, options?: PrepareOptions) => Promise<File | null>;
+  prepare: (file: File) => Promise<File | null>;
   /**
    * Re-open the editor after storage refused a clip as too large — the one
    * case where no client-side cap saw it coming. Opens at 720p, which is the
@@ -91,7 +82,17 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
       });
     });
 
-  const prepare = async (file: File, { offer = true }: PrepareOptions = {}) => {
+  /**
+   * Every video goes through the editor — including a five-clip batch attach,
+   * which opens five in turn.
+   *
+   * That is deliberate, and it is the storage bill talking: an untrimmed clip
+   * is mostly an athlete walking up to the bar and walking away from it, and
+   * those bytes are paid for on every upload and served on every review. The
+   * cost of asking is one tap, and the motion analysis usually has the lift
+   * bracketed before the athlete has finished looking at it.
+   */
+  const prepare = async (file: File) => {
     if (!supported) return file;
 
     // Over a cap we can see is non-negotiable: the upload would fail, so the
@@ -118,7 +119,7 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
         );
       }
     }
-    return offer ? open(file, null, false) : file;
+    return open(file, null, false);
   };
 
   const prepareAfterRejection = (file: File) =>

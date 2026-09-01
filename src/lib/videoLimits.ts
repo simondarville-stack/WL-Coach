@@ -7,30 +7,42 @@
  * them. `trainingLogService` re-exports the log-video members, so existing
  * importers are unaffected.
  *
- * ## Why only one bucket has a byte cap
+ * ## Keeping the caps honest
  *
- * `log-videos` is created by a migration and its `file_size_limit` is in the
- * repository, so the client can mirror it and reject an oversized clip before
- * spending the upload. `event-videos` and `planner-media` were created without
- * one, which means they inherit the *project's* global upload limit — a
- * Supabase dashboard setting no migration can see. Guessing it would reject
- * files the project would happily take, so those paths carry no client cap and
- * instead read storage's own refusal (`isStorageSizeRejection`) and turn it
- * into something an athlete can act on.
+ * Every bucket's `file_size_limit` is declared in a migration, so the numbers
+ * below can mirror them and the UI can refuse an oversized file before
+ * spending the upload rather than after:
+ *
+ *   - `log-videos`     — 20260828120000_add_training_log_videos.sql
+ *   - `event-videos`   — 20260901090000_video_bucket_size_limits.sql
+ *   - `planner-media`  — 20260901090000_video_bucket_size_limits.sql
+ *
+ * `isStorageSizeRejection` stays the backstop underneath all of them: the
+ * *project's* global upload limit can be lower than any bucket's, and that one
+ * lives in the Supabase dashboard where no migration can reach it.
  */
 
 /**
- * Mirrors the bucket's own `file_size_limit` so the UI can reject an oversized
- * file before spending the upload rather than after.
+ * The `file_size_limit` every video bucket declares — the 209715200 in the
+ * migrations listed above.
  *
- * It must stay equal to the 209715200 in
- * `supabase/migrations/20260828120000_add_training_log_videos.sql` — it drifted
- * to 400 MB once, which meant every clip between 200 and 400 MB passed our
- * check and then came back from storage as the raw, unactionable "The object
- * exceeded the maximum allowed size". The real product cap is duration (below);
- * the byte cap is only the bucket's edge.
+ * It must stay equal to them. On log-videos it drifted to 400 MB once, which
+ * meant every clip between 200 and 400 MB passed our check and then came back
+ * from storage as the raw, unactionable "The object exceeded the maximum
+ * allowed size".
  */
-export const LOG_VIDEO_MAX_BYTES = 200 * 1024 * 1024;
+const VIDEO_BUCKET_MAX_BYTES = 200 * 1024 * 1024;
+
+/** Cap on a training-log clip. The real product cap is duration (below); the
+ *  byte cap is only the bucket's edge. */
+export const LOG_VIDEO_MAX_BYTES = VIDEO_BUCKET_MAX_BYTES;
+
+/** Cap on competition attempt footage (`event-videos`). No duration cap: a
+ *  whole attempt — walk-on, lift, down signal — is not one lift. */
+export const EVENT_VIDEO_MAX_BYTES = VIDEO_BUCKET_MAX_BYTES;
+
+/** Cap on a coach's demo video or reference image (`planner-media`). */
+export const PLANNER_MEDIA_MAX_BYTES = VIDEO_BUCKET_MAX_BYTES;
 
 /** Longest clip an athlete may attach. Duration, not bytes, is what a coach
  *  actually reviews — one lift plus setup fits comfortably in a minute.

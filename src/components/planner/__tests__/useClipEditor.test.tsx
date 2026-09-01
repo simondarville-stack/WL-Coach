@@ -20,6 +20,16 @@ vi.mock('../../../lib/videoProbe', () => ({
   captureVideoPoster: () => Promise.resolve(null),
 }));
 
+/**
+ * The motion pass decodes with WebCodecs, which jsdom does not have. Stub it
+ * to "no clear lift" so these tests exercise the editor, not the analysis —
+ * `clipMotion.test.ts` covers the suggestion logic on its own.
+ */
+vi.mock('../../../lib/clipMotion', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../lib/clipMotion')>()),
+  analyseClipMotion: () => Promise.resolve([]),
+}));
+
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
     observe() {}
@@ -99,12 +109,15 @@ describe('useClipEditor', () => {
     expect(result.value).toBeUndefined();
   });
 
-  it('skips the offer for a batch pick', async () => {
+  it('opens the editor for a batch pick too', async () => {
+    // Deliberate: an untrimmed clip is mostly an athlete walking to the bar
+    // and away from it, and those bytes are paid for on every upload. Five
+    // clips means five editors, one after another.
     const gate = mountGate(LOG_LIMITS);
-    const file = sizedClip(4 * 1024 * 1024);
+    await startPrepare(() => gate().prepare(sizedClip(4 * 1024 * 1024)));
 
-    await expect(gate().prepare(file, { offer: false })).resolves.toBe(file);
-    expect(screen.queryByText('Trim & crop')).toBeNull();
+    expect(screen.getByText('Trim & crop')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload original' })).toBeInTheDocument();
   });
 
   it('forces the editor, with the reason, on a clip past the byte cap', async () => {
@@ -124,16 +137,15 @@ describe('useClipEditor', () => {
     expect(screen.queryByRole('button', { name: 'Upload original' })).toBeNull();
   });
 
-  it('never forces on size or length where the surface declares no caps', async () => {
+  it('never forces on length where the surface declares no duration cap', async () => {
     probedDuration.value = 600;
     const gate = mountGate(OPEN_LIMITS);
-    const file = sizedClip(900 * 1024 * 1024);
+    await startPrepare(() => gate().prepare(sizedClip(4 * 1024 * 1024)));
 
-    // event-videos and planner-media have no knowable ceiling, so a big, long
-    // clip is offered the editor like any other — never held hostage by a
-    // limit we guessed.
-    await expect(gate().prepare(file, { offer: false })).resolves.toBe(file);
-    expect(screen.queryByText('Trim & crop')).toBeNull();
+    // A competition attempt or a technique demo is legitimately long, so the
+    // editor opens as an offer, with the escape hatch intact.
+    expect(screen.getByRole('button', { name: 'Upload original' })).toBeInTheDocument();
+    expect(screen.queryByText(/the limit is/)).toBeNull();
   });
 
   it('resolves null when the athlete backs out', async () => {

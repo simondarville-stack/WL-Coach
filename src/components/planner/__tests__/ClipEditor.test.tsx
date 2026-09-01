@@ -3,9 +3,34 @@
  * itself is WebCodecs and cannot run under jsdom, so what is checked here is
  * the part that decides whether a clip gets uploaded at all.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClipEditor } from '../ClipEditor';
+
+/**
+ * The motion pass decodes with WebCodecs, which jsdom does not have. Only the
+ * decode is stubbed — `suggestTrimFromMotion` stays real, so these tests
+ * exercise the editor against the same judgement production uses.
+ */
+const motionSamples = vi.hoisted(() => ({ value: [] as { t: number; energy: number }[] }));
+vi.mock('../../../lib/clipMotion', async importOriginal => ({
+  ...(await importOriginal<typeof import('../../../lib/clipMotion')>()),
+  analyseClipMotion: () => Promise.resolve(motionSamples.value),
+}));
+
+/** A quiet clip with a burst of movement over [from, to) — an athlete milling
+ *  about the platform, then lifting. */
+function motionWithLiftAt(from: number, to: number, duration: number) {
+  const samples: { t: number; energy: number }[] = [];
+  for (let t = 0; t < duration; t += 0.25) {
+    samples.push({ t, energy: t >= from && t < to ? 0.3 : 0.02 });
+  }
+  return samples;
+}
+
+beforeEach(() => {
+  motionSamples.value = [];
+});
 
 beforeAll(() => {
   // jsdom ships none of these; the editor measures its stage with the first,
@@ -136,6 +161,50 @@ describe('ClipEditor', () => {
     // Nothing trimmed and nothing cropped, so the button says what it will
     // actually do — upload the file as it stands, no re-encode.
     expect(screen.getByRole('button', { name: 'Upload' })).toBeInTheDocument();
+  });
+
+  it('brackets the lift for the athlete and offers the whole clip back', async () => {
+    motionSamples.value = motionWithLiftAt(30, 34, 60);
+    render(<ClipEditor file={clip()} maxSeconds={60} onCancel={() => {}} onDone={() => {}} />);
+    loadMetadata({ duration: 60 });
+    await act(async () => {});
+
+    // Handles land on the burst plus run-up and run-out, not on the whole clip.
+    expect(screen.getByText('Lift found')).toBeInTheDocument();
+    expect(screen.getByText(/28,5 s → 3[56],[0-9] s/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Whole clip' }));
+    expect(screen.getByText(/0,0 s → 60,0 s/)).toBeInTheDocument();
+    expect(screen.queryByText('Lift found')).toBeNull();
+  });
+
+  it('leaves the handles alone when there is no clear lift to find', async () => {
+    // Uniform motion — a pan, a busy platform. Saying nothing beats guessing.
+    motionSamples.value = Array.from({ length: 100 }, (_, i) => ({ t: i * 0.25, energy: 0.05 }));
+    render(<ClipEditor file={clip()} maxSeconds={60} onCancel={() => {}} onDone={() => {}} />);
+    loadMetadata({ duration: 25 });
+    await act(async () => {});
+
+    expect(screen.queryByText('Lift found')).toBeNull();
+    expect(screen.queryByText('Finding the lift…')).toBeNull();
+    expect(screen.getByText(/0,0 s → 25,0 s/)).toBeInTheDocument();
+  });
+
+  it('does not yank the window from under an athlete who already trimmed', async () => {
+    motionSamples.value = motionWithLiftAt(30, 34, 60);
+    render(<ClipEditor file={clip()} maxSeconds={60} onCancel={() => {}} onDone={() => {}} />);
+    loadMetadata({ duration: 60 });
+
+    // A drag lands before the analysis returns — which is the normal race on a
+    // long clip, since the decode takes seconds.
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Trim start' }), {
+      clientX: 0,
+      clientY: 0,
+    });
+    fireEvent.pointerUp(window);
+    await act(async () => {});
+
+    expect(screen.queryByText('Lift found')).toBeNull();
   });
 
   it('cancels without handing anything back', () => {

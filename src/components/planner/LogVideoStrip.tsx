@@ -8,10 +8,10 @@
  * between the athlete's view of a clip and the coach's.
  *
  * Picking a file does not upload it straight away: on a browser that can
- * re-encode (see `clipEditingSupported`) the clip goes through `ClipEditor`
+ * re-encode (see `clipEditingSupported`) every clip goes through `ClipEditor`
  * first, so the athlete sends the lift rather than the four minutes around it.
- * A clip that is too long or too big to upload at all opens the editor by
- * itself and cannot skip it — that is the only way such a clip gets sent.
+ * A clip that is too long or too big to upload at all cannot skip the editor —
+ * that is the only way such a clip gets sent.
  */
 import { useRef, useState } from 'react';
 import { FolderPlus, Scissors, Trash2, Video } from 'lucide-react';
@@ -127,11 +127,9 @@ export function LogVideoStrip({
         setProgress(files.length > 1 ? { done: i, total: files.length } : null);
         // The editor runs outside the busy state: it *is* the athlete's turn,
         // and a spinner over a tile they are dragging handles on reads as a hang.
-        // A multi-file attach skips the offer — five clips picked at once is
-        // already a stated intent, and five editors in a row is not.
         const prepared = afterRejection
           ? await clipEditor.prepareAfterRejection(files[i])
-          : await clipEditor.prepare(files[i], { offer: files.length === 1 });
+          : await clipEditor.prepare(files[i]);
         if (!prepared) {
           skipped += 1;
           continue;
@@ -275,7 +273,7 @@ export function LogVideoStrip({
       {onAdd && !error && (
         <p className={`mt-1 text-[10px] ${t.label}`}>
           {clipEditor.supported
-            ? `Clips up to ${LOG_VIDEO_MAX_SECONDS} s — trim and crop before sending.`
+            ? `Clips up to ${LOG_VIDEO_MAX_SECONDS} s — trimmed to the lift before sending.`
             : `Clips up to ${LOG_VIDEO_MAX_SECONDS} s.`}
         </p>
       )}
