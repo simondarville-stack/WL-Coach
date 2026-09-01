@@ -27,8 +27,26 @@
 export interface ClipProbe {
   durationS: number | null;
   fps: number | null;
+  /** True when the packet timing says variable frame rate. Velocity is dx/dt:
+   *  a nominal fps on a VFR clip silently corrupts every derived number, so
+   *  the engine must know to use real timestamps and the quality grade must
+   *  know to dock the clip (design §6.3). Null = could not tell. */
+  vfr: boolean | null;
   width: number | null;
   height: number | null;
+  /** Container rotation in degrees clockwise (0/90/180/270). Portrait phone
+   *  video is stored landscape plus this flag; WebCodecs hands the engine
+   *  UNROTATED frames, so click→pixel mapping needs it (design §6.3). */
+  rotation: number | null;
+  /** Codec id as mediabunny names it: 'avc', 'hevc', 'vp9', 'av1', … */
+  codec: string | null;
+  /** Whether this browser's WebCodecs can decode the track — what the P2
+   *  engine will need on this machine. Machine-dependent, so it gates the
+   *  import but is not stored. */
+  decodable: boolean | null;
+  /** Whether a <video> element claims it can play the clip — what the library
+   *  tile and the editor preview need. */
+  playable: boolean | null;
   deviceMake: string | null;
   deviceModel: string | null;
   recordedAt: string | null;
@@ -37,12 +55,44 @@ export interface ClipProbe {
 export const EMPTY_PROBE: ClipProbe = {
   durationS: null,
   fps: null,
+  vfr: null,
   width: null,
   height: null,
+  rotation: null,
+  codec: null,
+  decodable: null,
+  playable: null,
   deviceMake: null,
   deviceModel: null,
   recordedAt: null,
 };
+
+/**
+ * VFR judgement from a sample of packet presentation timestamps.
+ *
+ * Timestamps are sorted first (packets arrive in decode order; with B-frames
+ * presentation order differs), then successive deltas are compared to their
+ * median. Container-timescale rounding wobbles CFR deltas by a tick, so the
+ * test is a tolerance, not equality: a clip is called VFR when more than 5 %
+ * of deltas sit over 15 % away from the median — real phone VFR swings far
+ * wider than that, while an edit splice or two stays under the 5 %.
+ *
+ * Exported for tests; null when the sample is too small to judge.
+ */
+export function isVariableFrameRate(timestamps: number[]): boolean | null {
+  if (timestamps.length < 24) return null;
+  const sorted = [...timestamps].sort((a, b) => a - b);
+  const deltas: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const d = sorted[i] - sorted[i - 1];
+    if (d > 0) deltas.push(d);
+  }
+  if (deltas.length < 12) return null;
+  const median = [...deltas].sort((a, b) => a - b)[Math.floor(deltas.length / 2)];
+  if (!(median > 0)) return null;
+  const outliers = deltas.filter(d => Math.abs(d - median) > median * 0.15).length;
+  return outliers / deltas.length > 0.05;
+}
 
 /** Packets sampled to average a frame rate. Enough to ride out variable frame
  *  timing without decoding the clip twice. */
@@ -82,16 +132,42 @@ function readTag(
  * Read a clip's technical provenance. Never throws — an unreadable container
  * yields EMPTY_PROBE and the import proceeds without provenance.
  */
+/** Sample of packet timestamps read for the VFR judgement. Metadata-only —
+ *  no frame data leaves the container. */
+const VFR_SAMPLE_PACKETS = 240;
+
 export async function probeClip(file: File): Promise<ClipProbe> {
   try {
-    const { ALL_FORMATS, BlobSource, Input } = await import('mediabunny');
+    const { ALL_FORMATS, BlobSource, EncodedPacketSink, Input } = await import('mediabunny');
     const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
 
     const track = await input.getPrimaryVideoTrack();
 
+    /** First N packet presentation timestamps, for the VFR call. */
+    const sampleTimestamps = async (): Promise<number[]> => {
+      if (!track) return [];
+      const sink = new EncodedPacketSink(track);
+      const times: number[] = [];
+      for await (const packet of sink.packets(undefined, undefined, { metadataOnly: true })) {
+        times.push(packet.timestamp);
+        if (times.length >= VFR_SAMPLE_PACKETS) break;
+      }
+      return times;
+    };
+
+    /** Can a <video> element play this? Codec-string based, so an HEVC clip on
+     *  a browser without HEVC answers '' rather than optimistically 'maybe'. */
+    const canPlay = async (): Promise<boolean | null> => {
+      if (!track || typeof document === 'undefined') return null;
+      const params = await track.getCodecParameterString();
+      if (!params) return null;
+      const container = file.type.startsWith('video/') ? file.type : 'video/mp4';
+      return document.createElement('video').canPlayType(`${container}; codecs="${params}"`) !== '';
+    };
+
     // Each of these can fail on its own (a truncated clip computes a duration
     // but no packet stats), so none of them may take the others down.
-    const [durationS, fps, tags] = await Promise.all([
+    const [durationS, fps, timestamps, decodable, playable, tags] = await Promise.all([
       input.computeDuration().catch(() => null),
       track
         ? track
@@ -99,6 +175,9 @@ export async function probeClip(file: File): Promise<ClipProbe> {
             .then(stats => stats.averagePacketRate ?? null)
             .catch(() => null)
         : Promise.resolve(null),
+      sampleTimestamps().catch(() => [] as number[]),
+      track ? track.canDecode().catch(() => null) : Promise.resolve(null),
+      canPlay().catch(() => null),
       input.getMetadataTags().catch(() => null),
     ]);
 
@@ -109,11 +188,16 @@ export async function probeClip(file: File): Promise<ClipProbe> {
       // Phone footage is nominally 30 or 60 fps but measures as 29.97 or
       // 59.94; two decimals keeps that honest without storing float noise.
       fps: fps != null && Number.isFinite(fps) ? Math.round(fps * 100) / 100 : null,
+      vfr: isVariableFrameRate(timestamps),
       // Display dimensions, not coded ones: a portrait phone clip is stored
       // landscape with a rotation flag, and the analysis works in the frame
       // the coach actually sees.
       width: track?.displayWidth ?? null,
       height: track?.displayHeight ?? null,
+      rotation: track?.rotation ?? null,
+      codec: track?.codec ?? null,
+      decodable,
+      playable,
       deviceMake: readTag(raw, MAKE_KEYS),
       deviceModel: readTag(raw, MODEL_KEYS),
       recordedAt: tags?.date instanceof Date ? tags.date.toISOString() : null,

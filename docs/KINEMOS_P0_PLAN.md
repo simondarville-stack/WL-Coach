@@ -24,10 +24,12 @@ exists.
 > **Review addendum (01/09/2026, post-build):** a CV-informed review (OpenCV
 > skill + barbell-path-tracker study) landed *after* the P0 build shipped on
 > `feature/kinemos-p0` (0.78.0). Items below marked **[retrofit]** were added
-> by that review and are follow-up work on the branch — including a follow-up
-> migration for the new `kinemos_videos` columns — not part of the 0.78.0
-> build. The engine-facing rationale lives in the design doc (§6.2
-> implementation note, §6.3 timestamps rule, P1 frame server).
+> by that review and **shipped in 0.78.1** (`feature/kinemos-p0-retrofit`),
+> including the follow-up migration `20260901160000_kinemos_video_provenance`
+> and a genuinely lossless trim path (see decision 3 — the review found the
+> 0.78.0 "lossless" claim held only for tail cuts). The engine-facing
+> rationale lives in the design doc (§6.2 implementation note, §6.3
+> timestamps rule, P1 frame server).
 
 ---
 
@@ -60,10 +62,16 @@ nothing. R2 is for new direct imports only.
 3. **Reuse the shared clip editor, at Original resolution.** KinEMOS calls
    `useClipEditor` with `maxSeconds: null` (long-form footage is the point)
    and `allowSplit: true` (one recording of six attempts becomes six rows).
-   mediabunny already keeps a trim-only edit on a lossless packet-copy path;
-   a crop or a resize forces a transcode, which is why the resolution default
-   stays **Original** here. Spatial resolution *is* analysis accuracy — at a
-   45 cm plate across ~200 px one pixel is ~2 mm — so shrinking, right for a
+   **Corrected by the CV review (0.78.1):** mediabunny's `Conversion` copies
+   packets only when the trim starts at the clip's first timestamp — any
+   head-trim (the whole point of cutting the chalk ritual) silently forced a
+   full re-encode in 0.78.0. KinEMOS now passes `preferLossless`, which
+   routes trim-only edits through `src/lib/losslessTrim.ts`: a hand-rolled
+   keyframe-aligned packet copy over mediabunny's demux/mux primitives, cut
+   precision = the GOP, pixels bit-identical. A crop or a resize forces a
+   transcode either way, which is why the resolution default stays
+   **Original** here. Spatial resolution *is* analysis accuracy — at a 45 cm
+   plate across ~200 px one pixel is ~2 mm — so shrinking, right for a
    review clip, is wrong for footage headed to measurement. The editor still
    offers it; nothing nudges the coach there.
 4. **Direct-import caps:** 300 MB (`KINEMOS_IMPORT_MAX_BYTES`, mirrored
@@ -89,12 +97,15 @@ nothing. R2 is for new direct imports only.
     `cache-control: immutable` (keys are content-addressed-by-uuid, never
     rewritten).
   - `DELETE /api/kinemos/video/<key>` — idempotent (404 counts as gone).
-- **[retrofit] Abuse hardening (no-auth phase):** a public `PUT` is a free-storage-dump
-  vector and `DELETE` is destructive against guessable-shape keys. Cheap
-  mitigations now: shared header token baked into the bundle (weak, but
-  filters drive-bys), Worker-side per-key size cap + content-type check, and
-  honour `DELETE` only for keys the client can name from an existing row.
-  Real auth replaces this in the auth/billing phase.
+- **[retrofit — done 0.78.1] Abuse hardening (no-auth phase):** a public
+  `PUT` is a free-storage-dump vector and `DELETE` is destructive against
+  guessable-shape keys. Shipped as an optional shared token: set
+  `KINEMOS_WRITE_TOKEN` on the worker and the same value as
+  `VITE_KINEMOS_TOKEN` at build time, and PUT/DELETE require a matching
+  `x-kinemos-token` header (GET stays open — the UUID key is the read
+  capability). Unset = open, matching the interim access model. Size cap and
+  content-type allow-list were already worker-side in 0.78.0. Deterrence,
+  not auth; the real check arrives with the auth/billing phase.
 - Dev workflow: `/api` does not exist under plain `vite dev` — add a Vite
   `server.proxy` entry forwarding `/api` to `wrangler dev` (documented in the
   worker header), same story the Stream path already lives with.
@@ -109,18 +120,20 @@ Direct-import registry (applied via Supabase MCP, captured as a migration):
 `note?`, `created_at`/`updated_at`. Both athlete and exercise nullable —
 unattached videos are first-class (design §5.2).
 
-**[retrofit — follow-up migration]** `fps_avg`/`vfr`, `rotation`, `codec`
-were added by the post-build review; the applied `20260901120000` migration
-predates them. Three columns exist for the P2 engine, not for P0 UI — cheap
-to probe now
-(mp4box.js already has the file open), expensive to backfill later:
+**[retrofit — done 0.78.1]** `vfr`, `rotation`, `codec` were added by the
+post-build review via migration `20260901160000_kinemos_video_provenance`
+(the existing `fps` column already stores the packet-averaged rate, so no
+`fps_avg` rename). Three columns exist for the P2 engine, not for P0 UI —
+cheap to probe at import (mediabunny already has the file open), expensive
+to backfill later:
 
 - **`vfr`** — phone video (iPhone especially) is often variable frame rate.
   Velocity is dx/dt; a single nominal fps on a VFR clip silently corrupts
   every velocity/power number, and the Butterworth filter (design §6.3)
   assumes uniform sampling. mp4box's sample table answers this directly;
   the engine works on per-frame timestamps (WebCodecs supplies them), and
-  the quality grade docks VFR clips.
+  the quality grade docks VFR clips. Judged from a 240-packet timestamp
+  sample (`isVariableFrameRate` in `kinemosProbe.ts`).
 - **`rotation`** — portrait phone video is stored landscape with a rotation
   matrix in the container; naive width/height are swapped vs playback, and
   WebCodecs decodes *unrotated* frames, so the engine needs the matrix to
@@ -136,27 +149,31 @@ to probe now
   exercise, date, load (from the log exercise where available), duration,
   thumbnail, playback URL, source deep-link. Filters: athlete, exercise,
   source, date range, unattached-only.
-  **[retrofit]** Answering the CV review's open question: 0.78.0 does *not*
-  page the union. It reads all three sources in full (`fetchAllRows` per
-  source, which pages each one) and then filters and sorts in memory — fine
-  at a season of footage, wrong once the library outgrows a single read.
-  The fix when it does: keyset pagination on `created_at` — fetch `limit`
-  from each source with `created_at < cursor`, merge-sort, take `limit`.
+  **[retrofit — verified 0.78.1, no change]** Answering the CV review's open
+  question: 0.78.0 does *not* page the union. It reads all three sources in
+  full (`fetchAllRows` per source, which pages each one) and then filters and
+  sorts in memory — a documented, deliberate choice, fine at a season of
+  footage. The fix once the library outgrows a single read: keyset pagination
+  on `created_at` — fetch `limit` from each source with
+  `created_at < cursor`, merge-sort, take `limit`.
 - `importDirectVideo(file, meta)` (`directImport.ts`) — probe → `PUT` to R2 →
   poster → insert row; deletes the R2 objects on a failed row insert, the
   cleanup contract the Stream path established.
-  **[retrofit]** Check decodability at import
-  (`VideoDecoder.isConfigSupported` / `MediaSource.isTypeSupported`) and
-  refuse an undecodable clip with a message rather than creating a dead
-  library row — iPhone defaults to HEVC and support varies by browser/OS.
+  **[retrofit — done 0.78.1]** Decodability is checked at import (mediabunny
+  `track.canDecode()` for WebCodecs + `canPlayType` with the real codec
+  string for `<video>`): a clip BOTH say no to is refused with a message
+  before any byte uploads, rather than becoming a dead library row. A clip
+  only WebCodecs rejects still imports — it plays today and P2 grades it
+  later. iPhone defaults to HEVC and support varies by browser/OS.
 - `deleteDirectVideo` — row first, then bytes (a row outliving its bytes shows
   a broken tile; bytes outliving their row are invisible).
 - `probeClip` (`kinemosProbe.ts`) — duration, fps, display dimensions, and
   device make/model from container metadata, via mediabunny behind a dynamic
   import. Every field optional, every failure silent.
-  **[retrofit]** Also record average fps + a VFR flag, rotation and codec —
-  the engine works on per-frame timestamps rather than frame indices, so VFR
-  has to be visible. Needs the follow-up migration noted in W2.
+  **[retrofit — done 0.78.1]** The probe also records a VFR flag (240-packet
+  timestamp sample), rotation and codec — the engine works on per-frame
+  timestamps rather than frame indices, so VFR has to be visible. Columns
+  landed in the W2 follow-up migration.
 - Thumbnail: `captureVideoPoster` (already extracted to `videoProbe.ts` by the
   0.77.0 work) → R2 beside the clip as `<uuid>.jpg`.
 
@@ -172,14 +189,16 @@ unattached footage is first-class), then a file pick that hands off to
 motion-suggested lift window; KinEMOS only supplies the limits and consumes
 the resulting file list.
 
-- **[retrofit] Snap handles to keyframes.** A keyframe-aligned cut lands the real
-  in-point at the previous keyframe, earlier than a free-floating handle
-  shows. mp4box exposes the sync-sample table — snap the UI handle to it so
-  what the coach sees is what they get.
-- **[retrofit] The MB cap binds before the minutes cap** on high-bitrate footage
-  (3 min of 4K60 easily exceeds 300 MB — exactly the competition-floor
-  use case). The readout treats the size cap as the binding constraint and
-  says so, instead of rejecting after the trim.
+- **[retrofit — done 0.78.1] Handles snap to keyframes.** A keyframe-aligned
+  cut lands the real in-point at the previous keyframe, earlier than a
+  free-floating handle shows. In lossless mode the editor reads the keyframe
+  times (metadata-only demux) and snaps the start handle on release, so what
+  the coach sees is what the packet copy cuts.
+- **[retrofit — done 0.78.1] The MB cap binds before the minutes cap** on
+  high-bitrate footage (there is no minutes cap here at all). In lossless
+  mode the editor shows a kept-size estimate — a copy's size is the kept
+  fraction of the source, unlike a re-encode's — and turns it red against
+  the 300 MB cap, instead of rejecting after the trim.
 
 ### W5 — Library UI + route
 

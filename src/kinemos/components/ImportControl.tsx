@@ -49,6 +49,11 @@ export function ImportControl({ athletes, exercises, onImported }: ImportControl
     maxBytes: KINEMOS_IMPORT_MAX_BYTES,
     maxSeconds: null,
     allowSplit: true,
+    // Analysis needs the camera's original pixels: trim-only edits become a
+    // keyframe-aligned packet copy instead of a re-encode, the start handle
+    // snaps to where that copy can actually cut, and the editor shows the
+    // kept-size estimate against the 300 MB cap (design §6.3, plan §2.3).
+    preferLossless: true,
   });
 
   const handlePick = async (file: File) => {

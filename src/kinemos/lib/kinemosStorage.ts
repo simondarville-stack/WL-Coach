@@ -43,6 +43,14 @@ export function kinemosObjectUrl(key: string): string {
   return `/api/kinemos/video/${encodeURIComponent(key)}`;
 }
 
+/** Shared write token, when this deployment sets one (KINEMOS_WRITE_TOKEN on
+ *  the worker, VITE_KINEMOS_TOKEN at build time). Drive-by filtering for the
+ *  open PUT/DELETE routes during the no-auth phase — see worker/index.ts. */
+function writeHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = import.meta.env.VITE_KINEMOS_TOKEN as string | undefined;
+  return token ? { ...extra, 'x-kinemos-token': token } : extra;
+}
+
 /** A fresh key for a picked file, honouring its container so the worker
  *  serves the right content-type. Unknown containers become .mp4 — every
  *  path that produces one here has already been through the clip editor,
@@ -66,7 +74,7 @@ async function put(key: string, body: Blob): Promise<void> {
     res = await fetch(kinemosObjectUrl(key), {
       method: 'PUT',
       body,
-      headers: { 'content-type': body.type || 'application/octet-stream' },
+      headers: writeHeaders({ 'content-type': body.type || 'application/octet-stream' }),
     });
   } catch {
     throw new KinemosUploadError('Upload failed — check the connection and try again.');
@@ -111,5 +119,7 @@ export async function uploadPoster(clipKey: string, poster: Blob): Promise<strin
  *  orphaned object is a wasted few megabytes, while a throw would leave the
  *  caller unable to delete the row it belongs to. */
 export async function deleteObject(key: string): Promise<void> {
-  await fetch(kinemosObjectUrl(key), { method: 'DELETE' }).catch(() => undefined);
+  await fetch(kinemosObjectUrl(key), { method: 'DELETE', headers: writeHeaders() }).catch(
+    () => undefined,
+  );
 }

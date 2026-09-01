@@ -54,6 +54,7 @@ import {
   resizeCrop,
   type CropHandle,
 } from '../../lib/clipCropGeometry';
+import { readKeyframeTimes, snapToKeyframe } from '../../lib/losslessTrim';
 
 interface ClipEditorProps {
   file: File;
@@ -80,6 +81,17 @@ interface ClipEditorProps {
    * whole competition attempt is legitimately longer than a single lift.
    */
   maxSeconds?: number | null;
+  /** Byte cap of the destination, when the caller knows one. Drives the
+   *  kept-size readout in lossless mode — on long footage the byte cap binds
+   *  long before any duration cap does. */
+  maxBytes?: number | null;
+  /**
+   * Trim-only edits become a keyframe-aligned lossless packet copy (see
+   * `applyClipEdit`). The editor then snaps the start handle to the keyframe
+   * the cut will actually land on, and shows an honest kept-size estimate —
+   * a copy's size is proportional to the kept time, unlike a re-encode's.
+   */
+  preferLossless?: boolean;
   onCancel: () => void;
   /**
    * Receives the edited files — or the original, if it was uploaded as is.
@@ -106,6 +118,8 @@ export function ClipEditor({
   allowSplit = false,
   defaultMaxEdge = null,
   maxSeconds = null,
+  maxBytes = null,
+  preferLossless = false,
   onCancel,
   onDone,
 }: ClipEditorProps) {
@@ -155,6 +169,25 @@ export function ClipEditor({
   const touchedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  /** Keyframe times of the source, loaded only in lossless mode — a packet
+   *  copy can only cut at a keyframe, so the start handle snaps to them
+   *  rather than promising a cut the file cannot make. Ref, not state: only
+   *  the pointer-up handler reads it. */
+  const keyframesRef = useRef<number[] | null>(null);
+  useEffect(() => {
+    keyframesRef.current = null;
+    if (!preferLossless) return;
+    let alive = true;
+    void readKeyframeTimes(file)
+      .then(times => {
+        if (alive) keyframesRef.current = times;
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [file, preferLossless]);
 
   const frameAspect = frame ? frame.w / frame.h : 1;
   const fractionRatio = ratio == null ? null : ratioInFractionSpace(ratio, frameAspect);
@@ -364,7 +397,20 @@ export function ClipEditor({
       if (dragRef.current) applyDrag(ev.clientX, ev.clientY);
     };
     const up = () => {
+      const drag = dragRef.current;
       dragRef.current = null;
+      // Lossless mode: on release, land the start handle where the packet
+      // copy will actually cut — the keyframe at or before it. Snapping on
+      // release rather than during the drag keeps the drag itself smooth.
+      if (drag?.kind === 'trim-start' && keyframesRef.current) {
+        const e = editRef.current;
+        const snapped = snapToKeyframe(keyframesRef.current, e.start);
+        if (snapped !== e.start) {
+          const end = maxSeconds == null ? e.end : Math.min(e.end, snapped + maxSeconds);
+          setEdit({ ...e, start: snapped, end });
+          seek(snapped);
+        }
+      }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -374,7 +420,7 @@ export function ClipEditor({
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
     };
-  }, [applyDrag]);
+  }, [applyDrag, maxSeconds, seek]);
 
   const startDrag = (drag: Drag) => (ev: React.PointerEvent) => {
     ev.preventDefault();
@@ -414,6 +460,24 @@ export function ClipEditor({
   const out = frame ? outputDimensions(edit, frame.w, frame.h) : null;
   const unchanged = duration != null && isNoopEdit(edit, duration);
 
+  /**
+   * Kept-size estimate, shown only when the edit will be a lossless packet
+   * copy — there the output size is simply the kept fraction of the source,
+   * while a re-encode's size is unknowable until it runs. On long footage the
+   * byte cap binds long before any duration cap, so this is the number that
+   * tells the coach whether the import will clear it.
+   */
+  const losslessEstimate =
+    preferLossless && edit.crop == null && edit.maxEdge == null && duration != null && duration > 0
+      ? file.size *
+        ((splitMode
+          ? exportRanges.reduce((sum, r) => sum + (r.end - r.start), 0)
+          : selection) /
+          duration)
+      : null;
+  const estimateOverCap =
+    losslessEstimate != null && maxBytes != null && losslessEstimate > maxBytes;
+
   const handleApply = async () => {
     if (duration == null) return;
     if (unchanged && !splitMode) {
@@ -441,6 +505,7 @@ export function ClipEditor({
             onProgress: p => setProgress((i + p) / exportRanges.length),
             signal: controller.signal,
             part: exportRanges.length > 1 ? i + 1 : undefined,
+            preferLossless,
           },
         );
         out.push(edited);
@@ -698,6 +763,19 @@ export function ClipEditor({
                 <span className="text-gray-200">{lifts.length} clips</span> ·{' '}
                 {secs(exportRanges.reduce((sum, r) => sum + (r.end - r.start), 0))}
                 {duration != null && <> of {secs(duration)}</>}
+                {losslessEstimate != null && (
+                  <span
+                    className={estimateOverCap ? 'text-red-400' : undefined}
+                    title={
+                      estimateOverCap && maxBytes != null
+                        ? `Over the ${Math.round(maxBytes / 1024 / 1024)} MB limit — trim tighter.`
+                        : 'Estimated size of the lossless copy.'
+                    }
+                  >
+                    {' '}
+                    · ≈{megabytes(losslessEstimate)}
+                  </span>
+                )}
               </span>
             ) : (
               <span>
@@ -710,6 +788,19 @@ export function ClipEditor({
                   {secs(selection)}
                 </span>
                 {duration != null && <> of {secs(duration)}</>}
+                {losslessEstimate != null && (
+                  <span
+                    className={estimateOverCap ? 'text-red-400' : undefined}
+                    title={
+                      estimateOverCap && maxBytes != null
+                        ? `Over the ${Math.round(maxBytes / 1024 / 1024)} MB limit — trim tighter.`
+                        : 'Estimated size of the lossless copy.'
+                    }
+                  >
+                    {' '}
+                    · ≈{megabytes(losslessEstimate)}
+                  </span>
+                )}
               </span>
             )}
           </div>

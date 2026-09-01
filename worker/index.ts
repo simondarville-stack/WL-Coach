@@ -67,6 +67,18 @@ interface Env {
   STREAM_API_TOKEN?: string;
   STREAM_CUSTOMER_CODE?: string;
   KINEMOS_VIDEOS?: R2Bucket;
+  /**
+   * Optional shared token for KinEMOS writes (PUT/DELETE). When set, those
+   * methods require a matching `x-kinemos-token` header; GET stays open (the
+   * UUID key is the read capability, same as the public Supabase buckets).
+   *
+   * This is drive-by filtering, not auth: the token is baked into the client
+   * bundle (VITE_KINEMOS_TOKEN) and anyone who extracts it is in. What it
+   * stops is the anonymous internet using an open PUT as free R2 storage, or
+   * walking DELETE against leaked keys. The real check arrives with the
+   * auth/billing phase. Unset = open, matching the interim access model.
+   */
+  KINEMOS_WRITE_TOKEN?: string;
 }
 
 /** Matches LOG_VIDEO_MAX_SECONDS client-side, plus slack so a clip that a
@@ -195,6 +207,15 @@ export default {
 
       if (request.method === 'GET' || request.method === 'HEAD') {
         return serveKinemosObject(bucket, key, request);
+      }
+
+      // Writes are gated by the shared token where one is configured — see
+      // KINEMOS_WRITE_TOKEN in Env for what this does and does not protect.
+      if (
+        env.KINEMOS_WRITE_TOKEN &&
+        request.headers.get('x-kinemos-token') !== env.KINEMOS_WRITE_TOKEN
+      ) {
+        return json({ error: 'forbidden' }, 403);
       }
 
       if (request.method === 'PUT') {
