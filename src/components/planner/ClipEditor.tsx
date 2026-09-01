@@ -25,7 +25,7 @@
  * the caller decides what to upload.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Crop, Scissors, Wand2, X } from 'lucide-react';
+import { Check, Crop, Scissors, Split, Wand2, X } from 'lucide-react';
 import { AdaptiveDialog } from '../ui/AdaptiveDialog';
 import { Spinner } from '../ui';
 
@@ -41,9 +41,9 @@ import {
 } from '../../lib/videoClipEdit';
 import {
   analyseClipMotion,
-  suggestTrimFromMotion,
+  findLifts,
+  type LiftSegment,
   type MotionSample,
-  type TrimSuggestion,
 } from '../../lib/clipMotion';
 import {
   clampCropToFrame,
@@ -64,6 +64,13 @@ interface ClipEditorProps {
   reason?: string | null;
   /** When true the original cannot be uploaded, so no escape hatch is shown. */
   mustEdit?: boolean;
+  /**
+   * Whether this surface can take more than one clip back. True for the
+   * training-log strip, which attaches a list; false for the surfaces that
+   * store exactly one video against one row, where a split would have the
+   * pieces overwrite each other.
+   */
+  allowSplit?: boolean;
   /** Resolution ceiling to open on. The caller sets one when the clip is too
    *  large to send, so the editor starts on a setting that actually fixes it. */
   defaultMaxEdge?: ClipResolution;
@@ -74,8 +81,12 @@ interface ClipEditorProps {
    */
   maxSeconds?: number | null;
   onCancel: () => void;
-  /** Receives the edited file — or the original, if it was uploaded as is. */
-  onDone: (file: File) => void;
+  /**
+   * Receives the edited files — or the original, if it was uploaded as is.
+   * Always at least one; more only when a multi-lift clip was split and the
+   * caller set `allowSplit`.
+   */
+  onDone: (files: File[]) => void;
 }
 
 /** Comma decimals, per the app's numeric conventions. */
@@ -92,6 +103,7 @@ export function ClipEditor({
   file,
   reason,
   mustEdit = false,
+  allowSplit = false,
   defaultMaxEdge = null,
   maxSeconds = null,
   onCancel,
@@ -128,7 +140,12 @@ export function ClipEditor({
   const [progress, setProgress] = useState<number | null>(null);
   /** Motion signal for the whole clip, once the analysis pass finishes. */
   const [motion, setMotion] = useState<MotionSample[] | null>(null);
-  const [suggestion, setSuggestion] = useState<TrimSuggestion | null>(null);
+  /** Every lift the analysis could defend, in time order. */
+  const [lifts, setLifts] = useState<LiftSegment[]>([]);
+  /** True once the handles have been set from `lifts` — the "Lift found" state. */
+  const [suggested, setSuggested] = useState(false);
+  /** Emit one clip per lift instead of one clip for the selected window. */
+  const [splitMode, setSplitMode] = useState(false);
   /**
    * Set the moment the athlete moves a handle. A suggestion that arrives after
    * that is discarded rather than yanking the window out from under them —
@@ -249,25 +266,32 @@ export function ClipEditor({
 
   useEffect(() => {
     if (!motion || motion.length === 0 || duration == null) return;
-    if (touchedRef.current || suggestion) return;
-    const found = suggestTrimFromMotion(motion, { duration, maxSeconds });
-    if (!found) {
+    if (touchedRef.current || suggested) return;
+    const found = findLifts(motion, { duration, maxSeconds });
+    if (found.length === 0) {
       // No clear burst: leave the handles where they are and say nothing. A
       // wrong suggestion costs more than a missing one.
       setMotion([]);
       return;
     }
-    setSuggestion(found);
-    setEdit(e => ({ ...e, start: found.start, end: found.end }));
-    seek(found.start);
-  }, [motion, duration, maxSeconds, suggestion, seek]);
+    setLifts(found);
+    setSuggested(true);
+    // The handles go to the strongest lift. A set of singles is offered as a
+    // split instead, but the window still has to mean something if the
+    // athlete ignores that and just hits send.
+    const best = found.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+    setEdit(e => ({ ...e, start: best.start, end: best.end }));
+    seek(best.start);
+  }, [motion, duration, maxSeconds, suggested, seek]);
 
   /** Back to the whole clip (or the longest legal window). Also marks the
    *  handles touched, so the suggestion cannot reapply itself. */
   const clearSuggestion = () => {
     if (duration == null) return;
     touchedRef.current = true;
-    setSuggestion(null);
+    setSuggested(false);
+    setSplitMode(false);
+    setLifts([]);
     setEdit(e => ({
       ...e,
       start: 0,
@@ -275,6 +299,13 @@ export function ClipEditor({
     }));
     seek(0);
   };
+
+  /** Clips the export will produce: one per lift in split mode, otherwise the
+   *  single window under the handles. */
+  const exportRanges: { start: number; end: number }[] =
+    splitMode && lifts.length > 1
+      ? lifts.map(l => ({ start: l.start, end: l.end }))
+      : [{ start: edit.start, end: edit.end }];
 
   // ── Pointer dragging (trim handles and crop box share one pipeline) ───────
   const applyDrag = useCallback(
@@ -385,10 +416,10 @@ export function ClipEditor({
 
   const handleApply = async () => {
     if (duration == null) return;
-    if (unchanged) {
+    if (unchanged && !splitMode) {
       // Only reachable when the original was uploadable all along — a
       // must-edit clip keeps the button disabled until something changes.
-      onDone(file);
+      onDone([file]);
       return;
     }
     setError(null);
@@ -398,11 +429,23 @@ export function ClipEditor({
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const edited = await applyClipEdit(file, edit, {
-        onProgress: setProgress,
-        signal: controller.signal,
-      });
-      onDone(edited);
+      const out: File[] = [];
+      for (let i = 0; i < exportRanges.length; i++) {
+        const range = exportRanges[i];
+        const edited = await applyClipEdit(
+          file,
+          { ...edit, start: range.start, end: range.end },
+          {
+            // One bar across the whole job, so splitting three lifts reads as
+            // one wait rather than three that keep restarting.
+            onProgress: p => setProgress((i + p) / exportRanges.length),
+            signal: controller.signal,
+            part: exportRanges.length > 1 ? i + 1 : undefined,
+          },
+        );
+        out.push(edited);
+      }
+      onDone(out);
     } catch (e) {
       if (e instanceof ClipEditCanceledError) {
         setProgress(null);
@@ -558,26 +601,47 @@ export function ClipEditor({
             className="relative h-9 rounded bg-gray-800 touch-none select-none"
             onPointerDown={startDrag({ kind: 'seek' })}
           >
-            <div
-              className="absolute inset-y-0 bg-[color:var(--color-accent)]/25 border-x-2 border-[color:var(--color-accent)]"
-              style={{ left: pct(edit.start), width: pct(edit.end - edit.start) }}
-            />
+            {/* Every detected lift, faint, so a set of singles reads as a set
+                even before the split is taken. */}
+            {lifts.length > 1 &&
+              lifts.map((lift, i) => (
+                <div
+                  key={`${lift.start}-${i}`}
+                  className="absolute inset-y-0 bg-[color:var(--color-accent)]/20 border-x border-[color:var(--color-accent)]/50"
+                  style={{ left: pct(lift.start), width: pct(lift.end - lift.start) }}
+                >
+                  {splitMode && (
+                    <span className="absolute top-0.5 left-1 text-[8px] font-semibold text-white/80">
+                      {i + 1}
+                    </span>
+                  )}
+                </div>
+              ))}
+            {/* The window under the handles. Hidden in split mode, where the
+                bands above are what gets exported. */}
+            {!splitMode && (
+              <div
+                className="absolute inset-y-0 bg-[color:var(--color-accent)]/25 border-x-2 border-[color:var(--color-accent)]"
+                style={{ left: pct(edit.start), width: pct(edit.end - edit.start) }}
+              />
+            )}
             <div
               className="absolute inset-y-0 w-0.5 bg-white pointer-events-none"
               style={{ left: pct(playhead) }}
             />
-            {(['trim-start', 'trim-end'] as const).map(kind => (
-              <button
-                key={kind}
-                type="button"
-                aria-label={kind === 'trim-start' ? 'Trim start' : 'Trim end'}
-                onPointerDown={startDrag({ kind })}
-                className="absolute inset-y-0 w-7 -ml-3.5 touch-none flex items-center justify-center"
-                style={{ left: pct(kind === 'trim-start' ? edit.start : edit.end) }}
-              >
-                <span className="w-1.5 h-6 rounded-full bg-[color:var(--color-accent)] border border-white/70" />
-              </button>
-            ))}
+            {!splitMode &&
+              (['trim-start', 'trim-end'] as const).map(kind => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-label={kind === 'trim-start' ? 'Trim start' : 'Trim end'}
+                  onPointerDown={startDrag({ kind })}
+                  className="absolute inset-y-0 w-7 -ml-3.5 touch-none flex items-center justify-center"
+                  style={{ left: pct(kind === 'trim-start' ? edit.start : edit.end) }}
+                >
+                  <span className="w-1.5 h-6 rounded-full bg-[color:var(--color-accent)] border border-white/70" />
+                </button>
+              ))}
           </div>
           <div className="flex items-center justify-between mt-1 text-[10px] text-gray-400">
             <div className="flex items-center gap-1.5">
@@ -592,12 +656,30 @@ export function ClipEditor({
               {/* The suggestion states itself and offers its own undo. Silent
                   auto-trimming would be the worst of both: the athlete would
                   not know why the handles moved, or how to get the rest back. */}
-              {suggestion ? (
+              {suggested ? (
                 <>
                   <span className="inline-flex items-center gap-0.5 text-[color:var(--color-accent)]">
                     <Wand2 size={10} />
-                    Lift found
+                    {lifts.length > 1 ? `${lifts.length} lifts found` : 'Lift found'}
                   </span>
+                  {/* Offered only where the caller can take a list back. On a
+                      surface storing one video per row the pieces would
+                      overwrite each other. */}
+                  {allowSplit && lifts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setSplitMode(v => !v)}
+                      disabled={busy}
+                      className={`px-1.5 py-0.5 rounded border disabled:opacity-50 ${
+                        splitMode
+                          ? 'border-[color:var(--color-accent)] text-white'
+                          : 'border-gray-700 hover:border-gray-500 hover:text-white'
+                      }`}
+                    >
+                      <Split size={9} className="inline -mt-0.5 mr-0.5" />
+                      {splitMode ? `Splitting into ${lifts.length}` : `Split into ${lifts.length}`}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={clearSuggestion}
@@ -611,17 +693,25 @@ export function ClipEditor({
                 motion === null && <span className="text-gray-500">Finding the lift…</span>
               )}
             </div>
-            <span>
-              {secs(edit.start)} → {secs(edit.end)} ·{' '}
-              <span
-                className={
-                  maxSeconds != null && selection > maxSeconds ? 'text-red-400' : 'text-gray-200'
-                }
-              >
-                {secs(selection)}
+            {splitMode ? (
+              <span>
+                <span className="text-gray-200">{lifts.length} clips</span> ·{' '}
+                {secs(exportRanges.reduce((sum, r) => sum + (r.end - r.start), 0))}
+                {duration != null && <> of {secs(duration)}</>}
               </span>
-              {duration != null && <> of {secs(duration)}</>}
-            </span>
+            ) : (
+              <span>
+                {secs(edit.start)} → {secs(edit.end)} ·{' '}
+                <span
+                  className={
+                    maxSeconds != null && selection > maxSeconds ? 'text-red-400' : 'text-gray-200'
+                  }
+                >
+                  {secs(selection)}
+                </span>
+                {duration != null && <> of {secs(duration)}</>}
+              </span>
+            )}
           </div>
         </div>
 
@@ -637,7 +727,7 @@ export function ClipEditor({
               <button
                 key={id}
                 type="button"
-                disabled={busy}
+                disabled={busy || (id === 'trim' && splitMode)}
                 onClick={() => (id === 'crop' ? enterCropMode() : setMode('trim'))}
                 className={`px-2 py-1 rounded text-[11px] inline-flex items-center gap-1 border disabled:opacity-50 ${
                   mode === id
@@ -726,7 +816,7 @@ export function ClipEditor({
             <button
               type="button"
               disabled={busy}
-              onClick={() => onDone(file)}
+              onClick={() => onDone([file])}
               className="px-2.5 py-1.5 rounded text-[11px] border border-gray-700 text-gray-300 hover:text-white disabled:opacity-50"
             >
               Upload original
@@ -744,15 +834,23 @@ export function ClipEditor({
             disabled={
               busy ||
               duration == null ||
-              (maxSeconds != null && selection > maxSeconds) ||
-              (mustEdit && unchanged)
+              (!splitMode && maxSeconds != null && selection > maxSeconds) ||
+              (mustEdit && unchanged && !splitMode)
             }
             onClick={() => void handleApply()}
-            title={mustEdit && unchanged ? 'Trim, crop or drop the size to send this clip' : undefined}
+            title={
+              mustEdit && unchanged && !splitMode
+                ? 'Trim, crop or drop the size to send this clip'
+                : undefined
+            }
             className="ml-auto px-3 py-1.5 rounded text-[11px] font-semibold inline-flex items-center gap-1.5 bg-[color:var(--color-accent)] text-white disabled:opacity-50"
           >
             <Check size={13} />
-            {unchanged ? 'Upload' : 'Save & upload'}
+            {splitMode
+              ? `Save & upload ${lifts.length} clips`
+              : unchanged
+                ? 'Upload'
+                : 'Save & upload'}
           </button>
         </div>
       </div>

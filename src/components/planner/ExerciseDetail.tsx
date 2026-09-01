@@ -309,9 +309,11 @@ export function ExerciseDetail({
     if (!picked || !plannedExercise) return;
     // Video only: the same picker handles the image sentinel, and there is
     // nothing to trim in a JPEG.
-    const file = sentinel === 'video' ? await clipEditor.prepare(picked) : picked;
-    if (!file) return;
-    await uploadMedia(file);
+    // allowSplit is off for this bucket (one media file per planned exercise),
+    // so the editor always hands back exactly one.
+    const prepared = sentinel === 'video' ? await clipEditor.prepare(picked) : [picked];
+    if (!prepared) return;
+    await uploadMedia(prepared[0]);
   }
 
   async function uploadMedia(file: File) {
@@ -347,7 +349,7 @@ export function ExerciseDetail({
   async function handleShrinkAndRetry() {
     if (!refusedClip) return;
     const shrunk = await clipEditor.prepareAfterRejection(refusedClip);
-    if (shrunk) await uploadMedia(shrunk);
+    if (shrunk) await uploadMedia(shrunk[0]);
   }
 
   async function saveSettingsField(field: 'unit' | 'combo_notation' | 'display_name', value: string) {

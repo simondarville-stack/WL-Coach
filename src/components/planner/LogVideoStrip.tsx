@@ -89,6 +89,9 @@ export function LogVideoStrip({
   const clipEditor = useClipEditor({
     maxBytes: LOG_VIDEO_MAX_BYTES,
     maxSeconds: LOG_VIDEO_MAX_SECONDS,
+    // The strip attaches a list, so a recording holding a set of singles can
+    // come back as a clip per lift.
+    allowSplit: true,
   });
 
   if (videos.length === 0 && !onAdd) return null;
@@ -136,9 +139,10 @@ export function LogVideoStrip({
         }
         setBusySource(source);
         try {
-          await onAdd(prepared);
+          // One pick can yield several clips, when a set of singles was split.
+          for (const clip of prepared) await onAdd(clip);
         } catch (e) {
-          if (e instanceof VideoTooLargeError && clipEditor.supported) setOversized(prepared);
+          if (e instanceof VideoTooLargeError && clipEditor.supported) setOversized(prepared[0]);
           failures.push(`${files[i].name}: ${e instanceof Error ? e.message : 'upload failed'}`);
         } finally {
           setBusySource(null);

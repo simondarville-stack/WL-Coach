@@ -133,14 +133,18 @@ export interface ApplyClipEditOptions {
   onProgress?: (progress: number) => void;
   /** Abort to cancel; `applyClipEdit` then rejects with ClipEditCanceledError. */
   signal?: AbortSignal;
+  /** 1-based piece number, when one recording is split into a clip per lift.
+   *  Only affects the output file's name. */
+  part?: number;
 }
 
 /** Keep the edited name recognisable next to the original in a camera roll
- *  or an upload error, without ever growing an unbounded `-clip-clip-clip`. */
-function editedFileName(name: string): string {
+ *  or an upload error, without ever growing an unbounded `-clip-clip-clip`.
+ *  `part` numbers the pieces when one recording is split into several lifts. */
+function editedFileName(name: string, part?: number): string {
   const base = (name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name) || 'clip';
   const trimmedBase = base.endsWith('-clip') ? base : `${base}-clip`;
-  return `${trimmedBase}.mp4`;
+  return part == null ? `${trimmedBase}.mp4` : `${trimmedBase}-${part}.mp4`;
 }
 
 /**
@@ -153,7 +157,7 @@ function editedFileName(name: string): string {
 export async function applyClipEdit(
   file: File,
   edit: ClipEdit,
-  { onProgress, signal }: ApplyClipEditOptions = {},
+  { onProgress, signal, part }: ApplyClipEditOptions = {},
 ): Promise<File> {
   if (signal?.aborted) throw new ClipEditCanceledError();
 
@@ -243,5 +247,5 @@ export async function applyClipEdit(
 
   const buffer = output.target.buffer;
   if (!buffer) throw new Error('Edited clip came back empty.');
-  return new File([buffer], editedFileName(file.name), { type: 'video/mp4' });
+  return new File([buffer], editedFileName(file.name, part), { type: 'video/mp4' });
 }

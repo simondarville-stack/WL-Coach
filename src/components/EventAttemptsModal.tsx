@@ -103,8 +103,9 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
       setSelectedFile(null);
       return;
     }
+    // allowSplit is off (one video per attempt row), so this is always one.
     const prepared = await clipEditor.prepare(picked);
-    if (prepared) setSelectedFile(prepared);
+    if (prepared) setSelectedFile(prepared[0]);
   }
 
   async function handleFileUpload(file: File | null = selectedFile) {
@@ -130,8 +131,8 @@ export function EventAttemptsModal({ eventId, eventName, athlete, onClose, onSav
         const shrunk = await clipEditor.prepareAfterRejection(file);
         setUploading(false);
         if (shrunk) {
-          setSelectedFile(shrunk);
-          await handleFileUpload(shrunk);
+          setSelectedFile(shrunk[0]);
+          await handleFileUpload(shrunk[0]);
         }
         return;
       }

@@ -84,7 +84,7 @@ describe('ClipEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Upload original' }));
     expect(onDone).toHaveBeenCalledTimes(1);
-    expect(onDone.mock.calls[0][0].name).toBe('lift.mp4');
+    expect(onDone.mock.calls[0][0].map((f: File) => f.name)).toEqual(['lift.mp4']);
   });
 
   it('withholds the original when the clip cannot be uploaded as it is', () => {
@@ -205,6 +205,42 @@ describe('ClipEditor', () => {
     await act(async () => {});
 
     expect(screen.queryByText('Lift found')).toBeNull();
+  });
+
+  it('offers a split when a clip holds a set of singles', async () => {
+    motionSamples.value = [
+      ...motionWithLiftAt(20, 24, 40),
+      ...motionWithLiftAt(60, 64, 100).filter(s => s.t >= 40),
+    ];
+    render(
+      <ClipEditor file={clip()} allowSplit maxSeconds={60} onCancel={() => {}} onDone={() => {}} />,
+    );
+    loadMetadata({ duration: 100 });
+    await act(async () => {});
+
+    expect(screen.getByText('2 lifts found')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Split into 2/ }));
+
+    expect(screen.getByRole('button', { name: /Save & upload 2 clips/ })).toBeInTheDocument();
+    expect(screen.getByText('2 clips')).toBeInTheDocument();
+    // In split mode the bands are what gets exported, so the single-window
+    // handles would be lying about the output.
+    expect(screen.queryByRole('button', { name: 'Trim start' })).toBeNull();
+  });
+
+  it('withholds the split where the surface stores one video per row', async () => {
+    motionSamples.value = [
+      ...motionWithLiftAt(20, 24, 40),
+      ...motionWithLiftAt(60, 64, 100).filter(s => s.t >= 40),
+    ];
+    // allowSplit defaults off: on planner-media or event-videos the pieces
+    // would overwrite each other.
+    render(<ClipEditor file={clip()} maxSeconds={60} onCancel={() => {}} onDone={() => {}} />);
+    loadMetadata({ duration: 100 });
+    await act(async () => {});
+
+    expect(screen.getByText('2 lifts found')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Split into/ })).toBeNull();
   });
 
   it('cancels without handing anything back', () => {

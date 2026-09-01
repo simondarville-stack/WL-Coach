@@ -12,9 +12,13 @@
  *
  *   const clipEditor = useClipEditor({ maxBytes: LIMIT, maxSeconds: 60 });
  *   const prepared = await clipEditor.prepare(file);
- *   if (!prepared) return;             // athlete backed out
- *   await upload(prepared);
+ *   if (!prepared) return;                       // athlete backed out
+ *   for (const clip of prepared) await upload(clip);
  *   … {clipEditor.editor}
+ *
+ * `prepare` resolves to a *list* because one recording can hold a set of
+ * singles and the editor offers to split it into a clip each. Surfaces that
+ * store one video against one row leave `allowSplit` off and always get one.
  *
  * On a browser without WebCodecs `prepare` is a pass-through, so every caller
  * behaves exactly as it did before the editor existed.
@@ -34,19 +38,27 @@ export interface ClipEditorLimits {
   maxBytes: number | null;
   /** Hard cap on clip length, or null where long clips are legitimate. */
   maxSeconds: number | null;
+  /**
+   * Whether this surface can accept more than one clip from a single pick.
+   * Defaults to false. Only turn it on where the caller stores a list — a
+   * surface with one video per row would have the split pieces overwrite each
+   * other.
+   */
+  allowSplit?: boolean;
 }
 
 export interface ClipEditorGate {
   /** Whether this browser can re-encode at all. */
   supported: boolean;
-  /** Resolves to the file to upload, or null if the athlete backed out. */
-  prepare: (file: File) => Promise<File | null>;
+  /** Resolves to the files to upload, or null if the athlete backed out.
+   *  One file unless `allowSplit` is set and the clip held several lifts. */
+  prepare: (file: File) => Promise<File[] | null>;
   /**
    * Re-open the editor after storage refused a clip as too large — the one
    * case where no client-side cap saw it coming. Opens at 720p, which is the
    * setting most likely to clear an unknown limit in one go.
    */
-  prepareAfterRejection: (file: File) => Promise<File | null>;
+  prepareAfterRejection: (file: File) => Promise<File[] | null>;
   /** Render this somewhere in the caller's tree. */
   editor: ReactNode;
 }
@@ -57,7 +69,7 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
     reason: string | null;
     mustEdit: boolean;
     defaultMaxEdge: ClipResolution;
-    resolve: (file: File | null) => void;
+    resolve: (files: File[] | null) => void;
   } | null>(null);
 
   const supported = clipEditingSupported();
@@ -69,7 +81,7 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
     mustEdit: boolean,
     defaultMaxEdge: ClipResolution = null,
   ) =>
-    new Promise<File | null>(resolve => {
+    new Promise<File[] | null>(resolve => {
       setEditing({
         file,
         reason,
@@ -92,8 +104,8 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
    * cost of asking is one tap, and the motion analysis usually has the lift
    * bracketed before the athlete has finished looking at it.
    */
-  const prepare = async (file: File) => {
-    if (!supported) return file;
+  const prepare = async (file: File): Promise<File[] | null> => {
+    if (!supported) return [file];
 
     // Over a cap we can see is non-negotiable: the upload would fail, so the
     // editor opens with the reason stated and no way past it.
@@ -141,10 +153,11 @@ export function useClipEditor(limits: ClipEditorLimits): ClipEditorGate {
         file={editing.file}
         reason={editing.reason}
         mustEdit={editing.mustEdit}
+        allowSplit={limits.allowSplit ?? false}
         defaultMaxEdge={editing.defaultMaxEdge}
         maxSeconds={limits.maxSeconds}
         onCancel={() => editing.resolve(null)}
-        onDone={file => editing.resolve(file)}
+        onDone={files => editing.resolve(files)}
       />
     ) : null,
   };

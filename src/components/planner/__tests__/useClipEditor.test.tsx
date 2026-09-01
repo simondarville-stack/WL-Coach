@@ -70,8 +70,8 @@ function mountGate(limits: ClipEditorLimits) {
  * promise stays pending until the athlete commits or backs out, which is the
  * whole point of the gate.
  */
-async function startPrepare(run: () => Promise<File | null>) {
-  const result: { value?: File | null } = {};
+async function startPrepare(run: () => Promise<File[] | null>) {
+  const result: { value?: File[] | null } = {};
   const pending = run().then(v => {
     result.value = v;
     return v;
@@ -94,7 +94,7 @@ describe('useClipEditor', () => {
     const file = sizedClip(500 * 1024 * 1024);
     // Even over both caps: without WebCodecs there is no editor to send them
     // to, and the pre-editor behaviour (upload, let the service refuse) stands.
-    await expect(gate().prepare(file)).resolves.toBe(file);
+    await expect(gate().prepare(file)).resolves.toEqual([file]);
     expect(screen.queryByText('Trim & crop')).toBeNull();
   });
 

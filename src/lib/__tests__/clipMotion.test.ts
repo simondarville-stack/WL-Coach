@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compareFrames,
+  findLifts,
   suggestTrimFromMotion,
   TRIM_MIN_SECONDS,
   TRIM_PAD_AFTER,
   TRIM_PAD_BEFORE,
+  weightedEnergy,
   type MotionSample,
 } from '../clipMotion';
 
@@ -18,20 +21,164 @@ function signal({
   baseline = 0.02,
   peak = 0.3,
   burst,
+  bursts,
 }: {
   duration: number;
   rate?: number;
   baseline?: number;
   peak?: number;
   burst?: [number, number];
+  bursts?: [number, number][];
 }): MotionSample[] {
+  const all = bursts ?? (burst ? [burst] : []);
   const samples: MotionSample[] = [];
   for (let t = 0; t < duration; t += 1 / rate) {
-    const inBurst = burst != null && t >= burst[0] && t < burst[1];
+    const inBurst = all.some(([from, to]) => t >= from && t < to);
     samples.push({ t, energy: inBurst ? peak : baseline });
   }
   return samples;
 }
+
+/** A width×height luma frame with a filled rectangle on a flat background —
+ *  enough of a "barbell" for block matching to have something to track. */
+function frame(width: number, height: number, box: { x: number; y: number; size: number }) {
+  const px = new Uint8ClampedArray(width * height).fill(40);
+  for (let y = box.y; y < box.y + box.size; y++) {
+    for (let x = box.x; x < box.x + box.size; x++) {
+      if (x >= 0 && x < width && y >= 0 && y < height) px[y * width + x] = 230;
+    }
+  }
+  return px;
+}
+
+describe('weightedEnergy', () => {
+  it('treats an absent verticality as no opinion', () => {
+    expect(weightedEnergy({ t: 0, energy: 0.2 })).toBeCloseTo(0.2);
+    expect(weightedEnergy({ t: 0, energy: 0.2, verticality: 0.5 })).toBeCloseTo(0.2);
+  });
+
+  it('promotes vertical motion over horizontal', () => {
+    const vertical = weightedEnergy({ t: 0, energy: 0.2, verticality: 1 });
+    const horizontal = weightedEnergy({ t: 0, energy: 0.2, verticality: 0 });
+    expect(vertical).toBeGreaterThan(0.2);
+    expect(horizontal).toBeLessThan(0.2);
+  });
+
+  it('lets a vertical burst beat a larger horizontal one', () => {
+    // The point of the weighting: a coach crossing the frame moves more
+    // pixels than a barbell, and must still lose to it.
+    const barbell = weightedEnergy({ t: 0, energy: 0.20, verticality: 0.95 });
+    const passerby = weightedEnergy({ t: 0, energy: 0.26, verticality: 0.05 });
+    expect(barbell).toBeGreaterThan(passerby);
+  });
+});
+
+describe('compareFrames', () => {
+  const W = 48;
+  const H = 48;
+  const start = { x: 20, y: 20, size: 6 };
+
+  it('scores a box moving up as vertical', () => {
+    const a = frame(W, H, start);
+    const b = frame(W, H, { ...start, y: start.y - 2 });
+    expect(compareFrames(b, a, W, H).verticality).toBeGreaterThan(0.7);
+  });
+
+  it('scores a box moving sideways as horizontal', () => {
+    const a = frame(W, H, start);
+    const b = frame(W, H, { ...start, x: start.x - 2 });
+    expect(compareFrames(b, a, W, H).verticality).toBeLessThan(0.3);
+  });
+
+  it('reports energy regardless of direction', () => {
+    const a = frame(W, H, start);
+    const up = compareFrames(frame(W, H, { ...start, y: start.y - 2 }), a, W, H);
+    const across = compareFrames(frame(W, H, { ...start, x: start.x - 2 }), a, W, H);
+    expect(up.energy).toBeGreaterThan(0);
+    expect(up.energy).toBeCloseTo(across.energy, 2);
+  });
+
+  it('has no opinion on a still frame', () => {
+    const a = frame(W, H, start);
+    const result = compareFrames(a, a, W, H);
+    expect(result.energy).toBe(0);
+    expect(result.verticality).toBe(0.5);
+  });
+});
+
+describe('findLifts', () => {
+  it('finds each lift in a set of singles filmed in one take', () => {
+    const lifts = findLifts(
+      signal({ duration: 120, bursts: [[20, 24], [55, 59], [90, 94]] }),
+      { duration: 120 },
+    );
+
+    expect(lifts).toHaveLength(3);
+    expect(lifts.map(l => Math.round(l.start))).toEqual([19, 54, 89]);
+    // In time order, and never overlapping — each becomes its own clip.
+    for (let i = 1; i < lifts.length; i++) {
+      expect(lifts[i].start).toBeGreaterThanOrEqual(lifts[i - 1].end);
+    }
+  });
+
+  it('merges lifts too close together to be separate clips', () => {
+    // Two seconds apart: after run-out and run-up they would overlap, and two
+    // clips repeating each other's footage helps nobody.
+    const lifts = findLifts(signal({ duration: 60, bursts: [[20, 22], [24, 26]] }), {
+      duration: 60,
+    });
+
+    expect(lifts).toHaveLength(1);
+    expect(lifts[0].start).toBeLessThan(20);
+    expect(lifts[0].end).toBeGreaterThan(26);
+  });
+
+  it('ignores a wobble beside a real lift', () => {
+    const samples = signal({ duration: 60, burst: [30, 34] });
+    for (const s of samples) if (s.t >= 10 && s.t < 11) s.energy = 0.06;
+
+    const lifts = findLifts(samples, { duration: 60 });
+    expect(lifts).toHaveLength(1);
+    expect(lifts[0].start).toBeGreaterThan(11);
+  });
+
+  it('caps a pathological clip rather than emitting dozens of clips', () => {
+    const bursts: [number, number][] = [];
+    for (let i = 0; i < 20; i++) bursts.push([i * 10, i * 10 + 2]);
+    const lifts = findLifts(signal({ duration: 200, bursts }), { duration: 200 });
+
+    expect(lifts.length).toBeLessThanOrEqual(6);
+    expect(lifts).toEqual([...lifts].sort((a, b) => a.start - b.start));
+  });
+
+  it('returns nothing when there is no clear burst', () => {
+    expect(findLifts(signal({ duration: 60 }), { duration: 60 })).toEqual([]);
+  });
+
+  it('applies the duration cap to every lift it returns', () => {
+    const lifts = findLifts(
+      signal({ duration: 300, bursts: [[20, 80], [150, 210]] }),
+      { duration: 300, maxSeconds: 60 },
+    );
+
+    expect(lifts.length).toBeGreaterThan(0);
+    for (const lift of lifts) expect(lift.end - lift.start).toBeLessThanOrEqual(60 + 1e-9);
+  });
+
+  it('prefers the vertical burst when two compete', () => {
+    // A passer-by moving more pixels than the lift, which is exactly the case
+    // the weighting exists for.
+    const samples = signal({ duration: 90, bursts: [[20, 24], [60, 64]] });
+    for (const s of samples) {
+      if (s.t >= 20 && s.t < 24) { s.energy = 0.20; s.verticality = 0.95; }
+      if (s.t >= 60 && s.t < 64) { s.energy = 0.26; s.verticality = 0.05; }
+    }
+
+    const best = suggestTrimFromMotion(samples, { duration: 90 });
+    expect(best).not.toBeNull();
+    expect(best!.start).toBeLessThan(24);
+  });
+});
 
 describe('suggestTrimFromMotion', () => {
   it('brackets a burst with run-up and run-out', () => {
@@ -115,6 +262,15 @@ describe('suggestTrimFromMotion', () => {
     expect(s).not.toBeNull();
     expect(s!.start).toBeLessThanOrEqual(20);
     expect(s!.end).toBeGreaterThan(23);
+  });
+
+  it('returns the strongest lift when a clip holds several', () => {
+    const samples = signal({ duration: 120, bursts: [[20, 24], [60, 64]] });
+    for (const s of samples) if (s.t >= 60 && s.t < 64) s.energy = 0.5;
+
+    const best = suggestTrimFromMotion(samples, { duration: 120 });
+    expect(best!.start).toBeGreaterThan(55);
+    expect(best!.start).toBeLessThan(60);
   });
 
   it('reports higher confidence for a cleaner peak', () => {
