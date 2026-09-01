@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KinEMOS — frame server check</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0; padding: 16px;
+        font: 13px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+        color: #1A1A18; background: #FAFAF9;
+      }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.lede { color: #5F5E5A; margin: 0 0 16px; max-width: 70ch; }
+      button {
+        font: inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+        border: 1px solid rgba(0,0,0,0.15); background: #fff;
+      }
+      button.primary { background: #185FA5; border-color: #185FA5; color: #fff; }
+      button:disabled { opacity: .5; cursor: default; }
+      .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+      table { border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+      th, td { padding: 3px 10px 3px 0; text-align: left; vertical-align: top; }
+      th { color: #5F5E5A; font-weight: 500; }
+      td.num, th.num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+      .pass { color: #27500A; }
+      .fail { color: #791F1F; font-weight: 600; }
+      #log { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; margin-top: 12px; }
+      canvas { border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; background: #000; max-width: 320px; }
+      .panels { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>KinEMOS frame server — self check</h1>
+    <p class="lede">
+      Dev-only harness for <code>src/kinemos/engine/video/frameServer.ts</code>. Unit tests cover the
+      index arithmetic; this exercises the real WebCodecs path. It encodes a clip whose every frame is
+      a flat grey level encoding its own ordinal, on <strong>deliberately uneven frame durations</strong>
+      (variable frame rate — the case that breaks <code>currentTime += 1/fps</code>), then reads each
+      frame back through the frame server and checks the pixel says what the index claims.
+      Not part of the production build — Vite only builds <code>index.html</code>, so this page
+      exists under <code>npm run dev</code> only: start the dev server and open
+      <code>/dev/frame-server-check.html</code>.
+    </p>
+
+    <div class="row">
+      <button class="primary" id="run">Run self check</button>
+      <label>
+        or open real footage:
+        <input type="file" id="file" accept="video/*" />
+      </label>
+    </div>
+
+    <div class="panels">
+      <div>
+        <div class="row" style="margin-bottom:6px">
+          <button id="prev" disabled>◀ frame</button>
+          <button id="next" disabled>frame ▶</button>
+          <span id="pos" class="num"></span>
+        </div>
+        <canvas id="view" width="320" height="180"></canvas>
+      </div>
+      <div id="report"></div>
+    </div>
+    <div id="log"></div>
+
+    <script type="module">
+      import { openFrameServer } from '../src/kinemos/engine/video/frameServer.ts';
+
+      const $ = id => document.getElementById(id);
+      const log = (msg) => { $('log').textContent += msg + '\n'; };
+
+      /** Frame i is painted a flat grey of this value — spaced 8 apart so
+       *  lossy compression cannot blur one frame into its neighbour. */
+      const greyFor = i => 8 + i * 8;
+      const FRAMES = 24;
+
+      /** Uneven durations on purpose: a nominal-fps viewer lands on the wrong
+       *  frame here, an indexed one does not. */
+      const durationFor = i => (i % 3 === 0 ? 1 / 24 : 1 / 60);
+
+      async function buildTestClip() {
+        const {
+          BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH,
+          getFirstEncodableVideoCodec,
+        } = await import('mediabunny');
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 320; canvas.height = 180;
+        const ctx = canvas.getContext('2d');
+
+        const codec = await getFirstEncodableVideoCodec(['avc', 'vp9', 'av1'], {
+          width: 320, height: 180,
+        });
+        if (!codec) throw new Error('No encodable video codec in this browser.');
+
+        const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
+        // Short GOPs so the check exercises real keyframe seeking rather than
+        // decoding everything from frame 0.
+        const source = new CanvasSource(canvas, {
+          codec, quality: QUALITY_HIGH, keyFrameInterval: 0.2,
+        });
+        output.addVideoTrack(source);
+        await output.start();
+
+        const written = [];
+        let t = 0;
+        for (let i = 0; i < FRAMES; i++) {
+          const g = greyFor(i);
+          ctx.fillStyle = `rgb(${g},${g},${g})`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          // Human-readable, and deliberately small so it cannot skew the
+          // centre pixel the check samples.
+          ctx.fillStyle = g > 128 ? '#000' : '#fff';
+          ctx.font = '16px monospace';
+          ctx.fillText(`frame ${i}`, 8, 24);
+          const d = durationFor(i);
+          await source.add(t, d);
+          written.push({ index: i, timestamp: t, duration: d, grey: g });
+          t += d;
+        }
+        source.close();
+        await output.finalize();
+        return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), written };
+      }
+
+      let server = null;
+      let cursor = 0;
+
+      function draw(frame) {
+        const view = $('view');
+        const ctx = view.getContext('2d');
+        ctx.clearRect(0, 0, view.width, view.height);
+        ctx.drawImage(frame.canvas, 0, 0, view.width, view.height);
+        $('pos').textContent =
+          `frame ${frame.index} / ${server.info.frameCount - 1} · t=${frame.timestamp.toFixed(4)} s`;
+      }
+
+      // Frame requests resolve out of order — holding the step key outruns a
+      // keyframe seek, and a slower earlier request can land after a faster
+      // later one. Every interactive consumer of the frame server needs this
+      // guard; the real viewer will too.
+      let generation = 0;
+
+      async function show(i) {
+        cursor = server.step(i, 0);
+        const mine = ++generation;
+        const frame = await server.frameAt(cursor);
+        if (frame && mine === generation) draw(frame);
+      }
+
+      $('prev').onclick = () => show(cursor - 1);
+      $('next').onclick = () => show(cursor + 1);
+
+      function report(rows) {
+        const html = ['<table><tr><th>check</th><th>result</th></tr>'];
+        for (const [label, ok, detail] of rows) {
+          html.push(
+            `<tr><td>${label}</td><td class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}` +
+            `${detail ? ` <span class="num">${detail}</span>` : ''}</td></tr>`,
+          );
+        }
+        html.push('</table>');
+        $('report').innerHTML = html.join('');
+      }
+
+      $('run').onclick = async () => {
+        $('run').disabled = true;
+        $('log').textContent = '';
+        $('report').innerHTML = '';
+        try {
+          log('encoding synthetic VFR clip…');
+          const { blob, written } = await buildTestClip();
+          log(`encoded ${written.length} frames, ${(blob.size / 1024).toFixed(1)} kB`);
+
+          server = await openFrameServer(blob);
+          window.__server = server;
+          const info = server.info;
+          log(`opened: ${info.displayWidth}×${info.displayHeight} ${info.codec} · ` +
+              `${info.frameCount} frames · avg ${info.averageFps?.toFixed(2)} fps · ` +
+              `vfr=${info.vfr} · ${info.durationS.toFixed(3)} s`);
+
+          const rows = [];
+          rows.push(['frame count matches what was encoded', info.frameCount === written.length,
+                     `${info.frameCount}/${written.length}`]);
+          rows.push(['variable frame rate detected', info.vfr === true, `vfr=${info.vfr}`]);
+
+          // Indexed timestamps must equal the ones written, not a nominal grid.
+          let maxTsErr = 0;
+          for (let i = 0; i < Math.min(info.frameCount, written.length); i++) {
+            maxTsErr = Math.max(maxTsErr, Math.abs(server.index.timestamps[i] - written[i].timestamp));
+          }
+          rows.push(['indexed timestamps match encoded timestamps', maxTsErr < 0.002,
+                     `max Δ ${(maxTsErr * 1000).toFixed(2)} ms`]);
+
+          // The real proof: ask for frame i, check the pixels are frame i's.
+          const probe = document.createElement('canvas');
+          probe.width = 320; probe.height = 180;
+          const pctx = probe.getContext('2d', { willReadFrequently: true });
+          let wrongFrames = [];
+          for (let i = 0; i < info.frameCount; i++) {
+            const frame = await server.frameAt(i);
+            pctx.drawImage(frame.canvas, 0, 0, probe.width, probe.height);
+            // Sample low, well away from the label text.
+            const px = pctx.getImageData(160, 150, 1, 1).data;
+            const recovered = Math.round((px[0] - 8) / 8);
+            if (recovered !== i) wrongFrames.push(`${i}→${recovered}`);
+          }
+          rows.push([`frameAt(i) returns frame i (all ${info.frameCount}, pixel-verified)`,
+                     wrongFrames.length === 0,
+                     wrongFrames.length ? wrongFrames.slice(0, 6).join(' ') : 'exact']);
+
+          // Seeking by time must land on the frame actually on screen.
+          let seekWrong = [];
+          for (let i = 0; i < info.frameCount; i++) {
+            const mid = written[i].timestamp + written[i].duration * 0.5;
+            if (server.indexAtTime(mid) !== i) seekWrong.push(i);
+          }
+          rows.push(['indexAtTime lands mid-frame on that frame', seekWrong.length === 0,
+                     seekWrong.length ? `wrong: ${seekWrong.slice(0, 6)}` : 'exact']);
+
+          // Sequential walk must visit every frame once, in order.
+          const walked = [];
+          for await (const f of server.frames()) walked.push(f.index);
+          const walkOk = walked.length === info.frameCount && walked.every((v, i) => v === i);
+          rows.push(['frames() walks every frame in order', walkOk,
+                     `${walked.length} frames`]);
+
+          report(rows);
+          $('prev').disabled = false; $('next').disabled = false;
+          await show(0);
+          log(rows.every(r => r[1]) ? 'ALL CHECKS PASSED' : 'CHECKS FAILED');
+        } catch (e) {
+          log('ERROR: ' + (e?.stack || e?.message || String(e)));
+        } finally {
+          $('run').disabled = false;
+        }
+      };
+
+      $('file').onchange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        $('log').textContent = '';
+        $('report').innerHTML = '';
+        try {
+          if (server) await server.close();
+          server = await openFrameServer(file);
+          window.__server = server;
+          const i = server.info;
+          log(`${file.name}: ${i.displayWidth}×${i.displayHeight} ${i.codec} · rotation ${i.rotation}° · ` +
+              `${i.frameCount} frames · avg ${i.averageFps?.toFixed(2)} fps · vfr=${i.vfr} · ` +
+              `${i.durationS.toFixed(3)} s`);
+          $('prev').disabled = false; $('next').disabled = false;
+          cursor = 0;
+          await show(0);
+        } catch (err) {
+          log('ERROR: ' + (err?.message || String(err)));
+        }
+      };
+    </script>
+  </body>
+</html>

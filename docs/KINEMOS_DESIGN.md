@@ -375,11 +375,20 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
   viewer (scrub/step/speed), manual plate calibration (ellipse confirm →
   anisotropic 2D), manual point marking frame-by-frame (Kinovea baseline),
   distance/angle tools, snapshots + notes. **Named deliverable: the
-  WebCodecs frame server** (mp4box demux → `VideoDecoder`) — HTML5
-  `<video>` seeking is not frame-accurate and `currentTime` maths off a
-  nominal fps breaks on VFR clips, so frame-accurate stepping and marking
-  already depend on it; P2's tracker then consumes it for free. *KinEMOS is
-  already a usable Kinovea-in-EMOS with zero automated tracking.*
+  WebCodecs frame server** — HTML5 `<video>` seeking is not frame-accurate
+  and `currentTime` maths off a nominal fps breaks on VFR clips, so
+  frame-accurate stepping and marking already depend on it; P2's tracker
+  then consumes it for free. *KinEMOS is already a usable Kinovea-in-EMOS
+  with zero automated tracking.*
+  - **Frame server: BUILT** (`src/kinemos/engine/video/`, first P1 slice).
+    Indexes every frame's real presentation timestamp in one metadata-only
+    pass, then serves frames by index through mediabunny's `CanvasSink`
+    (WebCodecs `VideoDecoder` underneath, rotation applied, canvas ring
+    buffer). mediabunny rather than the originally-proposed mp4box: it is
+    already a dependency and covers demux, decode and rotation. Streams over
+    range requests, so an R2-hosted clip opens without downloading it.
+    Verified end-to-end in `dev/frame-server-check.html` — a synthetic
+    variable-rate clip encoded, re-read and pixel-checked frame by frame.
 - **P2 — Assisted tracking & metrics.** Engine: anchor + supervise tracker,
   shake stabilisation, Butterworth pipeline, phase auto-proposal +
   coach-adjustable markers, per-rep metric computation, quality grades,

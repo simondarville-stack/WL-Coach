@@ -68,31 +68,16 @@ export const EMPTY_PROBE: ClipProbe = {
 };
 
 /**
- * VFR judgement from a sample of packet presentation timestamps.
+ * VFR judgement, re-exported from the engine.
  *
- * Timestamps are sorted first (packets arrive in decode order; with B-frames
- * presentation order differs), then successive deltas are compared to their
- * median. Container-timescale rounding wobbles CFR deltas by a tick, so the
- * test is a tolerance, not equality: a clip is called VFR when more than 5 %
- * of deltas sit over 15 % away from the median — real phone VFR swings far
- * wider than that, while an edit splice or two stays under the 5 %.
- *
- * Exported for tests; null when the sample is too small to judge.
+ * The import probe and the P1 frame server have to agree about what "variable
+ * frame rate" means — a clip flagged CFR at import but treated as VFR by the
+ * viewer would be graded on one basis and measured on another. The rule lives
+ * in `engine/video/frameTiming.ts` and is used from both.
  */
-export function isVariableFrameRate(timestamps: number[]): boolean | null {
-  if (timestamps.length < 24) return null;
-  const sorted = [...timestamps].sort((a, b) => a - b);
-  const deltas: number[] = [];
-  for (let i = 1; i < sorted.length; i++) {
-    const d = sorted[i] - sorted[i - 1];
-    if (d > 0) deltas.push(d);
-  }
-  if (deltas.length < 12) return null;
-  const median = [...deltas].sort((a, b) => a - b)[Math.floor(deltas.length / 2)];
-  if (!(median > 0)) return null;
-  const outliers = deltas.filter(d => Math.abs(d - median) > median * 0.15).length;
-  return outliers / deltas.length > 0.05;
-}
+import { isVariableFrameRate } from '../engine/video/frameTiming';
+
+export { isVariableFrameRate };
 
 /** Packets sampled to average a frame rate. Enough to ride out variable frame
  *  timing without decoding the clip twice. */
