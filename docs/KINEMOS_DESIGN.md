@@ -218,6 +218,20 @@ Coach-visible quality/effort tiers:
    the result; any correction click re-anchors the track from that frame
    (bidirectional re-track). Kinovea principle: manual override is always one
    click away, never a mode switch.
+   - **Implementation note (decided 01/09/2026):** the OpenCV tracking API
+     (`TrackerCSRT`/`TrackerKCF`) lives in opencv_contrib and is **not in
+     the stock opencv.js WASM build**. Rather than owning a custom WASM
+     toolchain, hand-roll the tracker from primitives that *are* in stock
+     opencv.js: `matchTemplate` + `calcOpticalFlowPyrLK` + masked-centroid /
+     `fitEllipse` sub-pixel refinement. Adequate for this target (large,
+     high-contrast, rotation-symmetric disc), and the correction loop needs
+     to reach inside the tracker anyway. Two practical rules: plates **spin**
+     during a lift, so the template mask is an annulus (lettering excluded —
+     this is why "mask-averaged centre"); and track coarse at reduced
+     resolution, refine the centre at full resolution for sub-pixel.
+     Everything else §6 needs is in the stock build (`fitEllipse`, Canny/
+     contours, `goodFeaturesToTrack` + LK flow + `estimateAffinePartial2D`
+     for stabilisation).
 2. **Marker mode:** high-contrast marker/sticker on the bar end cap for
    hardcore setups → tighter, more repeatable centres (the 0.02 m/s tier,
    §6.4).
@@ -231,6 +245,13 @@ Coach-visible quality/effort tiers:
 Raw pixel tracks are differentiated twice (velocity, acceleration/power), so
 noise handling is mandatory:
 
+- **Timestamps, never frame indices.** Phone video is frequently variable
+  frame rate (iPhone especially); velocity is dx/dt, and a nominal fps on a
+  VFR clip corrupts every derived number. The engine consumes per-frame
+  timestamps (WebCodecs supplies them); `kinemos_videos` records
+  `fps_avg` + a `vfr` flag (probed from mp4box's sample table at import),
+  and VFR is a quality-grade input (§6.4). Butterworth assumes uniform
+  sampling — resample VFR series onto a uniform grid before filtering.
 - Default: low-pass Butterworth (biomech-standard, ~4–6 Hz cutoff at 60 fps),
   applied to the calibrated position series before differentiation.
 - Filter type/cutoff coach-configurable (COACH-CONFIG); raw-vs-smoothed
@@ -322,8 +343,9 @@ Kinovea-inspired, EMOS-dense:
 New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
 
 - `kinemos_videos` — R2 key, athlete_id?, exercise_id?, training_log ref?,
-  source (log/review/competition/direct), duration, fps, resolution,
-  phone-model metadata, trim provenance, uploaded_by/at.
+  source (log/review/competition/direct), duration, fps_avg + vfr flag,
+  resolution + rotation, codec, phone-model metadata, trim provenance,
+  uploaded_by/at.
 - `kinemos_calibrations` — video ref, tier flags, plate ellipse px, plate
   diameter cm, viewing angle θ, distortion source (none/model/profile),
   stabilisation applied.
@@ -352,8 +374,12 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
 - **P1 — Viewer & manual toolkit.** Lazy-loaded `/kinemos` route, study-room
   viewer (scrub/step/speed), manual plate calibration (ellipse confirm →
   anisotropic 2D), manual point marking frame-by-frame (Kinovea baseline),
-  distance/angle tools, snapshots + notes. *KinEMOS is already a usable
-  Kinovea-in-EMOS with zero automated tracking.*
+  distance/angle tools, snapshots + notes. **Named deliverable: the
+  WebCodecs frame server** (mp4box demux → `VideoDecoder`) — HTML5
+  `<video>` seeking is not frame-accurate and `currentTime` maths off a
+  nominal fps breaks on VFR clips, so frame-accurate stepping and marking
+  already depend on it; P2's tracker then consumes it for free. *KinEMOS is
+  already a usable Kinovea-in-EMOS with zero automated tracking.*
 - **P2 — Assisted tracking & metrics.** Engine: anchor + supervise tracker,
   shake stabilisation, Butterworth pipeline, phase auto-proposal +
   coach-adjustable markers, per-rep metric computation, quality grades,
