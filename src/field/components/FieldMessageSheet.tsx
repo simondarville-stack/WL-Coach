@@ -70,7 +70,6 @@ export function FieldMessageSheet({ athleteId, athleteName, unit, onClose }: Fie
     setLoading(true);
     setError(null);
     try {
-      const ownerId = getOwnerId();
       if (target === 'unit' && unit) {
         const session = await fetchSessionRowForSlot(athleteId, unit.weekStart, unit.dayIndex);
         setSessionId(session?.id ?? null);
@@ -83,9 +82,9 @@ export function FieldMessageSheet({ athleteId, athleteName, unit, onClose }: Fie
           setMessages([]);
         }
       } else {
-        const m = await fetchGeneralThreadMessages(athleteId, ownerId);
+        const m = await fetchGeneralThreadMessages(athleteId);
         setMessages(m);
-        void markGeneralThreadRead(athleteId, ownerId, 'coach').catch(() => {});
+        void markGeneralThreadRead(athleteId, 'coach').catch(() => {});
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -736,6 +736,12 @@ export interface TrainingLogVideo {
   /** Which set the clip shows, when the athlete tagged one. Null for a clip
    *  that covers the exercise as a whole. */
   set_number: number | null;
+  /** Athlete-stated load in the clip, for footage that is NOT a logged set —
+   *  a warm-up single, an extra attempt. When `set_number` is present the set
+   *  row wins and this stays null; see `resolveClipTag`. */
+  performed_load: number | null;
+  /** Athlete-stated reps in the clip. Same precedence as `performed_load`. */
+  performed_reps: number | null;
   video_url: string;
   /** Object key inside the `log-videos` bucket. Null only for rows written
    *  before the column existed; deletes fall back to parsing the URL. */

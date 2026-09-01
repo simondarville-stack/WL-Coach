@@ -264,8 +264,7 @@ export function ReviewScroller() {
           if (item.sessionId) {
             await markMessagesRead(item.sessionId, null, 'coach');
           } else {
-            const athlete = athleteById.get(item.athleteId);
-            await markGeneralThreadRead(item.athleteId, athlete?.owner_id ?? ownerId, 'coach');
+            await markGeneralThreadRead(item.athleteId, 'coach');
           }
         } else {
           await markSessionReviewed(item.session.id);
@@ -278,7 +277,7 @@ export function ReviewScroller() {
         .then(() => emitInboxChanged())
         .catch(() => undefined);
     },
-    [athleteById, ownerId],
+    [ownerId],
   );
 
   // ── In-view tracking (autoplay + dwell-to-seen) ──────────────────────────

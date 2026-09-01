@@ -12,11 +12,22 @@
  * first, so the athlete sends the lift rather than the four minutes around it.
  * A clip that is too long or too big to upload at all cannot skip the editor —
  * that is the only way such a clip gets sent.
+ *
+ * When the caller supplies `sets`, each clip is also tagged with what it shows
+ * — a logged set, or a typed load × reps — so a coach opening a strip of five
+ * clips can tell which one is the 105 kg single without playing all five.
  */
 import { useRef, useState } from 'react';
-import { FolderPlus, Scissors, Trash2, Video } from 'lucide-react';
-import type { TrainingLogVideo } from '../../lib/database.types';
+import { FolderPlus, Scissors, Tag, Trash2, Video } from 'lucide-react';
+import type { TrainingLogSet, TrainingLogVideo } from '../../lib/database.types';
 import { formatDateTimeShort } from '../../lib/dateUtils';
+import {
+  describeClipTag,
+  EMPTY_CLIP_TAG,
+  suggestSetForClip,
+  type ClipTag,
+} from '../../lib/clipTag';
+import { ClipTagSheet } from './ClipTagSheet';
 import {
   LOG_VIDEO_MAX_BYTES,
   LOG_VIDEO_MAX_SECONDS,
@@ -32,9 +43,17 @@ interface LogVideoStripProps {
   theme: 'dark' | 'light';
   /** Provide to show the Film and Attach tiles. Omit for a read-only strip.
    *  Called once per file; a multi-file attach calls it repeatedly. */
-  onAdd?: (file: File) => Promise<void>;
+  onAdd?: (file: File, tag: ClipTag) => Promise<void>;
   /** Provide to show a delete affordance on each clip. */
   onDelete?: (video: TrainingLogVideo) => void;
+  /**
+   * Logged sets of this exercise. Supplying them turns on tagging: the athlete
+   * is asked which set a new clip shows, and every tile's caption resolves its
+   * load and reps through them. Omit on surfaces with no set list.
+   */
+  sets?: readonly TrainingLogSet[];
+  /** Provide to let the athlete re-tag a clip after it is uploaded. */
+  onRetag?: (video: TrainingLogVideo, tag: ClipTag) => Promise<void>;
   /** Fired when a clip is opened — the coach surfaces use it to stamp
    *  coach_reviewed_at. */
   onOpen?: (video: TrainingLogVideo) => void;
@@ -60,9 +79,8 @@ const THEMES = {
   },
 } as const;
 
-function captionFor(v: TrainingLogVideo): string {
-  const set = v.set_number != null ? `Set ${v.set_number}` : 'Clip';
-  return `${set} · ${formatDateTimeShort(v.created_at)}`;
+function captionFor(v: TrainingLogVideo, sets: readonly TrainingLogSet[]): string {
+  return `${describeClipTag(v, sets) ?? 'Clip'} · ${formatDateTimeShort(v.created_at)}`;
 }
 
 export function LogVideoStrip({
@@ -71,6 +89,8 @@ export function LogVideoStrip({
   onAdd,
   onDelete,
   onOpen,
+  sets = [],
+  onRetag,
   highlightUnreviewed = false,
   disabled = false,
 }: LogVideoStripProps) {
@@ -84,6 +104,16 @@ export function LogVideoStrip({
   /** A clip whose upload failed on size — offered back with a Trim & shrink
    *  button, because the fix is one edit away and re-picking the file is not. */
   const [oversized, setOversized] = useState<File | null>(null);
+  /**
+   * The tag sheet, either for a clip about to be uploaded (`resolve` pending)
+   * or for one already on screen (`video` set).
+   */
+  const [tagging, setTagging] = useState<{
+    initial: ClipTag;
+    caption: string | null;
+    video: TrainingLogVideo | null;
+    resolve: (tag: ClipTag) => void;
+  } | null>(null);
   const filmRef = useRef<HTMLInputElement | null>(null);
   const attachRef = useRef<HTMLInputElement | null>(null);
   const clipEditor = useClipEditor({
@@ -95,6 +125,29 @@ export function LogVideoStrip({
   });
 
   if (videos.length === 0 && !onAdd) return null;
+
+  /**
+   * Tagging is offered wherever the caller can persist a tag — not wherever
+   * there are sets. An exercise with nothing logged yet still benefits from
+   * "82,5 × 1" on the tile, and the sheet simply drops its set chips when the
+   * list is empty. Read-only surfaces pass `sets` for display and no `onRetag`,
+   * so they render labels without ever offering to change them.
+   */
+  const canTag = onRetag != null;
+
+  /** Open the tag sheet and suspend until the athlete answers or skips. */
+  const askForTag = (initial: ClipTag, caption: string | null, video: TrainingLogVideo | null) =>
+    new Promise<ClipTag>(resolve => {
+      setTagging({
+        initial,
+        caption,
+        video,
+        resolve: tag => {
+          setTagging(null);
+          resolve(tag);
+        },
+      });
+    });
 
   /** Bridge from the two hidden file inputs into the upload loop. */
   const handleFiles = async (
@@ -137,10 +190,30 @@ export function LogVideoStrip({
           skipped += 1;
           continue;
         }
+        // Ask what each clip shows before the upload, while the athlete still
+        // has the lift in mind. Tracked locally as well as from `videos`,
+        // because the props have not refreshed yet mid-loop and a split
+        // otherwise proposes the same set for all three pieces.
+        const tags: ClipTag[] = [];
+        if (canTag) {
+          const taken = videos.map(v => v.set_number);
+          for (let n = 0; n < prepared.length; n++) {
+            const guess = suggestSetForClip(sets, [...taken, ...tags.map(t => t.setNumber)]);
+            const tag = await askForTag(
+              { ...EMPTY_CLIP_TAG, setNumber: guess },
+              prepared.length > 1 ? `Clip ${n + 1} of ${prepared.length}` : null,
+              null,
+            );
+            tags.push(tag);
+          }
+        }
+
         setBusySource(source);
         try {
           // One pick can yield several clips, when a set of singles was split.
-          for (const clip of prepared) await onAdd(clip);
+          for (let n = 0; n < prepared.length; n++) {
+            await onAdd(prepared[n], tags[n] ?? EMPTY_CLIP_TAG);
+          }
         } catch (e) {
           if (e instanceof VideoTooLargeError && clipEditor.supported) setOversized(prepared[0]);
           failures.push(`${files[i].name}: ${e instanceof Error ? e.message : 'upload failed'}`);
@@ -170,13 +243,15 @@ export function LogVideoStrip({
       <div className="flex items-center gap-1.5 flex-wrap">
         {videos.map(v => {
           const unreviewed = highlightUnreviewed && v.coach_reviewed_at === null;
+          const caption = captionFor(v, sets);
+          const tagLabel = describeClipTag(v, sets);
           return (
             <div key={v.id} className="relative group">
               <button
                 type="button"
                 onClick={() => open(v)}
-                title={captionFor(v)}
-                aria-label={`Play ${captionFor(v)}`}
+                title={caption}
+                aria-label={`Play ${caption}`}
                 className={`relative block w-[68px] h-[46px] rounded overflow-hidden border ${t.tile} ${
                   unreviewed ? 'ring-1 ring-[color:var(--color-accent)]' : ''
                 }`}
@@ -187,17 +262,41 @@ export function LogVideoStrip({
                 <span className="absolute inset-0 flex items-center justify-center bg-black/25">
                   <span className="w-0 h-0 border-y-[6px] border-y-transparent border-l-[10px] border-l-white ml-0.5" />
                 </span>
-                {v.set_number != null && (
-                  <span className="absolute bottom-0 left-0 px-1 text-[9px] font-semibold text-white bg-black/60 rounded-tr">
-                    S{v.set_number}
+                {/* The whole point of tagging is that a coach can read the
+                    strip without opening anything, so the label goes on the
+                    tile rather than only in the tooltip. */}
+                {tagLabel && (
+                  <span className="absolute bottom-0 inset-x-0 px-1 py-px text-[8px] leading-tight font-semibold text-white bg-black/65 truncate">
+                    {tagLabel}
                   </span>
                 )}
               </button>
+              {onRetag && canTag && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void askForTag(
+                      {
+                        setNumber: v.set_number,
+                        performedLoad: v.performed_load,
+                        performedReps: v.performed_reps,
+                      },
+                      null,
+                      v,
+                    );
+                  }}
+                  aria-label={`Tag ${caption}`}
+                  title="What is in this clip?"
+                  className="absolute -top-1.5 -left-1.5 p-0.5 rounded-full bg-gray-900 text-gray-400 border border-gray-700 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  <Tag size={11} />
+                </button>
+              )}
               {onDelete && (
                 <button
                   type="button"
                   onClick={() => onDelete(v)}
-                  aria-label={`Delete ${captionFor(v)}`}
+                  aria-label={`Delete ${caption}`}
                   title="Delete clip"
                   className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-gray-900 text-gray-400 border border-gray-700 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                 >
@@ -302,8 +401,29 @@ export function LogVideoStrip({
       {playing && (
         <VideoLightbox
           src={playing.video_url}
-          caption={captionFor(playing)}
+          caption={captionFor(playing, sets)}
           onClose={() => setPlaying(null)}
+        />
+      )}
+
+      {tagging && (
+        <ClipTagSheet
+          sets={sets}
+          initial={tagging.initial}
+          caption={tagging.caption}
+          confirmLabel={tagging.video ? 'Save' : 'Upload'}
+          onCancel={() => tagging.resolve(EMPTY_CLIP_TAG)}
+          onSave={tag => {
+            const target = tagging.video;
+            tagging.resolve(tag);
+            // An existing clip persists immediately; a pending one rides along
+            // with the upload the suspended loop is about to start.
+            if (target && onRetag) {
+              void onRetag(target, tag).catch(e => {
+                setError(e instanceof Error ? e.message : 'Could not save the tag.');
+              });
+            }
+          }}
         />
       )}
     </div>

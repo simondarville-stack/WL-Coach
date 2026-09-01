@@ -17,6 +17,7 @@ import type {
   Exercise,
   ExerciseStub,
 } from '../../../lib/database.types';
+import type { ClipTag } from '../../../lib/clipTag';
 import { LogVideoStrip } from '../../../components/planner/LogVideoStrip';
 import { SetEntryRow } from './SetEntryRow';
 import { useNoteDraft } from '../lib/useNoteDraft';
@@ -46,7 +47,8 @@ interface OffPlanExerciseCardProps {
   onUpdateNotes: (notes: string) => Promise<void>;
   /** Clips attached to this exercise. */
   videos?: TrainingLogVideo[];
-  onAddVideo?: (file: File) => Promise<void>;
+  onAddVideo?: (file: File, tag: ClipTag) => Promise<void>;
+  onRetagVideo?: (video: TrainingLogVideo, tag: ClipTag) => Promise<void>;
   onDeleteVideo?: (video: TrainingLogVideo) => void;
 }
 
@@ -60,6 +62,7 @@ export function OffPlanExerciseCard({
   onUpdateNotes,
   videos = [],
   onAddVideo,
+  onRetagVideo,
   onDeleteVideo,
 }: OffPlanExerciseCardProps) {
   // Persists on blur / debounce / app-background / unmount (mobile lock doesn't
@@ -198,6 +201,8 @@ export function OffPlanExerciseCard({
           theme="dark"
           onAdd={onAddVideo}
           onDelete={onDeleteVideo}
+          sets={sortedSets}
+          onRetag={onRetagVideo}
         />
 
         <div className="pt-1">

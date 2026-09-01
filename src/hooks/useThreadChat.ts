@@ -16,7 +16,7 @@
  * The surfaces differ only in parameters, not branches:
  *   role            'coach' | 'athlete' — who is reading and sending
  *   kind            'general' (the standing conversation) | 'session' (a unit)
- *   ownerId         env scoping the general thread
+ *   ownerId         fallback env for writes (reads are athlete-scoped)
  *   sessionOwnerId  env stamped on a lazily-created session (the athlete's host)
  *   senderCoachId   labels which coach wrote a bubble in a shared inbox
  *
@@ -57,7 +57,13 @@ export interface UseThreadChatArgs {
   /** Attach-flow target — required to create the session on first send. */
   unit?: ThreadChatUnit | null;
   athleteId: string;
-  /** Owner env scoping the general thread. */
+  /**
+   * Fallback owner env for writes. Reading a general thread no longer needs
+   * it — the thread is athlete-scoped, so a co-coach and the host see the one
+   * conversation the athlete sees — and `sendGeneralMessage` derives the real
+   * owner from the athlete. It survives as the stamp for a session created
+   * here and as that fallback.
+   */
   ownerId: string;
   /**
    * Owner env to stamp on a session created here. Defaults to ownerId, which is
@@ -194,7 +200,7 @@ export function useThreadChat({
           ? sessionId
             ? await fetchSessionMessages(sessionId)
             : [] // a unit with no session row yet — nothing to show
-          : await fetchGeneralThreadMessages(athleteId, ownerId);
+          : await fetchGeneralThreadMessages(athleteId);
       setMessages(m);
       // Capture the unread boundary on the FIRST load of this thread only —
       // later reloads (a send, a poll) must leave the divider where it is.
@@ -209,7 +215,7 @@ export function useThreadChat({
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [kind, sessionId, athleteId, ownerId, role]);
+  }, [kind, sessionId, athleteId, role]);
 
   useEffect(() => {
     void reload();
@@ -230,11 +236,11 @@ export function useThreadChat({
         ? sessionId
           ? markMessagesRead(sessionId, null, role)
           : Promise.resolve()
-        : markGeneralThreadRead(athleteId, ownerId, role);
+        : markGeneralThreadRead(athleteId, role);
     void p.then(() => onMessagesChangedRef.current()).catch(() => {
       // Non-fatal: the next open retries.
     });
-  }, [kind, sessionId, athleteId, ownerId, role, unreadCount]);
+  }, [kind, sessionId, athleteId, role, unreadCount]);
 
   const send = useCallback(async () => {
     const body = draft.trim();

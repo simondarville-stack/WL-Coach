@@ -13,6 +13,7 @@ import {
   VideoTooLongError,
 } from './videoLimits';
 import { captureVideoPoster, readVideoDurationSeconds } from './videoProbe';
+import { getAccessibleAthleteIds } from './accessScope';
 import { rankExercises } from './exerciseRanker';
 import { emitInboxChanged } from './inboxEvents';
 import { getOwnerId } from './ownerContext';
@@ -1016,6 +1017,45 @@ export async function fetchSessionVideos(sessionId: string): Promise<SessionVide
 }
 
 /**
+ * The tag columns for an insert or update, applying clipTag.ts's precedence:
+ * a clip that names a set stores only the link, because the set row already
+ * holds the load and reps and two copies of one number drift.
+ */
+function clipTagColumns(tag: {
+  setNumber?: number | null;
+  performedLoad?: number | null;
+  performedReps?: number | null;
+}): { set_number: number | null; performed_load: number | null; performed_reps: number | null } {
+  const setNumber = tag.setNumber ?? null;
+  return {
+    set_number: setNumber,
+    performed_load: setNumber == null ? tag.performedLoad ?? null : null,
+    performed_reps: setNumber == null ? tag.performedReps ?? null : null,
+  };
+}
+
+/**
+ * Re-tag an existing clip: which set it shows, or the load and reps in it.
+ *
+ * Separate from the upload so an athlete can film first and label later —
+ * mid-session the priority is getting the lift recorded, and the tag is a
+ * calmer job for between sets or after training.
+ */
+export async function updateLogVideoTag(
+  videoId: string,
+  tag: { setNumber?: number | null; performedLoad?: number | null; performedReps?: number | null },
+): Promise<TrainingLogVideo> {
+  const { data, error } = await supabase
+    .from('training_log_videos')
+    .update(clipTagColumns(tag))
+    .eq('id', videoId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as TrainingLogVideo;
+}
+
+/**
  * Upload one clip and attach it to a logged exercise.
  *
  * Storage write first, row second: an orphaned object costs bytes, whereas an
@@ -1027,7 +1067,12 @@ export async function uploadLogVideo(params: {
   file: File;
   logExerciseId: string;
   athleteId: string;
+  /** Logged set this clip shows. See clipTag.ts for the precedence rule:
+   *  when this is set, the set row owns the load and reps. */
   setNumber?: number | null;
+  /** Athlete-stated load/reps, for footage outside the logged set list. */
+  performedLoad?: number | null;
+  performedReps?: number | null;
   description?: string | null;
   uploadedBy?: 'athlete' | 'coach';
   ownerId?: string | null;
@@ -1064,7 +1109,7 @@ export async function uploadLogVideo(params: {
         .insert({
           log_exercise_id: logExerciseId,
           athlete_id: athleteId,
-          set_number: params.setNumber ?? null,
+          ...clipTagColumns(params),
           video_url: stream.playbackUrl,
           storage_path: `stream:${stream.uid}`,
           // Stream renders real server-side thumbnails; store the URL so
@@ -1131,7 +1176,7 @@ export async function uploadLogVideo(params: {
     .insert({
       log_exercise_id: logExerciseId,
       athlete_id: athleteId,
-      set_number: params.setNumber ?? null,
+      ...clipTagColumns(params),
       video_url: publicUrlData.publicUrl,
       storage_path: storagePath,
       thumbnail_url: thumbnailUrl,
@@ -1585,6 +1630,24 @@ export function coachThreadKey(sessionId: string | null, athleteId: string | nul
   return sessionId ?? `general:${athleteId}`;
 }
 
+/**
+ * Which athletes' messages belong in this coach's inbox.
+ *
+ * The inbox is scoped by ATHLETE, not by `owner_id`. A shared athlete's
+ * messages carry their host coach's owner_id, so an owner_id filter made every
+ * co-coached athlete invisible in both the thread list and the badge — a coach
+ * could be looking at a shared athlete's whole programme and never see that
+ * they had written. Athlete scope also makes the inbox agree with what the
+ * athlete sees: their own view is athlete-scoped too, so a thread cannot be a
+ * conversation on one side and nothing on the other.
+ *
+ * Read watermarks stay per-coach (`coach_thread_reads`), so a co-coach reading
+ * a shared thread still never clears your badge.
+ */
+async function inboxAthleteScope(coachId: string): Promise<string[]> {
+  return getAccessibleAthleteIds(coachId);
+}
+
 /** thread_key → last_read_at for one coach. */
 async function fetchCoachThreadWatermarks(coachId: string): Promise<Map<string, string>> {
   const { data, error } = await supabase
@@ -1653,8 +1716,12 @@ export interface InboxThread {
  *  included, so a discussion the coach attached to a training unit is
  *  visible before the athlete's first reply. Unread threads sort first;
  *  within a sort group, most-recently-active threads come first. */
-export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]> {
-  // 1. Pull athlete-sent messages owned by this coach (newest first). We
+export async function fetchInboxThreads(coachId: string): Promise<InboxThread[]> {
+  // Scope by ATHLETE, not by owner_id — see inboxAthleteScope.
+  const scopeAthleteIds = await inboxAthleteScope(coachId);
+  if (scopeAthleteIds.length === 0) return [];
+
+  // 1. Pull athlete-sent messages for those athletes (newest first). We
   //    need the set to compute unreadCount and pick the latest message per
   //    thread; a per-session top-1 query would force one round-trip per
   //    thread. Capped: message history grows forever, and this used to be
@@ -1667,22 +1734,23 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
     supabase
       .from('training_log_messages')
       .select('id, session_id, message, created_at, coach_read_at')
-      .eq('owner_id', ownerId)
+      .in('athlete_id', scopeAthleteIds)
       .eq('sender_type', 'athlete')
       .order('created_at', { ascending: false })
       .limit(2000),
-    // 2. Coach-sent session messages, owner-wide (not just for sessions the
-    //    athlete wrote on): they feed "last activity" AND surface sessions
-    //    where only the coach has written so far as their own threads.
+    // 2. Coach-sent session messages across the whole scope (not just for
+    //    sessions the athlete wrote on): they feed "last activity" AND
+    //    surface sessions where only the coach has written so far as their
+    //    own threads.
     supabase
       .from('training_log_messages')
       .select('session_id, message, created_at')
-      .eq('owner_id', ownerId)
+      .in('athlete_id', scopeAthleteIds)
       .eq('sender_type', 'coach')
       .not('session_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(2000),
-    fetchCoachThreadWatermarks(ownerId),
+    fetchCoachThreadWatermarks(coachId),
   ]);
   if (amRes.error) throw amRes.error;
   const rows = (amRes.data ?? []) as {
@@ -1711,7 +1779,8 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   if (sessionIds.length === 0) {
     // No session threads at all — general threads may still exist
     // (e.g. the coach wrote first and the athlete hasn't replied).
-    return (await fetchGeneralThreadsForCoach(ownerId, watermarks)).sort(compareInboxThreads);
+    return (await fetchGeneralThreadsForCoach(coachId, watermarks, scopeAthleteIds))
+      .sort(compareInboxThreads);
   }
 
   // 3. Session → athlete map. The DB column is `date`; we expose it as
@@ -1809,7 +1878,7 @@ export async function fetchInboxThreads(ownerId: string): Promise<InboxThread[]>
   // 4. General (no-session) threads — one per athlete that has any
   //    general messages. Keyed separately so the coach sees them next
   //    to the session threads.
-  const generalThreads = await fetchGeneralThreadsForCoach(ownerId, watermarks);
+  const generalThreads = await fetchGeneralThreadsForCoach(coachId, watermarks, scopeAthleteIds);
 
   // Sort: unread first, then by lastActivity desc.
   return [...Array.from(threads.values()), ...generalThreads].sort(compareInboxThreads);
@@ -1823,18 +1892,21 @@ function compareInboxThreads(a: InboxThread, b: InboxThread): number {
   return b.lastActivityAt.localeCompare(a.lastActivityAt);
 }
 
-/** Aggregate every general (session_id IS NULL) message owned by this
- *  coach into one InboxThread per athlete. Same shape as a session
- *  thread but with kind='general' and sessionId/performedOn null. */
+/** Aggregate every general (session_id IS NULL) message for the athletes
+ *  this coach can see into one InboxThread per athlete. Same shape as a
+ *  session thread but with kind='general' and sessionId/performedOn null. */
 async function fetchGeneralThreadsForCoach(
-  ownerId: string,
+  coachId: string,
   watermarks?: Map<string, string>,
+  scope?: string[],
 ): Promise<InboxThread[]> {
-  const wm = watermarks ?? (await fetchCoachThreadWatermarks(ownerId));
+  const wm = watermarks ?? (await fetchCoachThreadWatermarks(coachId));
+  const scopeAthleteIds = scope ?? (await inboxAthleteScope(coachId));
+  if (scopeAthleteIds.length === 0) return [];
   const { data, error } = await supabase
     .from('training_log_messages')
     .select('athlete_id, sender_type, message, created_at, coach_read_at')
-    .eq('owner_id', ownerId)
+    .in('athlete_id', scopeAthleteIds)
     .is('session_id', null)
     .order('created_at', { ascending: false })
     .limit(2000);
@@ -1911,7 +1983,10 @@ export interface InboxUnreadSummary {
 
 /** One query behind both the badge and the desktop notification, so the two
  *  can never disagree about what is unread. */
-export async function fetchInboxUnreadSummary(ownerId: string): Promise<InboxUnreadSummary> {
+export async function fetchInboxUnreadSummary(coachId: string): Promise<InboxUnreadSummary> {
+  const athleteIds = await inboxAthleteScope(coachId);
+  if (athleteIds.length === 0) return { threads: 0, athleteIds: [] };
+
   // Per-coach unread: an athlete message is unread when it is newer than
   // THIS coach's thread watermark, so a co-coach reading a shared thread
   // never clears your badge. Same 2000-newest cap as the thread list.
@@ -1919,11 +1994,11 @@ export async function fetchInboxUnreadSummary(ownerId: string): Promise<InboxUnr
     supabase
       .from('training_log_messages')
       .select('session_id, athlete_id, created_at')
-      .eq('owner_id', ownerId)
+      .in('athlete_id', athleteIds)
       .eq('sender_type', 'athlete')
       .order('created_at', { ascending: false })
       .limit(2000),
-    fetchCoachThreadWatermarks(ownerId),
+    fetchCoachThreadWatermarks(coachId),
   ]);
   if (msgRes.error) throw msgRes.error;
   const rows = (msgRes.data ?? []) as {
@@ -1954,12 +2029,14 @@ export async function fetchInboxUnreadCount(ownerId: string): Promise<number> {
  *  oldest first (chronological for chat display). */
 export async function fetchGeneralThreadMessages(
   athleteId: string,
-  ownerId: string,
 ): Promise<TrainingLogMessage[]> {
+  // Athlete-scoped, with no owner_id filter: the athlete sees ONE general
+  // thread with their coaching staff (see fetchAthleteInbox), so the coach
+  // side has to see the same one. Filtering by owner_id split it in two the
+  // moment a co-coach wrote — each coach reading half a conversation.
   const { data, error } = await supabase
     .from('training_log_messages')
     .select('*')
-    .eq('owner_id', ownerId)
     .eq('athlete_id', athleteId)
     .is('session_id', null)
     .order('created_at', { ascending: true });
@@ -1969,6 +2046,7 @@ export async function fetchGeneralThreadMessages(
 
 export interface SendGeneralMessageArgs {
   athleteId: string;
+  /** Fallback owner_id, used only if the athlete's own row can't be read. */
   ownerId: string;
   message: string;
   senderType: 'athlete' | 'coach';
@@ -1976,17 +2054,32 @@ export interface SendGeneralMessageArgs {
   senderCoachId?: string | null;
 }
 
-/** Insert a general (no-session) message. Both owner_id and athlete_id
- *  are required because no session exists to derive them from. */
+/**
+ * Insert a general (no-session) message.
+ *
+ * owner_id is taken from the ATHLETE rather than from the sending coach: on a
+ * shared athlete those differ, and a co-coach's replies used to land under
+ * their own id — the same conversation stored under two owners. Reads are
+ * athlete-scoped now so that no longer splits the thread on screen, but the
+ * rows should still say who the messages belong to. `senderCoachId` is what
+ * records who actually wrote it.
+ */
 export async function sendGeneralMessage(
   args: SendGeneralMessageArgs,
 ): Promise<TrainingLogMessage> {
+  const { data: athleteRow } = await supabase
+    .from('athletes')
+    .select('owner_id')
+    .eq('id', args.athleteId)
+    .maybeSingle();
+  const ownerId = (athleteRow as { owner_id: string } | null)?.owner_id ?? args.ownerId;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag schema
   const insertRow: any = {
     session_id: null,
     exercise_id: null,
     athlete_id: args.athleteId,
-    owner_id: args.ownerId,
+    owner_id: ownerId,
     message: args.message,
     sender_type: args.senderType,
     sender_coach_id: args.senderType === 'coach' ? args.senderCoachId ?? null : null,
@@ -2003,24 +2096,24 @@ export async function sendGeneralMessage(
 /** Mark every general message from the other party as read by this role. */
 export async function markGeneralThreadRead(
   athleteId: string,
-  ownerId: string,
   role: 'coach' | 'athlete',
 ): Promise<void> {
   const column = role === 'coach' ? 'coach_read_at' : 'athlete_read_at';
   const otherSender: 'athlete' | 'coach' = role === 'coach' ? 'athlete' : 'coach';
   const now = new Date().toISOString();
+  // Athlete-scoped, matching fetchGeneralThreadMessages: mark exactly the
+  // messages the reader was just shown, whichever coach's owner_id they carry.
   const { error } = await supabase
     .from('training_log_messages')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generated types lag
     .update({ [column]: now } as never)
-    .eq('owner_id', ownerId)
     .eq('athlete_id', athleteId)
     .is('session_id', null)
     .eq('sender_type', otherSender)
     .is(column, null);
   if (error) throw error;
-  // Per-coach inbox: watermark for the ACTIVE coach (not the ownerId
-  // param, which scopes the messages and may be the athlete's host env).
+  // Per-coach inbox: the watermark belongs to the ACTIVE coach, so reading a
+  // shared athlete's thread clears your badge and nobody else's.
   if (role === 'coach') {
     await markCoachThreadRead(getOwnerId(), coachThreadKey(null, athleteId));
   }

@@ -32,6 +32,7 @@ import {
   setSessionCustomMetric,
   setSubstitutedExercise,
   markMessagesRead,
+  updateLogVideoTag,
   uploadLogVideo,
   deleteLogVideo,
   defaultSlotLabel,
@@ -40,6 +41,7 @@ import {
   type WeekOverview,
   type ExerciseSearchResult,
 } from '../../../lib/trainingLogService';
+import type { ClipTag } from '../../../lib/clipTag';
 import { getOrCreateSentinel } from '../../../components/planner/sentinelService';
 import { getSentinelType } from '../../../components/planner/sentinelUtils';
 import type {
@@ -698,7 +700,7 @@ export function TodayScreen() {
    * strip owns its own spinner. Errors propagate to the strip rather than the
    * session-level banner for the same reason.
    */
-  const handleAddVideo = (planned: PlannedExerciseFull) => async (file: File) => {
+  const handleAddVideo = (planned: PlannedExerciseFull) => async (file: File, tag: ClipTag) => {
     const session = await getOrCreateSession();
     mergeSession(session);
     const logEx = await ensureLogEx(planned, session.id);
@@ -709,21 +711,34 @@ export function TodayScreen() {
       athleteId: athlete.id,
       ownerId: athlete.owner_id,
       uploadedBy: 'athlete',
+      setNumber: tag.setNumber,
+      performedLoad: tag.performedLoad,
+      performedReps: tag.performedReps,
     });
     mergeVideo(video);
   };
 
   /** Same as handleAddVideo, for a log exercise that already exists (the
    *  off-plan cards) and so needs no session/log-exercise bootstrap. */
-  const handleAddVideoToLogExercise = (logExerciseId: string) => async (file: File) => {
-    const video = await uploadLogVideo({
-      file,
-      logExerciseId,
-      athleteId: athlete.id,
-      ownerId: athlete.owner_id,
-      uploadedBy: 'athlete',
-    });
-    mergeVideo(video);
+  const handleAddVideoToLogExercise =
+    (logExerciseId: string) => async (file: File, tag: ClipTag) => {
+      const video = await uploadLogVideo({
+        file,
+        logExerciseId,
+        athleteId: athlete.id,
+        ownerId: athlete.owner_id,
+        uploadedBy: 'athlete',
+        setNumber: tag.setNumber,
+        performedLoad: tag.performedLoad,
+        performedReps: tag.performedReps,
+      });
+      mergeVideo(video);
+    };
+
+  /** Re-label a clip already on screen. Outside runSave for the same reason
+   *  as the upload: it must not freeze the set inputs. */
+  const handleRetagVideo = async (video: TrainingLogVideo, tag: ClipTag) => {
+    mergeVideo(await updateLogVideoTag(video.id, tag));
   };
 
   const handleDeleteVideo = (video: TrainingLogVideo) => {
@@ -1346,6 +1361,7 @@ export function TodayScreen() {
                       performedExercise={performed}
                       videos={le?.videos ?? []}
                       onAddVideo={handleAddVideo(p)}
+                      onRetagVideo={handleRetagVideo}
                       onDeleteVideo={handleDeleteVideo}
                       globalSaving={saving}
                     />
@@ -1394,6 +1410,7 @@ export function TodayScreen() {
                     onUpdateNotes={handleUpdateOffPlanNotes(le.log.id)}
                     videos={le.videos}
                     onAddVideo={handleAddVideoToLogExercise(le.log.id)}
+                    onRetagVideo={handleRetagVideo}
                     onDeleteVideo={handleDeleteVideo}
                   />
                 );

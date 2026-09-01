@@ -474,6 +474,9 @@ export function LogExerciseRow({
           theme="light"
           onOpen={onVideoOpened}
           highlightUnreviewed
+          // Read-only, but the sets still matter: they are what turns "S2"
+          // into "S2 · 105 × 2" on the tile the coach is scanning.
+          sets={logged?.sets ?? []}
         />
       </div>
     </div>

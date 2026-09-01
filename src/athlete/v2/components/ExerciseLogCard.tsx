@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Replace } from 'lucide-react';
 import { DoneChip } from '../../../components/log/DoneChip';
 import type { TrainingLogSet, TrainingLogExercise, TrainingLogVideo, Exercise, ExerciseStub, GppSection } from '../../../lib/database.types';
+import type { ClipTag } from '../../../lib/clipTag';
 import { LogVideoStrip } from '../../../components/planner/LogVideoStrip';
 import type { PlannedExerciseFull } from '../../../lib/trainingLogService';
 import { SetEntryRow, expandSetLines, type SetRowInput } from './SetEntryRow';
@@ -62,7 +63,9 @@ interface ExerciseLogCardProps {
   /** Attach a clip. Provided only when the athlete owns this log; the
    *  parent handles creating the session/log-exercise rows first, so a
    *  video can be the very first thing recorded against an exercise. */
-  onAddVideo?: (file: File) => Promise<void>;
+  onAddVideo?: (file: File, tag: ClipTag) => Promise<void>;
+  /** Re-tag an already-uploaded clip (which set / what load × reps). */
+  onRetagVideo?: (video: TrainingLogVideo, tag: ClipTag) => Promise<void>;
   /** Delete one of the athlete's own clips. */
   onDeleteVideo?: (video: TrainingLogVideo) => void;
   /** View-only render for the group viewer: hides Log-as-prescribed,
@@ -87,6 +90,7 @@ export function ExerciseLogCard({
   performedExercise,
   videos = [],
   onAddVideo,
+  onRetagVideo,
   onDeleteVideo,
   globalSaving = false,
   readOnly = false,
@@ -554,6 +558,10 @@ export function ExerciseLogCard({
             theme="dark"
             onAdd={readOnly ? undefined : onAddVideo}
             onDelete={readOnly ? undefined : onDeleteVideo}
+            // The set list is what makes "which lift is this?" a one-tap
+            // question instead of a typing exercise.
+            sets={loggedSets}
+            onRetag={readOnly ? undefined : onRetagVideo}
             disabled={globalSaving}
           />
 

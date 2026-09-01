@@ -29,6 +29,7 @@ import { ToolsScreen } from './screens/ToolsScreen';
 import { FieldInboxScreen } from './screens/FieldInboxScreen';
 import { FieldConversationScreen } from './screens/FieldConversationScreen';
 import { Spinner } from '../components/ui';
+import { TabBadge } from './components/TabBadge';
 import { FieldReviewScreen } from './screens/FieldReviewScreen';
 
 const TABS = [
@@ -68,21 +69,14 @@ function FieldLayout() {
             >
               <span className="relative">
                 <tab.icon size={20} strokeWidth={1.8} />
-                {tab.label === 'Inbox' && unread > 0 && (
-                  <span
-                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--color-accent)] text-white text-[length:var(--text-micro)] font-bold flex items-center justify-center"
-                    aria-label={`${unread} unread ${unread === 1 ? 'thread' : 'threads'}`}
-                  >
-                    {unread > 9 ? '9+' : unread}
-                  </span>
+                {tab.label === 'Inbox' && (
+                  <TabBadge
+                    count={unread}
+                    label={`unread ${unread === 1 ? 'thread' : 'threads'}`}
+                  />
                 )}
-                {tab.label === 'Review' && reviewCount > 0 && (
-                  <span
-                    className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--color-accent)] text-white text-[length:var(--text-micro)] font-bold flex items-center justify-center"
-                    aria-label={`${reviewCount} to review`}
-                  >
-                    {reviewCount > 9 ? '9+' : reviewCount}
-                  </span>
+                {tab.label === 'Review' && (
+                  <TabBadge count={reviewCount} label="to review" />
                 )}
               </span>
               <span className="max-w-full truncate">{tab.label}</span>

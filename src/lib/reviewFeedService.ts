@@ -915,6 +915,9 @@ export async function fetchExampleCards(athleteIds: string[]): Promise<ReviewFee
       log_exercise_id: 'demo',
       athlete_id: threadAthleteId ?? athleteIds[0] ?? '',
       set_number: 3,
+      // Tagged to a set, so the load and reps come from that set row.
+      performed_load: null,
+      performed_reps: null,
       video_url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
       storage_path: null,
       thumbnail_url: null,
