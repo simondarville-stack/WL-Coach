@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — frame server verification</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font: 14px/1.5 system-ui, sans-serif;
+        background: #fafaf9;
+        color: #1a1a18;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #5f5e5a; max-width: 70ch; }
+      table { border-collapse: collapse; font-size: 13px; }
+      td { padding: 3px 12px 3px 0; vertical-align: top; }
+      td:first-child { color: #5f5e5a; white-space: nowrap; }
+      .pass { color: #27500a; font-weight: 600; }
+      .fail { color: #791f1f; font-weight: 600; }
+      .verdict { margin: 16px 0; font-size: 16px; font-weight: 600; }
+      code { font-family: ui-monospace, Menlo, monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>KinEMOS — frame server verification</h1>
+    <p class="lede">
+      Encodes a synthetic clip in this browser, then reads it back through
+      <code>src/kinemos/engine/frameServer.ts</code>. Every frame carries a grey patch whose
+      brightness encodes its own index, so decoding frame <em>n</em> and recovering <em>n</em> from
+      the pixels is proof of frame-accurate seeking — not merely that some frame came back. Run it
+      with <code>npm run dev</code> and open <code>/verify/frame-server.html</code>.
+    </p>
+    <div class="verdict" id="verdict">Running…</div>
+    <table id="results"></table>
+
+    <script type="module">
+      import { openFrameServer, nearestIndexIn, detectVfr } from '/src/kinemos/engine/frameServer.ts';
+
+      const WIDTH = 480;
+      const HEIGHT = 270;
+      const FRAMES = 30;
+      const FPS = 25;
+      /** Marker step in luma units. 8 leaves plenty of room above codec noise
+       *  on a flat 48 px patch while keeping 30 frames inside 0–255. */
+      const MARKER_STEP = 8;
+      const MARKER_SIZE = 48;
+
+      const checks = [];
+      const check = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail ?? '' });
+
+      /** Paint frame `i`: a moving bar for something to compress, plus the flat
+       *  grey patch that names the frame. */
+      function paint(ctx, i) {
+        ctx.fillStyle = '#101010';
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.fillStyle = '#c8c8c8';
+        ctx.fillRect(60 + i * 12, 140, 30, 90);
+        const v = i * MARKER_STEP;
+        ctx.fillStyle = `rgb(${v},${v},${v})`;
+        ctx.fillRect(0, 0, MARKER_SIZE, MARKER_SIZE);
+      }
+
+      // Readback surface. The frame server owns the canvas it serves and does
+      // not configure it for readback, so the marker is sampled through this
+      // one instead.
+      const probe = document.createElement('canvas');
+      probe.width = MARKER_SIZE;
+      probe.height = MARKER_SIZE;
+      const probeCtx = probe.getContext('2d', { willReadFrequently: true });
+
+      /** Read the marker back out of a decoded frame. */
+      function readMarker(canvas) {
+        probeCtx.drawImage(canvas, 0, 0, MARKER_SIZE, MARKER_SIZE, 0, 0, MARKER_SIZE, MARKER_SIZE);
+        // Sample the middle of the patch, away from the edges the codec smears.
+        const { data } = probeCtx.getImageData(MARKER_SIZE / 2, MARKER_SIZE / 2, 1, 1);
+        return { luma: data[0], index: Math.round(data[0] / MARKER_STEP) };
+      }
+
+      /** First codec this browser can actually encode, with the container that
+       *  can carry it. Reported, because which one it picked is itself a fact
+       *  worth knowing about the machine. */
+      async function pickCodec() {
+        const candidates = [
+          { codec: 'avc', container: 'mp4', config: 'avc1.42001f' },
+          { codec: 'vp9', container: 'webm', config: 'vp09.00.10.08' },
+          { codec: 'vp8', container: 'webm', config: 'vp8' },
+        ];
+        for (const candidate of candidates) {
+          const support = await VideoEncoder.isConfigSupported({
+            codec: candidate.config,
+            width: WIDTH,
+            height: HEIGHT,
+            bitrate: 6_000_000,
+          }).catch(() => null);
+          if (support?.supported) return candidate;
+        }
+        return null;
+      }
+
+      /** Encode a clip whose frames present at exactly `timestamps`. */
+      async function encode(timestamps, chosen) {
+        const { Output, BufferTarget, CanvasSource, Mp4OutputFormat, WebMOutputFormat } =
+          await import('mediabunny');
+
+        const canvas = document.createElement('canvas');
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        const format =
+          chosen.container === 'mp4'
+            ? new Mp4OutputFormat({ fastStart: 'in-memory' })
+            : new WebMOutputFormat();
+        const output = new Output({ format, target: new BufferTarget() });
+        const source = new CanvasSource(canvas, {
+          codec: chosen.codec,
+          bitrate: 6_000_000,
+          // Every frame a key frame: this harness is testing the frame server's
+          // addressing, not the decoder's GOP handling, and an intra-only clip
+          // removes one source of ambiguity from a failure.
+          keyFrameInterval: 0,
+        });
+        output.addVideoTrack(source);
+        await output.start();
+
+        for (let i = 0; i < timestamps.length; i++) {
+          paint(ctx, i);
+          const duration =
+            i + 1 < timestamps.length ? timestamps[i + 1] - timestamps[i] : 1 / FPS;
+          await source.add(timestamps[i], duration);
+        }
+        source.close();
+        await output.finalize();
+        return new Blob([output.target.buffer], {
+          type: chosen.container === 'mp4' ? 'video/mp4' : 'video/webm',
+        });
+      }
+
+      async function run() {
+        const chosen = await pickCodec();
+        if (!chosen) {
+          check('A codec this browser can encode', false, 'none of avc / vp9 / vp8');
+          return;
+        }
+        check('Encoder codec', true, `${chosen.codec} in ${chosen.container}`);
+
+        // ── Constant frame rate ────────────────────────────────────────────
+        const cfrTimes = Array.from({ length: FRAMES }, (_, i) => i / FPS);
+        const cfrBlob = await encode(cfrTimes, chosen);
+        check('Synthetic clip encoded', cfrBlob.size > 0, `${(cfrBlob.size / 1024).toFixed(0)} kB`);
+
+        const server = await openFrameServer(cfrBlob);
+
+        check('Frame count', server.frameCount === FRAMES, `${server.frameCount}, expected ${FRAMES}`);
+        check(
+          'Display dimensions',
+          server.displayWidth === WIDTH && server.displayHeight === HEIGHT,
+          `${server.displayWidth}×${server.displayHeight}`,
+        );
+        check(
+          'Average fps',
+          Math.abs(server.averageFps - FPS) < 0.5,
+          server.averageFps.toFixed(3),
+        );
+        check('Constant rate detected as constant', server.isVfr === false, String(server.isVfr));
+
+        const ascending = server.timestamps.every((t, i) => i === 0 || t > server.timestamps[i - 1]);
+        check('Timestamps strictly ascending', ascending);
+        const maxDrift = Math.max(
+          ...server.timestamps.map((t, i) => Math.abs(t - cfrTimes[i])),
+        );
+        check(
+          'Timestamps match what was encoded',
+          maxDrift < 0.002,
+          `worst drift ${(maxDrift * 1000).toFixed(2)} ms`,
+        );
+
+        // The load-bearing test. Deliberately out of order, so a decoder that
+        // simply hands back "the next frame" fails.
+        const probes = [0, 7, 29, 1, 13, 2, 28, 14];
+        const recovered = [];
+        for (const i of probes) {
+          const served = await server.frameAt(i);
+          const marker = readMarker(served.canvas);
+          recovered.push({ asked: i, got: marker.index, luma: marker.luma, t: served.timestamp });
+        }
+        const allExact = recovered.every(r => r.asked === r.got);
+        check(
+          'Seeking returns the frame that was asked for',
+          allExact,
+          recovered.map(r => `${r.asked}→${r.got}`).join(' '),
+        );
+        const timestampsMatch = recovered.every(
+          r => Math.abs(r.t - cfrTimes[r.asked]) < 0.002,
+        );
+        check('Served frame carries its own timestamp', timestampsMatch);
+
+        // Stepping forward one frame at a time must walk the markers in order.
+        const walk = [];
+        for (let i = 5; i <= 9; i++) {
+          walk.push(readMarker((await server.frameAt(i)).canvas).index);
+        }
+        check(
+          'Stepping walks consecutive frames',
+          walk.join(',') === '5,6,7,8,9',
+          walk.join(','),
+        );
+
+        // A repeat read must come from the cache and still be the right frame.
+        const again = readMarker((await server.frameAt(7)).canvas).index;
+        check('Re-reading a cached frame is still that frame', again === 7, String(again));
+
+        check(
+          'nearestIndex maps a time back to its frame',
+          server.nearestIndex(13 / FPS) === 13 && server.nearestIndex(0) === 0,
+        );
+
+        server.close();
+
+        // ── Variable frame rate ────────────────────────────────────────────
+        // A rate CHANGE, not jitter: 30 fps for the first half, 24 for the
+        // second, which is what a phone does when the light drops mid-lift.
+        // Symmetric jitter would not make the point — it cancels out, and a
+        // nominal grid still rounds to the right frame. A rate change makes the
+        // error cumulative, which is the failure mode that actually corrupts a
+        // velocity.
+        const vfrTimes = [];
+        let t = 0;
+        for (let i = 0; i < FRAMES; i++) {
+          vfrTimes.push(Number(t.toFixed(6)));
+          t += i < FRAMES / 2 ? 1 / 30 : 1 / 24;
+        }
+        check('VFR timestamps are variable by the engine rule', detectVfr(vfrTimes) === true);
+
+        const vfrBlob = await encode(vfrTimes, chosen);
+        const vfrServer = await openFrameServer(vfrBlob);
+        check('VFR clip opens', vfrServer.frameCount === FRAMES, String(vfrServer.frameCount));
+        check('VFR clip flagged as variable', vfrServer.isVfr === true, String(vfrServer.isVfr));
+
+        // The whole reason the engine is timestamp-addressed. Stated over the
+        // WHOLE clip rather than at one index: on a jittered clip the nominal
+        // grid happens to agree at some frames, so a single probe proves
+        // nothing either way. What matters is that the real table is right
+        // everywhere and the nominal one is not.
+        const nominalGrid = Array.from({ length: FRAMES }, (_, i) => i / vfrServer.averageFps);
+        let realWrong = 0;
+        let nominalWrong = 0;
+        for (let i = 0; i < FRAMES; i++) {
+          if (vfrServer.nearestIndex(vfrTimes[i]) !== i) realWrong++;
+          if (nearestIndexIn(nominalGrid, vfrTimes[i]) !== i) nominalWrong++;
+        }
+        check(
+          'Timestamp addressing is right at every VFR frame',
+          realWrong === 0,
+          `${realWrong} wrong of ${FRAMES}`,
+        );
+        check(
+          'A nominal-fps grid would not have been',
+          nominalWrong > 0,
+          `${nominalWrong} of ${FRAMES} frames would land on the wrong one`,
+        );
+        const vfrFrame = await vfrServer.frameAt(11);
+        check(
+          'VFR frame 11 decodes as frame 11',
+          readMarker(vfrFrame.canvas).index === 11,
+          String(readMarker(vfrFrame.canvas).index),
+        );
+        vfrServer.close();
+      }
+
+      run()
+        .catch(err => check('Harness ran without throwing', false, String(err?.message ?? err)))
+        .finally(() => {
+          const failed = checks.filter(c => !c.ok);
+          document.getElementById('results').innerHTML = checks
+            .map(
+              c =>
+                `<tr><td>${c.name}</td><td class="${c.ok ? 'pass' : 'fail'}">${
+                  c.ok ? 'PASS' : 'FAIL'
+                }</td><td>${c.detail}</td></tr>`,
+            )
+            .join('');
+          const verdict = document.getElementById('verdict');
+          verdict.textContent = failed.length
+            ? `${failed.length} of ${checks.length} checks FAILED`
+            : `All ${checks.length} checks passed`;
+          verdict.className = `verdict ${failed.length ? 'fail' : 'pass'}`;
+          window.__VERIFY__ = { checks, failed: failed.length };
+        });
+    </script>
+  </body>
+</html>

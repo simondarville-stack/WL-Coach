@@ -252,8 +252,44 @@ without leaving EMOS.
 - Migration `20260901180000_kinemos_analysis` applied to the EMOS project via
   the Supabase MCP server.
 
-**Not yet exercised in a browser.** Everything decoder-facing — WebCodecs
-decode through `CanvasSink`, Range-request scrubbing off R2, the pointer
-gestures — is verified by construction and by unit tests over the pure parts,
-not by a run against real footage. That pass is the first thing to do with a
-real clip in front of it.
+### The browser pass (0.79.1)
+
+`verify/frame-server.html` closes the gap the first ship left open. Open it
+under `npm run dev`: the page encodes a synthetic clip **in the browser**
+(WebCodecs + mediabunny), reads it back through the real
+`openFrameServer`, and checks 19 properties. Every frame carries a flat grey
+patch whose brightness encodes its own index, so decoding frame *n* and
+recovering *n* from the pixels proves frame-accurate **seeking** — not merely
+that some frame came back.
+
+It immediately earned its keep. The 0.79.0 frame server passed
+`metadataOnly: true` and `verifyKeyPackets: true` together on the packet pass;
+mediabunny rejects that combination outright (verifying a key packet means
+reading the bitstream, which is what metadata-only skips), so
+`openFrameServer` **threw on every clip** and the viewer could never have
+opened one. Typecheck, lint and 794 unit tests all passed over that bug,
+because nothing in jsdom can call a decoder. Fixed in 0.79.1: the pass drops
+`verifyKeyPackets`, and `keyframeTimestamps` is documented as the container's
+unverified claim — fine for a scrub hint, and the trim path still pays for
+verification where a wrong key packet would corrupt output.
+
+Now green, on Chromium, VP9-in-WebM: frame count, dimensions, average fps,
+strictly-ascending timestamps matching what was encoded to under a
+millisecond, out-of-order seeks returning exactly the frame asked for,
+consecutive stepping, cache re-reads, and the VFR case. That last one also
+puts a number on the design's central bet: on a clip that changes rate
+mid-recording (30 fps → 24 fps, what a phone does when the light drops),
+**20 of 30 frames would land on the wrong frame** under a nominal-fps grid.
+Timestamp addressing is not caution, it is the difference between right and
+wrong.
+
+Alongside it, `src/kinemos/__tests__/KinemosViewer.test.tsx` renders the
+viewer under jsdom: the tree mounts, a streaming embed is refused with its
+reason rather than opened onto a black stage, a decoder failure surfaces the
+frame server's own wording, and the rail says "pixels" before a plate is
+outlined.
+
+**Still not exercised against real footage.** The synthetic clip is
+intra-only, unrotated, and 480×270. Real phone video adds long GOPs, rotation
+matrices, HEVC, and Range-request delivery off R2 — none of which this harness
+reaches. A pass over one real clip in the running app is still worth doing.

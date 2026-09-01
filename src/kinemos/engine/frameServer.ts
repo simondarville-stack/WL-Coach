@@ -52,7 +52,9 @@ export class FrameServerUnavailableError extends Error {
 export interface FrameServer {
   /** Presentation timestamps in seconds, ascending. The authoritative clock. */
   readonly timestamps: readonly number[];
-  /** Timestamps of key frames, ascending — a subset of `timestamps`. */
+  /** Timestamps the container DECLARES to be key frames, ascending — a subset
+   *  of `timestamps`. Unverified (see the packet pass in `openFrameServer`), so
+   *  treat it as a hint, never as a guarantee. */
   readonly keyframeTimestamps: readonly number[];
   readonly frameCount: number;
   readonly durationS: number;
@@ -257,12 +259,23 @@ export async function openFrameServer(
   }
 
   // ── Frame index: metadata-only packet pass ────────────────────────────────
+  //
+  // No `verifyKeyPackets` here: mediabunny refuses it alongside `metadataOnly`
+  // (verifying a key packet means reading the bitstream, which is exactly what
+  // metadata-only skips), and paying for a full data read of every packet to
+  // build a timestamp table would defeat the point on a multi-minute clip.
+  //
+  // The consequence is that `keyframeTimestamps` is the CONTAINER'S CLAIM, not
+  // a verified fact. That is fine for what it is used for — a scrub hint and
+  // provenance — because nothing here hands those packets to a decoder;
+  // `CanvasSink` does its own retrieval. Where a wrong key packet would
+  // actually corrupt output, the trim path pays for verification
+  // (`src/lib/losslessTrim.ts`).
   const packetSink = new EncodedPacketSink(track);
   const timestamps: number[] = [];
   const keyframeTimestamps: number[] = [];
   for await (const packet of packetSink.packets(undefined, undefined, {
     metadataOnly: true,
-    verifyKeyPackets: true,
   })) {
     timestamps.push(packet.timestamp);
     if (packet.type === 'key') keyframeTimestamps.push(packet.timestamp);
