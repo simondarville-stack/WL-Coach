@@ -43,6 +43,7 @@ const ReviewScroller = lazy(() => import('./components/review/ReviewScroller').t
 // here: the analysis phases pull in WASM decoders and CV code, and none of it may
 // reach a coach who never opens the module.
 const KinemosLibrary = lazy(() => import('./kinemos/KinemosLibrary').then(m => ({ default: m.KinemosLibrary })));
+const KinemosViewer = lazy(() => import('./kinemos/KinemosViewer').then(m => ({ default: m.KinemosViewer })));
 
 /** Route-chunk loading state — same minimal spinner the app boot uses. */
 function RouteFallback() {
@@ -344,6 +345,9 @@ function CoachApp() {
               <Route path="/inbox" element={<CoachInbox />} />
               <Route path="/review" element={<ReviewScroller />} />
               <Route path="/kinemos" element={<KinemosLibrary />} />
+              {/* The P1 study room. Source kind and id are separate segments so a
+                  library key (`log:<uuid>`) never has to survive URL escaping. */}
+              <Route path="/kinemos/analysis/:kind/:id" element={<KinemosViewer />} />
               {/* SD-04: remove intermediate hop; both routes redirect to dashboard */}
               <Route path="/athlete-log" element={<Navigate to="/dashboard" replace />} />
               <Route path="/settings" element={<GeneralSettings />} />

@@ -416,3 +416,20 @@ export function applyFilters(items: LibraryVideo[], filters: LibraryFilters): Li
     return true;
   });
 }
+
+/**
+ * One library row by its `key`. The viewer opens on a key from the URL, and
+ * needs the same context the table shows: athlete, exercise, date, load,
+ * playback URL.
+ *
+ * Implemented as a filtered full read rather than a targeted query, because
+ * "one row" means a different table per source and the join that resolves an
+ * athlete name and a logged load already lives in `loadLibrary`. That is a
+ * deliberate reuse-over-speed trade at a season of footage, and it moves to
+ * keyset paging together with the library's own read when that read outgrows
+ * a single pass (docs/KINEMOS_P0_PLAN.md W3).
+ */
+export async function loadClipByKey(key: string): Promise<LibraryVideo | null> {
+  const all = await loadLibrary();
+  return all.find(item => item.key === key) ?? null;
+}

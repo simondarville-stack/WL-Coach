@@ -115,6 +115,21 @@ export async function uploadPoster(clipKey: string, poster: Blob): Promise<strin
   }
 }
 
+/**
+ * Upload a derived image — a P1 snapshot — as its own object.
+ *
+ * Snapshots get a fresh UUID rather than a name derived from the clip: several
+ * snapshots exist per analysis, and the poster's `<clip-uuid>.jpg` slot is
+ * already taken by the library thumbnail. Note this lands in the KinEMOS
+ * bucket even when the source clip lives in a Supabase bucket — the source
+ * video stays where it is, and derived media collects in one place.
+ */
+export async function uploadSnapshot(image: Blob): Promise<string> {
+  const key = `${crypto.randomUUID()}.jpg`;
+  await put(key, image);
+  return key;
+}
+
 /** Remove an object. Idempotent worker-side, and best-effort here: an
  *  orphaned object is a wasted few megabytes, while a throw would leave the
  *  caller unable to delete the row it belongs to. */

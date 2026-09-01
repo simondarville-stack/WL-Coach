@@ -12,8 +12,8 @@
  * reads from.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Trash2, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Ruler, Trash2, X } from 'lucide-react';
 import {
   Button,
   DataTable,
@@ -58,6 +58,7 @@ export function KinemosLibrary() {
   // viewer instead; until that exists, focusing the library row is the honest
   // version of the same gesture.
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const focusedKey = searchParams.get('clip');
 
   const { athletes, fetchAthletes } = useAthletes();
@@ -241,26 +242,46 @@ export function KinemosLibrary() {
     {
       key: 'actions',
       header: '',
-      width: '40px',
+      width: '76px',
       align: 'right',
-      render: row =>
-        // Only direct imports are deletable here: a log or competition clip is
-        // deleted where it lives, so the library can never orphan a row that
-        // another surface still lists.
-        row.source === 'direct' ? (
+      render: row => (
+        <span style={{ display: 'inline-flex', gap: 2 }}>
           <Button
             variant="ghost"
             size="sm"
             iconOnly
-            icon={<Trash2 size={14} />}
-            title="Delete import"
-            aria-label="Delete import"
+            icon={<Ruler size={14} />}
+            // A Stream-hosted clip is an iframe embed: pixels to look at, not
+            // frames to measure. The viewer says so plainly, but there is no
+            // point sending a coach there to be told.
+            disabled={row.isEmbed}
+            title={row.isEmbed ? 'Streaming clips cannot be analysed' : 'Analyse in KinEMOS'}
+            aria-label="Analyse in KinEMOS"
             onClick={e => {
               e.stopPropagation();
-              void handleDelete(row);
+              if (row.isEmbed) return;
+              navigate(`/kinemos/analysis/${row.source}/${row.sourceId}`);
             }}
           />
-        ) : null,
+          {/* Only direct imports are deletable here: a log or competition clip
+              is deleted where it lives, so the library can never orphan a row
+              another surface still lists. */}
+          {row.source === 'direct' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<Trash2 size={14} />}
+              title="Delete import"
+              aria-label="Delete import"
+              onClick={e => {
+                e.stopPropagation();
+                void handleDelete(row);
+              }}
+            />
+          )}
+        </span>
+      ),
     },
   ];
 

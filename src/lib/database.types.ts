@@ -1229,6 +1229,102 @@ export interface KinemosVideo {
   updated_at: string;
 }
 
+/** KinEMOS analysis record — one per REP, not one per clip (design §7: a
+ *  three-rep set yields three bar paths and three metric rows). Its source is
+ *  polymorphic so a log clip, a competition attempt and a direct import are all
+ *  analysable without mirroring any of them. */
+export interface KinemosAnalysis {
+  id: string;
+  owner_id: string | null;
+  /** Which of the library's three sources `source_id` points into. */
+  source_kind: 'log' | 'event' | 'direct';
+  source_id: string;
+  /** 1-based, as a coach counts reps. */
+  rep_index: number;
+  label: string | null;
+  /** Frame geometry the points were captured in — display space, rotation
+   *  already applied. Lets a later reader tell whether stored pixels still mean
+   *  what they meant. */
+  frame_width: number | null;
+  frame_height: number | null;
+  rotation: number | null;
+  /** Mass for the power computation P2 will do. Captured now because it is free
+   *  here and expensive to reconstruct later. */
+  mass_kg: number | null;
+  mass_source: 'logged' | 'manual' | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The px→cm record: the coach's confirmed plate ellipse plus the scales
+ *  derived from it. Two scales, never one — the plate's minor axis is its
+ *  diameter squashed by cos θ (design §6.1). */
+export interface KinemosCalibration {
+  id: string;
+  owner_id: string | null;
+  analysis_id: string;
+  frame_index: number | null;
+  frame_t: number | null;
+  ellipse_cx: number;
+  ellipse_cy: number;
+  semi_major_px: number;
+  semi_minor_px: number;
+  tilt_deg: number;
+  plate_diameter_cm: number;
+  cm_per_px_v: number | null;
+  cm_per_px_h: number | null;
+  viewing_angle_deg: number | null;
+  confidence: string | null;
+  distortion_source: 'none' | 'model' | 'profile';
+  stabilised: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One stored track point. `t` is the frame's real presentation timestamp —
+ *  never an index over a nominal fps (design §6.3). `s` records whether a hand
+ *  or a tracker put it there. */
+export interface KinemosTrackPoint {
+  t: number;
+  x: number;
+  y: number;
+  s?: 'm' | 't';
+}
+
+/** The point series for one tracked thing on one rep. JSONB because it is read
+ *  and written as a unit and nothing queries a single frame across analyses. */
+export interface KinemosTrack {
+  id: string;
+  owner_id: string | null;
+  analysis_id: string;
+  kind: string;
+  points: KinemosTrackPoint[];
+  tracker_tier: 'manual' | 'assisted' | 'marker' | 'ml';
+  correction_count: number;
+  filter_settings: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Snapshots, notes and hand measurements: one table, because to a coach they
+ *  are the same object — a thing said about a moment in the lift. */
+export interface KinemosAnnotation {
+  id: string;
+  owner_id: string | null;
+  analysis_id: string;
+  kind: 'snapshot' | 'note' | 'measurement' | 'talkover';
+  frame_index: number | null;
+  frame_t: number | null;
+  body: string | null;
+  /** R2 object key for a snapshot JPEG. Only the key, never a URL. */
+  asset_key: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -1548,6 +1644,38 @@ export interface Database {
         Row: ClubMember & Record<string, unknown>;
         Insert: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
         Update: Partial<Omit<ClubMember, 'id' | 'created_at'>> & Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_analyses: {
+        Row: KinemosAnalysis & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosAnalysis, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosAnalysis, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_calibrations: {
+        Row: KinemosCalibration & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosCalibration, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosCalibration, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_tracks: {
+        Row: KinemosTrack & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosTrack, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosTrack, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Relationships: [];
+      };
+      kinemos_annotations: {
+        Row: KinemosAnnotation & Record<string, unknown>;
+        Insert: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
+        Update: Partial<Omit<KinemosAnnotation, 'id' | 'created_at' | 'updated_at'>> &
+          Record<string, unknown>;
         Relationships: [];
       };
       kinemos_videos: {

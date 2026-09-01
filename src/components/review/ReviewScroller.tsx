@@ -530,9 +530,10 @@ export function ReviewScroller() {
               : null
           }
           externalSent={keyboardSent[item.key]}
-          // The library keys log clips as `log:<video id>` — same shape the
-          // KinEMOS library builds, so the link lands on exactly this clip.
-          onOpenInKinemos={() => navigate(`/kinemos?clip=log:${item.video.id}`)}
+          // Straight into the P1 study room, as the P0 plan said this gesture
+          // would become once a viewer existed. `log` + the video id is the
+          // same source reference the analysis rows carry.
+          onOpenInKinemos={() => navigate(`/kinemos/analysis/log/${item.video.id}`)}
         />
       )}
       {item.kind === 'thread' && (

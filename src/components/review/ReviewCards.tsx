@@ -338,8 +338,7 @@ export function VideoCard({
             )}
             {onOpenInKinemos && (
               // The reel is for triage; this is the escape hatch to study one
-              // clip properly. P0 lands in the library filtered to this clip —
-              // P1 will point it at the analysis viewer instead.
+              // clip properly — straight into the P1 analysis viewer.
               <button
                 type="button"
                 onClick={onOpenInKinemos}

@@ -366,20 +366,25 @@ New tables (all `owner_id`-carrying, timestamps everywhere, LWW):
 
 ## 12. Phased build plan (proposal — to tear apart, then lock)
 
-- **P0 — Pipeline & library.** R2 bucket + routes on the existing `/api/*`
+- **P0 — Pipeline & library.** *Shipped in 0.78.0/0.78.1.* R2 bucket + routes on the existing `/api/*`
   Worker, trim-on-upload, `kinemos_videos`, automatic ingestion from existing
   upload paths, direct import, library UI, Review Feed "Open in KinEMOS"
   action. Detailed scope: `docs/KINEMOS_P0_PLAN.md`.
   *Ships value alone: organised, trimmed, cheap video library.*
-- **P1 — Viewer & manual toolkit.** Lazy-loaded `/kinemos` route, study-room
-  viewer (scrub/step/speed), manual plate calibration (ellipse confirm →
-  anisotropic 2D), manual point marking frame-by-frame (Kinovea baseline),
-  distance/angle tools, snapshots + notes. **Named deliverable: the
-  WebCodecs frame server** (mp4box demux → `VideoDecoder`) — HTML5
-  `<video>` seeking is not frame-accurate and `currentTime` maths off a
-  nominal fps breaks on VFR clips, so frame-accurate stepping and marking
-  already depend on it; P2's tracker then consumes it for free. *KinEMOS is
-  already a usable Kinovea-in-EMOS with zero automated tracking.*
+- **P1 — Viewer & manual toolkit.** *Shipped in 0.79.0; scope and outcome in
+  `docs/KINEMOS_P1_PLAN.md`.* Lazy-loaded `/kinemos/analysis/:kind/:id` route,
+  study-room viewer (scrub/step/speed), manual plate calibration (ellipse
+  confirm → anisotropic 2D), manual point marking frame-by-frame (Kinovea
+  baseline), distance/angle tools, snapshots + notes. **Named deliverable: the
+  WebCodecs frame server** — HTML5 `<video>` seeking is not frame-accurate and
+  `currentTime` maths off a nominal fps breaks on VFR clips, so frame-accurate
+  stepping and marking already depend on it; P2's tracker then consumes it for
+  free. Built on **mediabunny** (`EncodedPacketSink` for the timestamp table,
+  `CanvasSink` for decoded, rotation-corrected pixels) rather than the mp4box
+  this plan originally named: mediabunny arrived with the 0.77.0 clip editor
+  and wraps the same demux → `VideoDecoder` pipeline, so mp4box would have been
+  a second demuxer for one job. *KinEMOS is already a usable Kinovea-in-EMOS
+  with zero automated tracking.*
 - **P2 — Assisted tracking & metrics.** Engine: anchor + supervise tracker,
   shake stabilisation, Butterworth pipeline, phase auto-proposal +
   coach-adjustable markers, per-rep metric computation, quality grades,

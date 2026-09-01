@@ -75,6 +75,12 @@ All modules are **active** — nothing is currently disabled or hidden:
   obsolete — re-disabling it would be a regression.)
 - Coach/athlete **Inbox & messaging** (`/inbox`, coach + athlete inboxes) —
   added in 0.6.0.
+- **KinEMOS** (`src/kinemos/*`) — the kinematic-analysis module: video library
+  at `/kinemos` (0.78.0) and the manual analysis viewer at
+  `/kinemos/analysis/:kind/:id` (0.79.0). `src/kinemos/engine/*` is a pure
+  core — no React, no Supabase, no EMOS imports. Design and phase plan in
+  `docs/KINEMOS_DESIGN.md`; per-phase scope in `docs/KINEMOS_P0_PLAN.md` and
+  `docs/KINEMOS_P1_PLAN.md`.
 
 **Deletion policy:** shipped code and database tables are never deleted
 without explicit instruction. **Carve-out for failed experiments:** once the
