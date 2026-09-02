@@ -10,11 +10,22 @@
  * The lift is the same control-point profile the phase tests use, so what is on
  * screen here is what those assertions are asserting about.
  *
+ * It also exposes `window.__BENCH__`, so the pointer gestures — dragging a
+ * phase edge, marking the bar end on the stage — can be driven from outside and
+ * checked. That maths (client coordinates through a transformed canvas's own
+ * rect, times through a band's width) is the part of the viewer with no unit
+ * test and the most ways to be subtly wrong.
+ *
  * Run `npm run dev` and open `/verify/viewer-preview.html`.
  */
-import { StrictMode, useMemo, useState } from 'react';
+import { StrictMode, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { calibrateFromEllipse, type TrackPoint } from '../src/kinemos/engine/calibration';
+import {
+  calibrateFromEllipse,
+  type PlateEllipse,
+  type PxPoint,
+  type TrackPoint,
+} from '../src/kinemos/engine/calibration';
 import { computeKinematics, summariseRep } from '../src/kinemos/engine/kinematics';
 import {
   DEFAULT_PHASE_SET,
@@ -27,8 +38,10 @@ import {
 import { gradeAnalysis, type CameraStability } from '../src/kinemos/engine/grade';
 import { DEFAULT_FILTER } from '../src/kinemos/engine/signal';
 import { AnalysisPanel } from '../src/kinemos/components/AnalysisPanel';
+import { ViewerStage, type ViewerTool } from '../src/kinemos/components/ViewerStage';
 import { GradeChip, GradePanel } from '../src/kinemos/components/GradePanel';
 import { MetricsPanel } from '../src/kinemos/components/MetricsPanel';
+import type { KinemosTrackPoint } from '../src/lib/database.types';
 import '../src/index.css';
 
 /** Velocity control points of a textbook snatch, m/s. */
@@ -62,6 +75,12 @@ function velocityAt(t: number): number {
  *  track must be drawn at for the lift to be physically the size it claims. */
 const CM_PER_PX = 0.2;
 
+/** Stage dimensions. Deliberately larger than the box it is drawn into, so the
+ *  gesture maths has to deal with a scaled canvas — which is the case that
+ *  breaks if a handler reads clientX without going through the rect. */
+const STAGE_W = 1280;
+const STAGE_H = 800;
+
 /** The lift as a marked track, with optional marking tremor so the filter has
  *  something to do. */
 function syntheticTrack(fps: number, tremorPx: number): TrackPoint[] {
@@ -84,7 +103,6 @@ function syntheticTrack(fps: number, tremorPx: number): TrackPoint[] {
         t,
         x: 500 + (4 / CM_PER_PX) * Math.sin(2 * Math.PI * t * 0.7) + rand() * tremorPx,
         y: 1000 - y * pxPerM + rand() * tremorPx,
-        s: 'm',
       });
       next += 1 / fps;
     }
@@ -98,6 +116,39 @@ const calibration = calibrateFromEllipse(
   45,
 );
 
+/** The stage needs pixels. A painted frame stands in for decoded video: a
+ *  platform, a plate at the marked position, and enough contrast to see the
+ *  overlay against. */
+function useStageCanvas(width: number, height: number, plate: PxPoint) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  if (!ref.current) {
+    ref.current = document.createElement('canvas');
+    ref.current.width = width;
+    ref.current.height = height;
+  }
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#232320';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#3a3a35';
+    ctx.fillRect(0, height - 90, width, 90);
+    ctx.save();
+    ctx.translate(plate.x, plate.y);
+    ctx.fillStyle = '#7a7a74';
+    ctx.fillRect(-330, -7, 660, 14);
+    ctx.beginPath();
+    ctx.arc(0, 0, 112, 0, Math.PI * 2);
+    ctx.fillStyle = '#6f6f68';
+    ctx.fill();
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#dcdcd6';
+    ctx.stroke();
+    ctx.restore();
+  }, [width, height, plate.x, plate.y]);
+  return ref.current;
+}
+
 function Bench() {
   const [fps, setFps] = useState(60);
   const [tremor, setTremor] = useState(1.5);
@@ -105,6 +156,9 @@ function Bench() {
   const [camera, setCamera] = useState<CameraStability>('handheld');
   const [currentT, setCurrentT] = useState(1.28);
   const [coach, setCoach] = useState<PhaseBoundary[] | null>(null);
+  const [tool, setTool] = useState<ViewerTool>('mark');
+  const [marks, setMarks] = useState<KinemosTrackPoint[]>([]);
+  const [ellipse, setEllipse] = useState<PlateEllipse | null>(null);
 
   const points = useMemo(() => syntheticTrack(fps, tremor), [fps, tremor]);
   const kinematics = useMemo(
@@ -139,6 +193,26 @@ function Bench() {
       }),
     [kinematics, fps, camera, points.length],
   );
+
+  const stageCanvas = useStageCanvas(STAGE_W, STAGE_H, { x: 640, y: 620 });
+
+  // The handle the driver reaches through. Exposing state rather than reaching
+  // into the DOM keeps the assertions about what the component computed, not
+  // about how it happens to render.
+  useEffect(() => {
+    (window as unknown as { __BENCH__: unknown }).__BENCH__ = {
+      boundaries: boundaries.map(b => ({ t: b.t, rule: b.rule, source: b.source })),
+      marks: marks.map(m => ({ t: m.t, x: m.x, y: m.y })),
+      ellipse,
+      stage: { width: STAGE_W, height: STAGE_H },
+      // The chart's x-domain is the SERIES, not the boundary range — a driver
+      // that assumes otherwise computes the wrong pixel for a given time.
+      domain: kinematics
+        ? { from: kinematics.t[0], to: kinematics.t[kinematics.t.length - 1] }
+        : null,
+      currentT,
+    };
+  }, [boundaries, marks, ellipse, currentT, kinematics]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--color-bg-page)' }}>
@@ -176,19 +250,25 @@ function Bench() {
             background: 'var(--color-bg-tertiary)',
           }}
         >
-          <div
-            style={{
-              flexGrow: 1,
-              display: 'grid',
-              placeItems: 'center',
-              background: '#0F0F0E',
-              borderRadius: 'var(--radius-md)',
-              color: '#5F5E5A',
-              fontSize: 'var(--text-caption)',
-            }}
-          >
-            (video stage — not part of this bench)
-          </div>
+          <ViewerStage
+            canvas={stageCanvas}
+            width={STAGE_W}
+            height={STAGE_H}
+            tool={tool}
+            points={marks}
+            currentT={currentT}
+            showPath
+            ellipse={ellipse}
+            onEllipseChange={setEllipse}
+            measurePoints={[]}
+            onMeasurePoint={() => undefined}
+            onMark={p =>
+              setMarks(current => [
+                ...current.filter(m => Math.abs(m.t - currentT) > 1e-6),
+                { t: currentT, x: p.x, y: p.y, s: 'm' },
+              ])
+            }
+          />
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', fontSize: 'var(--text-caption)' }}>
             <label>
               fps{' '}
@@ -221,9 +301,20 @@ function Bench() {
                 onChange={e => setCurrentT(Number(e.target.value))}
               />
             </label>
+            <label>
+              tool{' '}
+              <select value={tool} onChange={e => setTool(e.target.value as ViewerTool)}>
+                {(['look', 'calibrate', 'mark', 'distance', 'angle'] as ViewerTool[]).map(t => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button type="button" onClick={() => setCoach(null)}>
               reset phase edges
             </button>
+            <span>{`${marks.length} marks`}</span>
           </div>
         </main>
 

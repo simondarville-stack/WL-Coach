@@ -45,6 +45,24 @@ interface ViewerTransportProps {
   onSpeed: (speed: number) => void;
 }
 
+
+/**
+ * Pointer capture, guarded.
+ *
+ * `setPointerCapture` throws `NotFoundError` when the pointer id is no longer
+ * active — which happens for real when a pointer is released between the event
+ * being queued and the handler running, and which would otherwise take the
+ * whole gesture down with it. Failing to capture costs a drag that stops at the
+ * element's edge; throwing costs the interaction entirely.
+ */
+function capturePointer(element: Element, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Nothing to capture. The gesture still works inside the element.
+  }
+}
+
 export function ViewerTransport({
   index,
   frameCount,
@@ -78,7 +96,7 @@ export function ViewerTransport({
 
   const onStripDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     scrubbing.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capturePointer(e.currentTarget, e.pointerId);
     seekFromClient(e.clientX);
   };
   const onStripMove = (e: ReactPointerEvent<HTMLDivElement>) => {

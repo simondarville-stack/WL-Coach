@@ -57,6 +57,24 @@ interface AnalysisPanelProps {
   emptyReason: string | null;
 }
 
+
+/**
+ * Pointer capture, guarded.
+ *
+ * `setPointerCapture` throws `NotFoundError` when the pointer id is no longer
+ * active — which happens for real when a pointer is released between the event
+ * being queued and the handler running, and which would otherwise take the
+ * whole gesture down with it. Failing to capture costs a drag that stops at the
+ * element's edge; throwing costs the interaction entirely.
+ */
+function capturePointer(element: Element, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Nothing to capture. The gesture still works inside the element.
+  }
+}
+
 export function AnalysisPanel({
   series,
   spans,
@@ -90,12 +108,12 @@ export function AnalysisPanel({
 
   const onTrackPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (draggingRef.current !== null) {
-      e.currentTarget.setPointerCapture(e.pointerId);
+      capturePointer(e.currentTarget, e.pointerId);
       return;
     }
     // A press anywhere else on the band scrubs, so the band doubles as a
     // timeline rather than being a thing you can only drag edges on.
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capturePointer(e.currentTarget, e.pointerId);
     onSeekT(timeFromClient(e.clientX));
   };
 

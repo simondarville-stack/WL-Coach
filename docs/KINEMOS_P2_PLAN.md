@@ -194,7 +194,27 @@ plate half out of frame. Carrying 0,09 into the grade would put every clip at A,
 which is exactly the over-claim the grade exists to prevent. The figure moves
 when somebody measures a real clip against a hand-labelled track.
 
-## 5. Out of scope for P2
+## 5. The verification harnesses
+
+Three, each closing a gap the layer above it cannot:
+
+| Harness | What it proves | How |
+| --- | --- | --- |
+| `verify/frame-server.html` | Frame-accurate **seeking** — that frame *n* really is frame *n* | Encodes a clip whose every frame carries a grey patch naming its own index, reads it back through the real frame server, and recovers the index from the pixels |
+| `verify/tracker.html` | The tracker through the **real** path — codec, frame server, canvas readback, greyscale conversion | Encodes a plate on a drawn trajectory and compares the track to it |
+| `verify/viewer-preview.html` + `verify/drive-gestures.mjs` | The **pointer maths** — client coordinates through a scaled canvas, times through a band's width, a drag that survives pointer capture | Renders the analysis surfaces against a synthetic lift and drives them with a real browser pointer |
+
+The first two run in any browser with no dependency. The gesture driver needs
+`npm i --no-save playwright-core`, deliberately not a project dependency.
+
+They exist because the layers they cover are exactly the ones jsdom cannot
+reach: there is no decoder, and there is no layout, so every
+`getBoundingClientRect()` in a unit test is zero. Between them they have caught
+a frame server that threw on every clip, a tracker with a systematic half-pixel
+offset, a phase whose duration was always zero, and a rail whose verdict sat
+below the fold.
+
+## 6. Out of scope for P2
 
 Comparison, trend views, talkovers, sharing, overlay export — P3. Stabilisation
 and the device-profile calibration tier are P3 as well; the columns and the

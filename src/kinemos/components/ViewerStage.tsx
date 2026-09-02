@@ -81,6 +81,24 @@ function handlePoint(ellipse: PlateEllipse, which: 'major' | 'minor'): PxPoint {
   return { x: ellipse.cx + dir.x * r, y: ellipse.cy + dir.y * r };
 }
 
+
+/**
+ * Pointer capture, guarded.
+ *
+ * `setPointerCapture` throws `NotFoundError` when the pointer id is no longer
+ * active — which happens for real when a pointer is released between the event
+ * being queued and the handler running, and which would otherwise take the
+ * whole gesture down with it. Failing to capture costs a drag that stops at the
+ * element's edge; throwing costs the interaction entirely.
+ */
+function capturePointer(element: Element, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Nothing to capture. The gesture still works inside the element.
+  }
+}
+
 export function ViewerStage({
   canvas,
   width,
@@ -153,7 +171,7 @@ export function ViewerStage({
     // The pointer is captured on the wrapper in every case, including a handle
     // grab: capturing on the small circle instead would send moves to the
     // circle and lose them the moment the coach drags faster than it is wide.
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capturePointer(e.currentTarget, e.pointerId);
 
     if (dragRef.current) return; // a handle claimed this press
 
