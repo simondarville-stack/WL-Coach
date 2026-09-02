@@ -28,8 +28,10 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, 'fixtures')
-CLIP = os.path.join(FIX, 'synth-degraded.webm')
-TRUTH = os.path.join(FIX, 'synth-degraded.truth.json')
+HANDHELD = '--handheld' in sys.argv
+NAME = 'synth-handheld' if HANDHELD else 'synth-degraded'
+CLIP = os.path.join(FIX, f'{NAME}.webm')
+TRUTH = os.path.join(FIX, f'{NAME}.truth.json')
 
 W, H, FPS, FRAMES = 384, 288, 50, 175
 PLATE_R = 22          # 45 cm plate ≈ 44 px across at this scale (~1 cm/px)
@@ -62,10 +64,15 @@ def make():
     # A gym: mottled wall, floor band, a rack upright, a horizontal line at plate height.
     wall = np.full((H, W), 92, np.float32)
     wall += cv2.GaussianBlur(rng.normal(0, 18, (H, W)).astype(np.float32), (0, 0), 9)
+    # Fine, world-fixed texture as well: a gym wall has bricks, posters and
+    # scuffs, and a stabiliser has nothing to hold on to without them.
+    wall += cv2.GaussianBlur(rng.normal(0, 14, (H, W)).astype(np.float32), (0, 0), 1.2)
     wall[H - 40:, :] = 70
     wall[:, 300:316] = 175
     wall[120:124, :] = 130
-    truth = []
+    truth = []   # where the bar end appears in each frame
+    world = []   # where it is in the gym, i.e. with the camera taken out
+    cam_dx = cam_dy = cam_rot = 0.0
     fourcc = cv2.VideoWriter_fourcc(*'VP80')
     writer = cv2.VideoWriter(CLIP, fourcc, FPS, (W, H))
     assert writer.isOpened()
@@ -92,19 +99,35 @@ def make():
             k = np.zeros((blur, blur), np.float32)
             k[:, blur // 2] = 1.0 / blur
             img = cv2.filter2D(img, -1, k)
-        # sensor noise + slight camera shake
+        # sensor noise + camera motion: a frame-independent wobble by default,
+        # or — with --handheld — a random walk with rotation, the way a phone
+        # held at arm's length actually moves.
         img += rng.normal(0, 4, img.shape).astype(np.float32)
-        shake = rng.normal(0, 0.4, 2)
-        M = np.float32([[1, 0, shake[0]], [0, 1, shake[1]]])
-        img = cv2.warpAffine(img, M, (W, H), borderMode=cv2.BORDER_REFLECT)
-        truth[-1] = [truth[-1][0] + float(shake[0]), truth[-1][1] + float(shake[1])]
+        if HANDHELD:
+            cam_dx += float(rng.normal(0.35, 0.9))
+            cam_dy += float(rng.normal(-0.2, 0.9))
+            cam_rot += float(rng.normal(0, 0.12))
+            M = cv2.getRotationMatrix2D((W / 2, H / 2), cam_rot, 1.0)
+            M[0, 2] += cam_dx
+            M[1, 2] += cam_dy
+            img = cv2.warpAffine(img, M, (W, H), borderMode=cv2.BORDER_REFLECT)
+            # Where the true bar end appears on this frame.
+            px = M @ np.array([truth[-1][0], truth[-1][1], 1.0])
+            world.append(list(truth[-1]))
+            truth[-1] = [float(px[0]), float(px[1])]
+        else:
+            shake = rng.normal(0, 0.4, 2)
+            M = np.float32([[1, 0, shake[0]], [0, 1, shake[1]]])
+            img = cv2.warpAffine(img, M, (W, H), borderMode=cv2.BORDER_REFLECT)
+            world.append(list(truth[-1]))
+            truth[-1] = [truth[-1][0] + float(shake[0]), truth[-1][1] + float(shake[1])]
         frame = np.clip(img, 0, 255).astype(np.uint8)
         writer.write(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR))
     writer.release()
     ax, ay = truth[ANCHOR_FRAME]
-    json.dump({'fps': FPS, 'frames': FRAMES, 'anchorFrame': ANCHOR_FRAME, 'plateR': PLATE_R, 'truth': truth}, open(TRUTH, 'w'))
+    json.dump({'fps': FPS, 'frames': FRAMES, 'anchorFrame': ANCHOR_FRAME, 'plateR': PLATE_R, 'truth': truth, 'world': world}, open(TRUTH, 'w'))
     print(f'wrote {CLIP} ({os.path.getsize(CLIP)} bytes) and truth')
-    print(f'QUERY=clip=/verify/fixtures/synth-degraded.webm&anchor={ANCHOR_FRAME},{ax:.2f},{ay:.2f}&plate={ax:.2f},{ay:.2f},{PLATE_R},{PLATE_R},0,45')
+    print(f'QUERY=clip=/verify/fixtures/{NAME}.webm&anchor={ANCHOR_FRAME},{ax:.2f},{ay:.2f}&plate={ax:.2f},{ay:.2f},{PLATE_R},{PLATE_R},0,45')
 
 
 def load_frames():
@@ -270,7 +293,14 @@ def run_score(result_path):
     if result_path and os.path.exists(result_path):
         res = json.load(open(result_path))
         pts = [(p[0], p[2], p[3]) for p in res['points']]
-        score(pts, truth, 'KinEMOS NCC (TS, real path)', 0.0)
+        if '--world' in sys.argv:
+            # A stabilised track is in the anchor frame's coordinates: compare
+            # against the gym-frame truth mapped into the anchor frame.
+            anchor_off = [truth[ANCHOR_FRAME][0] - meta['world'][ANCHOR_FRAME][0], truth[ANCHOR_FRAME][1] - meta['world'][ANCHOR_FRAME][1]]
+            world = [[w[0] + anchor_off[0], w[1] + anchor_off[1]] for w in meta['world']]
+            score(pts, world, 'KinEMOS NCC, stabilised (vs gym)', 0.0)
+        else:
+            score(pts, truth, 'KinEMOS NCC (TS, real path)', 0.0)
     for name, fn in [
         ('cv2.matchTemplate fixed, masked', lambda: track_template(frames, truth, False, True)),
         ('cv2.matchTemplate fixed, square', lambda: track_template(frames, truth, False, False)),

@@ -27,6 +27,10 @@
        *   &plate=180,210,22,21,0,45               ellipse cx,cy,a,b,tiltDeg + plate cm
        *   &mass=60                                bar mass for power (optional)
        *   &radius=22                              template radius (default: plate a)
+       *   &auto=1                                 find the plate on the anchor frame with OpenCV
+       *                                           (anchor= needs only the frame index; plate= only the cm)
+       *   &stabilise=1                            estimate camera motion on the background and
+       *                                           map the track into the anchor frame first
        *
        * Writes the result to `window.__RESULT__` and draws the track over the
        * anchor frame plus a bar-path panel in centimetres, equal aspect.
@@ -38,6 +42,8 @@
       import { computeKinematics, summariseRep } from '/src/kinemos/engine/kinematics.ts';
       import { computeLiftMetrics, proposePhases, spansFrom } from '/src/kinemos/engine/phases.ts';
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
+      import { findPlate } from '/src/kinemos/cv/plate.ts';
+      import { estimateCameraMotion, motionSummary, stabilisePoints } from '/src/kinemos/cv/stabilise.ts';
 
       const params = new URLSearchParams(location.search);
       const logEl = document.getElementById('log');
@@ -165,11 +171,27 @@
           window.__DONE__ = true;
           log('done (frame dump)');
         } else {
-          const [aIndex, ax, ay] = nums('anchor');
-          const plate = nums('plate');
+          let [aIndex, ax, ay] = nums('anchor');
+          let plate = nums('plate');
+          const source = trackerSourceFrom(server);
+          if (params.has('auto')) {
+            if (!Number.isFinite(aIndex)) throw new Error('auto needs ?anchor=<frame index>');
+            const cm = plate[plate.length - 1] ?? 45;
+            const gray = await source.getGray(aIndex);
+            const tAuto = performance.now();
+            const found = await findPlate(gray, {
+              minRadiusPx: Math.round(server.displayHeight * 0.03),
+              maxRadiusPx: Math.round(server.displayHeight * 0.22),
+              near: Number.isFinite(ax) && Number.isFinite(ay) ? { x: ax, y: ay } : undefined,
+            });
+            if (!found) throw new Error('auto: no plate found on the anchor frame');
+            const e = found.ellipse;
+            log(`auto plate in ${(performance.now() - tAuto).toFixed(0)} ms: centre (${e.cx.toFixed(2)}, ${e.cy.toFixed(2)}) semi-axes ${e.semiMajorPx.toFixed(2)}×${e.semiMinorPx.toFixed(2)} tilt ${e.tiltDeg.toFixed(1)}°, edge support ${found.support.toFixed(2)} on ${found.points} points (hough r ${found.candidate.r.toFixed(1)})`);
+            ax = e.cx; ay = e.cy;
+            plate = [e.cx, e.cy, e.semiMajorPx, e.semiMinorPx, e.tiltDeg, cm];
+          }
           if (!Number.isFinite(aIndex) || plate.length < 6) throw new Error('need ?anchor=i,x,y&plate=cx,cy,a,b,tilt,cm');
           const radius = Number(params.get('radius') ?? plate[2]);
-          const source = trackerSourceFrom(server);
           const t0 = performance.now();
           const result = await trackFromAnchor(source, { index: aIndex, x: ax, y: ay }, { templateRadiusPx: radius });
           const ms = performance.now() - t0;
@@ -193,6 +215,34 @@
           }
           const jitRms = Math.sqrt(jit / Math.max(1, pts.length - 2));
           log(`raw jitter (2nd difference) rms ${jitRms.toFixed(3)} px, max ${jitMax.toFixed(3)} px`);
+
+          if (params.has('stabilise')) {
+            const tS = performance.now();
+            const byIndex = new Map(pts.map(p => [p.index, p]));
+            const motions = await estimateCameraMotion(source, aIndex, {
+              exclude: i => {
+                const p = byIndex.get(i);
+                return p ? { x: p.x, y: p.y, r: radius } : null;
+              },
+            });
+            const sum = motionSummary(motions);
+            log(`stabilised in ${(performance.now() - tS).toFixed(0)} ms: camera moved up to ${sum.maxShiftPx.toFixed(2)} px (rms ${sum.rmsShiftPx.toFixed(2)}), ${sum.weakFrames} weak frames`);
+            const before = pts.map(p => ({ x: p.x, y: p.y }));
+            const stabilised = stabilisePoints(pts, motions);
+            let moved = 0;
+            for (let i = 0; i < pts.length; i++) moved = Math.max(moved, Math.hypot(stabilised[i].x - before[i].x, stabilised[i].y - before[i].y));
+            log(`track moved by up to ${moved.toFixed(2)} px after stabilisation`);
+            for (let i = 0; i < pts.length; i++) { pts[i].x = stabilised[i].x; pts[i].y = stabilised[i].y; }
+            window.__MOTIONS__ = motions.map(m => [m.index, ...m.toAnchor, m.inliers]);
+            // Jitter again, now on the stabilised track.
+            let j2 = 0; let j2max = 0;
+            for (let i = 1; i < pts.length - 1; i++) {
+              const ddx = pts[i + 1].x - 2 * pts[i].x + pts[i - 1].x;
+              const ddy = pts[i + 1].y - 2 * pts[i].y + pts[i - 1].y;
+              const d = Math.hypot(ddx, ddy); j2 += d * d; j2max = Math.max(j2max, d);
+            }
+            log(`stabilised jitter (2nd difference) rms ${Math.sqrt(j2 / Math.max(1, pts.length - 2)).toFixed(3)} px, max ${j2max.toFixed(3)} px`);
+          }
 
           const calibration = calibrateFromEllipse(
             { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] },
