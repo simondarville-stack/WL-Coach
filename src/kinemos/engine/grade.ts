@@ -61,14 +61,28 @@ export type DistortionSource = 'none' | 'model' | 'profile';
 export type Verdict = 'good' | 'fair' | 'weak';
 
 /**
- * Position uncertainty per tier, in pixels. COACH-CONFIG in spirit, though
- * these are properties of the method rather than preferences: they are the
- * numbers to revise when a tracker is measured against ground truth, and the
- * P2 tracker's own validation is where that measurement comes from.
+ * Position uncertainty per tier, in pixels. Properties of the method rather
+ * than preferences — these are the numbers to revise as each tier is measured.
+ *
+ * `assisted` is the one with evidence behind it, and the evidence is not what
+ * this number says. Measured against ground truth the P2 tracker lands within
+ * **0,04 px** RMS on synthetic images (`tracker.test.ts`) and **0,09 px**
+ * through a real encode-decode round trip — VP9, the actual frame server, the
+ * actual canvas readback (`verify/tracker.html`). Either figure would put every
+ * clip at grade A.
+ *
+ * Neither is carried over. What both measurements still lack is everything that
+ * makes real footage hard: motion blur through the second pull, a lifter's
+ * hands and body crossing the plate, a background that moves because the camera
+ * does, and a plate that is not a clean disc at all when it is half out of
+ * frame. 0,8 px is a deliberately conservative stand-in — better than a coach's
+ * click, worse than a marker — and it stays there until somebody measures a real
+ * clip against a hand-labelled track. Over-claiming here would corrupt the grade
+ * in the one direction the grade exists to prevent.
  */
 export const TIER_POSITION_NOISE_PX: Record<TrackerTier, number> = {
   manual: 1.5,
-  assisted: 1.0,
+  assisted: 0.8,
   ml: 0.8,
   marker: 0.4,
 };

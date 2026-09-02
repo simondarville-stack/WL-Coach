@@ -17,11 +17,7 @@
 import { Trash2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { Button, Select } from '../../components/ui';
-import {
-  PLATE_PRESETS,
-  type Calibration,
-  type PlateEllipse,
-} from '../engine/calibration';
+import { PLATE_PRESETS, type Calibration, type PlateEllipse } from '../engine/calibration';
 import { mmPerPx, num } from '../lib/viewerFormat';
 
 interface CalibrationPanelProps {
@@ -153,7 +149,9 @@ function Row({ term, value, hint }: { term: string; value: string; hint?: string
       style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}
       title={hint}
     >
-      <dt style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>{term}</dt>
+      <dt style={{ fontSize: 'var(--text-label)', color: 'var(--color-text-secondary)' }}>
+        {term}
+      </dt>
       <dd
         style={{
           margin: 0,

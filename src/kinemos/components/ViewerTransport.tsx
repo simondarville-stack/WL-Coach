@@ -32,6 +32,10 @@ interface ViewerTransportProps {
   speed: number;
   /** Timestamps that carry a mark, for the coverage band. */
   markedTimes: number[];
+  /** Frame indices the tracker was not sure about. Drawn over the coverage in
+   *  warning colour: this strip is where "which frames are worth checking" gets
+   *  answered without scrubbing all 218 of them. */
+  uncertainIndices?: number[];
   fps: number;
   vfr: boolean;
 
@@ -48,6 +52,7 @@ export function ViewerTransport({
   playing,
   speed,
   markedTimes,
+  uncertainIndices = [],
   fps,
   vfr,
   onSeek,
@@ -124,6 +129,24 @@ export function ViewerTransport({
                 width: 2,
                 background: 'var(--color-accent)',
                 opacity: 0.55,
+              }}
+            />
+          );
+        })}
+        {uncertainIndices.map(i => {
+          const left = frameCount > 1 ? (i / (frameCount - 1)) * 100 : 0;
+          return (
+            <span
+              key={`u${i}`}
+              title={`Frame ${i + 1} — the tracker was not confident here`}
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: `${left}%`,
+                width: 3,
+                marginLeft: -0.5,
+                background: 'var(--color-warning-border)',
               }}
             />
           );

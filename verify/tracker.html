@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KinEMOS — tracker verification</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font: 14px/1.5 system-ui, sans-serif;
+        background: #fafaf9;
+        color: #1a1a18;
+      }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #5f5e5a; max-width: 74ch; }
+      table { border-collapse: collapse; font-size: 13px; }
+      td { padding: 3px 12px 3px 0; vertical-align: top; }
+      td:first-child { color: #5f5e5a; white-space: nowrap; }
+      .pass { color: #27500a; font-weight: 600; }
+      .fail { color: #791f1f; font-weight: 600; }
+      .verdict { margin: 16px 0; font-size: 16px; font-weight: 600; }
+      code { font-family: ui-monospace, Menlo, monospace; }
+      canvas { border: 1px solid rgba(0,0,0,0.15); margin-top: 16px; max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <h1>KinEMOS — tracker verification</h1>
+    <p class="lede">
+      The tracker's unit tests hand it synthetic images directly. This page closes the gap between
+      that and the app: it <strong>encodes a real video</strong> of a plate moving along a known
+      trajectory, reads it back through the actual frame server, converts frames through the actual
+      <code>trackerSourceFrom</code> adapter, and tracks. So the codec's chroma subsampling, its
+      quantisation, the canvas readback and the greyscale conversion are all in the path — and the
+      answer is still known, because the trajectory was drawn.
+    </p>
+    <div class="verdict" id="verdict">Running…</div>
+    <table id="results"></table>
+    <canvas id="preview" width="480" height="320"></canvas>
+
+    <script type="module">
+      import { openFrameServer } from '/src/kinemos/engine/frameServer.ts';
+      import { trackFromAnchor, DEFAULT_TRACK_OPTIONS } from '/src/kinemos/engine/tracker.ts';
+      import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
+
+      const W = 480;
+      const H = 320;
+      const FRAMES = 40;
+      const FPS = 30;
+      const PLATE_R = 34;
+
+      const checks = [];
+      const check = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail ?? '' });
+
+      /** An S-pull with deliberately fractional coordinates. */
+      function truthAt(i) {
+        const u = i / (FRAMES - 1);
+        return {
+          x: 190 + 16 * Math.sin(u * Math.PI * 2) + 0.37,
+          y: 250 - 170 * u + 0.61,
+        };
+      }
+
+      /** Draw frame i: platform, a rack upright to be tempted by, and a plate
+       *  with branding that rotates through a full turn over the clip. */
+      function draw(ctx, i) {
+        const { x, y } = truthAt(i);
+        const rotation = (i / (FRAMES - 1)) * Math.PI * 2;
+
+        ctx.fillStyle = '#232320';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#3a3a35';
+        ctx.fillRect(0, H - 40, W, 40);
+        ctx.fillStyle = '#b9b9b2';
+        ctx.fillRect(392, 0, 18, H);
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.fillStyle = '#7a7a74';
+        ctx.fillRect(-PLATE_R * 3, -5, PLATE_R * 6, 10);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, PLATE_R, 0, Math.PI * 2);
+        ctx.fillStyle = '#6f6f68';
+        ctx.fill();
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#dcdcd6';
+        ctx.stroke();
+
+        ctx.rotate(rotation);
+        ctx.fillStyle = '#2b2b28';
+        ctx.fillRect(-PLATE_R * 0.72, -PLATE_R * 0.26, PLATE_R * 1.44, PLATE_R * 0.52);
+        ctx.restore();
+      }
+
+      async function pickCodec() {
+        for (const c of [
+          { codec: 'avc', container: 'mp4', config: 'avc1.42001f' },
+          { codec: 'vp9', container: 'webm', config: 'vp09.00.10.08' },
+          { codec: 'vp8', container: 'webm', config: 'vp8' },
+        ]) {
+          const s = await VideoEncoder.isConfigSupported({
+            codec: c.config,
+            width: W,
+            height: H,
+            bitrate: 8_000_000,
+          }).catch(() => null);
+          if (s?.supported) return c;
+        }
+        return null;
+      }
+
+      async function encodeClip(chosen) {
+        const { Output, BufferTarget, CanvasSource, Mp4OutputFormat, WebMOutputFormat } =
+          await import('mediabunny');
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+
+        const output = new Output({
+          format:
+            chosen.container === 'mp4'
+              ? new Mp4OutputFormat({ fastStart: 'in-memory' })
+              : new WebMOutputFormat(),
+          target: new BufferTarget(),
+        });
+        const source = new CanvasSource(canvas, {
+          codec: chosen.codec,
+          // Generous: this is testing the tracker, not the codec's rate control.
+          bitrate: 12_000_000,
+        });
+        output.addVideoTrack(source);
+        await output.start();
+        for (let i = 0; i < FRAMES; i++) {
+          draw(ctx, i);
+          await source.add(i / FPS, 1 / FPS);
+        }
+        source.close();
+        await output.finalize();
+        return new Blob([output.target.buffer], {
+          type: chosen.container === 'mp4' ? 'video/mp4' : 'video/webm',
+        });
+      }
+
+      async function run() {
+        const chosen = await pickCodec();
+        if (!chosen) {
+          check('A codec this browser can encode', false, 'none of avc / vp9 / vp8');
+          return;
+        }
+        check('Encoder codec', true, `${chosen.codec} in ${chosen.container}`);
+
+        const blob = await encodeClip(chosen);
+        check('Clip encoded', blob.size > 0, `${(blob.size / 1024).toFixed(0)} kB`);
+
+        const server = await openFrameServer(blob);
+        check('Frame server opened it', server.frameCount === FRAMES, `${server.frameCount} frames`);
+
+        const source = trackerSourceFrom(server);
+        const anchor = truthAt(0);
+        const started = performance.now();
+        const result = await trackFromAnchor(
+          source,
+          { index: 0, x: anchor.x, y: anchor.y },
+          { templateRadiusPx: PLATE_R },
+        );
+        const elapsed = performance.now() - started;
+
+        check('Tracked the whole clip', result.points.length === FRAMES, `${result.points.length} points`);
+        check('Did not lose the bar', !result.gaveUp);
+
+        let sum = 0;
+        let worst = 0;
+        for (const p of result.points) {
+          const t = truthAt(p.index);
+          const e = Math.hypot(p.x - t.x, p.y - t.y);
+          sum += e * e;
+          worst = Math.max(worst, e);
+        }
+        const rms = Math.sqrt(sum / result.points.length);
+        // Through a real codec the bar is looser than on synthetic images: the
+        // encoder softens the plate's edge and the chroma path throws some of
+        // it away. Sub-pixel is still the requirement — a whole-pixel tracker
+        // would sit near 0,5 and could not reach the grade's assisted tier.
+        check('Sub-pixel through a real codec', rms < 0.5, `rms ${rms.toFixed(3)} px`);
+        check('No frame badly wrong', worst < 2, `worst ${worst.toFixed(3)} px`);
+
+        const minConfidence = Math.min(...result.points.map(p => p.confidence));
+        check(
+          'Stayed confident through the rotation',
+          minConfidence > DEFAULT_TRACK_OPTIONS.minConfidence,
+          `min ${minConfidence.toFixed(3)}`,
+        );
+        check(
+          'Fast enough to feel immediate',
+          elapsed / FRAMES < 60,
+          `${(elapsed / FRAMES).toFixed(1)} ms per frame, ${elapsed.toFixed(0)} ms total`,
+        );
+
+        // Draw the last frame with the track over it, so a human can see what
+        // the numbers are describing.
+        const preview = document.getElementById('preview');
+        const pctx = preview.getContext('2d');
+        const last = await server.frameAt(FRAMES - 1);
+        pctx.drawImage(last.canvas, 0, 0, W, H);
+        pctx.strokeStyle = '#185FA5';
+        pctx.lineWidth = 2;
+        pctx.beginPath();
+        result.points.forEach((p, i) => (i ? pctx.lineTo(p.x, p.y) : pctx.moveTo(p.x, p.y)));
+        pctx.stroke();
+        pctx.strokeStyle = 'rgba(255,255,255,0.75)';
+        pctx.setLineDash([4, 4]);
+        pctx.beginPath();
+        for (let i = 0; i < FRAMES; i++) {
+          const t = truthAt(i);
+          if (i) pctx.lineTo(t.x, t.y);
+          else pctx.moveTo(t.x, t.y);
+        }
+        pctx.stroke();
+
+        source.dispose();
+        server.close();
+      }
+
+      run()
+        .catch(err => check('Harness ran without throwing', false, String(err?.message ?? err)))
+        .finally(() => {
+          const failed = checks.filter(c => !c.ok);
+          document.getElementById('results').innerHTML = checks
+            .map(
+              c =>
+                `<tr><td>${c.name}</td><td class="${c.ok ? 'pass' : 'fail'}">${
+                  c.ok ? 'PASS' : 'FAIL'
+                }</td><td>${c.detail}</td></tr>`,
+            )
+            .join('');
+          const verdict = document.getElementById('verdict');
+          verdict.textContent = failed.length
+            ? `${failed.length} of ${checks.length} checks FAILED`
+            : `All ${checks.length} checks passed`;
+          verdict.className = `verdict ${failed.length ? 'fail' : 'pass'}`;
+          window.__VERIFY__ = { checks, failed: failed.length };
+        });
+    </script>
+  </body>
+</html>

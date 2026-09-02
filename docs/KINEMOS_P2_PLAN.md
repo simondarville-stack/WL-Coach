@@ -4,8 +4,8 @@
 `docs/KINEMOS_P0_PLAN.md` (library, 0.78.x), `docs/KINEMOS_P1_PLAN.md`
 (study room, 0.79.x).
 
-> **Status: P2a SHIPPED in 0.80.0** — the measurement pipeline and the surfaces
-> that show it. **P2b (the assisted tracker) is in progress.**
+> **Status: SHIPPED.** P2a (the measurement pipeline and its surfaces) in
+> 0.80.0; P2b (the assisted tracker) in 0.81.0.
 
 **P2 promise:** the numbers a coach came for — velocity per phase, power, a bar
 path they did not have to place by hand — each carrying an honest statement of
@@ -134,24 +134,65 @@ hour with `verify/viewer-preview.html` found, in order:
 None of these would have failed a unit test, and none would have survived a
 coach's first session.
 
-## 4. P2b — the assisted tracker (next)
+## 4. What P2b shipped
 
-- **Pure TypeScript, no OpenCV.** The design doc's implementation note assumed
-  opencv.js and hand-rolling from `matchTemplate` + `calcOpticalFlowPyrLK`. The
-  WASM build is ~9 MB and, for this target — one large, high-contrast,
-  rotation-symmetric disc, anchored by the coach on frame 1 — pyramidal
-  normalised cross-correlation with sub-pixel refinement is a few hundred lines
-  and no dependency at all. Revisit if it proves inadequate; the engine boundary
-  means swapping the implementation costs nothing above it.
-- **Validated against ground truth.** The browser harness can synthesise a clip
-  of a disc on a known trajectory, so tracker error is measurable in pixels
-  rather than assessed by eye — and `TIER_POSITION_NOISE_PX.assisted` in the
-  grade stops being a guess.
-- **Anchor and supervise.** Coach clicks the bar end on frame 1; the tracker
-  runs; per-frame confidence paints the timeline strip so the frames worth
-  checking are visible without scrubbing all 218 (the design brief's third open
-  question, answered properly this time). A correction re-tracks from that frame
-  and increments `correction_count`, which the grade already reads.
+**Pure TypeScript, no OpenCV.** The design doc's implementation note assumed
+opencv.js, hand-rolling from `matchTemplate` + `calcOpticalFlowPyrLK` because
+CSRT/KCF live in opencv_contrib. The dependency turned out to be unnecessary:
+for one large, high-contrast disc anchored by the coach, normalised
+cross-correlation over a masked template is a few hundred lines and no 9 MB WASM
+payload. The engine boundary means it can still be swapped if real footage
+demands it.
+
+**Anchor and supervise.** The coach marks the bar end on any frame; the tracker
+fills the clip forwards and backwards from it. Per-frame confidence paints the
+scrub strip, so the frames worth checking are visible without scrubbing all 218
+— the design brief's third open question, answered properly this time. A
+correction is the same gesture (mark the wrong frame, track again), which is why
+re-tracking needed no separate code path, and it increments `correction_count`,
+which the grade reads to demote a tracker that is not really doing the work.
+
+### Two assumptions the measurements overturned
+
+**The annulus mask was wrong.** The design doc reasoned that plates spin, so the
+template must exclude the rotating face and match only the rim. Measured against
+a synthetic plate carrying realistic branding through a full rotation, position
+error by inner radius:
+
+| inner / outer | 0,00 | 0,30 | 0,45 | 0,60 | 0,70 | 0,78 |
+| --- | --- | --- | --- | --- | --- | --- |
+| RMS error (px) | 0,038 | 0,047 | 0,050 | 0,065 | 0,089 | 0,243 |
+
+A ring does hold slightly higher correlation through the spin — but correlation
+only has to clear the confidence threshold, while position error *is* the
+product. Cutting the middle out throws away most of the pixels that localise the
+disc. The circular edge dominates the correlation regardless of what is printed
+inside it, so the default masks nothing and the knob stays for footage that
+misbehaves.
+
+**The template was cut on the wrong pixel.** A template can only be cut on whole
+pixels, but the coach clicks at (120,37 · 170,61) — so every match inherited that
+fractional offset, identically, on every frame. A systematic half-pixel error,
+invisible to anyone watching the overlay. Ground-truth testing found it in one
+run: RMS went from 0,53 px to 0,04 px.
+
+### Measured
+
+| | RMS | worst | min confidence |
+| --- | --- | --- | --- |
+| Synthetic images (`tracker.test.ts`) | 0,04 px | — | 0,79 through a full rotation |
+| Through VP9 encode → frame server → canvas (`verify/tracker.html`) | 0,09 px | 0,16 px | 0,76 |
+
+At ~20 ms per frame including decode, a 200-frame clip tracks in about four
+seconds.
+
+**What the grade does with that: nothing yet.**
+`TIER_POSITION_NOISE_PX.assisted` stays at a conservative 0,8 px rather than the
+0,09 that was measured. Neither measurement includes motion blur through the
+second pull, a lifter's hands crossing the plate, a camera that moves, or a
+plate half out of frame. Carrying 0,09 into the grade would put every clip at A,
+which is exactly the over-claim the grade exists to prevent. The figure moves
+when somebody measures a real clip against a hand-labelled track.
 
 ## 5. Out of scope for P2
 

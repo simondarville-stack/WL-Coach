@@ -147,6 +147,16 @@ describe('KinemosViewer', () => {
     expect(screen.getByText(/Power needs a mass/i)).toBeInTheDocument();
   });
 
+  it('offers tracking, and says what it needs first', async () => {
+    renderViewer();
+    await screen.findByText('Hang clean');
+    // Nothing marked yet, so there is no anchor to track from — the button is
+    // there but disabled, with the reason stated rather than implied.
+    const button = screen.getByRole('button', { name: /Track the bar from here/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/Mark the bar end once/i)).toBeInTheDocument();
+  });
+
   it('lets the coach state how the clip was filmed — half the error budget', async () => {
     renderViewer();
     await screen.findByText('Hang clean');
