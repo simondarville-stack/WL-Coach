@@ -31,6 +31,11 @@
        *                                           (anchor= needs only the frame index; plate= only the cm)
        *   &stabilise=1                            estimate camera motion on the background and
        *                                           map the track into the anchor frame first
+       *   &outline=1                              re-fit the plate outline on every frame, starting
+       *                                           from the tracker's point, and track its CENTRE —
+       *                                           the geometric plate rather than its appearance
+       *   &roll=2&tilt=0&cutoff=4&norepair=1      calibration roll, outline orientation override,
+       *                                           filter cutoff, timing repair off
        *
        * Writes the result to `window.__RESULT__` and draws the track over the
        * anchor frame plus a bar-path panel in centimetres, equal aspect.
@@ -39,10 +44,10 @@
       import { trackFromAnchor } from '/src/kinemos/engine/tracker.ts';
       import { trackerSourceFrom } from '/src/kinemos/lib/trackerSource.ts';
       import { calibrateFromEllipse } from '/src/kinemos/engine/calibration.ts';
-      import { computeKinematics, summariseRep } from '/src/kinemos/engine/kinematics.ts';
+      import { computeKinematics, peakStability, summariseRep } from '/src/kinemos/engine/kinematics.ts';
       import { computeLiftMetrics, proposePhases, spansFrom } from '/src/kinemos/engine/phases.ts';
       import { DEFAULT_FILTER } from '/src/kinemos/engine/signal.ts';
-      import { findPlate } from '/src/kinemos/cv/plate.ts';
+      import { findPlate, refinePlateEllipse } from '/src/kinemos/cv/plate.ts';
       import { estimateCameraMotion, motionSummary, stabilisePoints } from '/src/kinemos/cv/stabilise.ts';
 
       const params = new URLSearchParams(location.search);
@@ -244,15 +249,47 @@
             log(`stabilised jitter (2nd difference) rms ${Math.sqrt(j2 / Math.max(1, pts.length - 2)).toFixed(3)} px, max ${j2max.toFixed(3)} px`);
           }
 
+          // `?roll=` is the camera roll in degrees (default 0, a tripod);
+          // `?tilt=` overrides the outline orientation the find/snap produced,
+          // for showing what the orientation does and does not change.
+          const tiltDeg = params.has('tilt') ? Number(params.get('tilt')) : plate[4];
+          if (params.get('outline') === '1') {
+            // The outline tracker: the tracker's point seeds a per-frame
+            // edge fit and the fit's centre replaces it. Frames where the
+            // fit finds too little rim keep the tracker's point.
+            const tO = performance.now();
+            let kept = 0;
+            let weak = 0;
+            let moved = 0;
+            for (const p of pts) {
+              const gray = await source.getGray(p.index);
+              const guess = { cx: p.x, cy: p.y, semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] };
+              const fit = await refinePlateEllipse(gray, guess, { pick: params.get('pick') ?? 'outermost' });
+              if (!fit || fit.support < 0.6) { weak++; continue; }
+              moved = Math.max(moved, Math.hypot(fit.ellipse.cx - p.x, fit.ellipse.cy - p.y));
+              p.x = fit.ellipse.cx; p.y = fit.ellipse.cy; kept++;
+            }
+            log(`outline tracker in ${(performance.now() - tO).toFixed(0)} ms: ${kept} frames re-centred on the fitted outline, ${weak} kept the tracker's point (support < 0,6), largest move ${moved.toFixed(2)} px`);
+          }
+
           const calibration = calibrateFromEllipse(
-            { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg: plate[4] },
+            { cx: plate[0], cy: plate[1], semiMajorPx: plate[2], semiMinorPx: plate[3], tiltDeg },
             plate[5],
+            { rollDeg: Number(params.get('roll') ?? 0) },
           );
-          log(`calibration: ${calibration.cmPerPxV.toFixed(4)} cm/px vertical, ${calibration.cmPerPxH.toFixed(4)} horizontal, viewing angle ${calibration.viewingAngleDeg.toFixed(1)}°, confidence ${calibration.confidence}`);
+          log(`calibration: ${calibration.cmPerPxV.toFixed(4)} cm/px vertical, ${calibration.cmPerPxH.toFixed(4)} horizontal, viewing angle ${calibration.viewingAngleDeg.toFixed(1)}°, outline orientation ${calibration.tiltDeg.toFixed(1)}°, roll ${calibration.rollDeg}°, confidence ${calibration.confidence}`);
 
           const track = pts.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' }));
           const mass = params.has('mass') ? Number(params.get('mass')) : null;
-          const series = computeKinematics(track, calibration, { massKg: mass, filter: DEFAULT_FILTER });
+          // `?cutoff=` tries another filter cutoff; `?norepair=1` shows the
+          // series with mis-stamped frames left in.
+          const filter = params.has('cutoff') ? { ...DEFAULT_FILTER, cutoffHz: Number(params.get('cutoff')) } : DEFAULT_FILTER;
+          const series = computeKinematics(track, calibration, { massKg: mass, filter, repairTiming: params.get('norepair') !== '1' });
+          if (series && series.timingRepairs.length > 0) {
+            log(`timing: ${series.timingRepairs.map(r => `frame ${r.index} (t=${r.t.toFixed(2)}) ${r.action}${r.action !== 'dropped' ? ` by ${r.shiftFrames.toFixed(2)} frames` : ''} (step change ${r.stepChangePx.toFixed(1)} px)`).join('; ')}`);
+          } else if (series) {
+            log('timing: no frame needed re-timing');
+          }
           let metrics = null;
           let summary = null;
           let boundaries = [];
@@ -263,6 +300,8 @@
             summary = summariseRep(series);
             log(`kinematics: ${series.t.length} samples at ${series.sampleRateHz} Hz, filtered=${series.filtered}`);
             log(`peak vertical velocity ${summary.peakVerticalVelocityMs.toFixed(3)} m/s at t=${summary.peakVerticalVelocityT.toFixed(2)} s; peak height ${summary.peakHeightCm.toFixed(1)} cm; loop width ${summary.loopWidthCm.toFixed(1)} cm; duration ${summary.durationS.toFixed(2)} s`);
+            const stability = peakStability(track, calibration, { massKg: mass, filter, repairTiming: params.get('norepair') !== '1' });
+            if (stability) log(`peak stability: ${stability.peakAtLowerMs.toFixed(3)} / ${stability.peakMs.toFixed(3)} / ${stability.peakAtHigherMs.toFixed(3)} m/s at ${(filter.cutoffHz * 2 / 3).toFixed(1)} / ${filter.cutoffHz} / ${(filter.cutoffHz * 4 / 3).toFixed(1)} Hz — spread ${(stability.spread * 100).toFixed(1)} %`);
             log(`phases: ${metrics.phases.map(p => `${p.phaseId} ${p.durationS.toFixed(2)}s pk ${p.peakVelocityMs?.toFixed(2) ?? '—'}`).join(' | ')}; fully detected=${proposal.fullyDetected}`);
             log(`transition loss ${metrics.transitionVelocityLossMs?.toFixed(3) ?? '—'} m/s, turnover ${metrics.turnoverVelocityMs?.toFixed(3) ?? '—'} m/s, peak power ${metrics.peakPowerW?.toFixed(0) ?? '—'} W`);
           } else {
@@ -353,6 +392,7 @@
             jitterRms: jitRms,
             calibration,
             series: series ? { t: series.t, xCm: series.xCm, yCm: series.yCm, vyMs: series.vyMs } : null,
+            timingRepairs: series ? series.timingRepairs : [],
             summary,
             metrics,
             boundaries,

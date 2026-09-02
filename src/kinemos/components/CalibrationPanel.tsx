@@ -120,7 +120,11 @@ export function CalibrationPanel({
               value={`${num(calibration.viewingAngleDeg, 0)}° off perpendicular`}
               hint="Derived from how much narrower the plate looks than it is tall."
             />
-            <Row term="Plate tilt" value={`${num(calibration.tiltDeg, 1)}°`} />
+            <Row
+              term="Outline orientation"
+              value={`${num(calibration.tiltDeg, 1)}°`}
+              hint="Which way the outline's long axis leans. It says how the two scales are shared between the image axes — not which way is up. Up is the image vertical, from the tripod."
+            />
           </dl>
 
           {calibration.reason && (

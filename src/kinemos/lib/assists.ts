@@ -52,6 +52,73 @@ export async function snapEllipseOnFrame(
   }
 }
 
+export interface RecentreTrackResult {
+  points: KinemosTrackPoint[];
+  /** Frames whose point now sits on the fitted outline's centre. */
+  recentred: number;
+  /** Frames that kept the tracker's point — too little rim found. */
+  kept: number;
+  /** The largest move any point made, px. */
+  largestMovePx: number;
+}
+
+/**
+ * Put every point on the centre of the plate's OUTLINE rather than on the
+ * template match.
+ *
+ * The tracker follows the plate's appearance — the face pattern the coach
+ * anchored on — and appearance moves relative to the plate's geometry: the
+ * disc turns on the sleeve, blurs through the second pull, is lit from a
+ * different angle at the top of the pull than at the bottom. On the first real
+ * footage those moved the side view's peak velocity 5 % away from a second
+ * view of the same lift, and re-fitting the outline on every frame brought
+ * the two to within 1 % (docs/KINEMOS_ACCURACY_STUDY.md). The tracker's point
+ * seeds each fit, so this is a refinement, not a replacement: a frame where
+ * the rim is mostly hidden keeps the tracker's point, and says so.
+ *
+ * `strongest` picks the plate's own edge over the shadow's below it, which
+ * for a centre is what matters — a shadow that grows and shrinks with the
+ * lighting along the pull would otherwise pull the centre with it.
+ */
+export async function recentreTrackOnOutline(
+  server: FrameServer,
+  points: readonly KinemosTrackPoint[],
+  axes: { semiMajorPx: number; semiMinorPx: number; tiltDeg: number },
+  onProgress?: (done: number, total: number) => void,
+): Promise<RecentreTrackResult> {
+  const source = trackerSourceFrom(server);
+  try {
+    const out: KinemosTrackPoint[] = [];
+    let recentred = 0;
+    let kept = 0;
+    let largestMovePx = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const gray = await source.getGray(server.nearestIndex(p.t));
+      const fit = await refinePlateEllipse(
+        gray,
+        { cx: p.x, cy: p.y, semiMajorPx: axes.semiMajorPx, semiMinorPx: axes.semiMinorPx, tiltDeg: axes.tiltDeg },
+        { pick: 'strongest' },
+      );
+      if (fit && fit.support >= MIN_RECENTRE_SUPPORT) {
+        largestMovePx = Math.max(largestMovePx, Math.hypot(fit.ellipse.cx - p.x, fit.ellipse.cy - p.y));
+        out.push({ ...p, x: fit.ellipse.cx, y: fit.ellipse.cy });
+        recentred++;
+      } else {
+        out.push({ ...p });
+        kept++;
+      }
+      onProgress?.(i + 1, points.length);
+    }
+    return { points: out, recentred, kept, largestMovePx };
+  } finally {
+    source.dispose();
+  }
+}
+
+/** Below this much of the rim, the fit is not trusted over the tracker. */
+const MIN_RECENTRE_SUPPORT = 0.6;
+
 export interface StabiliseTrackResult {
   points: KinemosTrackPoint[];
   /** How far the camera moved over the clip, px. */

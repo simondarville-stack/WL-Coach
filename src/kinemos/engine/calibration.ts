@@ -17,6 +17,21 @@
  * interface must never imply one scale, and neither does this module: it
  * returns both, plus θ, plus how far to trust the result.
  *
+ * **Which way is up is NOT read off the ellipse.** The first version rotated
+ * every displacement onto the fitted ellipse's axes, on the reasoning that the
+ * major axis is the bar's travel direction. On real footage that was the
+ * single largest error KinEMOS had (docs/KINEMOS_ACCURACY_STUDY.md): a plate
+ * a few degrees off perpendicular is a few per cent from circular, and the
+ * orientation of a nearly circular ellipse is noise — ±15° on the two clips
+ * studied — so the rotation smeared a 160 cm vertical pull into a 40 cm
+ * sideways "loop" and moved peak velocity by 7 % between two views of one
+ * lift. Gravity is the reference a bar path actually has: on a tripod it is
+ * the image vertical, and a rolled camera is a separate, small, explicit
+ * number (`rollDeg`). The ellipse contributes its two scales and, through its
+ * orientation, only how those scales are shared between the image axes — a
+ * quantity that vanishes smoothly as the ellipse becomes a circle, which is
+ * exactly the robustness the rotation lacked. See `displacementToCm`.
+ *
  * Validity: ±30° off perpendicular (design §6.1). Beyond that the flat-circle
  * model breaks down (the plate's own thickness starts to show, and the residual
  * depth change of the bar through the lift stops being second-order), so the
@@ -44,9 +59,10 @@ export interface CmPoint {
  * The plate outline the coach confirmed.
  *
  * `tiltDeg` is the clockwise rotation of the MAJOR axis away from image
- * vertical. It is usually a couple of degrees (a hand-held phone is never
- * quite level); it exists because assuming zero would tilt every measured
- * height by the same error.
+ * vertical. It describes the outline's shape — which way the foreshortening
+ * runs — and nothing else: it is not the camera's roll and is never used as
+ * one (see the module comment). On a nearly circular plate it is barely
+ * determined, and the maths below is written so that does not matter.
  */
 export interface PlateEllipse {
   cx: number;
@@ -90,8 +106,19 @@ export interface Calibration {
   cmPerPxH: number;
   /** How far off perpendicular the camera is, degrees. */
   viewingAngleDeg: number;
-  /** Clockwise tilt of the major axis from image vertical, degrees. */
+  /** Clockwise tilt of the outline's major axis from image vertical, degrees.
+   *  Reported for the panel; it steers only how the two scales are shared
+   *  between the image axes, never which way is up. */
   tiltDeg: number;
+  /**
+   * Clockwise roll of the camera from level, degrees: the direction gravity
+   * points in the image. 0 for a tripod, which is the default and the case
+   * every measured clip so far. It is deliberately NOT inferred from the plate
+   * outline — a near-circular ellipse cannot say which way is up — and a
+   * source for it (a plumb reference, a rack upright, the stabiliser's
+   * rotation on a handheld clip) is a later assist. COACH-CONFIG candidate.
+   */
+  rollDeg: number;
   plateDiameterCm: number;
   confidence: CalibrationConfidence;
   /** Why the confidence is not `ok`. Null when it is. */
@@ -105,10 +132,17 @@ export interface Calibration {
  * `degenerate` with the scales it would have implied, because a viewer that
  * silently drops a calibration is worse than one that shows a flagged number.
  */
+export interface CalibrationOptions {
+  /** Camera roll, degrees clockwise from level. See `Calibration.rollDeg`. */
+  rollDeg?: number;
+}
+
 export function calibrateFromEllipse(
   ellipse: PlateEllipse,
   plateDiameterCm: number = DEFAULT_PLATE_DIAMETER_CM,
+  options: CalibrationOptions = {},
 ): Calibration {
+  const rollDeg = Number.isFinite(options.rollDeg) ? (options.rollDeg as number) : 0;
   // Whichever axis the coach dragged longer IS the major one; a UI that lets
   // both handles move will produce the other order sooner or later. Swapping
   // the axes rotates the frame by a quarter turn, so the tilt follows.
@@ -125,6 +159,7 @@ export function calibrateFromEllipse(
       cmPerPxH: 0,
       viewingAngleDeg: 0,
       tiltDeg,
+      rollDeg,
       plateDiameterCm: diameter,
       confidence: 'degenerate',
       reason: 'The plate outline has no size — drag the handles onto the plate edge.',
@@ -153,7 +188,16 @@ export function calibrateFromEllipse(
       'distances especially are approximate.';
   }
 
-  return { cmPerPxV, cmPerPxH, viewingAngleDeg, tiltDeg, plateDiameterCm: diameter, confidence, reason };
+  return {
+    cmPerPxV,
+    cmPerPxH,
+    viewingAngleDeg,
+    tiltDeg,
+    rollDeg,
+    plateDiameterCm: diameter,
+    confidence,
+    reason,
+  };
 }
 
 /** Fold a tilt into (-90, 90]. A plate rotated 100° is a plate rotated -80°;
@@ -164,11 +208,10 @@ export function normaliseTilt(deg: number): number {
   return t;
 }
 
-/** Unit vectors of the calibration frame, in image coordinates (y down).
- *  `up` runs along the major axis toward the top of frame; `right` across it. */
-function frameAxes(tiltDeg: number): { up: PxPoint; right: PxPoint } {
-  const phi = (tiltDeg * Math.PI) / 180;
-  // tilt 0 ⇒ up = (0,-1) (image y grows downward), right = (1,0).
+/** Unit vectors at `deg` clockwise from image vertical, in image coordinates
+ *  (y down). `up` at 0° is (0,−1), the top of the frame; `right` is (1,0). */
+function frameAxes(deg: number): { up: PxPoint; right: PxPoint } {
+  const phi = (deg * Math.PI) / 180;
   return {
     up: { x: Math.sin(phi), y: -Math.cos(phi) },
     right: { x: Math.cos(phi), y: Math.sin(phi) },
@@ -178,16 +221,52 @@ function frameAxes(tiltDeg: number): { up: PxPoint; right: PxPoint } {
 /**
  * Convert a pixel displacement to centimetres in the movement plane.
  *
- * This is the whole point of the anisotropic model: the displacement is
- * decomposed onto the plate's own axes and each component gets ITS scale. A
- * diagonal is not `px · cmPerPxV`, and a viewer that treats it as one reports a
- * loop-back 13 % short at 30°.
+ * The model. Under weak perspective a circle of radius R in the movement
+ * plane maps to the image by a linear map M; the ellipse IS that map, up to a
+ * rotation ψ within the plane that a circle cannot reveal. Inverting it:
+ *
+ *     N(δ) = ( (δ·n)·cmPerPxH , (δ·m)·cmPerPxV )
+ *
+ * with m, n the unit vectors along the major and minor axes — a displacement
+ * measured in the plane, but in a frame rotated by the unknown ψ. Lengths and
+ * angles in that frame are right; which way is up in it is not known.
+ *
+ * Gravity supplies it. Plane-up is what the image vertical (rotated by the
+ * camera roll) maps to under the same N, so with ĝ = N(up)/|N(up)|:
+ *
+ *     y = N(δ)·ĝ        x = N(δ)·ĝ⊥
+ *
+ * Two properties make this the right model on real footage, and both are the
+ * opposite of what "rotate onto the ellipse axes" did:
+ *
+ *   - a vertical image displacement is ALWAYS purely vertical in the result;
+ *     no orientation noise can leak height into the loop;
+ *   - as the ellipse tends to a circle, N tends to a uniform scale and the
+ *     orientation drops out entirely — so the one case where the orientation
+ *     is worst determined is the case where it matters least.
+ *
+ * At tilt 0 this is the plain anisotropic model (vertical by the major axis,
+ * horizontal by the minor); at tilt 90 the scales swap, which is what a plate
+ * foreshortened vertically — a camera looking down on the bar — needs. A
+ * diagonal is still never `px · cmPerPxV`.
  */
 export function displacementToCm(cal: Calibration, dxPx: number, dyPx: number): CmPoint {
-  const { up, right } = frameAxes(cal.tiltDeg);
-  const alongUp = dxPx * up.x + dyPx * up.y;
-  const alongRight = dxPx * right.x + dyPx * right.y;
-  return { x: alongRight * cal.cmPerPxH, y: alongUp * cal.cmPerPxV };
+  const axes = frameAxes(cal.tiltDeg);
+  const map = (px: number, py: number): CmPoint => ({
+    x: (px * axes.right.x + py * axes.right.y) * cal.cmPerPxH,
+    y: (px * axes.up.x + py * axes.up.y) * cal.cmPerPxV,
+  });
+  const gravity = frameAxes(cal.rollDeg).up;
+  const g = map(gravity.x, gravity.y);
+  const gLen = Math.hypot(g.x, g.y);
+  if (!(gLen > 0)) return { x: 0, y: 0 };
+  const gx = g.x / gLen;
+  const gy = g.y / gLen;
+  const v = map(dxPx, dyPx);
+  return {
+    x: v.x * gy - v.y * gx,
+    y: v.x * gx + v.y * gy,
+  };
 }
 
 /** Distance in cm between two display-space points, honouring both scales. */

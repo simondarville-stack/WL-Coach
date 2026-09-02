@@ -29,6 +29,13 @@ interface GradePanelProps {
     progress: { done: number; total: number } | null;
     note: string | null;
   };
+  /** Put every point on the plate outline's centre rather than on the
+   *  template match. Absent without a track and a calibration outline. */
+  recentre?: {
+    onRun: () => void;
+    progress: { done: number; total: number } | null;
+    note: string | null;
+  };
 }
 
 const CAMERA_OPTIONS: Array<{ value: CameraStability; label: string }> = [
@@ -38,7 +45,7 @@ const CAMERA_OPTIONS: Array<{ value: CameraStability; label: string }> = [
   { value: 'handheld', label: 'Handheld' },
 ];
 
-export function GradePanel({ grade, camera, onCamera, stabilise }: GradePanelProps) {
+export function GradePanel({ grade, camera, onCamera, stabilise, recentre }: GradePanelProps) {
   // Collapsed by default. The verdict and what to do about it are what a coach
   // reads; the seven conditions behind it are what they read once, when the
   // verdict surprises them. Four panels stacked in a 304 px rail put the
@@ -149,6 +156,23 @@ export function GradePanel({ grade, camera, onCamera, stabilise }: GradePanelPro
               : 'Stabilise the camera'}
           </Button>
           {stabilise.note && <p style={hint}>{stabilise.note}</p>}
+        </div>
+      )}
+
+      {recentre && showFactors && (
+        <div style={{ marginTop: 'var(--space-sm)' }}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={recentre.onRun}
+            disabled={recentre.progress !== null}
+            title="Re-fit the plate's outline on every frame, starting from the tracked point, and move the point to the outline's centre. The tracker follows the plate's face, which turns and blurs; the outline is the plate itself. Loads OpenCV the first time, about 13 MB."
+          >
+            {recentre.progress
+              ? `Re-centring ${recentre.progress.done} / ${recentre.progress.total}…`
+              : 'Re-centre on the outline'}
+          </Button>
+          {recentre.note && <p style={hint}>{recentre.note}</p>}
         </div>
       )}
 

@@ -469,6 +469,19 @@ check the outline against the plate face (the snap reports support, not
 which edge it chose); the oblique view is for path shape. Both of these are
 now product facts rather than assumptions.
 
+**Superseded by the accuracy study.** The 15 % gap above was explained here
+by outline bias and depth; the overnight study that followed
+(`docs/KINEMOS_ACCURACY_STUDY.md`) measured each term and found the
+explanation wrong in its largest part. The calibration was *rotating*
+displacements onto the fitted outline's axes, and the orientation of a
+near-circular outline is noise (+11,9° and −16,9° for two level cameras) —
+that alone made the 46 cm "loops" and most of the velocity gap. With gravity
+as the reference, a timing repair before resampling, the track re-centred on
+the plate's outline frame by frame, and a peak-stability factor in the grade,
+the two views now agree to 1,2 % on peak velocity, 1,4 % on height and 0,3 cm
+on loop width. The study is the reference for what the pipeline does and why;
+the paragraphs above stand as the record of what the first pass concluded.
+
 One environment note: the bundled headless Chromium has no H.264 decoder, so
 the fixtures were transcoded to VP8 for this run; a coach's Chrome decodes the
 MP4 directly.

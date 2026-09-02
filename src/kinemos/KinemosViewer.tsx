@@ -28,7 +28,7 @@ import {
   type PlateEllipse,
   type PxPoint,
 } from './engine/calibration';
-import { computeKinematics, summariseRep } from './engine/kinematics';
+import { computeKinematics, peakStability, summariseRep } from './engine/kinematics';
 import {
   DEFAULT_PHASE_SET,
   computeLiftMetrics,
@@ -44,7 +44,7 @@ import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
-import { findPlateOnFrame, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
+import { findPlateOnFrame, recentreTrackOnOutline, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
 import {
   findComparable,
   loadComparisonSubject,
@@ -157,6 +157,8 @@ export function KinemosViewer() {
   });
   const [stabiliseProgress, setStabiliseProgress] = useState<{ done: number; total: number } | null>(null);
   const [stabiliseNote, setStabiliseNote] = useState<string | null>(null);
+  const [recentreProgress, setRecentreProgress] = useState<{ done: number; total: number } | null>(null);
+  const [recentreNote, setRecentreNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -353,6 +355,13 @@ export function KinemosViewer() {
    */
   const comparable = kinematics !== null && liftMetrics !== null && repSummary !== null;
 
+  // Two extra runs of the pipeline at neighbouring cutoffs — a few hundred
+  // points each — to say whether the peak is the lift's or the filter's.
+  const stability = useMemo(
+    () => (kinematics ? peakStability(points, calibration, { massKg, filter: DEFAULT_FILTER }) : null),
+    [kinematics, points, calibration, massKg],
+  );
+
   const grade = useMemo(
     () =>
       gradeAnalysis({
@@ -369,8 +378,10 @@ export function KinemosViewer() {
         trackedFrames: points.length,
         camera,
         distortionSource: 'none',
+        timingRepairs: kinematics?.timingRepairs.length ?? 0,
+        peakSpread: stability?.spread ?? null,
       }),
-    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount],
+    [kinematics, server, calibration, camera, points.length, trackerTier, correctionCount, stability],
   );
 
   /**
@@ -760,6 +771,27 @@ export function KinemosViewer() {
       setStabiliseProgress(null);
     }
   }, [server, points, currentT, ellipse]);
+
+  const recentreNow = useCallback(async () => {
+    if (!server || !ellipse || points.length < 8) return;
+    setRecentreProgress({ done: 0, total: points.length });
+    setRecentreNote(null);
+    try {
+      const out = await recentreTrackOnOutline(server, points, ellipse, (done, total) =>
+        setRecentreProgress({ done, total }),
+      );
+      dirtyRef.current = true;
+      setPoints(out.points);
+      setRecentreNote(
+        `${out.recentred} of ${points.length} points now sit on the fitted outline's centre, moved by up to ${num(out.largestMovePx, 1)} px` +
+          (out.kept > 0 ? `; ${out.kept} kept the tracker's point because too little rim was visible.` : '.'),
+      );
+    } catch (e) {
+      setRecentreNote(e instanceof Error ? e.message : 'Re-centring could not run.');
+    } finally {
+      setRecentreProgress(null);
+    }
+  }, [server, points, ellipse]);
 
   /** Seek to the next frame the tracker was unsure about, after the playhead.
    *  Wraps, so repeated presses walk the whole set. */
@@ -1454,6 +1486,11 @@ export function KinemosViewer() {
             stabilise={
               points.length >= 8
                 ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
+                : undefined
+            }
+            recentre={
+              points.length >= 8 && ellipse
+                ? { onRun: () => void recentreNow(), progress: recentreProgress, note: recentreNote }
                 : undefined
             }
           />

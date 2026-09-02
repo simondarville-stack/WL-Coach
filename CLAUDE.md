@@ -89,7 +89,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   assists: find the plate with no click, snap an outline to the rim at
   sub-pixel, stabilise a handheld camera's track (`src/kinemos/cv/*`,
   `@techstark/opencv-js` loaded lazily as its own chunk; the tracker itself
-  stays pure TypeScript, having out-measured OpenCV's trackers).
+  stays pure TypeScript, having out-measured OpenCV's trackers) — and, from
+  the two-view accuracy study (`docs/KINEMOS_ACCURACY_STUDY.md`, the
+  reference for why the pipeline is shaped as it is): gravity-anchored
+  calibration (the plate outline gives scales, never which way is up), a
+  timing repair for mis-stamped frames before resampling
+  (`src/kinemos/engine/timing.ts`), per-frame re-centring of the track on the
+  plate outline, and a peak-stability factor in the grade.
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
