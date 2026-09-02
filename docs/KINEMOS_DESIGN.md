@@ -235,7 +235,12 @@ Coach-visible quality/effort tiers:
    - **Corrected by measurement (P2b, 0.81.0).** Two of the three assumptions
      above did not survive contact with a ground-truth test. The details are in
      `docs/KINEMOS_P2_PLAN.md` §4; in short:
-     - **OpenCV was not needed at all.** For this target — one large,
+     - **OpenCV was not needed for the tracker** — and, measured again in
+       P3d against the library's own trackers on degraded footage, still is
+       not (`docs/KINEMOS_P3_PLAN.md` §7). It IS used, lazily loaded, for the
+       work around the tracker: plate detection, sub-pixel outline snapping,
+       and the stabiliser tier of the calibration ladder (`src/kinemos/cv/*`).
+     - For this target — one large,
        high-contrast disc, anchored by the coach — normalised cross-correlation
        over a masked template with parabolic sub-pixel refinement reaches
        0,04 px RMS on synthetic images and 0,09 px through a real

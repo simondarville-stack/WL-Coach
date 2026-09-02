@@ -28,6 +28,12 @@ interface CalibrationPanelProps {
   onPlateDiameter: (cm: number) => void;
   onActivate: () => void;
   onClear: () => void;
+  /** Find the plate on this frame with OpenCV — no outline needed. */
+  onFind: () => void;
+  /** Snap the drawn outline to the plate's real edge, sub-pixel. */
+  onSnap: () => void;
+  /** Which assist is running, and what the last one said. */
+  assist: { busy: 'find' | 'snap' | null; note: string | null };
 }
 
 export function CalibrationPanel({
@@ -38,6 +44,9 @@ export function CalibrationPanel({
   onPlateDiameter,
   onActivate,
   onClear,
+  onFind,
+  onSnap,
+  assist,
 }: CalibrationPanelProps) {
   return (
     <section style={sectionStyle}>
@@ -55,9 +64,21 @@ export function CalibrationPanel({
           <p style={hintStyle}>
             Not calibrated — distances read in pixels. Outline a plate to get centimetres.
           </p>
-          <Button size="sm" variant="secondary" onClick={onActivate}>
-            {active ? 'Click the plate on the frame' : 'Calibrate against a plate'}
-          </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={onFind}
+              disabled={assist.busy !== null}
+              title="Find the plate on this frame, outline it to the pixel and track the bar from it — no clicking. Loads OpenCV the first time, about 13 MB."
+            >
+              {assist.busy === 'find' ? 'Finding the plate…' : 'Find the plate'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onActivate} disabled={assist.busy !== null}>
+              {active ? 'Click the plate on the frame' : 'Outline it by hand'}
+            </Button>
+          </div>
+          {assist.note && <p style={hintStyle}>{assist.note}</p>}
         </>
       )}
 
@@ -125,12 +146,22 @@ export function CalibrationPanel({
           )}
 
           {!active && (
-            <div style={{ marginTop: 'var(--space-sm)' }}>
-              <Button size="sm" variant="ghost" onClick={onActivate}>
+            <div style={{ marginTop: 'var(--space-sm)', display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={onSnap}
+                disabled={assist.busy !== null}
+                title="Move the outline onto the plate's real edge, to a fraction of a pixel, using the edges in the frame. Says how much of the rim it found."
+              >
+                {assist.busy === 'snap' ? 'Snapping…' : 'Snap to the edge'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onActivate} disabled={assist.busy !== null}>
                 Adjust the outline
               </Button>
             </div>
           )}
+          {assist.note && !active && <p style={hintStyle}>{assist.note}</p>}
           {active && (
             <p style={hintStyle}>
               Drag the outer handle to size and rotate the plate, the side handle to squash it onto

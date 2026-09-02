@@ -14,7 +14,7 @@
  */
 import { useState, type CSSProperties } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { Select } from '../../components/ui';
+import { Button, Select } from '../../components/ui';
 import type { CameraStability, QualityGrade } from '../engine/grade';
 import { num } from '../lib/viewerFormat';
 
@@ -22,6 +22,13 @@ interface GradePanelProps {
   grade: QualityGrade;
   camera: CameraStability;
   onCamera: (camera: CameraStability) => void;
+  /** Take the camera's motion out of the track. Absent when there is no
+   *  track to stabilise. */
+  stabilise?: {
+    onRun: () => void;
+    progress: { done: number; total: number } | null;
+    note: string | null;
+  };
 }
 
 const CAMERA_OPTIONS: Array<{ value: CameraStability; label: string }> = [
@@ -31,7 +38,7 @@ const CAMERA_OPTIONS: Array<{ value: CameraStability; label: string }> = [
   { value: 'handheld', label: 'Handheld' },
 ];
 
-export function GradePanel({ grade, camera, onCamera }: GradePanelProps) {
+export function GradePanel({ grade, camera, onCamera, stabilise }: GradePanelProps) {
   // Collapsed by default. The verdict and what to do about it are what a coach
   // reads; the seven conditions behind it are what they read once, when the
   // verdict surprises them. Four panels stacked in a 304 px rail put the
@@ -127,6 +134,23 @@ export function GradePanel({ grade, camera, onCamera }: GradePanelProps) {
           ))}
         </Select>
       </label>
+
+      {stabilise && showFactors && (camera === 'handheld' || camera === 'unknown') && (
+        <div style={{ marginTop: 'var(--space-sm)' }}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={stabilise.onRun}
+            disabled={stabilise.progress !== null}
+            title="Estimate how the phone moved from the wall, the rack and the floor behind the lifter, and take that motion out of the track. The video is untouched; only the bar path changes. Loads OpenCV the first time, about 13 MB."
+          >
+            {stabilise.progress
+              ? `Stabilising ${stabilise.progress.done} / ${stabilise.progress.total}…`
+              : 'Stabilise the camera'}
+          </Button>
+          {stabilise.note && <p style={hint}>{stabilise.note}</p>}
+        </div>
+      )}
 
       <p
         style={{

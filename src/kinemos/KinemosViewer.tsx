@@ -44,6 +44,7 @@ import { toStoredMetrics } from './engine/metricCatalogue';
 import { ComparisonView } from './components/ComparisonView';
 import { TrendsView } from './components/TrendsView';
 import { markAsReference } from './lib/referenceService';
+import { findPlateOnFrame, snapEllipseOnFrame, stabiliseTrack } from './lib/assists';
 import {
   findComparable,
   loadComparisonSubject,
@@ -149,6 +150,13 @@ export function KinemosViewer() {
   // deliberate act, not a drag, and it has to clear the previous holder.
   const [isReference, setIsReference] = useState(false);
   const [referenceBusy, setReferenceBusy] = useState(false);
+  // The OpenCV assists: which is running, and what the last one said.
+  const [assist, setAssist] = useState<{ busy: 'find' | 'snap' | null; note: string | null }>({
+    busy: null,
+    note: null,
+  });
+  const [stabiliseProgress, setStabiliseProgress] = useState<{ done: number; total: number } | null>(null);
+  const [stabiliseNote, setStabiliseNote] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
   const [comparisonId, setComparisonId] = useState<string | null>(null);
   const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
@@ -242,6 +250,8 @@ export function KinemosViewer() {
     setCoachBoundaries(null);
     setCamera('unknown');
     setIsReference(false);
+    setAssist({ busy: null, note: null });
+    setStabiliseNote(null);
     // The logged load is the best first guess at bar mass, and it is already on
     // the library row. A coach who filmed a different set overwrites it.
     setMassKg(clip?.loadKg ?? null);
@@ -614,6 +624,52 @@ export function KinemosViewer() {
   // frame; the tracker fills the clip forwards and backwards from it. A
   // correction is the same gesture — mark the frame that is wrong, then track
   // again — which is why re-tracking needs no separate code path.
+  /** Track the clip from one anchor, in both directions, and take the result
+   *  into the viewer. Shared by the TRACK button and the plate finder. */
+  const trackFrom = useCallback(
+    async (anchorIndex: number, x: number, y: number, radiusPx: number | undefined) => {
+      if (!server) return;
+      const source = trackerSourceFrom(server);
+      setTrackProgress({ done: 0, total: server.frameCount });
+      try {
+        const result = await trackFromAnchor(
+          source,
+          { index: anchorIndex, x, y },
+          {
+            // The plate is calibrated, so its on-screen radius is known rather
+            // than guessed — quietly the most useful thing the calibration does
+            // for the tracker.
+            templateRadiusPx: radiusPx === undefined ? undefined : Math.max(10, radiusPx),
+            onProgress: (done, total) => setTrackProgress({ done, total }),
+          },
+        );
+        if (result.points.length < 2) {
+          setSaveError(
+            'Tracking could not get hold of the bar from that point. Mark the bar end more ' +
+              'precisely, or calibrate the plate first so the tracker knows how big it is.',
+          );
+          return;
+        }
+        dirtyRef.current = true;
+        setPoints(result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
+        setUncertainIndices(result.lowConfidenceIndices);
+        setTrackerTier('assisted');
+        setSaveError(
+          result.gaveUp
+            ? 'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
+                'further on and re-track.'
+            : null,
+        );
+      } catch {
+        setSaveError('Tracking failed — the clip could not be read frame by frame.');
+      } finally {
+        source.dispose();
+        setTrackProgress(null);
+      }
+    },
+    [server],
+  );
+
   const runTrack = useCallback(async () => {
     if (!server || currentT === null) return;
     // The mark on this frame if there is one, otherwise the nearest mark in
@@ -625,46 +681,85 @@ export function KinemosViewer() {
       null,
     );
     if (!anchorPoint) return;
-    const anchorIndex = server.nearestIndex(anchorPoint.t);
+    await trackFrom(server.nearestIndex(anchorPoint.t), anchorPoint.x, anchorPoint.y, ellipse?.semiMajorPx);
+  }, [server, currentT, points, ellipse, trackFrom]);
 
-    const source = trackerSourceFrom(server);
-    setTrackProgress({ done: 0, total: server.frameCount });
+  // ── OpenCV assists ────────────────────────────────────────────────────────
+  //
+  // Find the plate (no outline), snap an outline to the edge, and take the
+  // camera's motion out of a track. Each is one deliberate press; each says
+  // what it found in the coach's terms, and none of them touches the video.
+  const findPlateHere = useCallback(async () => {
+    if (!server || currentT === null) return;
+    setAssist({ busy: 'find', note: null });
     try {
-      const result = await trackFromAnchor(
-        source,
-        { index: anchorIndex, x: anchorPoint.x, y: anchorPoint.y },
-        {
-          // The plate is calibrated, so its on-screen radius is known rather
-          // than guessed — quietly the most useful thing the calibration does
-          // for the tracker.
-          templateRadiusPx: ellipse ? Math.max(10, ellipse.semiMajorPx) : undefined,
-          onProgress: (done, total) => setTrackProgress({ done, total }),
-        },
-      );
-      if (result.points.length < 2) {
-        setSaveError(
-          'Tracking could not get hold of the bar from that point. Mark the bar end more ' +
-            'precisely, or calibrate the plate first so the tracker knows how big it is.',
-        );
+      const found = await findPlateOnFrame(server, index);
+      if (!found) {
+        setAssist({ busy: null, note: 'No plate found on this frame. Try a frame where the whole plate is in view, or outline it by hand.' });
         return;
       }
       dirtyRef.current = true;
-      setPoints(result.points.map(p => ({ t: p.t, x: p.x, y: p.y, s: 't' as const })));
-      setUncertainIndices(result.lowConfidenceIndices);
-      setTrackerTier('assisted');
-      setSaveError(
-        result.gaveUp
-          ? 'The tracker lost the bar part way through, so the track stops there. Mark it again ' +
-              'further on and re-track.'
-          : null,
-      );
-    } catch {
-      setSaveError('Tracking failed — the clip could not be read frame by frame.');
-    } finally {
-      source.dispose();
-      setTrackProgress(null);
+      setEllipse(found.ellipse);
+      // The plate's centre is the bar end: the anchor the tracker needs.
+      const anchor: KinemosTrackPoint = { t: currentT, x: found.ellipse.cx, y: found.ellipse.cy, s: 'm' };
+      setPoints(prev => [...prev.filter(p => Math.abs(p.t - currentT) > 1e-6), anchor].sort((a, b) => a.t - b.t));
+      setAssist({
+        busy: null,
+        note: `Plate found, edge under ${Math.round(found.support * 100)} % of the outline. Tracking from its centre.`,
+      });
+      await trackFrom(index, found.ellipse.cx, found.ellipse.cy, found.ellipse.semiMajorPx);
+    } catch (e) {
+      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The plate finder could not run.' });
     }
-  }, [server, currentT, points, ellipse]);
+  }, [server, currentT, index, trackFrom]);
+
+  const snapHere = useCallback(async () => {
+    if (!server || !ellipse) return;
+    setAssist({ busy: 'snap', note: null });
+    try {
+      const out = await snapEllipseOnFrame(server, index, ellipse);
+      if (!out) {
+        setAssist({ busy: null, note: 'No plate edge near the outline on this frame — nothing to snap to.' });
+        return;
+      }
+      const moved = Math.hypot(out.ellipse.cx - ellipse.cx, out.ellipse.cy - ellipse.cy);
+      const grew = out.ellipse.semiMajorPx - ellipse.semiMajorPx;
+      dirtyRef.current = true;
+      setEllipse(out.ellipse);
+      setAssist({
+        busy: null,
+        note:
+          `Snapped: centre moved ${num(moved, 1)} px, radius ${grew >= 0 ? '+' : '−'}${num(Math.abs(grew), 1)} px, ` +
+          `edge under ${Math.round(out.support * 100)} % of the outline${out.support < 0.6 ? ' — part of the plate is hidden; check it' : ''}.`,
+      });
+    } catch (e) {
+      setAssist({ busy: null, note: e instanceof Error ? e.message : 'The snap could not run.' });
+    }
+  }, [server, ellipse, index]);
+
+  const stabiliseNow = useCallback(async () => {
+    if (!server || points.length < 8 || currentT === null) return;
+    setStabiliseProgress({ done: 0, total: server.frameCount });
+    setStabiliseNote(null);
+    try {
+      // The anchor is the frame the coach marked, or the nearest to the playhead.
+      const anchor = points.find(p => p.s === 'm') ?? points[0];
+      const out = await stabiliseTrack(server, anchor.t, points, ellipse?.semiMajorPx ?? 20, (done, total) =>
+        setStabiliseProgress({ done, total }),
+      );
+      dirtyRef.current = true;
+      setPoints(out.points);
+      setCamera('stabilised');
+      setStabiliseNote(
+        `Camera moved up to ${num(out.maxShiftPx, 1)} px; the track was corrected by up to ${num(out.maxCorrectionPx, 1)} px` +
+          (out.weakFrames > 0 ? `, with ${out.weakFrames} frames where the background gave little to hold on to.` : '.'),
+      );
+    } catch (e) {
+      setStabiliseNote(e instanceof Error ? e.message : 'Stabilisation could not run.');
+    } finally {
+      setStabiliseProgress(null);
+    }
+  }, [server, points, currentT, ellipse]);
 
   /** Seek to the next frame the tracker was unsure about, after the playhead.
    *  Wraps, so repeated presses walk the whole set. */
@@ -1304,6 +1399,9 @@ export function KinemosViewer() {
             }}
             onActivate={() => setTool('calibrate')}
             onClear={() => void clearCalibrationNow()}
+            onFind={() => void findPlateHere()}
+            onSnap={() => void snapHere()}
+            assist={assist}
           />
           <ReadoutRail
             repIndices={repIndices}
@@ -1353,6 +1451,11 @@ export function KinemosViewer() {
               dirtyRef.current = true;
               setCamera(next);
             }}
+            stabilise={
+              points.length >= 8
+                ? { onRun: () => void stabiliseNow(), progress: stabiliseProgress, note: stabiliseNote }
+                : undefined
+            }
           />
         </aside>
       </div>

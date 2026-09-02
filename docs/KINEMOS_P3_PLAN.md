@@ -7,8 +7,10 @@
 
 > **Status: P3a SHIPPED** — the charts in 0.82.0, synced side-by-side playback
 > in 0.83.0. **P3b SHIPPED** — metric trends in 0.84.0 (§5 below). **P3c
-> SHIPPED** — the reference lift, same ship (§6). The rest of P3 — talkover,
-> sharing, overlay export, the calibration tiers — is not started.
+> SHIPPED** — the reference lift, same ship (§6). **P3d SHIPPED** — the
+> OpenCV assists: find the plate, snap the outline, stabilise the camera,
+> same ship (§7). The rest of P3 — talkover, sharing, overlay export, the
+> device-profile calibration tier — is not started.
 
 **P3 promise:** the coach's actual question. Not "what was the peak velocity"
 — P2 answers that — but *"why did that one fail when the one last month made
@@ -206,7 +208,8 @@ Deliberately deferred, in the order they are likely to be picked up:
   notion of a reference lift, which P3c supplied (§6).
 - **Talkover recording, sharing, overlay export.** The rest of P3.
 - **Device-profile and phone-model calibration tiers.** Listed under P3 in the
-  design plan; unrelated to comparison and independently schedulable.
+  design plan; unrelated to comparison and independently schedulable. The
+  stabiliser tier landed in P3d (§7); the device-profile tier has not.
 - **Comparing more than two lifts.** Three curves on one chart is a different
   design problem, and no coach has asked yet.
 
@@ -353,4 +356,84 @@ adapter and fixtures updated.
 
 - A library of model lifts across athletes (design §12 P5), and any
   "distance from the model" score. The reference is one athlete's own lift.
+
+---
+
+## 7. P3d — The OpenCV assists (shipped with 0.84.0)
+
+Asked for directly: "why don't we use some of the advanced methods in OpenCV
+to enhance the tracker". The answer was measured before anything was built.
+
+### What the bench said (`verify/tracker-bench.py`)
+
+A degraded synthetic snatch — 384×288 at 50 fps, a rotating branded plate,
+motion blur scaled to bar speed, a hand sweeping across the plate through the
+second pull, sensor noise, camera shake, a real VP8 encode — scored against
+the trajectory it was drawn from:
+
+| Tracker | RMS px | worst px | lost |
+| --- | --- | --- | --- |
+| KinEMOS NCC, fixed template, through the browser | 0,68 | 0,90 | 0 |
+| OpenCV `matchTemplate`, fixed template | 0,52 | 1,26 | 0 |
+| OpenCV `matchTemplate`, adaptive template | 2,23 | 3,79 | 0 |
+| OpenCV Lucas–Kanade optical flow | 2,11 | 4,84 | 0 |
+| OpenCV `HoughCircles` per frame | 0,96 | 4,16 | 0 |
+| OpenCV `TrackerMIL` | 3,31 | 4,44 | 0 |
+
+Our tracker already *is* the OpenCV method that works for this target — a
+fixed-template normalised cross-correlation is what `matchTemplate` computes.
+The general-purpose trackers update their model every frame, which is what
+makes them robust to appearance change and exactly what makes them drift on
+a plate whose appearance changes every frame. So the tracker was left alone.
+
+### What was built instead
+
+OpenCV earns its place around the tracker, not in it. `src/kinemos/cv/*` is
+a layer the engine never imports, loaded on first use as its own Vite chunk
+(`@techstark/opencv-js`, 13 MB; `opencv.ts` is the one loader, `require()`
+under Node for vitest):
+
+1. **Find the plate** (`plate.ts` `detectPlates` → `findPlate`). Hough
+   circles over the plausible radius range, ranked by *edge support* — the
+   fraction of the circumference with an edge under it — rather than by
+   votes, which favour busy backgrounds. One press in the calibration panel
+   outlines the plate, marks its centre as the bar end and tracks from it:
+   zero clicks from clip to bar path.
+2. **Snap to the edge** (`refinePlateEllipse`). Canny edges in a ring round
+   the outline; per angular bin the *outermost* edge pixel, so the rim's
+   outer edge — the plate's diameter — wins over its inner one; a contrast
+   test so wall grain does not qualify; a direct least-squares ellipse fit;
+   then the intensity gradient along each radial, interpolated, for the
+   sub-pixel edge. Reports the support, so a half-hidden plate is flagged
+   rather than passed off. A near-circular fit gets tilt 0 by definition —
+   its tilt is noise, and 88° of it once swapped the calibration's axes.
+3. **Stabilise the camera** (`stabilise.ts`). Corners on the background
+   (`cornerMinEigenVal` and a hand-rolled non-maximum pick, since this build
+   lacks `goodFeaturesToTrack`), excluded round the plate, carried by
+   pyramidal Lucas–Kanade one frame at a time, and a *similarity* — not a
+   full affine; a hand does not shear — fitted by RANSAC from each frame
+   straight to the anchor frame's corners, never chained, with a step guard a
+   hand cannot exceed. Only the tracked points are corrected; the video is
+   untouched. Offered in the grade panel when the clip is handheld or
+   unknown; sets the camera to "stabilised".
+
+### Measured, through the real path
+
+| | result |
+| --- | --- |
+| Zero-click detection on the degraded clip | centre within 0,4 px, tilt 0, radius ≈ 1 px outside the drawn rim (codec blur) |
+| Handheld random walk, up to 52 px, raw track vs the gym | 35 px RMS; loop width read as 49 cm for a 17 cm loop |
+| Same, stabilised | 1,05 px RMS, 0 frames off; loop 17,2 cm, height 111,3 cm (true 111) |
+| Static clip, stabilised anyway | track moved by under 2 px |
+
+Ten unit tests on drawn scenes; `verify/track-clip.html` gained `?auto=1`
+and `?stabilise=1`; the bench gained `--handheld` and `--world` scoring.
+
+### Not in P3d
+
+- **Validation on real footage.** All of the above is synthetic degradation,
+  chosen by the author. The two "træk" clips are the first real test.
+- **The device-profile calibration tier** (lens distortion by phone model).
+- **Re-rendering a stabilised clip.** The points are corrected, the picture
+  is not; a coach watching a handheld clip still sees it move.
 

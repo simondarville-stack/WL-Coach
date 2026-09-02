@@ -85,9 +85,13 @@ All modules are **active** — nothing is currently disabled or hidden:
   the viewer plus KinEMOS measures inside the Analysis builder, both read
   through `src/kinemos/lib/analysisAdapter.ts` (design §13 Q3: metrics stay
   adjacent, Analysis never imports the engine) — and a per-athlete reference
-  lift that comparison opens on and trends draw as a line.
+  lift that comparison opens on and trends draw as a line — and the OpenCV
+  assists: find the plate with no click, snap an outline to the rim at
+  sub-pixel, stabilise a handheld camera's track (`src/kinemos/cv/*`,
+  `@techstark/opencv-js` loaded lazily as its own chunk; the tracker itself
+  stays pure TypeScript, having out-measured OpenCV's trackers).
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
-  imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
+  imports, and it never imports `cv/`. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
   in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
   `_P3_PLAN.md`.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
