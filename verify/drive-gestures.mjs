@@ -4,7 +4,8 @@
  * The viewer's pointer maths has no unit test and the most ways to be quietly
  * wrong: client coordinates converted through a scaled canvas's own rect,
  * times converted through a band's width, a drag that has to survive pointer
- * capture. jsdom cannot exercise any of it — there is no layout, so every
+ * capture, a crosshair read out of a chart's rect onto an aligned clock. jsdom
+ * cannot exercise any of it — there is no layout, so every
  * `getBoundingClientRect()` is zero — and dispatching synthetic events by hand
  * tests the dispatcher more than the component.
  *
@@ -115,6 +116,104 @@ try {
     'Boundaries stay in order',
     moved.every((b, i) => i === 0 || b.t >= moved[i - 1].t),
   );
+  // ── Comparison: the crosshair and the exaggeration ────────────────────────
+  //
+  // Two more pieces of maths with no unit test: client x through a chart's own
+  // rect into a time on the aligned clock, and an x-only scale applied to a
+  // path whose vertical must not move with it.
+  await page.getByRole('button', { name: /compare/i }).click();
+  await page.waitForTimeout(200);
+  const picker = page.locator('select').first();
+  const options = await picker.evaluate(el => [...el.options].map(o => o.value).filter(Boolean));
+  if (options.length) await picker.selectOption(options[0]);
+  await page.waitForTimeout(300);
+
+  // The readout is "t +0,97 s  0,28  0,32  +0,04 m/s" — comma decimals and a
+  // typographic minus, per the display conventions.
+  const readout = async () => {
+    const text = await page
+      .locator('header', { hasText: 'VERTICAL VELOCITY' })
+      .first()
+      .innerText();
+    const numbers = [...text.matchAll(/[−+-]?\d+,\d+/g)].map(m =>
+      Number(m[0].replace('−', '-').replace(',', '.')),
+    );
+    return numbers.length >= 4
+      ? { t: numbers[0], reference: numbers[1], current: numbers[2], delta: numbers[3] }
+      : null;
+  };
+
+  const chart = await page.locator('div[style*="crosshair"]').first().boundingBox();
+  const samples = [];
+  for (const fraction of [0.25, 0.5, 0.75]) {
+    await page.mouse.move(chart.x + chart.width * fraction, chart.y + chart.height / 2);
+    await page.waitForTimeout(80);
+    samples.push(await readout());
+  }
+
+  check(
+    'Hovering the velocity chart reads a moment out of it',
+    samples.every(s => s !== null),
+  );
+  if (samples.every(s => s !== null)) {
+    check(
+      'The clock runs left to right',
+      samples[0].t < samples[1].t && samples[1].t < samples[2].t,
+      samples.map(s => `${s.t.toFixed(2)} s`).join(' → '),
+    );
+    // Equal steps in x must be equal steps in time, or the rect is not being
+    // used and the reading drifts the further right the pointer goes.
+    const first = samples[1].t - samples[0].t;
+    const second = samples[2].t - samples[1].t;
+    check(
+      'Equal pointer steps are equal time steps',
+      Math.abs(first - second) < 0.03,
+      `${first.toFixed(3)} s then ${second.toFixed(3)} s`,
+    );
+    const worst = Math.max(
+      ...samples.map(s => Math.abs(s.delta - (s.current - s.reference))),
+    );
+    check(
+      'The gap shown is the gap between the two numbers shown',
+      worst <= 0.011,
+      `worst disagreement ${worst.toFixed(3)} m/s`,
+    );
+  }
+
+  await page.mouse.move(chart.x + chart.width / 2, chart.y - 60);
+  await page.waitForTimeout(120);
+  check(
+    'Leaving the chart puts the alignment caption back',
+    (await page.locator('header', { hasText: 'VERTICAL VELOCITY' }).first().innerText()).includes(
+      't = 0',
+    ),
+  );
+
+  // Exaggeration: the path must get wider and stay exactly as tall.
+  const pathBox = () =>
+    page.evaluate(() => {
+      const el = [...document.querySelectorAll('path')].find(
+        p => p.getAttribute('stroke') === '#185FA5',
+      );
+      const b = el.getBBox();
+      return { width: b.width, height: b.height };
+    });
+  const atOne = await pathBox();
+  await page.getByRole('button', { name: '×4', exact: true }).click();
+  await page.waitForTimeout(150);
+  const atFour = await pathBox();
+
+  check(
+    'Exaggerating stretches the path by exactly the stated factor',
+    Math.abs(atFour.width / atOne.width - 4) < 0.01,
+    `×${(atFour.width / atOne.width).toFixed(3)}`,
+  );
+  check(
+    'And leaves the vertical alone — the height is the measurement',
+    Math.abs(atFour.height - atOne.height) < 0.01,
+    `${atOne.height.toFixed(2)} → ${atFour.height.toFixed(2)} cm`,
+  );
+
   check('No page errors', errors.length === 0, errors.join(' | '));
 } catch (err) {
   check('The driver ran without throwing', false, String(err?.message ?? err));

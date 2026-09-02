@@ -39,6 +39,11 @@ import { gradeAnalysis, type CameraStability } from '../src/kinemos/engine/grade
 import { DEFAULT_FILTER } from '../src/kinemos/engine/signal';
 import { AnalysisPanel } from '../src/kinemos/components/AnalysisPanel';
 import { ViewerStage, type ViewerTool } from '../src/kinemos/components/ViewerStage';
+import { ComparisonView } from '../src/kinemos/components/ComparisonView';
+import type { AlignmentAnchor } from '../src/kinemos/engine/compare';
+import type { ComparisonCandidate, ComparisonSubject } from '../src/kinemos/lib/comparisonService';
+import type { KinemosAnalysis } from '../src/lib/database.types';
+import type { LibraryVideo } from '../src/kinemos/lib/videoLibrary';
 import { GradeChip, GradePanel } from '../src/kinemos/components/GradePanel';
 import { MetricsPanel } from '../src/kinemos/components/MetricsPanel';
 import type { KinemosTrackPoint } from '../src/lib/database.types';
@@ -62,15 +67,6 @@ const smoothstep = (u: number) => {
   return x * x * (3 - 2 * x);
 };
 
-function velocityAt(t: number): number {
-  for (let i = 1; i < CONTROL.length; i++) {
-    const [t0, v0] = CONTROL[i - 1];
-    const [t1, v1] = CONTROL[i];
-    if (t <= t1) return v0 + (v1 - v0) * smoothstep((t - t0) / (t1 - t0));
-  }
-  return 0;
-}
-
 /** 0,2 cm/px — the design doc's worked example, and the scale the synthetic
  *  track must be drawn at for the lift to be physically the size it claims. */
 const CM_PER_PX = 0.2;
@@ -81,9 +77,29 @@ const CM_PER_PX = 0.2;
 const STAGE_W = 1280;
 const STAGE_H = 800;
 
-/** The lift as a marked track, with optional marking tremor so the filter has
- *  something to do. */
-function syntheticTrack(fps: number, tremorPx: number): TrackPoint[] {
+interface TrackShape {
+  delay?: number;
+  firstPull?: number;
+  secondPull?: number;
+  xOffset?: number;
+}
+
+function syntheticTrack(fps: number, tremorPx: number, shape: TrackShape = {}): TrackPoint[] {
+  const { delay = 0, firstPull, secondPull, xOffset = 0 } = shape;
+  const control = CONTROL.map(([t, v], i) => {
+    let value = v;
+    if (firstPull !== undefined && i === 2) value = firstPull;
+    if (secondPull !== undefined && i === 4) value = secondPull;
+    return [t + (i === 0 ? 0 : delay), value] as [number, number];
+  });
+  const velocity = (t: number) => {
+    for (let i = 1; i < control.length; i++) {
+      const [t0, v0] = control[i - 1];
+      const [t1, v1] = control[i];
+      if (t <= t1) return v0 + (v1 - v0) * smoothstep((t - t0) / (t1 - t0));
+    }
+    return 0;
+  };
   const duration = CONTROL[CONTROL.length - 1][0];
   const points: TrackPoint[] = [];
   const fine = 2400;
@@ -101,18 +117,24 @@ function syntheticTrack(fps: number, tremorPx: number): TrackPoint[] {
       const pxPerM = 100 / CM_PER_PX;
       points.push({
         t,
-        x: 500 + (4 / CM_PER_PX) * Math.sin(2 * Math.PI * t * 0.7) + rand() * tremorPx,
+        x: 500 + xOffset + (4 / CM_PER_PX) * Math.sin(2 * Math.PI * t * 0.7) + rand() * tremorPx,
         y: 1000 - y * pxPerM + rand() * tremorPx,
       });
       next += 1 / fps;
     }
-    y += velocityAt(t) / fine;
+    y += velocity(t) / fine;
   }
   return points;
 }
 
 const calibration = calibrateFromEllipse(
-  { cx: 500, cy: 900, semiMajorPx: 45 / 2 / CM_PER_PX, semiMinorPx: 45 / 2 / CM_PER_PX, tiltDeg: 0 },
+  {
+    cx: 500,
+    cy: 900,
+    semiMajorPx: 45 / 2 / CM_PER_PX,
+    semiMinorPx: 45 / 2 / CM_PER_PX,
+    tiltDeg: 0,
+  },
   45,
 );
 
@@ -149,6 +171,72 @@ function useStageCanvas(width: number, height: number, plate: PxPoint) {
   return ref.current;
 }
 
+/**
+ * A comparison subject built out of a second synthetic lift — slower off the
+ * floor, faster through the second pull, filmed with the bar elsewhere in
+ * frame, from a clip that starts a third of a second earlier. Every one of
+ * those differences is something the alignment and the delta table have to
+ * handle, and none of them is visible from a unit test.
+ */
+function useReferenceSubject(): { candidate: ComparisonCandidate; subject: ComparisonSubject } {
+  return useMemo(() => {
+    const points = syntheticTrack(60, 1.2, {
+      delay: -0.35,
+      firstPull: 1.25,
+      secondPull: 1.68,
+      xOffset: 260,
+    });
+    const series = computeKinematics(points, calibration, { massKg: 96, filter: DEFAULT_FILTER })!;
+    const boundaries = proposePhases(series).boundaries;
+    const spans = spansFrom(boundaries, DEFAULT_PHASE_SET);
+
+    const clip = {
+      key: 'log:reference',
+      source: 'log',
+      sourceId: 'reference',
+      athleteId: 'a1',
+      athleteName: 'Jon Herskind',
+      exerciseName: 'Snatch',
+      date: '2026-07-14',
+      sortedAt: '2026-07-14T17:10:00Z',
+      loadKg: 96,
+      loadIsTopSet: false,
+      durationS: 2.4,
+      fps: 60,
+      width: 1920,
+      height: 1080,
+      playbackUrl: '',
+      isEmbed: false,
+      thumbnailUrl: null,
+      note: null,
+      sessionId: null,
+      eventId: null,
+    } as LibraryVideo;
+
+    const analysis = {
+      id: 'ref-1',
+      source_kind: 'log',
+      source_id: 'reference',
+      rep_index: 1,
+      grade: 'C',
+      mass_kg: 96,
+      phase_set_id: 'default',
+    } as unknown as KinemosAnalysis;
+
+    return {
+      candidate: { analysis, clip, sameExercise: true },
+      subject: {
+        analysis,
+        clip,
+        series,
+        boundaries,
+        metrics: computeLiftMetrics(series, spans),
+        summary: summariseRep(series),
+      },
+    };
+  }, []);
+}
+
 function Bench() {
   const [fps, setFps] = useState(60);
   const [tremor, setTremor] = useState(1.5);
@@ -159,6 +247,9 @@ function Bench() {
   const [tool, setTool] = useState<ViewerTool>('mark');
   const [marks, setMarks] = useState<KinemosTrackPoint[]>([]);
   const [ellipse, setEllipse] = useState<PlateEllipse | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [alignment, setAlignment] = useState<AlignmentAnchor>('liftoff');
+  const reference = useReferenceSubject();
 
   const points = useMemo(() => syntheticTrack(fps, tremor), [fps, tremor]);
   const kinematics = useMemo(
@@ -215,7 +306,14 @@ function Bench() {
   }, [boundaries, marks, ellipse, currentT, kinematics]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--color-bg-page)' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: 'var(--color-bg-page)',
+      }}
+    >
       <header
         style={{
           height: 52,
@@ -238,7 +336,31 @@ function Bench() {
         <GradeChip grade={grade} />
       </header>
 
-      <div style={{ flexGrow: 1, display: 'flex', minHeight: 0 }}>
+      {comparing && kinematics && metrics && summary && (
+        <ComparisonView
+          current={{
+            label: 'Snatch · 26/08',
+            date: '2026-08-26',
+            series: kinematics,
+            boundaries,
+            metrics,
+            summary,
+            grade: grade.grade,
+            massKg,
+            phaseSetId: 'default',
+          }}
+          candidates={[reference.candidate]}
+          selectedId={reference.candidate.analysis.id}
+          onSelect={() => undefined}
+          subject={reference.subject}
+          loading={false}
+          anchor={alignment}
+          onAnchor={setAlignment}
+          onClose={() => setComparing(false)}
+        />
+      )}
+
+      <div style={{ flexGrow: 1, display: comparing ? 'none' : 'flex', minHeight: 0 }}>
         <main
           style={{
             flexGrow: 1,
@@ -269,12 +391,22 @@ function Bench() {
               ])
             }
           />
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', fontSize: 'var(--text-caption)' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 16,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              fontSize: 'var(--text-caption)',
+            }}
+          >
             <label>
               fps{' '}
               <select value={fps} onChange={e => setFps(Number(e.target.value))}>
                 {[24, 30, 60, 120, 240].map(v => (
-                  <option key={v} value={v}>{v}</option>
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
               </select>
             </label>
@@ -315,6 +447,9 @@ function Bench() {
               reset phase edges
             </button>
             <span>{`${marks.length} marks`}</span>
+            <button type="button" onClick={() => setComparing(c => !c)}>
+              {comparing ? 'back to the lift' : 'compare'}
+            </button>
           </div>
         </main>
 
@@ -341,21 +476,25 @@ function Bench() {
         </aside>
       </div>
 
-      <AnalysisPanel
-        series={kinematics}
-        spans={spans}
-        boundaries={boundaries}
-        onBoundaryDrag={(index, t) =>
-          setCoach(current => {
-            const base = current ?? boundaries;
-            return base.map((b, i) => (i === index ? { ...b, t, source: 'coach' as const } : b));
-          })
-        }
-        onBoundaryCommit={() => undefined}
-        currentT={currentT}
-        onSeekT={setCurrentT}
-        emptyReason={null}
-      />
+      {/* Hidden while comparing, exactly as the viewer does it — a bench that
+          shows a panel the real screen does not makes its screenshots lie. */}
+      {!comparing && (
+        <AnalysisPanel
+          series={kinematics}
+          spans={spans}
+          boundaries={boundaries}
+          onBoundaryDrag={(index, t) =>
+            setCoach(current => {
+              const base = current ?? boundaries;
+              return base.map((b, i) => (i === index ? { ...b, t, source: 'coach' as const } : b));
+            })
+          }
+          onBoundaryCommit={() => undefined}
+          currentT={currentT}
+          onSeekT={setCurrentT}
+          emptyReason={null}
+        />
+      )}
     </div>
   );
 }

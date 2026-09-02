@@ -71,6 +71,26 @@ export async function listReps(kind: LibrarySource, sourceId: string): Promise<K
   return (data ?? []) as KinemosAnalysis[];
 }
 
+/**
+ * Every analysis in the account, newest first. The comparison picker joins
+ * these against the library to find other lifts by the same athlete.
+ *
+ * A full read rather than a filtered query, for the same reason the library
+ * does one: an analysis names its source polymorphically and carries no athlete
+ * of its own, so "the same athlete's other snatches" is a join that only the
+ * library can complete. Fine at a season of footage; the fix when it is not is
+ * keyset pagination on `updated_at`, exactly as for the library.
+ */
+export async function listRecentAnalyses(limit = 400): Promise<KinemosAnalysis[]> {
+  const { data, error } = await supabase
+    .from('kinemos_analyses')
+    .select('*')
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as KinemosAnalysis[];
+}
+
 /** The whole record for one rep, or null when it has never been worked on. */
 export async function loadBundle(
   kind: LibrarySource,
@@ -222,6 +242,24 @@ export async function saveAnalysisState(
 export async function deleteAnalysis(analysisId: string): Promise<void> {
   const { error } = await supabase.from('kinemos_analyses').delete().eq('id', analysisId);
   if (error) throw error;
+}
+
+/**
+ * The stored calibration as the engine's own `PlateEllipse`.
+ *
+ * The database keeps numerics, which Supabase hands back as strings on some
+ * column types; every reader has to coerce, and two readers coercing
+ * independently is how one of them ends up with a string where a number was
+ * expected. One place, used by everything that reads a calibration back.
+ */
+export function plateEllipseFrom(row: KinemosCalibration): PlateEllipse {
+  return {
+    cx: Number(row.ellipse_cx),
+    cy: Number(row.ellipse_cy),
+    semiMajorPx: Number(row.semi_major_px),
+    semiMinorPx: Number(row.semi_minor_px),
+    tiltDeg: Number(row.tilt_deg),
+  };
 }
 
 /**

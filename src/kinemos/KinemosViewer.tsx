@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Circle, Crosshair, Hand, Ruler, Triangle } from 'lucide-react';
+import { ChevronLeft, Circle, Columns2, Crosshair, Hand, Ruler, Triangle } from 'lucide-react';
 import { ErrorState, Spinner, confirmDialog } from '../components/ui';
 import { formatDateShort } from '../lib/dateUtils';
 import { getOwnerId } from '../lib/ownerContext';
@@ -39,6 +39,14 @@ import {
 } from './engine/phases';
 import { gradeAnalysis, type CameraStability, type TrackerTier } from './engine/grade';
 import { trackFromAnchor } from './engine/tracker';
+import type { AlignmentAnchor } from './engine/compare';
+import { ComparisonView } from './components/ComparisonView';
+import {
+  findComparable,
+  loadComparisonSubject,
+  type ComparisonCandidate,
+  type ComparisonSubject,
+} from './lib/comparisonService';
 import { trackerSourceFrom } from './lib/trackerSource';
 import { DEFAULT_FILTER } from './engine/signal';
 import { useFrameServer } from './hooks/useFrameServer';
@@ -128,6 +136,15 @@ export function KinemosViewer() {
    *  them — the design brief's third open question. */
   const [uncertainIndices, setUncertainIndices] = useState<number[]>([]);
   const [trackProgress, setTrackProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const [comparing, setComparing] = useState(false);
+  const [candidates, setCandidates] = useState<ComparisonCandidate[]>([]);
+  const [comparisonId, setComparisonId] = useState<string | null>(null);
+  const [comparisonSubject, setComparisonSubject] = useState<ComparisonSubject | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  /** Lift-off by default: the one event every pull has, and where the bar path
+   *  starts (design §8). */
+  const [alignment, setAlignment] = useState<AlignmentAnchor>('liftoff');
 
   const analysisIdRef = useRef<string | null>(null);
   // Only user edits are written back. Without this the load that populates
@@ -300,6 +317,13 @@ export function KinemosViewer() {
   );
 
   const repSummary = useMemo(() => (kinematics ? summariseRep(kinematics) : null), [kinematics]);
+
+  /**
+   * Whether this lift has everything the comparison needs. One flag rather than
+   * three conditions in three places: a button enabled on a weaker test than
+   * the view it opens is a button that opens nothing.
+   */
+  const comparable = kinematics !== null && liftMetrics !== null && repSummary !== null;
 
   const grade = useMemo(
     () =>
@@ -514,6 +538,50 @@ export function KinemosViewer() {
     setCorrectionCount(0);
     setUncertainIndices([]);
   }, []);
+
+  // ── Comparison ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!comparing || !source || !id) return;
+    let cancelled = false;
+    findComparable(
+      { kind: source, id, repIndex },
+      clip?.athleteId ?? null,
+      clip?.exerciseName ?? null,
+    )
+      .then(found => {
+        if (!cancelled) setCandidates(found);
+      })
+      .catch(() => {
+        if (!cancelled) setCandidates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [comparing, source, id, repIndex, clip?.athleteId, clip?.exerciseName]);
+
+  useEffect(() => {
+    if (!comparisonId) {
+      setComparisonSubject(null);
+      return;
+    }
+    const candidate = candidates.find(c => c.analysis.id === comparisonId);
+    if (!candidate) return;
+    let cancelled = false;
+    setComparisonLoading(true);
+    loadComparisonSubject(candidate)
+      .then(subject => {
+        if (!cancelled) setComparisonSubject(subject);
+      })
+      .catch(() => {
+        if (!cancelled) setComparisonSubject(null);
+      })
+      .finally(() => {
+        if (!cancelled) setComparisonLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [comparisonId, candidates]);
 
   // ── Assisted tracking ─────────────────────────────────────────────────────
   //
@@ -850,7 +918,43 @@ export function KinemosViewer() {
             {subtitle}
           </span>
         </div>
-        <GradeChip grade={grade} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <button
+            type="button"
+            onClick={() => setComparing(current => !current)}
+            title={
+              comparable
+                ? 'Compare this lift with another of the same athlete'
+                : 'Comparison needs a calibrated, marked lift'
+            }
+            disabled={!comparable}
+            aria-pressed={comparing}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 24,
+              padding: '0 9px',
+              border: '1px solid var(--color-border-secondary)',
+              borderRadius: 'var(--radius-sm)',
+              background: comparing ? 'var(--color-accent-muted)' : 'var(--color-bg-primary)',
+              color: comparable
+                ? comparing
+                  ? 'var(--color-accent)'
+                  : 'var(--color-text-primary)'
+                : 'var(--color-text-tertiary)',
+              fontSize: 'var(--text-micro)',
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              cursor: comparable ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Columns2 size={12} />
+            COMPARE
+          </button>
+          <GradeChip grade={grade} />
+        </div>
       </header>
 
       {saveError && (
@@ -866,7 +970,41 @@ export function KinemosViewer() {
         </div>
       )}
 
-      <div style={{ flexGrow: 1, display: 'flex', minHeight: 0 }}>
+      {/* `comparable` spelled out, because a boolean does not narrow the three
+          nullable values the view needs. Same conjunction, by definition. */}
+      {comparing && kinematics && liftMetrics && repSummary && (
+        <ComparisonView
+          current={{
+            label: [title, clip.date ? formatDateShort(clip.date) : null]
+              .filter(Boolean)
+              .join(' · '),
+            date: clip.date,
+            series: kinematics,
+            boundaries,
+            metrics: liftMetrics,
+            summary: repSummary,
+            grade: grade.grade,
+            massKg,
+            phaseSetId: 'default',
+          }}
+          candidates={candidates}
+          selectedId={comparisonId}
+          onSelect={setComparisonId}
+          subject={comparisonSubject}
+          loading={comparisonLoading}
+          anchor={alignment}
+          onAnchor={setAlignment}
+          onClose={() => setComparing(false)}
+        />
+      )}
+
+      <div
+        style={{
+          flexGrow: 1,
+          display: comparing && comparable ? 'none' : 'flex',
+          minHeight: 0,
+        }}
+      >
         {/* Tool rail */}
         <nav
           style={{
@@ -1066,7 +1204,7 @@ export function KinemosViewer() {
         </aside>
       </div>
 
-      {analysable && status === 'ready' && (
+      {analysable && status === 'ready' && !comparing && (
         <AnalysisPanel
           series={kinematics}
           spans={spans}

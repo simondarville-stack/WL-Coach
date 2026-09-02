@@ -79,10 +79,12 @@ All modules are **active** — nothing is currently disabled or hidden:
   at `/kinemos` (0.78.0) and the manual analysis viewer at
   `/kinemos/analysis/:kind/:id` (0.79.0), plus the measurement pipeline —
   filtering, velocity, phases, power and the A/B/C quality grade (0.80.0) — and
-  assisted bar tracking, anchor-and-supervise, in pure TypeScript (0.81.0).
+  assisted bar tracking, anchor-and-supervise, in pure TypeScript (0.81.0), and
+  lift-vs-lift comparison inside the viewer (0.82.0).
   `src/kinemos/engine/*` is a pure core — no React, no Supabase, no EMOS
   imports. Design and phase plan in `docs/KINEMOS_DESIGN.md`; per-phase scope
-  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md` and `_P2_PLAN.md`.
+  in `docs/KINEMOS_P0_PLAN.md`, `_P1_PLAN.md`, `_P2_PLAN.md` and
+  `_P3_PLAN.md`.
   `verify/*.html` are browser harnesses (frame-server checks, a design bench
   for the analysis panels) — open them under `npm run dev`.
 
