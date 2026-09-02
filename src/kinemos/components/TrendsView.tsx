@@ -34,6 +34,7 @@ import { Select, Spinner } from '../../components/ui';
 import { formatDateShort } from '../../lib/dateUtils';
 import { METRIC_CATALOGUE, metricById } from '../engine/metricCatalogue';
 import { loadKinemosLiftRecords, type KinemosLiftRecord } from '../lib/analysisAdapter';
+import { isStale, refreshStoredMetrics, type RefreshOutcome } from '../lib/recompute';
 import { num } from '../lib/viewerFormat';
 
 /** The lift on screen, drawn as the comparison view draws it. */
@@ -61,6 +62,8 @@ interface TrendsViewProps {
   onOpen: (record: KinemosLiftRecord) => void;
   /** Injected for tests; the adapter's loader otherwise. */
   load?: typeof loadKinemosLiftRecords;
+  /** Injected for tests; the cache refresh otherwise. */
+  refresh?: typeof refreshStoredMetrics;
 }
 
 export function TrendsView({
@@ -71,6 +74,7 @@ export function TrendsView({
   onClose,
   onOpen,
   load = loadKinemosLiftRecords,
+  refresh = refreshStoredMetrics,
 }: TrendsViewProps) {
   const [metricId, setMetricId] = useState('peakVelocity');
   const [scope, setScope] = useState<Scope>('exercise');
@@ -81,13 +85,18 @@ export function TrendsView({
   const [error, setError] = useState<string | null>(null);
   const [hover, setHover] = useState<KinemosLiftRecord | null>(null);
 
+  // Bumped to read the history again — after a cache refresh has rewritten it.
+  const [generation, setGeneration] = useState(0);
+  const [refreshing, setRefreshing] = useState<{ done: number; total: number } | null>(null);
+  const [refreshed, setRefreshed] = useState<RefreshOutcome | null>(null);
+
   useEffect(() => {
     if (!athleteId) {
       setRecords([]);
       return;
     }
     let cancelled = false;
-    setRecords(null);
+    if (generation === 0) setRecords(null);
     load({ athleteIds: [athleteId] })
       .then(found => {
         if (!cancelled) setRecords(found);
@@ -98,7 +107,7 @@ export function TrendsView({
     return () => {
       cancelled = true;
     };
-  }, [athleteId, load]);
+  }, [athleteId, load, generation]);
 
   const metric = metricById(metricId) ?? METRIC_CATALOGUE[0];
 
@@ -128,6 +137,24 @@ export function TrendsView({
   );
   const withLoad = useMemo(() => plotted.filter(r => isFinite(r.loadKg)), [plotted]);
   const missing = inScope.length - plotted.length;
+  /** Reps in view whose cache predates the current schema — the ones a
+   *  recompute would give numbers, or newer numbers. */
+  const stale = useMemo(() => inScope.filter(isStale), [inScope]);
+
+  const runRefresh = async () => {
+    if (refreshing || stale.length === 0) return;
+    setRefreshed(null);
+    setRefreshing({ done: 0, total: stale.length });
+    try {
+      const outcome = await refresh(stale, {
+        onProgress: (done, total) => setRefreshing({ done, total }),
+      });
+      setRefreshed(outcome);
+    } finally {
+      setRefreshing(null);
+      setGeneration(g => g + 1);
+    }
+  };
 
   const metricUnit = `${metric.label} · ${metric.unit}`;
 
@@ -297,13 +324,40 @@ export function TrendsView({
                 onOpen={onOpen}
               />
             )}
-            {(missing > 0 || (against === 'load' && withLoad.length < plotted.length)) && (
-              <p style={{ ...caption, margin: 'var(--space-sm) 0 0', lineHeight: 1.4 }}>
-                {missing > 0 &&
-                  `${missing} of ${inScope.length} reps in view have no stored ${metric.label.toLowerCase()} — usually the ones analysed before the numbers were kept. Opening a rep stores them. `}
-                {against === 'load' &&
-                  withLoad.length < plotted.length &&
-                  `${plotted.length - withLoad.length} more have no logged load and are not on this chart.`}
+            {(missing > 0 ||
+              stale.length > 0 ||
+              refreshed ||
+              (against === 'load' && withLoad.length < plotted.length)) && (
+              <p
+                style={{
+                  ...caption,
+                  margin: 'var(--space-sm) 0 0',
+                  lineHeight: 1.4,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 'var(--space-sm)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {missing > 0 && (
+                  <span>
+                    {`${missing} of ${inScope.length} reps in view have no stored ${metric.label.toLowerCase()}`}
+                    {stale.length > 0
+                      ? ' — analysed before these numbers were kept.'
+                      : ' — usually a rep without the phase or the mass this needs.'}
+                  </span>
+                )}
+                {stale.length > 0 && (
+                  <RecomputeButton
+                    count={stale.length}
+                    progress={refreshing}
+                    onClick={() => void runRefresh()}
+                  />
+                )}
+                {refreshed && <RefreshSummary outcome={refreshed} />}
+                {against === 'load' && withLoad.length < plotted.length && (
+                  <span>{`${plotted.length - withLoad.length} more have no logged load and are not on this chart.`}</span>
+                )}
               </p>
             )}
           </section>
@@ -798,6 +852,60 @@ function RepTable({
         })}
       </tbody>
     </table>
+  );
+}
+
+// ── Cache refresh ───────────────────────────────────────────────────────────
+
+/**
+ * The one action on this screen. A rep analysed before the metrics cache
+ * existed has a track and a calibration but no stored numbers; running the
+ * pipeline over it once puts it on the chart. The button says how many, and
+ * counts while it runs.
+ */
+function RecomputeButton({
+  count,
+  progress,
+  onClick,
+}: {
+  count: number;
+  progress: { done: number; total: number } | null;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={progress !== null}
+      title="Run the measurement pipeline over each of these reps and store the result, exactly as opening the rep would. The grade is left as it is."
+      style={{
+        height: 22,
+        padding: '0 8px',
+        border: '1px solid var(--color-border-secondary)',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--color-bg-primary)',
+        color: 'var(--color-text-primary)',
+        fontSize: 'var(--text-micro)',
+        fontFamily: 'inherit',
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        cursor: progress ? 'progress' : 'pointer',
+      }}
+    >
+      {progress ? `RECOMPUTING ${progress.done} / ${progress.total}` : `RECOMPUTE ${count} ${count === 1 ? 'REP' : 'REPS'}`}
+    </button>
+  );
+}
+
+/** What the refresh did, and what it could not do, in one line. */
+function RefreshSummary({ outcome }: { outcome: RefreshOutcome }) {
+  const reasons = new Map<string, number>();
+  for (const s of outcome.skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1);
+  const skipped = [...reasons.entries()].map(([reason, n]) => `${n} ${reason}`).join(', ');
+  return (
+    <span style={{ color: outcome.skipped.length > 0 ? 'var(--color-warning-text)' : undefined }}>
+      {`${outcome.refreshed.length} recomputed${skipped ? `; skipped ${skipped}` : ''}.`}
+    </span>
   );
 }
 

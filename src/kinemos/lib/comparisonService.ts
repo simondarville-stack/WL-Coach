@@ -14,25 +14,14 @@
  * calibration rather than read from the cached `metrics` column. The cache is
  * for trend views that read a season at once; a comparison the coach is looking
  * at should agree with the viewer beside it, and the only way to guarantee that
- * is to run the same pipeline.
+ * is to run the same pipeline — `computeFromBundle`, shared with the cache
+ * refresh so every writer of the cache computes the same way too.
  */
-import { calibrateFromEllipse } from '../engine/calibration';
-import {
-  computeKinematics,
-  summariseRep,
-  type KinematicSeries,
-  type RepSummary,
-} from '../engine/kinematics';
-import {
-  computeLiftMetrics,
-  proposePhases,
-  spansFrom,
-  type LiftMetrics,
-  type PhaseBoundary,
-} from '../engine/phases';
-import { DEFAULT_FILTER } from '../engine/signal';
+import type { KinematicSeries, RepSummary } from '../engine/kinematics';
+import type { LiftMetrics, PhaseBoundary } from '../engine/phases';
 import type { KinemosAnalysis, KinemosTrackPoint } from '../../lib/database.types';
-import { listRecentAnalyses, loadBundle, plateEllipseFrom } from './analysisService';
+import { listRecentAnalyses, loadBundle } from './analysisService';
+import { computeFromBundle } from './recompute';
 import { loadLibrary, type LibrarySource, type LibraryVideo } from './videoLibrary';
 
 /** An analysis the coach could compare the current one against. */
@@ -113,36 +102,9 @@ export async function loadComparisonSubject(
     candidate.analysis.source_id,
     candidate.analysis.rep_index,
   );
-  if (!bundle?.track || !bundle.calibration) return null;
-  const points = bundle.track.points ?? [];
-  if (points.length < 2) return null;
+  if (!bundle) return null;
+  const computed = computeFromBundle(bundle);
+  if (!computed) return null;
 
-  const calibration = calibrateFromEllipse(
-    plateEllipseFrom(bundle.calibration),
-    Number(bundle.calibration.plate_diameter_cm),
-  );
-  const series = computeKinematics(points, calibration, {
-    massKg: bundle.analysis.mass_kg === null ? null : Number(bundle.analysis.mass_kg),
-    filter: DEFAULT_FILTER,
-  });
-  if (!series) return null;
-
-  // A coach-corrected phase set is the answer; anything else is re-proposed
-  // against the series as it is now, for the same reason the viewer does.
-  const stored = bundle.analysis.phase_boundaries;
-  const boundaries =
-    stored && stored.some(b => b.source === 'coach')
-      ? (stored as PhaseBoundary[])
-      : proposePhases(series).boundaries;
-
-  const spans = spansFrom(boundaries);
-  return {
-    analysis: bundle.analysis,
-    clip: candidate.clip,
-    points,
-    series,
-    boundaries,
-    metrics: computeLiftMetrics(series, spans),
-    summary: summariseRep(series),
-  };
+  return { analysis: bundle.analysis, clip: candidate.clip, ...computed };
 }

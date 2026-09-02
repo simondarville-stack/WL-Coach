@@ -278,15 +278,24 @@ through the adapter; a KinEMOS read failure leaves the training facts intact),
 W and s. A coach can now put "Second pull (KinEMOS)" in a pivot next to max
 load and tonnage, per week or per date.
 
+**Cache refresh (`lib/recompute.ts`)** — `computeFromBundle` is the one
+pipeline over a stored rep, shared by the comparison loader and by
+`refreshStoredMetrics`, which rewrites the metrics cache of reps whose stored
+schema is behind the current one. The Trends view offers it as a
+RECOMPUTE N REPS action beside the caption that counts them, reports what it
+could not do (not calibrated, no track, gone) and reads the history again.
+The grade is deliberately left alone: it needs the frame server's sample rate
+and its variable-frame-rate verdict, which only the viewer has.
+
 **Tests** — catalogue round trip and leniency (9), adapter projection and
-filters (10), Trends view words and modes (9), KinEMOS fact stream and
-measures (8).
+filters (10), Trends view words, modes and the refresh (11), recompute (8),
+KinEMOS fact stream and measures (8).
 
 ### Not in P3b
 
-- **Recomputing stale caches in bulk.** A rep analysed under an older filter
-  default keeps its old numbers until it is reopened. The schema stamp makes
-  that visible; a "recompute this athlete" job is a later slice.
+- **Recomputing a rep's grade headlessly.** The refresh rewrites metrics only;
+  a grade needs the frame server. A rep graded under an older rule keeps its
+  letter until it is reopened.
 - **Trend lines in the athlete app.** The adapter makes it a projection
   question; the surface is a product decision.
 - **Load–velocity profile fitting.** The against-load view shows the points;

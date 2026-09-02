@@ -47,6 +47,7 @@ const records: KinemosLiftRecord[] = [
 function mount(over: Partial<Parameters<typeof TrendsView>[0]> = {}) {
   const onOpen = vi.fn();
   const onClose = vi.fn();
+  const refresh = vi.fn(async () => ({ refreshed: [] as string[], skipped: [] }));
   render(
     <TrendsView
       athleteId="ath-1"
@@ -56,10 +57,11 @@ function mount(over: Partial<Parameters<typeof TrendsView>[0]> = {}) {
       onClose={onClose}
       onOpen={onOpen}
       load={() => Promise.resolve(records)}
+      refresh={refresh}
       {...over}
     />,
   );
-  return { onOpen, onClose };
+  return { onOpen, onClose, refresh };
 }
 
 describe('TrendsView', () => {
@@ -77,11 +79,46 @@ describe('TrendsView', () => {
     expect(screen.getAllByText('1,70').length).toBeGreaterThan(0);
   });
 
-  it('counts a rep with no stored number instead of hiding it', async () => {
+  it('counts a rep with no stored number instead of hiding it, and offers to recompute it', async () => {
     mount();
     expect(
       await screen.findByText(/1 of 4 reps in view have no stored peak velocity/),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'RECOMPUTE 1 REP' })).toBeInTheDocument();
+  });
+
+  it('recomputes the stale reps, reports the outcome and reads the history again', async () => {
+    let loads = 0;
+    const load = vi.fn(async () => {
+      loads += 1;
+      // After the refresh the stale rep comes back with a number.
+      return loads === 1
+        ? records
+        : records.map(r => (r.analysisId === 'r3' ? { ...r, schema: 1, values: { peakVelocity: 1.78 } } : r));
+    });
+    const refresh = vi.fn(async (stale: readonly KinemosLiftRecord[]) => ({
+      refreshed: stale.map(r => r.analysisId),
+      skipped: [] as Array<{ analysisId: string; reason: string }>,
+    }));
+    mount({ load, refresh });
+    fireEvent.click(await screen.findByRole('button', { name: 'RECOMPUTE 1 REP' }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(refresh.mock.calls[0][0].map(r => r.analysisId)).toEqual(['r3']);
+    expect(await screen.findByText('1 recomputed.')).toBeInTheDocument();
+    await waitFor(() => expect(loads).toBe(2));
+    // Nothing stale is left, so the button is gone and the caption with it.
+    await waitFor(() => expect(screen.queryByRole('button', { name: /RECOMPUTE/ })).not.toBeInTheDocument());
+    expect(screen.queryByText(/have no stored peak velocity/)).not.toBeInTheDocument();
+  });
+
+  it('says what a recompute could not do', async () => {
+    const refresh = vi.fn(async () => ({
+      refreshed: [] as string[],
+      skipped: [{ analysisId: 'r3', reason: 'not calibrated' }],
+    }));
+    mount({ refresh });
+    fireEvent.click(await screen.findByRole('button', { name: 'RECOMPUTE 1 REP' }));
+    expect(await screen.findByText('0 recomputed; skipped 1 not calibrated.')).toBeInTheDocument();
   });
 
   it('widens to every exercise on request, and says the clean is a clean', async () => {
